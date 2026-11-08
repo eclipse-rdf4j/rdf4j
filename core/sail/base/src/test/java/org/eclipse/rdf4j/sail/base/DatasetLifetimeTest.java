@@ -194,6 +194,7 @@ class DatasetLifetimeTest {
 					() -> assertEquals(101, cursor.getSourceRowsScannedActual()),
 					() -> assertEquals(201, cursor.getSourceRowsMatchedActual()),
 					() -> assertEquals(301, cursor.getSourceRowsFilteredActual()));
+			assertSkipMetrics(cursor, 1);
 		} finally {
 			cursor.close();
 			lifetime.close(false);
@@ -224,6 +225,39 @@ class DatasetLifetimeTest {
 			exhausted.close();
 			exhaustedLifetime.close(false);
 		}
+	}
+
+	@Test
+	void supportedZeroSkipCountersSurviveRetainedNormalClose() {
+		TrackingReportingIteration source = new TrackingReportingIteration(List.of("zero")) {
+			@Override
+			public long getDistinctCursorSkipCountActual() {
+				return 0L;
+			}
+
+			@Override
+			public long getDistinctCursorSkipSeekCountActual() {
+				return 0L;
+			}
+
+			@Override
+			public long getSkipAheadSeekCountActual() {
+				return 0L;
+			}
+		};
+		DatasetLifetime lifetime = new DatasetLifetime(abandon -> {
+		});
+		try (CloseableIteration<? extends String> cursor = lifetime.open(() -> source)) {
+			assertEquals(List.of("zero"), readAll(cursor));
+			IndexReportingIterator reporting = (IndexReportingIterator) cursor;
+			assertAll(
+					() -> assertEquals(0, reporting.getDistinctCursorSkipCountActual()),
+					() -> assertEquals(0, reporting.getDistinctCursorSkipSeekCountActual()),
+					() -> assertEquals(0, reporting.getSkipAheadSeekCountActual()));
+		} finally {
+			lifetime.close(false);
+		}
+		assertEquals(1, source.closeCount());
 	}
 
 	@Test
@@ -324,6 +358,9 @@ class DatasetLifetimeTest {
 			assertEquals(-1, plain.getSourceRowsScannedActual());
 			assertEquals(-1, plain.getSourceRowsMatchedActual());
 			assertEquals(-1, plain.getSourceRowsFilteredActual());
+			assertEquals(-1, plain.getDistinctCursorSkipCountActual());
+			assertEquals(-1, plain.getDistinctCursorSkipSeekCountActual());
+			assertEquals(-1, plain.getSkipAheadSeekCountActual());
 		} finally {
 			plain.close();
 			plainLifetime.close(false);
@@ -342,6 +379,9 @@ class DatasetLifetimeTest {
 			assertEquals(-1, nonReportingUnion.getSourceRowsScannedActual());
 			assertEquals(-1, nonReportingUnion.getSourceRowsMatchedActual());
 			assertEquals(-1, nonReportingUnion.getSourceRowsFilteredActual());
+			assertEquals(-1, nonReportingUnion.getDistinctCursorSkipCountActual());
+			assertEquals(-1, nonReportingUnion.getDistinctCursorSkipSeekCountActual());
+			assertEquals(-1, nonReportingUnion.getSkipAheadSeekCountActual());
 		} finally {
 			nonReportingUnion.close();
 			unionPlainLifetime.close(false);
@@ -368,6 +408,7 @@ class DatasetLifetimeTest {
 					() -> assertEquals(101, union.getSourceRowsScannedActual()),
 					() -> assertEquals(201, union.getSourceRowsMatchedActual()),
 					() -> assertEquals(301, union.getSourceRowsFilteredActual()));
+			assertSkipMetrics(union, 1);
 		} finally {
 			union.close();
 			reportingLifetime.close(false);
@@ -389,6 +430,14 @@ class DatasetLifetimeTest {
 				() -> assertEquals(100 + rowsReturned, iterator.getSourceRowsScannedActual()),
 				() -> assertEquals(200 + rowsReturned, iterator.getSourceRowsMatchedActual()),
 				() -> assertEquals(300 + rowsReturned, iterator.getSourceRowsFilteredActual()));
+		assertSkipMetrics(iterator, rowsReturned);
+	}
+
+	private static void assertSkipMetrics(IndexReportingIterator iterator, int rowsReturned) {
+		assertAll("transparent scopes preserve each measured skip counter",
+				() -> assertEquals(400 + rowsReturned, iterator.getDistinctCursorSkipCountActual()),
+				() -> assertEquals(500 + rowsReturned, iterator.getDistinctCursorSkipSeekCountActual()),
+				() -> assertEquals(600 + rowsReturned, iterator.getSkipAheadSeekCountActual()));
 	}
 
 	private static class TrackingIteration implements CloseableIteration<String> {
@@ -432,7 +481,7 @@ class DatasetLifetimeTest {
 		}
 	}
 
-	private static final class TrackingReportingIteration extends TrackingIteration implements IndexReportingIterator {
+	private static class TrackingReportingIteration extends TrackingIteration implements IndexReportingIterator {
 		private TrackingReportingIteration(List<String> values) {
 			super(values);
 		}
@@ -455,6 +504,21 @@ class DatasetLifetimeTest {
 		@Override
 		public long getSourceRowsFilteredActual() {
 			return 300 + rowsReturned();
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			return 400 + rowsReturned();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			return 500 + rowsReturned();
+		}
+
+		@Override
+		public long getSkipAheadSeekCountActual() {
+			return 600 + rowsReturned();
 		}
 	}
 }

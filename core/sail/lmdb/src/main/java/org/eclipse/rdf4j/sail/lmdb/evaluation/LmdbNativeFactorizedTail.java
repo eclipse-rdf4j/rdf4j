@@ -541,13 +541,14 @@ final class FactorizedTail {
 			boolean existenceOnly = !anyNonDistinct && valueColumnsPerBranch[b] == 0 && tailGroupPos < 0;
 			// the memo key covers everything the branch's result can depend on: the pattern's probe
 			// slots plus any prefix slots its filters read
-			int[] memoKeySlots = slotsOf((pattern.producedMask() & boundByPrefix) | branchFilterReads[b]);
+			int[] memoKeySlots = slotsOf(((pattern.producedMask() | pattern.readOnlyMask()) & boundByPrefix) | branchFilterReads[b]);
 			// scan-once (hash-join-style) mode needs exactly one row-varying correlated slot, count-only
 			// filter-free consumption, and a quad position for the key
 			long varyingMask = pattern.producedMask() & boundByPrefix & ~seedMask;
 			int varyingSlot = -1;
 			int varyingQuadPos = -1;
-			if (!existenceOnly && tailGroupPos < 0 && valueColumnsPerBranch[b] == 0 && branchFilters.length == 0
+			if (!pattern.hasEntryDependentFields() && !existenceOnly && tailGroupPos < 0
+					&& valueColumnsPerBranch[b] == 0 && branchFilters.length == 0
 					&& Long.bitCount(varyingMask) == 1) {
 				int slot = Long.numberOfTrailingZeros(varyingMask);
 				int quadPos = pattern.quadPositionOfSlot(slot);
@@ -600,7 +601,8 @@ final class FactorizedTail {
 			}
 		}
 		for (int i = 0; i < count; i++) {
-			long reads = order[start + i].producedMask();
+			PatternPlan branch = (PatternPlan) order[start + i];
+			long reads = branch.producedMask() | branch.readOnlyMask();
 			for (int j = 0; j < count; j++) {
 				if (i != j && (reads & fresh[j]) != 0L) {
 					return false;

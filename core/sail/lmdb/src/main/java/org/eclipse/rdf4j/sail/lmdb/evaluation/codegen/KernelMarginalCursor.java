@@ -34,6 +34,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 	private final KernelCancellation cancellation;
 	private final KernelPlan.ProjectionCursor nativeCursor;
 	private final KernelPlan.FactorCursor factors;
+	private final boolean sourcesExternallyRetained;
 	private final KernelPlan.Cursor rows;
 	private final int[] slots;
 	private final long[] rowBuffer, rowWeights;
@@ -109,6 +110,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 		}
 		this.nativeCursor = nativeCursor;
 		this.factors = factors;
+		this.sourcesExternallyRetained = factors != null && factors.borrowedSourcesExternallyRetained();
 		this.rows = rows;
 		slots = factors == null ? null : new int[width];
 		masks = factors == null ? null : new long[columns.length];
@@ -161,7 +163,13 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 				flatCount = rowCount;
 			} else {
 				found = false;
-				while (factors.next()) {
+				while (true) {
+					KernelRuntime.checkCancelled(cancellation);
+					if (!sourcesExternallyRetained)
+						releaseReaders();
+					KernelRuntime.checkCancelled(cancellation);
+					if (!factors.next())
+						break;
 					KernelRuntime.checkCancelled(cancellation);
 					environment = Objects.requireNonNull(factors.factors());
 					environment.checkValid();
@@ -208,7 +216,9 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 			if (product == null)
 				product = new FactorProductCursor(64, WINDOW);
 			product.bind(environment, unionDemand, 1L, false);
-			if (!product.next())
+			boolean found = product.next();
+			KernelRuntime.checkCancelled(cancellation);
+			if (!found)
 				throw new IllegalStateException("nonempty singleton factor disappeared");
 		}
 		for (long rest = unionColumns; rest != 0L; rest &= rest - 1L) {
@@ -369,6 +379,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 			} else if (!windowMode)
 				throw new IllegalStateException("cannot switch projection traversal mode");
 			windowCount = windowReader.nextWindow();
+			KernelRuntime.checkCancelled(cancellation);
 			// A reader callback must not advance another mandatory factor while filling this window.
 			checkEpoch();
 			if (windowCount == 0) {
@@ -433,7 +444,8 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 			positioned = false;
 			if (projection == completed)
 				return false;
-			if (active != projection) {
+			boolean initialize = active != projection;
+			if (initialize) {
 				KernelRuntime.checkCancelled(cancellation);
 				if (projection != completed + 1 || active != completed)
 					throw new IllegalStateException("projection order or unfinished projection");
@@ -472,6 +484,8 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 					currentWeight = 0L;
 				} else {
 					found = product.next();
+					if (initialize)
+						KernelRuntime.checkCancelled(cancellation);
 					if (found)
 						currentWeight = 0L;
 				}
@@ -535,6 +549,21 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 		if (environment.epoch() != epoch)
 			throw new IllegalStateException("relation advanced during projection");
 		environment.checkValid();
+	}
+
+	private void releaseReaders() {
+		BorrowedFactorBatch.Cursor previous = windowReader;
+		windowReader = null;
+		windowBatch = null;
+		Throwable failure = KernelRuntime.closeResource(previous, null);
+		if (product != null) {
+			try { product.release(); }
+			catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem;
+				else if (failure != problem) failure.addSuppressed(problem);
+			}
+		}
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	private void fail(Throwable failure) {

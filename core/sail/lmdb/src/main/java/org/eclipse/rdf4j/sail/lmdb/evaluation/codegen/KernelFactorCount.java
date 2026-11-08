@@ -162,10 +162,10 @@ public final class KernelFactorCount implements AutoCloseable {
 		if (!environment.isTuple(leader)) {
 			BorrowedFactorBatch batch = environment.batch(leader);
 			if (batches[leader] != batch) {
-				if (readers[leader] != null)
-					readers[leader].close();
+				BorrowedFactorBatch.Cursor previous = readers[leader];
 				readers[leader] = null;
 				batches[leader] = null;
+				if (previous != null) previous.close();
 				readers[leader] = batch.cursor(WINDOW);
 				batches[leader] = batch;
 			}
@@ -198,10 +198,10 @@ public final class KernelFactorCount implements AutoCloseable {
 			}
 			BorrowedTupleBatch batch = environment.tupleBatch(leader);
 			if (tupleBatches[leader] != batch) {
-				if (tupleReaders[leader] != null)
-					tupleReaders[leader].close();
+				BorrowedTupleBatch.Cursor previous = tupleReaders[leader];
 				tupleReaders[leader] = null;
 				tupleBatches[leader] = null;
+				if (previous != null) previous.close();
 				tupleReaders[leader] = batch.cursor(WINDOW);
 				tupleBatches[leader] = batch;
 			}
@@ -249,46 +249,37 @@ public final class KernelFactorCount implements AutoCloseable {
 			throw new IllegalStateException("factor prefix advanced during reduction");
 	}
 
+	/** Release input decoder ownership while retaining bounded counting workspace for another live prefix. */
+	void release() {
+		if (closed) throw new IllegalStateException("factor counter closed");
+		releaseReaders();
+	}
+
+	private void releaseReaders() {
+		Throwable failure = null;
+		for (int slot = 0; slot < readers.length; slot++) {
+			BorrowedFactorBatch.Cursor reader = readers[slot];
+			readers[slot] = null;
+			batches[slot] = null;
+			failure = KernelRuntime.closeResource(reader, failure);
+		}
+		if (tupleReaders != null) {
+			for (int slot = 0; slot < tupleReaders.length; slot++) {
+				BorrowedTupleBatch.Cursor reader = tupleReaders[slot];
+				tupleReaders[slot] = null;
+				tupleBatches[slot] = null;
+				failure = KernelRuntime.closeResource(reader, failure);
+			}
+		}
+		Arrays.fill(columns, null);
+		KernelRuntime.rethrowCloseFailure(failure);
+	}
+
 	@Override
 	public void close() {
-		if (closed)
-			return;
+		if (closed) return;
 		closed = true;
-		Throwable failure = null;
-		for (BorrowedFactorBatch.Cursor reader : readers)
-			if (reader != null) {
-				try {
-					reader.close();
-				} catch (RuntimeException | Error problem) {
-					if (failure == null)
-						failure = problem;
-					else if (failure != problem)
-						failure.addSuppressed(problem);
-				}
-			}
-		if (tupleReaders != null)
-			for (BorrowedTupleBatch.Cursor reader : tupleReaders)
-				if (reader != null) {
-					try {
-						reader.close();
-					} catch (RuntimeException | Error problem) {
-						if (failure == null)
-							failure = problem;
-						else if (failure != problem)
-							failure.addSuppressed(problem);
-					}
-				}
-		Arrays.fill(columns, null);
-		Arrays.fill(tupleColumns, null);
-		Arrays.fill(batches, null);
-		Arrays.fill(readers, null);
-		if (tupleReaders != null) {
-			Arrays.fill(tupleReaders, null);
-			Arrays.fill(tupleBatches, null);
-		}
-		if (failure instanceof RuntimeException problem)
-			throw problem;
-		if (failure instanceof Error problem)
-			throw problem;
+		try { releaseReaders(); }
+		finally { Arrays.fill(tupleColumns, null); }
 	}
 }

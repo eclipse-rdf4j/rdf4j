@@ -86,6 +86,8 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 				// Push UNION down below other filters to avoid cloning them
 				Filter leftFilter = new Filter(node.clone(), orNode.getLeftArg());
 				Filter rightFilter = new Filter(node.clone(), orNode.getRightArg());
+				leftFilter.setRequiredInputBindingNames(filter.getRequiredInputBindingNames());
+				rightFilter.setRequiredInputBindingNames(filter.getRequiredInputBindingNames());
 				Union union = new Union(leftFilter, rightFilter);
 				union.setVariableScopeChange(scopeChange);
 				node.replaceWith(union);

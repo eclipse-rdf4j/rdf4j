@@ -107,6 +107,7 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 
 	/** Binds only proven independent lexical producers. The original AUTO plan remains a separate alternative. */
 	static SlotPlan bindLexicalInputs(SlotPlan input, RowState row) {
+		if (input instanceof NativeValuesFoldPlan guard) { return bindLexicalInputs(guard.select(row), row); }
 		if (input instanceof NativeSubqueryPlan subquery) {
 			return subquery.withPhysicalPlan(row);
 		}

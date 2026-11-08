@@ -110,7 +110,8 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	 * @param object to put into the set
 	 */
 	protected boolean add(E object) {
-		return excludeSet.add(object);
+		Set<E> set = excludeSet;
+		return set != null && set.add(object);
 	}
 
 	private static final class QueryExecutionContextBridge {

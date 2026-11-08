@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryOperationContext;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -44,11 +45,13 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 
 	@Override
 	public boolean evaluate() throws QueryEvaluationException {
-		InterruptingTimeLimit timeLimit = startEvaluationTimeLimit();
+		InterruptingTimeLimit timeLimit = null;
 		CloseableIteration<? extends BindingSet> bindingsIter1 = null;
 		CloseableIteration<? extends BindingSet> bindingsIter2 = null;
 
-		try {
+		try (QueryOperationContext.Scope operation = openQueryOperation()) {
+			timeLimit = startEvaluationTimeLimit();
+			QueryOperationContext.throwIfDeadlineExpired();
 			ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
 			TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
 			Dataset dataset = getDataset();

@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -121,7 +122,7 @@ class LmdbCanonicalIriFormatPolicyTest {
 	}
 
 	@Test
-	void loadedMetadataWithoutVersionCannotBecomeNewOutput() {
+	void persistedMetadataWithoutVersionCannotBecomeNewOutput() {
 		StoreProperties properties = new StoreProperties(directory.toFile()).setTripleIndexes("spoc,posc");
 		properties.save();
 		assertThatThrownBy(() -> LmdbStoreFormat.fromProperties(properties, config()))
@@ -265,13 +266,56 @@ class LmdbCanonicalIriFormatPolicyTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void dictionaryConstructorPreservesActualOwnerQualification(boolean loadedProfile) throws Exception {
+		completePreparedGeneration(7);
+		StoreProperties persisted = readProperties();
+		PreparedBulkStore.Snapshot snapshot = PreparedBulkStore.readSealed(directory, persisted, config());
+		assertThat(snapshot).isNotNull();
+		StoreProperties owner = loadedProfile ? readProperties() : new StoreProperties(directory.toFile());
+		if (!loadedProfile) {
+			// An owner may already hold a resolved profile and an actual paired observation before native opening.
+			// Reuse the real closed generation's capabilities and witness through their ordinary APIs.
+			LmdbStoreFormat.fromProperties(persisted, config()).initializeProperties(owner);
+			owner.setTripleIndexes(persisted.getTripleIndexes());
+			owner.setTripleTermIndexes(persisted.getTripleTermIndexes());
+			owner.setLanguageTagKey(persisted.getLanguageTagKey());
+			owner.setRefCountsVersion(persisted.getRefCountsVersion());
+			owner.setRdfTermDomainsVersion(persisted.getRdfTermDomainsVersion());
+			owner.setRdfTermDomainQualification(persisted.getRdfTermDomainQualification());
+		}
+		RdfTermDomainQualification.observe(owner, snapshot);
+		assertThat(owner.rdfTermDomainQualifiedAtOpen).isTrue();
+		RdfTermDomainQualification.Witness witness = owner.rdfTermDomainWitnessAtOpen;
+		ValueStore values = new ValueStore(directory.resolve("values").toFile(), owner, config());
+		try {
+			assertThat(owner.isLoaded()).isEqualTo(loadedProfile);
+			assertThat(owner.rdfTermDomainQualifiedAtOpen).isTrue();
+			assertThat(owner.rdfTermDomainWitnessAtOpen).isSameAs(witness);
+			assertThat(owner.rdfTermDomainValuesTransactionAtOpen).isEqualTo(snapshot.values().transactionId());
+			assertThat(owner.rdfTermDomainTriplesTransactionAtOpen).isEqualTo(snapshot.triples().transactionId());
+		} finally {
+			values.close();
+		}
+	}
+
+	@ParameterizedTest
 	@ValueSource(ints = { 2, 7 })
 	void standaloneDictionariesRecoverTheirPersistedFormat(int version) throws Exception {
 		Path valuesDirectory = directory.resolve("values");
 		var value = SimpleValueFactory.getInstance().createIRI("urn:standalone:", "branch/leaf");
 		long id;
-		ValueStore values = new ValueStore(valuesDirectory.toFile(),
-				new StoreProperties().setVersion(Integer.toString(version)), config());
+		LmdbStoreConfig config = config();
+		ValueStore values;
+		if (version == LmdbStoreFormat.LEGACY_VERSION) {
+			values = new ValueStore(valuesDirectory.toFile(),
+					new StoreProperties().setVersion(Integer.toString(version)),
+					config);
+		} else {
+			// The convenience path creates and persists format 7 capabilities and the old-reader marker before opening
+			// the first native generation.
+			values = new ValueStore(valuesDirectory.toFile(), config);
+		}
 		try {
 			values.startTransaction(true);
 			id = values.storeValue(value);
@@ -279,8 +323,19 @@ class LmdbCanonicalIriFormatPolicyTest {
 		} finally {
 			values.close();
 		}
-		assertThat(directory.resolve(StoreProperties.FILE_NAME)).doesNotExist();
-		values = new ValueStore(valuesDirectory.toFile(), config());
+		if (version == LmdbStoreFormat.LEGACY_VERSION) {
+			// The low-level legacy codec constructor is an explicit transient seam. Publish matching persisted owner
+			// metadata before asking the convenience constructor to reopen this dictionary.
+			new StoreProperties(valuesDirectory.toFile()).setVersion(Integer.toString(version)).save();
+		}
+		assertThat(valuesDirectory.resolve(StoreProperties.FILE_NAME)).isRegularFile();
+		if (version == LmdbStoreFormat.CANONICAL_IRI_VERSION) {
+			assertThat(Files.readString(valuesDirectory.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE)))
+					.isEqualTo(LmdbStore.CORE_LITERAL_REFERENCE_MARKER);
+		} else {
+			assertThat(valuesDirectory.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE)).doesNotExist();
+		}
+		values = new ValueStore(valuesDirectory.toFile(), config);
 		try {
 			assertThat(values.getFormat().getVersion()).isEqualTo(version);
 			assertThat(values.getFormat().usesCanonicalIriEncoding()).isEqualTo(version == 7);
@@ -291,10 +346,52 @@ class LmdbCanonicalIriFormatPolicyTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(ints = { 2, 7 })
+	void standaloneNativeDataWithoutSidecarRequiresExplicitFormatAuthority(int version) throws Exception {
+		Path valuesDirectory = directory.resolve("values");
+		LmdbStoreConfig config = config();
+		StoreProperties codecProperties = standaloneCodecProperties(version, config);
+		var value = SimpleValueFactory.getInstance().createIRI("urn:standalone:", "explicit/format");
+		long id;
+		ValueStore seeded = new ValueStore(valuesDirectory.toFile(), codecProperties, config);
+		try {
+			seeded.startTransaction(true);
+			id = seeded.storeValue(value);
+			seeded.commit();
+		} finally {
+			seeded.close();
+		}
+
+		var before = LmdbCompatibilityFixtures.snapshot(valuesDirectory);
+		assertThat(valuesDirectory.resolve(StoreProperties.FILE_NAME)).doesNotExist();
+		assertThatThrownBy(() -> new ValueStore(valuesDirectory.toFile(), config))
+				.isInstanceOf(IOException.class)
+				.hasMessageContaining("Missing store.properties");
+		assertThatThrownBy(() -> new ValueStore(valuesDirectory.toFile(), new StoreProperties(), config))
+				.isInstanceOf(SailException.class)
+				.hasMessageContaining("Missing store.properties");
+		assertThat(LmdbCompatibilityFixtures.snapshot(valuesDirectory)).isEqualTo(before);
+
+		// An explicitly supplied codec remains sufficient for this low-level in-memory test seam.
+		ValueStore reopened = new ValueStore(valuesDirectory.toFile(), standaloneCodecProperties(version, config),
+				config);
+		try {
+			assertThat(reopened.getFormat().getVersion()).isEqualTo(version);
+			assertThat(reopened.getId(value)).isEqualTo(id);
+			assertThat(reopened.getValue(id).stringValue()).isEqualTo(value.stringValue());
+		} finally {
+			reopened.close();
+		}
+	}
+
 	@Test
 	void standaloneConstructorReadsOwningSailMetadata() throws Exception {
 		int version = 7;
 		createGeneration(version);
+		byte[] owningProperties = Files.readAllBytes(directory.resolve(StoreProperties.FILE_NAME));
+		byte[] compatibilityMarker = Files
+				.readAllBytes(directory.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE));
 		ValueStore values = new ValueStore(directory.resolve("values").toFile(), config());
 		try {
 			assertThat(values.getFormat().getVersion()).isEqualTo(version);
@@ -303,6 +400,25 @@ class LmdbCanonicalIriFormatPolicyTest {
 		} finally {
 			values.close();
 		}
+		assertThat(Files.readAllBytes(directory.resolve(StoreProperties.FILE_NAME))).isEqualTo(owningProperties);
+		assertThat(Files.readAllBytes(directory.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE)))
+				.isEqualTo(compatibilityMarker);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "7,missing", "7,incompatible", "2,unexpected" })
+	void owningGenerationRejectsMissingOrInconsistentCompatibilityMarkerWithoutMutation(int version, String state)
+			throws Exception {
+		createGeneration(version);
+		Path marker = directory.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE);
+		switch (state) {
+		case "missing" -> Files.delete(marker);
+		case "incompatible" -> Files.writeString(marker, "incompatible marker");
+		case "unexpected" -> Files.writeString(marker, LmdbStore.CORE_LITERAL_REFERENCE_MARKER);
+		default -> throw new IllegalArgumentException("Unexpected marker state: " + state);
+		}
+
+		assertRejectedWithoutMutation();
 	}
 
 	@Test
@@ -456,14 +572,18 @@ class LmdbCanonicalIriFormatPolicyTest {
 		createGeneration(version);
 		LmdbStore store = new LmdbStore(directory.toFile(), config());
 		store.init();
-		try (NotifyingSailConnection connection = store.getConnection()) {
-			var values = SimpleValueFactory.getInstance();
-			connection.begin();
-			// Prepared admission requires the authoritative namespace snapshot, published by a real mutation.
-			connection.setNamespace("prepared", "urn:prepared:");
-			connection.addStatement(values.createIRI("urn:prepared:", "branch/subject"),
-					values.createIRI("urn:prepared:predicate"), values.createLiteral("completed generation"));
-			connection.commit();
+		try {
+			// The fixture requires completed domain authority, not cancellation of optional startup work at close.
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				var values = SimpleValueFactory.getInstance();
+				connection.begin();
+				// Prepared admission requires the authoritative namespace snapshot, published by a real mutation.
+				connection.setNamespace("prepared", "urn:prepared:");
+				connection.addStatement(values.createIRI("urn:prepared:", "branch/subject"),
+						values.createIRI("urn:prepared:predicate"), values.createLiteral("completed generation"));
+				connection.commit();
+			}
 		} finally {
 			store.shutDown();
 		}
@@ -486,6 +606,15 @@ class LmdbCanonicalIriFormatPolicyTest {
 		} finally {
 			store.close();
 		}
+	}
+
+	private static StoreProperties standaloneCodecProperties(int version, LmdbStoreConfig config) {
+		StoreProperties properties = new StoreProperties();
+		if (version == LmdbStoreFormat.LEGACY_VERSION) {
+			return properties.setVersion(Integer.toString(version));
+		}
+		LmdbStoreFormat.forNewStore(config).initializeProperties(properties);
+		return properties;
 	}
 
 	private StoreProperties readProperties() {

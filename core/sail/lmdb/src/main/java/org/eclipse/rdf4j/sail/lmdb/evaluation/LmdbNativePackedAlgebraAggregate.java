@@ -38,18 +38,54 @@ final class LmdbNativePackedAlgebraAggregate {
 
 	private static List<BindingSet> evaluate(SlotPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			NativeGroupIteration owner, TupleExpr explainTarget, boolean allowParallel) throws IOException {
-		if (!LmdbNativeFactorAlgebra.candidate(plan))
+		if (!candidate(plan, row, aggregates)) {
 			return null;
+		}
+		// This admitted aggregate owns its internal dispatch decisions. Include lazy input preparation, draining
+		// and cleanup in the same scope, and retain any enclosing owner's scope when this aggregate finishes.
+		boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+		try {
+			return evaluateOwned(plan, row, groupSlots, aggregates, owner, explainTarget, allowParallel);
+		} finally {
+			LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
+		}
+	}
+
+	private static List<BindingSet> evaluateOwned(SlotPlan plan, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr explainTarget, boolean allowParallel)
+			throws IOException {
 		boolean ordered = row.encounterOrderRequired || !SlotPlan.encounterOrderReplaySafe(plan);
 		for (AggregateSpec aggregate : aggregates)
-			ordered |= aggregate.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.OPAQUE;
+			ordered |= aggregate.kind == AggKind.GROUP_CONCAT || aggregate.kind == AggKind.CUSTOM
+					|| aggregate.kind == AggKind.SAMPLE
+					|| aggregate.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.OPAQUE;
+		boolean countOnePass = onePass(plan, row, aggregates);
+		if (!countOnePass && ordered && owner.consumerInput != null) {
+			// This collector declares ordered input before construction, including when the outer COUNT permits a bag.
+			// Requalify the exact lexical alternative before any owned open; the selected graph drives actual
+			// telemetry.
+			LmdbNativeInteriorPlans.Selection lexical = LmdbNativeInteriorPlans.select(owner.consumerInput.original,
+					row, null);
+			owner = owner.withArg(lexical.plan);
+			owner.consumerInput = lexical;
+			owner.consumerRequest = null;
+			plan = lexical.plan;
+			if (!candidate(plan, row, aggregates)) {
+				return null;
+			}
+		}
 		List<BindingSet> results;
-		if (ordered) {
+		OnePassResult completed = null;
+		if (countOnePass) {
+			completed = collectOnePass(plan, row, groupSlots, aggregates, owner);
+			results = completed.rows();
+		} else if (ordered) {
 			// Never speculatively evaluate, then replay, a volatile BIND or a custom aggregate. Its input is
 			// expanded and replayed one logical mapping at a time from the outset.
 			results = collect(plan, row, groupSlots, aggregates, owner, true);
 		} else {
-			NativeFilterLease lease = new NativeFilterLease();
+			NativeFilterLease lease = new NativeFilterLease(owner.filterAttempt == null
+					? NativeFilterLease.parentOf(row) : owner.filterAttempt);
 			try {
 				SlotPlan attempt = lease.borrow(plan);
 				results = allowParallel ? LmdbNativePackedMorsels.tryAggregate(attempt, row, groupSlots, aggregates,
@@ -83,8 +119,62 @@ final class LmdbNativePackedAlgebraAggregate {
 				: LmdbNativePackedFtree.AGGREGATE_SERIAL;
 		if (row.runtimePlan != null)
 			row.runtimePlan.activate(tag, new SlotPlan[] { plan });
+		if (completed != null) {
+			LmdbNativeExplain.addCompletedRuntimeCount(explainTarget,
+					"nativeOnePassPackedRegionsOpenedActual", completed.packedRegions());
+		}
 		LmdbNativeExplain.recordExecutionPath(explainTarget, tag);
 		return results;
+	}
+
+	/** COUNT folds are permutation-invariant; every other aggregate retains its existing encounter-order policy. */
+	private static boolean onePass(SlotPlan plan, RowState row, AggregateSpec[] aggregates) {
+		if (LmdbNativeFactorAlgebra.candidate(plan) || row.encounterOrderRequired
+				|| SlotPlan.encounterOrderReplaySafe(plan) || aggregates.length == 0) {
+			return false;
+		}
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.kind != AggKind.COUNT) {
+				return false;
+			}
+		}
+		return LmdbNativeFactorAlgebra.onePassCandidate(plan, row);
+	}
+
+	static boolean candidate(SlotPlan plan, RowState row, AggregateSpec[] aggregates) {
+		return LmdbNativeFactorAlgebra.candidate(plan) || onePass(plan, row, aggregates);
+	}
+
+	private record OnePassResult(List<BindingSet> rows, long packedRegions) {
+	}
+
+	private static OnePassResult collectOnePass(SlotPlan plan, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, NativeGroupIteration owner) throws IOException {
+		// No projections, marginals, worker siblings, speculative leases or value-driven retry in this route.
+		AggContext context = new AggContext(row.source, owner.strictCompare, false);
+		try (NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, context,
+				AggregateDistinctChannels.allHash(aggregates), true, false)) {
+			LmdbNativeFactorAlgebra.OnePass input = LmdbNativeFactorAlgebra.openOnePass(plan, row);
+			long matched = 0L;
+			try (input) {
+				if (owner.consumerInput != null) {
+					owner.consumerInput.opened(row, plan);
+				}
+				while (row.advance(input)) {
+					table.add(row, 1L);
+					if (row.exactValuesMetrics != null && matched != Long.MAX_VALUE) {
+						matched++;
+					}
+				}
+			}
+			// Authority comes from the pinned physical capability, never whether an earlier island emitted a row.
+			input.requireComplete();
+			List<BindingSet> results = table.results(owner, LmdbNativeAttemptMetrics.direct());
+			row.recordExactValuesMatched(matched);
+			return new OnePassResult(results, input.packedRegions);
+		} finally {
+			context.close();
+		}
 	}
 
 	private static List<BindingSet> collect(SlotPlan plan, RowState row, int[] groupSlots,

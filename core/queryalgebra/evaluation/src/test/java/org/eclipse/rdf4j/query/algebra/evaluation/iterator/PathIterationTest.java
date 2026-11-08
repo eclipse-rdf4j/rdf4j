@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -26,9 +27,11 @@ import static org.mockito.Mockito.when;
 
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -45,12 +48,16 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -76,6 +83,7 @@ import org.junit.jupiter.api.TestFactory;
 public class PathIterationTest {
 
 	private DefaultEvaluationStrategy evaluator;
+	private TripleSource tripleSource;
 	private Model model;
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 	private static final Resource one = vf.createIRI("https://example.org/", "one");
@@ -102,6 +110,7 @@ public class PathIterationTest {
 				return vf;
 			}
 		};
+		tripleSource = ts;
 		evaluator = new DefaultEvaluationStrategy(ts, null);
 	}
 
@@ -132,6 +141,157 @@ public class PathIterationTest {
 	}
 
 	@Test
+	public void multiExpansionCompilesOncePerInvocationWithAllQueryState() {
+		Literal now = vf.createLiteral("path-now");
+		SimpleDataset expectedDataset = new SimpleDataset();
+		Comparator<Value> comparator = Comparator.comparing(Value::stringValue);
+		BNode bnode = vf.createBNode();
+		QueryEvaluationContext.ActiveGraph active = new QueryEvaluationContext.ActiveGraph(RDF4J.NIL, null);
+		QueryEvaluationContext state = new QueryEvaluationContext.Minimal(now, expectedDataset, comparator) {
+			@Override
+			public ActiveGraph getActiveGraph() {
+				return active;
+			}
+
+			@Override
+			public Set<String> getSubstitutionBindingNames() {
+				return Set.of("outer");
+			}
+
+			@Override
+			public boolean hasEnclosingProjection() {
+				return true;
+			}
+
+			@Override
+			public BNode getOrCreateBNode(String label, BindingSet bindings, ValueFactory factory) {
+				return bnode;
+			}
+		};
+		AtomicInteger compilations = new AtomicInteger();
+		AtomicInteger expansionCalls = new AtomicInteger();
+		EvaluationStrategy observing = new DefaultEvaluationStrategy(tripleSource, null) {
+			@Override
+			public QueryEvaluationStep precompileRuntimeSubtree(TupleExpr expression, QueryEvaluationContext context) {
+				int compiled = compilations.incrementAndGet();
+				assertThat(context.getNow()).isSameAs(now);
+				assertThat(context.getDataset()).isSameAs(expectedDataset);
+				assertThat(context.getComparator()).isSameAs(comparator);
+				assertThat(context.getActiveGraph()).isSameAs(active);
+				assertThat(context.getSubstitutionBindingNames()).containsExactly("outer");
+				assertThat(context.hasEnclosingProjection()).isTrue();
+				assertThat(context.getOrCreateBNode("same", EmptyBindingSet.getInstance(), vf)).isSameAs(bnode);
+				QueryEvaluationStep step = super.precompileRuntimeSubtree(expression, context);
+				return input -> {
+					if (compiled % 2 == 0) {
+						expansionCalls.incrementAndGet();
+					}
+					return step.evaluate(input);
+				};
+			}
+		};
+		QueryEvaluationContext layout = new ArrayBindingBasedQueryEvaluationContext(state,
+				new String[] { "subClass", "superClass" }, comparator);
+		for (int invocation = 0; invocation < 2; invocation++) {
+			Var start = Var.of("subClass", one);
+			Var end = Var.of("superClass");
+			StatementPattern expression = new StatementPattern(start.clone(),
+					Var.of("predicate", RDFS.SUBCLASSOF, true, true),
+					end.clone());
+			try (PathIteration path = new PathIteration(observing, Scope.DEFAULT_CONTEXTS, start, expression, end,
+					null, 1, EmptyBindingSet.getInstance(), layout)) {
+				List<BindingSet> rows = QueryResults.asList(path);
+				assertThat(rows).extracting(row -> row.getValue("superClass")).containsExactlyInAnyOrder(two, three);
+				assertThat(compilations).hasValue((invocation + 1) * 2);
+				assertThat(expansionCalls.get()).isGreaterThanOrEqualTo((invocation + 1) * 2);
+			}
+		}
+	}
+
+	@TestFactory
+	public Stream<DynamicTest> closingDuringLazyPreparationOrOpenCannotPublishAnIteration() {
+		return Stream.of(false, true).map(preparing -> DynamicTest.dynamicTest("preparing=" + preparing, () -> {
+			CollectionFactory factory = spy(evaluator.getCollectionFactory().get());
+			EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+			when(strategy.getCollectionFactory()).thenReturn(() -> factory);
+			AtomicReference<PathIteration> owner = new AtomicReference<>();
+			AtomicInteger compilations = new AtomicInteger();
+			AtomicInteger opens = new AtomicInteger();
+			AtomicInteger closes = new AtomicInteger();
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("subClass", one);
+			row.addBinding("superClass", two);
+			Function<TupleExpr, QueryEvaluationStep> compiler = expression -> {
+				if (compilations.incrementAndGet() == 1) {
+					return ignored -> new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+				}
+				if (preparing) {
+					owner.get().close();
+				}
+				return ignored -> {
+					opens.incrementAndGet();
+					owner.get().close();
+					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator()) {
+						@Override
+						protected void handleClose() {
+							closes.incrementAndGet();
+						}
+					};
+				};
+			};
+			try (PathIteration path = new PathIteration(strategy, Scope.DEFAULT_CONTEXTS, Var.of("subClass", one),
+					new SingletonSet(), Var.of("superClass"), null, 1, EmptyBindingSet.getInstance(), null, compiler,
+					new QueryEvaluationContext.Minimal(null))) {
+				owner.set(path);
+				assertThat(path.hasNext()).isTrue();
+				path.next();
+				assertThat(path.hasNext()).isFalse();
+				assertThat(path.isClosed()).isTrue();
+				assertThat(compilations).hasValue(2);
+				assertThat(opens).hasValue(preparing ? 0 : 1);
+				assertThat(closes).hasValue(preparing ? 0 : 1);
+			}
+			verify(factory).close();
+		}));
+	}
+
+	@TestFactory
+	public Stream<DynamicTest> lazyPreparationFailurePreservesExceptionAndErrorIdentityWithSuppressedClose() {
+		return Stream
+				.<Throwable>of(new QueryEvaluationException("lazy preparation"), new AssertionError("lazy preparation"))
+				.map(failure -> DynamicTest.dynamicTest(failure.getClass().getSimpleName(), () -> {
+					QueryEvaluationException closeFailure = new QueryEvaluationException("factory close");
+					CollectionFactory factory = spy(evaluator.getCollectionFactory().get());
+					doThrow(closeFailure).when(factory).close();
+					EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+					when(strategy.getCollectionFactory()).thenReturn(() -> factory);
+					AtomicInteger compilations = new AtomicInteger();
+					QueryBindingSet row = new QueryBindingSet();
+					row.addBinding("subClass", one);
+					row.addBinding("superClass", two);
+					Function<TupleExpr, QueryEvaluationStep> compiler = expression -> {
+						if (compilations.incrementAndGet() == 1) {
+							return ignored -> new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+						}
+						if (failure instanceof Error error) {
+							throw error;
+						}
+						throw (RuntimeException) failure;
+					};
+					PathIteration path = new PathIteration(strategy, Scope.DEFAULT_CONTEXTS, Var.of("subClass", one),
+							new SingletonSet(), Var.of("superClass"), null, 1, EmptyBindingSet.getInstance(), null,
+							compiler,
+							new QueryEvaluationContext.Minimal(null));
+					assertThat(path.hasNext()).isTrue();
+					path.next();
+					assertThat(assertThrows(failure.getClass(), path::hasNext)).isSameAs(failure);
+					assertThat(failure.getSuppressed()).containsExactly(closeFailure);
+					assertThat(path.isClosed()).isTrue();
+					verify(factory).close();
+				}));
+	}
+
+	@Test
 	public void privatePathLayoutSharesAllQueryState() {
 		Literal now = vf.createLiteral("shared now");
 		BNode bnode = vf.createBNode();
@@ -157,6 +317,8 @@ public class PathIterationTest {
 				active);
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.getCollectionFactory()).thenReturn(evaluator.getCollectionFactory());
+		when(strategy.precompileRuntimeSubtree(any(TupleExpr.class), any(QueryEvaluationContext.class)))
+				.thenCallRealMethod();
 		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(call -> {
 			QueryEvaluationContext child = call.getArgument(1);
 			assertThat(child.getNow()).isSameAs(now);
@@ -189,6 +351,8 @@ public class PathIterationTest {
 			doThrow(failure).when(current).close();
 			EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 			when(strategy.getCollectionFactory()).thenReturn(() -> factory);
+			when(strategy.precompileRuntimeSubtree(any(TupleExpr.class), any(QueryEvaluationContext.class)))
+					.thenCallRealMethod();
 			when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class)))
 					.thenReturn(ignored -> current);
 			PathIteration path = new PathIteration(strategy, Scope.DEFAULT_CONTEXTS, Var.of("subClass"),
@@ -211,6 +375,8 @@ public class PathIterationTest {
 			when(current.hasNext()).thenThrow(failure);
 			EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 			when(strategy.getCollectionFactory()).thenReturn(() -> factory);
+			when(strategy.precompileRuntimeSubtree(any(TupleExpr.class), any(QueryEvaluationContext.class)))
+					.thenCallRealMethod();
 			if (preparing) {
 				when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenThrow(failure);
 				assertThat(assertThrows(QueryEvaluationException.class,
@@ -230,6 +396,38 @@ public class PathIterationTest {
 			}
 			verify(factory).close();
 		}));
+	}
+
+	@Test
+	public void valuePairOmitsUnboundEndpointsFromBindingContract() {
+		PathIteration.ValuePair complete = new PathIteration.ValuePair(one, two);
+		String startName = complete.getBindingNames()
+				.stream()
+				.filter(name -> one.equals(complete.getValue(name)))
+				.findFirst()
+				.orElseThrow();
+		String endName = complete.getBindingNames()
+				.stream()
+				.filter(name -> two.equals(complete.getValue(name)))
+				.findFirst()
+				.orElseThrow();
+
+		PathIteration.ValuePair endOnly = new PathIteration.ValuePair(null, two);
+		assertEquals(1, endOnly.size());
+		assertEquals(Set.of(endName), endOnly.getBindingNames());
+		assertFalse(endOnly.hasBinding(startName));
+		assertNull(endOnly.getBinding(startName));
+		assertEquals(two, endOnly.getBinding(endName).getValue());
+		Iterator<Binding> endOnlyIterator = endOnly.iterator();
+		assertEquals(two, endOnlyIterator.next().getValue());
+		assertFalse(endOnlyIterator.hasNext());
+
+		PathIteration.ValuePair empty = new PathIteration.ValuePair(null, null);
+		assertEquals(0, empty.size());
+		assertTrue(empty.getBindingNames().isEmpty());
+		assertFalse(empty.iterator().hasNext());
+		assertNull(empty.getBinding(startName));
+		assertNull(empty.getBinding(endName));
 	}
 
 	@Test
@@ -337,6 +535,59 @@ public class PathIterationTest {
 		}
 	}
 
+	@Test
+	public void zeroHopRetainsStartEndpointBoundByInput() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(startVar.getName(), one);
+
+		try (PathIteration path = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 0, bindings)) {
+			assertExpected(path.getNextElement(), one, one);
+			assertExpected(path.getNextElement(), one, two);
+			assertExpected(path.getNextElement(), one, three);
+			assertNull(path.getNextElement());
+		}
+	}
+
+	@Test
+	public void zeroHopRetainsEndEndpointBoundByInput() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(endVar.getName(), three);
+
+		try (PathIteration path = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 0, bindings)) {
+			assertExpected(path.getNextElement(), three, three);
+			assertExpected(path.getNextElement(), two, three);
+			assertExpected(path.getNextElement(), one, three);
+			assertNull(path.getNextElement());
+		}
+	}
+
+	@Test
+	public void zeroHopMatchesEqualEndpointsBoundByInput() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(startVar.getName(), one);
+		bindings.addBinding(endVar.getName(), one);
+
+		try (PathIteration path = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 0, bindings)) {
+			assertExpected(path.getNextElement(), one, one);
+			assertNull(path.getNextElement());
+		}
+	}
+
 	void assertExpected(BindingSet result, Value subClass, Value superClass) {
 		assertNotNull(result);
 		assertTrue(result.hasBinding("subClass"), "path zlp evaluation should binding for subClass var");
@@ -384,6 +635,147 @@ public class PathIterationTest {
 			assertExpected(zlp.getNextElement(), one, two);
 			assertExpected(zlp.getNextElement(), one, three);
 			assertNull(zlp.getNextElement());
+		}
+	}
+
+	@Test
+	public void oneHopEndConstant() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass", three, true, true);
+		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("predicate", RDFS.SUBCLASSOF, true, true),
+				endVar);
+
+		try (PathIteration pathIteration = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 1, new QueryBindingSet())) {
+			assertExpected(pathIteration.getNextElement(), two, three);
+			assertExpected(pathIteration.getNextElement(), one, three);
+			assertNull(pathIteration.getNextElement());
+		}
+	}
+
+	@Test
+	public void fixedEndpointsStopAfterFirstReachabilityHit() {
+		// SELECT * WHERE { <one> rdfs:subClassOf+ <three> }
+
+		Model m = new LinkedHashModel();
+		m.add(one, RDFS.SUBCLASSOF, two);
+		m.add(two, RDFS.SUBCLASSOF, three);
+		m.add(three, RDFS.SUBCLASSOF, vf.createIRI("https://example.org/", "four"));
+
+		CountingTripleSource ts = new CountingTripleSource(m);
+		DefaultEvaluationStrategy countingEvaluator = new DefaultEvaluationStrategy(ts, null);
+
+		Var startVar = Var.of("subClass", one, true, true);
+		Var endVar = Var.of("superClass", three, true, true);
+		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("lala", RDFS.SUBCLASSOF, true, true), endVar);
+		Var contextVar = null;
+		long minLength = 1;
+		BindingSet bindings = new QueryBindingSet();
+
+		try (PathIteration zlp = new PathIteration(countingEvaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, contextVar, minLength, bindings)) {
+			assertExpected(zlp.getNextElement(), one, three);
+
+			int callsAfterHit = ts.getStatementsCalls;
+			assertNull(zlp.getNextElement());
+			assertEquals(callsAfterHit, ts.getStatementsCalls);
+		}
+	}
+
+	@Test
+	public void recordsPathExplorationTelemetry() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("lala", RDFS.SUBCLASSOF, true, true), endVar);
+		ArbitraryLengthPath pathNode = new ArbitraryLengthPath(startVar.clone(), pathExpression.clone(), endVar.clone(),
+				1);
+		pathNode.setRuntimeTelemetryEnabled(true);
+		try (PathIteration pathIteration = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 1, new QueryBindingSet(), pathNode)) {
+			assertExpected(pathIteration.getNextElement(), one, two);
+			assertExpected(pathIteration.getNextElement(), two, three);
+			assertExpected(pathIteration.getNextElement(), one, three);
+			assertNull(pathIteration.getNextElement());
+		}
+		assertEquals(3L, pathNode.getLongMetricActual(PathIteration.PATH_RETURNED_ROWS_ACTUAL));
+		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_CANDIDATE_ROWS_ACTUAL) >= 3L);
+		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_EXPANSION_ITERATIONS_ACTUAL) >= 1L);
+		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_QUEUE_ENQUEUE_ROWS_ACTUAL) >= 1L);
+	}
+
+	@Test
+	public void reusesPreparedExpansionShapeAcrossFrontierSteps() {
+		AtomicInteger cloneCount = new AtomicInteger();
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new CloneCountingStatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar, cloneCount);
+
+		try (PathIteration pathIteration = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 1, new QueryBindingSet())) {
+			assertExpected(pathIteration.getNextElement(), one, two);
+			assertExpected(pathIteration.getNextElement(), two, three);
+			assertExpected(pathIteration.getNextElement(), one, three);
+			assertNull(pathIteration.getNextElement());
+		}
+
+		assertEquals(1, cloneCount.get(), "the expansion algebra shape should be cloned once per path iterator");
+	}
+
+	@Test
+	public void preparedExpansionReadsFrontierBindingOutsideFixedArrayContext() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar);
+		QueryEvaluationContext fixedArrayContext = new ArrayBindingBasedQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal((Dataset) null),
+				new String[] { startVar.getName(), endVar.getName() }, null);
+		ArbitraryLengthPath path = new ArbitraryLengthPath(startVar.clone(), pathExpression, endVar.clone(), 1);
+
+		try (CloseableIteration<BindingSet> pathIteration = evaluator.precompile(path, fixedArrayContext)
+				.evaluate(new QueryBindingSet())) {
+			assertExpected(pathIteration.next(), one, two);
+			assertExpected(pathIteration.next(), two, three);
+			assertExpected(pathIteration.next(), one, three);
+			assertFalse(pathIteration.hasNext());
+		}
+	}
+
+	private static final class CloneCountingStatementPattern extends StatementPattern {
+		private static final long serialVersionUID = 1L;
+		private final AtomicInteger cloneCount;
+
+		private CloneCountingStatementPattern(Var subject, Var predicate, Var object, AtomicInteger cloneCount) {
+			super(subject, predicate, object);
+			this.cloneCount = cloneCount;
+		}
+
+		@Override
+		public CloneCountingStatementPattern clone() {
+			cloneCount.incrementAndGet();
+			return (CloneCountingStatementPattern) super.clone();
+		}
+	}
+
+	private static final class CountingTripleSource implements TripleSource {
+		private final Model model;
+		private int getStatementsCalls;
+
+		private CountingTripleSource(Model model) {
+			this.model = model;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			getStatementsCalls++;
+			return new CloseableIteratorIteration<>(model.getStatements(subj, pred, obj, contexts).iterator());
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return vf;
 		}
 	}
 }

@@ -1,0 +1,17 @@
+<urn:historical-domain:loaded-0> <urn:historical-domain:p-0> <urn:historical-domain:object> <urn:historical-domain:first> .
+<urn:historical-domain:loaded-0> <urn:historical-domain:p-0> <urn:historical-domain:object> <urn:historical-domain:second> .
+<urn:historical-domain:loaded-1> <urn:historical-domain:p-1> "loaded words" <urn:historical-domain:first> .
+<urn:historical-domain:loaded-1> <urn:historical-domain:p-1> "loaded words" <urn:historical-domain:second> .
+<urn:historical-domain:loaded-2> <urn:historical-domain:p-2> "007"^^<http://www.w3.org/2001/XMLSchema#int> <urn:historical-domain:first> .
+<urn:historical-domain:loaded-2> <urn:historical-domain:p-2> "007"^^<http://www.w3.org/2001/XMLSchema#int> <urn:historical-domain:second> .
+VERSION "1.2"
+<urn:historical-domain:loaded-3> <urn:historical-domain:p-3> <<( <urn:historical-domain:outer> <urn:historical-domain:component> <<( <urn:historical-domain:inner> <urn:historical-domain:component> "nested"@en )>> )>> <urn:historical-domain:first> .
+<urn:historical-domain:loaded-3> <urn:historical-domain:p-3> <<( <urn:historical-domain:outer> <urn:historical-domain:component> <<( <urn:historical-domain:inner> <urn:historical-domain:component> "nested"@en )>> )>> <urn:historical-domain:second> .
+<urn:historical-domain:loaded-0> <urn:historical-domain:p-0> <urn:historical-domain:object> <urn:historical-domain:first> .
+<urn:historical-domain:loaded-0> <urn:historical-domain:p-0> <urn:historical-domain:object> <urn:historical-domain:second> .
+<urn:historical-domain:loaded-1> <urn:historical-domain:p-1> "loaded words" <urn:historical-domain:first> .
+<urn:historical-domain:loaded-1> <urn:historical-domain:p-1> "loaded words" <urn:historical-domain:second> .
+<urn:historical-domain:loaded-2> <urn:historical-domain:p-2> "007"^^<http://www.w3.org/2001/XMLSchema#int> <urn:historical-domain:first> .
+<urn:historical-domain:loaded-2> <urn:historical-domain:p-2> "007"^^<http://www.w3.org/2001/XMLSchema#int> <urn:historical-domain:second> .
+<urn:historical-domain:loaded-3> <urn:historical-domain:p-3> <<( <urn:historical-domain:outer> <urn:historical-domain:component> <<( <urn:historical-domain:inner> <urn:historical-domain:component> "nested"@en )>> )>> <urn:historical-domain:first> .
+<urn:historical-domain:loaded-3> <urn:historical-domain:p-3> <<( <urn:historical-domain:outer> <urn:historical-domain:component> <<( <urn:historical-domain:inner> <urn:historical-domain:component> "nested"@en )>> )>> <urn:historical-domain:second> .

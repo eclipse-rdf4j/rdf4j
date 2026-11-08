@@ -1078,7 +1078,7 @@ class ValueStoreStandaloneMaintenanceTest {
 		@Override
 		Long findIdInTransaction(byte[] data, boolean create, CoreDatatype coreDatatype, MemoryStack stack, long txn)
 				throws IOException {
-			if (create && pauseLookup.compareAndSet(true, false)) {
+			if (create && pauseLookup != null && pauseLookup.compareAndSet(true, false)) {
 				lookupEntered.countDown();
 				await(releaseLookup);
 			}

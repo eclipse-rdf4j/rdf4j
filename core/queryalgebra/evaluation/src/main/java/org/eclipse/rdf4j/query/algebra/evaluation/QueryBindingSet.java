@@ -38,6 +38,7 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 	private static final long serialVersionUID = -2010715346095527301L;
 
 	private final Map<String, Value> bindings;
+	BindingSetOrigin origin;
 	private GraphFrameBindings graphFrames;
 
 	@Override
@@ -70,29 +71,72 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 
 	public QueryBindingSet(BindingSet bindingSet) {
 		this(bindingSet.size());
-		addAll(bindingSet);
+		copyValues(bindingSet);
+		setGraphFrameBindings(GraphFrameBindings.from(bindingSet));
+		BindingSetOrigin.copy(bindingSet, this);
 	}
 
 	public void addAll(BindingSet bindingSet) {
-		GraphFrameBindings supplied = GraphFrameBindings.from(bindingSet);
-		if (graphFrames != null) {
-			bindingSet.getBindingNames().forEach(this::forgetGraphFrame);
+		boolean trackOrigin = origin != null || BindingSetOrigin.tracked(bindingSet);
+		GraphFrameBindings sourceFrames = GraphFrameBindings.from(bindingSet);
+		boolean trackFrames = graphFrames != null || !sourceFrames.retainedParametersForTransport().isEmpty();
+		Collection<String> writtenNames = trackOrigin || trackFrames ? actualBindingNames(bindingSet) : Set.of();
+		copyValues(bindingSet);
+		if (trackOrigin && !writtenNames.isEmpty()) {
+			origin = BindingSetOrigin.overlayWrittenMappings(BindingSetOrigin.of(this), BindingSetOrigin.of(bindingSet),
+					writtenNames);
 		}
-		if (bindingSet instanceof QueryBindingSet) {
-			bindings.putAll(((QueryBindingSet) bindingSet).bindings);
-		} else {
-			for (Binding binding : bindingSet) {
-				this.addBinding(binding);
-			}
+		if (trackFrames) {
+			GraphFrameBindings.overlayWrittenMappings(this, bindingSet, sourceFrames, writtenNames);
 		}
-		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
 	}
 
-	/**
-	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
-	 *
-	 * @param binding The binding to add this this BindingSet.
-	 */
+	private void copyValues(BindingSet bindingSet) {
+		BindingSet values = unwrapMapping(bindingSet);
+		if (values instanceof QueryBindingSet query) {
+			bindings.putAll(query.bindings);
+		} else {
+			// Iterators can omit actual null keys; name sets can conversely include schema-only UNDEF.
+			for (String name : values.getBindingNames()) {
+				if (values.hasBinding(name)) {
+					setBinding(name, values.getValue(name));
+				}
+			}
+		}
+	}
+
+	private static BindingSet unwrapMapping(BindingSet bindings) {
+		BindingSet current = bindings;
+		while (true) {
+			BindingSet originDelegate = BindingSetOrigin.unwrap(current);
+			if (originDelegate != current) {
+				current = originDelegate;
+				continue;
+			}
+			BindingSet graphDelegate = GraphFrameBindings.unwrap(current);
+			if (graphDelegate != current) {
+				current = graphDelegate;
+				continue;
+			}
+			return current;
+		}
+	}
+
+	@InternalUseOnly
+	public static Collection<String> actualBindingNames(BindingSet source) {
+		BindingSet values = unwrapMapping(source);
+		if (values instanceof QueryBindingSet query) {
+			return query.bindings.keySet();
+		}
+		java.util.ArrayList<String> names = new java.util.ArrayList<>(source.size());
+		for (String name : source.getBindingNames()) {
+			if (source.hasBinding(name)) {
+				names.add(name);
+			}
+		}
+		return names;
+	}
+
 	@Override
 	public void addBinding(Binding binding) {
 		addBinding(binding.getName(), binding.getValue());
@@ -171,6 +215,9 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean equals(Object other) {
+		if (other instanceof BindingSet bindingSet) {
+			other = BindingSetOrigin.unwrap(bindingSet);
+		}
 		if (other instanceof QueryBindingSet) {
 			return bindings.equals(((QueryBindingSet) other).bindings);
 		} else {

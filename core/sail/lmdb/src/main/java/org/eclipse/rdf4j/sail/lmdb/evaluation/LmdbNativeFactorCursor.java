@@ -25,6 +25,17 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 interface LmdbNativeFactorCursor extends AutoCloseable {
 	boolean next() throws IOException;
 
+	/**
+	 * A separately owned lifetime retains every exposed factor Source and independent reader dependency through
+	 * this cursor's next and close, including dormant readers, partial skip, EOF, failure and cancellation. This
+	 * immutable, side-effect-free promise permits decoder retention only: old descriptors/epochs still expire, and
+	 * all readers must close before the external owner. Closing a producer-owned decoder cannot revoke another
+	 * retained reader. Unknown, selected and dependent owners keep the default false.
+	 */
+	default boolean borrowedSourcesExternallyRetained() {
+		return false;
+	}
+
 	/** Conservative whole-cursor capability: false guarantees that every emitted relation is scalar. */
 	default boolean mayHaveFactors() {
 		return true;

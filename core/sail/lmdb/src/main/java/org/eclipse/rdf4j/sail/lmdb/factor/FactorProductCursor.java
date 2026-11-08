@@ -17,9 +17,9 @@ import java.util.Objects;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
- * Opens only a requested subset of independent factors. Unopened siblings remain relations. Bounded readers are reused
- * between prefixes; no allocation depends on degree. Each cursor owns its own iterator state, so another consumer can
- * traverse the same environment independently.
+ * Opens only a requested subset of independent factors. Unopened siblings remain relations. Bounded workspace and
+ * decoders within a live prefix, including replay after product EOF, are reused. Release readers before advancing the
+ * producer, whose next operation may close its source. No allocation depends on degree. Each cursor owns independent iterator state.
  */
 @Experimental
 public final class FactorProductCursor implements AutoCloseable {
@@ -200,10 +200,11 @@ public final class FactorProductCursor implements AutoCloseable {
 			BorrowedTupleBatch batch = environment.tupleBatch(slot);
 			int capacity = (int) Math.min(window, environment.count(slot));
 			if (boundTuples[slot] != batch || tupleWindows[slot] < capacity) {
-				if (tupleReaders[slot] != null)
-					tupleReaders[slot].close();
+				BorrowedTupleBatch.Cursor previous = tupleReaders[slot];
 				tupleReaders[slot] = null;
 				boundTuples[slot] = null;
+				if (previous != null)
+					previous.close();
 				tupleReaders[slot] = batch.cursor(capacity);
 				tupleWindows[slot] = capacity;
 				boundTuples[slot] = batch;
@@ -218,10 +219,11 @@ public final class FactorProductCursor implements AutoCloseable {
 		int capacity = (int) Math.min(window, environment.count(slot));
 		if (boundBatches[slot] == null || boundBatches[slot].source() != batch.source()
 				|| readerWindows[slot] < capacity) {
-			if (readers[slot] != null)
-				readers[slot].close();
+			BorrowedFactorBatch.Cursor previous = readers[slot];
 			readers[slot] = null;
 			boundBatches[slot] = null;
+			if (previous != null)
+				previous.close();
 			readers[slot] = batch.cursor(capacity);
 			readerWindows[slot] = capacity;
 			boundBatches[slot] = batch;
@@ -256,44 +258,57 @@ public final class FactorProductCursor implements AutoCloseable {
 			throw new IllegalStateException("factor product cursor closed");
 	}
 
-	@Override
-	public void close() {
-		if (closed)
-			return;
-		closed = true;
+	/** End the current prefix's decoder ownership before its producer can advance or close its source. */
+	public void release() {
+		checkOpen();
+		releaseReaders();
+	}
+
+	private void releaseReaders() {
+		environment = null;
+		selected = tupleLeaders = 0L;
+		width = 0;
+		first = false;
+		exhausted = true;
+		retireReaders();
+	}
+
+	private void retireReaders() {
 		Throwable failure = null;
-		for (BorrowedFactorBatch.Cursor reader : readers)
+		for (int slot = 0; slot < readers.length; slot++) {
+			BorrowedFactorBatch.Cursor reader = readers[slot];
+			readers[slot] = null;
+			boundBatches[slot] = null;
 			if (reader != null) {
-				try {
-					reader.close();
-				} catch (RuntimeException | Error problem) {
-					if (failure == null)
-						failure = problem;
-					else if (failure != problem)
-						failure.addSuppressed(problem);
+				try { reader.close(); }
+				catch (RuntimeException | Error problem) {
+					if (failure == null) failure = problem;
+					else if (failure != problem) failure.addSuppressed(problem);
 				}
 			}
+		}
 		if (tupleReaders != null) {
-			for (BorrowedTupleBatch.Cursor reader : tupleReaders)
+			for (int slot = 0; slot < tupleReaders.length; slot++) {
+				BorrowedTupleBatch.Cursor reader = tupleReaders[slot];
+				tupleReaders[slot] = null;
+				boundTuples[slot] = null;
 				if (reader != null) {
-					try {
-						reader.close();
-					} catch (RuntimeException | Error problem) {
-						if (failure == null)
-							failure = problem;
-						else if (failure != problem)
-							failure.addSuppressed(problem);
+					try { reader.close(); }
+					catch (RuntimeException | Error problem) {
+						if (failure == null) failure = problem;
+						else if (failure != problem) failure.addSuppressed(problem);
 					}
 				}
-			java.util.Arrays.fill(boundTuples, null);
-			java.util.Arrays.fill(tupleReaders, null);
+			}
 		}
-		environment = null;
-		java.util.Arrays.fill(boundBatches, null);
-		java.util.Arrays.fill(readers, null);
-		if (failure instanceof RuntimeException problem)
-			throw problem;
-		if (failure instanceof Error problem)
-			throw problem;
+		if (failure instanceof RuntimeException problem) throw problem;
+		if (failure instanceof Error problem) throw problem;
+	}
+
+	@Override
+	public void close() {
+		if (closed) return;
+		closed = true;
+		releaseReaders();
 	}
 }

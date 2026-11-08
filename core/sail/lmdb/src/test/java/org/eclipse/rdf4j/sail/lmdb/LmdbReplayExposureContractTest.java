@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -375,6 +378,7 @@ class LmdbReplayExposureContractTest {
 				.setReadOnlyReplayMaxRetries(1));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService queryExecutor = Executors.newSingleThreadExecutor();
+		ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
 		try {
 			registry.add(function);
 			repository.init();
@@ -389,7 +393,7 @@ class LmdbReplayExposureContractTest {
 			Future<Throwable> query = queryExecutor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					String queryString = "SELECT ?value WHERE { <" + SUBJECT + "> <" + PREDICATE
-							+ "> ?value . FILTER(<" + functionIri + ">(?value)) }";
+							+ "> ?value . BIND(<" + functionIri + ">(?value) AS ?accepted) FILTER(?accepted) }";
 					TupleQuery tupleQuery = reader.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 					try (TupleQueryResult result = tupleQuery.evaluate()) {
 						while (result.hasNext()) {
@@ -403,19 +407,24 @@ class LmdbReplayExposureContractTest {
 			});
 
 			assertTrue(function.awaitFirstInvocation(), "the initial query attempt must reach its barrier");
-			String namespace = publishGrowth(repository, initialMapSize, "retry-cap-first", 10_000);
+			Future<String> firstGrowth = writerExecutor.submit(
+					() -> publishGrowth(repository, initialMapSize, "retry-cap-first", 10_000));
 			awaitGrowthEpisode(backingStore, before);
 			awaitReplayAccepted(backingStore, before);
 			function.releaseFirstInvocation();
+			String namespace = firstGrowth.get(20, TimeUnit.SECONDS);
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 
 			assertTrue(function.awaitSecondInvocation(), "the configured single retry must reopen the query once");
 			long firstGrowthTripleMapSize = mapSize(tripleStore);
 			assertTrue(firstGrowthTripleMapSize > initialMapSize, "the first writer must grow TripleStore");
 			MapGrowthMetrics.Snapshot beforeSecondGrowth = backingStore.growthMetricsSnapshot();
-			String secondNamespace = publishGrowth(repository, firstGrowthTripleMapSize, "retry-cap-second", 10_000);
+			Future<String> secondGrowth = writerExecutor.submit(
+					() -> publishGrowth(repository, firstGrowthTripleMapSize, "retry-cap-second", 10_000));
 			awaitGrowthEpisode(backingStore, beforeSecondGrowth);
 			awaitForcedInvalidatedView(backingStore, beforeSecondGrowth);
 			function.releaseSecondInvocation();
+			String secondNamespace = secondGrowth.get(20, TimeUnit.SECONDS);
 
 			Throwable failure = query.get(20, TimeUnit.SECONDS);
 			awaitTripleStoreGrowth(repository, tripleStore, firstGrowthTripleMapSize, secondNamespace);
@@ -423,7 +432,8 @@ class LmdbReplayExposureContractTest {
 					"the second writer must grow TripleStore while the replayed attempt is active");
 			assertNotNull(failure, "exceeding the retry cap must fail rather than return a later-snapshot result");
 			assertTrue(hasMapResizeConflict(failure),
-					"the result invalidated after its one allowed replay must report typed map invalidation");
+					() -> "the result invalidated after its one allowed replay must report typed map invalidation: "
+							+ failureStack(failure));
 			assertEquals(LmdbSailStore.MapResizeKind.TRIPLE_STORE, mapResizeConflict(failure).kind(),
 					"the retry cap must apply to the second authoritative map-growth episode too");
 			assertEquals(2, function.invocationCount(),
@@ -432,14 +442,18 @@ class LmdbReplayExposureContractTest {
 			function.releaseFirstInvocation();
 			function.releaseSecondInvocation();
 			queryExecutor.shutdownNow();
+			writerExecutor.shutdownNow();
 			boolean terminated;
+			boolean writerTerminated;
 			try {
 				terminated = queryExecutor.awaitTermination(5, TimeUnit.SECONDS);
+				writerTerminated = writerExecutor.awaitTermination(5, TimeUnit.SECONDS);
 			} finally {
 				registry.remove(function);
 				repository.shutDown();
 			}
 			assertTrue(terminated, "the query worker must terminate");
+			assertTrue(writerTerminated, "the growth writer must terminate");
 		}
 	}
 
@@ -473,7 +487,7 @@ class LmdbReplayExposureContractTest {
 			Future<Throwable> query = queryExecutor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					String queryString = "SELECT ?value WHERE { <" + SUBJECT + "> <" + PREDICATE
-							+ "> ?value . FILTER(<" + functionIri + ">(?value)) }";
+							+ "> ?value . BIND(<" + functionIri + ">(?value) AS ?accepted) FILTER(?accepted) }";
 					TupleQuery tupleQuery = reader.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 					try (TupleQueryResult result = tupleQuery.evaluate()) {
 						while (result.hasNext()) {
@@ -552,7 +566,7 @@ class LmdbReplayExposureContractTest {
 			Future<Throwable> query = queryExecutor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					String queryString = "SELECT ?value WHERE { <" + SUBJECT + "> <" + PREDICATE
-							+ "> ?value . FILTER(<" + functionIri + ">(?value)) }";
+							+ "> ?value . BIND(<" + functionIri + ">(?value) AS ?accepted) FILTER(?accepted) }";
 					TupleQuery tupleQuery = reader.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 					try (TupleQueryResult result = tupleQuery.evaluate()) {
 						while (result.hasNext()) {
@@ -602,6 +616,20 @@ class LmdbReplayExposureContractTest {
 
 	private static boolean hasMapResizeConflict(Throwable failure) {
 		return mapResizeConflict(failure) != null;
+	}
+
+	private static String failureStack(Throwable failure) {
+		StringWriter stack = new StringWriter();
+		failure.printStackTrace(new PrintWriter(stack));
+		return stack.toString();
+	}
+
+	private static void assertRuntimeExtensionCallback() {
+		boolean runtimeExtension = StackWalker.getInstance()
+				.walk(frames -> frames
+						.anyMatch(frame -> frame.getClassName().equals(ExtensionIterator.class.getName())));
+		assertTrue(runtimeExtension,
+				"the stateful replay barrier must execute in the runtime BIND");
 	}
 
 	private static LmdbSailStore.MapResizeConflictException mapResizeConflict(Throwable failure) {
@@ -767,6 +795,11 @@ class LmdbReplayExposureContractTest {
 		}
 
 		@Override
+		public boolean mustReturnDifferentResult() {
+			return true;
+		}
+
+		@Override
 		public String getURI() {
 			return functionIri;
 		}
@@ -778,6 +811,7 @@ class LmdbReplayExposureContractTest {
 
 		@Override
 		public Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException {
+			assertRuntimeExtensionCallback();
 			int invocation = invocationCount.incrementAndGet();
 			CountDownLatch started = invocation == 1 ? firstInvocation
 					: invocation == 2 ? secondInvocation
@@ -831,6 +865,11 @@ class LmdbReplayExposureContractTest {
 		}
 
 		@Override
+		public boolean mustReturnDifferentResult() {
+			return true;
+		}
+
+		@Override
 		public String getURI() {
 			return functionIri;
 		}
@@ -842,6 +881,7 @@ class LmdbReplayExposureContractTest {
 
 		@Override
 		public Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException {
+			assertRuntimeExtensionCallback();
 			if (invocationCount.incrementAndGet() == 1) {
 				firstInvocation.countDown();
 				try {
@@ -923,6 +963,11 @@ class LmdbReplayExposureContractTest {
 		}
 
 		@Override
+		public boolean mustReturnDifferentResult() {
+			return true;
+		}
+
+		@Override
 		public String getURI() {
 			return functionIri;
 		}
@@ -934,6 +979,7 @@ class LmdbReplayExposureContractTest {
 
 		@Override
 		public Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException {
+			assertRuntimeExtensionCallback();
 			if (invocationCount.incrementAndGet() == 1) {
 				firstInvocation.countDown();
 				try {

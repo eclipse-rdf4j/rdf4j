@@ -13,7 +13,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueOverlayRegistry;
 
 /**
@@ -27,9 +30,53 @@ public final class NativeQuerySourceAccess {
 	private NativeQuerySourceAccess() {
 	}
 
+	/** Actual immutable view identity, not a fabricated lease/open counter and not an owning reference. */
+	public record BorrowedSourceView(Object identity, long lifetime, long snapshot, boolean exact) { }
+
+	public static BorrowedSourceView borrowedSourceView(
+			org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch.Source source) {
+		if (!(source instanceof LmdbBorrowedAdjacencySource nativeSource))
+			throw new IllegalArgumentException("the owning native fixture did not reach its real borrowed source");
+		source.checkOpen();
+		LmdbAdjacencyReadView view = nativeSource.view;
+		return new BorrowedSourceView(view, view.lifetimeId(), view.snapshotRevision(), view.isExact());
+	}
+
 	/** Opens a dataset the caller must close; it also implements {@code NativeLmdbQuerySource}. */
 	public static SailDataset openExplicitDataset(LmdbStore sail) {
 		return sail.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.NONE);
+	}
+
+	/** Actual store services used by evaluation-package feedback ownership tests. */
+	public static EvaluationStatistics evaluationStatistics(LmdbStore store) {
+		return store.getBackingStore().getEvaluationStatistics();
+	}
+
+	public static EvaluationStrategy evaluationStrategy(LmdbStore store,
+			SailDatasetTripleTermSource source,
+			EvaluationStatistics statistics) {
+		return store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(null, source, statistics,
+				store.getQueryExecutionPolicy());
+	}
+
+	public static int learnedFilterCount(LmdbStore store) {
+		LmdbLearnedFilterSelectivity learned = store.getBackingStore().learnedFilterSelectivity();
+		return learned == null ? 0 : learned.size();
+	}
+
+	/** Detached snapshot of the real legacy filter surface cells, without sampling or mutating them. */
+	public record LegacyFilterEvidence(long revision, long evidenceCount, double passRatio, boolean generalized) { }
+
+	public static LegacyFilterEvidence legacyFilterEvidence(LmdbStore store,
+			org.eclipse.rdf4j.query.algebra.Filter filter) {
+		LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) evaluationStatistics(store)).estimatorRuntime();
+		try (var ignored = runtime.pinProviderView()) {
+			LmdbFilterSelectivityStats filters = runtime.filters();
+			if (filters == null) { return new LegacyFilterEvidence(-1L, -1L, Double.NaN, false); }
+			var learned = filters.estimateLearnedSurface(filter);
+			return learned == null ? new LegacyFilterEvidence(filters.planningRevision(), -1L, Double.NaN, false)
+					: new LegacyFilterEvidence(filters.planningRevision(), learned.evidenceCount(), learned.passRatio(), learned.generalized());
+		}
 	}
 
 	/** The store's value-overlay warm-up state: scheduled/active flags, refusal counts and the last failure text. */

@@ -45,6 +45,8 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 	}
 
 	private static class ConstraintVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private record RelocatedConstraint(ValueExpr condition, Set<String> required) {
+		}
 
 		private final QueryAlgebraBindingAnalysis analysis;
 
@@ -77,9 +79,11 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 			TupleExpr filterArg = filter.getArg();
 
 			for (int i = 0; i < conjunctiveConstraints.size() - 1; i++) {
-				filterArg = new Filter(filterArg, FilterBindingScope
+				Filter split = new Filter(filterArg, FilterBindingScope
 						.conditionPreservingDeclarations(conjunctiveConstraints.get(i).clone(), declarations));
-				splitFilters.add((Filter) filterArg);
+				split.setRequiredInputBindingNames(filter.getRequiredInputBindingNames());
+				splitFilters.add(split);
+				filterArg = split;
 			}
 
 			filter.setCondition(FilterBindingScope
@@ -108,6 +112,7 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 				}
 
 				TupleExpr arg = node.getRightArg();
+				List<RelocatedConstraint> relocatedConstraints = new ArrayList<>();
 				ValueExpr condition = null;
 				QueryAlgebraBindingAnalysis.ReadOnlyContext conditionInput = analysis.contextAt(node.getCondition());
 				QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(arg);
@@ -118,13 +123,31 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 				for (ValueExpr constraint : conjunctiveConstraints) {
 					QueryAlgebraBindingAnalysis.Dependencies dependencies = analysis.dependencies(constraint,
 							conditionInput);
-					if (isWithinBindingScope(leftFacts, rightFacts, rightInput, conditionInput, dependencies)) {
-						arg = new Filter(arg, constraint.clone());
+					Set<String> required = new HashSet<>(dependencies.directReferences());
+					required.addAll(dependencies.correlatedInputs());
+					required.retainAll(leftFacts.guaranteedOutputs());
+					required.removeAll(rightFacts.guaranteedOutputs());
+					required.removeAll(analysis.contextAt(node).guaranteedNames());
+					if (isWithinBindingScope(leftFacts, rightFacts, rightInput, conditionInput, dependencies)
+							&& (required.isEmpty() || analysis.canReceiveSiblingBindings(arg,
+									node.getLeftArg().getBindingNames(), analysis.contextAt(node)))) {
+						relocatedConstraints.add(new RelocatedConstraint(constraint, Set.copyOf(required)));
 					} else if (condition == null) {
-						condition = constraint;
+						condition = constraint.clone();
 					} else {
 						condition = new And(condition, constraint.clone());
 					}
+				}
+				if (condition != null && analysis.leftJoinConditionUsesLeftFrame(node) != analysis
+						.leftJoinConditionUsesLeftFrame(node, condition)) {
+					// Removing a right-observing conjunct must not switch the remaining condition from the
+					// matched frame to old left values. Keep the original gate as one semantic unit.
+					return;
+				}
+				for (RelocatedConstraint constraint : relocatedConstraints) {
+					Filter relocated = new Filter(arg, constraint.condition().clone());
+					relocated.setRequiredInputBindingNames(constraint.required());
+					arg = relocated;
 				}
 
 				node.setCondition(condition);

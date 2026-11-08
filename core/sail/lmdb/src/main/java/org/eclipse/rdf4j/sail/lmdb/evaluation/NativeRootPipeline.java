@@ -26,14 +26,17 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
-import org.eclipse.rdf4j.common.iteration.DelayedIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -42,10 +45,19 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.lmdb.LmdbIndexOrderFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Semantic native solution-modifier pipeline for wrapper stacks that cannot be flattened into one slot-row root. Stages
@@ -88,10 +100,10 @@ final class NativeRootPipeline {
 		if (wrappers.isEmpty()) {
 			return null;
 		}
-		Map<Order, OrderKey[]> compiledOrderKeys = new IdentityHashMap<>();
+		Map<Order, OrderSpec> compiledOrderKeys = new IdentityHashMap<>();
 		for (TupleExpr wrapper : wrappers) {
 			if (wrapper instanceof Order order) {
-				OrderKey[] keys = compileOrderKeys(order, strategy, context);
+				OrderSpec keys = compileOrderKeys(order, strategy, context);
 				if (keys == null) {
 					return null;
 				}
@@ -112,6 +124,127 @@ final class NativeRootPipeline {
 			return null;
 		}
 
+		return compose(step, wrappers, compiledOrderKeys, strategy);
+	}
+
+	/**
+	 * A projection with nullable/caller-recovered fields or duplicate targets must run before its observers. These
+	 * cases cannot be flattened into a slot-key DISTINCT/ORDER that observes earlier projection occurrences.
+	 */
+	static QueryEvaluationStep projectionBoundary(TupleExpr expression, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		// Aggregate roots already use the semantic typed Group -> Extension -> Projection stack, which carries
+		// exact invocation authority and lexical summaries without forcing RDF materialization.
+		if (LmdbNativeAggregateCompiler.hasGroupOnModifierSpine(expression)) {
+			return null;
+		}
+		TupleExpr node = expression instanceof QueryRoot root ? root.getArg() : expression;
+		List<TupleExpr> wrappers = new ArrayList<>();
+		while (node instanceof Slice || node instanceof Order || node instanceof Distinct || node instanceof Reduced) {
+			wrappers.add(node);
+			node = ((org.eclipse.rdf4j.query.algebra.UnaryTupleOperator) node).getArg();
+		}
+		if (!(node instanceof org.eclipse.rdf4j.query.algebra.Projection projection)
+				|| !needsSemanticProjection(projection)
+				|| !wrappers.isEmpty() && !enabled()) {
+			return null;
+		}
+		Map<Order, OrderSpec> keys = new IdentityHashMap<>();
+		for (TupleExpr wrapper : wrappers) {
+			if (wrapper instanceof Order order) {
+				OrderSpec compiled = compileOrderKeys(order, strategy, context);
+				if (compiled == null) {
+					return null;
+				}
+				keys.put(order, compiled);
+			}
+		}
+		QueryEvaluationStep child = strategy.exactOriginView(source)
+				.precompileRuntimeSubtree(projection.getArg(), context);
+		QueryEvaluationStep projected = new NativeBindingSetProjectionStep(child, projection, context);
+		projected = NativeSealedProjection.tryCompile(expression, projection, context, strategy, source, projected);
+		QueryEvaluationStep result = wrappers.isEmpty() ? projected : compose(projected, wrappers, keys, strategy);
+		return new ProjectionBoundary(result, expression, source, strategy);
+	}
+
+	/** A disabled modifier pipeline must decline a fusion it cannot implement, then use its semantic native child. */
+	static boolean needsProjectionModifiers(TupleExpr expression) {
+		if (LmdbNativeAggregateCompiler.hasGroupOnModifierSpine(expression)) {
+			return false;
+		}
+		TupleExpr node = expression instanceof QueryRoot root ? root.getArg() : expression;
+		boolean modifiers = false;
+		while (node instanceof Slice || node instanceof Order || node instanceof Distinct || node instanceof Reduced) {
+			modifiers = true;
+			node = ((org.eclipse.rdf4j.query.algebra.UnaryTupleOperator) node).getArg();
+		}
+		return modifiers && node instanceof org.eclipse.rdf4j.query.algebra.Projection projection
+				&& needsSemanticProjection(projection);
+	}
+
+	private static boolean needsSemanticProjection(org.eclipse.rdf4j.query.algebra.Projection projection) {
+		if (projection.getProjectionContext() != null || projection.getInheritedGraphParameter() != null) {
+			return true;
+		}
+		var facts = org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis
+				.withBindingValues(projection.getArg(), org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance())
+				.outputFacts(projection.getArg());
+		NativeBGPOrigin producer = NativeBGPOrigin.of(projection.getArg());
+		NativeProjectionAuthorityProof authority = producer == null
+				? NativeProjectionAuthorityProof.of(projection.getArg())
+				: null;
+		if (!facts.guaranteedOutputsKnown() || producer == null && authority == null) {
+			return true;
+		}
+		Set<String> guaranteed = producer != null ? producer.guaranteedOutputs : authority.guaranteedLocal;
+		java.util.HashSet<String> targets = new java.util.HashSet<>();
+		for (var element : projection.getProjectionElemList().getElements()) {
+			if (!targets.add(element.getProjectionAlias().orElse(element.getName()))
+					|| !facts.guaranteedOutputs().contains(element.getName())
+					|| !guaranteed.contains(element.getName())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private record ProjectionBoundary(QueryEvaluationStep arg, TupleExpr expression, NativeLmdbQuerySource source,
+			LmdbNativeEvaluationStrategy strategy) implements NativeResultStep, LmdbNativePhysicalPlan {
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+			LmdbNativeExplain.recordExecutionPath(expression, "nativeProjectionBoundary");
+			LmdbNativeExplain.addRuntimeMetric(expression, "nativeInvocationsActual", 1L);
+			SyntheticValueSource evaluation = SyntheticValueSource.forInvocation(source,
+					strategy.getQueryExecutionPolicy(), bindings);
+			strategy.captureEvaluationValues(evaluation);
+			// Ordinary semantic operators need not expose a native carrier. Own their complete native query scope
+			// around preparation and every advance, so native descendants share the actual frame/term authority and
+			// a cached consumer can retain it after producer EOF through the existing carrier protocol.
+			return NativeExecutionContextCarrier.evaluate(() -> arg.evaluate(bindings), evaluation,
+					!SyntheticValueSource.inheritedEvaluation(evaluation));
+		}
+
+		@Override
+		public NativeResultCursor evaluateNative(BindingSet bindings) {
+			// Exact-origin preparation admits only full-RDF native leaves; all other argument operators stay in
+			// their ordinary value tier. Aggregate summary spines use the separate typed aggregate stack above.
+			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+		}
+
+		@Override
+		public void explainStrategies() {
+			LmdbNativeStrategyPreview.inspect(arg);
+		}
+
+		@Override
+		public String nativePhysicalPlan() {
+			return arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+					: arg.getClass().getSimpleName();
+		}
+	}
+
+	private static QueryEvaluationStep compose(QueryEvaluationStep step, List<TupleExpr> wrappers,
+			Map<Order, OrderSpec> compiledOrderKeys, LmdbNativeEvaluationStrategy strategy) {
 		StringBuilder stages = new StringBuilder();
 		boolean strict = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		boolean topK = false;
@@ -137,12 +270,12 @@ final class NativeRootPipeline {
 				step = new NativeOrderStep(step, compiledOrderKeys.get(order), strict,
 						strategy.getQueryExecutionPolicy());
 				description = "Order(keys=" + order.getElements().size() + ")";
-			} else if (wrapper instanceof Distinct) {
-				step = new NativeDistinctStep(step);
+			} else if (wrapper instanceof Distinct distinct) {
+				step = new NativeDistinctStep(step, distinct.getArg());
 				description = "Distinct";
 			} else {
 				// Exact duplicate elimination is one legal REDUCED implementation.
-				step = new NativeDistinctStep(step);
+				step = new NativeDistinctStep(step, ((Reduced) wrapper).getArg());
 				description = "Reduced";
 			}
 			if (stages.length() > 0) {
@@ -167,26 +300,29 @@ final class NativeRootPipeline {
 
 	static QueryEvaluationStep order(QueryEvaluationStep arg, Order order, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context) {
-		OrderKey[] keys = compileOrderKeys(order, strategy, context);
+		OrderSpec keys = compileOrderKeys(order, strategy, context);
 		return keys == null ? null
 				: new NativeOrderStep(arg, keys, strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT,
 						strategy.getQueryExecutionPolicy());
 	}
 
-	private static OrderKey[] compileOrderKeys(Order order, LmdbNativeEvaluationStrategy strategy,
+	private static OrderSpec compileOrderKeys(Order order, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context) {
 		OrderKey[] keys = new OrderKey[order.getElements().size()];
+		boolean stableKeys = true;
 		for (int i = 0; i < keys.length; i++) {
 			OrderElem element = order.getElements().get(i);
 			if (LmdbIndexOrder.isFunctionCall(element.getExpr())) {
 				throw new QueryEvaluationException(LmdbIndexOrderFunction.ERROR_MESSAGE);
 			}
+			// Use ordinary preparation's policy on the original node. Pinning an unpinned call here must not
+			// silently promote the selected volatile comparison boundary to the stable one.
+			stableKeys &= element.getExpr() instanceof Var || QueryEvaluationUtility.isRepeatable(element.getExpr());
 			NativeBindingSetValueEvaluator evaluator = NativeBindingSetValueCompiler.compile(element.getExpr(),
-					strategy,
-					context);
+					strategy, context);
 			keys[i] = new OrderKey(evaluator, element.isAscending());
 		}
-		return keys;
+		return new OrderSpec(keys, strategy, context, stableKeys);
 	}
 
 	static final class PipelineStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
@@ -217,14 +353,14 @@ final class NativeRootPipeline {
 	/** ORDER BY fused with its bounded LIMIT: a heap of the retained rows replaces staging the complete input. */
 	private static final class NativeTopKStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
-		private final OrderKey[] keys;
+		private final OrderSpec keys;
 		private final boolean strict;
 		private final QueryExecutionPolicy policy;
 		private final long offset;
 		private final long limit;
 		private final long retained;
 
-		private NativeTopKStep(QueryEvaluationStep arg, OrderKey[] keys, boolean strict, QueryExecutionPolicy policy,
+		private NativeTopKStep(QueryEvaluationStep arg, OrderSpec keys, boolean strict, QueryExecutionPolicy policy,
 				long offset, long limit, long retained) {
 			this.arg = arg;
 			this.keys = keys;
@@ -239,9 +375,7 @@ final class NativeRootPipeline {
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			LmdbNativeDispatchLoop.logDirect(null, "ORDER BY dispatch", LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
 					"Bounded top-K over the staged input");
-			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
-			return new TopKIteration(delegate, keys, strict, NativeExecutionContextCarrier.contextOf(delegate), policy,
-					offset, limit, retained);
+			return openOrder(arg, bindings, keys, strict, policy, offset, limit, Math.toIntExact(retained));
 		}
 
 		@Override
@@ -253,7 +387,7 @@ final class NativeRootPipeline {
 
 		@Override
 		public String nativePhysicalPlan() {
-			return "NativeTopK(offset=" + offset + ", limit=" + limit + ", keys=" + keys.length + ")";
+			return "NativeTopK(offset=" + offset + ", limit=" + limit + ", keys=" + keys.keys().length + ")";
 		}
 	}
 
@@ -262,20 +396,23 @@ final class NativeRootPipeline {
 	 * value so the dominant aggregate case (ORDER BY a COUNT) compares without reparsing labels; any other key pair
 	 * falls back to the exact {@link ValueComparator}.
 	 */
-	private static final class TopKEntry {
+	private static final class OrderEntry {
 		final BindingSet row;
 		final Value[] values;
 		final long[] integers;
 		final long integerMask;
 		final long sequence;
+		final BlankNodeAllocationScope.SolutionSnapshot labels;
 
-		TopKEntry(BindingSet row, Value[] values, long sequence) {
+		OrderEntry(BindingSet row, Value[] values, long sequence, BlankNodeAllocationScope.SolutionSnapshot labels,
+				boolean integerKeys) {
 			this.row = row;
 			this.values = values;
 			this.sequence = sequence;
+			this.labels = labels;
 			long[] integers = null;
 			long mask = 0L;
-			for (int i = 0; i < values.length && i < Long.SIZE; i++) {
+			for (int i = 0; integerKeys && i < values.length && i < Long.SIZE; i++) {
 				if (values[i] instanceof Literal literal
 						&& literal.getCoreDatatype() == CoreDatatype.XSD.INTEGER) {
 					String label = literal.getLabel();
@@ -295,143 +432,6 @@ final class NativeRootPipeline {
 			}
 			this.integers = integers;
 			this.integerMask = mask;
-		}
-	}
-
-	private static final class TopKIteration extends DelayedIteration<BindingSet>
-			implements CooperativeCancellation, NativeExecutionContextCarrier {
-		private CloseableIteration<BindingSet> source;
-		private final OrderKey[] keys;
-		private final ValueComparator comparator;
-		private final NativeExecutionContext executionContext;
-		private final NativeExecutionContext.Lease lease;
-		private final long offset;
-		private final long limit;
-		private final int retained;
-		private volatile boolean cancellationRequested;
-
-		private TopKIteration(CloseableIteration<BindingSet> source, OrderKey[] keys, boolean strict,
-				NativeExecutionContext executionContext, QueryExecutionPolicy policy, long offset, long limit,
-				long retained) {
-			this.source = source;
-			this.keys = keys;
-			this.comparator = new ValueComparator(policy);
-			this.comparator.setStrict(strict);
-			this.executionContext = executionContext;
-			this.lease = NativeExecutionContextCarrier.retain(source);
-			this.offset = offset;
-			this.limit = limit;
-			this.retained = Math.toIntExact(retained);
-		}
-
-		@Override
-		protected CloseableIteration<? extends BindingSet> createIteration() {
-			try {
-				if (retained == 0 || limit == 0L) {
-					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
-				}
-				// The heap head is the worst retained row: a candidate joins only when it sorts strictly before it,
-				// and later equal keys never displace an earlier row, so the retained set and its final order are
-				// exactly the first offset+limit rows of the stable complete sort.
-				Comparator<TopKEntry> order = this::compare;
-				PriorityQueue<TopKEntry> heap = new PriorityQueue<>(Math.min(retained, 1 << 16) + 1,
-						order.reversed());
-				long sequence = 0L;
-				while (!cancellationRequested && source.hasNext()) {
-					BindingSet row = source.next();
-					TopKEntry entry = new TopKEntry(row, keyValues(row), sequence++);
-					if (heap.size() < retained) {
-						heap.add(entry);
-					} else if (compare(entry, heap.peek()) < 0) {
-						heap.poll();
-						heap.add(entry);
-					}
-				}
-				if (cancellationRequested) {
-					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
-				}
-				List<TopKEntry> ordered = new ArrayList<>(heap);
-				ordered.sort(order);
-				List<BindingSet> rows = new ArrayList<>(
-						(int) Math.min(ordered.size(), Math.max(0L, ordered.size() - offset)));
-				for (int i = (int) Math.min(ordered.size(), offset); i < ordered.size(); i++) {
-					rows.add(ordered.get(i).row);
-				}
-				return new CloseableIteratorIteration<>(rows.iterator());
-			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
-				}
-			}
-		}
-
-		private Value[] keyValues(BindingSet row) {
-			Value[] values = new Value[keys.length];
-			for (int i = 0; i < keys.length; i++) {
-				values[i] = keys[i].value(row, executionContext);
-			}
-			return values;
-		}
-
-		private int compare(TopKEntry left, TopKEntry right) {
-			if (cancellationRequested) {
-				return 0;
-			}
-			for (int i = 0; i < keys.length; i++) {
-				long bit = 1L << i;
-				int comparison = i < Long.SIZE && (left.integerMask & right.integerMask & bit) != 0L
-						? Long.compare(left.integers[i], right.integers[i])
-						: comparator.compare(left.values[i], right.values[i]);
-				if (comparison != 0) {
-					return keys[i].ascending() ? comparison : -comparison;
-				}
-			}
-			return Long.compare(left.sequence, right.sequence);
-		}
-
-		@Override
-		protected void handleClose() {
-			cancellationRequested = true;
-			try {
-				super.handleClose();
-			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
-				}
-			}
-		}
-
-		@Override
-		public boolean requestCancellation() {
-			if (isClosed()) {
-				return false;
-			}
-			cancellationRequested = true;
-			CloseableIteration<BindingSet> current = source;
-			return current instanceof CooperativeCancellation cancellation && cancellation.requestCancellation();
-		}
-
-		@Override
-		public NativeExecutionContext executionContext() {
-			return executionContext;
-		}
-
-		private void releaseSource() {
-			CloseableIteration<BindingSet> current = source;
-			source = null;
-			if (current != null) {
-				current.close();
-			}
-		}
-
-		private void releaseLease() {
-			if (lease != null) {
-				lease.close();
-			}
 		}
 	}
 
@@ -501,10 +501,16 @@ final class NativeRootPipeline {
 				}
 				boolean result = delegate.hasNext();
 				if (!result) {
+					if (lease != null) {
+						lease.exhausted();
+					}
 					close();
 				}
 				return result;
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -527,6 +533,9 @@ final class NativeRootPipeline {
 				}
 				return delegate.next();
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -565,15 +574,18 @@ final class NativeRootPipeline {
 
 	private static final class NativeDistinctStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
+		private final Set<String> producedNames;
 
-		private NativeDistinctStep(QueryEvaluationStep arg) {
+		private NativeDistinctStep(QueryEvaluationStep arg, TupleExpr declaredArgument) {
 			this.arg = arg;
+			this.producedNames = Set.copyOf(TupleExprs.declaredOutputBindingNames(declaredArgument,
+					TupleExpr::getBindingNames));
 		}
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
-			return new DistinctIteration(delegate, NativeExecutionContextCarrier.contextOf(delegate));
+			return new DistinctIteration(delegate, NativeExecutionContextCarrier.contextOf(delegate), producedNames);
 		}
 
 		@Override
@@ -593,13 +605,16 @@ final class NativeRootPipeline {
 		private final Set<BindingSet> seen = new HashSet<>();
 		private final NativeExecutionContext executionContext;
 		private final NativeExecutionContext.Lease lease;
+		private final Set<String> producedNames;
 		private BindingSet next;
 		private boolean closed;
 
-		private DistinctIteration(CloseableIteration<BindingSet> delegate, NativeExecutionContext executionContext) {
+		private DistinctIteration(CloseableIteration<BindingSet> delegate, NativeExecutionContext executionContext,
+				Set<String> producedNames) {
 			this.delegate = delegate;
 			this.executionContext = executionContext;
 			this.lease = NativeExecutionContextCarrier.retain(delegate);
+			this.producedNames = producedNames;
 		}
 
 		@Override
@@ -619,6 +634,9 @@ final class NativeRootPipeline {
 				}
 				return next != null;
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -637,7 +655,17 @@ final class NativeRootPipeline {
 			}
 			BindingSet result = next;
 			next = null;
-			return result;
+			try {
+				// These solution modifiers own declared-output events, including absent OPTIONAL fields. Keep the
+				// selected row's mapping/authority and the carrier wrapper; empty declarations are a true no-op.
+				return producedNames.isEmpty() ? result : BindingSetOrigin.produced(result, producedNames);
+			} catch (RuntimeException | Error failure) {
+				if (lease != null) {
+					lease.failed();
+				}
+				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
+				throw new AssertionError("unreachable");
+			}
 		}
 
 		@Override
@@ -669,11 +697,11 @@ final class NativeRootPipeline {
 
 	private static final class NativeOrderStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
-		private final OrderKey[] keys;
+		private final OrderSpec keys;
 		private final boolean strict;
 		private final QueryExecutionPolicy policy;
 
-		private NativeOrderStep(QueryEvaluationStep arg, OrderKey[] keys, boolean strict, QueryExecutionPolicy policy) {
+		private NativeOrderStep(QueryEvaluationStep arg, OrderSpec keys, boolean strict, QueryExecutionPolicy policy) {
 			this.arg = arg;
 			this.keys = keys;
 			this.strict = strict;
@@ -684,9 +712,7 @@ final class NativeRootPipeline {
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			LmdbNativeDispatchLoop.logDirect(null, "ORDER BY dispatch",
 					LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "Sort the complete staged input");
-			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
-			return new OrderIteration(delegate, keys, strict, NativeExecutionContextCarrier.contextOf(delegate),
-					policy);
+			return openOrder(arg, bindings, keys, strict, policy, 0L, Long.MAX_VALUE, -1);
 		}
 
 		@Override
@@ -698,7 +724,147 @@ final class NativeRootPipeline {
 
 		@Override
 		public String nativePhysicalPlan() {
-			return "NativeOrder(keys=" + keys.length + ")";
+			return "NativeOrder(keys=" + keys.keys().length + ")";
+		}
+	}
+
+	/** Compile-time key evaluators and structural scope; no dynamic input or authority is retained here. */
+	private record OrderSpec(OrderKey[] keys, LmdbNativeEvaluationStrategy strategy,
+			QueryEvaluationContext context, boolean stableKeys) {
+	}
+
+	/** Captures cancellation authority without changing the child's scalar context or source facade. */
+	private static OrderIteration openOrder(QueryEvaluationStep arg, BindingSet bindings, OrderSpec keys,
+			boolean strict, QueryExecutionPolicy policy, long offset, long limit, int retained) {
+		SyntheticValueSource attached = SyntheticValueSource.activeEvaluation();
+		NativeExecutionContext cancellationOwner = attached == null ? null : attached.executionContext();
+		NativeExecutionContext.Lease cancellationLease = cancellationOwner == null ? null
+				: cancellationOwner.retainInternalLease();
+		CloseableIteration<BindingSet> source = null;
+		NativeExecutionContext.Lease lease = null;
+		try {
+			source = arg.evaluate(bindings);
+			NativeExecutionContext scalarOwner = NativeExecutionContextCarrier.contextOf(source);
+			lease = scalarOwner == null ? null : scalarOwner.retainLease();
+			return new OrderIteration(source, keys, strict, policy, scalarOwner, lease, cancellationOwner,
+					cancellationLease, offset, limit, retained);
+		} catch (RuntimeException | Error failure) {
+			Throwable outcome = KernelRuntime.closeResource(source == null ? null : source::close, failure);
+			outcome = KernelRuntime.closeResource(lease == null ? null : lease::close, outcome);
+			outcome = KernelRuntime.closeResource(cancellationLease == null ? null : cancellationLease::close, outcome);
+			NativeContextClosingIteration.throwFailure(outcome);
+			throw failure;
+		}
+	}
+
+	/**
+	 * A carrier-free invocation still has its executing thread and any admitted generic query scope. These are
+	 * cancellation authorities only: capturing them neither creates a native owner nor changes scalar context.
+	 * Ownership and interruption checks stay outside the ordinary comparator's exception boundary.
+	 */
+	private static final class GenericOrderCancellation {
+		private final QueryExecutionContext.ReplayContext replay = QueryExecutionContext.captureReplayContext();
+		private final QueryCircuitBreakerHandle handle = QueryExecutionContext.getHandle();
+
+		private void check() {
+			if (replay != null) {
+				replay.checkOwnership();
+			}
+			// A nested native cancellation scope is already attached authority, even without a result carrier.
+			NativeCancellationToken.checkCurrent();
+			if (handle != null && handle.isCancelRequested()) {
+				// Use the actual breaker for its owning exception and diagnostics. Cancellation already accepted
+				// by this handle remains terminal even if the breaker is disabled before this observation.
+				QueryCircuitBreaker.getInstance().checkpoint(handle, "ORDER");
+				throw new QueryInterruptedException(handle.getCancellationReason());
+			}
+			if (Thread.currentThread().isInterrupted()) {
+				throw new QueryInterruptedException("Query evaluation was interrupted");
+			}
+		}
+	}
+
+	/** One ORDER invocation's captured keys, exact payload tie comparator and producer occurrence state. */
+	private static final class OrderState {
+		private static final Logger LOGGER = LoggerFactory.getLogger(OrderComparator.class);
+		private final OrderSpec spec;
+		private final NativeExecutionContext executionContext;
+		private final ValueComparator values;
+		private final OrderComparator contents;
+		private final BlankNodeAllocationScope scope;
+		private final Object boundary = new Object();
+		private final boolean integerKeys;
+		private final Runnable checkpoint;
+		private boolean comparisonNeedsOwnerCheck;
+
+		OrderState(OrderSpec spec, boolean strict, QueryExecutionPolicy policy,
+				NativeExecutionContext executionContext, boolean integerKeys, Runnable checkpoint) {
+			this.spec = spec;
+			this.executionContext = executionContext;
+			this.integerKeys = integerKeys;
+			this.checkpoint = checkpoint;
+			this.values = new ValueComparator(policy);
+			this.values.setStrict(strict);
+			QueryEvaluationContext context = executionContext == null ? spec.context()
+					: executionContext.genericContext(spec.context(), spec.strategy());
+			this.scope = context.getBlankNodeAllocationScope();
+			this.contents = new OrderComparator(spec.strategy(), new Order(), values, context);
+		}
+
+		OrderEntry capture(BindingSet row, long sequence) {
+			try (var ignored = scope.visitSolutionOccurrence(row, boundary)) {
+				Value[] keys = new Value[spec.keys().length];
+				for (int i = 0; i < keys.length; i++) {
+					checkpoint.run();
+					keys[i] = spec.keys()[i].value(row, executionContext);
+					checkpoint.run();
+				}
+				return new OrderEntry(row, keys, sequence, scope.snapshotCurrentSolution(), integerKeys);
+			}
+		}
+
+		int compare(OrderEntry left, OrderEntry right) {
+			comparisonNeedsOwnerCheck = false;
+			int compared;
+			if (spec.stableKeys()) {
+				try {
+					compared = compareKeysAndContents(left, right);
+				} catch (QueryEvaluationException | IllegalArgumentException problem) {
+					// Match OrderComparator.compareSortKeys exactly: a failed explicit comparison is tied,
+					// without falling through to visible contents. Query/native controls outside these two
+					// classes propagate. Cancellation polling occurs only in the caller, outside this catch.
+					LOGGER.debug(problem.getMessage(), problem);
+					comparisonNeedsOwnerCheck = true;
+					compared = 0;
+				}
+			} else {
+				// Ordinary volatile ORDER propagates explicit-key comparison failures. Its payload tie alone
+				// delegates to OrderComparator. Key evaluation stays outside either comparison boundary.
+				compared = compareKeysAndContents(left, right);
+			}
+			return compared != 0 ? compared : Long.compare(left.sequence, right.sequence);
+		}
+
+		private int compareKeysAndContents(OrderEntry left, OrderEntry right) {
+			for (int i = 0; i < spec.keys().length; i++) {
+				long bit = 1L << i;
+				int compared = i < Long.SIZE && (left.integerMask & right.integerMask & bit) != 0L
+						? Long.compare(left.integers[i], right.integers[i])
+						: values.compare(left.values[i], right.values[i]);
+				if (compared != 0) {
+					return spec.keys()[i].ascending() ? compared : -compared;
+				}
+			}
+			comparisonNeedsOwnerCheck = true;
+			return contents.compare(left.row, right.row);
+		}
+
+		boolean comparisonNeedsOwnerCheck() {
+			return comparisonNeedsOwnerCheck;
+		}
+
+		void restore(OrderEntry entry) {
+			scope.restoreSolution(entry.row, entry.labels);
 		}
 	}
 
@@ -709,102 +875,466 @@ final class NativeRootPipeline {
 		}
 	}
 
-	private static final class OrderIteration extends DelayedIteration<BindingSet>
-			implements CooperativeCancellation, NativeExecutionContextCarrier {
-		private CloseableIteration<BindingSet> source;
-		private final OrderKey[] keys;
-		private final ValueComparator comparator;
+	/** A private operator-local stop; native/query controls never enter its handling boundary. */
+	private static final class OrderCancellation extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+		private static final OrderCancellation INSTANCE = new OrderCancellation();
+
+		private OrderCancellation() {
+			super(null, null, false, false);
+		}
+	}
+
+	/** One state owner for source callbacks, result publication and terminal resource retirement. */
+	private static final class OrderIteration
+			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
+		private final CloseableIteration<BindingSet> source;
+		/** Existing generic invocation authority; no native owner or scalar scope is created. */
+		private final GenericOrderCancellation genericCancellation;
+		private final OrderSpec keys;
+		private final boolean strict;
+		private final QueryExecutionPolicy policy;
 		private final NativeExecutionContext executionContext;
 		private final NativeExecutionContext.Lease lease;
+		private final NativeExecutionContext cancellationOwner;
+		private final NativeExecutionContext.Lease cancellationLease;
+		private final long offset;
+		private final long limit;
+		/** Negative means a full sort; otherwise this is the maximum retained heap size. */
+		private final int retained;
+		private volatile boolean closed;
 		private volatile boolean cancellationRequested;
+		/** The following lifecycle fields are guarded by this iteration, never by a superclass. */
+		private Thread advancingThread;
+		private Thread cancellationThread;
+		private boolean sourceCloseRequested;
+		private boolean sourceCloseStarted;
+		private boolean sourceCloseCompleted;
+		private Thread sourceClosingThread;
+		private boolean retirementStarted;
+		private boolean retirementCompleted;
+		private Thread retirementThread;
+		private Throwable cleanupFailure;
+		private List<OrderEntry> rows;
+		private int index;
+		private OrderState order;
+		/** Actual source EOF, independent of an empty/short-circuited output. */
+		private boolean inputExhausted;
+		/** Single-consumer counters; local cancellation is checked independently at every boundary. */
+		private int ticks;
 
-		private OrderIteration(CloseableIteration<BindingSet> source, OrderKey[] keys, boolean strict,
-				NativeExecutionContext executionContext, QueryExecutionPolicy policy) {
+		private OrderIteration(CloseableIteration<BindingSet> source, OrderSpec keys, boolean strict,
+				QueryExecutionPolicy policy, NativeExecutionContext executionContext,
+				NativeExecutionContext.Lease lease, NativeExecutionContext cancellationOwner,
+				NativeExecutionContext.Lease cancellationLease, long offset, long limit, int retained) {
 			this.source = source;
 			this.keys = keys;
-			this.comparator = new ValueComparator(policy);
-			this.comparator.setStrict(strict);
+			this.strict = strict;
+			this.policy = policy;
 			this.executionContext = executionContext;
-			this.lease = NativeExecutionContextCarrier.retain(source);
+			this.lease = lease;
+			this.cancellationOwner = cancellationOwner;
+			this.cancellationLease = cancellationLease;
+			this.genericCancellation = executionContext == null && cancellationOwner == null
+					? new GenericOrderCancellation()
+					: null;
+			this.offset = offset;
+			this.limit = limit;
+			this.retained = retained;
 		}
 
 		@Override
-		protected CloseableIteration<? extends BindingSet> createIteration() {
-			List<BindingSet> rows = new ArrayList<>();
+		public boolean hasNext() {
+			if (!beginAdvance()) {
+				return false;
+			}
+			Throwable primary = null;
+			boolean result = false;
 			try {
-				while (!cancellationRequested && source.hasNext()) {
-					rows.add(source.next());
+				checkpoint();
+				ensureMaterialized();
+				checkLocalStop();
+				synchronized (this) {
+					if (!closed && !cancellationRequested) {
+						result = index < rows.size();
+					}
 				}
-				if (!cancellationRequested) {
-					rows.sort(this::compare);
+				if (!result) {
+					// Cancellation cannot turn staged output EOF into a successful input/result receipt.
+					checkOwner();
+					synchronized (this) {
+						if (!closed && !cancellationRequested && inputExhausted && lease != null) {
+							lease.exhausted();
+						}
+						closed = true;
+						sourceCloseRequested = true;
+					}
+				}
+			} catch (OrderCancellation stopped) {
+				stopAdvance();
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				failed();
+				stopAdvance();
+			}
+			Throwable outcome = finishAdvance(primary);
+			if (outcome != null) {
+				NativeContextClosingIteration.throwFailure(outcome);
+			}
+			return result && !closed && !cancellationRequested;
+		}
+
+		@Override
+		public BindingSet next() {
+			if (!beginAdvance()) {
+				throw new NoSuchElementException();
+			}
+			Throwable primary = null;
+			BindingSet result = null;
+			boolean published = false;
+			try {
+				checkpoint();
+				ensureMaterialized();
+				OrderEntry entry;
+				synchronized (this) {
+					checkLocalStop();
+					entry = index < rows.size() ? rows.get(index) : null;
+				}
+				if (entry == null) {
+					checkOwner();
+					synchronized (this) {
+						if (!closed && !cancellationRequested && inputExhausted && lease != null) {
+							lease.exhausted();
+						}
+					}
+					stopAdvance();
 				} else {
-					rows.clear();
+					order.restore(entry);
+					// Real row publication is a strong owner boundary even between sampled sort checkpoints.
+					checkOwner();
+					synchronized (this) {
+						checkLocalStop();
+						index++;
+						result = entry.row;
+						published = true;
+					}
 				}
-				return new CloseableIteratorIteration<>(rows.iterator());
-			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
-				}
+			} catch (OrderCancellation stopped) {
+				stopAdvance();
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				failed();
+				stopAdvance();
 			}
-		}
-
-		private int compare(BindingSet left, BindingSet right) {
-			if (cancellationRequested) {
-				return 0;
+			Throwable outcome = finishAdvance(primary);
+			if (outcome != null) {
+				NativeContextClosingIteration.throwFailure(outcome);
 			}
-			for (OrderKey key : keys) {
-				int comparison = comparator.compare(key.value(left, executionContext),
-						key.value(right, executionContext));
-				if (comparison != 0) {
-					return key.ascending() ? comparison : -comparison;
-				}
+			if (!published) {
+				throw new NoSuchElementException();
 			}
-			return 0;
+			return result;
 		}
 
 		@Override
-		protected void handleClose() {
-			cancellationRequested = true;
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+
+		private synchronized boolean beginAdvance() {
+			if (closed) {
+				return false;
+			}
+			if (advancingThread != null) {
+				throw new IllegalStateException("ORDER iteration already has an active consumer");
+			}
+			advancingThread = Thread.currentThread();
+			return true;
+		}
+
+		private void ensureMaterialized() {
+			if (rows != null) {
+				return;
+			}
+			List<OrderEntry> staged = List.of();
+			Throwable primary = null;
 			try {
-				super.handleClose();
+				checkpoint();
+				if (retained != 0 && limit != 0L) {
+					order = new OrderState(keys, strict, policy, executionContext, retained >= 0, this::checkpoint);
+					staged = retained < 0 ? fullSort() : topK();
+				}
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				throw failure;
 			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
+				synchronized (this) {
+					sourceCloseRequested = true;
+				}
+				Throwable cleanup = drainCleanup();
+				Throwable outcome = mergeFailure(primary, cleanup);
+				if (outcome != null && outcome != primary) {
+					NativeContextClosingIteration.throwFailure(outcome);
 				}
 			}
+			checkOwner();
+			synchronized (this) {
+				checkLocalStop();
+				rows = staged;
+				index = (int) Math.min(rows.size(), offset);
+			}
+		}
+
+		private List<OrderEntry> fullSort() {
+			List<OrderEntry> staged = new ArrayList<>();
+			while (hasInput()) {
+				staged.add(order.capture(source.next(), staged.size()));
+			}
+			staged.sort(this::compare);
+			return staged;
+		}
+
+		private List<OrderEntry> topK() {
+			Comparator<OrderEntry> ordering = this::compare;
+			PriorityQueue<OrderEntry> heap = new PriorityQueue<>(Math.min(retained, 1 << 16) + 1,
+					ordering.reversed());
+			long sequence = 0L;
+			while (hasInput()) {
+				OrderEntry entry = order.capture(source.next(), sequence++);
+				if (heap.size() < retained) {
+					heap.add(entry);
+				} else if (compare(entry, heap.peek()) < 0) {
+					heap.poll();
+					heap.add(entry);
+				}
+			}
+			List<OrderEntry> staged = new ArrayList<>(heap);
+			staged.sort(ordering);
+			return staged;
+		}
+
+		private boolean hasInput() {
+			checkpoint();
+			boolean result = source.hasNext();
+			checkpoint();
+			if (!result) {
+				inputExhausted = true;
+			}
+			return result;
+		}
+
+		private int compare(OrderEntry left, OrderEntry right) {
+			checkpoint();
+			int compared = order.compare(left, right);
+			checkLocalStop();
+			if (order.comparisonNeedsOwnerCheck()) {
+				// A caught explicit error or an owning payload tie can hide a QueryInterruptedException.
+				// Observe the real token after that boundary, outside either comparator's catch.
+				checkOwner();
+			}
+			return compared;
+		}
+
+		private void checkpoint() {
+			checkLocalStop();
+			int tick = ticks++;
+			if (genericCancellation != null && (tick & 1023) == 0) {
+				genericCancellation.check();
+			}
+			if (executionContext != null) {
+				executionContext.cancellation().poll(tick);
+			}
+			if (cancellationOwner != null && cancellationOwner != executionContext) {
+				cancellationOwner.cancellation().poll(tick);
+			}
+		}
+
+		private void checkLocalStop() {
+			if (closed || cancellationRequested) {
+				throw OrderCancellation.INSTANCE;
+			}
+		}
+
+		private void checkOwner() {
+			checkLocalStop();
+			if (genericCancellation != null) {
+				genericCancellation.check();
+			}
+			if (executionContext != null) {
+				executionContext.cancellation().check();
+			}
+			if (cancellationOwner != null && cancellationOwner != executionContext) {
+				cancellationOwner.cancellation().check();
+			}
+		}
+
+		private synchronized void stopAdvance() {
+			closed = true;
+			sourceCloseRequested = true;
+		}
+
+		private Throwable finishAdvance(Throwable primary) {
+			synchronized (this) {
+				advancingThread = null;
+				notifyAll();
+			}
+			// An admitted callback or concurrent cleanup can await this consumer's return. Help any
+			// immediately available cleanup, but leave pending settlement to its actual owning caller.
+			// Cleanup available at this boundary still joins this call's primary failure.
+			return mergeFailure(primary, drainCleanup());
 		}
 
 		@Override
 		public boolean requestCancellation() {
-			if (isClosed()) {
-				return false;
+			boolean forward;
+			synchronized (this) {
+				if (closed) {
+					return false;
+				}
+				if (cancellationRequested) {
+					return true;
+				}
+				cancellationRequested = true;
+				cancellationThread = Thread.currentThread();
+				forward = !sourceCloseStarted;
 			}
-			cancellationRequested = true;
-			CloseableIteration<BindingSet> current = source;
-			return current instanceof CooperativeCancellation cancellation && cancellation.requestCancellation();
+			Throwable primary = null;
+			try {
+				failed();
+				if (forward) {
+					CooperativeCancellation.forward(source);
+				}
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				stopAdvance();
+			} finally {
+				synchronized (this) {
+					cancellationThread = null;
+					notifyAll();
+				}
+			}
+			drainCleanup();
+			Throwable outcome = mergeFailure(primary, awaitRetirement());
+			if (outcome != null) {
+				NativeContextClosingIteration.throwFailure(outcome);
+			}
+			return true;
+		}
+
+		@Override
+		public void close() {
+			boolean observeFailure;
+			synchronized (this) {
+				observeFailure = !retirementCompleted;
+				closed = true;
+				sourceCloseRequested = true;
+			}
+			drainCleanup();
+			Throwable failure = awaitRetirement();
+			if (observeFailure && failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+
+		/** Claims work under the monitor; all source/owner callbacks execute outside it. */
+		private Throwable drainCleanup() {
+			while (true) {
+				boolean closeSource;
+				Throwable prior;
+				synchronized (this) {
+					if (sourceCloseRequested && !sourceCloseStarted && cancellationThread == null) {
+						sourceCloseStarted = true;
+						sourceClosingThread = Thread.currentThread();
+						closeSource = true;
+						prior = null;
+					} else if (closed && sourceCloseCompleted && advancingThread == null
+							&& cancellationThread == null && !retirementStarted) {
+						retirementStarted = true;
+						retirementThread = Thread.currentThread();
+						closeSource = false;
+						prior = cleanupFailure;
+					} else {
+						return cleanupFailure;
+					}
+				}
+				Throwable failure = closeSource ? KernelRuntime.closeResource(source, null)
+						: KernelRuntime.closeResource(lease == null ? null : lease::close, prior);
+				if (!closeSource) {
+					failure = KernelRuntime.closeResource(cancellationLease == null ? null : cancellationLease::close,
+							failure);
+				}
+				if (failure != null) {
+					failed();
+				}
+				synchronized (this) {
+					cleanupFailure = failure;
+					if (closeSource) {
+						sourceCloseCompleted = true;
+						sourceClosingThread = null;
+					} else {
+						retirementCompleted = true;
+						retirementThread = null;
+						rows = null;
+						order = null;
+					}
+					notifyAll();
+				}
+			}
+		}
+
+		/** Reentrant semantic/cancellation/cleanup callbacks cannot wait for their own completion. */
+		private Throwable awaitRetirement() {
+			boolean interrupted = false;
+			try {
+				synchronized (this) {
+					if (!closed) {
+						return cleanupFailure;
+					}
+					Thread current = Thread.currentThread();
+					if (current == advancingThread || current == cancellationThread || current == sourceClosingThread
+							|| current == retirementThread
+							|| executionContext != null && executionContext.cancellationOwnerClosingOnCurrentThread()
+							|| cancellationOwner != null
+									&& cancellationOwner.cancellationOwnerClosingOnCurrentThread()) {
+						return cleanupFailure;
+					}
+					// Pending advances/cancellation callbacks own their own deferred completion. Close and
+					// cancellation must not wait for an evaluation callback which their caller may release.
+					if (!retirementStarted
+							&& (advancingThread != null || cancellationThread != null)) {
+						return cleanupFailure;
+					}
+					while (!retirementCompleted) {
+						try {
+							wait();
+						} catch (InterruptedException interruption) {
+							interrupted = true;
+						}
+					}
+					return cleanupFailure;
+				}
+			} finally {
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		}
+
+		private static Throwable mergeFailure(Throwable primary, Throwable cleanup) {
+			return cleanup == null || cleanup == primary ? primary
+					: KernelRuntime.closeResource(() -> NativeContextClosingIteration.throwFailure(cleanup), primary);
+		}
+
+		private void failed() {
+			if (lease != null) {
+				lease.failed();
+			}
 		}
 
 		@Override
 		public NativeExecutionContext executionContext() {
 			return executionContext;
 		}
-
-		private void releaseSource() {
-			CloseableIteration<BindingSet> current = source;
-			source = null;
-			if (current != null) {
-				current.close();
-			}
-		}
-
-		private void releaseLease() {
-			if (lease != null) {
-				lease.close();
-			}
-		}
 	}
+
 }

@@ -2491,15 +2491,28 @@ class LmdbSnapshotValueLifetimeTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void noneImportWithoutOtherReadersDoesNotUseResizeFallback(@TempDir File dataDir) throws Exception {
 		long mapSize = 10L * 1024 * 1024;
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc")
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
 				.setForceSync(true)
 				.setTripleDBSize(mapSize)
 				.setValueDBSize(mapSize)
 				.setMapGrowthReadDrainTimeoutMillis(100)
-				.setAutoGrow(true));
+				.setAutoGrow(true);
+		AdmissionObservationStore store = new AdmissionObservationStore(dataDir, config, true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
-		try {
+		try (AutoCloseable repositoryShutdown = repository::shutDown;
+				AutoCloseable deferredStart = () -> {
+					store.releasePostReadyValueAdmission.countDown();
+					store.startDeferredPostReadyMaintenance();
+				}) {
+			// The scenario excludes independent readers. Post-ready domain maintenance opens one, so keep its
+			// already-supported start gate closed until after this import and verify both native reader pools.
+			assertEquals("NOT_STARTED", store.getBackingStore().postReadyMaintenanceStatus());
+			assertNotNull(store.deferredPostReadyStart.get());
+			assertTrue(store.valueStore.getTxnManager().activeOrdinaryReaderSnapshotForTest().isEmpty(),
+					"the value store must have no independent ordinary reader before import");
+			assertTrue(store.tripleStore.getTxnManager().activeOrdinaryReaderSnapshotForTest().isEmpty(),
+					"the triple store must have no independent ordinary reader before import");
 			try (SailRepositoryConnection writer = repository.getConnection()) {
 				writer.begin(IsolationLevels.NONE);
 				writer.add(BenchmarkResources.openDecompressedStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "",
@@ -2513,8 +2526,6 @@ class LmdbSnapshotValueLifetimeTest {
 					"the import must exercise real ValueStore map growth");
 			assertEquals(0, metrics.forcedInvalidationEpisodes(),
 					"an import with no independent reader must not fall back to reader invalidation");
-		} finally {
-			repository.shutDown();
 		}
 	}
 
@@ -2812,6 +2823,10 @@ class LmdbSnapshotValueLifetimeTest {
 		private AdmissionObservationStore(File dataDir, boolean deferPostReadyStart, LmdbStoreConfig config) {
 			super(dataDir, config);
 			this.deferPostReadyStart = deferPostReadyStart;
+		}
+
+		private AdmissionObservationStore(File dataDir, LmdbStoreConfig config, boolean deferPostReadyStart) {
+			this(dataDir, deferPostReadyStart, config);
 		}
 
 		void startDeferredPostReadyMaintenance() {

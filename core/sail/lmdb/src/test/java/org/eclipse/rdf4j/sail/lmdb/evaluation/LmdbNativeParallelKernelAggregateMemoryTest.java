@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -576,26 +577,49 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 			NativeGroupIteration emitter = new NativeGroupIteration(source, SlotPlan.singleton(), layout, new int[0],
 					new AggregateSpec[] { countSpec }, false, base, null, null, false, null);
 			RowState row = new RowState(source, layout, base);
-			assertThat(emitter.initialize(row)).isTrue();
+			Throwable primary = null;
+			try {
+				assertThat(emitter.initialize(row)).isTrue();
 
-			Aggregate terminal = new Aggregate(new int[0],
-					new AggregateOutput[] { distinct ? AggregateOutput.countDistinct(1) : AggregateOutput.count(1) },
-					null, OutputMods.none());
-			Kernel kernel = new Kernel(2, List.of(new EnumerateDomain(0, 0), new EnumerateDomain(1, 1)), terminal);
-			KernelGroupLayout groupLayout = new KernelGroupLayout(new int[0],
-					new AggOut[] { new AggOut(countSpec, LmdbNativeKernelBindings.ENC_LONG_COUNT) });
-			LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
-					new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
-					new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
-					new int[0], List.of(), groupLayout, true, distinctExpected);
-			LmdbNativeKernelLowering.Lowered lowered = new LmdbNativeKernelLowering.Lowered(kernel, bindings);
-			BoundDomains domains = new BoundDomains(new long[][] { roots, { sharedValue } }, new int[] { 0, 0 },
-					new int[] { roots.length, 1 });
-			return LmdbNativeParallelKernelAggregate.tryEvaluate(lowered,
-					new NativeLmdbQuerySource.NativeAdjacency[0],
-					LmdbNativeKernelBindings.VariablePredicateViews.NONE, null, null, domains, SlotPlan.singleton(),
-					row,
-					emitter, null, LmdbNativeKernelInterpreter::forAggregate, workers);
+				Aggregate terminal = new Aggregate(new int[0],
+						new AggregateOutput[] { distinct ? AggregateOutput.countDistinct(1) : AggregateOutput.count(1) },
+						null, OutputMods.none());
+				Kernel kernel = new Kernel(2, List.of(new EnumerateDomain(0, 0), new EnumerateDomain(1, 1)), terminal);
+				KernelGroupLayout groupLayout = new KernelGroupLayout(new int[0],
+						new AggOut[] { new AggOut(countSpec, LmdbNativeKernelBindings.ENC_LONG_COUNT) });
+				LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+						new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+						new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
+						new int[0], List.of(), groupLayout, true, distinctExpected);
+				LmdbNativeKernelLowering.Lowered lowered = new LmdbNativeKernelLowering.Lowered(kernel, bindings);
+				BoundDomains domains = new BoundDomains(new long[][] { roots, { sharedValue } }, new int[] { 0, 0 },
+						new int[] { roots.length, 1 });
+				List<BindingSet> results = LmdbNativeParallelKernelAggregate.tryEvaluate(lowered,
+						new NativeLmdbQuerySource.NativeAdjacency[0],
+						LmdbNativeKernelBindings.VariablePredicateViews.NONE, null, null, domains, SlotPlan.singleton(),
+						row,
+						emitter, null, LmdbNativeKernelInterpreter::forAggregate, workers);
+				if (results == null) {
+					return null;
+				}
+				// The returned replay belongs to emitter/source. Consume it while its real ledger/producer owner is
+				// live, then detach these COUNT literals before this helper deliberately closes that owner.
+				List<BindingSet> detached = new ArrayList<>(results.size());
+				for (BindingSet result : results) {
+					detached.add(new QueryBindingSet(result));
+				}
+				return List.copyOf(detached);
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				throw failure;
+			} finally {
+				Throwable failure = KernelRuntime.closeResource(emitter, primary);
+				failure = KernelRuntime.closeResource(emitter.aggContext::close, failure);
+				failure = KernelRuntime.closeResource(row::closeDecodedInputs, failure);
+				if (primary == null && failure != null) {
+					NativeContextClosingIteration.throwFailure(failure);
+				}
+			}
 		} finally {
 			source.executionContext().close();
 		}

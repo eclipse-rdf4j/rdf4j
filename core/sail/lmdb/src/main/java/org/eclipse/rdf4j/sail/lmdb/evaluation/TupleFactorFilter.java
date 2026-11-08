@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedTupleBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.sail.lmdb.factor.SelectedTupleSource;
@@ -64,10 +65,10 @@ final class TupleFactorFilter implements AutoCloseable {
 			slots[column] = slot;
 		}
 		if (source != batch) {
-			if (reader != null)
-				reader.close();
+			BorrowedTupleBatch.Cursor previous = reader;
 			reader = null;
 			batch = null;
+			if (previous != null) previous.close();
 			reader = source.cursor(WINDOW);
 			batch = source;
 		}
@@ -159,22 +160,32 @@ final class TupleFactorFilter implements AutoCloseable {
 		return weight;
 	}
 
+	/** Finish input decoder ownership before the enclosing producer advances. Selection workspace remains bounded. */
+	void releaseInput() {
+		BorrowedTupleBatch.Cursor previous = reader;
+		reader = null;
+		batch = null;
+		factors = null;
+		exhausted = true;
+		Throwable failure = KernelRuntime.closeResource(previous, null);
+		try { clearOutput(); }
+		catch (RuntimeException | Error problem) {
+			if (failure == null) failure = problem;
+			else if (failure != problem) failure.addSuppressed(problem);
+		}
+		KernelRuntime.rethrowCloseFailure(failure);
+	}
+
 	@Override
 	public void close() {
-		if (closed)
-			return;
+		if (closed) return;
 		closed = true;
-		factors = null;
-		try {
-			if (reader != null)
-				reader.close();
-		} finally {
-			reader = null;
-			batch = null;
-			if (selection != null)
-				selection.clear();
-			if (selected != null)
-				selected.close();
-		}
+		Throwable failure = null;
+		try { releaseInput(); }
+		catch (RuntimeException | Error problem) { failure = problem; }
+		SelectedTupleSource previous = selected;
+		selected = null;
+		failure = KernelRuntime.closeResource(previous, failure);
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 }

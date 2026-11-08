@@ -25,10 +25,11 @@ public final class IfValueEvaluationStep implements QueryValueEvaluationStep {
 	private final QueryValueEvaluationStep condition;
 	private final QueryValueEvaluationStep alternative;
 	private final QueryModelNode metricTarget;
+	private final Runnable shortCircuitRecorder;
 
 	public IfValueEvaluationStep(QueryValueEvaluationStep result, QueryValueEvaluationStep condition,
 			QueryValueEvaluationStep alternative) {
-		this(result, condition, alternative, null);
+		this(result, condition, alternative, (QueryModelNode) null);
 	}
 
 	public IfValueEvaluationStep(QueryValueEvaluationStep result, QueryValueEvaluationStep condition,
@@ -37,6 +38,16 @@ public final class IfValueEvaluationStep implements QueryValueEvaluationStep {
 		this.condition = condition;
 		this.alternative = alternative;
 		this.metricTarget = metricTarget;
+		this.shortCircuitRecorder = null;
+	}
+
+	public IfValueEvaluationStep(QueryValueEvaluationStep result, QueryValueEvaluationStep condition,
+			QueryValueEvaluationStep alternative, Runnable shortCircuitRecorder) {
+		this.result = result;
+		this.condition = condition;
+		this.alternative = alternative;
+		this.metricTarget = null;
+		this.shortCircuitRecorder = shortCircuitRecorder;
 	}
 
 	@Override
@@ -54,6 +65,10 @@ public final class IfValueEvaluationStep implements QueryValueEvaluationStep {
 	}
 
 	private void incrementShortCircuitCount() {
+		if (shortCircuitRecorder != null) {
+			shortCircuitRecorder.run();
+			return;
+		}
 		if (metricTarget == null) {
 			return;
 		}

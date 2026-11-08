@@ -44,7 +44,7 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 		this.base = base;
 		this.context = context;
 		this.closeContext = closeContext;
-		this.lease = closeContext && context != null ? context.retainLease() : null;
+		this.lease = closeContext && context != null ? context.retainInternalLease() : null;
 		this.cancellation = NativeCancellationToken.forSource(source);
 		this.inputPhases = NativeExecutionPhaseEvent.inputOwner(cancellation);
 		this.remainingOffset = Math.max(0L, step.offset);

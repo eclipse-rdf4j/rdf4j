@@ -127,6 +127,29 @@ class LmdbNativeValuesFilterFoldShapesTest {
 	}
 
 	@Test
+	void nonDistinctExistingValuesFilterKeepsUserBagMultiplicityInNativeExecution() {
+		String query = PREFIXES + """
+				SELECT ?e ?code WHERE {
+				  VALUES ?code { "DX-200" "DX-200" }
+				  ?e a ex:Condition ; ex:code ?code .
+				  FILTER(?code = "DX-200")
+				}
+				""";
+		List<String> expected = rows(memoryRepository, query);
+		assertThat(expected).hasSize(4).as("two matching statements crossed with two user VALUES rows");
+		assertThat(new java.util.HashSet<>(expected)).hasSize(2);
+		List<String> actual = rows(lmdbRepository, query);
+		assertThat(actual)
+				.as("LMDB must retain the ordinary VALUES bag:\n" + query)
+				.containsExactlyElementsOf(expected);
+		String planned = explain(query);
+		String telemetry = explain(lmdbRepository, Explanation.Level.Telemetry, query);
+		assertThat(telemetry).as("the matching bag above must come from actual LMDB execution; planned diagnostics:\n" + planned)
+				.startsWith("LMDB native physical plan (executed)")
+				.contains("nativeExecutionPath=");
+	}
+
+	@Test
 	void projectedExistsRetainsValuesColumnsUsedByItsCorrelation() {
 		SailRepository nativeStore = new SailRepository(new LmdbStore(new File(directory, "projected-exists"),
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
@@ -611,8 +634,12 @@ class LmdbNativeValuesFilterFoldShapesTest {
 	}
 
 	private static String explain(Repository repository, String query) {
+		return explain(repository, Explanation.Level.Optimized, query);
+	}
+
+	private static String explain(Repository repository, Explanation.Level level, String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
+			return connection.prepareTupleQuery(query).explain(level).toString();
 		}
 	}
 

@@ -12,8 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 
 /**
@@ -23,17 +28,220 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
  */
 final class NativeFilterLease {
 
-	private final IdentityHashMap<NativeBooleanFilter, Entry> borrowed = new IdentityHashMap<>();
+	private IdentityHashMap<NativeBooleanFilter, Entry> borrowed;
+	private final IdentityHashMap<SlotPlan, SlotPlan> plans = new IdentityHashMap<>();
 	private final ArrayList<Entry> entries = new ArrayList<>();
 	private final boolean suppressFeedback;
 	private boolean finished;
+	private boolean selected;
+
+	synchronized void selected() {
+		selected = true;
+	}
+
+	synchronized boolean isSelected() {
+		return selected;
+	}
+
+	private NativeFilterLease parent;
+	private volatile NativeExecutionContext ownerContext;
+	private final boolean capture;
+	private Frozen capturedMemo;
+	private IdentityHashMap<Frozen, Boolean> inclusions;
+	private IdentityHashMap<RecordingNativeBooleanFilter, Outcome> outcomes;
 
 	NativeFilterLease() {
 		this(false);
 	}
 
 	NativeFilterLease(boolean suppressFeedback) {
+		this(suppressFeedback, null, false);
+	}
+
+	NativeFilterLease(NativeFilterLease parent) {
+		this(false, parent, false);
+	}
+
+	private NativeFilterLease(boolean suppressFeedback, NativeFilterLease parent, boolean capture) {
 		this.suppressFeedback = suppressFeedback;
+		this.parent = parent;
+		this.capture = capture;
+	}
+
+	static NativeBooleanFilter openInput(NativeBooleanFilter filter, RowState row, AutoCloseable input) {
+		try {
+			return filter.open(row);
+		} catch (RuntimeException | Error failure) {
+			try {
+				input.close();
+			} catch (Throwable cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	static NativeFilterLease capture(NativeExecutionContext context) {
+		NativeFilterLease lease = new NativeFilterLease(false, null, true);
+		lease.ownerContext = context.filterOutcomeOwner();
+		lease.capturedMemo = new Frozen(lease.ownerContext.filterOwnerIdentity());
+		return lease;
+	}
+
+	Frozen memo() {
+		if (!capture) {
+			throw new IllegalStateException("only a producer capture owns a memo receipt");
+		}
+		return capturedMemo;
+	}
+
+	static NativeFilterLease parentOf(RowState row) {
+		SyntheticValueSource source = row.evaluationScope();
+		return source == null ? null : source.filterParent();
+	}
+
+	synchronized void include(Frozen frozen, NativeExecutionContext context) {
+		if (finished) {
+			throw new IllegalStateException("native filter attempt already finalized");
+		}
+		NativeExecutionContext owner = context.filterOutcomeOwner();
+		if (frozen.owner != owner.filterOwnerIdentity()) {
+			throw new IllegalArgumentException("memo outcomes crossed evaluation owners");
+		}
+		bindOwner(owner);
+		if (inclusions == null) {
+			inclusions = new IdentityHashMap<>();
+		}
+		inclusions.put(frozen, Boolean.TRUE);
+	}
+
+	private void bindOwner(NativeExecutionContext owner) {
+		if (ownerContext != null && ownerContext != owner) {
+			throw new IllegalArgumentException("native filter attempt crossed evaluation owners");
+		}
+		ownerContext = owner;
+		for (Entry entry : entries) {
+			if (entry.used && entry.contextual && !entry.owned && !(entry.attempt instanceof BorrowedFilter)
+					&& entry.cleanup == null) {
+				entry.cleanup = owner.ownFilterResource(entry.attempt);
+			}
+		}
+	}
+
+	/** Actual query or worker use puts a semantic original in the query's close-once registry. */
+	private synchronized void use(Entry entry, NativeExecutionContext context, boolean worker) {
+		entry.used = true;
+		if (context != null) {
+			NativeExecutionContext owner = context.filterOutcomeOwner();
+			if (ownerContext != null && ownerContext != owner) {
+				throw new IllegalArgumentException("native filter attempt crossed evaluation owners");
+			}
+			entry.contextual = true;
+			bindOwner(owner);
+		} else if (worker) {
+			// A worker fork can precede binding its owning query. Remember that handoff when the owner arrives.
+			entry.contextual = true;
+			if (ownerContext != null) {
+				bindOwner(ownerContext);
+			}
+		}
+	}
+
+	/**
+	 * Stable publication receipt independent of the producer and its readers. A capture settles it only after owned
+	 * semantic cleanup. Selected receipts are resolved at query finalization; nested graph identity is deduplicated
+	 * before any primitive counts are summed. The settled contents retain no native resources or execution contexts.
+	 */
+	static final class Frozen {
+		private final Object owner;
+		private volatile Contents contents;
+
+		private record Contents(FrozenOutcome[] outcomes, Frozen[] inclusions, boolean complete) {
+		}
+
+		private Frozen(Object owner) {
+			this.owner = owner;
+		}
+
+		private void settle(FrozenOutcome[] outcomes, Frozen[] inclusions, boolean complete) {
+			if (contents != null) {
+				throw new IllegalStateException("memo feedback receipt already settled");
+			}
+			contents = new Contents(outcomes, inclusions, complete);
+		}
+
+		void requireOwner(NativeExecutionContext owner) {
+			if (this.owner != owner.filterOwnerIdentity()) {
+				throw new IllegalArgumentException("memo outcomes crossed evaluation owners");
+			}
+		}
+
+		void collect(NativeExecutionContext owner, IdentityHashMap<Frozen, Boolean> seen, boolean selectedComplete) {
+			requireOwner(owner);
+			Contents settled = contents;
+			if (settled == null) {
+				throw new IllegalStateException("memo producer did not settle before feedback publication");
+			}
+			boolean complete = selectedComplete && settled.complete();
+			Boolean previous = seen.get(this);
+			if (previous != null && (previous || !complete)) {
+				return;
+			}
+			seen.put(this, complete);
+			for (Frozen included : settled.inclusions()) {
+				included.collect(owner, seen, complete);
+			}
+		}
+
+		void mergeOwnOutcomes(NativeExecutionContext owner, boolean complete) {
+			for (FrozenOutcome outcome : contents.outcomes()) {
+				owner.mergeFrozenFilterOutcome(outcome, complete);
+			}
+		}
+	}
+
+	static record FrozenOutcome(Object template, long opens, long terminals, long exhausted,
+			long passed, long rejected, boolean incomplete, boolean inputQualified) {
+	}
+
+	synchronized Frozen freeze(boolean complete) {
+		if (!capture || finished) {
+			throw new IllegalStateException("only an open capture may freeze");
+		}
+		finished = true;
+		Throwable failure = closeEntries(null, true, null);
+		try {
+			if (failure != null) {
+				// Keep only failed-root diagnostics; a previously selected receipt settles without complete evidence.
+				for (Outcome outcome : outcomes()) {
+					outcome.incomplete = true;
+					outcome.context.mergeDiscardedFilterOutcome(outcome);
+				}
+				rethrow(failure);
+			}
+			FrozenOutcome[] values = new FrozenOutcome[outcomes().size()];
+			int index = 0;
+			for (Outcome outcome : outcomes()) {
+				values[index++] = new FrozenOutcome(outcome.template.outcomeIdentity, outcome.opens,
+						outcome.terminals, outcome.exhausted, outcome.passed, outcome.rejected,
+						outcome.incomplete || !complete, outcome.inputQualified);
+			}
+			Frozen[] children = inclusions().toArray(Frozen[]::new);
+			for (Frozen child : children) {
+				if (child.owner != ownerContext.filterOwnerIdentity()) {
+					throw new IllegalStateException("memo capture included another evaluation");
+				}
+			}
+			capturedMemo.settle(values, children, complete);
+			return capturedMemo;
+		} finally {
+			if (capturedMemo.contents == null) {
+				capturedMemo.settle(new FrozenOutcome[0], new Frozen[0], false);
+			}
+			clearReferences();
+		}
 	}
 
 	/**
@@ -56,21 +264,47 @@ final class NativeFilterLease {
 		}
 	}
 
-	NativeBooleanFilter borrow(NativeBooleanFilter original) {
+	synchronized NativeBooleanFilter borrow(NativeBooleanFilter original) {
 		if (finished) {
 			throw new IllegalStateException("native filter lease is already finalized");
 		}
-		Entry existing = borrowed.get(original);
+		if (original instanceof BorrowedFilter facade) {
+			NativeFilterLease outer = facade.entry.owner;
+			if (outer == this) {
+				return original;
+			}
+			if (parent != null && parent != outer) {
+				throw new IllegalArgumentException("one native attempt cannot borrow unrelated attempts");
+			}
+			parent = outer;
+			if (facade.entry.recorder == null) {
+				Entry semantic = borrowed == null ? null : borrowed.get(original);
+				if (semantic == null) {
+					if (borrowed == null) {
+						borrowed = new IdentityHashMap<>();
+					}
+					semantic = new Entry(this, original, null, false);
+					borrowed.put(original, semantic);
+					entries.add(semantic);
+				}
+				return semantic.facade;
+			}
+			original = facade.entry.attempt;
+		}
+		Entry existing = borrowed == null ? null : borrowed.get(original);
 		if (existing != null) {
 			return existing.facade;
 		}
 
+		if (borrowed == null) {
+			borrowed = new IdentityHashMap<>();
+		}
 		NativeBooleanFilter attempt;
 		RecordingNativeBooleanFilter recorder = null;
 		if (original instanceof RecordingNativeBooleanFilter recording) {
 			NativeBooleanFilter delegate = borrow(recording.delegate);
 			recorder = new RecordingNativeBooleanFilter(delegate, recording.filter, recording.statistics,
-					recording.adaptive);
+					recording.adaptive, recording.origin, this);
 			attempt = recorder;
 		} else if (original instanceof ExistsFilter exists) {
 			attempt = new ExistsFilter(borrow(exists.subPlan), exists.retainedBindingNames);
@@ -78,13 +312,42 @@ final class NativeFilterLease {
 			attempt = original;
 		}
 
-		Entry entry = new Entry(attempt, recorder, attempt != original);
+		Entry entry = new Entry(this, attempt, recorder, attempt != original);
 		borrowed.put(original, entry);
 		entries.add(entry);
 		return entry.facade;
 	}
 
-	SlotPlan borrow(SlotPlan plan) {
+	synchronized SlotPlan borrow(SlotPlan plan) {
+		SlotPlan existing = plans.get(plan);
+		if (existing != null) {
+			return existing;
+		}
+		SlotPlan result = borrowPlan(plan);
+		plans.put(plan, result);
+		return result;
+	}
+
+	private SlotPlan borrowPlan(SlotPlan plan) {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return new NativeValuesFoldPlan(borrow(guard.folded), borrow(guard.original), guard.inputNames,
+					guard.inputSlots);
+		}
+		if (LmdbNativeInteriorPlans.carrier(plan)) {
+			return LmdbNativeInteriorPlans.borrow(plan, this);
+		}
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.withFilterAttempt(this);
+		}
+		if (plan instanceof NativeGraphPlan graph) {
+			return graph.withFilterAttempt(this);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return new LateralPlan(borrow(lateral.left), borrow(lateral.right), lateral.rightInputMask);
+		}
+		if (plan instanceof MergeOrderedJoinPlan merge) {
+			return new MergeOrderedJoinPlan(borrow(merge.join), borrow(merge.orderedFallback), merge.keySeqSlots);
+		}
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			return borrow(multiJoin);
 		}
@@ -108,7 +371,9 @@ final class NativeFilterLease {
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
 			return new LeftJoinPlan(borrow(leftJoin.left), borrow(leftJoin.right), leftJoin.lexicalSharedSlots,
-					leftJoin.lexicalHashKeys, leftJoin.lexicalProblemSlots);
+					leftJoin.lexicalHashKeys, leftJoin.lexicalProblemSlots,
+					leftJoin.lexicalCondition == null ? null : borrow(leftJoin.lexicalCondition),
+					leftJoin.lexicalConditionMask);
 		}
 		if (plan instanceof UnionPlan union) {
 			return new UnionPlan(borrow(union.left), borrow(union.right));
@@ -132,6 +397,10 @@ final class NativeFilterLease {
 	}
 
 	MultiJoinPlan borrow(MultiJoinPlan plan) {
+		SlotPlan existing = plans.get(plan);
+		if (existing != null) {
+			return (MultiJoinPlan) existing;
+		}
 		SlotPlan[] children = new SlotPlan[plan.children.length];
 		for (int i = 0; i < children.length; i++) {
 			children[i] = borrow(plan.children[i]);
@@ -141,18 +410,35 @@ final class NativeFilterLease {
 			MaskedFilter filter = plan.filters[i];
 			filters[i] = new MaskedFilter(borrow(filter.filter), filter.mask, filter.adaptive, filter.plannedDepth);
 		}
-		return new MultiJoinPlan(children, filters);
+		MultiJoinPlan result = new MultiJoinPlan(children, filters);
+		plans.put(plan, result);
+		return result;
+	}
+
+	MultiJoinPlan.OrderedPlan borrow(MultiJoinPlan.OrderedPlan plan) {
+		SlotPlan[] order = new SlotPlan[plan.order.length];
+		for (int i = 0; i < order.length; i++) {
+			order[i] = borrow(plan.order[i]);
+		}
+		return new MultiJoinPlan.OrderedPlan(order, plan.filterDepth, plan.placement, plan.sunkCount);
 	}
 
 	void commit() {
 		finish(!suppressFeedback, null);
 	}
 
-	void discard() {
+	synchronized void discard() {
 		if (finished) {
 			return;
 		}
 		finished = true;
+		// Retain diagnostics only for a terminal failed root. A discarded trial never trains or poisons its winner.
+		for (Outcome outcome : outcomes()) {
+			outcome.context.mergeDiscardedFilterOutcome(outcome);
+		}
+		if (outcomes != null) {
+			outcomes.clear();
+		}
 		Throwable failure = null;
 		for (int i = entries.size() - 1; i >= 0; i--) {
 			Entry entry = entries.get(i);
@@ -169,26 +455,83 @@ final class NativeFilterLease {
 				continue;
 			}
 			try {
-				entry.attempt.close();
+				(entry.cleanup == null ? entry.attempt : entry.cleanup).close();
 			} catch (RuntimeException | Error closeFailure) {
 				failure = addFailure(failure, closeFailure);
 			}
 		}
+		clearReferences();
 		if (failure != null) {
 			rethrow(failure);
 		}
 	}
 
 	void abort(Throwable primary) {
-		finish(false, primary);
+		finish(false, primary, null);
+	}
+
+	/** Shares terminal close identity across attempts that could not bind a query execution context. */
+	void abort(Throwable primary, Set<NativeBooleanFilter> closedFilters) {
+		finish(false, primary, closedFilters);
 	}
 
 	private void finish(boolean publishFeedback, Throwable primary) {
+		finish(publishFeedback, primary, null);
+	}
+
+	private synchronized void finish(boolean publishFeedback, Throwable primary, Set<NativeBooleanFilter> closedFilters) {
 		if (finished) {
 			return;
 		}
 		finished = true;
+		Throwable failure = closeEntries(primary, publishFeedback, closedFilters);
+		try {
+			// Acceptance is a separate gate from EOF. Child summaries merge only after every owner closed successfully.
+			if (!capture && !suppressFeedback && (publishFeedback || primary != null)) {
+				for (Outcome outcome : outcomes()) {
+					if (failure != null) {
+						outcome.incomplete = true;
+					}
+					if (parent == null) {
+						outcome.context.mergeFilterOutcome(outcome);
+					} else {
+						parent.merge(outcome);
+					}
+				}
+			}
+			if (!capture && !suppressFeedback && publishFeedback && !inclusions().isEmpty()) {
+				if (parent == null) {
+					for (Frozen frozen : inclusions()) {
+						ownerContext.mergeFrozenFilterOutcomes(frozen);
+					}
+				} else {
+					for (Frozen frozen : inclusions()) {
+						parent.include(frozen, ownerContext);
+					}
+				}
+			}
+			if (capture && primary != null) {
+				for (Outcome outcome : outcomes()) {
+					outcome.context.mergeDiscardedFilterOutcome(outcome);
+				}
+			}
+		} catch (RuntimeException | Error publicationFailure) {
+			failure = addFailure(failure, publicationFailure);
+		} finally {
+			if (capture && capturedMemo.contents == null) {
+				capturedMemo.settle(new FrozenOutcome[0], new Frozen[0], false);
+			}
+			clearReferences();
+		}
+		KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, primary);
+	}
+
+	private Throwable closeEntries(Throwable primary, boolean publishFeedback, Set<NativeBooleanFilter> closedFilters) {
 		Throwable failure = primary;
+		boolean cachedProducer = capture;
+		for (NativeFilterLease ancestor = parent; !cachedProducer && ancestor != null; ancestor = ancestor.parent) {
+			cachedProducer = ancestor.capture;
+		}
 		for (int i = entries.size() - 1; i >= 0; i--) {
 			Entry entry = entries.get(i);
 			if (!entry.used && !suppressFeedback) {
@@ -197,43 +540,269 @@ final class NativeFilterLease {
 			if (!publishFeedback && entry.recorder != null) {
 				entry.recorder.discardOutcomes();
 			}
+			if (cachedProducer && !entry.owned && entry.cleanup != null) {
+				// A probe's producer and a later ordinary producer may borrow the same semantic template. Its real
+				// owner is the query resource registry; closing one capture cannot revoke another producer's input.
+				continue;
+			}
+			if (closedFilters != null && !entry.owned && !(entry.attempt instanceof BorrowedFilter)
+					&& !closedFilters.add(entry.attempt)) {
+				continue;
+			}
 			try {
-				entry.attempt.close();
+				(entry.cleanup == null ? entry.attempt : entry.cleanup).close();
 			} catch (RuntimeException | Error closeFailure) {
 				failure = addFailure(failure, closeFailure);
 			}
 		}
-		if (primary == null && failure != null) {
-			rethrow(failure);
+		return failure;
+	}
+
+	/** The lease monitor protects lazy allocation and every use of these attempt-local registries. */
+	private Collection<Outcome> outcomes() {
+		return outcomes == null ? Collections.emptyList() : outcomes.values();
+	}
+
+	private Set<Frozen> inclusions() {
+		return inclusions == null ? Collections.emptySet() : inclusions.keySet();
+	}
+
+	private void clearReferences() {
+		plans.clear();
+		if (borrowed != null) {
+			borrowed.clear();
 		}
+		entries.clear();
+		if (outcomes != null) {
+			outcomes.clear();
+		}
+		if (inclusions != null) {
+			inclusions.clear();
+		}
+		parent = null;
+		ownerContext = null;
 	}
 
 	private static Throwable addFailure(Throwable primary, Throwable later) {
-		if (primary == null) {
-			return later;
-		}
-		if (primary != later) {
-			primary.addSuppressed(later);
-		}
-		return primary;
+		return KernelRuntime.closeResource(() -> rethrow(later), primary);
 	}
 
 	private static void rethrow(Throwable failure) {
-		if (failure instanceof RuntimeException runtimeException) {
-			throw runtimeException;
+		KernelRuntime.rethrowCloseFailure(failure);
+	}
+
+	void unqualified(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
+		Outcome outcome = openUnqualified(template, context);
+		outcome.terminal(0L, 0L, false);
+	}
+
+	Outcome openUnqualified(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
+		Outcome outcome = open(template, context);
+		outcome.incomplete = true;
+		return outcome;
+	}
+
+	private synchronized Outcome open(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
+		if (finished) {
+			throw new IllegalStateException("native filter attempt already finalized");
 		}
-		throw (Error) failure;
+		bindOwner(context);
+		context.registerFilterTemplate(template.origin);
+		Outcome result = outcomes == null ? null : outcomes.get(template.origin);
+		if (result == null) {
+			result = new Outcome(template.origin, context);
+			if (outcomes == null) {
+				outcomes = new IdentityHashMap<>();
+			}
+			outcomes.put(template.origin, result);
+		} else if (result.context != context) {
+			throw new IllegalStateException("native filter attempt crossed evaluation owners");
+		}
+		result.open();
+		return result;
+	}
+
+	private synchronized void merge(Outcome other) {
+		if (finished) {
+			throw new IllegalStateException("native parent attempt already finalized");
+		}
+		bindOwner(other.context);
+		Outcome result = outcomes == null ? null : outcomes.get(other.template);
+		if (result == null) {
+			result = new Outcome(other.template, other.context);
+			if (outcomes == null) {
+				outcomes = new IdentityHashMap<>();
+			}
+			outcomes.put(other.template, result);
+		}
+		result.merge(other);
+	}
+
+	/** Terminal aggregates carry no physical-population authority. Counts are primitive and per open. */
+	static final class Outcome {
+		final RecordingNativeBooleanFilter template;
+		final NativeExecutionContext context;
+		long opens, terminals, exhausted, passed, rejected;
+		boolean incomplete;
+		boolean inputQualified = true;
+
+		Outcome(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
+			this.template = template;
+			this.context = context;
+		}
+
+		synchronized void open() {
+			opens++;
+		}
+
+		synchronized void terminal(long accepted, long filtered, boolean complete) {
+			terminals++;
+			passed += accepted;
+			rejected += filtered;
+			if (complete) {
+				exhausted++;
+			} else {
+				incomplete = true;
+			}
+		}
+
+		synchronized void merge(Outcome other) {
+			opens += other.opens;
+			terminals += other.terminals;
+			exhausted += other.exhausted;
+			passed += other.passed;
+			rejected += other.rejected;
+			incomplete |= other.incomplete;
+			inputQualified &= other.inputQualified;
+		}
+
+		void publish(boolean rootComplete) {
+			boolean complete = rootComplete && opens > 0L && opens == terminals && opens == exhausted && !incomplete;
+			EvaluationStatistics.FilterOutcomeObservation observation = complete
+					? EvaluationStatistics.FilterOutcomeObservation.completed(passed, rejected)
+					: EvaluationStatistics.FilterOutcomeObservation.incomplete(passed, rejected,
+							"native-filter-input-incomplete");
+			try {
+				if (template.preparedOutcome == null) {
+					template.statistics.recordFilterOutcome(template.filter, observation);
+				} else {
+					template.preparedOutcome.record(observation, inputQualified);
+				}
+			} catch (RuntimeException ignored) {
+				// Optional feedback may not change query semantics; Error identity is preserved.
+			}
+		}
+	}
+
+	/** One physical input opening, never retained by the compiled template or shared between workers. */
+	static final class Invocation implements NativeBooleanFilter {
+		final NativeBooleanFilter delegate;
+		final Outcome outcome;
+		long passed, rejected;
+		boolean eof, incomplete, closed;
+
+		Invocation(RecordingNativeBooleanFilter template, NativeBooleanFilter delegate, RowState row) {
+			this.delegate = delegate;
+			SyntheticValueSource scope = row.evaluationScope();
+			NativeExecutionContext context = scope == null ? null : scope.executionContext().filterOutcomeOwner();
+			this.outcome = context == null ? null
+					: template.attempt == null
+							? context.openFilterOutcome(template)
+							: template.attempt.open(template, context);
+			if (outcome != null && template.preparedOutcome != null) {
+				synchronized (outcome) {
+					outcome.inputQualified &= template.preparedOutcome.acceptsInput(row.base);
+				}
+			}
+		}
+
+		@Override
+		public boolean accept(RowState row) {
+			boolean accepted = delegate.accept(row);
+			recordDecision(accepted);
+			return accepted;
+		}
+
+		@Override
+		public int selectBatch(NativeBatch batch, int[] sel, int n, RowState row) {
+			int accepted = delegate.selectBatch(batch, sel, n, row);
+			passed += accepted;
+			rejected += n - accepted;
+			return accepted;
+		}
+
+		@Override
+		public void recordDecision(boolean accepted) {
+			if (accepted) {
+				passed++;
+			} else {
+				rejected++;
+			}
+		}
+
+		@Override
+		public void inputExhausted() {
+			eof = true;
+		}
+
+		@Override
+		public void incompleteInput() {
+			incomplete = true;
+		}
+
+		@Override
+		public long batchReadMask() {
+			return delegate.batchReadMask();
+		}
+
+		@Override
+		public NativePredicateCapabilities capabilities() {
+			return delegate.capabilities();
+		}
+
+		@Override
+		public KernelTermKindProof pageProof(int[] slots) {
+			return delegate.pageProof(slots);
+		}
+
+		@Override
+		public boolean variablePredicateExists() {
+			return delegate.variablePredicateExists();
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			boolean clean = false;
+			try {
+				delegate.close();
+				clean = true;
+			} finally {
+				if (outcome != null) {
+					outcome.terminal(passed, rejected, clean && eof && !incomplete);
+				}
+			}
+		}
 	}
 
 	private static final class Entry {
+		final NativeFilterLease owner;
 		final NativeBooleanFilter attempt;
 		final RecordingNativeBooleanFilter recorder;
 		/** True when {@code attempt} is a lease-constructed copy the lease may close on every terminal path. */
 		final boolean owned;
 		final NativeBooleanFilter facade = new BorrowedFilter(this);
-		boolean used;
+		volatile boolean used;
+		/** A real evaluation scope or worker handoff, independent of a capture's preassigned memo owner. */
+		volatile boolean contextual;
+		NativeBooleanFilter cleanup;
 
-		Entry(NativeBooleanFilter attempt, RecordingNativeBooleanFilter recorder, boolean owned) {
+		Entry(NativeFilterLease owner, NativeBooleanFilter attempt, RecordingNativeBooleanFilter recorder,
+				boolean owned) {
+			this.owner = owner;
 			this.attempt = attempt;
 			this.recorder = recorder;
 			this.owned = owned;
@@ -247,15 +816,65 @@ final class NativeFilterLease {
 			this.entry = entry;
 		}
 
+		private void use(RowState row) {
+			if (row == null && entry.used) {
+				return;
+			}
+			SyntheticValueSource scope = row == null ? null : row.evaluationScope();
+			NativeExecutionContext execution = scope == null ? null : scope.executionContext();
+			NativeExecutionContext owner = entry.owner.ownerContext;
+			if (entry.used && entry.contextual && owner != null) {
+				validateOwner(owner, execution);
+				return;
+			}
+			if (!entry.used || execution != null) {
+				entry.owner.use(entry, execution, false);
+			}
+		}
+
+		private void use(NativeScalarPlan.WorkerContext context) {
+			NativeLmdbQuerySource source = context == null ? null : context.source();
+			NativeExecutionContext execution = source instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext() : null;
+			NativeExecutionContext owner = entry.owner.ownerContext;
+			if (entry.used && entry.contextual && owner != null) {
+				validateOwner(owner, execution);
+			} else if (!entry.used || !entry.contextual || owner == null && execution != null) {
+				entry.owner.use(entry, execution, true);
+			}
+		}
+
+		private static void validateOwner(NativeExecutionContext owner, NativeExecutionContext execution) {
+			if (execution != null && execution.filterOutcomeOwner() != owner) {
+				throw new IllegalArgumentException("native filter attempt crossed evaluation owners");
+			}
+		}
+
+		@Override
+		public NativeBooleanFilter open(RowState row) {
+			use(row);
+			if (entry.recorder != null) {
+				return entry.recorder.open(row);
+			}
+			// Plain facades do not invoke their parent on open. Carry the actual scope through even when the input is
+			// empty, so each parent protects its reusable template until the query owner releases it.
+			NativeBooleanFilter parent = entry.attempt;
+			while (parent instanceof BorrowedFilter borrowed) {
+				borrowed.use(row);
+				parent = borrowed.entry.attempt;
+			}
+			return this;
+		}
+
 		@Override
 		public boolean accept(RowState row) {
-			entry.used = true;
+			use(row);
 			return entry.attempt.accept(row);
 		}
 
 		@Override
 		public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
-			entry.used = true;
+			use(scratch);
 			return entry.attempt.selectBatch(batch, sel, n, scratch);
 		}
 
@@ -281,7 +900,7 @@ final class NativeFilterLease {
 
 		@Override
 		public NativeBooleanFilter forkForParallelWorker() {
-			entry.used = true;
+			use((NativeScalarPlan.WorkerContext) null);
 			if (entry.recorder != null) {
 				return entry.recorder.forkForParallelWorker(entry.recorder);
 			}
@@ -290,13 +909,15 @@ final class NativeFilterLease {
 
 		@Override
 		public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
-			entry.used = true;
+			use(context);
 			return entry.attempt.forkForParallelWorker(context);
 		}
 
 		@Override
 		public void close() {
-			entry.used = true;
+			if (!entry.used) {
+				entry.owner.use(entry, null, false);
+			}
 		}
 	}
 }

@@ -29,7 +29,18 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		T open() throws IOException;
 	}
 
+	@FunctionalInterface
+	interface AttemptOpener<T> {
+		T open(NativeFilterLease filters) throws IOException;
+	}
 	final Opener<T> opener;
+	private final AttemptOpener<T> attemptOpener;
+	private NativeFilterLease filterAttempt;
+	private boolean ownsFilterAttempt;
+	private NativeFilterLease filterParent;
+	/** A retryable opening failure awaits the decision owner's disposition. */
+	private Throwable pendingOpenFailure;
+
 	/**
 	 * Work paid before the first row can be emitted — a parallel group's worker startup, a hash join's build sweep.
 	 * Zero for strategies that stream from the first probe.
@@ -69,8 +80,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	/** Changes only the result carrier; the original opener, quote, dominance and unopened release remain owned. */
 	<R> LmdbNativeStrategyProposal<R> map(Function<? super T, ? extends R> mapper, String mappedTag) {
-		LmdbNativeStrategyProposal<R> result = new LmdbNativeStrategyProposal<>(() -> {
-			T value = open();
+		LmdbNativeStrategyProposal<R> result = new LmdbNativeStrategyProposal<>(filters -> {
+			T value = openInFilterAttempt(filters);
 			if (value == null) {
 				return null;
 			}
@@ -239,6 +250,36 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork, double estRows,
 			String tag, Runnable releaseIfUnused) {
 		this.opener = opener;
+		this.attemptOpener = null;
+		this.work = work;
+		this.startupWork = startupWork == null ? LmdbNativeWork.ZERO : startupWork;
+		this.estRows = estRows;
+		this.tag = tag;
+		this.releaseIfUnused = releaseIfUnused;
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, double estCost, String tag) {
+		this(opener, LmdbNativeWork.exact(estCost), tag, () -> {
+		});
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, double estCost, String tag, Runnable releaseIfUnused) {
+		this(opener, LmdbNativeWork.exact(estCost), tag, releaseIfUnused);
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, LmdbNativeWork work, String tag, Runnable releaseIfUnused) {
+		this(opener, work, LmdbNativeWork.ZERO, Double.NaN, tag, releaseIfUnused, true);
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork,
+			double estRows, String tag, Runnable releaseIfUnused) {
+		this(opener, work, startupWork, estRows, tag, releaseIfUnused, true);
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork,
+			double estRows, String tag, Runnable releaseIfUnused, boolean probeable) {
+		this.opener = null;
+		this.attemptOpener = opener;
 		this.work = work;
 		this.startupWork = startupWork == null ? LmdbNativeWork.ZERO : startupWork;
 		this.estRows = estRows;
@@ -365,6 +406,55 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	synchronized T open() throws IOException {
+		return open(false);
+	}
+
+	/** Leaves a failed private opening intact for the dispatcher's shared retry or terminal cleanup decision. */
+	synchronized T openForDecision() throws IOException {
+		return open(true);
+	}
+
+	private T open(boolean deferFailure) throws IOException {
+		if (closed || opened) {
+			throw new IllegalStateException("strategy proposal already opened or closed");
+		}
+		if (attemptOpener == null) {
+			return openInFilterAttempt(null);
+		}
+		NativeFilterLease filters = new NativeFilterLease(filterParent);
+		filterAttempt = filters;
+		ownsFilterAttempt = true;
+		try {
+			return openInFilterAttempt(filters);
+		} catch (IOException | RuntimeException | Error failure) {
+			if (deferFailure) {
+				pendingOpenFailure = failure;
+				throw failure;
+			}
+			Throwable retained = KernelRuntime.closeResource(() -> filters.abort(failure), failure);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+			throw failure;
+		}
+	}
+
+	/** Whether an opened, unselected candidate still owns a filter attempt. */
+	synchronized boolean ownsUnselectedFilterAttempt() {
+		return ownsFilterAttempt && filterAttempt != null && !filterAttempt.isSelected();
+	}
+
+	/** Retires private work after a replacement opens or the caller takes over fallback responsibility. */
+	synchronized void discardUnselectedAttempt() {
+		try {
+			if (ownsUnselectedFilterAttempt()) {
+				filterAttempt.discard();
+			}
+		} finally {
+			pendingOpenFailure = null;
+		}
+	}
+
+	/** An adapter forwards its existing attempt; it does not allocate or own a second lease. */
+	synchronized T openInFilterAttempt(NativeFilterLease filters) throws IOException {
 		if (closed) {
 			throw new IllegalStateException("strategy proposal already closed");
 		}
@@ -372,6 +462,9 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			throw new IllegalStateException("strategy proposal already opened");
 		}
 		opened = true;
+		if (filterAttempt == null) {
+			filterAttempt = filters;
+		}
 		try {
 			if (parallelReservation != null && !parallelReservation.admit()) {
 				parallelReservation.close();
@@ -380,14 +473,16 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			if (beforeOpen != null) {
 				beforeOpen.run();
 			}
-			T result = aggregateExecution == null ? opener.open() : aggregateExecution.open(opener);
+			Opener<T> selectedOpener = attemptOpener == null ? opener : () -> attemptOpener.open(filters);
+			T result = aggregateExecution == null ? selectedOpener.open() : aggregateExecution.open(selectedOpener);
 			if (result == null && parallelReservation != null) {
 				parallelReservation.close();
 			}
 			return result;
 		} catch (IOException | RuntimeException | Error failure) {
 			if (parallelReservation != null) {
-				parallelReservation.close();
+				Throwable retained = KernelRuntime.closeResource(parallelReservation, failure);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			}
 			throw failure;
 		}
@@ -401,7 +496,33 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		beforeOpen = hook;
 	}
 
-	/** Releases admission reserved while costing a proposal that the dispatcher did not select. */
+	synchronized LmdbNativeStrategyProposal<T> filterParent(NativeFilterLease parent) {
+		if (opened || closed) {
+			throw new IllegalStateException("native filter parent must be bound before opening");
+		}
+		filterParent = parent;
+		return this;
+	}
+
+	/** Uses the dispatch site's parent unless the proposal already belongs to a nested owner. */
+	synchronized void defaultFilterParent(NativeFilterLease parent) {
+		if (filterParent == null) {
+			filterParent(parent);
+		}
+	}
+
+	synchronized NativeFilterLease filterAttempt() {
+		return filterAttempt;
+	}
+
+	void selected() {
+		NativeFilterLease filters = filterAttempt();
+		if (filters != null) {
+			filters.selected();
+		}
+	}
+
+	/** Unselected opens are discarded only after their cursor/materializer cleanup; old openers retain old behavior. */
 	@Override
 	public synchronized void close() {
 		if (closed) {
@@ -417,6 +538,13 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				}
 			}
 		}
+		if (ownsFilterAttempt && filterAttempt != null && !filterAttempt.isSelected()) {
+			if (pendingOpenFailure == null) {
+				filterAttempt.discard();
+			} else {
+				filterAttempt.abort(pendingOpenFailure);
+			}
+		}
 	}
 
 	/** Bridges one proposal: its tag is the candidate id and its quotes become feature counts. */
@@ -426,8 +554,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	/** Bridges one proposal; an interval without a finite ceiling is priced at {@code estimate} when one is known. */
 	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal, LmdbNativeWork estimate) {
-		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.of(proposal.tag, quote(proposal, estimate),
-				proposal::open, proposal::close);
+		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.<T>of(proposal.tag, quote(proposal, estimate),
+				proposal::open, proposal::close).withProposal(proposal);
 		return proposal.dominates().isEmpty() ? candidate : candidate.dominating(proposal.dominates());
 	}
 

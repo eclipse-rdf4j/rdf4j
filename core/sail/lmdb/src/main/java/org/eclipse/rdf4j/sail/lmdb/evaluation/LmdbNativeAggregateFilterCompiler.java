@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -114,12 +115,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		Term s = compileCorrelatedTerm(pattern.getSubjectVar(), NativePatternField.SUBJECT, bindingScope);
 		Term p = compileCorrelatedTerm(pattern.getPredicateVar(), NativePatternField.PREDICATE, bindingScope);
 		Term o = compileCorrelatedTerm(pattern.getObjectVar(), NativePatternField.OBJECT, bindingScope);
-		Term c = compileCorrelatedTerm(pattern.getContextVar(), NativePatternField.CONTEXT, bindingScope);
+		Term c = selectedContextTerm(pattern,
+				compileCorrelatedTerm(pattern.getContextVar(), NativePatternField.CONTEXT, bindingScope));
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
 		return new StatementPatternExistsFilter(source, s, p, o, c, contexts,
-				pattern.getScope() == Scope.NAMED_CONTEXTS);
+				pattern.getScope() == Scope.NAMED_CONTEXTS && !contexts.isFixed()
+						&& !(c.isConstant() && c.constant == NULL_CONTEXT_ID));
 	}
 
 	Term compileCorrelatedTerm(Var var, NativePatternField field) {
@@ -524,6 +527,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			boolean previousValueGuardsSupported = valueGuardsSupported;
 			valueGuardsSupported = false;
 			try {
+				SlotPlan emptyFiniteWitness = compileEmptyFiniteWitness(exists.getSubQuery());
+				if (emptyFiniteWitness != null) {
+					return new ExistsFilter(emptyFiniteWitness);
+				}
 				NativeBooleanFilter direct = compileDirectExists(exists);
 				if (direct != null) {
 					return direct;
@@ -665,7 +672,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		}
 		// Preserve both the slot-aware reads and the evaluation source when semantic expressions re-enter native
 		// EXISTS.
-		return new NativeValueOutcomeBooleanFilter(compileSemanticValue(strategy, expr, slotAwareContext()),
+		return NativeValueOutcomeBooleanFilter.prepareShared(descriptor, strategy, slotAwareContext(), null,
 				genericReadMask(expr));
 	}
 
@@ -689,8 +696,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					.prepare(() -> compileProjectedValue(compilingStrategy, pinned, compileContext, bindingScope));
 			return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, fallback, -1L);
 		}
-		return new NativeValueOutcomeBooleanFilter(
-				compileProjectedValue(compilingStrategy, pinned, compileContext, bindingScope), -1L);
+		return NativeValueOutcomeBooleanFilter.prepareShared(descriptor, compilingStrategy, compileContext,
+				bindingScope, -1L);
 	}
 
 	/**
@@ -720,6 +727,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 
 	private NativeBooleanFilter compileProjectedBoolean(ValueExpr expression, ConditionBindingScope bindingScope) {
 		if (expression instanceof Exists exists) {
+			SlotPlan emptyFiniteWitness = compileEmptyFiniteWitness(exists.getSubQuery());
+			if (emptyFiniteWitness != null) {
+				return new ExistsFilter(emptyFiniteWitness,
+						bindingScope.retainsAllBindings() ? null : bindingScope.bindingNames());
+			}
 			NativeBooleanFilter direct = compileDirectExists(exists, bindingScope);
 			if (direct != null) {
 				return direct;
@@ -748,6 +760,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					: new BooleanCombinationFilter(left, right, expression instanceof And);
 		}
 		return null;
+	}
+
+	/**
+	 * The direct EXISTS compiler can bypass tuple compilation for its single-pattern fast path. Run the exact finite
+	 * join proof first so an empty pure witness is visible to both direct and scoped EXISTS lowering.
+	 */
+	SlotPlan compileEmptyFiniteWitness(TupleExpr expr) {
+		return expr.getClass() == Join.class ? compileJoinWithAbsentFiniteValues((Join) expr) : null;
 	}
 
 	/**

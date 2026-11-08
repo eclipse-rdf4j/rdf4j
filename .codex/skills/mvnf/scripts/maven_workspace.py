@@ -44,18 +44,17 @@ OPTIONS_WITH_SEPARATE_VALUES = frozenset(
     }
 )
 
-OWNED_PROPERTIES = frozenset(
-    {
-        "maven.repo.local",
-        "maven.repo.local.head",
-        "rdf4j.build.root",
-        "rdf4j.test.outputDirectory",
-        "rdf4j.test.tmpRoot",
-        "rdf4j.test.tmpDirectory",
-        "java.io.tmpdir",
-        "formatter.skip",
-    }
-)
+OWNED_PROPERTIES = frozenset({
+    'formatter.skip',
+    'java.io.tmpdir',
+    'maven.repo.local',
+    'maven.repo.local.head',
+    'rdf4j.build.root',
+    'rdf4j.test.outputDirectory',
+    'rdf4j.test.tmpDirectory',
+    'rdf4j.test.tmpRoot',
+    'rdf4j.test.tmpdirArgLine',
+})
 
 OWNED_PROFILES = frozenset({"workspace-build-root"})
 

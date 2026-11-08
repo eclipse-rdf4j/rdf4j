@@ -462,6 +462,73 @@ class LmdbLegacyIndexDiscoveryTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(strings = { "present", "absent", "format-only", "snapshot-only", "bad-version",
+			"truncated-format", "truncated-snapshot" })
+	void currentMetadataAcceptsOnlyCompleteOrAbsentNamespaceAuthority(String state) throws Exception {
+		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), new LmdbStoreConfig()));
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			connection.setNamespace("example", "urn:example:");
+		} finally {
+			repository.shutDown();
+		}
+
+		switch (state) {
+		case "present" -> {
+		}
+		case "absent" -> {
+			putNamespaceMetadata(TripleStore.NAMESPACE_FORMAT_KEY, null);
+			putNamespaceMetadata(TripleStore.NAMESPACE_SNAPSHOT_KEY, null);
+		}
+		case "format-only" -> putNamespaceMetadata(TripleStore.NAMESPACE_SNAPSHOT_KEY, null);
+		case "snapshot-only" -> putNamespaceMetadata(TripleStore.NAMESPACE_FORMAT_KEY, null);
+		case "bad-version" -> putNamespaceMetadata(TripleStore.NAMESPACE_FORMAT_KEY,
+				ByteBuffer.allocate(Integer.BYTES).putInt(TripleStore.NAMESPACE_DATABASE_VERSION + 1).array());
+		case "truncated-format" -> putNamespaceMetadata(TripleStore.NAMESPACE_FORMAT_KEY, new byte[] { 1 });
+		case "truncated-snapshot" -> putNamespaceMetadata(TripleStore.NAMESPACE_SNAPSHOT_KEY, new byte[] { 0 });
+		default -> throw new AssertionError(state);
+		}
+		var before = snapshot(directory);
+		if (state.equals("present") || state.equals("absent")) {
+			validateCurrentMetadata();
+		} else {
+			assertThrows(IOException.class, this::validateCurrentMetadata, state);
+		}
+		assertThat(snapshot(directory)).isEqualTo(before);
+	}
+
+	private void validateCurrentMetadata() throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		assertThat(properties.load()).isTrue();
+		long valuesEnv = NULL;
+		long triplesEnv = NULL;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_env_create(handle));
+			valuesEnv = handle.get(0);
+			E(mdb_env_set_maxdbs(valuesEnv, 128));
+			E(mdb_env_open(valuesEnv, directory.resolve("values").toString(), MDB_NOTLS | MDB_RDONLY, 0664));
+			E(mdb_env_create(handle));
+			triplesEnv = handle.get(0);
+			E(mdb_env_set_maxdbs(triplesEnv, 128));
+			E(mdb_env_open(triplesEnv, directory.resolve("triples").toString(), MDB_NOTLS | MDB_RDONLY, 0664));
+			long selectedTriplesEnv = triplesEnv;
+			LmdbUtil.readTransaction(valuesEnv, (valuesStack, valuesTxn) -> LmdbUtil.readTransaction(
+					selectedTriplesEnv, (triplesStack, triplesTxn) -> {
+						LegacyStoreDiscovery.validateCurrentMetadata(triplesStack, valuesTxn, triplesTxn, properties);
+						return null;
+					}));
+		} finally {
+			if (triplesEnv != NULL) {
+				mdb_env_close(triplesEnv);
+			}
+			if (valuesEnv != NULL) {
+				mdb_env_close(valuesEnv);
+			}
+		}
+	}
+
+	@ParameterizedTest
 	@ValueSource(strings = { "version", "truncated", "index-set", "unknown-key", "missing" })
 	void rejectsMalformedTermIndexManifestWithoutMutation(String corruption) throws Exception {
 		extract("v2-610-default.zip", directory);

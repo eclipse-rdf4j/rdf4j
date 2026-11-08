@@ -122,6 +122,90 @@ final class NativeResultSteps {
 		};
 	}
 
+	static CloseableIteration<BindingSet> mapBindings(CloseableIteration<BindingSet> delegate,
+			Function<BindingSet, BindingSet> mapper) {
+		try {
+			return new MappedBindings(delegate, mapper);
+		} catch (Throwable failure) {
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(delegate, failure));
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	private static final class MappedBindings implements CloseableIteration<BindingSet>, CooperativeCancellation,
+			NativeExecutionContextCarrier {
+		private final CloseableIteration<BindingSet> delegate;
+		private final Function<BindingSet, BindingSet> mapper;
+		private final NativeExecutionContext context;
+		private final NativeExecutionContext.Lease lease;
+		private boolean closed;
+
+		MappedBindings(CloseableIteration<BindingSet> delegate, Function<BindingSet, BindingSet> mapper) {
+			this.delegate = delegate;
+			this.mapper = mapper;
+			context = NativeExecutionContextCarrier.contextOf(delegate);
+			lease = NativeExecutionContextCarrier.retain(delegate);
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return context;
+		}
+
+		@Override
+		public boolean hasNext() {
+			if (closed) {
+				return false;
+			}
+			try {
+				boolean present = delegate.hasNext();
+				if (!present) {
+					if (lease != null) {
+						lease.exhausted();
+					}
+					close();
+				}
+				return present;
+			} catch (Throwable failure) {
+				return failed(failure);
+			}
+		}
+
+		@Override
+		public BindingSet next() {
+			if (closed) {
+				throw new NoSuchElementException();
+			}
+			try {
+				return mapper.apply(delegate.next());
+			} catch (Throwable failure) {
+				failed(failure);
+				throw new AssertionError("unreachable");
+			}
+		}
+
+		private boolean failed(Throwable failure) {
+			if (lease != null) {
+				lease.failed();
+			}
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
+			throw new AssertionError("unreachable");
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			return !closed && CooperativeCancellation.forward(delegate);
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
+			}
+		}
+	}
+
 	static CloseableIteration<BindingSet> rdf(NativeResultCursor cursor) {
 		return new RdfIteration(cursor);
 	}

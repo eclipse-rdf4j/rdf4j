@@ -70,6 +70,7 @@ public class LmdbValueGcRecoveryTest {
 		CountDownLatch secondInlineGcFailed = new CountDownLatch(1);
 		CountDownLatch commitsFinished = new CountDownLatch(2);
 		AtomicInteger capacityFaults = new AtomicInteger();
+		AtomicInteger inlineMaintenanceFaults = new AtomicInteger();
 		AtomicInteger finalMaintenanceFaults = new AtomicInteger();
 		AtomicLong mapBefore = new AtomicLong();
 		AtomicBoolean armed = new AtomicBoolean();
@@ -102,6 +103,18 @@ public class LmdbValueGcRecoveryTest {
 
 							@Override
 							public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
+								injectGcFault();
+								super.gcIds(ids, nextIds);
+							}
+
+							@Override
+							boolean gcIdsIfReaderAvailable(Collection<Long> ids, Collection<Long> nextIds,
+									ImmediateValueIdLivenessChecker checker) throws IOException {
+								injectGcFault();
+								return super.gcIdsIfReaderAvailable(ids, nextIds, checker);
+							}
+
+							private void injectGcFault() throws IOException {
 								if (armed.get()) {
 									attemptedInlineGc.set(true);
 								}
@@ -111,6 +124,8 @@ public class LmdbValueGcRecoveryTest {
 									int fault = capacityFaults.incrementAndGet();
 									if (finalMaintenance.get()) {
 										finalMaintenanceFaults.incrementAndGet();
+									} else {
+										inlineMaintenanceFaults.incrementAndGet();
 									}
 									if (fault == 1) {
 										firstGcEntered.countDown();
@@ -120,7 +135,6 @@ public class LmdbValueGcRecoveryTest {
 									}
 									LmdbUtil.checkMapFull(MDB_MAP_FULL);
 								}
-								super.gcIds(ids, nextIds);
 							}
 						}, TripleStore::new);
 			}
@@ -195,6 +209,8 @@ public class LmdbValueGcRecoveryTest {
 			assertThat(secondInlineGcFailed.getCount()).as("both inline publications must encounter a full map")
 					.isZero();
 			assertThat(capacityFaults.get()).isGreaterThanOrEqualTo(3);
+			assertThat(inlineMaintenanceFaults.get()).as("both inline publications must encounter a capacity fault")
+					.isGreaterThanOrEqualTo(2);
 			assertThat(backing.valueStore().mapSizeBytes()).isGreaterThan(mapBefore.get());
 			assertThat(finalMaintenanceFaults.get()).as("final maintenance must encounter the capacity fault")
 					.isPositive();

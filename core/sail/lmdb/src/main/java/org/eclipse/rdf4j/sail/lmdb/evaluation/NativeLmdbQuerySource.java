@@ -76,6 +76,19 @@ public interface NativeLmdbQuerySource {
 		}
 	}
 
+	/**
+	 * Optionally retains dictionary-term membership for this query source's current paired read view. A successful
+	 * result certifies that subsequent dictionary lookups for the same source continue to use the retained mapping;
+	 * {@code false} declines to certify the mapping. Composite sources may have retained some earlier child views
+	 * before a later contributing source declines, so this operation is intended only after a complete finite candidate
+	 * is already known absent. Implementations must establish retention under the dictionary's native read barrier.
+	 * Synthetic and composite sources may opt in only by delegating to every source whose dictionary lookup or
+	 * statements contribute to the proof. The default is deliberately conservative.
+	 */
+	default boolean tryRetainDictionaryTermMembership() throws QueryEvaluationException {
+		return false;
+	}
+
 	Value lazyValue(long id) throws QueryEvaluationException;
 
 	/** Materializes a value using the complete static position mask of its lexical binding. */
@@ -222,10 +235,11 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Opens a scan preserving the ordinary candidate-capable encounter order exposed by
-	 * {@link #statements(long, long, long, long, AdjacencyAccessObserver)}. Order-sensitive native attempts use this to
-	 * replay the same row order as generic evaluation after speculation declines. This is not a source mandate:
-	 * implementations may still select adjacency or LMDB, but must not substitute a different physical index order.
+	 * Opens a scan preserving the complete encounter order of the same source's ordinary generic statement access.
+	 * Order-sensitive native attempts use this to replay that row order after speculation declines. Implementations may
+	 * still select adjacency or LMDB, provided their complete varying key order agrees with generic access; a shared
+	 * leading field is insufficient. Sources whose ordinary native and generic accesses already share one order may use
+	 * this default. Sources that arbitrate different physical orders must implement the constraint.
 	 */
 	default RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {

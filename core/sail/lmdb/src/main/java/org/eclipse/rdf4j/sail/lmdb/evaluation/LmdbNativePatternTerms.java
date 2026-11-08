@@ -33,8 +33,29 @@ final class Term {
 	final int slot;
 	final long constant;
 	final boolean bindConstant;
+	/** Fixed-valued model variables preserve an already-present output; equality certificates do not. */
+	final boolean preserveExisting;
+	final boolean readOnly;
+	/** Earlier physical fields that must equal this one, independent of its output role. */
+	final int equalFields;
 
 	Term(int slot, long constant, boolean bindConstant) {
+		this(slot, constant, bindConstant, false);
+	}
+
+	private Term(int slot, long constant, boolean bindConstant, boolean preserveExisting) {
+		this(slot, constant, bindConstant, preserveExisting, false);
+	}
+
+	private Term(int slot, long constant, boolean bindConstant, boolean preserveExisting, boolean readOnly) {
+		this(slot, constant, bindConstant, preserveExisting, readOnly, 0);
+	}
+
+	private Term(int slot, long constant, boolean bindConstant, boolean preserveExisting, boolean readOnly,
+			int equalFields) {
+		this.equalFields = equalFields;
+		this.readOnly = readOnly;
+		this.preserveExisting = preserveExisting;
 		this.slot = slot;
 		this.constant = constant;
 		this.bindConstant = bindConstant;
@@ -56,6 +77,33 @@ final class Term {
 		return new Term(slot, constant, true);
 	}
 
+	/** A valued nonconstant Var probes its fixed field and only supplies a previously absent named binding. */
+	static Term fixedValueSlot(int slot, long constant) {
+		return new Term(slot, constant, true, true);
+	}
+
+	static Term inputSlot(int slot) {
+		return new Term(slot, UNKNOWN, false, false, true);
+	}
+
+	/** Tests an original entry constraint without confusing a preserved output with its fixed scan field. */
+	boolean matchesEntryField(long current, long actual) {
+		if (isConstant() && constant != actual) { return false; }
+		if (!hasSlot() || isConstant() && !bindConstant || current == UNKNOWN) { return true; }
+		if (readOnly && current == 0L) { return true; }
+		return preserveExisting ? current != 0L : current == actual;
+	}
+
+	Term withConstant(long value) {
+		return value == constant ? this
+				: new Term(slot, value, bindConstant, preserveExisting, readOnly, equalFields);
+	}
+
+	Term withEqualFields(int fields) {
+		return fields == equalFields ? this
+				: new Term(slot, constant, bindConstant, preserveExisting, readOnly, fields);
+	}
+
 	boolean hasSlot() {
 		return slot >= 0;
 	}
@@ -68,7 +116,8 @@ final class Term {
 		if (isConstant()) {
 			return constant;
 		}
-		return slot >= 0 ? slots[slot] : UNKNOWN;
+		long value = slot >= 0 ? slots[slot] : UNKNOWN;
+		return readOnly && value == 0L ? UNKNOWN : value;
 	}
 
 	/**
@@ -82,7 +131,7 @@ final class Term {
 		if (!bindConstant || slot < 0 || row.slots[slot] == UNKNOWN) {
 			return true;
 		}
-		return row.bindOrCheckTerm(slot, constant);
+		return preserveExisting ? row.slots[slot] != 0L : row.bindOrCheckTerm(slot, constant);
 	}
 
 	/** Whether every bound-entry constant of {@code pattern} agrees with the slot the row already holds for it. */

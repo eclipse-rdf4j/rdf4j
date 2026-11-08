@@ -57,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -373,7 +374,7 @@ class ArrayBindingBasedQueryEvaluationContextTest {
 
 	private static <T extends QueryModelNode> T findFirst(QueryModelNode root, Class<T> type) {
 		List<T> matches = new ArrayList<>(1);
-		root.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) throws RuntimeException {
 				if (matches.isEmpty() && type.isInstance(node)) {

@@ -84,8 +84,7 @@ class LmdbMapGrowthCoordinatorTest {
 				}
 			});
 			assertTrue(evaluating.await(2, TimeUnit.SECONDS));
-			ExecutionException failure = assertThrows(ExecutionException.class,
-					() -> query.get(3, TimeUnit.SECONDS),
+			ExecutionException failure = assertThrows(ExecutionException.class, () -> query.get(3, TimeUnit.SECONDS),
 					"the original query deadline must wake publication admission before publication completes");
 			Throwable cause = failure.getCause();
 			while (cause != null && !(cause instanceof QueryInterruptedException)) {
@@ -127,8 +126,7 @@ class LmdbMapGrowthCoordinatorTest {
 				}
 			});
 			assertTrue(evaluating.await(2, TimeUnit.SECONDS));
-			ExecutionException failure = assertThrows(ExecutionException.class,
-					() -> query.get(3, TimeUnit.SECONDS),
+			ExecutionException failure = assertThrows(ExecutionException.class, () -> query.get(3, TimeUnit.SECONDS),
 					"the original query deadline must wake prepared-write admission before its reservation closes");
 			Throwable cause = failure.getCause();
 			while (cause != null && !(cause instanceof QueryInterruptedException)) {
@@ -152,10 +150,26 @@ class LmdbMapGrowthCoordinatorTest {
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void growthReservesReplayEpochBeforeAdmittingAnotherWriter(ReplayScope scope, @TempDir Path dataDir)
 			throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-				.setTripleDBSize(512L * 1024L)
-				.setValueDBSize(256L * 1024L * 1024L)
-				.setMapGrowthThreshold(0.90d)
+		int statementCount = 1_500;
+		String payload = "payload".repeat(150);
+		String namespacePrefix = "growth-demand";
+		String growthNamespace = "urn:phased-growth:" + "n".repeat(2 * 1024 * 1024);
+		// Admission also reserves conservative dictionary demand for namespace lexical content. Bound all four
+		// records of each literal statement (subject, predicate, literal, datatype) by the largest record, including
+		// both surrounding scalar writes. Keep startup metadata and the mandatory free-space reserve below the 50%
+		// dictionary watermark. The namespace's ASCII payload alone exceeds the small TripleStore watermark even
+		// before seeding; seed pages only reduce that headroom. These inequalities isolate actual TripleStore growth.
+		long maxLabelBytes = DictionaryByteEstimate.utf8UpperBound(statementCount + "-" + payload);
+		long maxTermBytes = 4L * (maxLabelBytes + 32L) + 256L;
+		long statementDemand = (statementCount + 2L) * 4L * maxTermBytes;
+		long namespaceDemand = 4L * (DictionaryByteEstimate.utf8UpperBound(namespacePrefix)
+				+ DictionaryByteEstimate.utf8UpperBound(growthNamespace) + 32L) + 256L;
+		long dictionaryHeadroom = statementDemand + namespaceDemand + 128L + 2L * LmdbUtil.MIN_FREE_SPACE;
+		long mebibyte = 1024L * 1024L;
+		long dictionaryMapSize = Math.ceilDiv(2L * (dictionaryHeadroom + 1L), mebibyte) * mebibyte;
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleDBSize(2L * mebibyte)
+				.setValueDBSize(dictionaryMapSize)
+				.setMapGrowthThreshold(0.50d)
 				.setMapGrowthReadDrainTimeoutMillis(0L);
 		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
 		SailRepository repository = new SailRepository(store);
@@ -165,19 +179,24 @@ class LmdbMapGrowthCoordinatorTest {
 		IRI laterSubject = values.createIRI("urn:phased-growth:after-reopen");
 		try (RepositoryConnection reader = repository.getConnection()) {
 			reader.add(values.createIRI("urn:phased-growth:initial"), predicate, values.createLiteral("initial"));
+			assertTrue(dictionaryMapSize / 2L > dictionaryHeadroom,
+					"dictionary watermark must exceed the complete conservative demand and seed/free-space reserve");
+			assertTrue(config.getTripleDBSize() / 2L < growthNamespace.length(),
+					"namespace ASCII payload must exceed TripleStore headroom even before counting seed pages");
 			if (scope != ReplayScope.AUTO_COMMIT) {
 				reader.begin(scope == ReplayScope.SNAPSHOT ? IsolationLevels.SNAPSHOT : IsolationLevels.READ_COMMITTED);
 			}
 			MapGrowthMetrics.Snapshot before = store.getBackingStore().growthMetricsSnapshot();
-			try (TupleQueryResult result = reader.prepareTupleQuery(
-					"SELECT ?s WHERE { ?s <urn:phased-growth:predicate> ?o }").evaluate()) {
+			try (TupleQueryResult result = reader
+					.prepareTupleQuery("SELECT ?s WHERE { ?s <urn:phased-growth:predicate> ?o }")
+					.evaluate()) {
 				try (RepositoryConnection writer = repository.getConnection()) {
 					writer.begin(IsolationLevels.SNAPSHOT);
-					for (int i = 0; i < 1_500; i++) {
+					for (int i = 0; i < statementCount; i++) {
 						writer.add(values.createIRI("urn:phased-growth:buffered:" + i), predicate,
-								values.createLiteral(i + "-" + "payload".repeat(150)));
+								values.createLiteral(i + "-" + payload));
 					}
-					writer.setNamespace("growth-demand", "urn:phased-growth:" + "n".repeat(2 * 1024 * 1024));
+					writer.setNamespace(namespacePrefix, growthNamespace);
 					writer.commit();
 				}
 				// Begin waits for the growth gate. Snapshot transactions retain the reserved paired epoch;
@@ -281,8 +300,7 @@ class LmdbMapGrowthCoordinatorTest {
 					connection.begin(level);
 					connection.addStatement(subject, predicate, valueFactory.createLiteral("local"));
 					try (CloseableIteration<? extends Statement> statements = connection.getStatements(subject,
-							predicate,
-							null, false)) {
+							predicate, null, false)) {
 						assertTrue(statements.hasNext(), "the " + level + " transaction must see its buffered write");
 						assertEquals(subject, statements.next().getSubject());
 						assertFalse(statements.hasNext());
@@ -309,7 +327,6 @@ class LmdbMapGrowthCoordinatorTest {
 				connection.begin();
 				connection.addStatement(subject, predicate, valueFactory.createLiteral("seed"), context);
 				connection.commit();
-
 				connection.begin(IsolationLevels.SNAPSHOT);
 				connection.clear(context);
 				assertTrue(store.getBackingStore().growthAdmissionClosed(),
@@ -357,13 +374,11 @@ class LmdbMapGrowthCoordinatorTest {
 				sinkRef.set(sink);
 				return null;
 			}).get(5, TimeUnit.SECONDS);
-
 			warningWriter = store.getConnection();
 			warningWriter.begin(IsolationLevels.SNAPSHOT);
 			warningWriter.clear();
 			assertTrue(store.getBackingStore().growthAdmissionClosed(),
 					"the active public clear must close admission before the earlier buffered source is flushed");
-
 			SailSource source = sourceRef.get();
 			SailSink sink = sinkRef.get();
 			sourceFlush = ownerWorker.submit(() -> {
@@ -379,7 +394,6 @@ class LmdbMapGrowthCoordinatorTest {
 			} catch (TimeoutException expectedIfAdmissionBlocksTheBufferedOwner) {
 				// Roll back the warning writer below, then check that the pending source still publishes its statement.
 			}
-
 			warningWriter.rollback();
 			warningWriterRolledBack = true;
 			try {
@@ -395,7 +409,6 @@ class LmdbMapGrowthCoordinatorTest {
 					reader.rollback();
 				}
 			}
-
 			assertTrue(completedDuringWarning,
 					"a buffered source owner admitted before the public clear must finish before that writer rolls back");
 			assertTrue(completedAfterRollback,
@@ -434,8 +447,8 @@ class LmdbMapGrowthCoordinatorTest {
 		AtomicReference<Thread> nativeWriterThread = new AtomicReference<>();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBulkOperationSize(1);
 		LmdbSailStore.TripleStoreFactory tripleStoreFactory = (tripleDir, properties, storeConfig,
-				values) -> new TripleStore(
-						tripleDir, properties, storeConfig, values) {
+				values) -> new TripleStore(tripleDir, properties, storeConfig, values) {
+
 					@Override
 					public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts,
 							int count, boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
@@ -445,16 +458,15 @@ class LmdbMapGrowthCoordinatorTest {
 						nativeWritesCompleted.countDown();
 					}
 				};
-		LmdbSailStore store = new LmdbSailStore(dataDir.toFile(), new StoreProperties(), config, false,
-				ValueStore::new, tripleStoreFactory);
+		LmdbSailStore store = new LmdbSailStore(dataDir.toFile(), new StoreProperties(), config, false, ValueStore::new,
+				tripleStoreFactory);
 		ExecutorService owner = Executors.newSingleThreadExecutor();
 		AtomicReference<SailSink> sinkReference = new AtomicReference<>();
 		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:async-rollback:uncommitted");
 		IRI secondSubject = SimpleValueFactory.getInstance().createIRI("urn:async-rollback:uncommitted-second");
 		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:async-rollback:predicate");
 		Statement statement = SimpleValueFactory.getInstance()
-				.createStatement(subject, predicate,
-						SimpleValueFactory.getInstance().createLiteral("discarded"));
+				.createStatement(subject, predicate, SimpleValueFactory.getInstance().createLiteral("discarded"));
 		Statement secondStatement = SimpleValueFactory.getInstance()
 				.createStatement(secondSubject, predicate,
 						SimpleValueFactory.getInstance().createLiteral("discarded-second"));
@@ -470,11 +482,9 @@ class LmdbMapGrowthCoordinatorTest {
 			Thread nativeWriter = nativeWriterThread.get();
 			assertTrue(nativeWriter != null, "the native bulk write must capture its actual worker thread");
 			awaitThreadWaiting(nativeWriter);
-
 			SailSink sink = sinkReference.get();
 			close = owner.submit(sink::close);
 			close.get(2, TimeUnit.SECONDS);
-
 			try (SailDataset reader = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
 					CloseableIteration<? extends Statement> statements = reader.getStatements(null, predicate, null)) {
 				assertFalse(statements.hasNext(),
@@ -553,7 +563,6 @@ class LmdbMapGrowthCoordinatorTest {
 			assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
 			store.shutDown();
 		}
-
 		assertTrue(writerAdmittedDuringWarning, "the warning owner must keep reading its buffered transaction");
 		assertTrue(readerAdmittedDuringWarning, "an already-admitted reader must be allowed to finish during warning");
 		assertFalse(newAttemptAdmittedDuringWarning,
@@ -575,12 +584,10 @@ class LmdbMapGrowthCoordinatorTest {
 		Future<Boolean> pinQuery = null;
 		boolean pinQueryCompletedWhileGuardHeld = false;
 		boolean pinObservedWhileGuardHeld = false;
-
 		try {
 			view.requireDictionaryTermSnapshot();
 			assertTrue(view.hasNativePin(LmdbSailStore.MapResizeKind.VALUE_STORE),
 					"the fixture must hold a real ValueStore native pin");
-
 			termDeclaration = executor.submit(() -> {
 				try {
 					view.valueSnapshot().requireTermSnapshot(declareMembership -> {
@@ -601,7 +608,6 @@ class LmdbMapGrowthCoordinatorTest {
 			});
 			assertTrue(termDeclarationEntered.await(2, TimeUnit.SECONDS),
 					"the worker must hold the actual ValueStore read guard inside term membership declaration");
-
 			pinQuery = executor.submit(() -> {
 				pinQueryStarted.countDown();
 				return view.hasNativePin(LmdbSailStore.MapResizeKind.VALUE_STORE);
@@ -646,7 +652,6 @@ class LmdbMapGrowthCoordinatorTest {
 				throw new AssertionError("both bounded native snapshot workers must complete normally", workerFailure);
 			}
 		}
-
 		assertTrue(pinQueryCompletedWhileGuardHeld,
 				"checking a native pin must not wait for another thread's term-snapshot read guard");
 		assertTrue(pinObservedWhileGuardHeld,
@@ -775,7 +780,6 @@ class LmdbMapGrowthCoordinatorTest {
 			}
 			return null;
 		});
-
 		try {
 			try {
 				writer.get(10, TimeUnit.SECONDS);
@@ -838,7 +842,6 @@ class LmdbMapGrowthCoordinatorTest {
 			growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 			return null;
 		});
-
 		boolean completedBeforeCallbackRelease = false;
 		try {
 			assertTrue(callbackEntered.await(2, TimeUnit.SECONDS), "the active reader observer must be notified");
@@ -861,9 +864,7 @@ class LmdbMapGrowthCoordinatorTest {
 			assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS), "growth coordination must release its worker");
 			store.shutDown();
 		}
-
-		assertTrue(completedBeforeCallbackRelease,
-				"observer work must be bounded by the shared map-growth deadline");
+		assertTrue(completedBeforeCallbackRelease, "observer work must be bounded by the shared map-growth deadline");
 	}
 
 	@Test
@@ -891,7 +892,6 @@ class LmdbMapGrowthCoordinatorTest {
 			growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 			return null;
 		});
-
 		boolean admittedDuringGrowth;
 		try {
 			admittedDuringGrowth = nestedViewOpened.await(150, TimeUnit.MILLISECONDS);
@@ -907,7 +907,6 @@ class LmdbMapGrowthCoordinatorTest {
 			assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS), "growth coordination must release its worker");
 			store.shutDown();
 		}
-
 		assertNull(callbackFailure.get(), "a replay callback must be able to open its replacement native view");
 		assertTrue(admittedDuringGrowth,
 				"nested views belonging to an admitted read attempt must not wait behind their own growth episode");
@@ -933,11 +932,9 @@ class LmdbMapGrowthCoordinatorTest {
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		try {
 			growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
-
-			Future<LmdbSailStore.ReadView> lateDescendant = executor.submit(
-					() -> backing.createTransactionReadView(observer, readAttempt));
+			Future<LmdbSailStore.ReadView> lateDescendant = executor
+					.submit(() -> backing.createTransactionReadView(observer, readAttempt));
 			assertThrows(TimeoutException.class, () -> lateDescendant.get(100, TimeUnit.MILLISECONDS));
-
 			growthAttempt.close();
 			try (LmdbSailStore.ReadView ignored = lateDescendant.get(2, TimeUnit.SECONDS)) {
 				// Admission reopens when the growth episode releases its barrier.
@@ -1008,13 +1005,10 @@ class LmdbMapGrowthCoordinatorTest {
 						}
 					});
 			assertTrue(retirementStarted.await(2, TimeUnit.SECONDS), "the store-owned retirement task should start");
-
 			invokeStoreApi(backing, "stopAcceptingReplayRetirements", new Class<?>[0]);
-			assertThrows(RejectedExecutionException.class,
-					() -> invokeStoreApi(backing, "submitReplayRetirement", new Class<?>[] { Runnable.class },
-							(Runnable) () -> {
-							}));
-
+			assertThrows(RejectedExecutionException.class, () -> invokeStoreApi(backing, "submitReplayRetirement",
+					new Class<?>[] { Runnable.class }, (Runnable) () -> {
+					}));
 			CountDownLatch shutdownInvoked = new CountDownLatch(1);
 			CountDownLatch shutdownCompleted = new CountDownLatch(1);
 			Future<?> shutdown = executor.submit(() -> {
@@ -1026,7 +1020,6 @@ class LmdbMapGrowthCoordinatorTest {
 			assertTrue(shutdownInvoked.await(2, TimeUnit.SECONDS));
 			assertFalse(shutdownCompleted.await(100, TimeUnit.MILLISECONDS),
 					"store shutdown must wait while a registered retirement may still use native maps");
-
 			releaseRetirement.countDown();
 			assertTrue(nativeReadCompleted.await(2, TimeUnit.SECONDS));
 			retirement.get(2, TimeUnit.SECONDS);
@@ -1060,7 +1053,6 @@ class LmdbMapGrowthCoordinatorTest {
 				admitted.set(backing.registerReadAttempt((kind, token, deadlineNanos, attempts, views) -> false));
 			}
 		});
-
 		try {
 			assertTrue(admissionStarted.await(1, TimeUnit.SECONDS));
 			ExecutionException failure = assertThrows(ExecutionException.class,
@@ -1104,7 +1096,6 @@ class LmdbMapGrowthCoordinatorTest {
 				admitted.set(backing.createTransactionReadView(observerRef.get(), readAttempt));
 			}
 		});
-
 		try {
 			assertTrue(admissionStarted.await(1, TimeUnit.SECONDS));
 			ExecutionException failure = assertThrows(ExecutionException.class,
@@ -1144,7 +1135,6 @@ class LmdbMapGrowthCoordinatorTest {
 			}
 			return null;
 		});
-
 		try {
 			ExecutionException failure = assertThrows(ExecutionException.class,
 					() -> wait.get(2, TimeUnit.SECONDS));

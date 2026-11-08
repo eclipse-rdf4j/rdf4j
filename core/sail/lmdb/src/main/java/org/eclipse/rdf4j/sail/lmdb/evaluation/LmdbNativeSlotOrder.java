@@ -398,6 +398,7 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	private static NativeSlotOrder currentOrder(SlotPlan input, RowState row) {
+		if (input instanceof NativeValuesFoldPlan guard) { return currentOrder(guard.select(row), row); }
 		if (input instanceof NativeAliasJoinPlan) {
 			// The guarded alternative may drive the other operand, so the logical left order is not a proof.
 			return NativeSlotOrder.NONE;
@@ -566,8 +567,7 @@ final class LmdbNativeOrderPlanner {
 			LeftJoinPlan join = (LeftJoinPlan) plan;
 			NativeOrderedPlan left = best(join.left, requested, row);
 			return new NativeOrderedPlan(
-					new LeftJoinPlan(left.plan, join.right, join.lexicalSharedSlots, join.lexicalHashKeys,
-							join.lexicalProblemSlots),
+					join.withChildren(left.plan, join.right),
 					left.order.withBarrier());
 		}
 		if (plan instanceof MinusPlan) {

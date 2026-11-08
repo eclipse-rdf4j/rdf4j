@@ -217,7 +217,8 @@ final class LmdbNativeChunkPipeline {
 	 * merge per-context ranges, which breaks the single global key order the walk relies on.
 	 */
 	static MergePlan tryPlanMerge(PatternPlan root, PatternPlan pattern, long boundBefore, RowState row) {
-		if (!mergeEnabled()) {
+		if (!mergeEnabled() || pattern.readOnlyMask() != 0L
+				|| (SlotPlan.fixedValueOutputMask(pattern) & boundBefore) != 0L) {
 			return null;
 		}
 		long keyMask = pattern.producedMask() & boundBefore;
@@ -436,7 +437,8 @@ final class LmdbNativeChunkPipeline {
 	 * the root's leading varying index field (ascending key runs) — otherwise it filters row by row.
 	 */
 	static SipTarget[] trySipTarget(PatternPlan root, PatternPlan pattern, long boundBefore, RowState row) {
-		if (!sipEnabled()) {
+		if (!sipEnabled() || pattern.readOnlyMask() != 0L
+				|| (SlotPlan.fixedValueOutputMask(pattern) & boundBefore) != 0L) {
 			return null;
 		}
 		long keyMask = pattern.producedMask() & boundBefore;
@@ -1015,7 +1017,9 @@ final class LmdbNativeChunkPipeline {
 			this.upstream = upstream;
 			this.pattern = pattern;
 			this.row = row;
-			this.keySlots = slotsOf(pattern.producedMask() & boundBefore);
+			allowHashBuild &= (SlotPlan.fixedValueOutputMask(pattern) & boundBefore) == 0L
+					&& pattern.readOnlyMask() == 0L;
+			this.keySlots = slotsOf((pattern.producedMask() | pattern.readOnlyMask()) & boundBefore);
 			this.freshSlots = slotsOf(pattern.producedMask() & ~boundBefore);
 			this.rejectNullContext = pattern.rejectsNullContextAtBind();
 			this.input = new NativeBatch(row.slots.length, BATCH_ROWS);
@@ -1868,7 +1872,7 @@ final class LmdbNativeChunkPipeline {
 
 		FilterStage(BatchStage upstream, NativeBooleanFilter filter, RowState row, long readMask) {
 			this.upstream = upstream;
-			this.filter = filter;
+			this.filter = NativeFilterLease.openInput(filter, row, upstream::close);
 			this.row = row;
 			this.readMask = readMask;
 		}
@@ -1881,6 +1885,9 @@ final class LmdbNativeChunkPipeline {
 			while (true) {
 				int rows = upstream.fill(out);
 				if (rows == 0) {
+					if (!row.cancellation.isCancellationRequested()) {
+						filter.inputExhausted();
+					}
 					return 0;
 				}
 				observedRows += out.selectedCount;
@@ -1902,6 +1909,7 @@ final class LmdbNativeChunkPipeline {
 				upstream.close();
 			} catch (RuntimeException | Error e) {
 				failure = e;
+				filter.incompleteInput();
 			}
 			try {
 				filter.close();
@@ -1955,8 +1963,13 @@ final class LmdbNativeChunkPipeline {
 	}
 
 	static boolean bindTerm(Term term, long id, NativeBatch out, int row) {
+		if (term.readOnly) { return true; }
 		if (term.isConstant()) {
-			return term.constant == id && (!term.bindConstant || bindSlot(term.slot, id, out, row));
+			if (term.constant != id) { return false; }
+			if (!term.bindConstant) { return true; }
+			long current = out.get(term.slot, row);
+			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			return bindSlot(term.slot, id, out, row);
 		}
 		return term.slot < 0 || bindSlot(term.slot, id, out, row);
 	}

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
@@ -77,6 +78,52 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public Object valueLookupScope() {
 		return sources.get(0).valueLookupScope();
+	}
+
+	@Override
+	public boolean tryRetainDictionaryTermMembership() {
+		NativeLmdbQuerySource lookupSource = sources.get(0);
+		// The lookup mapping belongs to the first source even when that source has no statement plane. Every active
+		// member must expose the same mapping before retention, and keep that mapping while retention is established.
+		Object lookupScope = lookupSource.valueLookupScope();
+		if (lookupScope == null) {
+			return false;
+		}
+		List<NativeLmdbQuerySource> members = new ArrayList<>(activeSources.size() + 1);
+		List<Object> scopes = new ArrayList<>(activeSources.size() + 1);
+		IdentityHashMap<NativeLmdbQuerySource, Boolean> seen = new IdentityHashMap<>();
+		members.add(lookupSource);
+		scopes.add(lookupScope);
+		seen.put(lookupSource, Boolean.TRUE);
+		for (NativeLmdbQuerySource source : activeSources) {
+			if (seen.put(source, Boolean.TRUE) != null) {
+				continue;
+			}
+			Object sourceScope = source.valueLookupScope();
+			if (sourceScope == null || sourceScope != lookupScope) {
+				return false;
+			}
+			members.add(source);
+			scopes.add(sourceScope);
+		}
+		// Reject a token that changed while the contributing sources were being inspected, before pinning any source.
+		for (int i = 0; i < members.size(); i++) {
+			if (members.get(i).valueLookupScope() != scopes.get(i)) {
+				return false;
+			}
+		}
+		for (NativeLmdbQuerySource member : members) {
+			if (!member.tryRetainDictionaryTermMembership()) {
+				return false;
+			}
+		}
+		// Retention must pin the exact mapping captured above, not a newer view acquired during a race.
+		for (int i = 0; i < members.size(); i++) {
+			if (members.get(i).valueLookupScope() != scopes.get(i)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	@Override
@@ -1251,6 +1298,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public Object valueLookupScope() {
 			return delegate.valueLookupScope();
+		}
+
+		@Override
+		public boolean tryRetainDictionaryTermMembership() {
+			return delegate.tryRetainDictionaryTermMembership();
 		}
 
 		@Override

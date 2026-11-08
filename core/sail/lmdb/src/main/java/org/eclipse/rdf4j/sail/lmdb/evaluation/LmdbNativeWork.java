@@ -132,6 +132,7 @@ record LmdbNativeWork(double low, double high) {
 	}
 
 	static RowBounds rowBounds(SlotPlan plan, RowState row, long boundMask) {
+		if (plan instanceof NativeValuesFoldPlan guard) { return rowBounds(guard.select(row, boundMask), row, boundMask); }
 		if (plan instanceof EmptyPlan) {
 			return RowBounds.ZERO;
 		}
@@ -249,6 +250,7 @@ record LmdbNativeWork(double low, double high) {
 	}
 
 	private static ExpectedEstimate expectedEstimate(SlotPlan plan, RowState row, long boundMask) {
+		if (plan instanceof NativeValuesFoldPlan guard) { return expectedEstimate(guard.select(row, boundMask), row, boundMask); }
 		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan) {
 			return new ExpectedEstimate(plan instanceof EmptyPlan ? 0D : 1D, 0D);
 		}
@@ -274,7 +276,14 @@ record LmdbNativeWork(double low, double high) {
 			return expectedJoinEstimate(join.left, join.right, row, boundMask, false);
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			return expectedJoinEstimate(leftJoin.left, leftJoin.right, row, boundMask, true);
+			ExpectedEstimate estimate = expectedJoinEstimate(leftJoin.left, leftJoin.right, row, boundMask, true);
+			if (leftJoin.lexicalCondition == null) {
+				return estimate;
+			}
+			double leftRows = expectedEstimate(leftJoin.left, row, boundMask).rows();
+			double rightRows = expectedEstimate(leftJoin.right, row, boundMask | leftJoin.left.producedMask()).rows();
+			return new ExpectedEstimate(estimate.rows(),
+					addExpected(estimate.work(), multiplyExpected(leftRows, rightRows)));
 		}
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			return expectedMultiJoinEstimate(multiJoin, row, boundMask);
@@ -527,7 +536,13 @@ record LmdbNativeWork(double low, double high) {
 			return planningProbeChain(join.left, join.right, row, boundMask);
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			return planningProbeChain(leftJoin.left, leftJoin.right, row, boundMask);
+			LmdbNativeWork work = planningProbeChain(leftJoin.left, leftJoin.right, row, boundMask);
+			if (leftJoin.lexicalCondition == null) {
+				return work;
+			}
+			double leftRows = planningRows(leftJoin.left, row, boundMask);
+			double rightRows = planningRows(leftJoin.right, row, boundMask | leftJoin.left.producedMask());
+			return work.plus(exact(rightRows).times(leftRows));
 		}
 		if (plan instanceof LateralPlan lateral) {
 			return planningProbeChain(lateral.left, lateral.right, row, boundMask);
@@ -538,6 +553,9 @@ record LmdbNativeWork(double low, double high) {
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			MultiJoinPlan.OrderedPlan ordered = multiJoin.derivedPlan(boundMask);
 			return planningChain(ordered.order, ordered.order.length, row, boundMask);
+		}
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return planning(guard.select(row, boundMask), row, boundMask);
 		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
 			return planning(alias.original, row, boundMask);

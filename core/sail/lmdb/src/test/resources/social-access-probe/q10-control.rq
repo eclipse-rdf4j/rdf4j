@@ -1,0 +1,37 @@
+PREFIX social: <http://example.com/theme/social/>
+SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
+  VALUES ?a { <http://example.com/theme/social/user/7>
+              <http://example.com/theme/social/user/8>
+              <http://example.com/theme/social/user/9>
+              <http://example.com/theme/social/user/10>
+              <http://example.com/theme/social/user/11> }
+  VALUES ?b { <http://example.com/theme/social/user/7>
+              <http://example.com/theme/social/user/8>
+              <http://example.com/theme/social/user/9>
+              <http://example.com/theme/social/user/10>
+              <http://example.com/theme/social/user/11> }
+  VALUES ?c { <http://example.com/theme/social/user/7>
+              <http://example.com/theme/social/user/8>
+              <http://example.com/theme/social/user/9>
+              <http://example.com/theme/social/user/10>
+              <http://example.com/theme/social/user/11> }
+  VALUES ?d { <http://example.com/theme/social/user/7>
+              <http://example.com/theme/social/user/8>
+              <http://example.com/theme/social/user/9>
+              <http://example.com/theme/social/user/10>
+              <http://example.com/theme/social/user/11> }
+  VALUES ?e { <http://example.com/theme/social/user/7>
+              <http://example.com/theme/social/user/8>
+              <http://example.com/theme/social/user/9>
+              <http://example.com/theme/social/user/10>
+              <http://example.com/theme/social/user/11> }
+  FILTER(?a != ?b && ?b != ?c && ?c != ?d && ?d != ?e && ?a != ?c)
+  ?a social:follows ?b .
+  ?b social:follows ?c .
+  ?c social:follows ?d .
+  ?d social:follows ?e .
+  ?e social:follows ?a .
+  FILTER EXISTS { ?a social:name ?name . FILTER(?name = "user7" || ?name = "user8") }
+  OPTIONAL { ?e social:name ?optName . }
+  FILTER(?optName IN ("user7", "user8", "user9", "user10", "user11"))
+}

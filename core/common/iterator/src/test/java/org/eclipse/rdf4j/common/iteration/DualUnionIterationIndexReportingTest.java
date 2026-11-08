@@ -122,6 +122,21 @@ class DualUnionIterationIndexReportingTest {
 		assertMetrics(reporting, 5, 7, 9);
 	}
 
+	@Test
+	void supportedZeroCountersRemainZeroAcrossNestedNormalClose() {
+		ReportingIteration<Integer> first = new ReportingIteration<>(List.of(1), "spoc", 0, 0, 0);
+		ReportingIteration<Integer> second = new ReportingIteration<>(List.of(2), "posc", 0, 0, 0);
+		try (CloseableIteration<? extends Integer> union = DualUnionIteration.getWildcardInstance(
+				new UnionIteration<>(first), second)) {
+			assertMetrics(assertReporting(union), 0, 0, 0);
+			assertThat(readAll(union)).isEqualTo(List.of(1, 2));
+			assertMetrics(assertReporting(union), 0, 0, 0);
+		}
+		// UnionIteration closes its current child on exhaustion and again on its owning close.
+		assertThat(first.closeCount).isEqualTo(2);
+		assertThat(second.closeCount).isEqualTo(1);
+	}
+
 	private static IndexReportingIterator assertReporting(CloseableIteration<?> iteration) {
 		assertThat(iteration).isInstanceOf(IndexReportingIterator.class);
 		return (IndexReportingIterator) iteration;
@@ -131,6 +146,9 @@ class DualUnionIterationIndexReportingTest {
 		assertThat(reporting.getSourceRowsScannedActual()).isEqualTo(scanned);
 		assertThat(reporting.getSourceRowsMatchedActual()).isEqualTo(matched);
 		assertThat(reporting.getSourceRowsFilteredActual()).isEqualTo(filtered);
+		assertThat(reporting.getDistinctCursorSkipCountActual()).isEqualTo(scanned);
+		assertThat(reporting.getDistinctCursorSkipSeekCountActual()).isEqualTo(matched);
+		assertThat(reporting.getSkipAheadSeekCountActual()).isEqualTo(filtered);
 	}
 
 	private static <E> List<E> readAll(CloseableIteration<? extends E> iteration) {
@@ -206,6 +224,21 @@ class DualUnionIterationIndexReportingTest {
 
 		@Override
 		public long getSourceRowsFilteredActual() {
+			return filtered;
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			return scanned;
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			return matched;
+		}
+
+		@Override
+		public long getSkipAheadSeekCountActual() {
 			return filtered;
 		}
 	}

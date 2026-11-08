@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
@@ -58,7 +59,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param serviceUrl URL of the service.
 	 * @return the {@link FederatedService} registered for the serviceUrl.
 	 * @throws QueryEvaluationException
-	 * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver#getService(java.lang.String)
+	 * @see FederatedServiceResolver#getService(String)
 	 */
 	@Override
 	FederatedService getService(String serviceUrl) throws QueryEvaluationException;
@@ -105,7 +106,44 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 */
 	QueryEvaluationStep precompile(TupleExpr expr);
 
+	/**
+	 * Prepares the complete tuple result consumed by a Sail evaluation request. Implementations which do not explicitly
+	 * support that consumer contract retain their existing precompile dispatch, including overrides. This entry
+	 * supplies no permission to separately compiled children or runtime fragments.
+	 */
+	@InternalUseOnly
+	default QueryEvaluationStep precompileFinalTupleResult(TupleExpr expr) {
+		return precompile(expr);
+	}
+
 	QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context);
+
+	/**
+	 * Compiles a subtree that is generated while a query is already running, such as a per-probe substituted EXISTS
+	 * body or a property-path step. Unlike {@link #precompile(TupleExpr, QueryEvaluationContext)} this must not open a
+	 * fresh runtime-feedback compilation root: no feedback targets are resolved or published for the subtree, so
+	 * compiling it once per outer row does not multiply feedback observations. Strategies without runtime feedback
+	 * simply delegate to {@link #precompile(TupleExpr, QueryEvaluationContext)}.
+	 *
+	 * @param expr    the runtime-generated subtree
+	 * @param context the evaluation context of the enclosing query
+	 * @return the compiled step
+	 */
+	default QueryEvaluationStep precompileRuntimeSubtree(TupleExpr expr, QueryEvaluationContext context) {
+		return precompile(expr, context);
+	}
+
+	/**
+	 * Prepare a value-expression step for repeated evaluation within one query. Implementations that can own a
+	 * query-lifetime {@link QueryEvaluationContext} should override this method; the compatibility implementation
+	 * preserves the legacy {@link #evaluate(ValueExpr, BindingSet)} semantics.
+	 *
+	 * @param expr expression that is to be evaluated later
+	 * @return a reusable value-expression evaluation step
+	 */
+	default QueryValueEvaluationStep precompile(ValueExpr expr) {
+		return bindings -> evaluate(expr, bindings);
+	}
 
 	/**
 	 * Gets the value of this expression.

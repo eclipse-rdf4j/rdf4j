@@ -13,7 +13,11 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -25,22 +29,38 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /** Keeps a dataset alive until its owner and all cursors opened from it have released their references. */
-final class RetainedSailDataset extends DelegatingSailDataset implements TreeOwnedDataset {
+final class RetainedSailDataset extends DelegatingSailDataset
+		implements TreeOwnedDataset, SailDatasetReadComposition.Transparent {
 
 	private final DatasetLifetime lifetime;
+	private final SailDataset compositionDelegate;
 
 	RetainedSailDataset(SailDataset delegate) {
-		super(Objects.requireNonNull(delegate, "delegate"));
-		lifetime = new DatasetLifetime(abandon -> {
+		this(delegate, abandon -> {
 			if (abandon) {
 				delegate.abandonUnobserved();
 			} else {
 				delegate.close();
 			}
 		});
+	}
+
+	/** Retains the actual delegate while an existing shared owner supplies the final lease disposition. */
+	RetainedSailDataset(SailDataset delegate, Consumer<Boolean> release) {
+		super(Objects.requireNonNull(delegate, "delegate"));
+		compositionDelegate = delegate;
+		lifetime = new DatasetLifetime(Objects.requireNonNull(release, "release"));
+	}
+
+	@Override
+	public <T> Optional<T> resolveReadComposition(Class<T> leafCapability,
+			BiFunction<T, T, Optional<T>> unionCombiner) {
+		return lifetime.call(() -> SailDatasetReadComposition.resolveDataset(compositionDelegate, leafCapability,
+				unionCombiner));
 	}
 
 	/** Publishes logical observations before the final physical reader can unregister or trigger automatic flush. */
@@ -94,8 +114,30 @@ final class RetainedSailDataset extends DelegatingSailDataset implements TreeOwn
 	}
 
 	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
+		return lifetime.open(() -> super.getStatements(statementPattern, subj, pred, obj, contexts));
+	}
+
+	@Override
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		return lifetime.call(() -> super.getStatementCount(subj, pred, obj, contexts));
+	}
+
+	@Override
+	public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		return lifetime.call(() -> super.getStatementCount(statementPattern, subj, pred, obj, contexts));
+	}
+
+	@Override
+	public OptionalLong getSnapshotEpoch() {
+		return lifetime.call(super::getSnapshotEpoch);
+	}
+
+	@Override
+	public <T> Optional<T> unwrap(Class<T> type) {
+		return lifetime.call(() -> super.unwrap(type));
 	}
 
 	@Override

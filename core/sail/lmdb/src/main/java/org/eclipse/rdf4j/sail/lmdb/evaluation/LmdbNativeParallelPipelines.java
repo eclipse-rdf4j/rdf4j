@@ -187,10 +187,226 @@ final class LmdbNativeParallelPipelines {
 		if (proposal == null) {
 			return null;
 		}
+		NativeExecutionContext.Lease contextLease = null;
+		RowCursor cursor = null;
+		NativeUnorderedInput input = null;
 		try {
-			return proposal.open();
-		} finally {
+			SyntheticValueSource scope = consumerRow.evaluationScope();
+			NativeExecutionContext context = scope == null ? null : scope.executionContext();
+			contextLease = context == null ? null : context.retainInternalLease();
+			proposal.filterParent(NativeFilterLease.parentOf(consumerRow));
+			cursor = proposal.open();
+			consumerRow.cancellation.check();
+			if (cursor == null) {
+				Throwable failure = KernelRuntime.closeResource(proposal, null);
+				failure = KernelRuntime.closeResource(contextLease, failure);
+				KernelRuntime.rethrowCloseFailure(failure);
+				return null;
+			}
+			input = NativeUnorderedInput.directRows(consumerRow, cursor);
+			input.ownFilterAttempt(proposal.filterAttempt());
+			RowCursor result = new DirectParallelRowCursor(input, cursor, contextLease);
+			proposal.selected();
+			consumerRow.cancellation.check();
 			proposal.close();
+			return result;
+		} catch (IOException | RuntimeException | Error failure) {
+			Throwable retained;
+			if (input == null) {
+				retained = KernelRuntime.closeResource(cursor, failure);
+			} else {
+				input.failScalarFilterAttempt(failure, true);
+				retained = KernelRuntime.closeResource(input, failure);
+			}
+			retained = LmdbNativeDispatchLoop.finishFilters(proposal.filterAttempt(), retained);
+			retained = KernelRuntime.closeResource(proposal, retained);
+			retained = KernelRuntime.closeResource(contextLease, retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+			throw failure;
+		}
+	}
+
+	/** Holds the selected receipt until the producer and every worker have finished cleanup. */
+	private static final class DirectParallelRowCursor implements RowCursor {
+		private final NativeUnorderedInput input;
+		private final RowCursor cursor;
+		private final NativeExecutionContext.Lease contextLease;
+		private final Object lifecycle = new Object();
+		private boolean advancing;
+		private Thread advancingThread;
+		private boolean closing;
+		private boolean cleanupClaimed;
+		private Thread cleanupThread;
+		private boolean workerCleanupScheduled;
+		private boolean workerCleanupOwner;
+		private boolean workerCleanupObserved;
+		private boolean closed;
+		private Throwable closeFailure;
+
+		DirectParallelRowCursor(NativeUnorderedInput input, RowCursor cursor,
+				NativeExecutionContext.Lease contextLease) {
+			this.input = input;
+			this.cursor = cursor;
+			this.contextLease = contextLease;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			synchronized (lifecycle) {
+				if (closing) {
+					return false;
+				}
+				if (advancing) {
+					throw new IllegalStateException("parallel row cursor already advancing");
+				}
+				advancing = true;
+				advancingThread = Thread.currentThread();
+			}
+			boolean advanced = false;
+			Throwable problem = null;
+			try {
+				advanced = input.advance();
+			} catch (IOException | RuntimeException | Error failure) {
+				problem = failure;
+			} finally {
+				synchronized (lifecycle) {
+					if (problem != null) {
+						input.failScalarFilterAttempt(problem, true);
+					} else if (!advanced && !closing && input.row.cancellation.pollCancellation() == null) {
+						input.markExhausted();
+					}
+					advancing = false;
+					advancingThread = null;
+					lifecycle.notifyAll();
+				}
+			}
+			if (problem != null) {
+				Throwable retained = KernelRuntime.closeResource(this, problem);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, problem);
+				if (problem instanceof IOException io) {
+					throw io;
+				}
+				NativeContextClosingIteration.throwFailure(problem);
+			}
+			boolean closingNow;
+			synchronized (lifecycle) {
+				closingNow = closing;
+			}
+			if (!advanced || closingNow) {
+				close();
+				return false;
+			}
+			return true;
+		}
+
+		@Override
+		public void close() {
+			close(false);
+		}
+
+		private void closeAfterWorkerSettlement() {
+			close(true);
+		}
+
+		private void close(boolean workerSettlement) {
+			boolean interrupted = false;
+			boolean alreadyClaimed = false;
+			boolean observeFailure = false;
+			boolean awaitWorkerSettlement = false;
+			Throwable observedFailure = null;
+			synchronized (lifecycle) {
+				if (!closing) {
+					closing = true;
+					// Wake a pull without cancelling the caller's query token on an ordinary early close.
+					if (cursor instanceof ParallelRowCursor parallel) {
+						parallel.ownerStopped.set(true);
+					}
+				}
+				if (advancing && advancingThread == Thread.currentThread()) {
+					// The active pull completes cleanup after it unwinds from this reentrant close.
+					return;
+				}
+				if (cursor instanceof ParallelRowCursor parallel && parallel.tasks.isWorkerThread()) {
+					if (!advancing && !cleanupClaimed && !workerCleanupScheduled) {
+						workerCleanupScheduled = true;
+						// Wake peers without cancelling the enclosing query. The last settled worker hands ownership
+						// back after every worker resource and captured scope has closed.
+						parallel.cancelled.set(true);
+						parallel.tasks.beforeOwnerSettlement(this::closeAfterWorkerSettlement);
+					}
+					// This particular worker must finish before any owner can retire its receipt.
+					return;
+				}
+				if (cleanupClaimed) {
+					if (workerSettlement || cleanupThread == Thread.currentThread()
+							|| workerCleanupOwner && cursor instanceof ParallelRowCursor parallel
+									&& parallel.tasks.isCleanupOwnerThread()) {
+						// Resource cleanup can synchronously close its own cursor again.
+						// A settlement callback must not await another owner that is awaiting this callback.
+						return;
+					}
+					boolean waited = !closed || workerCleanupOwner && cursor instanceof ParallelRowCursor parallel
+							&& parallel.tasks.getCount() != 0L;
+					while (!closed) {
+						try {
+							lifecycle.wait();
+						} catch (InterruptedException e) {
+							interrupted = true;
+						}
+					}
+					alreadyClaimed = true;
+					observeFailure = waited || workerCleanupOwner && !workerCleanupObserved;
+					awaitWorkerSettlement = workerCleanupOwner && observeFailure;
+					workerCleanupObserved |= observeFailure;
+					observedFailure = closeFailure;
+				} else {
+					cleanupClaimed = true;
+					cleanupThread = Thread.currentThread();
+					workerCleanupOwner = workerSettlement;
+				}
+			}
+			if (alreadyClaimed) {
+				if (awaitWorkerSettlement && cursor instanceof ParallelRowCursor parallel) {
+					parallel.awaitTasks();
+					Throwable workerFailure = parallel.tasks.cleanupFailure();
+					if (workerFailure != null) {
+						// The group already retained this cursor's callback failure with earlier worker failures.
+						observedFailure = workerFailure;
+					}
+				}
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
+				if (observeFailure) {
+					KernelRuntime.rethrowCloseFailure(observedFailure);
+				}
+				return;
+			}
+			synchronized (lifecycle) {
+				while (advancing) {
+					try {
+						lifecycle.wait();
+					} catch (InterruptedException e) {
+						interrupted = true;
+					}
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+			KernelQueryCancelledException cancellation = input.row.cancellation.pollCancellation();
+			if (cancellation != null) {
+				input.failScalarFilterAttempt(cancellation, true);
+			}
+			Throwable failure = KernelRuntime.closeResource(input, null);
+			failure = KernelRuntime.closeResource(contextLease, failure);
+			synchronized (lifecycle) {
+				closeFailure = failure;
+				closed = true;
+				cleanupThread = null;
+				lifecycle.notifyAll();
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 
@@ -288,7 +504,7 @@ final class LmdbNativeParallelPipelines {
 		}
 		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D)
 				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
-		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
+		return new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters), LmdbNativeWork.exact(estCost),
 				LmdbNativeWork.exact(startupCost), outputRows,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close)
 						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
@@ -311,7 +527,8 @@ final class LmdbNativeParallelPipelines {
 		boolean handedOff = false;
 		Throwable primaryFailure = null;
 		try {
-			sources = step.source.openParallelSources(sourceCount);
+			// Siblings borrow this opening's runtime authority; the compiled carrier has no execution context.
+			sources = consumerRow.source.openParallelSources(sourceCount);
 			if (sources == null) {
 				return reject(step, "snapshot-unavailable");
 			}
@@ -420,6 +637,11 @@ final class LmdbNativeParallelPipelines {
 			this.reservation = reservation;
 			this.workers = workers;
 			this.sourceCount = sourceCount;
+		}
+
+		RowCursor open(NativeFilterLease filters) throws IOException {
+			return LmdbNativeParallelPipelines.open(new ParallelCandidate(step, consumerRow, filters.borrow(plan), root,
+					partitions, reservation, workers, sourceCount));
 		}
 
 		RowCursor open() throws IOException {
@@ -790,6 +1012,10 @@ final class LmdbNativeParallelPipelines {
 			this.input = partitions != null ? null : new ArrayBlockingQueue<>(workerPlans.length * 2);
 			this.output = new ArrayBlockingQueue<>(workerPlans.length * 2);
 			this.tasks = new NativeExecutionContext.WorkerTasks(workerPlans.length, reservation::close);
+			SyntheticValueSource filterScope = consumerRow.evaluationScope();
+			if (filterScope != null) {
+				filterScope.executionContext().registerFilterWorkers(tasks);
+			}
 			this.futures = new ArrayList<>(workerPlans.length);
 			this.reservation = reservation;
 			this.poisonRemaining = partitions == null ? workerPlans.length : 0;
@@ -823,7 +1049,7 @@ final class LmdbNativeParallelPipelines {
 			} catch (RuntimeException | Error problem) {
 				recordStartupFailure(problem);
 				cancelled.set(true);
-				releaseUnsubmittedWorkers(submitted);
+				releaseUnsubmittedWorkers(submitted, problem);
 				closeProducer();
 				awaitTasks();
 				Throwable retained = retainRecordedCleanupFailures(problem);
@@ -839,6 +1065,10 @@ final class LmdbNativeParallelPipelines {
 
 		/** A worker that was never submitted cannot run its own cleanup or count its task down, so this does both. */
 		private void releaseUnsubmittedWorkers(int firstUnsubmitted) {
+			releaseUnsubmittedWorkers(firstUnsubmitted, null);
+		}
+
+		private void releaseUnsubmittedWorkers(int firstUnsubmitted, Throwable primary) {
 			for (int i = firstUnsubmitted; i < workerPlans.length; i++) {
 				Throwable filterFailure = closePlanFilters(workerPlans[i], null);
 				if (filterFailure != null) {
@@ -849,7 +1079,8 @@ final class LmdbNativeParallelPipelines {
 				} catch (Throwable closeFailure) {
 					recordCleanupFailure(closeFailure);
 				} finally {
-					taskFinished();
+					started = true;
+					tasks.countDown(primary);
 				}
 			}
 		}
@@ -1347,6 +1578,22 @@ final class LmdbNativeParallelPipelines {
 			}
 		}
 
+		private volatile boolean cleanupFailureReported;
+
+		private void throwOwnedCleanupFailure() {
+			// next() owns recorded execution failures and preserves their checked exception contract.
+			if (failure.get() != null) {
+				return;
+			}
+			Throwable problem = retainRecordedCleanupFailures(tasks.cleanupFailure());
+			if (!cleanupFailureReported && problem != null) {
+				if (!tasks.isCleanupOwnerThread()) {
+					cleanupFailureReported = true;
+				}
+				NativeContextClosingIteration.throwFailure(problem);
+			}
+		}
+
 		@Override
 		public void close() {
 			close(true);
@@ -1378,6 +1625,7 @@ final class LmdbNativeParallelPipelines {
 		private void shutdown() {
 			if (closed) {
 				awaitTasks();
+				throwOwnedCleanupFailure();
 				return;
 			}
 			closed = true;
@@ -1404,6 +1652,7 @@ final class LmdbNativeParallelPipelines {
 				partitions.clear();
 			}
 			output.clear();
+			throwOwnedCleanupFailure();
 		}
 	}
 

@@ -23,7 +23,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype.XSD;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -31,6 +33,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,6 +64,58 @@ class LmdbStoreFormatCompatibilityTest {
 		assertThat(properties.getProperty("literal-reference-encoding")).isEqualTo("core-v1");
 		assertThat(Files.readString(directory.resolve("lmdbrdf.ver")))
 				.isEqualTo(LmdbStore.CORE_LITERAL_REFERENCE_MARKER);
+	}
+
+	@Test
+	void freshFormatSevenStorePublishesQualificationOnFirstCleanCloseAndReopens() throws Exception {
+		LmdbStoreConfig settings = config(false).setForceSync(true)
+				.setSketchEstimatorEnabled(false)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setPredicateGuaranteeIndexEnabled(true)
+				.setPredicateGuaranteeIndexAutoRebuild(true);
+		var values = SimpleValueFactory.getInstance();
+		var subject = values.createIRI("urn:fresh-close:s");
+		var predicate = values.createIRI("urn:fresh-close:p");
+		var object = values.createLiteral("fresh store domain witness");
+		LmdbStore store = new LmdbStore(directory.toFile(), settings);
+		store.init();
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(subject, predicate, object);
+				connection.commit();
+			}
+		} finally {
+			store.shutDown();
+		}
+
+		StoreProperties persisted = new StoreProperties(directory.toFile());
+		assertThat(persisted.load()).isTrue();
+		PreparedBulkStore.Snapshot closed = PreparedBulkStore.read(directory, persisted, settings);
+		assertThat(closed).isNotNull();
+		assertThat(RdfTermDomainQualification.matches(persisted, closed)).isTrue();
+
+		LmdbStore reopened = new LmdbStore(directory.toFile(), settings);
+		reopened.init();
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(reopened, 30, TimeUnit.SECONDS);
+			LmdbSailStore backing = reopened.getBackingStore();
+			assertThat(backing.getPersistedRdfTermDomain(predicate)).isEmpty();
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) reopened.getSailStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(
+					IsolationLevels.SNAPSHOT_READ, null)) {
+				LmdbSailStore.ReadView view = admission.view();
+				view.requireDictionaryTermSnapshot();
+				try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(),
+						view.valueSnapshot())) {
+					assertThat(backing.getPersistedRdfTermDomain(predicate)).isPresent();
+				}
+			}
+		} finally {
+			reopened.shutDown();
+		}
 	}
 
 	@Test

@@ -14,9 +14,12 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -45,7 +48,23 @@ final class LmdbNativeDispatchLoop<C, T> {
 	 * timing a lazily consumed value reports to the learner, or null when nothing observes this run.
 	 */
 	record Selection<T>(T value, String id, double expectedNanos, LmdbNativeDecisionRecord record,
-			LmdbNativeCostObservation observation) {
+			LmdbNativeCostObservation observation, NativeFilterLease filters, boolean eager) {
+		/** Retire the selected lease after the producer and its enclosing owner have finished cleanup. */
+		Throwable finish(Throwable failure) {
+			Throwable retained = finishFilters(filters, failure);
+			if (retained == null && eager && observation != null) {
+				retained = KernelRuntime.closeResource(observation::completed, null);
+			}
+			return retained;
+		}
+	}
+
+	static Throwable finishFilters(NativeFilterLease filters, Throwable failure) {
+		if (filters == null) {
+			return failure;
+		}
+		return failure == null ? KernelRuntime.closeResource(filters::commit, null)
+				: KernelRuntime.closeResource(() -> filters.abort(failure), failure);
 	}
 
 	private final LmdbNativeDecisionPoint point;
@@ -56,12 +75,14 @@ final class LmdbNativeDispatchLoop<C, T> {
 	private boolean distinctConsumer;
 	private String forcedTag;
 	private RowState sharedRow;
+	private NativeFilterLease filterParent;
 	private RowState.AttemptStart sharedRowStart;
 	private LmdbNativeStaticPrior prior = LmdbNativeStaticPrior.DEFAULT;
 	private LmdbNativeAdvisoryLearner.Scope advice;
 	private boolean eager;
 	private boolean handlesBudgetRefusals;
 	private boolean retriesBudgetRefusals;
+	private NativeCancellationToken encounterReplayCancellation;
 
 	LmdbNativeDispatchLoop(LmdbNativeDecisionPoint point, List<? extends LmdbNativeStrategy<C, T>> strategies,
 			TupleExpr explainTarget) {
@@ -103,6 +124,14 @@ final class LmdbNativeDispatchLoop<C, T> {
 	/** The entry row every candidate binds against; it is restored between attempts. */
 	LmdbNativeDispatchLoop<C, T> sharedRow(RowState row) {
 		this.sharedRow = row;
+		if (filterParent == null) {
+			filterParent = NativeFilterLease.parentOf(row);
+		}
+		return this;
+	}
+
+	LmdbNativeDispatchLoop<C, T> filterParent(NativeFilterLease parent) {
+		this.filterParent = parent;
 		return this;
 	}
 
@@ -134,6 +163,12 @@ final class LmdbNativeDispatchLoop<C, T> {
 		return this;
 	}
 
+	/** The caller can replay this entire input in encounter order after a clean opening failure. */
+	LmdbNativeDispatchLoop<C, T> encounterOrderReplay(NativeCancellationToken cancellation) {
+		this.encounterReplayCancellation = java.util.Objects.requireNonNull(cancellation);
+		return this;
+	}
+
 	private LmdbNativeSelector.Ranking rank(List<LmdbNativeCandidate<T>> candidates) {
 		return LmdbNativeSelector.rank(candidates, prior, sliceRows, distinctConsumer, advice);
 	}
@@ -146,10 +181,6 @@ final class LmdbNativeDispatchLoop<C, T> {
 		}
 		LmdbNativeCostObservation observation = advice.observation(chosen.id(), chosen.quote(), quotedExpected);
 		observation.opened(System.nanoTime() - openStarted);
-		if (eager) {
-			observation.completed();
-			return null;
-		}
 		return observation;
 	}
 
@@ -386,6 +417,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 	private Selection<T> dispatchForced(C context) throws IOException {
 		long decisionId = DECISIONS.incrementAndGet();
 		Admitted admitted = new Admitted();
+		// A bind-time decline does not establish a replacement. Retain unselected filter attempts until one opens,
+		// or abort them with the terminal failure if every rival declines or the decision itself fails.
+		List<LmdbNativeCandidate<T>> unselectedAttempts = new ArrayList<>();
 		try {
 			admitted.admit(context);
 			recordProposalCosts(admitted);
@@ -431,7 +465,10 @@ final class LmdbNativeDispatchLoop<C, T> {
 				long openStarted = advice == null ? 0L : System.nanoTime();
 				T value;
 				try {
-					value = forcedTag == null || !admitted.forcingApplies ? chosen.opener().open()
+					if (chosen.proposal() != null) {
+						chosen.proposal().defaultFilterParent(filterParent);
+					}
+					value = forcedTag == null || !admitted.forcingApplies ? openCandidate(chosen)
 							: openCapturingDeclines(chosen, admitted);
 				} catch (KernelRuntime.AllocationDeniedException refused) {
 					if (!handlesBudgetRefusals) {
@@ -444,6 +481,21 @@ final class LmdbNativeDispatchLoop<C, T> {
 					budgetRefusal = refused;
 					value = null;
 					recordBudgetDecline(chosen.id(), admitted);
+				} catch (EncounterOrderFallback fallback) {
+					if (encounterReplayCancellation == null) {
+						throw fallback;
+					}
+					// The actual GROUP owner will replay only after every discarded candidate has cleaned up.
+					// Keep the failed proposal out of releaseAll so that close cannot abort its private lease first.
+					if (chosen.proposal() != null && chosen.proposal().ownsUnselectedFilterAttempt()) {
+						admitted.candidates.remove(ranking.winner());
+						unselectedAttempts.add(chosen);
+					}
+					admitted.releaseAll(fallback);
+					NativeGroupIteration.throwRealFailureSuppressedBy(fallback);
+					encounterReplayCancellation.check();
+					discardUnselectedAttempts(unselectedAttempts);
+					throw fallback;
 				}
 				if (value != null) {
 					int winner = ranking.winner();
@@ -455,14 +507,25 @@ final class LmdbNativeDispatchLoop<C, T> {
 						if (listener != null) {
 							listener.selected(explainTarget, label, chosen.id(), record);
 						}
+						LmdbNativeCostObservation observation = observation(chosen,
+								ranking.quotedExpectedNanos()[winner], openStarted);
+						discardUnselectedAttempts(unselectedAttempts);
+						NativeFilterLease filters = chosen.proposal() == null ? null : chosen.proposal().filterAttempt();
+						if (chosen.proposal() != null) {
+							chosen.proposal().selected();
+						}
 						return new Selection<>(value, chosen.id(), ranking.expectedNanos()[winner], record,
-								observation(chosen, ranking.quotedExpectedNanos()[winner], openStarted));
+								observation, filters, eager);
 					} catch (RuntimeException | Error failure) {
 						// The result has not been handed to the caller if cleanup or observation fails.
-						if (value instanceof AutoCloseable resource) {
-							KernelRuntime.rethrowCloseFailureIfNotPrimary(
-									KernelRuntime.closeResource(resource, failure), failure);
+						Throwable retained = value instanceof AutoCloseable resource
+								? KernelRuntime.closeResource(resource, failure) : failure;
+						if (chosen.proposal() == null) {
+							retained = KernelRuntime.closeResource(chosen.release()::run, retained);
+						} else {
+							unselectedAttempts.add(chosen);
 						}
+						KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 						throw failure;
 					}
 				}
@@ -470,7 +533,12 @@ final class LmdbNativeDispatchLoop<C, T> {
 					forcedReturnedNull = true;
 				}
 				admitted.candidates.remove(ranking.winner());
-				chosen.release().run();
+				if ((retriesBudgetRefusals || encounterReplayCancellation != null) && chosen.proposal() != null
+						&& chosen.proposal().ownsUnselectedFilterAttempt()) {
+					unselectedAttempts.add(chosen);
+				} else {
+					chosen.release().run();
+				}
 				if (forcedTag != null && admitted.forcingApplies && !admitted.deferred.isEmpty()) {
 					admitted.candidates.addAll(admitted.deferred);
 					admitted.deferred.clear();
@@ -481,15 +549,52 @@ final class LmdbNativeDispatchLoop<C, T> {
 			if (forcedTag != null && admitted.forcingApplies && point.forcedMandatory()) {
 				throw forcedUnavailable(forcedDecline(admitted), forcedReturnedNull);
 			}
-			admitted.releaseAll();
 			if (budgetRefusal != null) {
 				throw budgetExhausted(budgetRefusal);
 			}
+			discardUnselectedAttempts(unselectedAttempts);
+			admitted.releaseAll();
 			return null;
 		} catch (IOException | RuntimeException | Error failure) {
-			admitted.releaseAll(failure);
+			Set<NativeBooleanFilter> closedFilters = Collections.newSetFromMap(new IdentityHashMap<>());
+			Throwable retained = abortUnselectedAttempts(unselectedAttempts, failure, closedFilters);
+			for (LmdbNativeCandidate<T> candidate : admitted.candidates) {
+				if (candidate.proposal() != null && candidate.proposal().ownsUnselectedFilterAttempt()) {
+					retained = abortFilters(candidate.proposal().filterAttempt(), retained, closedFilters);
+				}
+			}
+			admitted.releaseAll(retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			throw failure;
 		}
+	}
+
+	/** The replacement is open or the caller owns fallback; earlier attempts are private work. */
+	private static <T> void discardUnselectedAttempts(List<LmdbNativeCandidate<T>> unselected) {
+		Throwable failure = null;
+		for (LmdbNativeCandidate<T> candidate : unselected) {
+			LmdbNativeStrategyProposal<T> proposal = candidate.proposal();
+			failure = KernelRuntime.closeResource(proposal::discardUnselectedAttempt, failure);
+			failure = KernelRuntime.closeResource((AutoCloseable) candidate.release()::run, failure);
+		}
+		unselected.clear();
+		KernelRuntime.rethrowCloseFailure(failure);
+	}
+
+	/** No replacement was handed off: every attempted input must retain terminal failure and cleanup. */
+	private static <T> Throwable abortUnselectedAttempts(List<LmdbNativeCandidate<T>> unselected, Throwable failure,
+			Set<NativeBooleanFilter> closedFilters) {
+		for (LmdbNativeCandidate<T> candidate : unselected) {
+			failure = abortFilters(candidate.proposal().filterAttempt(), failure, closedFilters);
+			failure = KernelRuntime.closeResource((AutoCloseable) candidate.release()::run, failure);
+		}
+		unselected.clear();
+		return failure;
+	}
+
+	private static Throwable abortFilters(NativeFilterLease filters, Throwable failure,
+			Set<NativeBooleanFilter> closedFilters) {
+		return filters == null ? failure : KernelRuntime.closeResource(() -> filters.abort(failure, closedFilters), failure);
 	}
 
 	private void recordBudgetDecline(String id, Admitted admitted) {
@@ -546,10 +651,17 @@ final class LmdbNativeDispatchLoop<C, T> {
 	private T openCapturingDeclines(LmdbNativeCandidate<T> chosen, Admitted admitted) throws IOException {
 		Map<String, String> previous = LmdbNativeAttemptMetrics.installDeclineCapture(admitted.declines);
 		try {
-			return chosen.opener().open();
+			return openCandidate(chosen);
 		} finally {
 			LmdbNativeAttemptMetrics.installDeclineCapture(previous);
 		}
+	}
+
+	private T openCandidate(LmdbNativeCandidate<T> chosen) throws IOException {
+		LmdbNativeStrategyProposal<T> proposal = chosen.proposal();
+		return proposal != null && (retriesBudgetRefusals || encounterReplayCancellation != null)
+				? proposal.openForDecision()
+				: chosen.opener().open();
 	}
 
 	private boolean forcedTagMatches(String candidateId) {

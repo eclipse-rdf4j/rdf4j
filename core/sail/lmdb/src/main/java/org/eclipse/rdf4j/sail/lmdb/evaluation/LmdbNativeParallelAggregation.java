@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Intra-query morsel parallelism for native COUNT-style aggregation. The root scan of the ordered physical plan is
@@ -69,12 +70,40 @@ final class LmdbNativeParallelAggregation {
 		if (proposal == null) {
 			return null;
 		}
+		List<BindingSet> results = null;
+		NativeExecutionContext.Lease contextLease = null;
 		try {
-			return proposal.open();
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
-		} finally {
+			SyntheticValueSource scope = row.evaluationScope();
+			NativeExecutionContext context = scope == null ? null : scope.executionContext();
+			contextLease = context == null ? null : context.retainInternalLease();
+			proposal.filterParent(it.filterAttempt == null ? NativeFilterLease.parentOf(row) : it.filterAttempt);
+			results = proposal.open();
+			it.cancellation.check();
+			row.cancellation.check();
+			if (results != null) {
+				proposal.selected();
+				it.cancellation.check();
+				row.cancellation.check();
+				Throwable failure = LmdbNativeDispatchLoop.finishFilters(proposal.filterAttempt(), null);
+				KernelRuntime.rethrowCloseFailure(failure);
+			}
 			proposal.close();
+			KernelRuntime.rethrowCloseFailure(KernelRuntime.closeResource(contextLease, null));
+			return results;
+		} catch (IOException | RuntimeException | Error failure) {
+			Throwable retained = results instanceof AutoCloseable resource
+					? KernelRuntime.closeResource(resource, failure) : failure;
+			retained = LmdbNativeDispatchLoop.finishFilters(proposal.filterAttempt(), retained);
+			retained = KernelRuntime.closeResource(proposal, retained);
+			retained = KernelRuntime.closeResource(contextLease, retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+			if (failure instanceof IOException io) {
+				throw new QueryEvaluationException(io);
+			}
+			if (failure instanceof RuntimeException problem) {
+				throw problem;
+			}
+			throw (Error) failure;
 		}
 	}
 
@@ -163,7 +192,7 @@ final class LmdbNativeParallelAggregation {
 		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D)
 				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, threads))
 				.plus(LmdbNativeStaticPrior.parallelMerge(shape, threads));
-		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
+		return new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters), LmdbNativeWork.exact(estCost),
 				LmdbNativeWork.exact(LmdbNativeWork.parallelStartupCost()), Double.NaN,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close)
 						.withCostQuote(new LmdbNativeCostQuote(startup, streaming,
@@ -324,6 +353,13 @@ final class LmdbNativeParallelAggregation {
 			this.reservation = reservation;
 			this.threads = threads;
 			this.sourceCount = sourceCount;
+		}
+
+		List<BindingSet> open(NativeFilterLease filters) {
+			MultiJoinPlan execution = filters.borrow(plan);
+			return LmdbNativeParallelAggregation.open(new AggregateCandidate(it.withArg(execution), execution,
+					parentMetrics, filters.borrow(derived), root, preflightAggregateSlots, partitions,
+					reservation, threads, sourceCount));
 		}
 
 		List<BindingSet> open() {

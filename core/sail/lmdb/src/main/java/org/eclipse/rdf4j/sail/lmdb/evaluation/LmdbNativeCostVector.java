@@ -44,17 +44,18 @@ final class LmdbNativeCostVector {
 
 	private static final Feature[] FEATURES = Feature.values();
 	private static final LmdbNativeCostVector ZERO = new LmdbNativeCostVector(new double[FEATURES.length],
-			new double[FEATURES.length], new double[FEATURES.length], false);
+			new double[FEATURES.length], new double[FEATURES.length]);
 
 	private final double[] low;
 	private final double[] expected;
 	private final double[] high;
 	private final int hashCode;
 
-	private LmdbNativeCostVector(double[] low, double[] expected, double[] high, boolean copy) {
-		this.low = copy ? low.clone() : low;
-		this.expected = copy ? expected.clone() : expected;
-		this.high = copy ? high.clone() : high;
+	/** Arrays are privately owned; a builder detaches them before any later mutation. */
+	private LmdbNativeCostVector(double[] low, double[] expected, double[] high) {
+		this.low = low;
+		this.expected = expected;
+		this.high = high;
 		validate(this.low, this.expected, this.high);
 		this.hashCode = 31 * (31 * Arrays.hashCode(this.low) + Arrays.hashCode(this.expected))
 				+ Arrays.hashCode(this.high);
@@ -107,7 +108,7 @@ final class LmdbNativeCostVector {
 			resultExpected[i] = saturatedAdd(expected[i], other.expected[i]);
 			resultHigh[i] = upperAdd(high[i], other.high[i]);
 		}
-		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh, false);
+		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh);
 	}
 
 	LmdbNativeCostVector scale(double factor) {
@@ -128,7 +129,7 @@ final class LmdbNativeCostVector {
 			resultExpected[i] = saturatedMultiply(expected[i], factor);
 			resultHigh[i] = upperMultiply(high[i], factor);
 		}
-		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh, false);
+		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh);
 	}
 
 	/** Retain proven startup/full bounds; use the consumption fraction only for the expected value. */
@@ -147,7 +148,7 @@ final class LmdbNativeCostVector {
 			resultExpected[i] = interpolate(startup.expected[i], total.expected[i], consumptionFraction);
 			resultHigh[i] = total.high[i];
 		}
-		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh, false);
+		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh);
 	}
 
 	double dotExpected(double[] coefficients) {
@@ -160,6 +161,19 @@ final class LmdbNativeCostVector {
 
 	double dotHigh(double[] coefficients) {
 		return dot(high, coefficients, true);
+	}
+
+	/** Same row products and outer accumulation order as dot(x, multiply(P, x)), without temporary arrays. */
+	double quadraticExpected(double[][] matrix) {
+		double result = 0.0;
+		for (int row = 0; row < expected.length; row++) {
+			double sum = 0.0;
+			for (int column = 0; column < expected.length; column++) {
+				sum += matrix[row][column] * expected[column];
+			}
+			result += expected[row] * sum;
+		}
+		return Math.max(0.0, result);
 	}
 
 	double structuralWork(ToDoubleFunction<Feature> weights) {
@@ -300,9 +314,10 @@ final class LmdbNativeCostVector {
 	}
 
 	static final class Builder {
-		private final double[] low = new double[FEATURES.length];
-		private final double[] expected = new double[FEATURES.length];
-		private final double[] high = new double[FEATURES.length];
+		private double[] low = new double[FEATURES.length];
+		private double[] expected = new double[FEATURES.length];
+		private double[] high = new double[FEATURES.length];
+		private LmdbNativeCostVector snapshot;
 
 		Builder add(Feature feature, double count) {
 			return add(feature, count, count, count);
@@ -314,6 +329,7 @@ final class LmdbNativeCostVector {
 					|| lower < 0.0 || expectedCount < lower || upper < expectedCount) {
 				throw new IllegalArgumentException("invalid bounds " + lower + "/" + expectedCount + "/" + upper);
 			}
+			prepareMutation();
 			int index = feature.ordinal();
 			low[index] = saturatedAdd(low[index], lower);
 			expected[index] = saturatedAdd(expected[index], expectedCount);
@@ -323,6 +339,7 @@ final class LmdbNativeCostVector {
 
 		Builder add(LmdbNativeCostVector vector) {
 			Objects.requireNonNull(vector, "vector");
+			prepareMutation();
 			for (Feature feature : FEATURES) {
 				int index = feature.ordinal();
 				low[index] = saturatedAdd(low[index], vector.low[index]);
@@ -333,11 +350,29 @@ final class LmdbNativeCostVector {
 		}
 
 		LmdbNativeCostVector build() {
-			boolean zero = true;
-			for (double value : high) {
-				zero &= value == 0.0;
+			if (snapshot == null) {
+				boolean zero = true;
+				for (double value : high) {
+					zero &= value == 0.0;
+				}
+				snapshot = zero ? ZERO : new LmdbNativeCostVector(low, expected, high);
 			}
-			return zero ? ZERO : new LmdbNativeCostVector(low, expected, high, true);
+			return snapshot;
+		}
+
+		private void prepareMutation() {
+			if (snapshot != null) {
+				if (snapshot != ZERO) {
+					// Publish only after every copy succeeds: the previous vector always keeps its owned arrays.
+					double[] mutableLow = low.clone();
+					double[] mutableExpected = expected.clone();
+					double[] mutableHigh = high.clone();
+					low = mutableLow;
+					expected = mutableExpected;
+					high = mutableHigh;
+				}
+				snapshot = null;
+			}
 		}
 	}
 }

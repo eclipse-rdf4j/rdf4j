@@ -34,7 +34,9 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 /** Immutable projected native ids that materialize RDF values only when a caller reads a binding. */
 @Experimental
 @InternalUseOnly
-public final class NativeProjectedBindingSet extends AbstractBindingSet {
+public final class NativeProjectedBindingSet extends AbstractBindingSet
+		implements org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.ReadOnlyCarrier,
+		org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.Carrier {
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.nativeLazyResults.enabled";
 	static final AtomicLong CREATED = new AtomicLong();
@@ -47,12 +49,19 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	final int[] positionMasks;
 	final int size;
 	Set<String> bindingNames;
+	private final NativeRowProvenance provenance;
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, String[] names, int[] sourceSlots, long[] row) {
 		this(source, ProjectionLayout.create(names, sourceSlots), row);
 	}
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, ProjectionLayout layout, long[] row) {
+		this(source, layout, row, NativeRowProvenance.EMPTY);
+	}
+
+	NativeProjectedBindingSet(NativeLmdbQuerySource source, ProjectionLayout layout, long[] row,
+			NativeRowProvenance provenance) {
+		this.provenance = provenance;
 		this.source = source;
 		this.names = layout.names;
 		this.positionMasks = layout.positionMasks;
@@ -67,6 +76,21 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		}
 		this.size = bound;
 		CREATED.incrementAndGet();
+	}
+
+	@Override
+	public org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin getBindingSetOrigin() {
+		return provenance.origin;
+	}
+
+	@Override
+	public boolean isBindingSetOriginTracked() {
+		return provenance.tracked;
+	}
+
+	@Override
+	public org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings getGraphFrameBindings() {
+		return provenance.graphs;
 	}
 
 	private static int indexOf(String[] names, int length, String name) {
@@ -125,6 +149,14 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 					? new ProjectionLayout(names, sourceSlots, null, uniqueMasks)
 					: new ProjectionLayout(Arrays.copyOf(uniqueNames, uniqueCount), sourceSlots, targets,
 							Arrays.copyOf(uniqueMasks, uniqueCount));
+		}
+
+		/** Linear layout construction when the owning compiler has already proved unique target names. */
+		static ProjectionLayout uniqueTargets(String[] names, int[] sourceSlots, int[] positionMasks) {
+			if (names.length != sourceSlots.length || names.length != positionMasks.length) {
+				throw new IllegalArgumentException("projection metadata lengths differ");
+			}
+			return new ProjectionLayout(names, sourceSlots, null, positionMasks.clone());
 		}
 
 		void copyIds(long[] row, long[] ids) {

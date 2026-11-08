@@ -76,7 +76,7 @@ final class LmdbNativeMergeJoin {
 				.plan(candidate.left.plan, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
 				.plus(LmdbNativeCostVectors.plan(candidate.right.plan, row, boundMask,
 						LmdbNativeCostVector.Feature.BATCH_ROW));
-		return new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row), candidate.estCost,
+		return new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters.borrow(plan), row), candidate.estCost,
 				LmdbNativeAttemptMetrics.PATH_BATCH)
 						.withCostQuote(
 								LmdbNativeCostQuote.streaming(streaming, LmdbNativeWork.rowsOut(plan, row, boundMask)));
@@ -134,7 +134,9 @@ final class LmdbNativeMergeJoin {
 		}
 		PatternPlan left = (PatternPlan) plan.children[0];
 		PatternPlan right = (PatternPlan) plan.children[1];
-		if (left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
+		if (!left.canCommuteWith(right) || !right.canCommuteWith(left)
+				|| left.readOnlyMask() != 0L || right.readOnlyMask() != 0L
+				|| left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
 			// correlated entry: the nested-loop chain is the strategy that exploits the entry binding
 			return rejectAdmission(row, "correlated-entry", record);
 		}

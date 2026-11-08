@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -165,6 +166,9 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 						MutableBindingSet nextResult = null;
 						while (nextResult == null && assignments.hasNext()) {
 							final BindingSet assignedBindings = assignments.next();
+							if (assignedBindings.isEmpty()) {
+								return bindings;
+							}
 							nextResult = bsMaker.apply(bindings);
 
 							for (String name : assignedBindings.getBindingNames()) {
@@ -204,6 +208,11 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 			}
 		}
 
+		// A nullable finite column remains a local output even in an UNDEF row. An opaque source cannot grant
+		// request authority through an undeclared column; its complete invocation frame therefore remains strict.
+		Set<String> localNames = node.hasRepeatableBindingSets() ? node.getPossibleBindingNames()
+				: bindings.getBindingNames();
+		result = BindingSetOrigin.produced(result, localNames, bindings);
 		if (!node.isRuntimeTelemetryEnabled()) {
 			return result;
 		}

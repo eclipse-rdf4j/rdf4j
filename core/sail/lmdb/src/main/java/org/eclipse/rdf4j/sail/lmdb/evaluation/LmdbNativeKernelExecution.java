@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -527,6 +528,9 @@ final class LmdbNativeKernelExecution {
 			LmdbNativeKernelLowering.Lowered semantic = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 					aggregates, LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates), explainTarget,
 					preferScans, scanVariablePredicates, emitter.strictCompare, allowFixedContexts);
+			if (semantic != null && emitter != null) {
+				semantic = semantic.withConsumerInput(emitter.consumerInput);
+			}
 			if (semantic == null) {
 				AGG_DECLINED.incrementAndGet();
 				if (row.runtimePlan != null) {
@@ -848,7 +852,7 @@ final class LmdbNativeKernelExecution {
 			Throwable failure = null;
 			try {
 				if (hooks != null) {
-					hooks.closeFilters();
+					hooks.closeFilters(kernel != null && kernel.filterInputExhausted());
 				}
 			} catch (RuntimeException | Error problem) {
 				failure = problem;
@@ -924,36 +928,51 @@ final class LmdbNativeKernelExecution {
 	 */
 	static LmdbNativeStrategyProposal<RowCursor> proposeRows(SlotPlan arg, RowState row, TupleExpr originalExpr,
 			boolean interpreted) {
+		return proposeRows(arg, row, originalExpr, interpreted, null);
+	}
+
+	static LmdbNativeStrategyProposal<RowCursor> proposeRows(SlotPlan arg, RowState row, TupleExpr originalExpr,
+			boolean interpreted, LmdbNativeInteriorPlans.Selection input) {
 		return proposeRows(arg, row, originalExpr, ParallelExecution.DISABLE,
-				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, false);
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, false, input);
 	}
 
 	/** A wildcard-view peer owns only kernels that retain that physical family after every bind retry. */
 	static LmdbNativeStrategyProposal<RowCursor> proposeWildcardRows(SlotPlan arg, RowState row,
 			TupleExpr originalExpr, boolean interpreted) {
+		return proposeWildcardRows(arg, row, originalExpr, interpreted, null);
+	}
+
+	static LmdbNativeStrategyProposal<RowCursor> proposeWildcardRows(SlotPlan arg, RowState row,
+			TupleExpr originalExpr, boolean interpreted, LmdbNativeInteriorPlans.Selection input) {
 		if (!wildcardIrCandidate(arg) || !row.source.mayHaveWildcardViews()) {
 			LmdbNativeAttemptMetrics.captureDecline(rowRoute(interpreted, false, true),
 					"No eligible wildcard-view input for this source and shape");
 			return null;
 		}
 		return proposeRows(arg, row, originalExpr, ParallelExecution.DISABLE,
-				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, true);
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, true, input);
 	}
 
 	static LmdbNativeStrategyProposal<RowCursor> proposeParallelRows(SlotPlan arg, RowState row,
 			TupleExpr originalExpr, boolean interpreted) {
+		return proposeParallelRows(arg, row, originalExpr, interpreted, null);
+	}
+
+	static LmdbNativeStrategyProposal<RowCursor> proposeParallelRows(SlotPlan arg, RowState row,
+			TupleExpr originalExpr, boolean interpreted, LmdbNativeInteriorPlans.Selection input) {
 		if (!rowParallelProposalEnabled()) {
 			LmdbNativeAttemptMetrics.captureDecline(parallelRowRoute(interpreted, false),
 					"Parallel row kernels require enabled pipelines and at least two configured workers");
 			return null;
 		}
 		return proposeRows(arg, row, originalExpr, ParallelExecution.REQUIRE,
-				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, null);
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, null, input);
 	}
 
 	private static LmdbNativeStrategyProposal<RowCursor> proposeRows(SlotPlan arg, RowState row,
 			TupleExpr originalExpr, ParallelExecution parallelExecution, KernelTier requestedTier,
-			Boolean wildcardFamily) {
+			Boolean wildcardFamily, LmdbNativeInteriorPlans.Selection consumerInput) {
 		boolean wildcard = Boolean.TRUE.equals(wildcardFamily);
 		boolean interpretedTier = requestedTier == KernelTier.INTERPRETED;
 		String tag = parallelExecution == ParallelExecution.REQUIRE ? parallelRowRoute(interpretedTier, false)
@@ -1006,9 +1025,13 @@ final class LmdbNativeKernelExecution {
 		boolean scanVariables = Boolean.FALSE.equals(wildcardFamily)
 				&& (row.source == null || !row.source.mayHaveWildcardViews());
 		LmdbNativeStrategyProposal<RowCursor> proposal = new LmdbNativeStrategyProposal<>(
-				() -> openWithFusedRuntime(arg, row,
-						() -> tryOpenRows(arg, row, originalExpr, false, null, null, null, scanVariables,
-								parallelExecution, requestedTier, reservation, wildcardFamily)),
+				filters -> {
+					SlotPlan execution = filters.borrow(arg);
+					return openWithFusedRuntime(execution, row,
+							() -> tryOpenRows(execution, row, originalExpr, false, null, null, null, scanVariables,
+									parallelExecution, requestedTier, reservation, wildcardFamily,
+									consumerInput == null ? null : consumerInput.borrow(filters)));
+				},
 				work, startup, rows, tag, () -> {
 				}).withPlanningWork(planning).withParallelReservation(reservation);
 		return Boolean.FALSE.equals(wildcardFamily)
@@ -1051,8 +1074,14 @@ final class LmdbNativeKernelExecution {
 	static LmdbNativeStrategyProposal<RowCursor> proposeDistinctRows(SlotPlan arg, RowState row,
 			TupleExpr originalExpr, int[] distinctSlots, boolean interpreted,
 			LmdbNativeDistinctRowCostQuote.SharedInput pricing) {
+		return proposeDistinctRows(arg, row, originalExpr, distinctSlots, interpreted, pricing, null);
+	}
+
+	static LmdbNativeStrategyProposal<RowCursor> proposeDistinctRows(SlotPlan arg, RowState row,
+			TupleExpr originalExpr, int[] distinctSlots, boolean interpreted,
+			LmdbNativeDistinctRowCostQuote.SharedInput pricing, LmdbNativeInteriorPlans.Selection consumerInput) {
 		return proposeDistinctRows(arg, row, originalExpr, distinctSlots, ParallelExecution.DISABLE,
-				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, pricing);
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, pricing, consumerInput);
 	}
 
 	static LmdbNativeStrategyProposal<RowCursor> proposeParallelDistinctRows(SlotPlan arg, RowState row,
@@ -1063,16 +1092,23 @@ final class LmdbNativeKernelExecution {
 	static LmdbNativeStrategyProposal<RowCursor> proposeParallelDistinctRows(SlotPlan arg, RowState row,
 			TupleExpr originalExpr, int[] distinctSlots, boolean interpreted,
 			LmdbNativeDistinctRowCostQuote.SharedInput pricing) {
+		return proposeParallelDistinctRows(arg, row, originalExpr, distinctSlots, interpreted, pricing, null);
+	}
+
+	static LmdbNativeStrategyProposal<RowCursor> proposeParallelDistinctRows(SlotPlan arg, RowState row,
+			TupleExpr originalExpr, int[] distinctSlots, boolean interpreted,
+			LmdbNativeDistinctRowCostQuote.SharedInput pricing, LmdbNativeInteriorPlans.Selection consumerInput) {
 		if (!rowParallelProposalEnabled()) {
 			return null;
 		}
 		return proposeDistinctRows(arg, row, originalExpr, distinctSlots, ParallelExecution.REQUIRE,
-				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, pricing);
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED, pricing, consumerInput);
 	}
 
 	private static LmdbNativeStrategyProposal<RowCursor> proposeDistinctRows(SlotPlan arg, RowState row,
 			TupleExpr originalExpr, int[] distinctSlots, ParallelExecution parallelExecution,
-			KernelTier requestedTier, LmdbNativeDistinctRowCostQuote.SharedInput pricing) {
+			KernelTier requestedTier, LmdbNativeDistinctRowCostQuote.SharedInput pricing,
+			LmdbNativeInteriorPlans.Selection consumerInput) {
 		if (!distinctKernelEnabled()) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 					"disabled");
@@ -1122,9 +1158,13 @@ final class LmdbNativeKernelExecution {
 				: LmdbNativeWork.ZERO;
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
 		return new LmdbNativeStrategyProposal<>(
-				() -> openWithFusedRuntime(arg, row,
-						() -> tryOpenRows(arg, row, originalExpr, false, distinctSlots, null, parallelExecution,
-								requestedTier, reservation)),
+				filters -> {
+					SlotPlan execution = filters.borrow(arg);
+					return openWithFusedRuntime(execution, row,
+							() -> tryOpenRows(execution, row, originalExpr, false, distinctSlots, null,
+									null, false, parallelExecution, requestedTier, reservation, null,
+									consumerInput == null ? null : consumerInput.borrow(filters)));
+				},
 				work, startup, rows, tag, () -> {
 				}).withPlanningWork(planning)
 						.withParallelReservation(reservation)
@@ -1418,18 +1458,29 @@ final class LmdbNativeKernelExecution {
 			boolean scanVariablePredicates, ParallelExecution parallelExecution, KernelTier requestedTier,
 			LmdbNativeParallelPipelines.TaskReservation quotedReservation, Boolean wildcardFamily) throws IOException {
 		return tryOpenRows(arg, row, originalExpr, preferScans, distinctSlots, ordered, scanPredicates,
-				scanVariablePredicates, parallelExecution, requestedTier, quotedReservation, wildcardFamily, false);
+				scanVariablePredicates, parallelExecution, requestedTier, quotedReservation, wildcardFamily, null);
 	}
 
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
 			int[] distinctSlots, OrderedMods ordered, Set<Long> scanPredicates,
 			boolean scanVariablePredicates, ParallelExecution parallelExecution, KernelTier requestedTier,
-			LmdbNativeParallelPipelines.TaskReservation quotedReservation, Boolean wildcardFamily, boolean suppressHash)
+			LmdbNativeParallelPipelines.TaskReservation quotedReservation, Boolean wildcardFamily,
+			LmdbNativeInteriorPlans.Selection consumerInput) throws IOException {
+		return tryOpenRows(arg, row, originalExpr, preferScans, distinctSlots, ordered, scanPredicates,
+				scanVariablePredicates, parallelExecution, requestedTier, quotedReservation, wildcardFamily, false,
+				consumerInput);
+	}
+
+	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
+			int[] distinctSlots, OrderedMods ordered, Set<Long> scanPredicates,
+			boolean scanVariablePredicates, ParallelExecution parallelExecution, KernelTier requestedTier,
+			LmdbNativeParallelPipelines.TaskReservation quotedReservation, Boolean wildcardFamily, boolean suppressHash,
+			LmdbNativeInteriorPlans.Selection consumerInput)
 			throws IOException {
 		try {
 			return tryOpenRowsAttempt(arg, row, originalExpr, preferScans, distinctSlots, ordered, scanPredicates,
 					scanVariablePredicates, parallelExecution, requestedTier, quotedReservation, wildcardFamily,
-					suppressHash);
+					suppressHash, consumerInput);
 		} catch (SerialHashBuildRefusal refused) {
 			// The private build is drained before any probe output. Its cursor, views and reservation have all been
 			// closed by the attempt's finally block before re-lowering the same route without a hash build.
@@ -1443,15 +1494,16 @@ final class LmdbNativeKernelExecution {
 				throw refused;
 			}
 			return tryOpenRows(arg, row, originalExpr, preferScans, distinctSlots, ordered, scanPredicates,
-					scanVariablePredicates, parallelExecution, requestedTier, quotedReservation, wildcardFamily, true);
+					scanVariablePredicates, parallelExecution, requestedTier, quotedReservation, wildcardFamily, true,
+					consumerInput);
 		}
 	}
 
 	private static RowCursor tryOpenRowsAttempt(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
 			int[] distinctSlots, OrderedMods ordered, Set<Long> scanPredicates,
 			boolean scanVariablePredicates, ParallelExecution parallelExecution, KernelTier requestedTier,
-			LmdbNativeParallelPipelines.TaskReservation quotedReservation, Boolean wildcardFamily, boolean suppressHash)
-			throws IOException {
+			LmdbNativeParallelPipelines.TaskReservation quotedReservation, Boolean wildcardFamily, boolean suppressHash,
+			LmdbNativeInteriorPlans.Selection consumerInput) throws IOException {
 		// With janino codegen disabled, the interpreted tier (M4) executes the same lowered IR through
 		// LmdbNativeKernelInterpreter.forRows. Only when BOTH tiers are off does the route decline.
 		boolean parallelAttempt = false;
@@ -1477,6 +1529,9 @@ final class LmdbNativeKernelExecution {
 									distinctSlots, scanPredicates, scanVariablePredicates)
 							: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans,
 									scanPredicates, scanVariablePredicates, suppressHash);
+			if (semantic != null) {
+				semantic = semantic.withConsumerInput(consumerInput);
+			}
 			if (semantic == null) {
 				if (ordered != null) {
 					// Quiet: the ordinary ladder still sorts outside the kernel; see tryOpenOrderedRows.
@@ -1495,7 +1550,7 @@ final class LmdbNativeKernelExecution {
 				nestedAttemptStarted = true;
 				return retainedCursor = tryOpenRows(arg, row, originalExpr, preferScans, distinctSlots, ordered,
 						scanPredicates, scanVariablePredicates, parallelExecution, requestedTier, quotedReservation,
-						wildcardFamily, true);
+						wildcardFamily, true, consumerInput);
 			}
 			final LmdbNativeKernelLowering.Lowered lowered = semantic.withTelemetry(row.runtimePlan == null
 					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
@@ -1509,7 +1564,7 @@ final class LmdbNativeKernelExecution {
 					nestedAttemptStarted = true;
 					return retainedCursor = tryOpenRows(arg, row, originalExpr, preferScans, distinctSlots, ordered,
 							scanPredicates, true, parallelExecution, requestedTier, quotedReservation, wildcardFamily,
-							suppressHash);
+							suppressHash, consumerInput);
 				}
 				return null;
 			}
@@ -1522,7 +1577,7 @@ final class LmdbNativeKernelExecution {
 					nestedAttemptStarted = true;
 					return retainedCursor = tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered,
 							scanPredicates, true,
-							parallelExecution, requestedTier, quotedReservation, wildcardFamily, suppressHash);
+							parallelExecution, requestedTier, quotedReservation, wildcardFamily, suppressHash, consumerInput);
 				}
 				LmdbNativeAttemptMetrics.recordDecline(originalExpr,
 						rowRoute(false, distinctSlots != null, wildcardKernel), "disabled");
@@ -1630,7 +1685,7 @@ final class LmdbNativeKernelExecution {
 					nestedAttemptStarted = true;
 					return retainedCursor = tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered,
 							scanPredicates, true,
-							parallelExecution, requestedTier, quotedReservation, wildcardFamily, suppressHash);
+							parallelExecution, requestedTier, quotedReservation, wildcardFamily, suppressHash, consumerInput);
 				}
 				if (ordered == null) {
 					LmdbNativeAttemptMetrics.recordDecline(originalExpr, pathTag,
@@ -1669,14 +1724,14 @@ final class LmdbNativeKernelExecution {
 					nestedAttemptStarted = true;
 					return retainedCursor = tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered, failed,
 							scanVariablePredicates, parallelExecution, requestedTier, quotedReservation,
-							wildcardFamily, suppressHash);
+							wildcardFamily, suppressHash, consumerInput);
 				}
 				// Retry once without views before giving the plan back to the ordinary ladder.
 				if (!preferScans && LmdbNativeKernelLowering.scanSourcesEnabled()) {
 					nestedAttemptStarted = true;
 					return retainedCursor = tryOpenRows(arg, row, originalExpr, true, distinctSlots, ordered, null,
 							scanVariablePredicates, parallelExecution, requestedTier, quotedReservation,
-							wildcardFamily, suppressHash);
+							wildcardFamily, suppressHash, consumerInput);
 				}
 				if (ordered != null) {
 					return null;
@@ -1845,7 +1900,7 @@ final class LmdbNativeKernelExecution {
 			Throwable failure = null;
 			try {
 				if (hooks != null) {
-					hooks.closeFilters();
+					hooks.closeFilters(kernel != null && kernel.filterInputExhausted());
 				}
 			} catch (RuntimeException | Error problem) {
 				failure = problem;
@@ -2256,11 +2311,28 @@ final class LmdbNativeKernelExecution {
 			this.views = views;
 			this.row = row;
 			this.columnSlots = columnSlots;
-			this.residualFilters = residualFilters;
-			this.hashReservation = hashReservation;
-			this.fillRows = fillRows;
-			this.buffer = initialBuffer == null ? new long[Math.max(columnSlots.length, 1) * fillRows] : initialBuffer;
-			this.bufferRows = initialRows;
+			this.residualFilters = new ArrayList<>(residualFilters.size());
+			try {
+				for (MaskedFilter residual : residualFilters) {
+					this.residualFilters.add(new MaskedFilter(residual.filter.open(row), residual.mask,
+							residual.adaptive, residual.plannedDepth));
+				}
+				this.hashReservation = hashReservation;
+				this.fillRows = fillRows;
+				this.buffer = initialBuffer == null ? new long[Math.max(columnSlots.length, 1) * fillRows] : initialBuffer;
+				this.bufferRows = initialRows;
+			} catch (RuntimeException | Error failure) {
+				for (MaskedFilter residual : this.residualFilters) {
+					try {
+						residual.filter.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (cleanup != failure) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+				}
+				throw failure;
+			}
 		}
 
 		@Override
@@ -2331,6 +2403,9 @@ final class LmdbNativeKernelExecution {
 			Throwable failure = null;
 			for (MaskedFilter residual : residualFilters) {
 				try {
+					if (kernel.filterInputExhausted()) {
+						residual.filter.inputExhausted();
+					}
 					residual.filter.close();
 				} catch (RuntimeException | Error problem) {
 					failure = addFailure(failure, problem);
@@ -2338,7 +2413,7 @@ final class LmdbNativeKernelExecution {
 			}
 			try {
 				if (hooks != null) {
-					hooks.closeFilters();
+					hooks.closeFilters(kernel.filterInputExhausted());
 				}
 			} catch (RuntimeException | Error problem) {
 				failure = addFailure(failure, problem);

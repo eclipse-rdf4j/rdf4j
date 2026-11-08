@@ -67,8 +67,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentKeyability;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbCacheValueCopies;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.Test;
@@ -134,6 +137,117 @@ class LmdbNativeAggregateValuesCompilerTest {
 		assertThat(planner.pendingValueGuards)
 				.as("RDF-term VALUES rows must not become value-equality guards")
 				.isEmpty();
+	}
+
+	@Test
+	void liveLookupScopeWithoutRetainedDictionarySnapshotCannotProveFiniteAbsence() throws Exception {
+		Literal valueInsertedAfterProof = VF.createLiteral("live-only-value");
+		LiveDictionarySource source = new LiveDictionarySource(valueInsertedAfterProof);
+		BindingSetAssignment finiteValues = new BindingSetAssignment();
+		finiteValues.setBindingNames(Set.of("term"));
+		finiteValues.setBindingSets(List.of(new ListBindingSet(List.of("term"), valueInsertedAfterProof)));
+		Join witness = new Join(patternForTerm(), finiteValues);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+		assertThat(BindingSetAssignmentKeyability.canInspect(finiteValues)).isTrue();
+		assertThat(LmdbNativeAggregatePlannerBase.canDiscardWithoutEvaluation(witness)).isTrue();
+		assertThat(LmdbNativeAggregatePlannerBase.termSafeAbsenceProof(valueInsertedAfterProof)).isTrue();
+		assertThat(LmdbCacheValueCopies.copyValueForFiniteAbsenceProof(valueInsertedAfterProof)).isNotNull();
+		assertThat(source.idOf(valueInsertedAfterProof)).isEqualTo(UNKNOWN_ID);
+		assertThat(source.valueLookupScope()).isNotNull().isSameAs(source.valueLookupScope());
+		assertThat(planner.islandsEnabled).isTrue();
+
+		SlotPlan absenceProof = planner.compileJoinWithAbsentFiniteValues((Join) witness);
+
+		assertThat(absenceProof)
+				.as("a stable lookup token from a live custom source does not certify retained dictionary absence")
+				.isNull();
+
+		source.insert(valueInsertedAfterProof);
+		long insertedId = source.idOf(valueInsertedAfterProof);
+		assertThat(insertedId).isNotEqualTo(UNKNOWN_ID);
+		assertThat(source.has(UNKNOWN_ID, LINK_ID, insertedId, 0L))
+				.as("the live source fixture exposes the inserted statement before compiling its row plan")
+				.isTrue();
+		finiteValues.setBindingSets(List.of(new ListBindingSet(List.of("term"), valueInsertedAfterProof)));
+		planner.resetValuesFallbackCompilation();
+		assertThat(planner.compileJoinWithAbsentFiniteValues((Join) witness))
+				.as("source and AST changes followed by compiler reset must recheck the current dictionary")
+				.isNull();
+		planner.collectSyntheticValues(witness);
+		SlotPlan patternOnly = planner.compileTuple(witness.getLeftArg(), false);
+		SlotPlan valuesOnly = planner.compileTuple(finiteValues, false);
+		SlotPlan executable = planner.compileTuple(witness, false);
+		assertThat(executable).isNotSameAs(EmptyPlan.INSTANCE);
+		assertThat(patternOnly).isInstanceOf(PatternPlan.class);
+		assertThat(valuesOnly).isInstanceOf(ValuesPlan.class);
+		assertThat(((ValuesPlan) valuesOnly).rows[0].values).containsExactly(insertedId);
+		planner.layout.freeze(planner.slotNames);
+		RowState patternRow = new RowState(source, planner.layout, EmptyBindingSet.getInstance());
+		assertThat(NativeRowSeeder.seed(patternRow.slots, patternRow.layout, patternRow.base, patternRow.source))
+				.isTrue();
+		patternRow.recomputeBoundMask();
+		try (RowCursor cursor = patternOnly.open(patternRow)) {
+			boolean foundPatternRow = cursor.next();
+			assertThat(foundPatternRow)
+					.as("PatternPlan reads the inserted source record; statement bounds=%s, has bounds=%s",
+							java.util.Arrays.toString(source.lastStatementBounds),
+							java.util.Arrays.toString(source.lastHasBounds))
+					.isTrue();
+			assertThat(patternRow.view.getValue("term")).isEqualTo(valueInsertedAfterProof);
+			assertThat(source.lastStatementBounds).containsExactly(UNKNOWN_ID, LINK_ID, UNKNOWN_ID, UNKNOWN_ID);
+		}
+		RowState valuesRow = new RowState(source, planner.layout, EmptyBindingSet.getInstance());
+		assertThat(NativeRowSeeder.seed(valuesRow.slots, valuesRow.layout, valuesRow.base, valuesRow.source))
+				.isTrue();
+		valuesRow.recomputeBoundMask();
+		try (RowCursor cursor = valuesOnly.open(valuesRow)) {
+			assertThat(cursor.next()).as("ValuesPlan binds the inserted dictionary ID").isTrue();
+			assertThat(valuesRow.view.getValue("term")).isEqualTo(valueInsertedAfterProof);
+		}
+		RowState row = new RowState(source, planner.layout, EmptyBindingSet.getInstance());
+		assertThat(NativeRowSeeder.seed(row.slots, row.layout, row.base, row.source)).isTrue();
+		row.recomputeBoundMask();
+		try (RowCursor cursor = executable.open(row)) {
+			assertThat(cursor.next())
+					.as("the recompiled live source exposes its newly inserted value (plan=%s)",
+							executable.getClass().getSimpleName())
+					.isTrue();
+			assertThat(row.view.getValue("term")).isEqualTo(valueInsertedAfterProof);
+			assertThat(cursor.next()).isFalse();
+		}
+	}
+
+	@Test
+	void valuesFallbackResetDoesNotKeepAbsentProofAfterLiveSourceAndAstMutation() {
+		Literal value = VF.createLiteral("live-value-after-reset");
+		LiveDictionarySource source = new LiveDictionarySource(value) {
+			@Override
+			public boolean tryRetainDictionaryTermMembership() {
+				return true;
+			}
+		};
+		BindingSetAssignment finiteValues = new BindingSetAssignment();
+		finiteValues.setBindingNames(Set.of("term"));
+		finiteValues.setBindingSets(List.of(new ListBindingSet(List.of("term"), value)));
+		Join witness = new Join(patternForTerm(), finiteValues);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+
+		assertThat(planner.compileJoinWithAbsentFiniteValues(witness))
+				.as("the retained source proves the original value absent")
+				.isSameAs(EmptyPlan.INSTANCE);
+		source.insert(value);
+		finiteValues.setBindingSets(List.of(new ListBindingSet(List.of("term"), value)));
+		planner.resetValuesFallbackCompilation();
+
+		assertThat(planner.compileJoinWithAbsentFiniteValues(witness))
+				.as("a reset after source and AST mutation must not reuse a cached empty proof")
+				.isNull();
 	}
 
 	@Test
@@ -356,20 +470,93 @@ class LmdbNativeAggregateValuesCompilerTest {
 
 	@Test
 	void automaticConditionVisibilityAlsoHidesUndeclaredApiBindings() {
+		assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope.AUTO, true, 1);
+	}
+
+	@Test
+	void unscopedAutomaticAndAllConditionFramesKeepDirectApiBindings() {
+		assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope.AUTO, false, 0);
+		assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope.ALL, false, 0);
+	}
+
+	@Test
+	void explicitlyRetainedStatementNamesHideUndeclaredApiBindings() {
+		assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope.retain(Set.of("subject", "name")), false, 1);
+	}
+
+	private void assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope scope, boolean scopeChange,
+			int expectedSize) {
 		StatementPattern pattern = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name"));
 		Filter filter = new Filter(pattern, new Not(new Bound(Var.of("hidden"))));
-		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+		filter.setConditionBindingScope(scope);
+		filter.setVariableScopeChange(scopeChange);
+		MapBindingSet api = new MapBindingSet();
+		api.addBinding("hidden", NAME_1);
+		TripleSource triples = new TripleSource() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o, Resource... c) {
+				boolean matches = (s == null || s.equals(SUBJECT)) && (p == null || p.equals(LINK))
+						&& (o == null || o.equals(NAME_1));
+				return new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
+						(matches ? List.of(VF.createStatement(SUBJECT, LINK, NAME_1)) : List.<Statement>of())
+								.iterator());
+			}
+		};
+		var ordinary = new org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy(triples,
+				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
+		List<BindingSet> expected;
+		try (var rows = ordinary.precompile(filter.clone()).evaluate(api)) {
+			expected = org.eclipse.rdf4j.query.QueryResults.asList(rows);
+		}
+		assertThat(expected).as("condition scope %s, scopeChange=%s", scope, scopeChange)
+				.hasSize(expectedSize);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null,
 				null, 0L, new EvaluationStatistics(), false);
 		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(filter,
 				new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
 		assertThat(step).isNotNull();
-		MapBindingSet api = new MapBindingSet();
-		api.addBinding("hidden", NAME_1);
 		try (var rows = step.evaluate(api)) {
-			assertThat(rows.hasNext()).isTrue();
-			assertThat(rows.next().getValue("name")).isEqualTo(NAME_1);
-			assertThat(rows.hasNext()).isFalse();
+			assertThat(org.eclipse.rdf4j.query.QueryResults.asList(rows)).isEqualTo(expected);
 		}
+		if (!expected.isEmpty()) {
+			assertThat(expected.getFirst().getValue("name")).isEqualTo(NAME_1);
+		}
+	}
+
+	@Test
+	void exactDomainPropagationRequiresCompleteObservationContracts() {
+		StatementPattern pattern = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name"));
+		Filter opaqueFilter = new Filter(pattern.clone(), new Bound(Var.of("name")) {
+		});
+		opaqueFilter.setConditionBindingScope(ConditionBindingScope.ALL);
+		List<TupleExpr> opaque = List.of(new Join(pattern.clone(), new SingletonSet() {
+		}), opaqueFilter,
+				new Extension(pattern.clone(), new ExtensionElem(new Var("name") {
+				}, "copy")));
+		for (TupleExpr expression : opaque) {
+			SingleStatementSource source = new SingleStatementSource();
+			var strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null, 0L,
+					new EvaluationStatistics(), false);
+			var planner = new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+					source);
+			assertThat(planner.compileTupleWithConstantFilter(expression, "name", new long[] { NAME_1_ID },
+					new Value[] { NAME_1 }, true))
+							.as("a specialized finite-domain rewrite cannot certify hidden observations: %s",
+									expression.getClass())
+							.isNull();
+		}
+		SingleStatementSource source = new SingleStatementSource();
+		var strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null, 0L,
+				new EvaluationStatistics(), false);
+		var planner = new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+				source);
+		assertThat(planner.compileTupleWithConstantFilter(new Join(pattern, new SingletonSet()), "name",
+				new long[] { NAME_1_ID }, new Value[] { NAME_1 }, true)).isNotNull();
 	}
 
 	@Test
@@ -609,7 +796,7 @@ class LmdbNativeAggregateValuesCompilerTest {
 		return new StatementPattern(Var.of("subject"), Var.of("predicate", LINK, true), Var.of("term"));
 	}
 
-	private static final class SingleStatementSource implements NativeLmdbQuerySource {
+	private static class SingleStatementSource implements NativeLmdbQuerySource {
 		private static final Map<Value, Long> IDS = Map.of(
 				SUBJECT, SUBJECT_ID,
 				LINK, LINK_ID,
@@ -679,6 +866,76 @@ class LmdbNativeAggregateValuesCompilerTest {
 		}
 
 		private static boolean matchesField(long requested, long actual) {
+			return requested == UNKNOWN_ID || requested == actual;
+		}
+	}
+
+	private static class LiveDictionarySource extends SingleStatementSource {
+		private final Value value;
+		private final long valueId = ValueIds.createId(ValueIds.T_LITERAL, 42L);
+		private Object liveLookupScope = new Object();
+		private boolean inserted;
+		private long[] lastStatementBounds;
+		private long[] lastHasBounds;
+
+		private LiveDictionarySource(Value value) {
+			this.value = value;
+		}
+
+		@Override
+		public Object valueLookupScope() {
+			// The token tracks the current version but does not retain an older dictionary view.
+			return liveLookupScope;
+		}
+
+		@Override
+		public long idOf(Value value) {
+			if (this.value.equals(value)) {
+				return inserted ? valueId : UNKNOWN_ID;
+			}
+			return super.idOf(value);
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			return id == valueId ? value : super.lazyValue(id);
+		}
+
+		private void insert(Value value) {
+			if (!this.value.equals(value)) {
+				throw new IllegalArgumentException("unexpected value");
+			}
+			inserted = true;
+			liveLookupScope = new Object();
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			lastStatementBounds = new long[] { subj, pred, obj, context };
+			return new SingleRecordIterator(matches(subj, SUBJECT_ID) && matches(pred, LINK_ID)
+					&& matches(obj, valueId) && matches(context, 0L) && inserted
+							? new long[] { SUBJECT_ID, LINK_ID, valueId, 0L }
+							: null);
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return inserted && matches(subj, SUBJECT_ID) && matches(pred, LINK_ID)
+					&& matches(obj, valueId) && matches(context, 0L) ? 1L : 0L;
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			lastHasBounds = new long[] { subj, pred, obj, context };
+			return count(subj, pred, obj, context) > 0L;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return count(subj, pred, obj, context);
+		}
+
+		private static boolean matches(long requested, long actual) {
 			return requested == UNKNOWN_ID || requested == actual;
 		}
 	}

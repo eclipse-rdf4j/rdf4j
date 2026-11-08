@@ -44,6 +44,9 @@ public class TripleIndex {
 	static final int KEY_MATCH = 0;
 	static final int KEY_FILTERED = 1;
 	static final int KEY_OUT_OF_RANGE = 2;
+	private static final int BOUND_MASK_BITS = 4;
+	private static final int BOUND_PATTERN_COUNT = 1 << BOUND_MASK_BITS;
+	private static final StatementOrder[] STATEMENT_ORDERS = StatementOrder.values();
 	private static final ConcurrentMap<String, IndexKeyWriters.KeyWriter> STATIC_KEY_WRITERS = new ConcurrentHashMap<>();
 
 	// triples are represented by 4 varints for subject, predicate, object and context
@@ -75,6 +78,10 @@ public class TripleIndex {
 	final StatementFieldValueAccessor leadingFieldValueAccessor;
 	private final int dbiExplicit, dbiInferred;
 	private final int[] indexMap;
+	private final byte[] patternScoresByBoundMask;
+	private final boolean[] supportedOrdersByBoundMask;
+	// Sixteen four-bit prefix-component masks, indexed by S/P/O/C boundness.
+	private final long prefixComponentMasksByBoundMask;
 	private final long env;
 	private String name;
 	private boolean explicitDbiClosed;
@@ -95,6 +102,9 @@ public class TripleIndex {
 		this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 		this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 		this.indexMap = getIndexes(this.fieldSeq);
+		this.patternScoresByBoundMask = new byte[BOUND_PATTERN_COUNT];
+		this.supportedOrdersByBoundMask = new boolean[STATEMENT_ORDERS.length * BOUND_PATTERN_COUNT];
+		this.prefixComponentMasksByBoundMask = precomputePatternLookups();
 		this.env = env;
 		// open database and use native sort order without comparator
 		int explicitDbi = databaseOpener.open(writeTxn, getName(true), MDB_CREATE);
@@ -107,7 +117,12 @@ public class TripleIndex {
 	}
 
 	public char[] getFieldSeq() {
-		return fieldSeq;
+		// Defensive copy: pattern scoring and key encoding must always use the constructor's field sequence.
+		return fieldSeq.clone();
+	}
+
+	boolean isSpoc() {
+		return fieldSeq[0] == 's' && fieldSeq[1] == 'p' && fieldSeq[2] == 'o' && fieldSeq[3] == 'c';
 	}
 
 	@InternalUseOnly
@@ -211,6 +226,62 @@ public class TripleIndex {
 	 * the index will perform a sequential scan.
 	 */
 	public int getPatternScore(long subj, long pred, long obj, long context) {
+		return patternScoresByBoundMask[boundMask(subj, pred, obj, context)];
+	}
+
+	boolean supportsOrder(StatementOrder statementOrder, long subj, long pred, long obj, long context) {
+		return supportedOrdersByBoundMask[(statementOrder.ordinal() << BOUND_MASK_BITS)
+				| boundMask(subj, pred, obj, context)];
+	}
+
+	/**
+	 * Returns the component bits in this index's contiguous bound prefix. Bits 0..3 represent subject, predicate,
+	 * object and context; higher input bits are ignored. All sixteen answers are packed into one long.
+	 */
+	int indexPrefixComponentMask(int boundComponentMask) {
+		int shift = (boundComponentMask & (BOUND_PATTERN_COUNT - 1)) * BOUND_MASK_BITS;
+		return (int) (prefixComponentMasksByBoundMask >>> shift) & (BOUND_PATTERN_COUNT - 1);
+	}
+
+	/**
+	 * Encodes whether each ID is non-negative: bits 0..3 represent subject, predicate, object and context. In
+	 * particular, zero is bound and every negative ID is unbound, not just -1.
+	 */
+	static int boundMask(long subj, long pred, long obj, long context) {
+		int unboundMask = (int) ((subj >>> 63) | ((pred >>> 62) & 2) | ((obj >>> 61) & 4)
+				| ((context >>> 60) & 8));
+		return unboundMask ^ (BOUND_PATTERN_COUNT - 1);
+	}
+
+	private long precomputePatternLookups() {
+		long prefixMasks = 0;
+		for (int mask = 0; mask < BOUND_PATTERN_COUNT; mask++) {
+			long subj = (mask & 1) != 0 ? 1 : -1;
+			long pred = (mask & 2) != 0 ? 1 : -1;
+			long obj = (mask & 4) != 0 ? 1 : -1;
+			long context = (mask & 8) != 0 ? 1 : -1;
+			int score = calculatePatternScore(subj, pred, obj, context);
+			patternScoresByBoundMask[mask] = (byte) score;
+			int prefixMask = 0;
+			for (int i = 0; i < score; i++) {
+				prefixMask |= switch (fieldSeq[i]) {
+				case 's' -> 1 << SUBJ_IDX;
+				case 'p' -> 1 << PRED_IDX;
+				case 'o' -> 1 << OBJ_IDX;
+				case 'c' -> 1 << CONTEXT_IDX;
+				default -> throw new IllegalStateException("Unknown index field: " + fieldSeq[i]);
+				};
+			}
+			prefixMasks |= (long) prefixMask << (mask * BOUND_MASK_BITS);
+			for (StatementOrder order : STATEMENT_ORDERS) {
+				supportedOrdersByBoundMask[(order.ordinal() << BOUND_MASK_BITS) | mask] = calculateSupportsOrder(
+						order, subj, pred, obj, context);
+			}
+		}
+		return prefixMasks;
+	}
+
+	private int calculatePatternScore(long subj, long pred, long obj, long context) {
 		int score = 0;
 
 		for (char field : fieldSeq) {
@@ -252,7 +323,8 @@ public class TripleIndex {
 		return score;
 	}
 
-	boolean supportsOrder(StatementOrder statementOrder, long subj, long pred, long obj, long context) {
+	private boolean calculateSupportsOrder(StatementOrder statementOrder, long subj, long pred, long obj,
+			long context) {
 		int orderedComponent = switch (statementOrder) {
 		case S -> SUBJ_IDX;
 		case P -> PRED_IDX;
@@ -431,6 +503,10 @@ public class TripleIndex {
 		}
 	}
 
+	void keyToQuad(long keyAddress, int keyLength, long[] quad) {
+		Varint.readQuadUnsigned(keyAddress, keyLength, indexMap, quad);
+	}
+
 	int keyToQuadMatchStatus(ByteBuffer key, int rangePrefixLength, long matchSubj, long matchPred, long matchObj,
 			long matchContext, long[] quad) {
 		for (int i = 0; i < indexMap.length; i++) {
@@ -579,6 +655,15 @@ public class TripleIndex {
 	}
 
 	static TripleIndex getBestIndex(List<TripleIndex> indexes, long subj, long pred, long obj, long context) {
+		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
+			// Wildcard scans iterate subject-locally; prefer spoc when it exists.
+			for (TripleIndex index : indexes) {
+				if (index.isSpoc()) {
+					return index;
+				}
+			}
+		}
+
 		int bestScore = -1;
 		TripleIndex bestIndex = null;
 
@@ -587,12 +672,19 @@ public class TripleIndex {
 			if (score > bestScore) {
 				bestScore = score;
 				bestIndex = index;
+				if (score == 4) {
+					return bestIndex;
+				}
 			}
 		}
 
 		return bestIndex;
 	}
 
+	/**
+	 * Computes one ordered choice for an arbitrary list. Repeated queries use {@link IndexSelection}, which calls this
+	 * method only while precomputing the choices for an index generation.
+	 */
 	static TripleIndex getBestCompatibleOrderedIndex(List<TripleIndex> indexes, StatementOrder statementOrder,
 			long subj, long pred, long obj, long context) {
 		int bestScore = -1;
@@ -610,6 +702,38 @@ public class TripleIndex {
 		}
 
 		return bestIndex;
+	}
+
+	/**
+	 * Ordered index choices for one immutable index generation. Winners retain the actual index instances from that
+	 * generation and preserve the configured list order when scores tie.
+	 */
+	static final class IndexSelection {
+		private final TripleIndex[] orderedIndexesByBoundMask;
+
+		IndexSelection(List<TripleIndex> indexes) {
+			List<TripleIndex> snapshot = List.copyOf(indexes);
+			orderedIndexesByBoundMask = new TripleIndex[STATEMENT_ORDERS.length * BOUND_PATTERN_COUNT];
+			for (int mask = 0; mask < BOUND_PATTERN_COUNT; mask++) {
+				long subj = (mask & 1) != 0 ? 1 : -1;
+				long pred = (mask & 2) != 0 ? 1 : -1;
+				long obj = (mask & 4) != 0 ? 1 : -1;
+				long context = (mask & 8) != 0 ? 1 : -1;
+				for (StatementOrder order : STATEMENT_ORDERS) {
+					orderedIndexesByBoundMask[(order.ordinal() << BOUND_MASK_BITS) | mask] = TripleIndex
+							.getBestCompatibleOrderedIndex(snapshot, order, subj, pred, obj, context);
+				}
+			}
+		}
+
+		TripleIndex getBestCompatibleOrderedIndex(StatementOrder order, long subj, long pred, long obj, long context) {
+			return getBestCompatibleOrderedIndex(order, boundMask(subj, pred, obj, context));
+		}
+
+		/** The bound mask must be in the range 0..15 and the requested order must be non-null. */
+		TripleIndex getBestCompatibleOrderedIndex(StatementOrder order, int boundMask) {
+			return orderedIndexesByBoundMask[(order.ordinal() << BOUND_MASK_BITS) | boundMask];
+		}
 	}
 
 	static boolean threeOfFourAreZeroOrMax(long subj, long pred, long obj, long context) {

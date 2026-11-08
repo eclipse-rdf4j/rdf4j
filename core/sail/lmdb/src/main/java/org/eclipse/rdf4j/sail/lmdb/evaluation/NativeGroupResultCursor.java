@@ -27,6 +27,8 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	private final GroupingPlan fixedPlan;
 	private final List<AutoCloseable> alternatives = new ArrayList<>();
 	private NativeResultCursor selectedResults;
+	private LmdbNativeDispatchLoop.Selection<NativeResultCursor> selection;
+	private NativeExecutionContext.Lease selectionLease;
 	private final NativeExecutionContext context;
 	private final NativeExecutionContext.Lease lease;
 	private final boolean closeContext;
@@ -44,6 +46,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	private AggregateDistinctChannels channels;
 	private boolean initialized, streaming, inputDone, pendingInput;
 	private boolean active, closeRequested, cleanupStarted, completed;
+	private boolean cancellationRequested;
 	private int probeTicks;
 	private NativeExecutionPhaseEvent.Span phase;
 	private Throwable terminalFailure;
@@ -71,7 +74,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		this.context = context;
 		this.closeContext = closeContext;
 		this.closeAggregateContext = closeAggregateContext;
-		this.lease = context == null || !closeContext ? null : context.retainLease();
+		this.lease = context == null || !closeContext ? null : context.retainInternalLease();
 		this.inputPhases = fixedPlan == null || closeAggregateContext
 				? NativeExecutionPhaseEvent.inputOwner(cancellation())
 				: null;
@@ -118,7 +121,12 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			if (!initialized) {
 				initialize();
 			}
+			LmdbNativeCostObservation observation = selection == null ? null : selection.observation();
+			long started = observation == null ? 0L : observation.beginPull();
 			result = streaming ? nextStreaming() : results.next();
+			if (observation != null) {
+				observation.endPull(started);
+			}
 			cancellation().check();
 			if (result == null) {
 				completed = true;
@@ -282,6 +290,8 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		LmdbNativeDispatchLoop<Void, NativeResultCursor> loop = new LmdbNativeDispatchLoop<>(
 				LmdbNativeDecisionPoint.GROUP_PHYSICAL, offers.strategies(), iteration.explainTarget)
 						.label(iteration.decisionPoint())
+						.filterParent(iteration.filterAttempt == null ? NativeFilterLease.parentOf(row)
+								: iteration.filterAttempt)
 						.forcing(iteration.forcedExecutionStrategy)
 						.advice(LmdbNativeAdvisoryLearner.scope(row, iteration.arg));
 		if (preview) {
@@ -290,6 +300,9 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				LmdbNativeStrategyPreview.inspect(fullAttempt.iteration.arg);
 			}
 			return null;
+		}
+		if (fullAttempt != null) {
+			loop.encounterOrderReplay(iteration.cancellation);
 		}
 		LmdbNativeDispatchLoop.Selection<NativeResultCursor> selected;
 		try {
@@ -300,14 +313,19 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			if (fullAttempt == null) {
 				throw fallback;
 			}
+			iteration.cancellation.check();
 			return fullAttempt.replay(fallback);
 		}
-		iteration.cancellation.check();
 		if (selected == null) {
 			throw new QueryEvaluationException("No legal native physical aggregate candidate could open");
 		}
-		LmdbNativeCostObservation observation = selected.observation();
-		return observation == null ? selected.value() : observation.observed(selected.value());
+		// The outer cursor owns the receipt before checking cancellation, so a failed handoff still aborts it.
+		selection = selected;
+		selectedResults = selected.value();
+		NativeExecutionContext selectedContext = selectedResults.executionContext();
+		selectionLease = selectedContext == null ? null : selectedContext.retainInternalLease();
+		iteration.cancellation.check();
+		return selected.value();
 	}
 
 	private void offerGroupingPlan(LmdbNativeOffers<NativeResultCursor> offers, NativeAggregateCostQuotes quotes,
@@ -316,7 +334,8 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		GroupingPlan actual = quotedInput == null ? plan
 				: new GroupingPlan(quotedInput, plan.channels(), plan.streaming(), plan.tag());
 		offers.offer(actual.tag(), () -> quotes.attach(new LmdbNativeStrategyProposal<NativeResultCursor>(
-				() -> actual.open(iteration, executionContext()),
+				filters -> new GroupingPlan(filters.borrow(actual.input()), actual.channels(), actual.streaming(),
+						actual.tag()).open(iteration.withFilterAttempt(filters), executionContext()),
 				actual.input().estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO,
 				iteration.groupSlots.length == 0 && iteration.havingCondition == null ? 1D : Double.NaN,
 				actual.tag(), () -> {
@@ -439,6 +458,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			return false;
 		}
 		cancellation().requestCancellation();
+		cancellationRequested = true;
 		return true;
 	}
 
@@ -450,6 +470,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				return;
 			}
 			closeRequested = true;
+			cancellationRequested |= cancellation().isUpstreamCancellationRequested();
 			cancellation().requestCancellation();
 			cleanup = !active && !cleanupStarted;
 			cleanupStarted |= cleanup;
@@ -474,6 +495,11 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		failure = KernelRuntime.closeResource(streamingMemory, failure);
 		streamingMemory = null;
 		failure = KernelRuntime.closeResource(results, failure);
+		if (results == null && selectedResults != null) {
+			failure = KernelRuntime.closeResource(selectedResults, failure);
+		}
+		results = null;
+		selectedResults = null;
 		failure = KernelRuntime.closeResource(input, failure);
 		failure = KernelRuntime.closeResource(table, failure);
 		for (AutoCloseable alternative : alternatives) {
@@ -515,9 +541,19 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 
 	/** Active leases and every accepted producer resource finish before a sample can be marked complete. */
 	private Throwable finishSelection(Throwable failure) {
-		if (selectedResults != null) {
-			failure = KernelRuntime.closeResource(selectedResults, failure);
-			selectedResults = null;
+		LmdbNativeDispatchLoop.Selection<NativeResultCursor> retiring = selection;
+		selection = null;
+		if (retiring != null) {
+			Throwable cancellation = failure == null && cancellationRequested ? cancellation().pollCancellation() : null;
+			Throwable primary = failure == null ? cancellation : failure;
+			Throwable retained = retiring.finish(primary);
+			failure = retained == cancellation ? null : retained;
+		}
+		// Keep the evaluation and its feedback destination alive until the selected filter receipt is settled.
+		failure = KernelRuntime.closeResource(selectionLease, failure);
+		selectionLease = null;
+		if (retiring != null && completed && failure == null && retiring.observation() != null) {
+			failure = KernelRuntime.closeResource(retiring.observation()::completed, null);
 		}
 		return failure;
 	}
@@ -527,15 +563,16 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		private final NativeGroupIteration iteration;
 		private final RowState row;
 		private final SyntheticValueSource evaluation;
+		private final NativeFilterLease parentFilters;
 		private final boolean closeContext;
-		private final NativeFilterLease filters = new NativeFilterLease();
 		private final LmdbNativeAttemptMetrics metrics;
 		private final SlotPlan originalArg;
 		private final boolean seeded;
-		private boolean closed, selected;
+		private boolean closed;
 
 		FullAttempt(NativeGroupStep full, NativeGroupIteration parent) {
-			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(parent.source)) {
+			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(parent.source,
+					parent.filterAttempt)) {
 				evaluation = full.source instanceof SyntheticValueSource synthetic
 						? synthetic.forInvocation(full.generatedKeys, full.layout, parent.base)
 						: SyntheticValueSource.forEvaluation(full.source);
@@ -546,7 +583,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			NativeGroupIteration accepted = null;
 			RowState acceptedRow = null;
 			try {
-				accepted = new NativeGroupIteration(evaluation, filters.borrow(full.arg), full.layout, full.groupSlots,
+				accepted = new NativeGroupIteration(evaluation, full.arg, full.layout, full.groupSlots,
 						full.aggregates, full.strictCompare, parent.base, full.prefixPattern, full.prefixRunPlan,
 						full.prefixCountRunRows, full.prefixDistinctRuns, full.prefixRunFilter,
 						full.prefixRootKindFilter,
@@ -556,6 +593,8 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				accepted.alternatives = full.alternatives;
 				acceptedRow = new RowState(evaluation, full.layout, parent.base, parent.explainTarget,
 						accepted.cancellation);
+				parentFilters = parent.filterAttempt == null ? NativeFilterLease.parentOf(acceptedRow)
+						: parent.filterAttempt;
 				seeded = accepted.initialize(acceptedRow);
 				iteration = accepted;
 				row = acceptedRow;
@@ -567,7 +606,6 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				if (acceptedRow != null) {
 					KernelRuntime.closeResource(acceptedRow::closeDecodedInputs, failure);
 				}
-				filters.abort(failure);
 				if (closeContext) {
 					KernelRuntime.closeResource(evaluation.executionContext(), failure);
 				}
@@ -613,7 +651,6 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				metrics.commitToParent();
 				LmdbNativeExplain.recordExecutionPath(iteration.explainTarget, actualTag);
 				NativeResultCursor cursor = cursor(rows);
-				selected = true;
 				return cursor;
 			}, tag);
 		}
@@ -659,11 +696,22 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 
 		private NativeResultCursor replay(EncounterOrderFallback fallback) {
 			NativeGroupIteration.throwRealFailureSuppressedBy(fallback);
-			filters.discard();
-			List<BindingSet> rows = iteration.evaluateSequentialFallback(row, fallback.reason, originalArg);
-			NativeResultCursor result = cursor(rows);
-			selected = true;
-			return result;
+			NativeFilterLease filters = new NativeFilterLease(parentFilters);
+			List<BindingSet> rows = null;
+			NativeResultCursor result = null;
+			try {
+				rows = iteration.withFilterAttempt(filters)
+						.evaluateSequentialFallback(row, fallback.reason, filters.borrow(originalArg));
+				result = cursor(rows);
+				filters.commit();
+				return result;
+			} catch (RuntimeException | Error failure) {
+				Throwable retained = result != null ? KernelRuntime.closeResource(result, failure)
+						: rows instanceof AutoCloseable resource ? KernelRuntime.closeResource(resource, failure) : failure;
+				retained = LmdbNativeDispatchLoop.finishFilters(filters, retained);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+				throw failure;
+			}
 		}
 
 		@Override
@@ -675,7 +723,6 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			Throwable failure = KernelRuntime.closeResource(iteration, null);
 			failure = KernelRuntime.closeResource(iteration.aggContext::close, failure);
 			failure = KernelRuntime.closeResource(row::closeDecodedInputs, failure);
-			failure = KernelRuntime.closeResource(selected ? filters::commit : () -> filters.abort(null), failure);
 			failure = KernelRuntime.closeResource(
 					iteration.prefixRunFilter == null ? null : iteration.prefixRunFilter::close,
 					failure);

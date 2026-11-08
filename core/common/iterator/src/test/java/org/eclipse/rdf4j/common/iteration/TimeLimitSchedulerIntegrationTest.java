@@ -173,6 +173,8 @@ class TimeLimitSchedulerIntegrationTest {
 				ExecutionException failure = assertThrows(ExecutionException.class,
 						() -> call.get(WAIT_SECONDS, TimeUnit.SECONDS));
 				assertInstanceOf(TimeLimitReached.class, failure.getCause());
+				assertEquals(1, source.closed.getCount(), "an admitted callback retains its source until it returns");
+				source.releaseCancellation.countDown();
 				assertTrue(source.closed.await(WAIT_SECONDS, TimeUnit.SECONDS));
 			} finally {
 				source.releaseCall.countDown();
@@ -201,6 +203,8 @@ class TimeLimitSchedulerIntegrationTest {
 				ExecutionException failure = assertThrows(ExecutionException.class,
 						() -> call.get(WAIT_SECONDS, TimeUnit.SECONDS));
 				assertInstanceOf(TimeLimitReached.class, failure.getCause());
+				assertEquals(1, source.closed.getCount(), "an admitted callback retains its source until it returns");
+				source.releaseCancellation.countDown();
 				assertTrue(source.closed.await(WAIT_SECONDS, TimeUnit.SECONDS));
 			} finally {
 				source.releaseCall.countDown();
@@ -214,7 +218,7 @@ class TimeLimitSchedulerIntegrationTest {
 	}
 
 	@Test
-	void extremeLimitsAndGracesDoNotOverflow() {
+	void extremeLimitsAndGracesDoNotOverflow() throws Exception {
 		try (InterruptingTimeLimit limit = InterruptingTimeLimit.start(Long.MAX_VALUE)) {
 			assertTrue(limit.remainingMillis() > 0);
 			assertFalse(limit.fired());
@@ -226,14 +230,17 @@ class TimeLimitSchedulerIntegrationTest {
 		assertFalse(Thread.currentThread().isInterrupted());
 
 		List<String> events = new CopyOnWriteArrayList<>();
-		TimedIteration iteration = new TimedIteration(new OrderedSource(events), Long.MAX_VALUE,
+		OrderedSource source = new OrderedSource(events);
+		TimedIteration iteration = new TimedIteration(source, Long.MAX_VALUE,
 				Long.MAX_VALUE, Long.MAX_VALUE);
 		try {
 			assertDoesNotThrow(iteration::interrupt);
+			assertTrue(source.cancelled.await(WAIT_SECONDS, TimeUnit.SECONDS));
 			assertEquals(List.of("cancel"), events);
 		} finally {
 			iteration.close();
 		}
+		assertTrue(source.closed.await(WAIT_SECONDS, TimeUnit.SECONDS));
 		assertEquals(List.of("cancel", "close"), events);
 	}
 
@@ -345,6 +352,7 @@ class TimeLimitSchedulerIntegrationTest {
 	private static final class OrderedSource implements CloseableIteration<Integer>, CooperativeCancellation {
 
 		private final List<String> events;
+		private final CountDownLatch cancelled = new CountDownLatch(1);
 		private final CountDownLatch entered = new CountDownLatch(1);
 		private final CountDownLatch released = new CountDownLatch(1);
 		private final CountDownLatch closed = new CountDownLatch(1);
@@ -356,6 +364,7 @@ class TimeLimitSchedulerIntegrationTest {
 		@Override
 		public boolean requestCancellation() {
 			events.add("cancel");
+			cancelled.countDown();
 			return false;
 		}
 

@@ -46,6 +46,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryOperationContext;
+import org.eclipse.rdf4j.query.QueryOperationDeadline;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -239,6 +241,74 @@ class SailQueryExecutionTimeoutTest {
 					.isNotSameAs(iteration);
 			Thread.sleep(MAX_EXECUTION_TIME_SECONDS * 1000L + DEADLINE_MARGIN_MILLIS);
 			assertThatThrownBy(timed::hasNext).isInstanceOf(QueryInterruptedException.class);
+		}
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void directLegacyHookKeepsItsOwnLimitUnderAnUnrelatedOperationBudget() throws Exception {
+		var query = new SailTupleQuery(
+				((SailTupleQuery) repositoryConnection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }"))
+						.getParsedQuery(), repositoryConnection) {
+			@Override
+			protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+					CloseableIteration<? extends BindingSet> bindings) {
+				return super.enforceMaxQueryTime(bindings);
+			}
+		};
+		query.setMaxExecutionTime(MAX_EXECUTION_TIME_SECONDS);
+		BlockingIteration iteration = new BlockingIteration();
+		QueryOperationDeadline unrelated = QueryOperationDeadline.after(60, TimeUnit.SECONDS);
+		try (QueryOperationContext.Scope scope = QueryOperationContext.open(unrelated);
+				var timed = query.enforceMaxQueryTime(iteration)) {
+			assertThat(iteration.closedLatch.await(8, TimeUnit.SECONDS)).isTrue();
+			assertThat(unrelated.isExpired()).isFalse();
+			assertThatThrownBy(timed::hasNext).isInstanceOf(QueryInterruptedException.class);
+		}
+		assertThat(iteration.closeCalls.get()).isEqualTo(1);
+	}
+
+	@Test
+	@Timeout(value = 20, unit = TimeUnit.SECONDS)
+	void blockedIdleCleanupDoesNotDelayAnotherPublicResultTimeLimit() throws Exception {
+		CountDownLatch releaseClose = new CountDownLatch(1);
+		BlockingIteration first = new BlockingIteration();
+		first.blockClose(releaseClose);
+		BlockingIteration second = new BlockingIteration();
+		AtomicInteger evaluations = new AtomicInteger();
+		when(sailConnection.evaluate(any(), any(), any(), anyBoolean()))
+				.thenAnswer(invocation -> evaluations.getAndIncrement() == 0 ? first : second);
+		TupleQuery firstQuery = repositoryConnection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
+		firstQuery.setMaxExecutionTime(MAX_EXECUTION_TIME_SECONDS);
+		TupleQueryResult firstResult = firstQuery.evaluate();
+		try {
+			assertThat(first.closeEntered.await(8, TimeUnit.SECONDS)).isTrue();
+			TupleQuery secondQuery = repositoryConnection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
+			secondQuery.setMaxExecutionTime(MAX_EXECUTION_TIME_SECONDS);
+			try (TupleQueryResult secondResult = secondQuery.evaluate()) {
+				assertThat(second.closedLatch.await(8, TimeUnit.SECONDS)).isTrue();
+				assertThat(first.closed).isFalse();
+				assertThatThrownBy(secondResult::hasNext).isInstanceOf(QueryInterruptedException.class);
+			}
+		} finally {
+			releaseClose.countDown();
+			firstResult.close();
+		}
+		assertThat(first.closeCalls.get()).isEqualTo(1);
+		assertThat(second.closeCalls.get()).isEqualTo(1);
+	}
+
+	@Test
+	void alreadyExpiredResultLimitClosesItsDelegateWithoutEnteringIt() throws Exception {
+		BlockingCallIteration source = new BlockingCallIteration(DelegateOperation.NEXT);
+		try (TimeLimitIteration<BindingSet> timed = new TimeLimitIteration<>(source, 0, 50, 50) {
+			@Override
+			protected void throwInterruptedException() { throw new QueryInterruptedException("expired"); }
+		}) {
+			assertThatThrownBy(timed::next).isInstanceOf(QueryInterruptedException.class);
+			assertThat(source.closedLatch.await(3, TimeUnit.SECONDS)).isTrue();
+			assertThat(source.entered.getCount()).isEqualTo(1);
+			assertThat(source.closeCalls.get()).isEqualTo(1);
 		}
 	}
 

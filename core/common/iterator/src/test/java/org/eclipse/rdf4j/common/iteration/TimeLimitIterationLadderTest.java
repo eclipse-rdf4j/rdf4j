@@ -168,6 +168,7 @@ class TimeLimitIterationLadderTest {
 			timed.close();
 			assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - closeStarted) < SHORT_GRACE,
 					"close must not wait for the active call");
+			assertTrue(source.cancelled.await(5, TimeUnit.SECONDS));
 			assertEquals(1, source.cancellationCalls.get(), "close requests cooperative cancellation first");
 			assertEquals(0, source.closeCalls.get(), "close is deferred while the call is active");
 			assertTrue(source.closed.await(5, TimeUnit.SECONDS), "an ignored close escalates to a forced close");
@@ -178,7 +179,7 @@ class TimeLimitIterationLadderTest {
 	}
 
 	@Test
-	void nonPositiveTimeLimitTimesOutOnFirstUseWithoutEnteringTheSource() {
+	void nonPositiveTimeLimitTimesOutOnFirstUseWithoutEnteringTheSource() throws Exception {
 		for (long limit : new long[] { 0, -5 }) {
 			Source source = new Source();
 			source.acceptCancellation = true;
@@ -186,10 +187,12 @@ class TimeLimitIterationLadderTest {
 			try {
 				assertSame(timed.timeout, assertThrows(IllegalStateException.class, timed::hasNext));
 				assertEquals(1, source.entered.getCount(), "an expired time limit must not enter the source");
+				assertTrue(source.cancelled.await(5, TimeUnit.SECONDS));
 				assertEquals(1, source.cancellationCalls.get());
 			} finally {
 				timed.close();
 			}
+			assertTrue(source.closed.await(5, TimeUnit.SECONDS));
 			assertEquals(1, source.closeCalls.get());
 		}
 	}
@@ -210,6 +213,44 @@ class TimeLimitIterationLadderTest {
 			timed.close();
 		}
 		assertInstanceOf(CooperativeCancellation.class, timed);
+	}
+
+	@Test
+	void reentrantCallsClearTheDeliveredInterruptAtTheOutermostReturn() throws Exception {
+		AtomicReference<Ladder> wrapper = new AtomicReference<>();
+		AtomicInteger depth = new AtomicInteger();
+		CountDownLatch innerEntered = new CountDownLatch(1);
+		CloseableIteration<Integer> source = new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				if (depth.incrementAndGet() == 1) {
+					assertThrows(IllegalStateException.class, () -> wrapper.get().hasNext());
+					return true;
+				}
+				innerEntered.countDown();
+				try {
+					new CountDownLatch(1).await(5, TimeUnit.SECONDS);
+					throw new AssertionError("time limit did not interrupt the inner call");
+				} catch (InterruptedException expected) {
+					Thread.currentThread().interrupt();
+					return true;
+				}
+			}
+			@Override public Integer next() { throw new UnsupportedOperationException(); }
+			@Override public void remove() { throw new UnsupportedOperationException(); }
+			@Override public void close() {}
+		};
+		try (Ladder timed = new Ladder(source, HOUR, 0, HOUR);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			wrapper.set(timed);
+			Future<Boolean> call = executor.submit(() -> {
+				assertSame(timed.timeout, assertThrows(IllegalStateException.class, timed::hasNext));
+				return Thread.currentThread().isInterrupted();
+			});
+			assertTrue(innerEntered.await(5, TimeUnit.SECONDS));
+			timed.interrupt();
+			assertFalse(call.get(5, TimeUnit.SECONDS));
+		}
 	}
 
 	private static final class Ladder extends TimeLimitIteration<Integer> {

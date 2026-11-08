@@ -194,6 +194,10 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		LmdbPrefixRunPlan.OPENED.incrementAndGet();
 	}
 
+	void retainIndexGeneration(Runnable release) {
+		delegate.retainIndexGeneration(release);
+	}
+
 	@Override
 	public boolean next() throws IOException {
 		if (exhausted) {

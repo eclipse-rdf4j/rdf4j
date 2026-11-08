@@ -15,6 +15,9 @@ import java.util.Collection;
 
 public class ReifiedTripleRef extends TripleRef {
 
+	// Preserve the serialized identity of the pre-metadata model class.
+	private static final long serialVersionUID = -8323267647636343329L;
+
 	private Var reifVar;
 
 	public ReifiedTripleRef() {
@@ -22,7 +25,7 @@ public class ReifiedTripleRef extends TripleRef {
 
 	public ReifiedTripleRef(Var subjectVar, Var predicateVar, Var objectVar, Var exprVar, Var reifVar) {
 		super(subjectVar, predicateVar, objectVar, exprVar);
-		this.reifVar = reifVar;
+		setReifVar(reifVar);
 	}
 
 	public Var getReifVar() {

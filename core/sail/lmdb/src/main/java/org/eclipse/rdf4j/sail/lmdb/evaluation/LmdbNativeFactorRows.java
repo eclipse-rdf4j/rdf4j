@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
@@ -75,6 +76,10 @@ final class LmdbNativeFactorRows {
 	static LmdbNativeFactorCursor join(JoinPlan plan, RowState row) throws IOException {
 		if (!enabled() || row.encounterOrderRequired)
 			return null;
+		RowCursor memoized = LmdbNativeSupportJoin.tryOpen(plan.left, plan.right, row, false);
+		if (memoized != null) {
+			return scalar(memoized, row.slots.length);
+		}
 		long reads = memoReadMask(plan.right);
 		// A known dependency set alone does not grant replay permission to unknown future plan kinds.
 		if (reads < 0L || !SlotPlan.encounterOrderReplaySafe(plan.right))
@@ -160,17 +165,20 @@ final class LmdbNativeFactorRows {
 	/** Expands only the consumer's dependency set, leaving all other descriptors attached. */
 	static final class Expanded implements LmdbNativeFactorCursor {
 		final LmdbNativeFactorCursor input;
+		final boolean sourcesExternallyRetained;
 		final RowState row;
 		final long demanded;
 		final FactorEnvironment remaining;
 		final FactorProductCursor product;
 		int mark = -1;
 		boolean active;
+		boolean productPending;
 		boolean closed;
 		int tick;
 
 		Expanded(LmdbNativeFactorCursor input, RowState row, long demanded) {
 			this.input = input;
+			this.sourcesExternallyRetained = input.borrowedSourcesExternallyRetained();
 			this.row = row;
 			this.demanded = demanded;
 			remaining = new FactorEnvironment(row.slots.length);
@@ -189,7 +197,15 @@ final class LmdbNativeFactorRows {
 					}
 					if (active) {
 						row.rollback(mark);
-						if (product.next()) {
+						boolean found = product.next();
+						if (productPending) {
+							productPending = false;
+							if (row.cancellation.isCancellationRequested()) {
+								close();
+								return false;
+							}
+						}
+						if (found) {
 							boolean compatible = true;
 							for (long mask = product.expandedMask(); mask != 0L; mask &= mask - 1L) {
 								int slot = Long.numberOfTrailingZeros(mask);
@@ -202,7 +218,18 @@ final class LmdbNativeFactorRows {
 						active = false;
 					}
 					remaining.clear();
-					if (!input.next()) {
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
+					if (!sourcesExternallyRetained)
+						product.release();
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
+					boolean next = input.next();
+					if (row.cancellation.isCancellationRequested() || !next) {
 						close();
 						return false;
 					}
@@ -211,6 +238,7 @@ final class LmdbNativeFactorRows {
 					if ((row.boundMask() & factors.mask()) != 0L)
 						throw new IllegalStateException("deferred factor installed as a scalar binding");
 					product.bind(factors, demanded, input.multiplicity());
+					productPending = true;
 					remaining.append(factors, ~product.expandedMask());
 					active = true;
 				}
@@ -218,6 +246,11 @@ final class LmdbNativeFactorRows {
 				closeSuppressing(this, failure);
 				throw failure;
 			}
+		}
+
+		@Override
+		public boolean borrowedSourcesExternallyRetained() {
+			return sourcesExternallyRetained;
 		}
 
 		@Override
@@ -236,13 +269,18 @@ final class LmdbNativeFactorRows {
 				return;
 			closed = true;
 			remaining.clear();
+			Throwable failure = KernelRuntime.closeResource(product, null);
 			try {
-				product.close();
-			} finally {
 				if (mark >= 0)
 					row.rollback(mark);
-				input.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
 			}
+			failure = KernelRuntime.closeResource(input, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 
@@ -316,7 +354,8 @@ final class LmdbNativeFactorRows {
 		SelectingFilter(LmdbNativeFactorCursor input, NativeBooleanFilter filter, RowState row, long reads,
 				long scalarDemand) {
 			this.input = input;
-			this.filter = filter;
+			this.filter = NativeFilterLease.openInput(filter, row, input);
+			this.filter.incompleteInput();
 			this.row = row;
 			this.reads = reads;
 			this.scalarDemand = scalarDemand;
@@ -412,6 +451,15 @@ final class LmdbNativeFactorRows {
 						row.rollback(mark);
 						mode = NONE;
 					}
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
+					releaseInputReaders();
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
 					if (!input.next()) {
 						close();
 						return false;
@@ -456,10 +504,11 @@ final class LmdbNativeFactorRows {
 					slot = Long.numberOfTrailingZeros(demand);
 					BorrowedFactorBatch batch = factors.batch(slot);
 					if (boundBatch != batch) {
-						if (reader != null)
-							reader.close();
+						BorrowedFactorBatch.Cursor previous = reader;
 						reader = null;
 						boundBatch = null;
+						if (previous != null)
+							previous.close();
 						reader = batch.cursor(READ_WINDOW);
 						boundBatch = batch;
 					}
@@ -537,6 +586,35 @@ final class LmdbNativeFactorRows {
 			return result;
 		}
 
+		private void releaseInputReaders() {
+			BorrowedFactorBatch.Cursor previous = reader;
+			reader = null;
+			boundBatch = null;
+			factors = null;
+			Throwable failure = KernelRuntime.closeResource(previous, null);
+			if (product != null) {
+				try {
+					product.release();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null)
+						failure = problem;
+					else if (failure != problem)
+						failure.addSuppressed(problem);
+				}
+			}
+			if (tupleFilter != null) {
+				try {
+					tupleFilter.releaseInput();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null)
+						failure = problem;
+					else if (failure != problem)
+						failure.addSuppressed(problem);
+				}
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+
 		@Override
 		public void close() {
 			if (closed)
@@ -544,35 +622,34 @@ final class LmdbNativeFactorRows {
 			closed = true;
 			result.clear();
 			factors = null;
+			BorrowedFactorBatch.Cursor previous = reader;
+			reader = null;
+			boundBatch = null;
+			Throwable failure = KernelRuntime.closeResource(previous, null);
+			failure = KernelRuntime.closeResource(product, failure);
+			failure = KernelRuntime.closeResource(tupleFilter, failure);
+			SelectedFactorSource previousSelection = selected;
+			selected = null;
+			failure = KernelRuntime.closeResource(previousSelection, failure);
 			try {
-				if (reader != null)
-					reader.close();
-			} finally {
-				reader = null;
-				boundBatch = null;
-				try {
-					if (product != null)
-						product.close();
-				} finally {
-					try {
-						if (tupleFilter != null)
-							tupleFilter.close();
-					} finally {
-						try {
-							if (selected != null)
-								selected.close();
-						} finally {
-							try {
-								if (mark >= 0)
-									row.rollback(mark);
-								input.close();
-							} finally {
-								filter.close();
-							}
-						}
-					}
-				}
+				if (mark >= 0)
+					row.rollback(mark);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
 			}
+			failure = KernelRuntime.closeResource(input, failure);
+			try {
+				filter.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 
@@ -585,7 +662,7 @@ final class LmdbNativeFactorRows {
 
 		Filter(LmdbNativeFactorCursor input, NativeBooleanFilter filter, RowState row) {
 			this.input = input;
-			this.filter = filter;
+			this.filter = NativeFilterLease.openInput(filter, row, input);
 			this.row = row;
 		}
 
@@ -599,6 +676,17 @@ final class LmdbNativeFactorRows {
 						close();
 						return false;
 					}
+					if (input.multiplicity() != 1L) {
+						filter.incompleteInput();
+					} else {
+						FactorEnvironment factors = input.factors();
+						for (long rest = factors.groupLeaders(); rest != 0L; rest &= rest - 1L) {
+							if (factors.count(Long.numberOfTrailingZeros(rest)) != 1L) {
+								filter.incompleteInput();
+								break;
+							}
+						}
+					}
 					RowCursor previous = row.expressionProducer;
 					row.expressionProducer = expressionProducer(input);
 					try {
@@ -608,6 +696,9 @@ final class LmdbNativeFactorRows {
 					} finally {
 						row.expressionProducer = previous;
 					}
+				}
+				if (!row.cancellation.isCancellationRequested()) {
+					filter.inputExhausted();
 				}
 				close();
 				return false;
@@ -637,10 +728,24 @@ final class LmdbNativeFactorRows {
 			if (closed)
 				return;
 			closed = true;
+			Throwable failure = null;
 			try {
 				input.close();
-			} finally {
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+				filter.incompleteInput();
+			}
+			try {
 				filter.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 	}

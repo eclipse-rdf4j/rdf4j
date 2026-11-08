@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
@@ -50,6 +51,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	private final Service service;
 	private final Var serviceRef;
 	private final FederatedServiceResolver serviceResolver;
+	private final DeferredServiceTelemetry deferredTelemetry;
 	private final BlankNodeAllocationScope allocation;
 	private final ValueFactory localFactory;
 
@@ -65,6 +67,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		this.service = service;
 		this.serviceRef = serviceRef;
 		this.serviceResolver = serviceResolver;
+		this.deferredTelemetry = DeferredServiceTelemetry.create(service);
 	}
 
 	@Override
@@ -80,7 +83,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 
 		long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 		if (runtimeTelemetryEnabled) {
-			incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
+			addMetric(DeferredServiceTelemetry.REQUEST, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL, 1L);
 		}
 		try {
 			SPARQLQueries.initializeServiceReferences(service);
@@ -113,7 +116,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport,
 					canonicalIDs);
 			if (runtimeTelemetryEnabled) {
-				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
+				addMetric(DeferredServiceTelemetry.BYTES_SENT, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
 						estimateRequestBytes(service, bindings, freeVars));
 			}
 
@@ -124,7 +127,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			// special case: no free variables => perform ASK query
 			if (outputs.possibleOutputsKnown() && freeVars.isEmpty()) {
 				if (runtimeTelemetryEnabled) {
-					incrementLongMetric(service, TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL);
+					addMetric(DeferredServiceTelemetry.ASK, TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL,
+							1L);
 				}
 				boolean exists;
 				try (var allocationActivation = allocation.activate();
@@ -133,7 +137,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				if (runtimeTelemetryEnabled) {
-					addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL, exists ? 4 : 5);
+					addMetric(DeferredServiceTelemetry.BYTES_RECEIVED,
+							TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL, exists ? 4L : 5L);
 				}
 
 				// check if triples are available (with inserted bindings)
@@ -147,7 +152,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 
 			// otherwise: perform a SELECT query
 			if (runtimeTelemetryEnabled) {
-				incrementLongMetric(service, TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL);
+				addMetric(DeferredServiceTelemetry.SELECT, TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL,
+						1L);
 			}
 			CloseableIteration<BindingSet> results = null;
 			try {
@@ -157,7 +163,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				if (runtimeTelemetryEnabled) {
-					results = trackResponseBytes(service, results);
+					results = trackResponseBytes(service, deferredTelemetry, results);
 				}
 				RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation, localFactory,
 						receivingScope, canonicalIDs);
@@ -186,9 +192,10 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				throw e;
 			}
 			if (runtimeTelemetryEnabled) {
-				incrementLongMetric(service, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL);
+				addMetric(DeferredServiceTelemetry.ERROR, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL, 1L);
 				if (isTimeoutException(e)) {
-					incrementLongMetric(service, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL);
+					addMetric(DeferredServiceTelemetry.TIMEOUT, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL,
+							1L);
 				}
 			}
 			// suppress exceptions if silent
@@ -199,19 +206,22 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			}
 		} finally {
 			if (runtimeTelemetryEnabled) {
-				recordRequestLatency(service, started);
+				recordRequestLatency(service, deferredTelemetry, started);
 			}
 		}
 	}
 
+	private void addMetric(int counter, String metricName, long delta) {
+		if (deferredTelemetry != null) {
+			deferredTelemetry.add(counter, delta);
+		} else {
+			addLongMetric(service, metricName, delta);
+		}
+	}
+
 	private static BindingSet restoreRuntimeBindings(BindingSet originals, BindingSet runtimeInputs) {
-		MapBindingSet restored = new MapBindingSet(originals.size() + 1);
-		for (Binding binding : originals) {
-			restored.addBinding(binding);
-		}
-		for (Binding binding : runtimeInputs) {
-			restored.addBinding(binding);
-		}
+		QueryBindingSet restored = new QueryBindingSet(originals);
+		restored.addAll(runtimeInputs);
 		return restored;
 	}
 
@@ -222,10 +232,6 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				canonicalIDs);
 	}
 
-	private static void incrementLongMetric(Service service, String metricName) {
-		addLongMetric(service, metricName, 1L);
-	}
-
 	private static void addLongMetric(Service service, String metricName, long delta) {
 		if (!isRuntimeTelemetryEnabled(service) || delta <= 0) {
 			return;
@@ -233,8 +239,13 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		service.setLongMetricActual(metricName, Math.max(0L, service.getLongMetricActual(metricName)) + delta);
 	}
 
-	private static void recordRequestLatency(Service service, long startedNanos) {
+	private static void recordRequestLatency(Service service, DeferredServiceTelemetry deferredTelemetry,
+			long startedNanos) {
 		long latencyNanos = Math.max(0L, System.nanoTime() - startedNanos);
+		if (deferredTelemetry != null) {
+			deferredTelemetry.recordLatency(latencyNanos);
+			return;
+		}
 		addLongMetric(service, TelemetryMetricNames.REMOTE_LATENCY_TOTAL_NANOS_ACTUAL, latencyNanos);
 		updateLatencyQuantileEstimate(service, TelemetryMetricNames.REMOTE_LATENCY_P50_NANOS_ACTUAL, 0.50,
 				latencyNanos);
@@ -263,12 +274,17 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static CloseableIteration<BindingSet> trackResponseBytes(Service service,
+			DeferredServiceTelemetry deferredTelemetry,
 			CloseableIteration<BindingSet> delegate) {
 		return new ConvertingIteration<BindingSet, BindingSet>(delegate) {
 			@Override
 			protected BindingSet convert(BindingSet sourceObject) {
-				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL,
-						estimateBindingSetBytes(sourceObject));
+				long bytes = estimateBindingSetBytes(sourceObject);
+				if (deferredTelemetry != null) {
+					deferredTelemetry.add(DeferredServiceTelemetry.BYTES_RECEIVED, bytes);
+				} else {
+					addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL, bytes);
+				}
 				return sourceObject;
 			}
 		};
