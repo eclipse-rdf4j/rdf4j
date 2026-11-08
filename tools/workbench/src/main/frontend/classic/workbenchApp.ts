@@ -1298,14 +1298,28 @@ namespace workbench {
             }
         }
 
+        /** A repository deletion started on the page before: the Repositories list it leads to confirms it. */
+        function settleRepositoryDeletion(mount: any, failed: boolean): void {
+            const shared: any = (workbench as any).workspace;
+            if (shared && typeof shared.deletionDone === 'function') {
+                try {
+                    shared.deletionDone(attribute(mount, 'data-workbench-view') || '', failed);
+                } catch (error) {
+                    // What the browser keeps for it stays.
+                }
+            }
+        }
+
         export function bootstrap(mount: any, dependencies?: any): Promise<any> {
             const basePath = basePathFor(mount);
             scriptSource = { basePath, dependencies };
             return loadSharedRuntime(basePath, dependencies)
                 .then(() => bootstrapPage(mount, dependencies, basePath).then((result) => {
+                    settleRepositoryDeletion(mount, false);
                     scheduleRowStoreCleanup();
                     return result;
                 }, (error: any) => {
+                    settleRepositoryDeletion(mount, true);
                     scheduleRowStoreCleanup();
                     throw error;
                 }), (error: any) => {

@@ -73,7 +73,7 @@ namespace workbench {
             }
             try {
                 const parts = JSON.parse(key.slice(prefix.length));
-                if (parts instanceof Array && parts.length === 3 && typeof parts[0] === 'string'
+                if (Array.isArray(parts) && parts.length === 3 && typeof parts[0] === 'string'
                     && typeof parts[1] === 'string' && typeof parts[2] === 'string') {
                     return { digest: parts[0], user: parts[1], repositoryId: parts[2] };
                 }
@@ -206,7 +206,7 @@ namespace workbench {
             const key = scopeKey(QUERY_TABS_PREFIX, scope);
             const state = parsed(session || browserStorage('sessionStorage'), key)
                 || parsed(local || browserStorage('localStorage'), key);
-            return state && state.tabs instanceof Array && state.tabs.length ? state : null;
+            return state && Array.isArray(state.tabs) && state.tabs.length ? state : null;
         }
 
         /**
@@ -219,7 +219,7 @@ namespace workbench {
             const key = scopeKey(QUERY_TABS_PREFIX, scope);
             const stream: any = (<any>workbench).queryStream;
             [parsed(localStorage, key), parsed(sessionStorage, key)].forEach(function(state) {
-                (state && state.tabs instanceof Array ? state.tabs : []).forEach(function(tab: any) {
+                (state && Array.isArray(state.tabs) ? state.tabs : []).forEach(function(tab: any) {
                     const saved = tab && tab.lastRun && tab.lastRun.saved;
                     if (saved && typeof saved.storeId === 'string' && stream
                             && typeof stream.discardRowStore === 'function') {
@@ -227,7 +227,7 @@ namespace workbench {
                     }
                 });
             });
-            const copied = (from && from.tabs instanceof Array ? from.tabs : []).filter(function(tab: any) {
+            const copied = (from && Array.isArray(from.tabs) ? from.tabs : []).filter(function(tab: any) {
                 return tab && typeof tab.query === 'string' && tab.query.trim();
             }).map(function(tab: any, index: number) {
                 return { id: typeof tab.id === 'string' && tab.id ? tab.id : 'copy-' + index,
@@ -242,6 +242,210 @@ namespace workbench {
             write(localStorage, key, state);
             write(sessionStorage, key, state);
             return state;
+        }
+
+        const ROW_STORE_REGISTRY_PREFIX = 'rdf4j.workbench.row-store.v2:';
+        const GRAPH_ADDITIONS_PREFIX = 'rdf4j-workbench-graph-additions:';
+        const GRAPH_LEGACY_PREFIX = 'graph-field-workspace-v1:';
+        const UPDATE_DRAFT_PREFIX = 'workbench:update-draft:';
+        const EXPLORED_PREFIX = 'workbench:explored:';
+        const DELETING_KEY = 'rdf4j.workbench.workspace.deleting';
+
+        /** A Graph page scope (graph-explorer repositoryScope, v2 or v3) of the repository on that server. */
+        function graphScopeMatches(text: string, digest: string, repositoryId: string, user?: string): boolean {
+            let parts: any = null;
+            try {
+                parts = JSON.parse(text.replace(/:unreadable$/, ''));
+            } catch (error) {
+                return false;
+            }
+            if (!Array.isArray(parts)) {
+                return false;
+            }
+            if (parts.length === 5 && parts[0] === 'repository-v3') {
+                return parts[2] === digest && parts[4] === repositoryId && (user === undefined || parts[3] === user);
+            }
+            return parts.length === 4 && parts[0] === 'repository-v2' && typeof parts[2] === 'string'
+                && serverDigest(parts[2]) === digest && parts[3] === repositoryId;
+        }
+
+        /** Deletes the Graph page's stored graphs of the repository (IndexedDB graph-field-workspaces), if any. */
+        function forgetStoredGraphs(digest: string, repositoryId: string, user?: string): void {
+            let factory: any = null;
+            try {
+                factory = typeof window !== 'undefined' ? (<any>window).indexedDB : null;
+            } catch (error) {
+                return;
+            }
+            let request: any;
+            try {
+                request = factory ? factory.open('graph-field-workspaces') : null;
+            } catch (error) {
+                return;
+            }
+            if (!request) {
+                return;
+            }
+            request.onupgradeneeded = function(event: any) {
+                // No graph was ever stored here: opening must not create the database.
+                if ((!event || event.oldVersion === 0) && request.transaction) {
+                    request.transaction.abort();
+                }
+            };
+            request.onerror = function() {};
+            request.onsuccess = function() {
+                const database = request.result;
+                database.onversionchange = function() { database.close(); };
+                if (!database.objectStoreNames.contains('workspaces')) {
+                    database.close();
+                    return;
+                }
+                const transaction = database.transaction('workspaces', 'readwrite');
+                const cursor = transaction.objectStore('workspaces').openCursor();
+                cursor.onsuccess = function() {
+                    const at = cursor.result;
+                    if (!at) {
+                        return;
+                    }
+                    const key = String(at.key);
+                    if (key.indexOf('workspace:') === 0
+                            && graphScopeMatches(key.substring('workspace:'.length), digest, repositoryId, user)) {
+                        at.delete();
+                    }
+                    at.continue();
+                };
+                transaction.oncomplete = transaction.onerror = transaction.onabort = function() {
+                    database.close();
+                };
+            };
+        }
+
+        /**
+         * Forget what this browser keeps about a repository of a server: for every user (a deleted repository), or
+         * for one (a repository that user no longer sees). Its query tabs (the latest state and this page's copy),
+         * the page it was left on, its saved results (given up, cleanup deletes them), its Graph page's stored graph
+         * and additions, what Explore last showed, and its SPARQL Update draft.
+         */
+        export function forgetRepository(digest: string, repositoryId: string, user?: string, local?: Storage,
+                                         session?: Storage): void {
+            if (!digest || !repositoryId) {
+                return;
+            }
+            const localStorage = local || browserStorage('localStorage');
+            const sessionStorage = session || browserStorage('sessionStorage');
+            const stream: any = (<any>workbench).queryStream;
+            const discard = function(id: string) {
+                if (stream && typeof stream.discardRowStore === 'function') {
+                    stream.discardRowStore(id);
+                }
+            };
+            const matches = function(scope: Scope): boolean {
+                return !!scope && scope.digest === digest && scope.repositoryId === repositoryId
+                    && (user === undefined || scope.user === user);
+            };
+            [localStorage, sessionStorage].forEach(function(storage) {
+                [QUERY_TABS_PREFIX, WORKSPACE_PREFIX].forEach(function(prefix) {
+                    keysWithPrefix(storage, prefix).forEach(function(key) {
+                        if (!matches(parseScopeKey(prefix, key))) {
+                            return;
+                        }
+                        const state = prefix === QUERY_TABS_PREFIX ? parsed(storage, key) : null;
+                        (state && Array.isArray(state.tabs) ? state.tabs : []).forEach(function(tab: any) {
+                            const saved = tab && tab.lastRun && tab.lastRun.saved;
+                            if (saved && typeof saved.storeId === 'string') {
+                                discard(saved.storeId);
+                            }
+                        });
+                        remove(storage, key);
+                    });
+                });
+                [GRAPH_ADDITIONS_PREFIX, GRAPH_LEGACY_PREFIX].forEach(function(prefix) {
+                    keysWithPrefix(storage, prefix).forEach(function(key) {
+                        if (graphScopeMatches(key.substring(prefix.length), digest, repositoryId, user)) {
+                            remove(storage, key);
+                        }
+                    });
+                });
+                if (user === undefined) {
+                    remove(storage, UPDATE_DRAFT_PREFIX + encodeURIComponent(digest) + ':'
+                        + encodeURIComponent(repositoryId));
+                    keysWithPrefix(storage, EXPLORED_PREFIX).forEach(function(key) {
+                        const rest = key.substring(EXPLORED_PREFIX.length);
+                        const split = rest.lastIndexOf(':');
+                        let identity = '';
+                        try {
+                            identity = decodeURIComponent(rest.substring(0, split));
+                        } catch (error) {
+                            return;
+                        }
+                        if (serverDigest(identity) === digest && rest.substring(split + 1) === encodeURIComponent(repositoryId)) {
+                            remove(storage, key);
+                        }
+                    });
+                }
+            });
+            // Saved results kept for the repository's tabs, also those no tab state names any more.
+            keysWithPrefix(localStorage, ROW_STORE_REGISTRY_PREFIX).forEach(function(key) {
+                const entry = parsed(localStorage, key);
+                let scope: any = null;
+                try {
+                    scope = entry && entry.retained ? JSON.parse(entry.retained.scope) : null;
+                } catch (error) {
+                    scope = null;
+                }
+                if (Array.isArray(scope) && matches({ digest: scope[0], user: scope[1], repositoryId: scope[2] })) {
+                    discard(key.substring(ROW_STORE_REGISTRY_PREFIX.length));
+                }
+            });
+            forgetStoredGraphs(digest, repositoryId, user);
+        }
+
+        /** The repository list a user sees: what this browser keeps for that user's other repositories goes. */
+        export function forgetMissingRepositories(digest: string, user: string, present: string[],
+                                                  local?: Storage, session?: Storage): string[] {
+            const known: { [id: string]: boolean } = {};
+            (present || []).forEach(function(id) { known[id] = true; });
+            const gone: string[] = [];
+            [local || browserStorage('localStorage'), session || browserStorage('sessionStorage')]
+                .forEach(function(storage) {
+                    [QUERY_TABS_PREFIX, WORKSPACE_PREFIX].forEach(function(prefix) {
+                        keysWithPrefix(storage, prefix).forEach(function(key) {
+                            const scope = parseScopeKey(prefix, key);
+                            if (scope && scope.digest === digest && scope.user === (user || '')
+                                    && !known[scope.repositoryId] && gone.indexOf(scope.repositoryId) < 0) {
+                                gone.push(scope.repositoryId);
+                            }
+                        });
+                    });
+                });
+            gone.forEach(function(id) {
+                forgetRepository(digest, id, user || '', local, session);
+            });
+            return gone;
+        }
+
+        /** A repository is about to be deleted on this page: forgotten once the deletion is confirmed (deletionDone). */
+        export function deletionStarted(serverIdentity: string, repositoryId: string, session?: Storage): void {
+            write(session || browserStorage('sessionStorage'), DELETING_KEY,
+                { digest: serverDigest(serverIdentity), repositoryId: repositoryId, at: Date.now() });
+        }
+
+        /**
+         * A page is shown after a deletion was started: the Repositories list (where a deletion leads) forgets the
+         * repository; any other page (the deletion failed) leaves it. Returns the repository forgotten, or ''.
+         */
+        export function deletionDone(viewId: string, failed: boolean, session?: Storage, local?: Storage): string {
+            const sessionStorage = session || browserStorage('sessionStorage');
+            const pending = parsed(sessionStorage, DELETING_KEY);
+            if (!pending) {
+                return '';
+            }
+            remove(sessionStorage, DELETING_KEY);
+            if (failed || viewId !== 'repositories' || !pending.digest || !pending.repositoryId) {
+                return '';
+            }
+            forgetRepository(pending.digest, pending.repositoryId, undefined, local, sessionStorage);
+            return pending.repositoryId;
         }
 
         /**
@@ -261,7 +465,7 @@ namespace workbench {
                             } catch (error) {
                                 return;
                             }
-                            const tabs = state && state.tabs instanceof Array ? state.tabs : [];
+                            const tabs = state && Array.isArray(state.tabs) ? state.tabs : [];
                             tabs.forEach(function(tab: any) {
                                 const saved = tab && tab.lastRun && tab.lastRun.saved;
                                 if (saved && typeof saved.storeId === 'string') {

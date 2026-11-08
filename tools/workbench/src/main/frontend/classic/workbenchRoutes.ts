@@ -170,7 +170,7 @@ namespace workbench {
                         return states.some((state) => state !== null && state !== undefined) ? states : null;
                     },
                     restore(states: any): void {
-                        if (states instanceof Array) {
+                        if (Array.isArray(states)) {
                             cleanups.forEach((cleanup, index) => {
                                 if (cleanup.restore && states[index] !== null && states[index] !== undefined) {
                                     cleanup.restore(states[index]);

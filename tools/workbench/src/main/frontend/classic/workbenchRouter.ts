@@ -446,6 +446,25 @@ namespace workbench {
             });
         }
 
+        /**
+         * A deleted repository leaves nothing behind in this browser: once a deletion started here reaches the
+         * Repositories list, or a page says the repository is not found, its tabs, saved results and pages go.
+         */
+        function forgetDeletedRepository(viewId: string, model: any, context: any): void {
+            const shared: any = (workbench as any).workspace;
+            if (!shared || typeof shared.forgetRepository !== 'function') {
+                return;
+            }
+            try {
+                shared.deletionDone(viewId || 'repositories', !!model.error);
+                if (context && context.missingRepositoryId && context.serverIdentity) {
+                    shared.forgetRepository(shared.serverDigest(context.serverIdentity), context.missingRepositoryId);
+                }
+            } catch (error) {
+                // What the browser keeps for it stays.
+            }
+        }
+
         function markRoute(viewId: string, ready: boolean): void {
             const element = outlet();
             element.setAttribute('data-workbench-route', viewId);
@@ -1382,6 +1401,7 @@ namespace workbench {
             const viewId = viewIdOf(url);
             currentRoute = { url: url.href, viewId, repositoryId: repositoryIdOf(url), key,
                 instance: { dispose() {} }, model, context };
+            forgetDeletedRepository(viewId, model, context);
             if (!model.error) {
                 rememberExplored(url, context.serverIdentity);
             }

@@ -69,3 +69,104 @@ test('the saved results query tabs refer to are found in the latest tab states a
     const failing = { get length() { throw new Error('denied'); } };
     assert.equal(workspace.referencedRowStores(failing, session), null);
 });
+
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+function mapStorage(initial = {}) {
+    const values = new Map(Object.entries(initial));
+    return {
+        values,
+        get length() { return values.size; },
+        key: (index) => [...values.keys()][index] || null,
+        getItem: (key) => (values.has(key) ? values.get(key) : null),
+        setItem: (key, value) => { values.set(key, String(value)); },
+        removeItem: (key) => { values.delete(key); }
+    };
+}
+
+/** The workspace module in a sandbox whose queryStream records the saved results given up. */
+function sandboxed() {
+    const discarded = [];
+    const context = vm.createContext({ workbench: { queryStream: { discardRowStore: (id) => discarded.push(id) } },
+        JSON, Date, Math });
+    const file = require('./workbench-scripts.js').workbenchScriptPath('workbenchWorkspace.js');
+    vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
+    return { workspace: context.workbench.workspace, discarded };
+}
+
+test('forgetting a deleted repository removes what every user kept for it, and only for it', () => {
+    const { workspace: shared, discarded } = sandboxed();
+    const tabs = (user, repository) => shared.QUERY_TABS_PREFIX + JSON.stringify([SERVER, user, repository]);
+    const pages = (user, repository) => shared.WORKSPACE_PREFIX + JSON.stringify([SERVER, user, repository]);
+    const state = (storeId) => JSON.stringify({ version: 1, activeId: 'a', tabs: [{ id: 'a', query: 'ASK {}',
+        lastRun: { status: 'done', saved: { storeId } } }] });
+    const local = mapStorage({
+        [tabs('', 'gone')]: state('rows-1'), [tabs('ada', 'gone')]: state('rows-2'), [tabs('', 'kept')]: state('rows-3'),
+        [pages('', 'gone')]: '{}', [pages('', 'kept')]: '{}',
+        ['rdf4j-workbench-graph-additions:' + JSON.stringify(['repository-v3', '/wb', SERVER, 'ada', 'gone'])]: '[]',
+        ['rdf4j-workbench-graph-additions:' + JSON.stringify(['repository-v3', '/wb', SERVER, 'ada', 'kept'])]: '[]',
+        ['graph-field-workspace-v1:' + JSON.stringify(['repository-v2', '/wb', SERVER + ':s', 'gone'])]: '{}',
+        ['workbench:update-draft:' + encodeURIComponent(SERVER) + ':gone']: 'INSERT DATA {}',
+        ['rdf4j.workbench.row-store.v2:rows-9']: JSON.stringify({ retained: { scope: JSON.stringify([SERVER, '', 'gone']) } }),
+        ['rdf4j.workbench.row-store.v2:rows-8']: JSON.stringify({ retained: { scope: JSON.stringify([SERVER, '', 'kept']) } })
+    });
+    const session = mapStorage({
+        [tabs('', 'gone')]: state('rows-4'),
+        ['workbench:explored:' + encodeURIComponent(SERVER + ':s') + ':gone']: '?resource=x',
+        ['workbench:explored:' + encodeURIComponent(SERVER + ':s') + ':kept']: '?resource=y'
+    });
+    shared.forgetRepository(SERVER, 'gone', undefined, local, session);
+    assert.deepEqual([...local.values.keys()].sort(), [
+        tabs('', 'kept'), pages('', 'kept'),
+        'rdf4j-workbench-graph-additions:' + JSON.stringify(['repository-v3', '/wb', SERVER, 'ada', 'kept']),
+        'rdf4j.workbench.row-store.v2:rows-8', 'rdf4j.workbench.row-store.v2:rows-9'
+    ].sort());
+    assert.deepEqual([...session.values.keys()], ['workbench:explored:' + encodeURIComponent(SERVER + ':s') + ':kept']);
+    assert.deepEqual(discarded.sort(), ['rows-1', 'rows-2', 'rows-4', 'rows-9'],
+        'its saved results are given up, also one no tab names any more');
+});
+
+test('a repository a user no longer sees is forgotten for that user only', () => {
+    const { workspace: shared } = sandboxed();
+    const tabs = (user, repository) => shared.QUERY_TABS_PREFIX + JSON.stringify([SERVER, user, repository]);
+    const local = mapStorage({ [tabs('ada', 'a')]: '{}', [tabs('ada', 'b')]: '{}', [tabs('bob', 'b')]: '{}',
+        [tabs('ada', 'c')]: '{}' });
+    const session = mapStorage();
+    assert.deepEqual(Array.from(shared.forgetMissingRepositories(SERVER, 'ada', ['a', 'c'], local, session)), ['b']);
+    assert.deepEqual([...local.values.keys()].sort(), [tabs('ada', 'a'), tabs('ada', 'c'), tabs('bob', 'b')].sort());
+});
+
+test('a deletion started here is forgotten once the Repositories list shows, and not when it failed', () => {
+    const { workspace: shared } = sandboxed();
+    const tabs = shared.QUERY_TABS_PREFIX + JSON.stringify([SERVER, '', 'gone']);
+    const local = mapStorage({ [tabs]: '{}' });
+    const session = mapStorage();
+    shared.deletionStarted(SERVER + ':s', 'gone', session);
+    assert.equal(shared.deletionDone('delete', false, session, local), '', 'the deletion page again: it failed');
+    assert.ok(local.values.has(tabs));
+    shared.deletionStarted(SERVER + ':s', 'gone', session);
+    assert.equal(shared.deletionDone('repositories', true, session, local), '', 'a page that failed to load');
+    shared.deletionStarted(SERVER + ':s', 'gone', session);
+    assert.equal(shared.deletionDone('repositories', false, session, local), 'gone');
+    assert.ok(!local.values.has(tabs));
+    assert.equal(shared.deletionDone('repositories', false, session, local), '', 'once only');
+});
+
+test('a page of a repository is remembered with what was typed, short values only, and read back', () => {
+    const { workspace: shared } = sandboxed();
+    const local = mapStorage();
+    const scope = { digest: SERVER, user: '', repositoryId: 'r' };
+    assert.equal(shared.readWorkspace(scope, local), null);
+    shared.rememberPage(scope, 'update', { url: '/wb/repositories/r/update', scrollY: 12.6,
+        form: [{ form: 0, name: 'update', type: 'textarea', value: 'INSERT DATA {}', checked: false },
+            { form: 0, name: 'huge', type: 'textarea', value: 'x'.repeat(100001), checked: false }], at: 5 }, local);
+    shared.rememberPage(scope, 'explore', { url: '/wb/repositories/r/explore?resource=x', scrollY: 0, form: [], at: 6 },
+        local);
+    const kept = shared.readWorkspace(scope, local);
+    assert.equal(kept.lastView, 'explore');
+    assert.equal(kept.pages.update.scrollY, 13);
+    assert.deepEqual(Array.from(kept.pages.update.form, (field) => field.name), ['update']);
+    shared.forgetWorkspace(scope, local);
+    assert.equal(shared.readWorkspace(scope, local), null);
+});

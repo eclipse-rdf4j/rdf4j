@@ -5054,6 +5054,22 @@ namespace workbench {
             return (basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(repositoryId) + '/' + view;
         }
 
+        /** What this browser keeps for repositories this user no longer sees on the server goes (workbench.workspace). */
+        function forgetMissingRepositories(document: any, repositories: any[]): void {
+            const shared: any = (workbench as any).workspace;
+            const app = document && document.getElementById ? document.getElementById('workbench-app') : null;
+            const identity = app ? app.getAttribute('data-workbench-server-identity') : '';
+            if (!shared || typeof shared.forgetMissingRepositories !== 'function' || !identity) {
+                return;
+            }
+            try {
+                shared.forgetMissingRepositories(shared.serverDigest(identity),
+                    app.getAttribute('data-workbench-server-user') || '', repositories.map((repository: any) => repository.id));
+            } catch (error) {
+                // What the browser keeps for them stays.
+            }
+        }
+
         function repositoryOptions(panel: any): any[] {
             const list = panel.querySelector('#workbench-repository-options');
             const options: any[] = [];
@@ -5160,6 +5176,7 @@ namespace workbench {
             }).then((repositories: any[]) => {
                 panel.__rdf4jRepositoriesLoading = null;
                 panel.__rdf4jRepositoriesLoaded = true;
+                forgetMissingRepositories(panel.ownerDocument, repositories);
                 const shown = panel.__rdf4jRepositories;
                 panel.__rdf4jRepositories = repositories;
                 // An unchanged list is left alone, so keyboard focus in it stays where it is.
