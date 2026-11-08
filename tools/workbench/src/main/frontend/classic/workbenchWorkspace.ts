@@ -89,6 +89,27 @@ namespace workbench {
 
         /** The query tabs of every repository (queryTabs.STORAGE_PREFIX): the latest state, and each page's copy. */
         export const QUERY_TABS_PREFIX = 'rdf4j.workbench.query.tabs.v2:';
+        /** The page each repository was left on, and the state of each of its pages (rememberPage). */
+        export const WORKSPACE_PREFIX = 'rdf4j.workbench.workspace.v1:';
+        /** A typed value longer than this is not kept with its page. */
+        const FIELD_LIMIT = 100000;
+
+        /** A page of a repository as it was left: its address, where it was scrolled, what was typed, its own state. */
+        export interface PageState {
+            url: string;
+            scrollY: number;
+            form: { form: number; name: string; type: string; value: string; checked: boolean }[];
+            /** What the page keeps beyond its address and fields (a route instance's snapshot). */
+            extra?: any;
+            at: number;
+        }
+
+        export interface Workspace {
+            /** The page the repository was left on. */
+            lastView: string;
+            pages: { [viewId: string]: PageState };
+            at: number;
+        }
 
         function browserStorage(kind: string): Storage {
             try {
@@ -108,6 +129,119 @@ namespace workbench {
                 }
             }
             return keys;
+        }
+
+        function parsed(storage: Storage, key: string): any {
+            try {
+                const text = storage ? storage.getItem(key) : null;
+                return text ? JSON.parse(text) : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function write(storage: Storage, key: string, value: any): boolean {
+            try {
+                if (!storage) {
+                    return false;
+                }
+                storage.setItem(key, JSON.stringify(value));
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function remove(storage: Storage, key: string): void {
+            try {
+                if (storage) {
+                    storage.removeItem(key);
+                }
+            } catch (error) {
+                // Left behind: nothing reads it without its repository.
+            }
+        }
+
+        /** The page a repository was left on, and its pages' states, in this browser for this user; null if none. */
+        export function readWorkspace(scope: Scope, storage?: Storage): Workspace | null {
+            const value = scope ? parsed(storage || browserStorage('localStorage'), scopeKey(WORKSPACE_PREFIX, scope))
+                : null;
+            if (!value || typeof value.lastView !== 'string' || !value.pages || typeof value.pages !== 'object') {
+                return null;
+            }
+            const page = value.pages[value.lastView];
+            return page && typeof page.url === 'string' ? value : null;
+        }
+
+        /** Remember a page of a repository as it is left; it is the page the repository opens on next. */
+        export function rememberPage(scope: Scope, viewId: string, page: PageState, storage?: Storage): boolean {
+            if (!scope || !viewId || !page || typeof page.url !== 'string') {
+                return false;
+            }
+            const target = storage || browserStorage('localStorage');
+            const key = scopeKey(WORKSPACE_PREFIX, scope);
+            const existing = readWorkspace(scope, target);
+            const pages = existing ? existing.pages : {};
+            pages[viewId] = {
+                url: page.url,
+                scrollY: Math.max(0, Math.round(Number(page.scrollY) || 0)),
+                form: (page.form || []).filter(field => field && String(field.value || '').length <= FIELD_LIMIT),
+                extra: page.extra === undefined ? null : page.extra,
+                at: page.at || Date.now()
+            };
+            return write(target, key, { lastView: viewId, pages: pages, at: Date.now() });
+        }
+
+        export function forgetWorkspace(scope: Scope, storage?: Storage): void {
+            if (scope) {
+                remove(storage || browserStorage('localStorage'), scopeKey(WORKSPACE_PREFIX, scope));
+            }
+        }
+
+        /** The query tabs of a repository: this page's own copy, else the latest any page wrote; null if none. */
+        export function queryTabsState(scope: Scope, local?: Storage, session?: Storage): any {
+            if (!scope) {
+                return null;
+            }
+            const key = scopeKey(QUERY_TABS_PREFIX, scope);
+            const state = parsed(session || browserStorage('sessionStorage'), key)
+                || parsed(local || browserStorage('localStorage'), key);
+            return state && state.tabs instanceof Array && state.tabs.length ? state : null;
+        }
+
+        /**
+         * Replace a repository's query tabs (Undo of a restore): with the queries of `from` (their text only, no
+         * results), or with one empty tab. The saved results of the tabs replaced are given up. Returns the state.
+         */
+        export function replaceQueryTabs(scope: Scope, from: any, local?: Storage, session?: Storage): any {
+            const localStorage = local || browserStorage('localStorage');
+            const sessionStorage = session || browserStorage('sessionStorage');
+            const key = scopeKey(QUERY_TABS_PREFIX, scope);
+            const stream: any = (<any>workbench).queryStream;
+            [parsed(localStorage, key), parsed(sessionStorage, key)].forEach(function(state) {
+                (state && state.tabs instanceof Array ? state.tabs : []).forEach(function(tab: any) {
+                    const saved = tab && tab.lastRun && tab.lastRun.saved;
+                    if (saved && typeof saved.storeId === 'string' && stream
+                            && typeof stream.discardRowStore === 'function') {
+                        stream.discardRowStore(saved.storeId);
+                    }
+                });
+            });
+            const copied = (from && from.tabs instanceof Array ? from.tabs : []).filter(function(tab: any) {
+                return tab && typeof tab.query === 'string' && tab.query.trim();
+            }).map(function(tab: any, index: number) {
+                return { id: typeof tab.id === 'string' && tab.id ? tab.id : 'copy-' + index,
+                    title: typeof tab.title === 'string' ? tab.title : null, saved: !!tab.saved, query: tab.query,
+                    queryLn: typeof tab.queryLn === 'string' ? tab.queryLn : 'SPARQL', dirty: false, lastRun: <any>null };
+            });
+            const tabs = copied.length ? copied : [{ id: 't' + Date.now().toString(36), title: null, saved: false,
+                query: '', queryLn: 'SPARQL', dirty: false, lastRun: <any>null }];
+            const activeId = from && tabs.some(function(tab: any) { return tab.id === from.activeId; })
+                ? from.activeId : tabs[0].id;
+            const state = { version: 1, activeId: activeId, tabs: tabs };
+            write(localStorage, key, state);
+            write(sessionStorage, key, state);
+            return state;
         }
 
         /**

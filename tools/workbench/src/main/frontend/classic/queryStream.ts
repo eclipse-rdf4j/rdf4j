@@ -10617,6 +10617,18 @@ namespace workbench {
                 } : null;
             }
 
+            /**
+             * Drop the result waiting for a repository's next Query page (its tabs were replaced, or the repository
+             * was deleted): that page starts without it.
+             */
+            export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string): void {
+                var waiting = takeShelved(repositoryScope(repositoryId, serverIdentity, basePath));
+                if (waiting) {
+                    waiting.dispose();
+                    activityChanged();
+                }
+            }
+
             /** Query tabs: keep each result whose batch ends (null stops). */
             export function onResultEnd(listener: (controller: BoundExecutionController) => void): void {
                 resultEndListener = listener;
@@ -10748,6 +10760,11 @@ namespace workbench {
 
         export function offerMountedResult(): void {
             queryStream.queryPage.offerMountedResult();
+        }
+
+        /** Drop the result waiting for a repository's next Query page. */
+        export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string): void {
+            queryStream.queryPage.forgetShelved(repositoryId, serverIdentity, basePath);
         }
 
         /** Query tabs: show a kept result in the page (null shows nothing). */

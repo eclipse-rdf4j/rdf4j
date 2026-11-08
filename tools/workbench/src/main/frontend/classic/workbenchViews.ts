@@ -547,6 +547,11 @@ namespace workbench {
             add: 'Add RDF', remove: 'Remove', clear: 'Clear', update: 'SPARQL Update', server: 'Connection'
         };
 
+        /** The short name of a page ("Query", "Saved queries"), or '' for a page without one. */
+        export function pageName(viewId: string): string {
+            return shortTitles[viewId] || '';
+        }
+
         /** "Page · repository — RDF4J Workbench", matching the title the server writes into the shell. */
         export function documentTitle(viewId: string, repositoryId: string): string {
             const page = shortTitles[viewId];
@@ -5037,6 +5042,11 @@ namespace workbench {
             'saved-queries': true, export: true, update: true, add: true, remove: true, clear: true, config: true
         };
 
+        /** A page of one repository: switching repositories restores the page left there (workbench.workspace). */
+        export function isRepositoryScoped(viewId: string): boolean {
+            return repositoryScopedViews[viewId] === true;
+        }
+
         /** Where choosing a repository in the switcher leads: the same view when it is repository-scoped. */
         export function repositorySwitchTarget(basePath: string, activeView: string, repositoryId: string,
                                                fallback?: string): string {
@@ -5073,6 +5083,8 @@ namespace workbench {
                 link.setAttribute('href', repositorySwitchTarget(basePath, activeView, repository.id,
                     panel.getAttribute('data-workbench-switch-fallback') || 'summary'));
                 link.setAttribute('data-repository-id', repository.id);
+                // The router opens the repository as it was left in this browser (workbench.workspace).
+                link.setAttribute('data-workbench-repository-switch', 'true');
                 link.setAttribute('data-repository-search', (repository.id + ' ' + repository.title).toLowerCase());
                 if (repository.id === currentId) {
                     link.setAttribute('aria-current', 'true');
