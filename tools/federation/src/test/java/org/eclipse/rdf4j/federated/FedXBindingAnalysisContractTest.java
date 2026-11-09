@@ -121,17 +121,31 @@ class FedXBindingAnalysisContractTest {
 				new MathExpr(new ValueConstant(Values.literal(1)), new ValueConstant(Values.literal(0)),
 						MathExpr.MathOp.DIVIDE) };
 		for (ValueExpr value : values) {
+			String scenario = value.getClass().getSimpleName();
 			var right = new Projection(new Extension(new SingletonSet(), new ExtensionElem(value, "x")),
 					new ProjectionElemList(new ProjectionElem("x")));
 			var later = pattern("x", "p", "o");
 			var join = new NJoin(List.of(new SingletonSet(), right, later), info);
 			var input = bindings("x", "entry");
 			var analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(join, input);
+			var runtime = QueryAlgebraBindingAnalysis.withBindingValues(join, input);
 
-			assertEquals(Values.literal("entry"), analysis.contextAt(later.getSubjectVar()).fixedValues().get("x"));
-			assertEquals(Values.literal("entry"), analysis.contextAt(later.getSubjectVar()).externalValues().get("x"));
+			assertEquals(Values.literal("entry"), analysis.contextAt(later.getSubjectVar()).fixedValues().get("x"),
+					"prepared fixed input: " + scenario);
+			assertEquals(Values.literal("entry"), analysis.contextAt(later.getSubjectVar()).externalValues().get("x"),
+					"prepared external input: " + scenario);
+			assertTrue(runtime.contextAt(later.getSubjectVar()).guaranteedNames().contains("x"),
+					"runtime guaranteed input: " + scenario);
+			assertEquals(Values.literal("entry"), runtime.contextAt(later.getSubjectVar()).fixedValues().get("x"),
+					"runtime fixed input: " + scenario);
+			assertFalse(runtime.contextAt(later.getSubjectVar()).externalValues().containsKey("x"),
+					"runtime external provenance: " + scenario);
 			new BindingAssignerOptimizer().optimize(join, null, input);
-			assertEquals(Values.literal("entry"), later.getSubjectVar().getValue());
+			assertFalse(later.getSubjectVar().hasValue(), "runtime substitution: " + scenario);
+			assertThrows(QueryEvaluationException.class,
+					() -> new BindingAssignerOptimizer().optimizeForPreparedQuery(join, input),
+					"strict physical NJoin capture: " + scenario);
+			assertFalse(later.getSubjectVar().hasValue(), "strict capture must be atomic: " + scenario);
 		}
 	}
 

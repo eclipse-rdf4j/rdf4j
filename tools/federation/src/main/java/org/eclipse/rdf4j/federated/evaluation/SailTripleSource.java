@@ -71,10 +71,11 @@ public class SailTripleSource extends TripleSourceBase {
 			QueryEvaluationException {
 
 		Dataset dataset = stmt instanceof QueryRef queryRef ? queryRef.getExecutionDataset() : queryInfo.getDataset();
-		if (!BoundFilterUtil.hasValidValuePositions(stmt, bindings)) {
+		boolean queryTransport = EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset);
+		if (!hasValidStatementPositions(stmt, bindings, queryInfo, dataset, queryTransport)) {
 			return new EmptyIteration<>();
 		}
-		if (EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset)) {
+		if (queryTransport) {
 			return preparedStatements(stmt, bindings, filterExpr, queryInfo,
 					typed -> QueryStringUtil.selectQueryString(stmt, typed, null, new AtomicBoolean(), null),
 					typed -> QueryStringUtil.askQueryString(stmt, typed, null), dataset);
@@ -177,10 +178,11 @@ public class SailTripleSource extends TripleSourceBase {
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
-		if (!BoundFilterUtil.hasValidValuePositions(stmt, bindings)) {
+		boolean queryTransport = EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset);
+		if (!hasValidStatementPositions(stmt, bindings, queryInfo, dataset, queryTransport)) {
 			return false;
 		}
-		if (EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset)) {
+		if (queryTransport) {
 			return hasPreparedStatements(stmt, bindings, queryInfo,
 					typed -> QueryStringUtil.askQueryString(stmt, typed, null), dataset);
 		}

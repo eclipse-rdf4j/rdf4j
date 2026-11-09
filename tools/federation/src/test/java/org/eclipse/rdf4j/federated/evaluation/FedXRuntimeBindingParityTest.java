@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
+import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
@@ -52,11 +53,20 @@ import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -90,6 +100,43 @@ class FedXRuntimeBindingParityTest {
 			federation.shutDown();
 		}
 		repositories.forEach(Repository::shutDown);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "local", "remote", "mixed" })
+	void runtimeIndependentAssignmentPreservesCompatibleInput(String transport) throws Exception {
+		initialize(transport);
+		for (String assignment : List.of("equal", "error", "different")) {
+			for (boolean optimized : List.of(false, true)) {
+				ValueExpr value = switch (assignment) {
+				case "equal" -> new ValueConstant(VF.createLiteral("entry"));
+				case "error" -> new MathExpr(new ValueConstant(VF.createLiteral(1)),
+						new ValueConstant(VF.createLiteral(0)), MathExpr.MathOp.DIVIDE);
+				default -> new ValueConstant(VF.createLiteral("different"));
+				};
+				var right = new Projection(new Extension(new SingletonSet(), new ExtensionElem(value, "x")),
+						new ProjectionElemList(new ProjectionElem("x")));
+				var observe = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "observed"));
+				var join = new NJoin(List.of(new SingletonSet(), right, observe), info);
+				QueryBindingSet input = new QueryBindingSet();
+				input.addBinding("x", VF.createLiteral("entry"));
+				if (optimized) {
+					new BindingAssignerOptimizer().optimize(join, null, input);
+				}
+				try (var results = strategy.precompile(join).evaluate(input)) {
+					var rows = QueryResults.asList(results);
+					String scenario = transport + ", " + assignment + ", optimized=" + optimized;
+					if (assignment.equals("different")) {
+						assertThat(rows).as(scenario).isEmpty();
+					} else {
+						assertThat(rows).as(scenario).hasSize(1).allSatisfy(row -> {
+							assertThat(row.getValue("x")).as(scenario).isEqualTo(VF.createLiteral("entry"));
+							assertThat(row.getValue("observed")).as(scenario).isEqualTo(VF.createLiteral("entry"));
+						});
+					}
+				}
+			}
+		}
 	}
 
 	@ParameterizedTest

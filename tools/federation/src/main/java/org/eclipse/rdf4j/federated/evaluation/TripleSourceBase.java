@@ -20,6 +20,9 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.GraphSelectionAware;
+import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
+import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.iterator.CloseDependentConnectionIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
@@ -32,7 +35,9 @@ import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
+import org.eclipse.rdf4j.federated.util.BoundFilterUtil;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
+import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -54,6 +59,8 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResult;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -74,6 +81,52 @@ public abstract class TripleSourceBase implements TripleSource {
 		this.federationContext = federationContext;
 		this.monitoringService = federationContext.getMonitoringService();
 		this.endpoint = endpoint;
+	}
+
+	/** Validate endpoint identities before an impossible RDF position is treated as a negative match. */
+	protected boolean hasValidStatementPositions(StatementPattern statement, BindingSet bindings,
+			QueryInfo queryInfo, Dataset dataset, boolean queryTransport) {
+		if (BoundFilterUtil.hasValidValuePositions(statement, bindings)) {
+			return true;
+		}
+		EndpointIdentity identity = new EndpointIdentity(endpoint, queryInfo);
+		validateOperand(identity, statement.getSubjectVar(), bindings);
+		validateOperand(identity, statement.getPredicateVar(), bindings);
+		if (statement instanceof TripleRefStatementPattern triple) {
+			// The outer object and expression variable are private join identifiers, not transported terms.
+			validateOperand(identity, triple.getTripleRef().getSubjectVar(), bindings);
+			validateOperand(identity, triple.getTripleRef().getPredicateVar(), bindings);
+			validateOperand(identity, triple.getTripleRef().getObjectVar(), bindings);
+		} else {
+			validateOperand(identity, statement.getObjectVar(), bindings);
+		}
+		ResolvedGraphSelection selection = statement instanceof GraphSelectionAware aware
+				? aware.getResolvedGraphSelection()
+				: null;
+		if (queryTransport) {
+			if (selection != null) {
+				validateEndpointValue(identity, selection.logicalGraph());
+			} else if (statement.getScope() == StatementPattern.Scope.NAMED_CONTEXTS) {
+				validateOperand(identity, statement.getContextVar(), bindings);
+			}
+			identity.outgoingDataset(FedXUtil.toRdfDataset(dataset));
+		} else {
+			Var context = statement.getContextVar();
+			if (selection != null || context == null || !context.hasValue() || context.getValue() instanceof Resource) {
+				identity.outgoing(FedXUtil.toContexts(statement, dataset));
+			}
+		}
+		return false;
+	}
+
+	private static void validateOperand(EndpointIdentity identity, Var variable, BindingSet bindings) {
+		validateEndpointValue(identity, QueryAlgebraUtil.getVarValue(variable, bindings));
+	}
+
+	private static void validateEndpointValue(EndpointIdentity identity, Value value) {
+		if (value != null && !identity.isForeignLocalValue(value)) {
+			identity.outgoing(value);
+		}
 	}
 
 	@Override
@@ -189,6 +242,14 @@ public abstract class TripleSourceBase implements TripleSource {
 	/** Preserve the selected graph's RDF value through the connection's ordinary query binding contract. */
 	CloseableIteration<BindingSet> getStatements(NativeGraphQuery.Prepared preparedQuery, QueryInfo queryInfo) {
 		EndpointIdentity identity = new EndpointIdentity(endpoint, queryInfo);
+		FederationEvaluationStrategy strategy = queryInfo.getStrategy();
+		RemoteGraphSnapshot snapshot = strategy == null ? null : strategy.getGraphSnapshot(endpoint);
+		for (Value graph : preparedQuery.selectedGraphIdentities()) {
+			if (snapshot != null && snapshot.excludesSelectedCanonicalGraph(graph)
+					|| identity.isOtherSupportedGraphNamespace(graph)) {
+				return new EmptyIteration<>();
+			}
+		}
 		if (identity.hasForeignLocalValue(preparedQuery.graphBindings())) {
 			return new EmptyIteration<>();
 		}
@@ -197,8 +258,6 @@ public abstract class TripleSourceBase implements TripleSource {
 		Dataset validatedDataset = identity.outgoingDataset(originalDataset);
 		Dataset dataset = selectedDataset == originalDataset ? validatedDataset
 				: identity.outgoingDataset(selectedDataset);
-		FederationEvaluationStrategy strategy = queryInfo.getStrategy();
-		RemoteGraphSnapshot snapshot = strategy == null ? null : strategy.getGraphSnapshot(endpoint);
 		QueryBindingSet outgoing = new QueryBindingSet(preparedQuery.graphBindings().size());
 		for (Binding binding : preparedQuery.graphBindings()) {
 			if (!RemoteGraphSnapshot.belongsTo(binding.getValue(), endpoint.getId())) {

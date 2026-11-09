@@ -26,6 +26,7 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,14 +39,17 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.assertj.core.groups.Tuple;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.FedXFactory;
+import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
+import org.eclipse.rdf4j.federated.algebra.FilterExpr;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
 import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
+import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointBase;
 import org.eclipse.rdf4j.federated.endpoint.EndpointConfiguration;
@@ -71,10 +75,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
@@ -267,6 +273,161 @@ class FedXRemoteBlankNodeGraphTest {
 			}).isInstanceOf(QueryEvaluationException.class).hasMessageContaining("released");
 		} finally {
 			info.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "direct", "check" })
+	void releasedSnapshotStillFailsExistenceChecksWithInvalidSubject(String route) throws Exception {
+		initialize("mixed");
+		var context = federation.getFederationContext();
+		var strategy = context.createStrategy(null);
+		var info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+		try {
+			strategy.prepareGraphSnapshots(endpoints, info);
+			Resource graph = (Resource) new EndpointIdentity(endpoints.getLast(), info).incoming(GRAPH);
+			strategy.getGraphSnapshot(endpoints.getFirst()).release();
+			ExclusiveStatement expression = selectedGraph(graph, info, endpoints.getFirst());
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("s", VF.createLiteral("invalid-subject"));
+			bindings.addBinding("o", VF.createLiteral("value"));
+			assertThatThrownBy(() -> {
+				if (route.equals("direct")) {
+					endpoints.getFirst()
+							.getTripleSource()
+							.hasStatements(expression, bindings, info,
+									expression.getExecutionDataset());
+				} else {
+					try (var rows = new CheckStatementPattern(expression, info).evaluate(bindings)) {
+						QueryResults.asList(rows);
+					}
+				}
+			}).as(route).isInstanceOf(QueryEvaluationException.class).hasMessageContaining("released");
+		} finally {
+			info.close();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "existence, false", "existence, true", "results, false", "results, true" })
+	void localTypedIdentityIsValidatedBeforeInvalidSubject(String route, boolean invalidSubject) throws Exception {
+		initialize("mixed");
+		var context = federation.getFederationContext();
+		var strategy = context.createStrategy(null);
+		var info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+		try {
+			strategy.prepareGraphSnapshots(endpoints, info);
+			Resource foreign = strategy.getGraphSnapshot(endpoints.getFirst())
+					.graphNames()
+					.stream()
+					.filter(BNode.class::isInstance)
+					.findFirst()
+					.orElseThrow();
+			StatementPattern expression = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("s", invalidSubject ? VF.createLiteral("invalid-subject") : A);
+			bindings.addBinding("o", foreign);
+			assertThatThrownBy(() -> {
+				if (route.equals("existence")) {
+					endpoints.getLast().getTripleSource().hasStatements(expression, bindings, info, null);
+				} else {
+					try (var rows = endpoints.getLast()
+							.getTripleSource()
+							.getStatements(expression, bindings, null,
+									info)) {
+						QueryResults.asList(rows);
+					}
+				}
+			}).as("%s, invalid subject=%s", route, invalidSubject)
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("Unsupported blank-node identity");
+		} finally {
+			info.close();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "existence, false", "existence, true", "results, false", "results, true" })
+	void invalidSubjectDoesNotTransportLocalFilterInputs(String route, boolean invalidSubject) throws Exception {
+		initialize("mixed");
+		var context = federation.getFederationContext();
+		var strategy = context.createStrategy(null);
+		var info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+		try {
+			Endpoint local = endpoints.getLast();
+			ExclusiveStatement expression = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o")),
+					new StatementSource(local.getId(), StatementSourceType.REMOTE), info);
+			expression.addFilterExpr(new FilterExpr(new Bound(Var.of("guard")), new HashSet<>(Set.of("guard"))));
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("s", invalidSubject ? VF.createLiteral("invalid-subject") : A);
+			bindings.addBinding("guard", VF.createBNode("filter-only"));
+			assertNoStatements(local, expression, bindings, info, route);
+		} finally {
+			info.close();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "existence, false", "existence, true", "results, false", "results, true" })
+	void invalidSubjectDoesNotTransportPrivateTripleIdentifier(String route, boolean invalidSubject) throws Exception {
+		initialize("mixed");
+		var context = federation.getFederationContext();
+		var strategy = context.createStrategy(null);
+		var info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+		try {
+			TripleRefStatementPattern expression = new TripleRefStatementPattern(
+					new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("privateTriple")),
+					new TripleRef(Var.of("innerS"), Var.of("innerP"), Var.of("innerO"), Var.of("privateTriple")),
+					info);
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("s", invalidSubject ? VF.createLiteral("invalid-subject") : A);
+			bindings.addBinding("privateTriple", VF.createBNode("private-only"));
+			assertNoStatements(endpoints.getLast(), expression, bindings, info, route);
+		} finally {
+			info.close();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "existence, false", "existence, true", "results, false", "results, true" })
+	void localTypedTripleOperandIsValidatedBeforeInvalidSubject(String route, boolean invalidSubject) throws Exception {
+		initialize("mixed");
+		var context = federation.getFederationContext();
+		var strategy = context.createStrategy(null);
+		var info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+		try {
+			strategy.prepareGraphSnapshots(endpoints, info);
+			Resource foreign = strategy.getGraphSnapshot(endpoints.getFirst())
+					.graphNames()
+					.stream()
+					.filter(BNode.class::isInstance)
+					.findFirst()
+					.orElseThrow();
+			TripleRefStatementPattern expression = new TripleRefStatementPattern(
+					new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("privateTriple")),
+					new TripleRef(Var.of("innerS"), Var.of("innerP"), Var.of("innerO"), Var.of("privateTriple")),
+					info);
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("s", invalidSubject ? VF.createLiteral("invalid-subject") : A);
+			bindings.addBinding("innerO", foreign);
+			assertThatThrownBy(() -> assertNoStatements(endpoints.getLast(), expression, bindings, info, route))
+					.as("%s, invalid subject=%s", route, invalidSubject)
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("Unsupported blank-node identity");
+		} finally {
+			info.close();
+		}
+	}
+
+	private static void assertNoStatements(Endpoint endpoint, StatementPattern expression, BindingSet bindings,
+			QueryInfo info, String route) {
+		if (route.equals("existence")) {
+			assertThat(endpoint.getTripleSource().hasStatements(expression, bindings, info, null)).isFalse();
+		} else {
+			try (var rows = endpoint.getTripleSource().getStatements(expression, bindings, null, info)) {
+				assertThat(QueryResults.asList(rows)).isEmpty();
+			}
 		}
 	}
 
