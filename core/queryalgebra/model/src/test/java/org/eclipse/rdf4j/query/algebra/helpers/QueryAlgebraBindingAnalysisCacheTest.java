@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -154,13 +155,19 @@ class QueryAlgebraBindingAnalysisCacheTest {
 		assertThat(distinctValue.equalsCalls).hasValue(0);
 	}
 
-	private static final class CountingStatementPattern extends StatementPattern {
+	private static final class CountingStatementPattern extends StatementPattern
+			implements BindingAnalysisContract.Standard {
 		private static final long serialVersionUID = 1L;
 		private final AtomicInteger bindingReads;
 
 		private CountingStatementPattern(String predicate, String object, AtomicInteger bindingReads) {
 			super(Var.of("s"), Var.of(predicate), Var.of(object));
 			this.bindingReads = bindingReads;
+		}
+
+		@Override
+		public Class<? extends QueryModelNode> bindingContractClass() {
+			return CountingStatementPattern.class;
 		}
 
 		@Override

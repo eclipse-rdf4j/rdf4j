@@ -15,19 +15,19 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Exists;
-import org.eclipse.rdf4j.query.algebra.Graph;
-import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 
 /**
  * Assigns values to variables based on a supplied set of bindings.
@@ -38,76 +38,102 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		assign(tupleExpr, bindings, false);
+	}
+
+	/**
+	 * Captures API parameters before preparing a query that will execute with empty input. Unlike ordinary optional
+	 * optimization, this must reject unmodelled binding propagation: leaving a parameter for runtime would lose it.
+	 * Known local assignments still shadow parameters. No replacements are applied until validation succeeds.
+	 */
+	@InternalUseOnly
+	public void optimizeForPreparedQuery(TupleExpr tupleExpr, BindingSet bindings) {
+		assign(tupleExpr, bindings, true);
+	}
+
+	/**
+	 * Attempts the same complete capture, returning false when an operator or scope requires runtime bindings. The tree
+	 * is unchanged on false, so callers can fall back to execution with the original input. Other evaluation failures
+	 * are not treated as evidence that this fallback is safe.
+	 */
+	@InternalUseOnly
+	public boolean tryOptimizeForPreparedQuery(TupleExpr tupleExpr, BindingSet bindings) {
+		try {
+			assign(tupleExpr, bindings, true);
+			return true;
+		} catch (UnsupportedPreparedBindings e) {
+			return false;
+		}
+	}
+
+	private void assign(TupleExpr tupleExpr, BindingSet bindings, boolean requireAssignment) {
+		if (bindings == null || bindings.isEmpty()) {
+			return;
+		}
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(tupleExpr, bindings);
 		if (!analysis.rootContext().externalValues().isEmpty()) {
-			VarVisitor visitor = new VarVisitor(analysis);
-			tupleExpr.visit(visitor);
+			VarVisitor visitor = new VarVisitor(analysis, requireAssignment);
+			analysis.visitScoped(tupleExpr, analysis.rootContext(), visitor::visit);
 			visitor.apply();
 		}
 	}
 
-	private static class VarVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	private static class VarVisitor {
 
 		private final QueryAlgebraBindingAnalysis analysis;
 		private final List<Replacement> replacements = new ArrayList<>();
-		private int unknownOperatorDepth;
+		private final boolean requireAssignment;
 
-		private VarVisitor(QueryAlgebraBindingAnalysis analysis) {
-			super(true);
+		private VarVisitor(QueryAlgebraBindingAnalysis analysis, boolean requireAssignment) {
 			this.analysis = analysis;
+			this.requireAssignment = requireAssignment;
 		}
 
-		@Override
-		public void meet(Graph graph) {
-			// Graph is a known tuple operator whose variables use the current query scope. The shared input-frame
-			// analysis proves each API substitution, while genuinely unknown tuple operators remain opaque.
-			super.meetOther(graph);
-		}
-
-		@Override
-		public void meetOther(QueryModelNode node) {
-			if (node.getClass() == TupleFunctionCall.class) {
-				// Standard tuple-function result Vars constrain incoming bindings; capturing an API value keeps
-				// that constraint when a prepared plan subsequently executes with an empty input mapping.
-				super.meetOther(node);
-				return;
-			}
-			// Unknown operators own their binding contract; keep their variables opaque.
-			if (node instanceof TupleExpr) {
-				unknownOperatorDepth++;
-				try {
-					super.meetOther(node);
-				} finally {
-					unknownOperatorDepth--;
+		private boolean visit(QueryModelNode node, ReadOnlyContext context) {
+			if (node instanceof TupleExpr tuple) {
+				if (!analysis.hasKnownBindingContract(tuple) || !context.bindingDomainKnown()) {
+					if (requireAssignment) {
+						throw unsupportedBindings(node);
+					}
+					return false;
 				}
-			} else {
-				super.meetOther(node);
+				if (tuple instanceof BindingAnalysisContract contract) {
+					if (requireAssignment ? !contract.supportsPreparedBindings()
+							: !contract.supportsBindingSubstitution()) {
+						if (requireAssignment) {
+							throw new UnsupportedPreparedBindings("Runtime query bindings required by: "
+									+ node.getClass().getName());
+						}
+						return false;
+					}
+					if (!contract.visitChildrenForBindingAssignment()) {
+						return false;
+					}
+				}
 			}
-		}
-
-		@Override
-		public void meet(Var var) {
+			if (!(node instanceof Var var)) {
+				return true;
+			}
 			if (var.hasValue() || var.getName() == null
 					|| !analysis.rootContext().externalValues().containsKey(var.getName())) {
-				return;
+				return true;
 			}
-			if (unknownOperatorDepth > 0) {
-				return;
-			}
-			QueryAlgebraBindingAnalysis.ReadOnlyContext context = analysis.contextAt(var);
 			Value value = context.externalValues().get(var.getName());
+			if (requireAssignment && !context.bindingDomainKnown()) {
+				throw unsupportedBindings(var);
+			}
 			if (value != null && context.bindingDomainKnown() && context.guaranteedNames().contains(var.getName())
 					&& value.equals(context.fixedValues().get(var.getName()))) {
 				replacements.add(new Replacement(var, value));
+			} else if (requireAssignment && value != null) {
+				throw unsupportedBindings(var);
 			}
+			return true;
 		}
 
-		@Override
-		public void meet(Projection projection) {
-			if (projection.getProjectionContext() != null) {
-				projection.getProjectionContext().visit(this);
-			}
-			super.meet(projection);
+		private UnsupportedPreparedBindings unsupportedBindings(QueryModelNode node) {
+			return new UnsupportedPreparedBindings("Cannot preserve query bindings through unmodelled binding scope: "
+					+ node.getClass().getName());
 		}
 
 		private void apply() {
@@ -134,6 +160,14 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 		}
 
 		private record Replacement(Var variable, Value value) {
+		}
+	}
+
+	private static final class UnsupportedPreparedBindings extends QueryEvaluationException {
+		private static final long serialVersionUID = 1L;
+
+		private UnsupportedPreparedBindings(String message) {
+			super(message);
 		}
 	}
 }
