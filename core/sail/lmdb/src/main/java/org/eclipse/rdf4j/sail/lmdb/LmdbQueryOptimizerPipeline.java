@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 @Experimental
 @InternalUseOnly
@@ -101,7 +100,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				BINDING_ASSIGNER,
 				GRAPH_SCOPE_OPTIMIZER,
 				StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
-				new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()),
+				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,

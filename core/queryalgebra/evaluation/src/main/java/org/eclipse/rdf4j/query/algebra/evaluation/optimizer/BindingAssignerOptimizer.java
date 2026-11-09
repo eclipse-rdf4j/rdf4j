@@ -13,21 +13,46 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
 /**
  * Assigns values to variables based on a supplied set of bindings.
@@ -68,23 +93,70 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 
 	private void assign(TupleExpr tupleExpr, BindingSet bindings, boolean requireAssignment) {
 		if (bindings == null || bindings.isEmpty()) {
+			if (requireAssignment) {
+				rejectAlreadyPreparedServices(tupleExpr);
+			}
 			return;
 		}
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(tupleExpr, bindings);
+		QueryAlgebraBindingAnalysis analysis = requireAssignment
+				? QueryAlgebraBindingAnalysis.forBindingAssignment(tupleExpr, bindings)
+				: QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
 		if (!analysis.rootContext().externalValues().isEmpty()) {
-			VarVisitor visitor = new VarVisitor(analysis, requireAssignment);
+			VarVisitor visitor = new VarVisitor(tupleExpr, analysis, requireAssignment);
 			analysis.visitScoped(tupleExpr, analysis.rootContext(), visitor::visit);
+			visitor.validateServiceInputs();
 			visitor.apply();
+		} else if (requireAssignment) {
+			// A nonempty caller set can contain only private GRAPH-frame names, leaving no logical inputs.
+			rejectAlreadyPreparedServices(tupleExpr);
 		}
+	}
+
+	private void rejectAlreadyPreparedServices(TupleExpr tupleExpr) {
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				if (!service.getPreparedInputBindings().isEmpty()
+						|| !service.getRuntimeBindingHistory().values().isEmpty()
+						|| !service.getRuntimeBindingHistory().conflicts().isEmpty()) {
+					throw new UnsupportedPreparedBindings("Cannot recapture an already prepared SERVICE");
+				}
+				super.meet(service);
+			}
+
+			@Override
+			public void meet(Var variable) {
+				if (variable.hasValue() && variable.hasApiInputOrigin() && withinSavedServiceBody(variable)) {
+					throw new UnsupportedPreparedBindings("Cannot recover a previously assigned SERVICE input");
+				}
+			}
+		});
+	}
+
+	private static boolean withinSavedServiceBody(Var variable) {
+		QueryModelNode child = variable;
+		for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+			if (parent instanceof Service service && child == service.getServiceExpr()) {
+				return true;
+			}
+			child = parent;
+		}
+		return false;
 	}
 
 	private static class VarVisitor {
 
+		private final TupleExpr root;
 		private final QueryAlgebraBindingAnalysis analysis;
 		private final List<Replacement> replacements = new ArrayList<>();
+		private final Map<Service, ReadOnlyContext> serviceContexts = new IdentityHashMap<>();
+		private final Map<Service, Map<String, Value>> serviceInputs = new IdentityHashMap<>();
+		private final Map<UnaryTupleOperator, Map<String, Value>> projectionInputs = new IdentityHashMap<>();
+		private final List<RuntimeServiceInput> runtimeServiceInputs = new ArrayList<>();
 		private final boolean requireAssignment;
 
-		private VarVisitor(QueryAlgebraBindingAnalysis analysis, boolean requireAssignment) {
+		private VarVisitor(TupleExpr root, QueryAlgebraBindingAnalysis analysis, boolean requireAssignment) {
+			this.root = root;
 			this.analysis = analysis;
 			this.requireAssignment = requireAssignment;
 		}
@@ -110,25 +182,259 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 						return false;
 					}
 				}
+				if (requireAssignment) {
+					if (tuple.getClass() == Service.class) {
+						Service service = (Service) tuple;
+						if (!service.getPreparedInputBindings().isEmpty()) {
+							throw new UnsupportedPreparedBindings("Cannot recapture an already prepared SERVICE: "
+									+ service.getClass().getName());
+						}
+						serviceContexts.put(service, context);
+						Service.RuntimeBindingHistory history = service.getRuntimeBindingHistory();
+						if (!history.conflicts().isEmpty() || history.savedQuery() != null
+								&& !history.savedQuery().equals(service.getAskQueryString())) {
+							throw unsupportedBindings(service);
+						}
+						if (!history.values().isEmpty()) {
+							Set<String> newReads = new HashSet<>(SPARQLQueries.getPossibleBindingReadNames(
+									service.getAskQueryString(), analysis.rootContext().externalValues().keySet()));
+							newReads.removeAll(history.values().keySet());
+							if (!newReads.isEmpty()) {
+								// An already rewritten body cannot prove how a newly introduced input would affect it.
+								throw unsupportedBindings(service);
+							}
+						}
+						for (var entry : history.values().entrySet()) {
+							if (!context.externalGuaranteedNames().contains(entry.getKey())
+									|| !entry.getValue().equals(context.externalValues().get(entry.getKey()))) {
+								throw unsupportedBindings(service);
+							}
+							serviceInputs.computeIfAbsent(service, ignored -> new LinkedHashMap<>())
+									.put(entry.getKey(), entry.getValue());
+						}
+					}
+				}
 			}
 			if (!(node instanceof Var var)) {
 				return true;
 			}
-			if (var.hasValue() || var.getName() == null
-					|| !analysis.rootContext().externalValues().containsKey(var.getName())) {
+			if (requireAssignment && var.hasValue() && var.hasApiInputOrigin() && hasUntrackedServiceOrigin(var)) {
+				throw unsupportedBindings(var);
+			}
+			if (requireAssignment && var.hasValue() && var.hasApiInputOrigin() && withinSavedServiceBody(var)
+					&& !isRecordedServiceSource(var)) {
+				// Other optimizers can propagate the origin bit to a differently named variable. Its original
+				// parameters are already checked from the owning SERVICE history, not inferred from that name.
+				return true;
+			}
+			if (var.getName() == null || !analysis.rootContext().externalValues().containsKey(var.getName())) {
 				return true;
 			}
 			Value value = context.externalValues().get(var.getName());
+			if (var.hasValue()) {
+				if (requireAssignment && var.hasApiInputOrigin()) {
+					if (value == null || !context.externalGuaranteedNames().contains(var.getName())
+							|| !value.equals(context.fixedValues().get(var.getName()))
+							|| !value.equals(var.getValue())) {
+						throw unsupportedBindings(var);
+					}
+					replacements.add(new Replacement(var, value));
+					captureServiceInput(var, value);
+					captureProjectionInput(var, value);
+				}
+				return true;
+			}
 			if (requireAssignment && !context.bindingDomainKnown()) {
 				throw unsupportedBindings(var);
 			}
 			if (value != null && context.bindingDomainKnown() && context.guaranteedNames().contains(var.getName())
 					&& value.equals(context.fixedValues().get(var.getName()))) {
 				replacements.add(new Replacement(var, value));
+				if (requireAssignment) {
+					captureServiceInput(var, value);
+					captureProjectionInput(var, value);
+				} else {
+					recordRuntimeServiceInput(var, value);
+				}
 			} else if (requireAssignment && value != null) {
 				throw unsupportedBindings(var);
 			}
 			return true;
+		}
+
+		private boolean hasUntrackedServiceOrigin(Var variable) {
+			QueryModelNode child = variable;
+			for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+				if (parent instanceof Service service && child == service.getServiceExpr()
+						&& service.getRuntimeBindingHistory().values().isEmpty()) {
+					return true;
+				}
+				child = parent;
+			}
+			return false;
+		}
+
+		private boolean isRecordedServiceSource(Var variable) {
+			QueryModelNode child = variable;
+			for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+				if (parent instanceof Service service && child == service.getServiceExpr()
+						&& !service.getRuntimeBindingHistory().values().containsKey(variable.getName())) {
+					return false;
+				}
+				child = parent;
+			}
+			return true;
+		}
+
+		private void recordRuntimeServiceInput(Var variable, Value value) {
+			QueryModelNode child = variable;
+			for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+				if (parent instanceof Service service && child == service.getServiceExpr()) {
+					runtimeServiceInputs.add(new RuntimeServiceInput(service, variable.getName(), value));
+				}
+				child = parent;
+			}
+		}
+
+		/** A projection recovers only an API expression read belonging to its own result scope. */
+		private void captureProjectionInput(Var variable, Value value) {
+			QueryModelNode directParent = variable.getParentNode();
+			boolean expressionRead = directParent instanceof ValueExpr || directParent instanceof ExtensionElem
+					|| directParent instanceof GroupElem || directParent instanceof OrderElem
+					|| directParent instanceof Filter filter && filter.getCondition() == variable
+					|| directParent instanceof TupleFunctionCall function && function.getArgs().contains(variable);
+			if (!expressionRead) {
+				return;
+			}
+			UnaryTupleOperator projection = null;
+			QueryModelNode child = variable;
+			for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+				if (parent instanceof ExtensionElem element && !TupleExprs.isEvaluatedExtensionElement(element)) {
+					return;
+				}
+				if (parent instanceof SubQueryValueOperator subquery && child == subquery.getSubQuery()
+						|| parent instanceof Difference difference
+								&& child == difference.getRightArg()) {
+					return;
+				}
+				if (projection == null && (parent instanceof Projection || parent instanceof MultiProjection)) {
+					projection = (UnaryTupleOperator) parent;
+				}
+				child = parent;
+			}
+			if (projection == null || !projectsSource(projection, variable.getName())) {
+				return;
+			}
+			ReadOnlyContext input = analysis.contextAt(projection);
+			if (!input.externalGuaranteedNames().contains(variable.getName())
+					|| !value.equals(input.externalValues().get(variable.getName()))) {
+				return;
+			}
+			Map<String, Value> names = projectionInputs.get(projection);
+			if (names == null) {
+				names = new LinkedHashMap<>();
+				projectionInputs.put(projection, names);
+			}
+			names.put(variable.getName(), value);
+		}
+
+		private boolean projectsSource(UnaryTupleOperator projection, String name) {
+			List<ProjectionElemList> lists = projection instanceof Projection single
+					? List.of(single.getProjectionElemList())
+					: ((MultiProjection) projection).getProjections();
+			for (ProjectionElemList list : lists) {
+				for (ProjectionElem element : list.getElements()) {
+					if (name.equals(element.getName())) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private void recoverProjectionInputs() {
+			List<UnaryTupleOperator> projections = new ArrayList<>();
+			collectProjections(root, Collections.newSetFromMap(new IdentityHashMap<>()), projections);
+			for (UnaryTupleOperator projection : projections) {
+				// Rebuild after each insertion: an earlier projection may now provide input to a later one.
+				QueryAlgebraBindingAnalysis actual = QueryAlgebraBindingAnalysis.withBindingValues(root,
+						EmptyBindingSet.getInstance());
+				ReadOnlyContext input = actual.contextAt(projection);
+				var outputs = actual.outputFacts(projection.getArg(), actual.contextAt(projection.getArg()));
+				if (!input.bindingDomainKnown() || !outputs.possibleOutputsKnown()) {
+					continue;
+				}
+				Extension extension = null;
+				for (var entry : projectionInputs.get(projection).entrySet()) {
+					String name = entry.getKey();
+					if (input.maybeBoundNames().contains(name) || outputs.possibleOutputs().contains(name)
+							|| projection.getArg().getBindingNames().contains(name)) {
+						continue;
+					}
+					if (extension == null) {
+						extension = new Extension(projection.getArg());
+						projection.setArg(extension);
+					}
+					extension.addElement(new ExtensionElem(Var.of(name, entry.getValue()).withApiInputOrigin(), name));
+				}
+			}
+		}
+
+		private void collectProjections(QueryModelNode node, Set<QueryModelNode> visited,
+				List<UnaryTupleOperator> projections) {
+			if (!visited.add(node)) {
+				return;
+			}
+			List<QueryModelNode> children = new ArrayList<>();
+			node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode child) {
+					children.add(child);
+				}
+			});
+			// Tuple inputs determine evaluator frames. Process them left-to-right before value-expression children.
+			for (QueryModelNode child : children) {
+				if (child instanceof TupleExpr) {
+					collectProjections(child, visited, projections);
+				}
+			}
+			for (QueryModelNode child : children) {
+				if (!(child instanceof TupleExpr)) {
+					collectProjections(child, visited, projections);
+				}
+			}
+			if (node instanceof UnaryTupleOperator projection && projectionInputs.containsKey(projection)) {
+				projections.add(projection);
+			}
+		}
+
+		private void captureServiceInput(Var variable, Value value) {
+			QueryModelNode child = variable;
+			for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+				if (parent instanceof Service service && child == service.getServiceExpr()
+						&& serviceContexts.containsKey(service)) {
+					ReadOnlyContext input = serviceContexts.get(service);
+					Value parameter = input.externalValues().get(variable.getName());
+					if (parameter != null) {
+						if (!input.externalGuaranteedNames().contains(variable.getName()) || !parameter.equals(value)) {
+							throw unsupportedBindings(service);
+						}
+						serviceInputs.computeIfAbsent(service, ignored -> new LinkedHashMap<>())
+								.put(variable.getName(), value);
+					}
+				}
+				child = parent;
+			}
+		}
+
+		private void validateServiceInputs() {
+			serviceInputs.forEach((service, captured) -> {
+				String query = service.getAskQueryString();
+				if (!SPARQLQueries.getPossibleBindingReadNames(query, captured.keySet())
+						.containsAll(captured.keySet())) {
+					throw new UnsupportedPreparedBindings("Saved SERVICE text does not read a captured input");
+				}
+			});
 		}
 
 		private UnsupportedPreparedBindings unsupportedBindings(QueryModelNode node) {
@@ -137,6 +443,9 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 		}
 
 		private void apply() {
+			if (requireAssignment) {
+				recoverProjectionInputs();
+			}
 			// Prove every occurrence against the unchanged tree, so context/output caches survive the traversal.
 			// Each admitted read already has this guaranteed API value, independent of earlier replacements.
 			for (Replacement replacement : replacements) {
@@ -157,9 +466,16 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 				assigned.setVariableScopeChange(var.isVariableScopeChange());
 				var.replaceWith(assigned);
 			}
+			serviceInputs.forEach(Service::setPreparedInputBindings);
+			for (RuntimeServiceInput input : runtimeServiceInputs) {
+				input.service().recordRuntimeBinding(input.name(), input.value());
+			}
 		}
 
 		private record Replacement(Var variable, Value value) {
+		}
+
+		private record RuntimeServiceInput(Service service, String name, Value value) {
 		}
 	}
 

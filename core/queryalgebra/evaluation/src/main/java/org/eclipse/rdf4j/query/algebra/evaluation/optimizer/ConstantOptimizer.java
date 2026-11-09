@@ -42,6 +42,8 @@ import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingContextAwareOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -64,7 +66,7 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  * @author Arjohn Kampman
  */
-public class ConstantOptimizer implements QueryOptimizer {
+public class ConstantOptimizer implements BindingContextAwareOptimizer {
 
 	private static final Logger logger = LoggerFactory.getLogger(ConstantOptimizer.class);
 
@@ -81,9 +83,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 	 */
 	public ConstantOptimizer(EvaluationStrategy strategy, BindingSet evaluationBindings) {
 		this.strategy = strategy;
-		this.evaluationBindings = evaluationBindings == null ? null
-				: evaluationBindings.isEmpty() ? EmptyBindingSet.getInstance()
-						: new QueryBindingSet(evaluationBindings);
+		this.evaluationBindings = evaluationBindings == null ? null : new QueryBindingSet(evaluationBindings);
 	}
 
 	/**
@@ -91,11 +91,31 @@ public class ConstantOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		optimizeWithInputs(tupleExpr, bindings, evaluationBindings == null ? bindings : evaluationBindings, true);
+	}
+
+	@Override
+	public Class<? extends QueryOptimizer> bindingContextOptimizerClass() {
+		return ConstantOptimizer.class;
+	}
+
+	@Override
+	public void optimizeWithBindingContext(TupleExpr tupleExpr, Dataset dataset, BindingOptimizationContext context) {
+		optimizeWithInputs(tupleExpr, context.parameters(), context.evaluationInput(),
+				context.mode() != BindingOptimizationContext.Mode.EMPTY_INPUT);
+	}
+
+	private void optimizeWithInputs(TupleExpr tupleExpr, BindingSet parameters, BindingSet evaluationInput,
+			boolean recoverProjectedInputs) {
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr,
-				evaluationBindings == null ? bindings : evaluationBindings);
+				evaluationInput);
 		ConstantVisitor visitor = new ConstantVisitor(strategy, bindingAnalysis,
 				new QueryEvaluationContext.Minimal(new SimpleDataset()));
 		tupleExpr.visit(visitor);
+		if (!recoverProjectedInputs) {
+			// Mandatory prepared capture already recovered proven API reads in their own projection scope.
+			return;
+		}
 		Set<String> varsBefore = visitor.varNames;
 
 		VarNameCollector varCollector = new VarNameCollector();
@@ -124,7 +144,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 						Extension ext = new Extension(proj.getArg());
 						proj.setArg(ext);
 
-						Value value = bindings.getValue(name);
+						Value value = parameters == null ? null : parameters.getValue(name);
 
 						Var lostVar;
 						if (value == null) {

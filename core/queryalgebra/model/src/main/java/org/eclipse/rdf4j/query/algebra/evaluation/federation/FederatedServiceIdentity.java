@@ -62,8 +62,13 @@ public final class FederatedServiceIdentity {
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(service.getServiceExpr(),
 				originals);
 		QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(service.getServiceExpr());
-		BindingSet additional = runtimeAssignedInputs(service, originals,
+		BindingSet recovered = runtimeAssignedInputs(service, originals,
 				outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : Set.of(), analysis);
+		MapBindingSet additional = new MapBindingSet(recovered.size() + service.getPreparedInputBindings().size());
+		recovered.forEach(additional::addBinding);
+		// Prepared API expression values can differ from a VALUES-produced caller row. They constrain only the
+		// receiving query; RemoteBNode keeps the caller's original mapping separate for result reconstruction.
+		service.getPreparedInputBindings().forEach(additional::setBinding);
 		return RemoteBNode.toRemoteBindings(bindings, additional, relevantBindingNames(service), receivingScope,
 				referencesSupported, canonicalIDs);
 	}
@@ -198,6 +203,9 @@ public final class FederatedServiceIdentity {
 
 	public static Set<String> relevantBindingNames(Service service) {
 		Set<String> names = new HashSet<>(service.getServiceVars());
+		names.addAll(service.getSavedPossibleReadNames());
+		// Optimizers may erase a captured read from the algebra while the saved SERVICE text still contains it.
+		names.addAll(service.getPreparedInputBindings().keySet());
 		service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
 			@Override
 			public void meet(Service nested) {

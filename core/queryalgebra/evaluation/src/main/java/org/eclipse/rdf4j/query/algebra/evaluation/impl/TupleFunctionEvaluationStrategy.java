@@ -40,6 +40,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
+	@Override
+	protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
+		return TupleFunctionEvaluationStrategy.class;
+	}
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 

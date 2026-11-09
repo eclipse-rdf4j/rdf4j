@@ -103,33 +103,38 @@ public class SPARQLQueries {
 	 */
 	public static void initializeServiceReferences(Service service) {
 		Objects.requireNonNull(service);
-		if (service.isBNodeReferenceMetadataInitialized()) {
+		if (service.isBNodeReferenceMetadataInitialized() && service.hasSavedPossibleReadNames()) {
 			return;
 		}
 		synchronized (service) {
-			if (service.isBNodeReferenceMetadataInitialized()) {
+			if (service.isBNodeReferenceMetadataInitialized() && service.hasSavedPossibleReadNames()) {
 				return;
 			}
 			try {
 				ASTQueryContainer syntax = SyntaxTreeBuilder.parseQuery(service.getAskQueryString());
-				Set<String> ids = BNodeReferenceProcessor.process(syntax, QueryParseOptions.DEFAULT);
-				Set<String> names = new LinkedHashSet<>();
-				service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
-					@Override
-					public void meet(Service nested) {
-						// The nested request owns its constants and is initialized independently.
-					}
-
-					@Override
-					public void meet(Var variable) {
-						if (variable.isAnonymous() && variable.hasValue()
-								&& containsReference(variable.getValue(), ids)) {
-							names.add(variable.getName());
+				if (!service.hasSavedPossibleReadNames()) {
+					service.setSavedBindingNames(lexicalBindingNames(syntax), possibleBindingReadNames(syntax));
+				}
+				if (!service.isBNodeReferenceMetadataInitialized()) {
+					Set<String> ids = BNodeReferenceProcessor.process(syntax, QueryParseOptions.DEFAULT);
+					Set<String> names = new LinkedHashSet<>();
+					service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+						@Override
+						public void meet(Service nested) {
+							// The nested request owns its constants and is initialized independently.
 						}
-					}
-				});
-				service.setBNodeReferenceMetadata(ids, names,
-						BNodeReferenceProcessor.containsReferenceSyntax(syntax));
+
+						@Override
+						public void meet(Var variable) {
+							if (variable.isAnonymous() && variable.hasValue()
+									&& containsReference(variable.getValue(), ids)) {
+								names.add(variable.getName());
+							}
+						}
+					});
+					service.setBNodeReferenceMetadata(ids, names,
+							BNodeReferenceProcessor.containsReferenceSyntax(syntax));
+				}
 			} catch (ParseException | TokenMgrError failure) {
 				throw new MalformedQueryException("Invalid SERVICE request syntax: " + failure.getMessage(), failure);
 			}
@@ -272,8 +277,61 @@ public class SPARQLQueries {
 		}
 	}
 
+	/**
+	 * Returns names that may be read in query syntax, excluding occurrences that only declare a VALUES column or an
+	 * assignment target. This is a conservative lexical check, not a proof that a particular scope reads a binding.
+	 */
+	@InternalUseOnly
+	public static Set<String> getPossibleBindingReadNames(String query, Set<String> candidateNames) {
+		Objects.requireNonNull(query);
+		Objects.requireNonNull(candidateNames);
+		try {
+			Set<String> names = new LinkedHashSet<>();
+			collectPossibleBindingReads(SyntaxTreeBuilder.parseQuery(query), candidateNames, names);
+			return Collections.unmodifiableSet(names);
+		} catch (ParseException | TokenMgrError failure) {
+			throw new MalformedQueryException(failure.getMessage(), failure);
+		}
+	}
+
+	static Set<String> lexicalBindingNames(Node syntax) {
+		Set<String> names = new LinkedHashSet<>();
+		collectBoundNames(syntax, (Set<String>) null, names);
+		return names;
+	}
+
+	static Set<String> possibleBindingReadNames(Node syntax) {
+		Set<String> names = new LinkedHashSet<>();
+		collectPossibleBindingReads(syntax, null, names);
+		return names;
+	}
+
+	private static void collectPossibleBindingReads(Node node, Set<String> candidates, Set<String> names) {
+		if (node instanceof ASTInlineData || node instanceof ASTBindingsClause) {
+			return;
+		}
+		int count = node.jjtGetNumChildren();
+		if (count == 1 && node.jjtGetChild(0) instanceof ASTVar
+				&& (node instanceof ASTProjectionElem projection && !projection.hasAlias()
+						|| node instanceof ASTGroupCondition)) {
+			return;
+		}
+		if (node instanceof ASTVar variable && !variable.isAnonymous()
+				&& (candidates == null || candidates.contains(variable.getName()))) {
+			names.add(variable.getName());
+		}
+		for (int i = 0; i < count; i++) {
+			if ((node instanceof ASTBind || node instanceof ASTGroupCondition && count > 1) && i == count - 1
+					|| node instanceof ASTProjectionElem projection && projection.hasAlias() && i == 1) {
+				continue;
+			}
+			collectPossibleBindingReads(node.jjtGetChild(i), candidates, names);
+		}
+	}
+
 	private static void collectBoundNames(Node node, Set<String> candidateNames, Set<String> names) {
-		if (node instanceof ASTVar variable && candidateNames.contains(variable.getName())) {
+		if (node instanceof ASTVar variable && !variable.isAnonymous()
+				&& (candidateNames == null || candidateNames.contains(variable.getName()))) {
 			names.add(variable.getName());
 		}
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {

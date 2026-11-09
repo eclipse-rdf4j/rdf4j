@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
@@ -446,7 +447,7 @@ public class RepositoryFederatedService implements FederatedService {
 					|| TupleExprs.containsSubquery(service.getArg())) {
 				return evaluateOnceAndJoinLocally(service, originals, baseUri);
 			}
-			Set<String> projectionVars = new HashSet<>(service.getServiceVars());
+			Set<String> projectionVars = remoteOutputBindingNames(service);
 			Set<String> assuredInputNames = new HashSet<>(originals.get(0).getBindingNames());
 			for (BindingSet input : originals) {
 				assuredInputNames.removeIf(name -> input.getValue(name) == null);
@@ -529,7 +530,7 @@ public class RepositoryFederatedService implements FederatedService {
 	private CloseableIteration<BindingSet> evaluateOnceAndJoinLocally(Service service,
 			List<BindingSet> allBindings, String baseUri) {
 		BlankNodeAllocationScope allocation = BlankNodeAllocationScope.currentOrNew();
-		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
+		Set<String> projectionVars = remoteOutputBindingNames(service);
 		CloseableIteration<BindingSet> remote;
 		try (var active = allocation.activate()) {
 			remote = select(service, projectionVars, EmptyBindingSet.getInstance(), baseUri);
@@ -544,6 +545,15 @@ public class RepositoryFederatedService implements FederatedService {
 		RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
 				SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
 		return new LocalServiceJoinIteration(remote, allBindings, response);
+	}
+
+	/** Only real SERVICE result names are projected; expression-only transport inputs are not result columns. */
+	private static Set<String> remoteOutputBindingNames(Service service) {
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(service.getServiceExpr(),
+				EmptyBindingSet.getInstance());
+		QueryAlgebraBindingAnalysis.OutputFacts facts = analysis.outputFacts(service.getServiceExpr());
+		Set<String> candidates = facts.possibleOutputsKnown() ? facts.possibleOutputs() : service.getServiceVars();
+		return new HashSet<>(SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(), candidates));
 	}
 
 	/**

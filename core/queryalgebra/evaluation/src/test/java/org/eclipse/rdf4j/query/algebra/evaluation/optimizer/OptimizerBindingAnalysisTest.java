@@ -89,7 +89,13 @@ class OptimizerBindingAnalysisTest {
 
 		assertThat(runtime.contextAt(reference).externalValues()).doesNotContainKey("x");
 		assertThat(substitution.contextAt(reference).externalValues()).containsEntry("x", VF.createLiteral(1));
-		new BindingAssignerOptimizer().optimize(union, null, input);
+		Union runtimePlan = union.clone();
+		new BindingAssignerOptimizer().optimize(runtimePlan, null, input);
+		Filter runtimeRight = (Filter) runtimePlan.getRightArg();
+		assertThat(((Var) ((SameTerm) runtimeRight.getCondition()).getLeftArg()).hasValue())
+				.as("runtime input is hidden at the filter")
+				.isFalse();
+		new BindingAssignerOptimizer().optimizeForPreparedQuery(union, input);
 		assertThat(((SameTerm) right.getCondition()).getLeftArg()).isInstanceOfSatisfying(Var.class,
 				var -> assertThat(var.getValue()).isEqualTo(VF.createLiteral(1)));
 	}
@@ -107,13 +113,22 @@ class OptimizerBindingAnalysisTest {
 			MapBindingSet input = new MapBindingSet();
 			input.addBinding("x", VF.createLiteral(1));
 			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(extension, input);
-			assertThat(analysis.contextAt(beforeWrite).externalValues()).containsEntry("x", VF.createLiteral(1));
-			assertThat(analysis.contextAt(afterWrite).externalValues()).doesNotContainKey("x");
-			assertThat(analysis.contextAt(afterWrite).fixedValues()).containsEntry("x", VF.createLiteral(2));
-			new BindingAssignerOptimizer().optimize(extension, null, input);
+			assertThat(analysis.contextAt(beforeWrite).externalValues())
+					.as("prepared relation=%s, before write", relation)
+					.containsEntry("x", VF.createLiteral(1));
+			assertThat(analysis.contextAt(afterWrite).externalValues())
+					.as("prepared relation=%s, after write", relation)
+					.doesNotContainKey("x");
+			assertThat(analysis.contextAt(afterWrite).fixedValues()).as("prepared relation=%s, after write", relation)
+					.containsEntry("x", VF.createLiteral(2));
+			new BindingAssignerOptimizer().optimizeForPreparedQuery(extension, input);
 			assertThat((Var) extension.getElements().getFirst().getExpr())
-					.satisfies(var -> assertThat(var.getValue()).isEqualTo(VF.createLiteral(1)));
-			assertThat(((Var) extension.getElements().getLast().getExpr()).hasValue()).isFalse();
+					.as("prepared relation=%s, before write", relation)
+					.satisfies(var -> assertThat(var.getValue()).as("prepared relation=%s, before write", relation)
+							.isEqualTo(VF.createLiteral(1)));
+			assertThat(((Var) extension.getElements().getLast().getExpr()).hasValue())
+					.as("prepared relation=%s, after write", relation)
+					.isFalse();
 		}
 	}
 

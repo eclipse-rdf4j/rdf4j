@@ -1841,6 +1841,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 			Service service = new Service(serviceVar, serviceExpr, node.getPatternString(),
 					node.getPrefixDeclarations(), node.getBaseURI(), node.isSilent());
+			service.setSavedBindingNames(SPARQLQueries.lexicalBindingNames(node.jjtGetChild(1)),
+					SPARQLQueries.possibleBindingReadNames(node.jjtGetChild(1)));
 			Set<String> remoteIDs = BNodeReferenceProcessor.ownedIDs(node);
 			Set<String> remoteNames = new HashSet<>();
 			constantVars.forEach((value, variable) -> {

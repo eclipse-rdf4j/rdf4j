@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
  * A standard pipeline with the default {@link QueryOptimizer}s that will be used by {@link StrictEvaluationStrategy}
@@ -82,9 +81,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	/** Shared by standard and store-specific prepared pipelines without wrapping their optimizer identities. */
 	@InternalUseOnly
 	public static BindingSet preparedPlanInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
-		return optimizer instanceof BindingAssignerOptimizer || optimizer instanceof ConstantOptimizer
-				? initialBindings
-				: EmptyBindingSet.getInstance();
+		return initialBindings;
 	}
 
 	/*
@@ -99,7 +96,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				GRAPH_SCOPE_OPTIMIZER,
 				TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
 				BINDING_SET_ASSIGNMENT_INLINER,
-				new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()),
+				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,

@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -164,7 +165,16 @@ class NativePositionConsumerTest {
 		assertOneShotValuesPrepared(true);
 	}
 
+	@Test
+	void preparedOptimizationSnapshotsPositionsBeforeCapturingBindings() {
+		assertOneShotValuesPrepared(true, true);
+	}
+
 	private static void assertOneShotValuesPrepared(boolean optimize) {
+		assertOneShotValuesPrepared(optimize, false);
+	}
+
+	private static void assertOneShotValuesPrepared(boolean optimize, boolean prepared) {
 		AtomicInteger traversals = new AtomicInteger();
 		BindingSetAssignment values = new BindingSetAssignment();
 		values.setBindingSets(() -> {
@@ -178,13 +188,18 @@ class NativePositionConsumerTest {
 		QueryRoot root = new QueryRoot(new Filter(new Join(values,
 				new StatementPattern(left, Var.of("p"), right)), new SameTerm(left.clone(), right.clone())));
 		LmdbNativeEvaluationStrategy strategy = strategy();
-		if (optimize) {
+		if (prepared) {
+			MapBindingSet parameters = new MapBindingSet();
+			parameters.addBinding("x", VF.createIRI("urn:bound"));
+			strategy.optimizeForEmptyInput(root, new EvaluationStatistics(), parameters);
+		} else if (optimize) {
 			strategy.optimize(root, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 		} else {
 			strategy.precompile(root);
 		}
-		assertThat(traversals.get()).isEqualTo(1);
-		assertThat(strategy.valuePositionMasks(root).get("x")).isEqualTo(5);
+		assertThat(traversals.get()).as("prepared=%s, optimize=%s", prepared, optimize).isEqualTo(1);
+		assertThat(strategy.valuePositionMasks(root).get("x")).as("prepared=%s, optimize=%s", prepared, optimize)
+				.isEqualTo(5);
 	}
 
 	@Test

@@ -293,7 +293,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				strategy.setTrackTime(trackTime);
 			}
 
-			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			tupleExpr = strategy.optimizeForEmptyInput(tupleExpr, store.getEvaluationStatistics(), bindings);
 			if (runtimeTelemetryEnabled) {
 				setRuntimeTelemetryEnabled(tupleExpr, true);
 			}

@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
@@ -583,6 +584,17 @@ public final class QueryAlgebraBindingAnalysis {
 
 	/** Computes the standard core semantics for an explicitly opted-in annotation-only subclass. */
 	public ReadOnlyContext standardChildInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
+		if (parent instanceof GroupConcat concat && child == concat.getSeparator()) {
+			// The aggregate argument sees each grouped row, but its separator is evaluated once against the
+			// grouping operator's parent input, before any row-local assignment.
+			for (QueryModelNode ancestor = parent.getParentNode(); ancestor != null; ancestor = ancestor
+					.getParentNode()) {
+				if (ancestor instanceof Group group) {
+					return contextAt(group);
+				}
+			}
+			return unknownChildInput(parent, input);
+		}
 		if (parent instanceof Graph) {
 			return input;
 		}

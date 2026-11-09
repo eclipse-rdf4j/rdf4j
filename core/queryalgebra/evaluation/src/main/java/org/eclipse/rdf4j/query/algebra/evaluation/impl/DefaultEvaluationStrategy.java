@@ -141,6 +141,8 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingContextAwareOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -445,6 +447,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.pipeline = pipeline;
 	}
 
+	/** Structural lowerers registered for the explicit empty-input preparation boundary. */
+	protected final Iterable<QueryOptimizerPipeline.PreparationStep> getBindingPreparationSteps() {
+		return pipeline.getPreparationSteps();
+	}
+
 	/**
 	 * Execute the {@link QueryOptimizerPipeline} on the given {@link TupleExpr} to optimize its execution plan.
 	 *
@@ -457,6 +464,35 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+		return optimizeWithBindingContext(expr, evaluationStatistics, BindingOptimizationContext.runtime(bindings));
+	}
+
+	@Override
+	public TupleExpr optimizeForEmptyInput(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+			BindingSet parameters) {
+		if (preparedBindingStrategyClass() != getClass()) {
+			if (parameters == EmptyBindingSet.getInstance()) {
+				return optimize(expr, evaluationStatistics, parameters);
+			}
+			throw new QueryEvaluationException("Evaluation strategy has not opted in to prepared query bindings: "
+					+ getClass().getName());
+		}
+		if (GraphFrameBindings.from(parameters) != GraphFrameBindings.EMPTY) {
+			throw new QueryEvaluationException("Cannot capture private graph-frame binding metadata");
+		}
+		return optimizeWithBindingContext(expr, evaluationStatistics,
+				BindingOptimizationContext.emptyInput(parameters));
+	}
+
+	/** Subclasses must explicitly identify the concrete implementation that adopts empty-input preparation. */
+	protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
+		return DefaultEvaluationStrategy.class;
+	}
+
+	/** Shared invocation boundary for runtime and empty-input preparation, including backend-specific envelopes. */
+	protected TupleExpr optimizeWithBindingContext(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+			BindingOptimizationContext context) {
+		BindingSet parameters = context.parameters();
 		LocalBNodeReferences.Analysis original = LocalBNodeReferences.analyze(expr);
 		original.runtimeValues().forEach(blankNodes::reserve);
 		Set<String> references = blankNodes.getReferenceSnapshot(expr, original.structure());
@@ -470,19 +506,35 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		references.forEach(blankNodes::reserve);
 		knownIds.forEach(blankNodes::reserveKnownID);
 		blankNodes.reserve(dataset);
-		blankNodes.reserve(bindings);
+		blankNodes.reserve(parameters);
 		TupleExpr result = withPreparedTupleExpr(expr, prepared -> {
 			QueryEvaluationUtility.pinFunctions(prepared);
-			// Prepared store evaluation starts with empty input. Parameter capture is required even when a caller
-			// replaces the optional optimizer pipeline, and must finish before optimizers can erase unresolved reads.
-			StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimizeForPreparedQuery(prepared, bindings);
 			TupleExpr optimized = prepared;
+			if (context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT) {
+				for (QueryOptimizerPipeline.PreparationStep step : pipeline.getPreparationSteps()) {
+					optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, root -> {
+						step.lower(root, dataset);
+						return root;
+					});
+				}
+				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, root -> {
+					QueryEvaluationUtility.pinFunctions(root);
+					StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimizeForPreparedQuery(root, parameters);
+					return root;
+				});
+			}
 			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-				if (optimizer.getClass() == BindingAssignerOptimizer.class) {
+				if (context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT
+						&& optimizer.getClass() == BindingAssignerOptimizer.class) {
 					continue; // The standard parameter assignment has already run, with completeness validation.
 				}
 				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, optimizerRoot -> {
-					optimizer.optimize(optimizerRoot, dataset, pipeline.getOptimizerInputBindings(optimizer, bindings));
+					if (optimizer instanceof BindingContextAwareOptimizer aware
+							&& optimizer.getClass() == aware.bindingContextOptimizerClass()) {
+						aware.optimizeWithBindingContext(optimizerRoot, dataset, context);
+					} else {
+						optimizer.optimize(optimizerRoot, dataset, context.evaluationInput());
+					}
 					return optimizerRoot;
 				});
 			}
@@ -652,8 +704,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			public void meet(BindingSetAssignment assignment) {
 				unknown[0] |= !assignment.hasRepeatableBindingSets();
 			}
+
+			@Override
+			public void meet(Service service) {
+				// Constructed SERVICEs may not yet have parsed saved-syntax metadata. A fixed layout would
+				// discard unknown incoming columns before the request can examine them.
+				unknown[0] |= !service.hasSavedPossibleReadNames();
+				super.meet(service);
+			}
 		});
-		// A fixed array layout cannot represent columns discovered only while a streaming source is evaluated.
+		// A fixed layout cannot represent columns discovered only by a streaming source or unparsed SERVICE text.
 		return unknown[0];
 	}
 
