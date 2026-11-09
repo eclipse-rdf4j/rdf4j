@@ -21,7 +21,9 @@ import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
 
 import com.google.common.collect.Lists;
 
@@ -32,7 +34,12 @@ import com.google.common.collect.Lists;
  *
  */
 public class ExclusiveArbitraryLengthPath extends ArbitraryLengthPath
-		implements ExclusiveTupleExprRenderer, ExecutionDatasetAware {
+		implements ExclusiveTupleExprRenderer, ExecutionDatasetAware, BindingAnalysisContract.Standard {
+
+	@Override
+	public Class<? extends QueryModelNode> bindingContractClass() {
+		return ExclusiveArbitraryLengthPath.class;
+	}
 
 	private static final long serialVersionUID = 5743134085306940200L;
 

@@ -35,8 +35,9 @@ public class FilterExpr extends AbstractQueryModelNode implements FilterValueExp
 
 	public FilterExpr(ValueExpr expr, HashSet<String> vars) {
 		super();
-		this.expr = expr;
-		this.vars = vars;
+		this.expr = expr.clone();
+		this.expr.setParentNode(this);
+		this.vars = vars == null ? null : new HashSet<>(vars);
 	}
 
 	@Override
@@ -55,6 +56,7 @@ public class FilterExpr extends AbstractQueryModelNode implements FilterValueExp
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (expr == current) {
 			expr = (ValueExpr) replacement;
+			expr.setParentNode(this);
 		} else {
 			throw new IllegalArgumentException("Node is not a child node: " + current);
 		}
@@ -72,6 +74,7 @@ public class FilterExpr extends AbstractQueryModelNode implements FilterValueExp
 	public FilterExpr clone() {
 		FilterExpr clone = (FilterExpr) super.clone();
 		clone.expr = (ValueExpr) expr.clone();
+		clone.expr.setParentNode(clone);
 		clone.vars = vars == null ? null : new HashSet<>(vars);
 		return clone;
 	}
