@@ -17,8 +17,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.ByteArrayOutputStream;
 import java.io.StringWriter;
 import java.net.URL;
+import java.util.List;
+import java.util.Map;
 
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriter;
 import org.junit.jupiter.api.Test;
@@ -68,6 +74,60 @@ class TupleResultBuilderCoverageTest {
 		assertThatThrownBy(() -> unsupportedBuilder.namedResult("value", new Object()))
 				.isInstanceOf(QueryResultHandlerException.class)
 				.hasMessageContaining("Could not convert an object to a Value");
+	}
+
+	private static TupleResultBuilder newBuilder() {
+		return new TupleResultBuilder(new WorkbenchTupleResultWriter(new StringWriter()),
+				SimpleValueFactory.getInstance());
+	}
+
+	private static boolean hasPrefix(List<Namespace> namespaces, String prefix) {
+		return namespaces.stream().anyMatch(ns -> ns.getPrefix().equals(prefix));
+	}
+
+	@Test
+	void emptyRepositoryGetsDefaultNamespaces() {
+		List<Namespace> result = newBuilder().withConfiguredNamespaces(List.of());
+
+		assertThat(result).contains(new SimpleNamespace("rsx", RSX.NAMESPACE));
+	}
+
+	@Test
+	void storedPrefixBeatsDefaultNamespace() {
+		List<Namespace> result = newBuilder()
+				.withConfiguredNamespaces(List.of(new SimpleNamespace("rsx", "urn:other#")));
+
+		assertThat(result).contains(new SimpleNamespace("rsx", "urn:other#"));
+		assertThat(result).doesNotContain(new SimpleNamespace("rsx", RSX.NAMESPACE));
+	}
+
+	@Test
+	void storedNamespaceIriUnderOtherPrefixSuppressesDefault() {
+		List<Namespace> result = newBuilder()
+				.withConfiguredNamespaces(List.of(new SimpleNamespace("my", RDF4J.NAMESPACE)));
+
+		assertThat(result).contains(new SimpleNamespace("my", RDF4J.NAMESPACE));
+		assertThat(hasPrefix(result, "rdf4j")).isFalse();
+	}
+
+	@Test
+	void configuredNamespaceBeatsDefaultNamespace() {
+		TupleResultBuilder builder = newBuilder().configuredNamespaces(Map.of("rsx", "urn:configured#"));
+
+		List<Namespace> result = builder.withConfiguredNamespaces(List.of());
+
+		assertThat(result).contains(new SimpleNamespace("rsx", "urn:configured#"));
+		assertThat(result).doesNotContain(new SimpleNamespace("rsx", RSX.NAMESPACE));
+	}
+
+	@Test
+	void configuredNamespaceIriSuppressesDefaultUnderOtherPrefix() {
+		TupleResultBuilder builder = newBuilder().configuredNamespaces(Map.of("mine", RDF4J.NAMESPACE));
+
+		List<Namespace> result = builder.withConfiguredNamespaces(List.of());
+
+		assertThat(result).contains(new SimpleNamespace("mine", RDF4J.NAMESPACE));
+		assertThat(hasPrefix(result, "rdf4j")).isFalse();
 	}
 
 	@Test

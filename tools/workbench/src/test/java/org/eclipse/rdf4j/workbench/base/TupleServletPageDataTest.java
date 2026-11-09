@@ -63,8 +63,8 @@ class TupleServletPageDataTest {
 
 		List<JsonNode> records = records(response);
 		assertThat(records).extracting(record -> record.path("type").asText())
-				.containsExactly("head", "vars", "links", "rows", "error");
-		assertThat(records.get(3).path("values").get(0).get(0).path("value").asText()).isEqualTo("completed row");
+				.containsExactly("head", "vars", "namespaces", "links", "rows", "error");
+		assertThat(records.get(4).path("values").get(0).get(0).path("value").asText()).isEqualTo("completed row");
 		assertThat(records.getLast().path("status").asInt()).isEqualTo(400);
 		assertThat(records.getLast().path("message").asText()).isEqualTo("bad tuple parameter");
 		assertThat(response.isCommitted()).isTrue();
@@ -93,7 +93,7 @@ class TupleServletPageDataTest {
 				.map(JSON_MAPPER::readTree)
 				.toList();
 		assertThat(records).extracting(record -> record.path("type").asText())
-				.containsExactly("head", "vars", "links", "rows", "error");
+				.containsExactly("head", "vars", "namespaces", "links", "rows", "error");
 		assertThat(records.getLast().path("message").asText()).isEqualTo("bad tuple parameter");
 	}
 

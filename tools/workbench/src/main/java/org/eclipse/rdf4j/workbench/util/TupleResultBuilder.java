@@ -74,8 +74,8 @@ public class TupleResultBuilder {
 	}
 
 	/**
-	 * Declares a repository's namespaces, followed by the configured namespaces whose prefix it does not store: pages
-	 * treat those as if the repository had stored them.
+	 * Declares a repository's namespaces, followed by the configured namespaces whose prefix it does not store and the
+	 * default namespaces it does not use: pages treat those as if the repository had stored them.
 	 *
 	 * @param stored the repository's namespaces
 	 */
@@ -87,22 +87,29 @@ public class TupleResultBuilder {
 
 	/**
 	 * @param stored a repository's namespaces
-	 * @return the repository's namespaces, followed by the configured namespaces whose prefix it does not store
+	 * @return the repository's namespaces, followed by the configured namespaces whose prefix it does not store, and
+	 *         then the {@link WorkbenchDefaultNamespaces} whose prefix and namespace IRI none of those use
 	 */
 	public List<Namespace> withConfiguredNamespaces(List<Namespace> stored) {
-		if (configuredNamespaces.isEmpty()) {
-			return stored;
-		}
 		Set<String> prefixes = new HashSet<>();
+		Set<String> names = new HashSet<>();
 		List<Namespace> namespaces = new ArrayList<>(stored);
 		for (Namespace namespace : stored) {
 			prefixes.add(namespace.getPrefix());
+			names.add(namespace.getName());
 		}
 		configuredNamespaces.forEach((prefix, name) -> {
 			if (!prefixes.contains(prefix)) {
+				prefixes.add(prefix);
+				names.add(name);
 				namespaces.add(new SimpleNamespace(prefix, name));
 			}
 		});
+		for (Namespace namespace : WorkbenchDefaultNamespaces.get()) {
+			if (!prefixes.contains(namespace.getPrefix()) && !names.contains(namespace.getName())) {
+				namespaces.add(namespace);
+			}
+		}
 		return namespaces;
 	}
 

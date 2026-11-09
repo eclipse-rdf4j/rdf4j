@@ -13,7 +13,7 @@
 import type { CSSProperties, Ref } from "react";
 import { DETAILS_ITEM_LIMIT } from "./explorer-config.ts";
 import { NODE_TYPE_LIMIT } from "./rdf-vocabulary.ts";
-import { compactTerm } from "./graph-terms.ts";
+import { compactTerm, termTooltip } from "./graph-terms.ts";
 import type { GraphNode } from "./graph-types.ts";
 import { nodeVisual, typeVisual } from "./graph-visuals.ts";
 import { isQueryableResource, sparqlTermFromNodeId } from "./rdf-terms.ts";
@@ -99,7 +99,7 @@ export function NodeDetailsCard({
                 {details.types.map((type) => (
                   <li
                     key={type.id}
-                    title={type.id}
+                    title={termTooltip(type.id)}
                     style={{ "--type-color": typeVisual(type.id).stroke } as CSSProperties}
                   >
                     {type.label}
@@ -117,7 +117,7 @@ export function NodeDetailsCard({
               {node.kind === "literal" ? "Value" : node.kind === "blank" ? "Blank node" : "Resource"}
             </p>
           )}
-          <h3 dir={nodeLanguage.dir}>{node.kind === "literal" ? node.termValue ?? node.label : node.label}</h3>
+          <h3 dir={nodeLanguage.dir} title={node.kind === "literal" ? undefined : termTooltip(node.id)}>{node.kind === "literal" ? node.termValue ?? node.label : node.label}</h3>
           {nodeLanguage.languageLabel ? <small>@{nodeLanguage.languageLabel}</small> : null}
         </div>
         <button
@@ -238,7 +238,7 @@ export function NodeDetailsCard({
                       <button
                         type="button"
                         className="node-details-link"
-                        title={statement}
+                        title={`${statement}\n${termTooltip(item.id)}`}
                         style={{ "--node-color": nodeVisual(item).stroke } as CSSProperties}
                         onClick={() => onFollow(item.id)}
                       >

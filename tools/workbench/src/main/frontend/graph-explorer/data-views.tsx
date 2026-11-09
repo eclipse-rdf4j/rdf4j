@@ -14,7 +14,7 @@ import type { LoadBatch, ViewMode } from "./explorer-types.ts";
 import { unorderedPairKey } from "./graph-geometry.ts";
 import { mapFrame, parseGraphDate, placesOf } from "./graph-literals.ts";
 import { histogram, numericSeriesOf, predicateChartOf } from "./chart-data.ts";
-import { compactTerm, termCode } from "./graph-terms.ts";
+import { compactTerm, termCode, termTooltip } from "./graph-terms.ts";
 import type { Graph, GraphEdge, GraphNode } from "./graph-types.ts";
 import { nodeVisual, primaryNodeType } from "./graph-visuals.ts";
 import { Icon } from "./icons.tsx";
@@ -222,12 +222,12 @@ export function DataViews({
               {tableRows.slice(0, tableLimit).map(({ edge, source, target, batch, statement }) => (
                 <tr key={edge.id}>
                   <td>
-                    <strong>{source?.label ?? compactTerm(edge.source)}</strong>
-                    <code>{termCode(source, edge.source)}</code>
+                    <strong title={termTooltip(edge.source)}>{source?.label ?? compactTerm(edge.source)}</strong>
+                    <code title={termTooltip(edge.source)}>{termCode(source, edge.source)}</code>
                   </td>
                   <td>
-                    <strong>{edge.label}</strong>
-                    <code>{compactTerm(edge.predicate, 42)}</code>
+                    <strong title={termTooltip(edge.predicate)}>{edge.label}</strong>
+                    <code title={termTooltip(edge.predicate)}>{compactTerm(edge.predicate, 42)}</code>
                   </td>
                   <td>
                     {statement ? (
@@ -237,8 +237,8 @@ export function DataViews({
                       </>
                     ) : (
                       <>
-                        <strong>{target?.label ?? compactTerm(edge.target)}</strong>
-                        <code>{termCode(target, edge.target)}</code>
+                        <strong title={termTooltip(edge.target)}>{target?.label ?? compactTerm(edge.target)}</strong>
+                        <code title={termTooltip(edge.target)}>{termCode(target, edge.target)}</code>
                       </>
                     )}
                   </td>
@@ -289,8 +289,8 @@ export function DataViews({
                   </span>
                   {node.pinned && <i>PINNED</i>}
                 </header>
-                <h4>{node.kind === "literal" ? node.termValue ?? node.label : node.label}</h4>
-                {node.kind === "iri" ? <code>{compactTerm(node.id, 48)}</code> : null}
+                <h4 title={node.kind === "literal" ? undefined : termTooltip(node.id)}>{node.kind === "literal" ? node.termValue ?? node.label : node.label}</h4>
+                {node.kind === "iri" ? <code title={termTooltip(node.id)}>{compactTerm(node.id, 48)}</code> : null}
                 <dl>
                   {incident.slice(0, 6).map((edge) => {
                     const outgoing = edge.source === node.id;
