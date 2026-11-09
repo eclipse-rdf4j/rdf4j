@@ -484,12 +484,36 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				BindingOptimizationContext.emptyInput(parameters));
 	}
 
-	/** Subclasses must explicitly identify the concrete implementation that adopts empty-input preparation. */
+	/**
+	 * Declares the exact concrete strategy class that adopts empty-input preparation.
+	 * <p>
+	 * A subclass that opts in must override this method and return its own class literal, for example
+	 * {@code MyStrategy.class}. Do not return {@code getClass()}: an inherited declaration must not authorize further
+	 * subclasses whose legacy optimization overrides may have different semantics.
+	 * <p>
+	 * An adopted subclass should move preparation-sensitive logic from its
+	 * {@link #optimize(TupleExpr, EvaluationStatistics, BindingSet) optimize} override to
+	 * {@link #optimizeWithBindingContext(TupleExpr, EvaluationStatistics, BindingOptimizationContext)}, which receives
+	 * both modes. An old optimize override remains a runtime dispatch point and is not called for an adopted
+	 * empty-input preparation. An unadopted legacy strategy can still dispatch through that override when the input is
+	 * the canonical empty binding set, for which capture is vacuous.
+	 *
+	 * @return the concrete strategy class that declares support
+	 */
 	protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
 		return DefaultEvaluationStrategy.class;
 	}
 
-	/** Shared invocation boundary for runtime and empty-input preparation, including backend-specific envelopes. */
+	/**
+	 * Shared invocation boundary used by this strategy for runtime optimization and adopted empty-input preparation.
+	 * Subclasses that opt in should implement preparation-sensitive envelopes here instead of relying on an override of
+	 * {@link #optimize(TupleExpr, EvaluationStatistics, BindingSet)} to intercept both modes.
+	 *
+	 * @param expr                 expression to optimize
+	 * @param evaluationStatistics statistics used by optimizers
+	 * @param context              invocation mode, logical parameters and actual evaluation input
+	 * @return the optimized expression
+	 */
 	protected TupleExpr optimizeWithBindingContext(TupleExpr expr, EvaluationStatistics evaluationStatistics,
 			BindingOptimizationContext context) {
 		BindingSet parameters = context.parameters();
