@@ -429,8 +429,13 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		}
 
 		// Inline any externally set bindings, lucene statement patterns can also
-		// use externally bound variables
-		new BindingAssignerOptimizer().optimize(tupleExpr, dataset, bindings);
+		// use externally bound variables. They are query parameters, which reach the whole query; the runtime
+		// assigner treats them as evaluation input and leaves variables below a projection unbound. It remains the
+		// fallback when an operator requires runtime bindings, as the tree is unchanged then.
+		BindingAssignerOptimizer bindingAssigner = new BindingAssignerOptimizer();
+		if (!bindingAssigner.tryOptimizeForPreparedQuery(tupleExpr, bindings)) {
+			bindingAssigner.optimize(tupleExpr, dataset, bindings);
+		}
 
 		List<SearchQueryEvaluator> queries = new ArrayList<>();
 

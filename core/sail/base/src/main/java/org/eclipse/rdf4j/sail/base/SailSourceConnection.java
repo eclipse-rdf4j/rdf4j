@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -242,6 +243,19 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		return evalStrat;
 	}
 
+	/**
+	 * Callers such as the repository API pass their own parameter set even when no parameter is set. Without values or
+	 * graph-frame metadata it is the canonical empty set, the only input a strategy that has not adopted prepared
+	 * bindings may be asked to prepare.
+	 */
+	private static BindingSet canonicalParameters(BindingSet bindings) {
+		if (bindings == null
+				|| bindings.isEmpty() && GraphFrameBindings.from(bindings) == GraphFrameBindings.EMPTY) {
+			return EmptyBindingSet.getInstance();
+		}
+		return bindings;
+	}
+
 	@Override
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
@@ -293,7 +307,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				strategy.setTrackTime(trackTime);
 			}
 
-			tupleExpr = strategy.optimizeForEmptyInput(tupleExpr, store.getEvaluationStatistics(), bindings);
+			tupleExpr = strategy.optimizeForEmptyInput(tupleExpr, store.getEvaluationStatistics(),
+					canonicalParameters(bindings));
 			if (runtimeTelemetryEnabled) {
 				setRuntimeTelemetryEnabled(tupleExpr, true);
 			}
