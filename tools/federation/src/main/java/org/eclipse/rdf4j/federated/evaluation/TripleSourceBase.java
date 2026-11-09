@@ -207,6 +207,10 @@ public abstract class TripleSourceBase implements TripleSource {
 			outgoing.addBinding(binding.getName(), outgoingNativeValue(binding.getValue(), identity, snapshot,
 					preparedQuery.selectedGraphIdentities()));
 		}
+		// Identity validation is observable even when the RDF term cannot occupy its statement position.
+		if (!preparedQuery.validValuePositions()) {
+			return new EmptyIteration<>();
+		}
 		return withConnection((conn, resultHolder) -> {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery.queryString(), null);
 			if (dataset != null) {

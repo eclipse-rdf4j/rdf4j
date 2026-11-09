@@ -95,6 +95,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentMatchers;
 
@@ -201,8 +202,10 @@ class FedXRemoteBlankNodeGraphTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void capturedGraphDoesNotAuthorizeForeignCanonicalBodyBindings(boolean nestedTriple) throws Exception {
+	@CsvSource({ "false, scalar", "true, scalar", "false, inner", "true, inner", "false, optional",
+			"true, optional" })
+	void capturedGraphDoesNotAuthorizeForeignCanonicalBodyBindings(boolean nestedTriple, String evaluation)
+			throws Exception {
 		initialize("mixed");
 		var context = federation.getFederationContext();
 		var strategy = context.createStrategy(null);
@@ -221,7 +224,12 @@ class FedXRemoteBlankNodeGraphTest {
 			bindings.addBinding("s", nestedTriple ? VF.createTripleTerm(foreign, P, foreign) : foreign);
 			ExclusiveStatement expression = selectedGraph(graph, info, endpoints.getFirst());
 			assertThatThrownBy(() -> {
-				try (var rows = strategy.precompile(expression).evaluate(bindings)) {
+				try (var rows = switch (evaluation) {
+				case "inner" -> strategy.evaluateBoundJoinStatementPattern(expression, List.of(bindings, bindings));
+				case "optional" -> strategy.evaluateLeftBoundJoinStatementPattern(expression,
+						List.of(bindings, bindings));
+				default -> strategy.precompile(expression).evaluate(bindings);
+				}) {
 					QueryResults.asList(rows);
 				}
 			}).isInstanceOf(QueryEvaluationException.class).hasMessageContaining("Unsupported blank-node identity");
@@ -230,8 +238,10 @@ class FedXRemoteBlankNodeGraphTest {
 		}
 	}
 
-	@Test
-	void releasedSnapshotCannotExcludeSelectedCanonicalGraph() throws Exception {
+	@ParameterizedTest
+	@CsvSource({ "false, scalar", "true, scalar", "true, inner", "true, optional" })
+	void releasedSnapshotCannotExcludeSelectedCanonicalGraph(boolean invalidSubject, String evaluation)
+			throws Exception {
 		initialize("mixed");
 		var context = federation.getFederationContext();
 		var strategy = context.createStrategy(null);
@@ -241,8 +251,17 @@ class FedXRemoteBlankNodeGraphTest {
 			Resource graph = (Resource) new EndpointIdentity(endpoints.getLast(), info).incoming(GRAPH);
 			strategy.getGraphSnapshot(endpoints.getFirst()).release();
 			ExclusiveStatement expression = selectedGraph(graph, info, endpoints.getFirst());
+			QueryBindingSet bindings = new QueryBindingSet();
+			if (invalidSubject) {
+				bindings.addBinding("s", VF.createLiteral("invalid-subject"));
+			}
 			assertThatThrownBy(() -> {
-				try (var rows = strategy.precompile(expression).evaluate(EmptyBindingSet.getInstance())) {
+				try (var rows = switch (evaluation) {
+				case "inner" -> strategy.evaluateBoundJoinStatementPattern(expression, List.of(bindings, bindings));
+				case "optional" -> strategy.evaluateLeftBoundJoinStatementPattern(expression,
+						List.of(bindings, bindings));
+				default -> strategy.precompile(expression).evaluate(bindings);
+				}) {
 					QueryResults.asList(rows);
 				}
 			}).isInstanceOf(QueryEvaluationException.class).hasMessageContaining("released");

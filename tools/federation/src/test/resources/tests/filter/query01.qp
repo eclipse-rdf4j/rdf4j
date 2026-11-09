@@ -6,7 +6,10 @@ QueryRoot
       StatementSourcePattern
          Var (name=s)
          Var (name=_const_0, value=http://xmlns.com/foaf/0.1/name, anonymous)
-         Var (name=name, value="Person1")
+         Var (name=name)
          StatementSource (id=endpoint1, type=REMOTE)
          StatementSource (id=endpoint2, type=REMOTE)
-         BoundFilters (name="Person1")
+         FilterExpr
+            Compare (=)
+               Var (name=name)
+               ValueConstant (value="Person1")

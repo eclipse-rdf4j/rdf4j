@@ -26,10 +26,15 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
@@ -40,11 +45,12 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  *
  * @author Andreas Schwarte
  */
-public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTupleExpr, ExecutionDatasetAware {
+public class CheckStatementPattern extends AbstractQueryModelNode
+		implements StatementTupleExpr, BoundJoinTupleExpr, ExecutionDatasetAware, BindingAnalysisContract {
 
 	private static final long serialVersionUID = -4063951571744144255L;
 
-	protected final StatementTupleExpr stmt;
+	protected StatementTupleExpr stmt;
 	protected final String id;
 	protected final QueryInfo queryInfo;
 
@@ -55,7 +61,10 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	public CheckStatementPattern(StatementTupleExpr stmt, QueryInfo queryInfo) {
 		super();
-		this.stmt = stmt;
+		// An attached source still belongs to its existing tree until the caller replaces it. Adopt an unattached
+		// source directly; clone an attached source so constructing this wrapper cannot steal that tree edge.
+		this.stmt = stmt.getParentNode() == null ? stmt : (StatementTupleExpr) stmt.clone();
+		this.stmt.setParentNode(this);
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
 	}
@@ -91,17 +100,17 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		return stmt.getAssuredBindingNames();
+		return Collections.emptySet();
 	}
 
 	@Override
 	public Set<String> getBindingNames() {
-		return stmt.getBindingNames();
+		return Collections.emptySet();
 	}
 
 	@Override
 	public QueryModelNode getParentNode() {
-		return stmt.getParentNode();
+		return super.getParentNode();
 	}
 
 	@Override
@@ -111,34 +120,58 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-		stmt.replaceChildNode(current, replacement);
+		if (current == stmt && replacement instanceof StatementTupleExpr statement) {
+			stmt = statement;
+			statement.setParentNode(this);
+		} else {
+			stmt.replaceChildNode(current, replacement);
+		}
 	}
 
 	@Override
 	public void replaceWith(QueryModelNode replacement) {
-		stmt.replaceWith(replacement);
+		super.replaceWith(replacement);
 	}
 
 	@Override
 	public void setParentNode(QueryModelNode parent) {
-		stmt.setParentNode(parent);
+		super.setParentNode(parent);
 	}
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
-		stmt.visit(visitor);
+		visitor.meetOther(this);
 	}
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
-		stmt.visitChildren(visitor);
+		stmt.visit(visitor);
+	}
+
+	@Override
+	public Class<? extends QueryModelNode> bindingContractClass() {
+		return CheckStatementPattern.class;
+	}
+
+	@Override
+	public OutputFacts bindingOutput(QueryAlgebraBindingAnalysis analysis, ReadOnlyContext input) {
+		return analysis.inputOnlyFacts(input);
+	}
+
+	@Override
+	public ReadOnlyContext bindingInput(QueryAlgebraBindingAnalysis analysis, QueryModelNode child,
+			ReadOnlyContext input) {
+		return input;
 	}
 
 	@Override
 	public CheckStatementPattern clone() {
-		throw new RuntimeException("Operation not supported on this node!");
+		CheckStatementPattern clone = (CheckStatementPattern) super.clone();
+		clone.stmt = (StatementTupleExpr) stmt.clone();
+		clone.stmt.setParentNode(clone);
+		return clone;
 	}
 
 	@Override
