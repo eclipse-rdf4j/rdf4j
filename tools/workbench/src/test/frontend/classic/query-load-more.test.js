@@ -333,6 +333,47 @@ test('progressive row writes coalesce visible rendering rather than rereading fo
     renderer.dispose();
 });
 
+// WebKit can report a zero or negative scrollHeight for the 1px capacity probe (legacy scrollbars wider than the probe,
+// or layout units saturating past the engine's pixel limit) while the child still renders. A capacity probe must never
+// hand that value on: the Explore page's result tables threw "A positive physical scroll capacity is required."
+for (const [name, probeScrollHeight] of [
+    ['zero', () => 0],
+    ['negative', () => -14],
+    ['wrapping past the cap', requested => requested > 40000 ? -2147483648 + requested : requested]
+]) {
+    test(`a ${name} probe scrollHeight still yields a positive scroll capacity`, () => {
+        const { api, document } = loadApi();
+        const createElement = document.createElement.bind(document);
+        document.createElement = tag => {
+            const element = createElement(tag);
+            element.getBoundingClientRect = () => {
+                const requested = parseFloat(element.style.height) || 0;
+                return { top: 0, left: 0, width: 1, height: requested };
+            };
+            if (tag === 'div') Object.defineProperty(element, 'scrollHeight', { get() {
+                if (this.style.overflow !== 'scroll' || !this.children.length) return 0;
+                const content = this.children[0];
+                const target = content.tagName === 'TABLE' ? content.children[0].children[0].children[0] : content;
+                return probeScrollHeight(parseFloat(target.style.height) || 0);
+            } });
+            return element;
+        };
+        const target = document.createElement('section');
+        document.body.appendChild(target);
+        const table = new api.ResultTable(target, {
+            rowCount: () => 0, variables: () => ['s'], read: async () => [], namespaces: () => []
+        });
+        for (const capacity of [table.tableScrollCapacity, table.recordScrollCapacity]) {
+            assert.ok(isFinite(capacity) && capacity > 0, `scroll capacity must be positive; got ${capacity}`);
+        }
+        if (name === 'wrapping past the cap') {
+            assert.ok(table.tableScrollCapacity <= 40000 && table.tableScrollCapacity >= 32768,
+                `only verified probe heights may become the capacity; got ${table.tableScrollCapacity}`);
+        }
+        table.dispose();
+    });
+}
+
 for (const layout of ['table', 'records']) {
   for (const overflow of ['clamp', 'collapse']) {
     test(`${layout} ${overflow} scroll capacity keeps wheel and keyboard row access`, async () => {

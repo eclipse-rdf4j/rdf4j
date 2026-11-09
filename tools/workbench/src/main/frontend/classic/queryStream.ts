@@ -4035,11 +4035,13 @@ namespace workbench {
                 }
                 if (actual < requested) {
                     var renderedHeight = heightTarget.getBoundingClientRect().height;
-                    if (renderedHeight > 0) {
+                    // The previous step proved previousRequested fits, so a real clamp is never below it. WebKit can
+                    // report zero or negative heights (scrollbars wider than the probe, saturated layout units).
+                    if (renderedHeight > 0 && actual > 0 && actual >= previousRequested) {
                         capacity = actual;
                     } else {
-                        // A collapsed child still leaves the probe's own viewport in scrollHeight.
-                        // Search the actual child geometry rather than mistaking that viewport for the cap.
+                        // A collapsed child still leaves the probe's own viewport in scrollHeight, and a nonsensical
+                        // scrollHeight is no cap at all. Search the actual child geometry instead.
                         var low = previousRequested;
                         var high = requested;
                         while (high - low > 1) {
