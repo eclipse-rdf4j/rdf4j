@@ -280,7 +280,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				+ "direct adjacency is enabled and its mode is not DISABLED.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
 						"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
-public class LmdbStoreConfig extends BaseSailConfig {
+public class LmdbStoreConfig extends BaseSailConfig implements Cloneable {
 	/**
 	 * The default size of the triple database.
 	 */
@@ -623,6 +623,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public LmdbStoreConfig setForceSync(boolean forceSync) {
 		this.forceSync = forceSync;
 		return this;
+	}
+
+	/**
+	 * Settings for a store that holds one transaction's spilled changes. That store is deleted with its transaction, so
+	 * forced syncs buy no durability and would make every buffered statement wait for the disk.
+	 */
+	@InternalUseOnly
+	public LmdbStoreConfig forTemporaryOverflow() {
+		if (!forceSync) {
+			return this;
+		}
+		try {
+			LmdbStoreConfig overflow = (LmdbStoreConfig) clone();
+			overflow.forceSync = false;
+			return overflow;
+		} catch (CloneNotSupportedException e) {
+			throw new AssertionError(e);
+		}
 	}
 
 	public LmdbStoreConfig setNoReadahead(boolean noReadahead) {
