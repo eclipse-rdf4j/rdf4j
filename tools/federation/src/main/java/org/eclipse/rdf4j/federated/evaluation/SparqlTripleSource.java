@@ -101,6 +101,9 @@ public class SparqlTripleSource extends TripleSourceBase {
 				return rows.hasNext();
 			}
 		}
+		if (!hasValidStatementPositions(stmt, bindings, queryInfo, dataset, true)) {
+			return false;
+		}
 
 		// decide whether to use ASK queries or a SELECT query
 		if (useASKQueries) {

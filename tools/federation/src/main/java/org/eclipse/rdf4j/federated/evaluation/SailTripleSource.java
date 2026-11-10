@@ -71,7 +71,11 @@ public class SailTripleSource extends TripleSourceBase {
 			QueryEvaluationException {
 
 		Dataset dataset = stmt instanceof QueryRef queryRef ? queryRef.getExecutionDataset() : queryInfo.getDataset();
-		if (EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset)) {
+		boolean queryTransport = EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset);
+		if (!hasValidStatementPositions(stmt, bindings, queryInfo, dataset, queryTransport)) {
+			return new EmptyIteration<>();
+		}
+		if (queryTransport) {
 			return preparedStatements(stmt, bindings, filterExpr, queryInfo,
 					typed -> QueryStringUtil.selectQueryString(stmt, typed, null, new AtomicBoolean(), null),
 					typed -> QueryStringUtil.askQueryString(stmt, typed, null), dataset);
@@ -174,7 +178,11 @@ public class SailTripleSource extends TripleSourceBase {
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
-		if (EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset)) {
+		boolean queryTransport = EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset);
+		if (!hasValidStatementPositions(stmt, bindings, queryInfo, dataset, queryTransport)) {
+			return false;
+		}
+		if (queryTransport) {
 			return hasPreparedStatements(stmt, bindings, queryInfo,
 					typed -> QueryStringUtil.askQueryString(stmt, typed, null), dataset);
 		}
@@ -284,9 +292,17 @@ public class SailTripleSource extends TripleSourceBase {
 			return new EmptyIteration<>();
 		}
 		bindings = compatibleBindings.get();
-		return preparedStatements(group, bindings, null, group.getQueryInfo(),
-				typed -> QueryStringUtil.selectQueryStringTripleRefJoinGroup(group, typed, null),
-				typed -> QueryStringUtil.askQueryString(group, typed, null), group.getExecutionDataset());
+		QueryStringUtil.TypedBindings typed = new QueryStringUtil.TypedBindings(group, bindings);
+		var rendered = QueryStringUtil.renderTripleRefJoinGroup(group, typed, null);
+		if (rendered.bindingNames().isEmpty()) {
+			// A private probe projection expresses existence, never a public RDF-star result column.
+			return hasPreparedStatements(group, bindings, group.getQueryInfo(),
+					values -> QueryStringUtil.askQueryString(group, values, null), group.getExecutionDataset())
+							? new SingleBindingSetIteration(bindings)
+							: new EmptyIteration<>();
+		}
+		return getStatements(rendered.queryString(), bindings, typed.getQueryBindings(), null, group.getQueryInfo(),
+				group.getExecutionDataset());
 	}
 
 	@Override

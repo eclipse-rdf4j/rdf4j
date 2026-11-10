@@ -1,4 +1,4 @@
-QueryRoot
+SingleSourceQuery @endpoint3
    Projection
       ProjectionElemList
          ProjectionElem "project"
@@ -8,16 +8,13 @@ QueryRoot
             SingletonSet
             ExtensionElem (type)
                ValueConstant (value=http://namespace3.org/Project)
-         StatementSourcePattern
-            Var (name=project)
-            Var (name=_const_1, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-            Var (name=type)
-            StatementSource (id=endpoint1, type=REMOTE)
-            StatementSource (id=endpoint2, type=REMOTE)
-            StatementSource (id=endpoint3, type=REMOTE)
-            StatementSource (id=endpoint4, type=REMOTE)
          ExclusiveStatement
             Var (name=project)
             Var (name=_const_0, value=http://www.w3.org/2000/01/rdf-schema#label, anonymous)
             Var (name=label)
+            StatementSource (id=endpoint3, type=REMOTE)
+         ExclusiveStatement
+            Var (name=project)
+            Var (name=_const_1, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            Var (name=type, value=http://namespace3.org/Project)
             StatementSource (id=endpoint3, type=REMOTE)
