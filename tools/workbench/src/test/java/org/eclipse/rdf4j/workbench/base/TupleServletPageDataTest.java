@@ -13,11 +13,21 @@ package org.eclipse.rdf4j.workbench.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -33,6 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import jakarta.servlet.http.HttpServletResponse;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -98,6 +109,142 @@ class TupleServletPageDataTest {
 	}
 
 	@Test
+	void largeNativePageModelSpillsAndRoundTripsWithoutRetainingItInHeap() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/test-tuple");
+		request.addHeader("Accept", "text/html");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		try (WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(response)) {
+			bufferedResponse.setContentType(WorkbenchPageProtocol.ACCEPT);
+			Set<Path> previousSpools = pageModelSpools();
+			byte[] chunk = "{\"type\":\"rows\",\"values\":[[{\"kind\":\"literal\",\"value\":\"Å🙂\"}]]}\n".repeat(256)
+					.getBytes(StandardCharsets.UTF_8);
+			byte[] expected = new byte[chunk.length * 256];
+			for (int index = 0; index < 256; index++) {
+				bufferedResponse.getOutputStream().write(chunk);
+				System.arraycopy(chunk, 0, expected, chunk.length * index, chunk.length);
+			}
+
+			Set<Path> newSpools = pageModelSpools();
+			newSpools.removeAll(previousSpools);
+			assertThat(newSpools).hasSize(1);
+			Path spool = newSpools.iterator().next();
+			if (Files.getFileStore(spool).supportsFileAttributeView("posix")) {
+				assertThat(Files.getPosixFilePermissions(spool))
+						.containsExactlyInAnyOrder(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
+			}
+			bufferedResponse.complete(request, null, "test-tuple");
+
+			String html = response.getContentAsString();
+			String encodedModel = html.split("data-workbench-initial-model=\"")[1].split("\"", 2)[0];
+			byte[] decoded = Base64.getUrlDecoder().decode(encodedModel);
+			assertThat(decoded).isEqualTo(expected);
+			assertThat(pageModelSpools()).containsExactlyInAnyOrderElementsOf(previousSpools);
+		}
+	}
+
+	@Test
+	void redirectedNativePostDeletesSpilledModelWithoutWritingHtml() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/test-tuple");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		Set<Path> previousSpools = pageModelSpools();
+		try (WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(response)) {
+			bufferedResponse.setContentType(WorkbenchPageProtocol.ACCEPT);
+			bufferedResponse.getOutputStream().write(new byte[512 * 1024]);
+			assertThat(pageModelSpools()).hasSize(previousSpools.size() + 1);
+			bufferedResponse.sendRedirect("/done");
+			bufferedResponse.complete(request, null, "test-tuple");
+		}
+		assertThat(response.getRedirectedUrl()).isEqualTo("/done");
+		assertThat(response.getContentAsByteArray()).isEmpty();
+		assertThat(pageModelSpools()).containsExactlyInAnyOrderElementsOf(previousSpools);
+	}
+
+	@Test
+	void abortedNativePostDeletesSpilledModelWithoutCompleting() throws Exception {
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		Set<Path> previousSpools = pageModelSpools();
+		try (WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(response)) {
+			bufferedResponse.getOutputStream().write(new byte[512 * 1024]);
+			assertThat(pageModelSpools()).hasSize(previousSpools.size() + 1);
+		}
+		assertThat(response.getContentAsByteArray()).isEmpty();
+		assertThat(pageModelSpools()).containsExactlyInAnyOrderElementsOf(previousSpools);
+	}
+
+	@Test
+	void failedHtmlShellDeletesSpilledModel() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/test-tuple");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getContentType()).thenReturn(WorkbenchPageProtocol.ACCEPT);
+		when(response.getWriter()).thenThrow(new IOException("HTML output unavailable"));
+		Set<Path> previousSpools = pageModelSpools();
+		try (WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(response)) {
+			bufferedResponse.getOutputStream().write(new byte[512 * 1024]);
+			assertThat(pageModelSpools()).hasSize(previousSpools.size() + 1);
+			assertThatThrownBy(() -> bufferedResponse.complete(request, null, "test-tuple"))
+					.isInstanceOf(IOException.class)
+					.hasMessage("HTML output unavailable");
+		}
+		assertThat(pageModelSpools()).containsExactlyInAnyOrderElementsOf(previousSpools);
+	}
+
+	@Test
+	void clientDisconnectDuringBase64OutputDeletesSpilledModel() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/test-tuple");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getContentType()).thenReturn(WorkbenchPageProtocol.ACCEPT);
+		Writer failingOutput = new Writer() {
+			private boolean inModel;
+
+			@Override
+			public void write(char[] characters, int offset, int length) throws IOException {
+				String fragment = new String(characters, offset, length);
+				if (inModel) {
+					throw new IOException("client disconnected");
+				}
+				if (fragment.contains("data-workbench-initial-model")) {
+					inModel = true;
+				}
+			}
+
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+		when(response.getWriter()).thenReturn(new PrintWriter(failingOutput));
+		Set<Path> previousSpools = pageModelSpools();
+		try (WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(response)) {
+			bufferedResponse.getOutputStream().write(new byte[512 * 1024]);
+			assertThat(pageModelSpools()).hasSize(previousSpools.size() + 1);
+			assertThatThrownBy(() -> bufferedResponse.complete(request, null, "test-tuple"))
+					.isInstanceOf(IOException.class)
+					.hasMessageContaining("Workbench HTML shell");
+		}
+		assertThat(pageModelSpools()).containsExactlyInAnyOrderElementsOf(previousSpools);
+	}
+
+	@Test
+	void nativePageModelSurvivesServletClosingItsResponseWriter() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/test-tuple");
+		request.addHeader("Accept", "text/html");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		try (WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(response)) {
+			bufferedResponse.setContentType(WorkbenchPageProtocol.ACCEPT);
+			bufferedResponse.getWriter().write("{\"type\":\"end\"}\n");
+			bufferedResponse.getWriter().close();
+			bufferedResponse.complete(request, null, "test-tuple");
+		}
+		String html = response.getContentAsString();
+		String encodedModel = html.split("data-workbench-initial-model=\"")[1].split("\"", 2)[0];
+		assertThat(new String(Base64.getUrlDecoder().decode(encodedModel), StandardCharsets.UTF_8))
+				.isEqualTo("{\"type\":\"end\"}\n");
+	}
+
+	@Test
 	void legacyTupleFailuresStillPropagateToTheServletFallback() throws Exception {
 		FailingTupleServlet servlet = failingServlet();
 		WorkbenchRequest request = request("application/sparql-results+xml");
@@ -121,6 +268,13 @@ class TupleServletPageDataTest {
 
 	private static List<JsonNode> records(MockHttpServletResponse response) throws Exception {
 		return response.getContentAsString().lines().map(JSON_MAPPER::readTree).toList();
+	}
+
+	private static Set<Path> pageModelSpools() throws Exception {
+		try (var files = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
+			return files.filter(path -> path.getFileName().toString().startsWith("rdf4j-workbench-page-model-"))
+					.collect(Collectors.toSet());
+		}
 	}
 
 	private static final class FailingTupleServlet extends TupleServlet {
