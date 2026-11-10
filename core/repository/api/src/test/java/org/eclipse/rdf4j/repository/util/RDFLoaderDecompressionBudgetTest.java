@@ -60,29 +60,29 @@ class RDFLoaderDecompressionBudgetTest {
 	}
 
 	@Test
-	void acceptsSingleCompressionLayerPastConfiguredExpandedByteLimit() throws Exception {
+	void rejectsSingleCompressionLayerPastConfiguredExpandedByteLimit() throws Exception {
 		ParserConfig config = new ParserConfig()
 				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
 				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
 				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
 		byte[] input = gzip(largeTurtleDocument());
 
-		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
+		assertBudgetFailureStartingWith(config, input, "expanded bytes");
 	}
 
 	@Test
-	void acceptsSingleArchivePastConfiguredExpandedByteLimit() throws Exception {
+	void rejectsSingleArchivePastConfiguredExpandedByteLimit() throws Exception {
 		ParserConfig config = new ParserConfig()
 				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
 				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
 				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
 		byte[] input = zip("data.ttl", largeTurtleDocument());
 
-		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
+		assertBudgetFailureStartingWith(config, input, "expanded bytes");
 	}
 
 	@Test
-	void acceptsSingleCompressionLayerPastConfiguredExpansionRatio() throws Exception {
+	void rejectsSingleCompressionLayerPastConfiguredExpansionRatio() throws Exception {
 		ParserConfig config = new ParserConfig()
 				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, Long.MAX_VALUE)
 				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, 2L)
@@ -90,11 +90,11 @@ class RDFLoaderDecompressionBudgetTest {
 		byte[] input = gzip(("<urn:s> <urn:p> \"" + "a".repeat(16_384) + "\" .")
 				.getBytes(StandardCharsets.UTF_8));
 
-		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
+		assertBudgetFailureStartingWith(config, input, "expansion ratio exceeds 2:1 after 0 grace bytes");
 	}
 
 	@Test
-	void doesNotChargeOuterLayerExpansionToNestedByteLimit() throws Exception {
+	void chargesOuterLayerExpansionToAggregateByteLimit() throws Exception {
 		ByteArrayOutputStream intermediate = new ByteArrayOutputStream();
 		byte[] emptyMember = gzip(new byte[0]);
 		for (int i = 0; i < 32; i++) {
@@ -106,7 +106,7 @@ class RDFLoaderDecompressionBudgetTest {
 				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
 				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
 
-		assertThatCode(() -> load(config, gzip(intermediate.toByteArray()))).doesNotThrowAnyException();
+		assertBudgetFailureStartingWith(config, gzip(intermediate.toByteArray()), "expanded bytes");
 	}
 
 	@Test
@@ -169,14 +169,19 @@ class RDFLoaderDecompressionBudgetTest {
 	}
 
 	@Test
-	void acceptsExactNestedExpandedByteBoundary() throws Exception {
+	void acceptsExactAggregateExpandedByteBoundary() throws Exception {
 		byte[] body = TURTLE.getBytes(StandardCharsets.UTF_8);
-		ParserConfig config = new ParserConfig().set(RDFLoaderSettings.MAX_EXPANDED_BYTES, (long) body.length);
+		byte[] archive = zip(Map.of("data.ttl", TURTLE));
+		long expandedBytes = archive.length + body.length;
+		ParserConfig config = new ParserConfig().set(RDFLoaderSettings.MAX_EXPANDED_BYTES, expandedBytes);
 		RDFLoader loader = new RDFLoader(config, getValueFactory());
 
-		assertThatCode(() -> loader.load(new ByteArrayInputStream(gzip(zip(Map.of("data.ttl", TURTLE)))), "urn:base",
+		assertThatCode(() -> loader.load(new ByteArrayInputStream(gzip(archive)), "urn:base",
 				RDFFormat.TURTLE, new AbstractRDFHandler() {
 				})).doesNotThrowAnyException();
+		ParserConfig belowBoundary = new ParserConfig().set(RDFLoaderSettings.MAX_EXPANDED_BYTES,
+				expandedBytes - 1);
+		assertBudgetFailureStartingWith(belowBoundary, gzip(archive), "expanded bytes");
 	}
 
 	@Test
@@ -270,6 +275,12 @@ class RDFLoaderDecompressionBudgetTest {
 		assertThatThrownBy(() -> load(config, input))
 				.isInstanceOf(RDFParseException.class)
 				.hasMessage(RDFInputDecompressionBudget.ERROR_PREFIX + detail);
+	}
+
+	private static void assertBudgetFailureStartingWith(ParserConfig config, byte[] input, String detail) {
+		assertThatThrownBy(() -> load(config, input))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageStartingWith(RDFInputDecompressionBudget.ERROR_PREFIX + detail);
 	}
 
 	private static void load(ParserConfig config, byte[] input) throws Exception {
