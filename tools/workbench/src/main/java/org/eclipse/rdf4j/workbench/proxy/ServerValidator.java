@@ -12,16 +12,17 @@
 package org.eclipse.rdf4j.workbench.proxy;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.workbench.util.LocalFileServerPath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +43,7 @@ class ServerValidator {
 	static final String ACCEPTED_SERVER_PREFIXES_PROPERTY = "org.eclipse.rdf4j.workbench.accepted-server-prefixes";
 
 	private static final String DEFAULT_ACCEPTED_SERVER_PREFIXES = "/rdf4j-server";
+	private static final Pattern SCHEME_ONLY_PREFIX = Pattern.compile("[A-Za-z][A-Za-z0-9+.-]*:");
 
 	private final String prefixes;
 
@@ -59,9 +61,8 @@ class ServerValidator {
 	private boolean isDirectory(final String server) {
 		boolean isDir = false;
 		try {
-			final URL url = new URL(server);
-			isDir = asLocalFile(url).isDirectory();
-		} catch (MalformedURLException e) {
+			isDir = LocalFileServerPath.canonicalFile(server).isDirectory();
+		} catch (IOException e) {
 			LOGGER.warn(e.toString(), e);
 		}
 		return isDir;
@@ -78,9 +79,9 @@ class ServerValidator {
 	protected boolean isValidServer(final String server) {
 		boolean isValid = checkServerPrefixes(server);
 		if (isValid) {
-			if (server.startsWith("http://") || server.startsWith("https://")) {
+			if (hasScheme(server, "http") || hasScheme(server, "https")) {
 				isValid = canConnect(server);
-			} else if (server.startsWith("file:")) {
+			} else if (hasScheme(server, "file")) {
 				isValid = isDirectory(server);
 			}
 		}
@@ -112,23 +113,43 @@ class ServerValidator {
 	}
 
 	private boolean matchesServerPrefix(String server, String prefix) {
+		boolean fileServer = hasScheme(server, "file");
+		boolean filePrefix = hasScheme(prefix, "file");
+		if (fileServer || filePrefix) {
+			return fileServer && filePrefix && normalizePrefixMatchValue(server) != null
+					&& normalizePrefixMatchValue(prefix) != null && isWithinLocalPrefix(server, prefix);
+		}
 		String normalizedServer = normalizePrefixMatchValue(server);
-		String normalizedPrefix = normalizePrefixMatchValue(prefix);
+		String normalizedPrefix = SCHEME_ONLY_PREFIX.matcher(prefix).matches()
+				? prefix.toLowerCase(Locale.ROOT)
+				: normalizePrefixMatchValue(prefix);
 		if (normalizedServer == null || normalizedPrefix == null) {
 			return false;
 		}
 		if (!normalizedServer.startsWith(normalizedPrefix)) {
 			return false;
 		}
+		boolean prefixMatch;
 		if (normalizedPrefix.endsWith(":") || normalizedPrefix.endsWith("/") || normalizedPrefix.endsWith("?")
 				|| normalizedPrefix.endsWith("#")) {
-			return true;
+			prefixMatch = true;
+		} else if (normalizedServer.length() == normalizedPrefix.length()) {
+			prefixMatch = true;
+		} else {
+			char next = normalizedServer.charAt(normalizedPrefix.length());
+			prefixMatch = next == '/' || next == '?' || next == '#';
 		}
-		if (normalizedServer.length() == normalizedPrefix.length()) {
-			return true;
+		return prefixMatch;
+	}
+
+	private boolean isWithinLocalPrefix(String server, String prefix) {
+		try {
+			return LocalFileServerPath.canonicalFile(server)
+					.toPath()
+					.startsWith(LocalFileServerPath.canonicalFile(prefix).toPath());
+		} catch (IOException e) {
+			return false;
 		}
-		char next = normalizedServer.charAt(normalizedPrefix.length());
-		return next == '/' || next == '?' || next == '#';
 	}
 
 	private String normalizePrefixMatchValue(String value) {
@@ -137,9 +158,20 @@ class ServerValidator {
 			if (hasUnsafePathSegment(uri.getRawPath())) {
 				return null;
 			}
-			return uri.normalize().toASCIIString();
+			String normalized = uri.normalize().toASCIIString();
+			String scheme = uri.getScheme();
+			return scheme == null ? normalized
+					: scheme.toLowerCase(Locale.ROOT) + normalized.substring(scheme.length());
 		} catch (URISyntaxException e) {
-			return value;
+			return null;
+		}
+	}
+
+	static boolean hasScheme(String value, String scheme) {
+		try {
+			return scheme.equalsIgnoreCase(new URI(value).getScheme());
+		} catch (URISyntaxException e) {
+			return false;
 		}
 	}
 
@@ -187,7 +219,4 @@ class ServerValidator {
 		return success;
 	}
 
-	private File asLocalFile(final URL rdf) {
-		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
-	}
 }
