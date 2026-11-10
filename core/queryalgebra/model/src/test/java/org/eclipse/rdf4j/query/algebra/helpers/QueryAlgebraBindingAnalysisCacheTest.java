@@ -12,24 +12,92 @@
 package org.eclipse.rdf4j.query.algebra.helpers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class QueryAlgebraBindingAnalysisCacheTest {
+	@Test
+	void capturePlanningRetainsOccurrenceIdentityWithoutChangingTheTree() {
+		var value = SimpleValueFactory.getInstance().createLiteral("value");
+		var read = Var.of("input");
+		var element = new ExtensionElem(read, "result");
+		var expression = new QueryRoot(new Extension(new SingletonSet(), element));
+		var before = expression.clone();
+		var plan = PreparedQueryBindingPlan.create(expression, bindings(value),
+				PreparedQueryBindingPlan.Mode.EMPTY_INPUT, (service, names) -> Set.of());
+		assertThat(expression).isEqualTo(before);
+		assertThat(plan.replacements()).singleElement().satisfies(replacement -> {
+			assertThat(replacement.variable()).isSameAs(read);
+			assertThat(replacement.value()).isSameAs(value);
+		});
+		assertThatThrownBy(() -> plan.replacements().clear()).isInstanceOf(UnsupportedOperationException.class);
+		plan.apply();
+		assertThat(((Var) element.getExpr()).getValue()).isSameAs(value);
+		assertThatThrownBy(plan::apply).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void scopedTraversalVisitsAggregateOwnersWithoutExecutingPlaceholders() {
+		var concat = new GroupConcat(Var.of("row"));
+		concat.setSeparator(Var.of("input"));
+		var group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("result", concat));
+		var placeholder = new ExtensionElem(concat.clone(), "result");
+		var expression = new Extension(group, placeholder);
+		var analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(expression, bindings(new ProbeValue("|")));
+		List<QueryModelNode> visited = new ArrayList<>();
+
+		analysis.visitScoped(expression, analysis.rootContext(), (node, input) -> {
+			visited.add(node);
+			return true;
+		});
+
+		assertThat(visited).contains(placeholder, concat, concat.getArg(), concat.getSeparator());
+		assertThat(visited.stream().anyMatch(node -> node == placeholder.getExpr())).isFalse();
+		assertThat(visited.stream().anyMatch(node -> node == ((GroupConcat) placeholder.getExpr()).getSeparator()))
+				.isFalse();
+		assertThat(analysis.contextAt(concat.getSeparator()).externalGuaranteedNames()).contains("input");
+	}
+
+	@Test
+	void scopedTraversalStillVisitsEvaluatedNestedExtensionExpressions() {
+		var read = Var.of("input");
+		var element = new ExtensionElem(new Str(read), "result");
+		var expression = new Extension(new SingletonSet(), element);
+		var analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(expression, bindings(new ProbeValue("value")));
+		List<QueryModelNode> visited = new ArrayList<>();
+		analysis.visitScoped(expression, analysis.rootContext(), (node, input) -> {
+			visited.add(node);
+			return true;
+		});
+		assertThat(visited).contains(element, element.getExpr(), read);
+	}
+
 	@Test
 	void outputFactsCacheUsesFrameIdentityWithoutHashingRdfValues() {
 		SingletonSet expression = new SingletonSet();

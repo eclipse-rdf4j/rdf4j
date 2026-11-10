@@ -64,12 +64,7 @@ public final class FederatedServiceIdentity {
 		QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(service.getServiceExpr());
 		BindingSet recovered = runtimeAssignedInputs(service, originals,
 				outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : Set.of(), analysis);
-		MapBindingSet additional = new MapBindingSet(recovered.size() + service.getPreparedInputBindings().size());
-		recovered.forEach(additional::addBinding);
-		// Prepared API expression values can differ from a VALUES-produced caller row. They constrain only the
-		// receiving query; RemoteBNode keeps the caller's original mapping separate for result reconstruction.
-		service.getPreparedInputBindings().forEach(additional::setBinding);
-		return RemoteBNode.toRemoteBindings(bindings, additional, relevantBindingNames(service), receivingScope,
+		return RemoteBNode.toRemoteBindings(bindings, recovered, relevantBindingNames(service), receivingScope,
 				referencesSupported, canonicalIDs);
 	}
 
@@ -81,7 +76,7 @@ public final class FederatedServiceIdentity {
 			QueryAlgebraBindingAnalysis analysis) {
 		MapBindingSet additional = new MapBindingSet();
 		Var endpoint = service.getServiceRef();
-		if (isRuntimeAssigned(endpoint) && !originals.hasBinding(endpoint.getName())) {
+		if (isRuntimeAssigned(endpoint, service) && !originals.hasBinding(endpoint.getName())) {
 			additional.addBinding(endpoint.getName(), endpoint.getValue());
 		}
 		QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(service.getServiceExpr());
@@ -119,7 +114,7 @@ public final class FederatedServiceIdentity {
 			@Override
 			public void meet(Var variable) {
 				String name = variable.getName();
-				if (isRuntimeAssigned(variable) && visibleNames.contains(name) && !originals.hasBinding(name)
+				if (isRuntimeAssigned(variable, service) && visibleNames.contains(name) && !originals.hasBinding(name)
 						&& !produced.contains(name) && outputs.guaranteedOutputs().contains(name)
 						&& variable.getValue().equals(outputs.fixedValues().get(name))) {
 					additional.setBinding(name, variable.getValue());
@@ -197,8 +192,11 @@ public final class FederatedServiceIdentity {
 		return produced;
 	}
 
-	private static boolean isRuntimeAssigned(Var variable) {
-		return variable.hasValue() && !variable.isAnonymous() && !variable.isConstant();
+	private static boolean isRuntimeAssigned(Var variable, Service service) {
+		// Origin records historical specialization in both modes. Only ownership in the logical parameter
+		// channel distinguishes a pending API substitution from an input retained by runtime optimization.
+		return variable.hasValue() && !variable.isAnonymous() && !variable.isConstant()
+				&& !service.getPreparedInputBindings().containsKey(variable.getName());
 	}
 
 	public static Set<String> relevantBindingNames(Service service) {

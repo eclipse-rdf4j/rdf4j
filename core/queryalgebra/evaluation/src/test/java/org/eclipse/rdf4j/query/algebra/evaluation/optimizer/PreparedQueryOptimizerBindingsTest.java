@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -91,6 +92,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.junit.jupiter.api.Test;
 
 class PreparedQueryOptimizerBindingsTest {
@@ -332,6 +334,57 @@ class PreparedQueryOptimizerBindingsTest {
 	}
 
 	@Test
+	void parsedGroupConcatSeparatorsUseTheGroupInputAcrossPlaceholderOwners() {
+		for (String separator : List.of("?separator", "STR(?separator)",
+				"IF(false, ?separator, \"|\")", "COALESCE(\"|\", ?separator)")) {
+			for (boolean standardPipeline : List.of(false, true)) {
+				String query = "SELECT (GROUP_CONCAT(?item; SEPARATOR=" + separator
+						+ ") AS ?result) WHERE { VALUES ?item { \"a\" \"b\" } }";
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+						.getTupleExpr();
+				var input = new MapBindingSet();
+				input.addBinding("separator", SimpleValueFactory.getInstance().createLiteral("|"));
+				var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+				if (!standardPipeline) {
+					strategy.setOptimizerPipeline(List::of);
+				}
+				var prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+				try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+					assertThat(QueryResults.asList(result)).as("separator=%s, standard=%s", separator, standardPipeline)
+							.extracting(row -> row.getValue("result").stringValue())
+							.singleElement()
+							.isIn("a|b", "b|a");
+				}
+			}
+		}
+	}
+
+	@Test
+	void unreachableAggregatePlaceholderDoesNotRequireAnUnknownScope() {
+		var placeholder = new ExtensionElem(new Count(new Exists(new OpaqueScope(new SingletonSet()))), "result");
+		var expression = new QueryRoot(new Extension(new SingletonSet(), placeholder));
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).singleElement()
+					.satisfies(row -> assertThat(row.isEmpty()).isTrue());
+		}
+	}
+
+	@Test
+	void executedAggregateSubqueryStillRejectsUnknownScopesAtomically() {
+		var group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("result", new Count(new Exists(new OpaqueScope(new SingletonSet())))));
+		var expression = new QueryRoot(group);
+		var original = expression.clone();
+		assertThatThrownBy(() -> new BindingAssignerOptimizer().optimizeForPreparedQuery(expression, parameters()))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("OpaqueScope");
+		assertThat(expression).isEqualTo(original);
+	}
+
+	@Test
 	void groupConcatSeparatorCapturesItsParentInput() {
 		assertGroupConcatSeparatorCaptured(Var.of("separator"));
 	}
@@ -521,10 +574,12 @@ class PreparedQueryOptimizerBindingsTest {
 		var vf = SimpleValueFactory.getInstance();
 		var remote = mock(FederatedService.class);
 		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
 		when(remote.select(any(), anySet(), any(), nullable(String.class))).thenAnswer(invocation -> {
 			BindingSet bindings = invocation.getArgument(2);
 			sent.set(bindings);
-			if (!vf.createLiteral(1).equals(bindings.getValue("x"))) {
+			request.set(invocation.getArgument(0));
+			if (!savedServiceFilterMatches(request.get(), bindings)) {
 				return new EmptyIteration<>();
 			}
 			var row = new MapBindingSet();
@@ -547,7 +602,9 @@ class PreparedQueryOptimizerBindingsTest {
 			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
 					.containsExactly(vf.createLiteral("matched"));
 		}
-		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral(1));
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
 	}
 
 	@Test
@@ -556,8 +613,11 @@ class PreparedQueryOptimizerBindingsTest {
 		var remote = mock(FederatedService.class);
 		var sent = new ArrayList<BindingSet>();
 		var original = new ArrayList<BindingSet>();
+		var requests = new ArrayList<Service>();
 		when(remote.preservesBNodeResultProvenance()).thenReturn(true);
 		when(remote.evaluate(any(), any(), nullable(String.class))).thenAnswer(invocation -> {
+			Service request = invocation.getArgument(0);
+			requests.add(request);
 			CloseableIteration<BindingSet> inputs = invocation.getArgument(1);
 			var output = new ArrayList<BindingSet>();
 			try (inputs) {
@@ -565,7 +625,7 @@ class PreparedQueryOptimizerBindingsTest {
 					BindingSet bindings = inputs.next();
 					sent.add(new QueryBindingSet(bindings));
 					original.add(new QueryBindingSet(RemoteBNode.originalBindings(bindings)));
-					if (vf.createLiteral(1).equals(bindings.getValue("x"))) {
+					if (savedServiceFilterMatches(request, bindings)) {
 						var row = new QueryBindingSet(RemoteBNode.originalBindings(bindings));
 						row.setBinding("o", vf.createLiteral("matched"));
 						output.add(row);
@@ -589,6 +649,7 @@ class PreparedQueryOptimizerBindingsTest {
 		assertThat(sent).hasSize(2).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(vf.createLiteral(1)));
 		sent.clear();
 		original.clear();
+		requests.clear();
 		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
 		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
 			List<BindingSet> result = QueryResults.asList(rows);
@@ -597,7 +658,12 @@ class PreparedQueryOptimizerBindingsTest {
 			// The outer SELECT recovers the API expression read, independently of SERVICE's transport mapping.
 			assertThat(result).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(vf.createLiteral(1)));
 		}
-		assertThat(sent).hasSize(2).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(vf.createLiteral(1)));
+		assertThat(sent).hasSize(2).allSatisfy(row -> assertThat(row.hasBinding("x")).isFalse());
+		assertThat(sent).extracting(row -> row.getValue("s"))
+				.containsExactlyInAnyOrder(vf.createIRI("urn:a"), vf.createIRI("urn:b"));
+		assertThat(requests).isNotEmpty()
+				.allSatisfy(request -> assertCapturedServiceFilter(request, EmptyBindingSet.getInstance(),
+						vf.createLiteral(1)));
 		assertThat(original).hasSize(2).allSatisfy(row -> assertThat(row.hasBinding("x")).isFalse());
 	}
 
@@ -618,10 +684,12 @@ class PreparedQueryOptimizerBindingsTest {
 	void serviceFilterParameterIsAnOutgoingConstraintNotAnOutputBinding() {
 		var vf = SimpleValueFactory.getInstance();
 		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
 		List<BindingSet> rows = preparedServiceRows(
-				"SELECT ?x ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }", sent,
+				"SELECT ?x ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }", sent, request,
 				vf.createLiteral("matched"), null);
-		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral(1));
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
 		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
 		assertThat(rows).hasSize(1);
 		assertThat(rows.get(0).getValue("o")).isEqualTo(vf.createLiteral("matched"));
@@ -643,11 +711,15 @@ class PreparedQueryOptimizerBindingsTest {
 	void serviceApiConstraintDoesNotReplaceAValuesResult() {
 		var vf = SimpleValueFactory.getInstance();
 		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
 		List<BindingSet> rows = preparedServiceRows(
 				"SELECT ?x ?o WHERE { VALUES ?x { 2 } SERVICE <urn:endpoint> { "
 						+ "?s <urn:p> ?o FILTER(?x = 1) } }",
-				sent, vf.createLiteral("matched"), null);
-		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral(1));
+				sent, request, vf.createLiteral("matched"), null);
+		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral("2", XSD.INTEGER));
+		assertThat(RemoteBNode.originalBindings(sent.get()).getValue("x"))
+				.isEqualTo(vf.createLiteral("2", XSD.INTEGER));
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
 		assertThat(rows).extracting(row -> row.getValue("x")).containsExactly(vf.createLiteral("2", XSD.INTEGER));
 	}
 
@@ -655,12 +727,14 @@ class PreparedQueryOptimizerBindingsTest {
 	void preparedServiceAllowsDifferentLocalValuesForAnApiExpressionRead() {
 		var vf = SimpleValueFactory.getInstance();
 		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
 		List<BindingSet> rows = preparedServiceRows(
 				"SELECT ?o WHERE { SERVICE <urn:endpoint> { VALUES ?x { 2 } "
 						+ "?s <urn:p> ?o FILTER(?x = 1) } }",
-				sent, vf.createLiteral("matched"), null);
+				sent, request, vf.createLiteral("matched"), null);
 		assertThat(rows).extracting(row -> row.getValue("o")).containsExactly(vf.createLiteral("matched"));
-		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral(1));
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
 		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
 	}
 
@@ -717,10 +791,12 @@ class PreparedQueryOptimizerBindingsTest {
 		var vf = SimpleValueFactory.getInstance();
 		var remote = mock(FederatedService.class);
 		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
 		when(remote.select(any(), anySet(), any(), nullable(String.class))).thenAnswer(invocation -> {
 			BindingSet bindings = invocation.getArgument(2);
 			sent.set(bindings);
-			if (!vf.createLiteral(1).equals(bindings.getValue("x"))) {
+			request.set(invocation.getArgument(0));
+			if (!savedServiceFilterMatches(request.get(), bindings)) {
 				return new EmptyIteration<>();
 			}
 			var row = new MapBindingSet();
@@ -737,7 +813,9 @@ class PreparedQueryOptimizerBindingsTest {
 			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
 					.containsExactly(vf.createLiteral("matched"));
 		}
-		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral(1));
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
 	}
 
 	@Test
@@ -1026,9 +1104,11 @@ class PreparedQueryOptimizerBindingsTest {
 		var vf = SimpleValueFactory.getInstance();
 		var remote = mock(FederatedService.class);
 		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
 		when(remote.ask(any(), any(), nullable(String.class))).thenAnswer(invocation -> {
 			sent.set(invocation.getArgument(1));
-			return true;
+			request.set(invocation.getArgument(0));
+			return savedServiceFilterMatches(request.get(), sent.get());
 		});
 		String query = "SELECT ?x WHERE { SERVICE <urn:endpoint> { FILTER(?x = 1) } }";
 		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
@@ -1040,16 +1120,23 @@ class PreparedQueryOptimizerBindingsTest {
 			assertThat(result).hasSize(1);
 			assertThat(result.get(0).getValue("x")).isEqualTo(vf.createLiteral(1));
 		}
-		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral(1));
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
 		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
 	}
 
 	private static List<BindingSet> preparedServiceRows(String query, AtomicReference<BindingSet> sent,
 			Value output, Value localX) {
+		return preparedServiceRows(query, sent, new AtomicReference<>(), output, localX);
+	}
+
+	private static List<BindingSet> preparedServiceRows(String query, AtomicReference<BindingSet> sent,
+			AtomicReference<Service> request, Value output, Value localX) {
 		var remote = mock(FederatedService.class);
 		when(remote.select(any(), anySet(), any(), nullable(String.class))).thenAnswer(invocation -> {
 			BindingSet outgoing = invocation.getArgument(2);
 			sent.set(outgoing);
+			request.set(invocation.getArgument(0));
 			var row = new MapBindingSet();
 			RemoteBNode.originalBindings(outgoing).forEach(row::addBinding);
 			if (output != null) {
@@ -1067,6 +1154,44 @@ class PreparedQueryOptimizerBindingsTest {
 		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
 			return QueryResults.asList(rows);
 		}
+	}
+
+	private static ValueExpr savedServiceFilter(Service request) {
+		TupleExpr parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, request.getAskQueryString(), null)
+				.getTupleExpr();
+		var conditions = new ArrayList<ValueExpr>();
+		parsed.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Filter filter) {
+				conditions.add(filter.getCondition());
+				super.meet(filter);
+			}
+		});
+		assertThat(conditions).as("saved SERVICE FILTER in %s", request.getAskQueryString()).hasSize(1);
+		return conditions.get(0);
+	}
+
+	private static boolean savedServiceFilterMatches(Service request, BindingSet runtimeInput) {
+		return new DefaultEvaluationStrategy(new EmptyTripleSource(), null).isTrue(savedServiceFilter(request),
+				runtimeInput);
+	}
+
+	private static void assertCapturedServiceFilter(Service request, BindingSet runtimeInput, Value parameter) {
+		assertThat(request.getPreparedInputBindings()).as("capture is consumed only on the invocation-owned request")
+				.isEmpty();
+		assertThat(SPARQLQueries.getPossibleBindingReadNames(request.getAskQueryString(), Set.of("x")))
+				.as("the API read is captured in saved syntax, independently of the runtime x value")
+				.isEmpty();
+		var condition = savedServiceFilter(request);
+		assertThat(condition).isInstanceOf(Compare.class);
+		assertThat(((Compare) condition).getLeftArg()).isInstanceOf(ValueConstant.class);
+		assertThat(((ValueConstant) ((Compare) condition).getLeftArg()).getValue()).isEqualTo(parameter);
+		assertThat(savedServiceFilterMatches(request, runtimeInput)).isTrue();
+		var conflictingInput = new MapBindingSet();
+		conflictingInput.addBinding("x", SimpleValueFactory.getInstance().createLiteral(2));
+		assertThat(savedServiceFilterMatches(request, conflictingInput))
+				.as("a conflicting runtime value cannot replace the captured API expression read")
+				.isTrue();
 	}
 
 	@Test
@@ -1638,6 +1763,95 @@ class PreparedQueryOptimizerBindingsTest {
 				.isInstanceOf(QueryEvaluationException.class);
 		assertThat(expression).isEqualTo(original);
 		assertThat(reference.hasValue()).isFalse();
+	}
+
+	@Test
+	void logicalSpecializationRetainsProjectedReadsConsumedByLowering() {
+		var read = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result"));
+		var projection = new Projection(read, new ProjectionElemList(new ProjectionElem("x")));
+		var expression = new QueryRoot(projection);
+		new BindingAssignerOptimizer().optimizeQueryParameters(expression, parameters());
+		read.replaceWith(read.getArg());
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("x"))
+					.containsExactly(parameters().getValue("x"));
+		}
+	}
+
+	@Test
+	void logicalSpecializationRecordsServiceProvenanceWithoutCompletingCapture() {
+		var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }", null)
+				.getTupleExpr();
+		var service = new AtomicReference<Service>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+			}
+		});
+		var assigner = new BindingAssignerOptimizer();
+		assigner.optimizeQueryParameters(expression, parameters());
+		assertThat(service.get().getPreparedInputBindings()).isEmpty();
+		assertThat(service.get().getRuntimeBindingHistory().values()).containsEntry("x", parameters().getValue("x"));
+		var snapshot = expression.clone();
+		var changed = new MapBindingSet();
+		changed.addBinding("x", SimpleValueFactory.getInstance().createLiteral(2));
+		assertThatThrownBy(() -> assigner.optimizeForPreparedQuery(expression, changed))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(snapshot);
+		assigner.optimizeForPreparedQuery(expression, parameters());
+		assertThat(service.get().getPreparedInputBindings()).containsEntry("x", parameters().getValue("x"));
+	}
+
+	@Test
+	void logicalSpecializationAllowsLocallyShadowedServiceParameterOnFinalCapture() {
+		var vf = SimpleValueFactory.getInstance();
+		var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s ?y WHERE { SERVICE <urn:endpoint> { BIND(2 AS ?y) "
+						+ "?s <urn:p> ?o FILTER(?x = 1) FILTER(?y = 2) } }",
+				null)
+				.getTupleExpr();
+		var service = new AtomicReference<Service>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+			}
+		});
+		var input = parameters();
+		input.addBinding("y", vf.createLiteral(99));
+		var assigner = new BindingAssignerOptimizer();
+		assigner.optimizeQueryParameters(expression, input);
+		assertThat(service.get().getPreparedInputBindings()).isEmpty();
+		assertThat(service.get().getRuntimeBindingHistory().values())
+				.containsExactlyEntriesOf(Map.of("x", vf.createLiteral(1)));
+
+		assigner.optimizeForPreparedQuery(expression, input);
+
+		assertThat(service.get().getPreparedInputBindings())
+				.containsExactlyEntriesOf(Map.of("x", vf.createLiteral(1)));
+	}
+
+	@Test
+	void logicalSpecializationRejectsAGenuinelyNewServiceReadAtomically() {
+		var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o "
+						+ "FILTER(?x = 1) FILTER(?y = 2) } }",
+				null)
+				.getTupleExpr();
+		var assigner = new BindingAssignerOptimizer();
+		assigner.optimizeQueryParameters(expression, parameters());
+		var snapshot = expression.clone();
+		var input = parameters();
+		input.addBinding("y", SimpleValueFactory.getInstance().createLiteral(2));
+
+		assertThatThrownBy(() -> assigner.optimizeForPreparedQuery(expression, input))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(snapshot);
 	}
 
 	@Test

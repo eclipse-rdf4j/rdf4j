@@ -17,8 +17,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -26,6 +28,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -158,13 +162,21 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 		return result;
 	}
 
-	private static TupleFunctionCall call(StatementPattern pattern, List<Var> args, List<Var> results,
+	private static TupleExpr call(StatementPattern pattern, List<Var> args, List<Var> results,
 			Set<String> inputNames) {
 		TupleFunctionCall call = new TupleFunctionCall();
 		call.setURI(pattern.getPredicateVar().getValue().stringValue());
+		Map<String, Var> capturedArguments = new LinkedHashMap<>();
+		Var predicate = pattern.getPredicateVar();
+		if (!predicate.isConstant()) {
+			capturedArguments.put(predicate.getName(), predicate);
+		}
 		for (Var arg : args) {
 			if (arg.hasValue()) {
 				call.addArg(new ValueConstant(arg.getValue()));
+				if (!arg.isConstant()) {
+					capturedArguments.putIfAbsent(arg.getName(), arg);
+				}
 			} else {
 				call.addArg(arg.clone());
 				inputNames.add(arg.getName());
@@ -175,7 +187,15 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 			inputNames.add(result.getName());
 		}
 
-		return call;
+		if (capturedArguments.isEmpty()) {
+			return call;
+		}
+		// Valued, nonconstant arguments and predicates are still named outputs of the original patterns. Retain that
+		// output when the function consumes its value, rather than depending on a caller row to restore it.
+		// Constant term substitutions (including EXISTS inputs) deliberately introduce no such column.
+		Extension restored = new Extension(call);
+		capturedArguments.forEach((name, variable) -> restored.addElement(new ExtensionElem(variable.clone(), name)));
+		return restored;
 	}
 
 	/** Walks up through plain joins (stopping at a scope-changing join) to the root of the basic graph pattern. */

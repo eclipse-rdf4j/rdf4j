@@ -664,9 +664,10 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			if (arg == null) {
 				return null;
 			}
-			CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
+			List<ExtensionElem> elements = evaluatedExtensionElements(extension);
+			CopyBinding[] copies = new CopyBinding[elements.size()];
 			for (int i = 0; i < copies.length; i++) {
-				ExtensionElem elem = extension.getElements().get(i);
+				ExtensionElem elem = elements.get(i);
 				ValueExpr expression = elem.getExpr();
 				if (expression instanceof Var) {
 					Var sourceVar = (Var) expression;

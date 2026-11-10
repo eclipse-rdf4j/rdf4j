@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -33,11 +34,20 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.CompareAll;
+import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -47,10 +57,16 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.In;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
@@ -59,9 +75,21 @@ import org.eclipse.rdf4j.query.algebra.IsResource;
 import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Label;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
+import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.LocalName;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Namespace;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -70,12 +98,18 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
@@ -84,6 +118,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.WindowElem;
@@ -122,17 +157,34 @@ public final class QueryAlgebraBindingAnalysis {
 			Service.class, SingletonSet.class, Slice.class, StatementPattern.class, TripleRef.class,
 			TupleFunctionCall.class, Union.class, Window.class, ZeroLengthPath.class);
 
+	// Exact classes whose evaluated inputs are represented by their ordinary model children. Unknown extensions
+	// cannot prove absence of hidden binding reads, even when they publish an output/child-input contract.
+	private static final Set<Class<?>> INPUT_READ_VALUE_TYPES = Set.of(Var.class, ValueConstant.class, Bound.class,
+			And.class, Or.class, Not.class, Compare.class, SameTerm.class, MathExpr.class, Coalesce.class, If.class,
+			FunctionCall.class, IRIFunction.class, Datatype.class, HasLang.class, HasLangDir.class,
+			Lang.class, LangDir.class, LangMatches.class, Label.class, LocalName.class, Namespace.class, Str.class,
+			StrLangDir.class, IsBNode.class, IsLiteral.class, IsNumeric.class, IsResource.class, IsTriple.class,
+			IsURI.class,
+			ListMemberOperator.class, Regex.class, Exists.class, In.class, CompareAll.class, CompareAny.class,
+			ValueExprTripleRef.class, TripleComponent.class, Avg.class, Count.class, GroupConcat.class, Max.class,
+			Min.class, Sample.class, Sum.class);
+	private static final Set<Class<?>> INPUT_READ_STRUCTURAL_TYPES = Set.of(ExtensionElem.class, GroupElem.class,
+			ProjectionElem.class, ProjectionElemList.class, OrderElem.class);
+
 	private final TupleExpr root;
 	private final ReadOnlyContext rootContext;
+	private final boolean rootInputOriginsKnown;
 	private final boolean bindingAssignment;
 	private final Map<QueryModelNode, ReadOnlyContext> contextCache = new IdentityHashMap<>();
 	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
+	private Boolean producedValueOriginsKnown;
 	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
 	private final Map<ChildInputKey, ReadOnlyContext> childInputCache = new HashMap<>();
 	private final Map<OutputKey, ReadOnlyContext> leftJoinInputCache = new HashMap<>();
 	private final Map<OutputKey, NaryFacts> naryCache = new HashMap<>();
 	private final AtomicLong nextScopeIdentity = new AtomicLong(1);
+	private Map<UnaryTupleOperator, Map<String, Value>> recoveredProjectionInputs = Map.of();
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
 			Set<String> possibleInputNames) {
@@ -142,6 +194,7 @@ public final class QueryAlgebraBindingAnalysis {
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
 			Set<String> possibleInputNames, boolean bindingAssignment) {
 		this.root = root;
+		this.rootInputOriginsKnown = true;
 		this.bindingAssignment = bindingAssignment;
 		Map<String, Value> values = new HashMap<>();
 		if (initialBindings != null) {
@@ -161,6 +214,7 @@ public final class QueryAlgebraBindingAnalysis {
 	private QueryAlgebraBindingAnalysis(TupleExpr root, ReadOnlyContext rootContext) {
 		this.root = root;
 		this.rootContext = rootContext;
+		this.rootInputOriginsKnown = false;
 		this.bindingAssignment = false;
 		if (root != null) {
 			contextCache.put(root, rootContext);
@@ -205,7 +259,9 @@ public final class QueryAlgebraBindingAnalysis {
 	/**
 	 * Creates an analysis rooted at an existing evaluator frame, augmented with possible inputs from reorderable
 	 * sibling relations. This preserves inherited API values and preceding operator facts while keeping candidate
-	 * sibling names nullable and scoped to this analysis root.
+	 * sibling names nullable and scoped to this analysis root. Producers of supplied facts may lie outside this root,
+	 * so this factory does not establish the origin required by
+	 * {@link #producesOnlyAbsentOrEqual(TupleExpr, String, Value)}.
 	 */
 	public static QueryAlgebraBindingAnalysis withInputContextAndPossibleInputs(TupleExpr root, ReadOnlyContext input,
 			Set<String> possibleInputNames) {
@@ -213,9 +269,301 @@ public final class QueryAlgebraBindingAnalysis {
 				.withPossibleInputs(Set.copyOf(Objects.requireNonNull(possibleInputNames, "possibleInputNames"))));
 	}
 
+	/**
+	 * Sufficient proof that execution cannot observe one incoming RDF value. The seed is guaranteed but unknown: no
+	 * actual or prepared value may establish the local fixed facts used by this proof. A false result means that
+	 * independence is unproven, not that the value is necessarily read.
+	 */
+	public static boolean provesUnusedIncomingValue(TupleExpr body, String name) {
+		Objects.requireNonNull(body, "body");
+		Objects.requireNonNull(name, "name");
+		QueryAlgebraBindingAnalysis analysis = withGuaranteedInputNames(body, Set.of(name));
+		boolean[] independent = { true };
+		analysis.visitScoped(body, analysis.rootContext(), (node, input) -> {
+			if (!independent[0]) {
+				return false;
+			}
+			if (!input.bindingDomainKnown()) {
+				independent[0] = false;
+				return false;
+			}
+			if (node instanceof TupleExpr tuple) {
+				if (!STANDARD_TUPLE_TYPES.contains(tuple.getClass()) || tuple instanceof Service
+						|| tuple instanceof TupleFunctionCall || tuple instanceof Distinct || tuple instanceof Reduced
+						|| tuple instanceof DescribeOperator || tuple instanceof Window || tuple instanceof Difference
+						|| tuple instanceof Intersection) {
+					independent[0] = false;
+					return false;
+				}
+			} else if (node instanceof ValueExpr expression) {
+				if (!INPUT_READ_VALUE_TYPES.contains(expression.getClass())
+						|| expression instanceof Count count && count.isDistinct() && count.getArg() == null) {
+					independent[0] = false;
+					return false;
+				}
+			} else if (!INPUT_READ_STRUCTURAL_TYPES.contains(node.getClass())) {
+				independent[0] = false;
+				return false;
+			}
+			if (node instanceof Var variable && name.equals(variable.getName()) && !variable.hasValue()
+					&& !readHasNoIncomingValue(input, name)) {
+				independent[0] = false;
+			} else if (node instanceof Group group && group.getGroupBindingNames().contains(name)) {
+				ReadOnlyContext argumentInput = analysis.childInput(group, group.getArg(), input);
+				ReadOnlyContext rows = analysis.withOutput(argumentInput,
+						analysis.outputFacts(group.getArg(), argumentInput));
+				independent[0] = readHasNoIncomingValue(rows, name);
+			} else if (node instanceof Projection projection) {
+				independent[0] = !name.equals(projection.getInheritedGraphParameter())
+						&& analysis.projectionDoesNotReadIncoming(projection,
+								List.of(projection.getProjectionElemList()),
+								input, name, analysis.includesParentBindings(projection));
+			} else if (node instanceof MultiProjection projection) {
+				independent[0] = analysis.projectionDoesNotReadIncoming(projection, projection.getProjections(), input,
+						name, false);
+			}
+			return independent[0];
+		});
+		return independent[0];
+	}
+
+	private static boolean readHasNoIncomingValue(ReadOnlyContext input, String name) {
+		// This bounded proof accepts an evaluated read only after a proven local fixed assignment. Nullable,
+		// hidden and merely possible frames stay conservative; absence of external provenance alone is not origin.
+		return input.bindingDomainKnown() && input.guaranteedNames().contains(name)
+				&& input.fixedValues().containsKey(name) && !input.externalGuaranteedNames().contains(name)
+				&& !input.externalValues().containsKey(name);
+	}
+
+	private boolean projectionDoesNotReadIncoming(UnaryTupleOperator projection, List<ProjectionElemList> lists,
+			ReadOnlyContext fallback, String name, boolean includeParentBindings) {
+		if (includeParentBindings && !readHasNoIncomingValue(fallback, name)) {
+			return false;
+		}
+		ReadOnlyContext argumentInput = childInput(projection, projection.getArg(), fallback);
+		ReadOnlyContext rows = withOutput(argumentInput, outputFacts(projection.getArg(), argumentInput));
+		for (ProjectionElemList list : lists) {
+			for (ProjectionElem element : list.getElements()) {
+				if (name.equals(element.getName())) {
+					boolean locallyFixed = rows.bindingDomainKnown() && rows.guaranteedNames().contains(name)
+							&& rows.fixedValues().containsKey(name) && !rows.externalGuaranteedNames().contains(name)
+							&& !rows.externalValues().containsKey(name);
+					// A missing projected source can fall back to parentBindings. It is independent only when
+					// both evaluator frames prove the value absent; an unknown caller seed cannot pass that gate.
+					boolean absentInBoth = rows.bindingDomainKnown() && fallback.bindingDomainKnown()
+							&& !rows.maybeBoundNames().contains(name) && !fallback.maybeBoundNames().contains(name);
+					if (!locallyFixed && !absentInBoth) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Sufficient proof that every locally exported, bound value of {@code name} equals {@code expected}. An absent
+	 * binding is permitted. Unlike mandatory fixed output facts, this also follows nullable VALUES and aliases; it
+	 * never evaluates arbitrary expressions or treats an unknown produced domain as empty.
+	 *
+	 * The target must belong to this invocation's root, with initial bindings or binding-name seeds owned by that
+	 * invocation. Analyses constructed from a supplied {@link ReadOnlyContext} return false: imported derived facts do
+	 * not verify the origins of producers outside the new root. Actual initial {@link BindingSet} seeds remain
+	 * supported, and all executed producers inside the invocation are validated before their facts are trusted.
+	 */
+	public boolean producesOnlyAbsentOrEqual(TupleExpr expression, String name, Value expected) {
+		Objects.requireNonNull(expression, "expression");
+		Objects.requireNonNull(name, "name");
+		Objects.requireNonNull(expected, "expected");
+		if (!rootInputOriginsKnown || !hasKnownProducedValueOrigins(expression)) {
+			return false;
+		}
+		return producesOnlyAbsentOrEqual(expression, contextAt(expression), name, expected);
+	}
+
+	private boolean hasKnownProducedValueOrigins(TupleExpr expression) {
+		boolean inInvocation = false;
+		for (QueryModelNode ancestor = expression; ancestor != null; ancestor = ancestor.getParentNode()) {
+			inInvocation |= ancestor == root;
+			if (ancestor instanceof Projection projection && projection.getInheritedGraphParameter() != null) {
+				// The caller-to-private graph carrier is not represented by ordinary input/output facts.
+				return false;
+			}
+		}
+		if (!inInvocation) {
+			return false;
+		}
+		if (producedValueOriginsKnown != null) {
+			return producedValueOriginsKnown;
+		}
+		// Validate the invocation, not just the queried operand: a sequential sibling can supply a derived
+		// fixed input. Unknown producer semantics must never become trusted through an ordinary Var alias.
+		// Shared traversal also excludes aggregate Extension placeholders that the evaluator never executes.
+		boolean[] known = { true };
+		visitScoped(root, rootContext, (node, input) -> {
+			if (!known[0]) {
+				return false;
+			}
+			if (!input.bindingDomainKnown()) {
+				known[0] = false;
+			} else if (node instanceof TupleExpr tuple) {
+				known[0] = STANDARD_TUPLE_TYPES.contains(tuple.getClass())
+						&& (!(tuple instanceof Projection projection)
+								|| projection.getInheritedGraphParameter() == null);
+			} else if (node instanceof ValueExpr value) {
+				known[0] = INPUT_READ_VALUE_TYPES.contains(value.getClass())
+						|| value.getClass() == BNodeGenerator.class || value.getClass() == AggregateFunctionCall.class
+						|| value.getClass() == WindowFunctionCall.class;
+			} else {
+				known[0] = INPUT_READ_STRUCTURAL_TYPES.contains(node.getClass()) || node.getClass() == WindowElem.class;
+			}
+			return known[0];
+		});
+		producedValueOriginsKnown = known[0];
+		return known[0];
+	}
+
+	private boolean producesOnlyAbsentOrEqual(TupleExpr expression, ReadOnlyContext input, String name,
+			Value expected) {
+		if (!STANDARD_TUPLE_TYPES.contains(expression.getClass()) || !input.bindingDomainKnown) {
+			return false;
+		}
+		OutputFacts facts = outputFacts(expression, input);
+		if (!facts.possibleOutputsKnown) {
+			return false;
+		}
+		if (facts.isKnownEmpty() || !facts.possibleOutputs.contains(name)) {
+			return true;
+		}
+		if (expression instanceof BindingSetAssignment assignment) {
+			if (!assignment.hasRepeatableBindingSets()) {
+				return false;
+			}
+			for (BindingSet row : assignment.getBindingSets()) {
+				Value value = row.getValue(name);
+				if (value != null && !expected.equals(value)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (expression instanceof Projection projection) {
+			return projectedValuesAbsentOrEqual(projection, List.of(projection.getProjectionElemList()), input,
+					name, expected, includesParentBindings(projection));
+		}
+		if (expression instanceof MultiProjection projection) {
+			return projectedValuesAbsentOrEqual(projection, projection.getProjections(), input, name, expected, false);
+		}
+		if (expression instanceof Extension extension) {
+			return extensionValueAbsentOrEqual(extension, extension.getElements().size(), input, name, expected);
+		}
+		if (expression instanceof Union union) {
+			return rowValueAbsentOrEqual(union.getLeftArg(), childInput(union, union.getLeftArg(), input), name,
+					expected)
+					&& rowValueAbsentOrEqual(union.getRightArg(), childInput(union, union.getRightArg(), input), name,
+							expected);
+		}
+		if (expression instanceof LeftJoin join) {
+			return rowValueAbsentOrEqual(join.getLeftArg(), childInput(join, join.getLeftArg(), input), name, expected)
+					&& rowValueAbsentOrEqual(join.getRightArg(), childInput(join, join.getRightArg(), input), name,
+							expected);
+		}
+		if (expression instanceof Join join) {
+			return rowValueAbsentOrEqual(join.getLeftArg(), childInput(join, join.getLeftArg(), input), name, expected)
+					&& rowValueAbsentOrEqual(join.getRightArg(), childInput(join, join.getRightArg(), input), name,
+							expected);
+		}
+		if (expression instanceof Filter || expression instanceof Distinct || expression instanceof Reduced
+				|| expression instanceof Slice || expression instanceof Order || expression instanceof QueryRoot) {
+			TupleExpr argument = ((UnaryTupleOperator) expression).getArg();
+			return producesOnlyAbsentOrEqual(argument, childInput(expression, argument, input), name, expected);
+		}
+		// Remaining known operators are supported only by their existing mandatory fixed-output proof. In
+		// particular, a may-output name from a path, aggregate, graph selector or custom scope is not an equality.
+		return facts.guaranteedOutputs.contains(name) && expected.equals(facts.fixedValues.get(name));
+	}
+
+	private boolean rowValueAbsentOrEqual(TupleExpr expression, ReadOnlyContext input, String name, Value expected) {
+		OutputFacts facts = outputFacts(expression, input);
+		if (!producesOnlyAbsentOrEqual(expression, input, name, expected)) {
+			return false;
+		}
+		return facts.isKnownEmpty() || facts.guaranteedOutputs.contains(name)
+				|| !facts.retainedInputNames.contains(name) || facts.overwrittenInputNames.contains(name)
+				|| inputValueAbsentOrEqual(input, name, expected);
+	}
+
+	private static boolean inputValueAbsentOrEqual(ReadOnlyContext input, String name, Value expected) {
+		return input.bindingDomainKnown && (!input.maybeBoundNames.contains(name)
+				|| expected.equals(input.fixedValues.get(name)));
+	}
+
+	private boolean projectedValuesAbsentOrEqual(UnaryTupleOperator projection, List<ProjectionElemList> lists,
+			ReadOnlyContext input, String name, Value expected, boolean includeParentBindings) {
+		ReadOnlyContext argumentInput = childInput(projection, projection.getArg(), input);
+		ReadOnlyContext rows = withOutput(argumentInput, outputFacts(projection.getArg(), argumentInput));
+		for (ProjectionElemList list : lists) {
+			boolean definitelyProjected = false;
+			for (ProjectionElem element : list.getElements()) {
+				String source = element.getName();
+				if (!name.equals(element.getProjectionAlias().orElse(source))) {
+					continue;
+				}
+				if (!rowValueAbsentOrEqual(projection.getArg(), argumentInput, source, expected)) {
+					return false;
+				}
+				boolean guaranteedSource = rows.bindingDomainKnown && rows.guaranteedNames.contains(source);
+				if (!includeParentBindings && !guaranteedSource && !inputValueAbsentOrEqual(input, source, expected)) {
+					// Outer projections fall back to the same source name in the parent frame.
+					return false;
+				}
+				definitelyProjected |= guaranteedSource;
+			}
+			if (includeParentBindings && !definitelyProjected && !inputValueAbsentOrEqual(input, name, expected)) {
+				// Inner projections retain the parent target when no source value overwrites it.
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean extensionValueAbsentOrEqual(Extension extension, int before, ReadOnlyContext input, String name,
+			Value expected) {
+		for (int index = before - 1; index >= 0; index--) {
+			ExtensionElem element = extension.getElements().get(index);
+			if (!name.equals(element.getName()) || !TupleExprs.isEvaluatedExtensionElement(element)) {
+				continue;
+			}
+			ValueExpr expression = element.getExpr();
+			if (!INPUT_READ_VALUE_TYPES.contains(expression.getClass())) {
+				return false;
+			}
+			if (expression instanceof Var variable && !variable.hasValue()) {
+				// Check an alias's actual definition before any propagated fixed fact. A fixed value inferred
+				// from an opaque expression must not bypass this proof's exact-class admission boundary.
+				// Earlier evaluated assignments, rather than later elements or the old target, own the source.
+				return extensionValueAbsentOrEqual(extension, index, input, variable.getName(), expected);
+			}
+			ValueExprFacts facts = expressionFacts(expression, childInput(extension, element, input));
+			return facts.fixedValue != null && expected.equals(facts.fixedValue);
+		}
+		TupleExpr argument = extension.getArg();
+		return rowValueAbsentOrEqual(argument, childInput(extension, argument, input), name, expected);
+	}
+
 	public static QueryAlgebraBindingAnalysis withGuaranteedInputNames(TupleExpr root, Set<String> inputNames) {
 		Set<String> names = Set.copyOf(Objects.requireNonNull(inputNames, "inputNames"));
 		return new QueryAlgebraBindingAnalysis(root, EmptyBindingSet.getInstance(), names, Set.of());
+	}
+
+	/** Models preceding recovery assignments while building a non-mutating capture plan. */
+	static QueryAlgebraBindingAnalysis withRecoveredProjectionInputs(TupleExpr root,
+			Map<UnaryTupleOperator, Map<String, Value>> recoveries) {
+		QueryAlgebraBindingAnalysis analysis = withBindingValues(root, EmptyBindingSet.getInstance());
+		Map<UnaryTupleOperator, Map<String, Value>> snapshot = new IdentityHashMap<>();
+		recoveries.forEach((owner, values) -> snapshot.put(owner, Map.copyOf(values)));
+		analysis.recoveredProjectionInputs = Collections.unmodifiableMap(snapshot);
+		return analysis;
 	}
 
 	public ReadOnlyContext rootContext() {
@@ -250,6 +598,11 @@ public final class QueryAlgebraBindingAnalysis {
 	/** Visits a model subtree with the child input phase used by its evaluator. */
 	public void visitScoped(QueryModelNode node, ReadOnlyContext input, ScopedNodeVisitor visitor) {
 		if (!visitor.visit(node, input)) {
+			return;
+		}
+		if (node instanceof ExtensionElem element && !TupleExprs.isEvaluatedExtensionElement(element)) {
+			// Root aggregate expressions only describe values computed by Group. ExtensionIterator never
+			// evaluates their children, so they do not introduce binding reads or reachable runtime scopes.
 			return;
 		}
 		node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -432,6 +785,7 @@ public final class QueryAlgebraBindingAnalysis {
 			contextCache.put(root, rootContext);
 		}
 		outputCache.clear();
+		producedValueOriginsKnown = null;
 		resultSetModifierCache.clear();
 		childInputCache.clear();
 		leftJoinInputCache.clear();
@@ -1634,7 +1988,9 @@ public final class QueryAlgebraBindingAnalysis {
 			return assignmentFacts(assignment, input);
 		}
 		if (expression instanceof Projection projection) {
-			OutputFacts child = outputFacts(projection.getArg(), childInput(projection, projection.getArg(), input));
+			ReadOnlyContext argumentInput = childInput(projection, projection.getArg(), input);
+			OutputFacts child = withProjectionRecovery(projection, outputFacts(projection.getArg(), argumentInput),
+					argumentInput);
 			if (!child.possibleOutputsKnown) {
 				return OutputFacts.unknown(input);
 			}
@@ -1843,15 +2199,30 @@ public final class QueryAlgebraBindingAnalysis {
 		return OutputFacts.known(possible, guaranteedNames, fixed, kinds, input, true);
 	}
 
+	private OutputFacts withProjectionRecovery(UnaryTupleOperator projection, OutputFacts child,
+			ReadOnlyContext input) {
+		Map<String, Value> recovered = recoveredProjectionInputs.get(projection);
+		if (recovered == null || recovered.isEmpty()) {
+			return child;
+		}
+		List<ExtensionElem> assignments = new ArrayList<>(recovered.size());
+		recovered.forEach((name, value) -> assignments.add(new ExtensionElem(new ValueConstant(value), name)));
+		return extendFacts(child, assignments, input);
+	}
+
 	private OutputFacts extensionFacts(Extension extension, ReadOnlyContext input) {
 		OutputFacts base = outputFacts(extension.getArg(), childInput(extension, extension.getArg(), input));
+		return extendFacts(base, extension.getElements(), input);
+	}
+
+	private OutputFacts extendFacts(OutputFacts base, List<ExtensionElem> elements, ReadOnlyContext input) {
 		if (base.isKnownEmpty()
-				|| extension.getElements().stream().noneMatch(TupleExprs::isEvaluatedExtensionElement)) {
+				|| elements.stream().noneMatch(TupleExprs::isEvaluatedExtensionElement)) {
 			return base;
 		}
 		Set<String> overwritten = new HashSet<>(base.overwrittenInputNames);
 		Set<String> conditional = new HashSet<>(base.conditionalInputNames);
-		for (ExtensionElem element : extension.getElements()) {
+		for (ExtensionElem element : elements) {
 			if (TupleExprs.isEvaluatedExtensionElement(element) && element.getName() != null) {
 				overwritten.add(element.getName());
 				conditional.remove(element.getName());
@@ -1865,7 +2236,7 @@ public final class QueryAlgebraBindingAnalysis {
 		Set<String> guaranteed = new HashSet<>(base.guaranteedOutputs);
 		Map<String, Value> fixed = new HashMap<>(base.fixedValues);
 		Map<String, Set<ValueKind>> kinds = new HashMap<>(base.valueKinds);
-		for (ExtensionElem element : extension.getElements()) {
+		for (ExtensionElem element : elements) {
 			String name = element.getName();
 			if (name == null || !TupleExprs.isEvaluatedExtensionElement(element)) {
 				continue;
@@ -2114,7 +2485,9 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private OutputFacts multiProjectionFacts(MultiProjection projection, ReadOnlyContext input) {
-		OutputFacts child = outputFacts(projection.getArg(), childInput(projection, projection.getArg(), input));
+		ReadOnlyContext argumentInput = childInput(projection, projection.getArg(), input);
+		OutputFacts child = withProjectionRecovery(projection, outputFacts(projection.getArg(), argumentInput),
+				argumentInput);
 		if (!child.possibleOutputsKnown) {
 			return OutputFacts.unknown(input);
 		}

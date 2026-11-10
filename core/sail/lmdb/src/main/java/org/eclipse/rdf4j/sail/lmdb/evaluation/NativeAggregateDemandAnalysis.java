@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * Immutable demands on authoritative aggregate definitions, captured before optimization. Names resolve references
@@ -141,13 +142,8 @@ final class NativeAggregateDemandAnalysis {
 	}
 
 	private static final class Definition {
-		final GroupElem aggregate;
 		final List<Definition> sources = new ArrayList<>();
 		int demand;
-
-		Definition(GroupElem aggregate) {
-			this.aggregate = aggregate;
-		}
 	}
 
 	private static final class Builder {
@@ -176,16 +172,15 @@ final class NativeAggregateDemandAnalysis {
 				Map<String, Definition> result = new HashMap<>(tuple(extension.getArg(), inherited));
 				for (ExtensionElem element : extension.getElements()) {
 					ValueExpr value = element.getExpr();
-					Definition existing = result.get(element.getName());
-					if (value instanceof AggregateOperator aggregate && mirrors(existing, aggregate)) {
-						// Parser-created SELECT aggregate extensions refer to the Group's authoritative output.
+					if (!TupleExprs.isEvaluatedExtensionElement(element)) {
+						// A placeholder neither observes nor replaces the Group's authoritative definition.
 						continue;
 					}
 					if (value instanceof Var variable && !variable.hasValue()) {
 						result.put(element.getName(), alias(result.get(variable.getName())));
 					} else {
 						expression(value, result);
-						result.put(element.getName(), new Definition(null));
+						result.put(element.getName(), new Definition());
 					}
 				}
 				return result;
@@ -207,7 +202,7 @@ final class NativeAggregateDemandAnalysis {
 					} else {
 						observeAll(input, FULL);
 					}
-					Definition definition = new Definition(element);
+					Definition definition = new Definition();
 					aggregates.put(element, definition);
 					output.put(element.getName(), definition);
 				}
@@ -248,7 +243,7 @@ final class NativeAggregateDemandAnalysis {
 				Map<String, Definition> result = new HashMap<>(inherited);
 				for (String name : expression.getBindingNames()) {
 					observe(inherited.get(name), FULL);
-					result.putIfAbsent(name, new Definition(null));
+					result.putIfAbsent(name, new Definition());
 				}
 				return result;
 			}
@@ -265,22 +260,9 @@ final class NativeAggregateDemandAnalysis {
 				expression(filter.getCondition(), result);
 			}
 			for (String name : expression.getBindingNames()) {
-				result.putIfAbsent(name, new Definition(null));
+				result.putIfAbsent(name, new Definition());
 			}
 			return result;
-		}
-
-		private boolean mirrors(Definition definition, AggregateOperator aggregate) {
-			if (definition == null || definition.aggregate == null
-					|| !definition.aggregate.getOperator().equals(aggregate)) {
-				return false;
-			}
-			if (aggregate instanceof GroupConcat concat) {
-				ValueExpr separator = concat.getSeparator();
-				ValueExpr original = ((GroupConcat) definition.aggregate.getOperator()).getSeparator();
-				return separator == null ? original == null : separator.equals(original);
-			}
-			return true;
 		}
 
 		private void expression(ValueExpr expression, Map<String, Definition> input) {
@@ -342,7 +324,7 @@ final class NativeAggregateDemandAnalysis {
 		}
 
 		private Definition alias(Definition source) {
-			Definition alias = new Definition(null);
+			Definition alias = new Definition();
 			if (source != null) {
 				alias.sources.add(source);
 			}

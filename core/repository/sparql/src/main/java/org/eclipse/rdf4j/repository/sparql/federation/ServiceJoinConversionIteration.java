@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
 
 /**
@@ -79,7 +80,8 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 				res.addBinding(binding);
 			}
 		}
-		return res;
+		return BindingSetSnapshots.preserveMetadata(input,
+				BindingSetSnapshots.preserveMetadata(bIn, res));
 	}
 
 	static int getRowIndex(BindingSet result, String rowIndexVar) {

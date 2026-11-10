@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
@@ -42,7 +44,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
@@ -105,20 +106,23 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 						"Unsupported blank-node identity: receiving SERVICE lacks reference support");
 			}
 
+			SPARQLQueries.ServiceRequest request = SPARQLQueries.prepareServiceRequest(service,
+					List.of(invocationBindings), receivingScope, referenceSupport, canonicalIDs);
+			Service requestService = request.service();
+
 			// create a copy of the free variables, and remove those for which
 			// bindings are available (we can set them as constraints!)
 			Set<String> freeVars = new HashSet<>(visibleNames);
 			freeVars.removeAll(invocationBindings.getBindingNames());
 
-			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport,
-					canonicalIDs);
+			bindings = request.prepareRuntimeInput(invocationBindings);
 			if (runtimeTelemetryEnabled) {
 				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
 						estimateRequestBytes(service, bindings, freeVars));
 			}
 
 			String baseUri = service.getBaseURI();
-			ExternalValuePreparation.initializeQueryModel(service);
+			ExternalValuePreparation.initializeQueryModel(requestService);
 			QueryExecutionContext.initializeExternalBindings(bindings);
 
 			// special case: no free variables => perform ASK query
@@ -129,7 +133,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				boolean exists;
 				try (var allocationActivation = allocation.activate();
 						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					exists = fs.ask(service, bindings, baseUri);
+					exists = fs.ask(requestService, bindings, baseUri);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				if (runtimeTelemetryEnabled) {
@@ -153,7 +157,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			try {
 				try (var allocationActivation = allocation.activate();
 						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					results = fs.select(service, freeVars, bindings, baseUri);
+					results = fs.select(requestService, freeVars, bindings, baseUri);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				if (runtimeTelemetryEnabled) {
@@ -162,6 +166,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation, localFactory,
 						receivingScope, canonicalIDs);
 				response.seedOriginalBindings(invocationBindings);
+				response.seedOriginalBindings(request.parameterIdentities());
 				results = new ConvertingIteration<BindingSet, BindingSet>(results) {
 					@Override
 					protected BindingSet convert(BindingSet row) {
@@ -205,10 +210,10 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static BindingSet restoreRuntimeBindings(BindingSet originals, BindingSet runtimeInputs) {
-		MapBindingSet restored = new MapBindingSet(originals.size() + 1);
-		for (Binding binding : originals) {
-			restored.addBinding(binding);
+		if (runtimeInputs.isEmpty()) {
+			return originals;
 		}
+		QueryBindingSet restored = new QueryBindingSet(originals);
 		for (Binding binding : runtimeInputs) {
 			restored.addBinding(binding);
 		}

@@ -2222,7 +2222,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			HashSet<String> extensionRequired = new HashSet<>(previousRequired);
 			// BIND inputs must keep duplicate-insensitive OPTIONAL pruning sound when the expression observes them.
 			for (ExtensionElem elem : extension.getElements()) {
-				extensionRequired.addAll(VarNameCollector.process(elem.getExpr()));
+				if (TupleExprs.isEvaluatedExtensionElement(elem)) {
+					extensionRequired.addAll(VarNameCollector.process(elem.getExpr()));
+				}
 			}
 			requiredAggregateNames = extensionRequired;
 			SlotPlan arg;

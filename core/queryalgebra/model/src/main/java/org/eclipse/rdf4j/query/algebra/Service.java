@@ -73,9 +73,29 @@ public class Service extends UnaryTupleOperator {
 
 	public Service(Var serviceRef, TupleExpr serviceExpr, String serviceExpressionString,
 			Map<String, String> prefixDeclarations, String baseURI, boolean silent) {
+		this(serviceRef, serviceExpr, serviceExpressionString, prefixDeclarations, baseURI, silent, false);
+	}
+
+	/**
+	 * Creates an invocation from an already-extracted SERVICE body. A leading nested SERVICE belongs to that body; it
+	 * must not be interpreted as the invocation wrapper accepted by the legacy constructor and setter.
+	 */
+	@InternalUseOnly
+	public static Service fromBody(Var serviceRef, TupleExpr serviceExpr, String bodySource,
+			Map<String, String> prefixDeclarations, String baseURI, boolean silent) {
+		return new Service(serviceRef, serviceExpr, bodySource, prefixDeclarations, baseURI, silent, true);
+	}
+
+	private Service(Var serviceRef, TupleExpr serviceExpr, String serviceExpressionString,
+			Map<String, String> prefixDeclarations, String baseURI, boolean silent, boolean extractedBody) {
 		super(serviceExpr);
 		setServiceRef(serviceRef);
-		setExpressionString(serviceExpressionString);
+		if (extractedBody) {
+			this.serviceExpressionString = serviceExpressionString;
+			invalidatePreparedQueryString();
+		} else {
+			setExpressionString(serviceExpressionString);
+		}
 		this.serviceVars = computeServiceVars(serviceExpr);
 		setPrefixDeclarations(prefixDeclarations);
 		setBaseURI(baseURI);

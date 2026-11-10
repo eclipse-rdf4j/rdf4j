@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 
 /**
  * Adds more bindings to each of the results.
@@ -57,7 +58,8 @@ public class InsertBindingSetCursor extends IterationWrapper<BindingSet> {
 				set.addBinding(binding);
 			}
 		}
-		return set;
+		return BindingSetSnapshots.preserveMetadata(bindings,
+				BindingSetSnapshots.preserveMetadata(next, set));
 	}
 
 }

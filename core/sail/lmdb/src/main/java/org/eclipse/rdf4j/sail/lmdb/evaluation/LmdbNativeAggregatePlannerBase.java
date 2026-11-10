@@ -350,6 +350,25 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	abstract long placeableFilterMask(ValueExpr condition);
 
+	/** Returns only executable assignments, retaining the original list for the usual placeholder-free row path. */
+	static List<ExtensionElem> evaluatedExtensionElements(Extension extension) {
+		List<ExtensionElem> elements = extension.getElements();
+		for (int i = 0; i < elements.size(); i++) {
+			if (!TupleExprs.isEvaluatedExtensionElement(elements.get(i))) {
+				List<ExtensionElem> evaluated = new ArrayList<>(elements.size() - 1);
+				evaluated.addAll(elements.subList(0, i));
+				for (int j = i + 1; j < elements.size(); j++) {
+					ExtensionElem element = elements.get(j);
+					if (TupleExprs.isEvaluatedExtensionElement(element)) {
+						evaluated.add(element);
+					}
+				}
+				return evaluated;
+			}
+		}
+		return elements;
+	}
+
 	/**
 	 * Applies RDF4J's assignment-error contract to every copy in one Extension node. SPARQL Extend returns the input
 	 * mapping unchanged when its expression errors, so the target variable stays absent and a later compatible pattern
