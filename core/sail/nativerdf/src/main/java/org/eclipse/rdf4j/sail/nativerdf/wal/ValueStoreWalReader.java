@@ -16,9 +16,13 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -26,7 +30,6 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.PriorityQueue;
-import java.util.regex.Pattern;
 import java.util.zip.CRC32;
 import java.util.zip.CRC32C;
 import java.util.zip.GZIPInputStream;
@@ -34,8 +37,8 @@ import java.util.zip.GZIPInputStream;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
-import tools.jackson.core.ObjectReadContext;
 import tools.jackson.core.exc.StreamConstraintsException;
+import tools.jackson.core.io.NumberInput;
 import tools.jackson.core.json.JsonFactory;
 
 /**
@@ -44,9 +47,9 @@ import tools.jackson.core.json.JsonFactory;
  */
 public final class ValueStoreWalReader implements AutoCloseable {
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
 	private static final int SEGMENT_WINDOW_SIZE = 1024;
 	private static final int INPUT_BUFFER_BYTES = 64 * 1024;
+	private static final int MAX_METADATA_CHARACTERS = 128;
 
 	private final ValueStoreWalConfig config;
 	private final JsonFactory jsonFactory = ValueStoreWalMemory.newJsonFactory();
@@ -54,6 +57,8 @@ public final class ValueStoreWalReader implements AutoCloseable {
 	private final boolean singleSegment;
 	private final byte[] drainBuffer = new byte[8192];
 	private InputStream input;
+	private FileChannel currentChannel;
+	private long currentSegmentOffset;
 	private boolean stop;
 	private boolean exhausted;
 	private boolean started;
@@ -120,7 +125,7 @@ public final class ValueStoreWalReader implements AutoCloseable {
 		boolean hasRecords = false;
 		boolean validIds = true;
 		try (ValueStoreWalCoverage coverage = new ValueStoreWalCoverage(config.walDirectory())) {
-			Iterator<ValueStoreWalRecord> it = new RecordIterator(true);
+			Iterator<ValueStoreWalRecord> it = new RecordIterator(true, 0);
 			while (it.hasNext()) {
 				ValueStoreWalRecord record = it.next();
 				hasRecords = true;
@@ -143,7 +148,19 @@ public final class ValueStoreWalReader implements AutoCloseable {
 	 * @throws UncheckedIOException if a record exceeds the bounded materialization/parser limits
 	 */
 	public Iterator<ValueStoreWalRecord> iterator() {
-		return new RecordIterator(false);
+		return new RecordIterator(false, 0);
+	}
+
+	/**
+	 * Validate every frame while materializing lexical strings only for the requested ID. Metadata is parsed first so
+	 * selection does not depend on JSON field order. A matching frame is reread from the still-open segment channel;
+	 * compressed segments require one additional inflation of the prefix preceding that frame.
+	 */
+	Iterator<ValueStoreWalRecord> iteratorForId(int targetId) {
+		if (targetId <= 0) {
+			throw new IllegalArgumentException("A WAL lookup requires a positive value ID");
+		}
+		return new RecordIterator(false, targetId);
 	}
 
 	/** Highest valid LSN observed, including non-mint records. */
@@ -167,7 +184,9 @@ public final class ValueStoreWalReader implements AutoCloseable {
 		}
 		currentSegmentCompressed = entry.compressed;
 		currentSegmentSummarySeen = false;
-		InputStream raw = Files.newInputStream(entry.path);
+		currentSegmentOffset = 0;
+		FileChannel channel = FileChannel.open(entry.path, StandardOpenOption.READ);
+		InputStream raw = Channels.newInputStream(channel);
 		try {
 			input = new BufferedInputStream(currentSegmentCompressed
 					? new GZIPInputStream(raw, INPUT_BUFFER_BYTES)
@@ -180,6 +199,7 @@ public final class ValueStoreWalReader implements AutoCloseable {
 			}
 			throw e;
 		}
+		currentChannel = channel;
 		currentSegmentCrc32 = currentSegmentCompressed ? new CRC32() : null;
 		return true;
 	}
@@ -194,13 +214,14 @@ public final class ValueStoreWalReader implements AutoCloseable {
 			}
 		} finally {
 			input = null;
+			currentChannel = null;
 			currentSegmentCompressed = false;
 			currentSegmentSummarySeen = false;
 			currentSegmentCrc32 = null;
 		}
 	}
 
-	private ValueStoreWalRecord readRecord(boolean metadataOnly) throws IOException {
+	private ValueStoreWalRecord readRecord(boolean metadataOnly, int targetId) throws IOException {
 		while (!stop && !closed) {
 			if (input == null && !openNextSegment()) {
 				return null;
@@ -220,15 +241,11 @@ public final class ValueStoreWalReader implements AutoCloseable {
 			}
 			updateIntLE(currentSegmentCrc32, length);
 			FrameInputStream frame = new FrameInputStream(input, length, currentSegmentCrc32);
-			Parsed parsed = parseJson(frame, metadataOnly);
-			while (frame.read(drainBuffer) >= 0) {
-				// Include trailing whitespace/unknown data in both checksums without retaining it.
-			}
-			int expectedCrc = readIntLE(input, input.read());
-			if ((int) frame.crc.getValue() != expectedCrc) {
-				throw new IOException("WAL frame checksum mismatch");
-			}
+			Parsed parsed = parseFrame(frame, metadataOnly || targetId != 0);
+			int expectedCrc = (int) frame.crc.getValue();
 			updateIntLE(currentSegmentCrc32, expectedCrc);
+			long payloadOffset = currentSegmentOffset + Integer.BYTES;
+			currentSegmentOffset += 2L * Integer.BYTES + length;
 			if (parsed.type == 'S' && currentSegmentCompressed) {
 				if (parsed.summaryCrc32 != crcBeforeFrame) {
 					throw new IOException("WAL compressed segment checksum mismatch");
@@ -236,12 +253,56 @@ public final class ValueStoreWalReader implements AutoCloseable {
 				currentSegmentSummarySeen = true;
 			}
 			lastValidLsn = Math.max(lastValidLsn, parsed.lsn);
-			if (parsed.type == 'M') {
+			if (parsed.type == 'M' && (targetId == 0 || parsed.id == targetId)) {
+				if (targetId != 0) {
+					parsed = materializeSelectedFrame(payloadOffset, length, expectedCrc);
+				}
 				return new ValueStoreWalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt, parsed.lang,
 						parsed.hash);
 			}
 		}
 		return null;
+	}
+
+	private Parsed parseFrame(FrameInputStream frame, boolean metadataOnly) throws IOException {
+		Parsed parsed = null;
+		Exception parseFailure = null;
+		try {
+			parsed = parseJson(frame, metadataOnly);
+		} catch (IOException | JacksonException | IllegalArgumentException e) {
+			// A damaged frame must retain checksum-failure semantics even when its bytes also trigger a
+			// semantic/parser error. Drain with fixed memory and verify before exposing that error.
+			parseFailure = e;
+		}
+		while (frame.read(drainBuffer) >= 0) {
+			// Include trailing whitespace/unknown data in both checksums without retaining it.
+		}
+		int expectedCrc = readIntLE(frame.input, frame.input.read());
+		if ((int) frame.crc.getValue() != expectedCrc) {
+			throw new IOException("WAL frame checksum mismatch");
+		}
+		if (parseFailure instanceof IOException ioFailure) {
+			throw ioFailure;
+		}
+		if (parseFailure instanceof RuntimeException runtimeFailure) {
+			throw runtimeFailure;
+		}
+		return parsed;
+	}
+
+	private Parsed materializeSelectedFrame(long payloadOffset, int length, int expectedCrc) throws IOException {
+		InputStream raw = new PositionalInputStream(currentChannel, currentSegmentCompressed ? 0 : payloadOffset);
+		try (InputStream selected = currentSegmentCompressed ? new GZIPInputStream(raw, INPUT_BUFFER_BYTES) : raw) {
+			if (currentSegmentCompressed) {
+				selected.skipNBytes(payloadOffset);
+			}
+			FrameInputStream frame = new FrameInputStream(selected, length, null);
+			Parsed parsed = parseFrame(frame, false);
+			if ((int) frame.crc.getValue() != expectedCrc) {
+				throw new IOException("WAL frame changed during lookup");
+			}
+			return parsed;
+		}
 	}
 
 	private static int readIntLE(InputStream in, int first) throws IOException {
@@ -265,7 +326,7 @@ public final class ValueStoreWalReader implements AutoCloseable {
 
 	private Parsed parseJson(InputStream payload, boolean metadataOnly) throws IOException {
 		Parsed parsed = new Parsed();
-		try (JsonParser jp = jsonFactory.createParser(ObjectReadContext.empty(), payload)) {
+		try (JsonParser jp = ValueStoreWalMemory.createParser(jsonFactory, payload)) {
 			if (jp.nextToken() != JsonToken.START_OBJECT) {
 				jp.skipChildren();
 				return parsed;
@@ -280,44 +341,58 @@ public final class ValueStoreWalReader implements AutoCloseable {
 					throw new EOFException("Truncated WAL JSON field");
 				}
 				if ("t".equals(field)) {
-					String type = jp.getValueAsString("");
+					String type = ValueStoreWalMemory.readString(jp, MAX_METADATA_CHARACTERS);
 					parsed.type = type.isEmpty() ? '?' : type.charAt(0);
 				} else if ("lsn".equals(field)) {
-					parsed.lsn = jp.getValueAsLong(ValueStoreWAL.NO_LSN);
+					parsed.lsn = readMetadataLong(jp, ValueStoreWAL.NO_LSN);
 				} else if ("id".equals(field) || "lastId".equals(field)) {
-					parsed.id = jp.getValueAsInt(0);
+					parsed.id = readMetadataInt(jp, 0);
 				} else if ("vk".equals(field)) {
-					parsed.kind = ValueStoreWalValueKind.fromCode(jp.getValueAsString(""));
+					parsed.kind = ValueStoreWalValueKind.fromCode(
+							ValueStoreWalMemory.readString(jp, MAX_METADATA_CHARACTERS));
 				} else if (!metadataOnly && "lex".equals(field)) {
-					parsed.lex = jp.getValueAsString("");
+					parsed.lex = ValueStoreWalMemory.readString(jp);
 				} else if (!metadataOnly && "dt".equals(field)) {
-					parsed.dt = jp.getValueAsString("");
+					parsed.dt = ValueStoreWalMemory.readString(jp);
 				} else if (!metadataOnly && "lang".equals(field)) {
-					parsed.lang = jp.getValueAsString("");
+					parsed.lang = ValueStoreWalMemory.readString(jp);
 				} else if ("hash".equals(field)) {
-					parsed.hash = jp.getValueAsInt(0);
+					parsed.hash = readMetadataInt(jp, 0);
 				} else if ("crc32".equals(field)) {
-					parsed.summaryCrc32 = jp.getValueAsLong(0L);
+					parsed.summaryCrc32 = readMetadataLong(jp, 0L);
 				} else {
 					jp.skipChildren();
-				}
-				if (2L * (parsed.lex.length() + (long) parsed.dt.length()
-						+ parsed.lang.length()) > ValueStoreWalMemory.MAX_MATERIALIZED_BYTES) {
-					throw new ValueStoreWalMemory.LimitExceededException(
-							"WAL record exceeds its materialization memory budget");
 				}
 			}
 		}
 		return parsed;
 	}
 
+	private static int readMetadataInt(JsonParser parser, int defaultValue) throws IOException {
+		if (parser.currentToken() != JsonToken.VALUE_STRING) {
+			return parser.getValueAsInt(defaultValue);
+		}
+		String value = ValueStoreWalMemory.readString(parser, MAX_METADATA_CHARACTERS);
+		return "null".equals(value) ? 0 : NumberInput.parseAsInt(value, defaultValue);
+	}
+
+	private static long readMetadataLong(JsonParser parser, long defaultValue) throws IOException {
+		if (parser.currentToken() != JsonToken.VALUE_STRING) {
+			return parser.getValueAsLong(defaultValue);
+		}
+		String value = ValueStoreWalMemory.readString(parser, MAX_METADATA_CHARACTERS);
+		return "null".equals(value) ? 0 : NumberInput.parseAsLong(value, defaultValue);
+	}
+
 	private final class RecordIterator implements Iterator<ValueStoreWalRecord> {
 		private final boolean metadataOnly;
+		private final int targetId;
 		private ValueStoreWalRecord next;
 		private boolean prepared;
 
-		RecordIterator(boolean metadataOnly) {
+		RecordIterator(boolean metadataOnly, int targetId) {
 			this.metadataOnly = metadataOnly;
+			this.targetId = targetId;
 		}
 
 		@Override
@@ -325,8 +400,8 @@ public final class ValueStoreWalReader implements AutoCloseable {
 			if (!prepared) {
 				started = true;
 				try {
-					next = readRecord(metadataOnly);
-				} catch (ValueStoreWalMemory.LimitExceededException e) {
+					next = readRecord(metadataOnly, targetId);
+				} catch (ValueStoreWalMemory.MaterializationException e) {
 					stop = true;
 					throw new UncheckedIOException(e);
 				} catch (StreamConstraintsException e) {
@@ -353,6 +428,50 @@ public final class ValueStoreWalReader implements AutoCloseable {
 			next = null;
 			prepared = false;
 			return result;
+		}
+	}
+
+	/** Rereads a frame without moving or closing the segment owner's channel. */
+	private static final class PositionalInputStream extends InputStream {
+		private final FileChannel channel;
+		private final byte[] singleByte = new byte[1];
+		private long position;
+
+		PositionalInputStream(FileChannel channel, long position) {
+			this.channel = channel;
+			this.position = position;
+		}
+
+		@Override
+		public int read() throws IOException {
+			int read;
+			do {
+				read = read(singleByte, 0, 1);
+			} while (read == 0);
+			return read < 0 ? -1 : singleByte[0] & 0xff;
+		}
+
+		@Override
+		public int read(byte[] bytes, int offset, int length) throws IOException {
+			Objects.checkFromIndexSize(offset, length, bytes.length);
+			if (length == 0) {
+				return 0;
+			}
+			int read = channel.read(ByteBuffer.wrap(bytes, offset, length), position);
+			if (read > 0) {
+				position += read;
+			}
+			return read;
+		}
+
+		@Override
+		public int available() throws IOException {
+			return (int) Math.min(Integer.MAX_VALUE, Math.max(0, channel.size() - position));
+		}
+
+		@Override
+		public void close() {
+			// Closing a lookup's parser/inflater must not close the sequential reader's channel.
 		}
 	}
 
@@ -466,7 +585,7 @@ public final class ValueStoreWalReader implements AutoCloseable {
 			if (Files.isDirectory(directory)) {
 				try (DirectoryStream<Path> paths = Files.newDirectoryStream(directory)) {
 					for (Path path : paths) {
-						if (!SEGMENT_PATTERN.matcher(path.getFileName().toString()).matches()) {
+						if (!ValueStoreWAL.SEGMENT_PATTERN.matcher(path.getFileName().toString()).matches()) {
 							continue;
 						}
 						int sequence;

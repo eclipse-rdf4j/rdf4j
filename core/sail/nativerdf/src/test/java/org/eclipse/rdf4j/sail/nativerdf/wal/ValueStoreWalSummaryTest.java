@@ -240,7 +240,8 @@ class ValueStoreWalSummaryTest {
 			throw new AssertionError(
 					"An oversized lexical form must fail explicitly instead of returning partial data");
 		} catch (IOException expected) {
-			if (!expected.getMessage().contains("bounded read limits") || expected.getCause() == null) {
+			if (!(expected instanceof ValueStoreWalMemory.LimitExceededException)
+					|| !expected.getMessage().contains("reconstruction budget")) {
 				throw expected;
 			}
 		}

@@ -56,12 +56,12 @@ class ValueStoreWalBoundedMemoryTest {
 	}
 
 	@Test
-	void bootstrapRejectsValueLargerThanItsReadBudgetWithoutHeapExhaustion() throws Exception {
+	void bootstrapReportsUnmaterializableValueWithoutHeapExhaustion() throws Exception {
 		runInConstrainedHeap("bootstrap-large-record");
 	}
 
 	@Test
-	void bootstrapBoundsReferencedNamespacesWithoutHeapExhaustion() throws Exception {
+	void bootstrapReportsUnmaterializableNamespaceWithoutHeapExhaustion() throws Exception {
 		runInConstrainedHeap("bootstrap-large-namespace");
 	}
 
@@ -187,9 +187,18 @@ class ValueStoreWalBoundedMemoryTest {
 				.storeUuid("bounded-memory-test")
 				.syncBootstrapOnOpen(true)
 				.build();
-		try (ValueStoreWAL wal = ValueStoreWAL.open(config);
-				ValueStore store = new ValueStore(values.toFile(), false, 16, 16, 16, 16, wal)) {
-			// A single oversized value must be reported and skipped without killing the JVM or WAL writer.
+		try (ValueStoreWAL wal = ValueStoreWAL.open(config)) {
+			try (ValueStore ignored = new ValueStore(values.toFile(), false, 16, 16, 16, 16, wal)) {
+				throw new AssertionError("A value that cannot be materialized must fail bootstrap explicitly");
+			} catch (IOException expected) {
+				if (!expected.getMessage().contains("Cannot bootstrap ValueStore ID")) {
+					throw expected;
+				}
+			}
+			if (!Files.exists(config.walDirectory().resolve(ValueStoreWAL.BOOTSTRAP_PENDING_FILE_NAME))) {
+				throw new AssertionError("Failed bootstrap did not preserve its incomplete-coverage marker");
+			}
+			// Rejecting an impossible materialization must not kill the JVM or the independent WAL writer.
 			wal.logMint(3, ValueStoreWalValueKind.BNODE, "after-bootstrap", "", "", 0);
 		}
 		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
@@ -210,8 +219,7 @@ class ValueStoreWalBoundedMemoryTest {
 		try (OutputStream output = new BufferedOutputStream(Files.newOutputStream(walDirectory.resolve("wal-1.v1")))) {
 			writeFrame(output, HEADER);
 			writeFrame(output, "{\"t\":\"M\",\"lsn\":1,\"id\":1,\"vk\":\"B\",\"lex\":\"existing\"}\n");
-			writeFrame(output, "{\"t\":\"M\",\"lsn\":2,\"id\":2,\"vk\":\"B\",\"lex\":\""
-					+ "a".repeat(2 * 1024 * 1024) + "\"}\n");
+			writeLargeRecoveryFrame(output, 20 * 1024 * 1024);
 		}
 		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDirectory)
@@ -222,7 +230,7 @@ class ValueStoreWalBoundedMemoryTest {
 			try (ValueStore ignored = new ValueStore(values.toFile(), false, 16, 16, 16, 16, wal)) {
 				throw new AssertionError("Required recovery must fail instead of opening an incomplete value store");
 			} catch (IOException expected) {
-				if (!expected.getMessage().contains("bounded read limits")) {
+				if (!expected.getMessage().contains("reconstruction budget")) {
 					throw expected;
 				}
 			}
@@ -238,6 +246,27 @@ class ValueStoreWalBoundedMemoryTest {
 				throw new AssertionError("Failed recovery leaked temporary spool files");
 			}
 		}
+	}
+
+	private static void writeLargeRecoveryFrame(OutputStream output, int characters) throws IOException {
+		byte[] prefix = "{\"t\":\"M\",\"lsn\":2,\"id\":2,\"vk\":\"B\",\"lex\":\""
+				.getBytes(StandardCharsets.UTF_8);
+		byte[] suffix = "\"}\n".getBytes(StandardCharsets.UTF_8);
+		writeIntLE(output, prefix.length + characters + suffix.length);
+		CRC32C crc = new CRC32C();
+		crc.update(prefix);
+		output.write(prefix);
+		byte[] block = new byte[8192];
+		Arrays.fill(block, (byte) 'a');
+		for (int remaining = characters; remaining > 0;) {
+			int count = Math.min(block.length, remaining);
+			crc.update(block, 0, count);
+			output.write(block, 0, count);
+			remaining -= count;
+		}
+		crc.update(suffix);
+		output.write(suffix);
+		writeIntLE(output, (int) crc.getValue());
 	}
 
 	private static void runSparseIdProbe(Path directory) throws Exception {

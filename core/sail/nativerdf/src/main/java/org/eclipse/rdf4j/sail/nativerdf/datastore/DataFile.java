@@ -13,13 +13,16 @@ package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
 import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES;
 
+import java.io.BufferedInputStream;
 import java.io.Closeable;
 import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -146,11 +149,110 @@ public class DataFile implements Closeable {
 		return length > 0 && length <= size - offset - Integer.BYTES;
 	}
 
+	/** Reuse one bounded buffer when comparing hash candidates with a caller-owned value. */
+	RecordMatcher matcher(byte[] queryData) {
+		return new RecordMatcher(queryData);
+	}
+
+	final class RecordMatcher {
+		private final byte[] queryData;
+		private final ByteBuffer readBuffer;
+		private final byte[] bytes;
+		private int dataLength;
+		private int arrayHash;
+
+		private RecordMatcher(byte[] queryData) {
+			this.queryData = queryData;
+			// Ordinary values need one read for both the length and payload. Large candidates reuse this buffer.
+			int capacity = (int) Math.min(8192, Math.max(64, (long) queryData.length + Integer.BYTES));
+			readBuffer = ByteBuffer.allocate(capacity);
+			bytes = readBuffer.array();
+		}
+
+		boolean matches(long offset, boolean summarize) throws IOException {
+			flush();
+			long size = nioFileSize;
+			if (offset < HEADER_LENGTH) {
+				throw new IOException("Invalid value record offset: " + offset);
+			}
+			readBuffer.clear();
+			int read = nioFile.read(readBuffer, offset);
+			if (read < Integer.BYTES) {
+				// Stale hash/ID entries can outlive a truncated data file during recovery. The legacy reader
+				// exposed an absent record as an empty candidate; skip it so replay can rebuild the data.
+				dataLength = 0;
+				arrayHash = 1;
+				return false;
+			}
+			dataLength = readBuffer.getInt(0);
+			if (dataLength < 0 || dataLength > size - offset - Integer.BYTES) {
+				throw new IOException("Corrupt value record length " + dataLength + " at offset " + offset);
+			}
+			boolean match = dataLength == queryData.length;
+			if (!match && !summarize) {
+				return false;
+			}
+			arrayHash = 1;
+			int position = 0;
+			int bufferOffset = Integer.BYTES;
+			int count = Math.min(dataLength, read - Integer.BYTES);
+			while (position < dataLength) {
+				if (match && Arrays.mismatch(queryData, position, position + count,
+						bytes, bufferOffset, bufferOffset + count) >= 0) {
+					match = false;
+					if (!summarize) {
+						return false;
+					}
+				}
+				if (summarize) {
+					for (int i = bufferOffset, end = bufferOffset + count; i < end; i++) {
+						arrayHash = 31 * arrayHash + bytes[i];
+					}
+				}
+				position += count;
+				if (position < dataLength) {
+					count = Math.min(bytes.length, dataLength - position);
+					readBuffer.clear().limit(count);
+					if (nioFile.read(readBuffer, offset + Integer.BYTES + position) != count) {
+						throw new EOFException("Incomplete value record at offset " + offset);
+					}
+					bufferOffset = 0;
+				}
+			}
+			return match;
+		}
+
+		/** Same summary as Arrays.hashCode on a materialized candidate, computed only when requested. */
+		String summary() {
+			return "len=" + dataLength + ",hash=" + arrayHash;
+		}
+	}
+
 	/** Read a complete value only after validating its length against file bounds and the caller's budget. */
 	byte[] getData(long offset, int maxBytes) throws IOException {
 		if (maxBytes < 0) {
 			throw new IllegalArgumentException("maxBytes must not be negative");
 		}
+		int length = validatedDataLength(offset);
+		if (length > maxBytes) {
+			throw new IOException("Value record length " + length + " exceeds read budget " + maxBytes
+					+ " at offset " + offset);
+		}
+		byte[] data = new byte[length];
+		if (nioFile.read(ByteBuffer.wrap(data), offset + Integer.BYTES) != length) {
+			throw new EOFException("Incomplete value record at offset " + offset);
+		}
+		return data;
+	}
+
+	/** Stream one validated record without allocating its encoded length or reading into the next record. */
+	InputStream getDataStream(long offset) throws IOException {
+		int length = validatedDataLength(offset);
+		return new BufferedInputStream(new RecordInputStream(offset + Integer.BYTES, length),
+				Math.max(1, Math.min(length, 8192)));
+	}
+
+	private int validatedDataLength(long offset) throws IOException {
 		flush();
 		long size = nioFileSize;
 		if (offset < HEADER_LENGTH || offset > size - Integer.BYTES) {
@@ -164,15 +266,54 @@ public class DataFile implements Closeable {
 		if (length < 0 || length > size - offset - Integer.BYTES) {
 			throw new IOException("Corrupt value record length " + length + " at offset " + offset);
 		}
-		if (length > maxBytes) {
-			throw new IOException("Value record length " + length + " exceeds read budget " + maxBytes
-					+ " at offset " + offset);
+		return length;
+	}
+
+	private final class RecordInputStream extends InputStream {
+		private final byte[] singleByte = new byte[1];
+		private long position;
+		private int remaining;
+
+		private RecordInputStream(long position, int remaining) {
+			this.position = position;
+			this.remaining = remaining;
 		}
-		byte[] data = new byte[length];
-		if (nioFile.read(ByteBuffer.wrap(data), offset + Integer.BYTES) != length) {
-			throw new EOFException("Incomplete value record at offset " + offset);
+
+		@Override
+		public int read() throws IOException {
+			return read(singleByte, 0, 1) < 0 ? -1 : singleByte[0] & 0xff;
 		}
-		return data;
+
+		@Override
+		public int read(byte[] bytes, int offset, int length) throws IOException {
+			Objects.checkFromIndexSize(offset, length, bytes.length);
+			if (length == 0) {
+				return 0;
+			}
+			if (remaining == 0) {
+				return -1;
+			}
+			int count = Math.min(length, remaining);
+			if (nioFile.read(ByteBuffer.wrap(bytes, offset, count), position) != count) {
+				throw new EOFException("Incomplete value record at offset " + position);
+			}
+			position += count;
+			remaining -= count;
+			return count;
+		}
+
+		@Override
+		public long skip(long count) {
+			int skipped = (int) Math.min(remaining, Math.max(0, count));
+			position += skipped;
+			remaining -= skipped;
+			return skipped;
+		}
+
+		@Override
+		public int available() {
+			return remaining;
+		}
 	}
 
 	/**
@@ -207,15 +348,18 @@ public class DataFile implements Closeable {
 
 			flush();
 
-			// TODO: two writes could be more efficient since it prevent array copies
-			ByteBuffer buf = ByteBuffer.allocate(data.length + 4);
-			buf.putInt(data.length);
-			buf.put(data);
-			buf.rewind();
+			// The caller already owns the complete payload; write its length and payload without another copy.
+			buffer.clear();
+			buffer.putInt(data.length).flip();
+			nioFile.write(buffer, offset);
+			buffer.clear();
+			for (int written = 0; written < data.length;) {
+				int chunk = Math.min(64 * 1024, data.length - written);
+				nioFile.write(ByteBuffer.wrap(data, written, chunk), offset + Integer.BYTES + written);
+				written += chunk;
+			}
 
-			nioFile.write(buf, offset);
-
-			nioFileSize += buf.array().length;
+			nioFileSize += (long) data.length + Integer.BYTES;
 
 		} else {
 			if (data.length + 4 > remainingBufferCapacity()) {

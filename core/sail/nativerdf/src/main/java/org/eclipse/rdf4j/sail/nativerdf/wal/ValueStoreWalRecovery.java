@@ -17,6 +17,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -246,17 +247,32 @@ public final class ValueStoreWalRecovery {
 			if (length == 0) {
 				return "";
 			}
-			char[] chars = new char[length];
-			for (int offset = 0; offset < length;) {
-				int chunk = Math.min(stringBuffer.length / Character.BYTES, length - offset);
-				input.readFully(stringBuffer, 0, chunk * Character.BYTES);
-				for (int i = 0; i < chunk; i++) {
-					chars[offset + i] = (char) ((stringBuffer[i * 2] & 0xff) << 8
-							| stringBuffer[i * 2 + 1] & 0xff);
+			return ValueStoreWalMemory.readString(new Reader() {
+				private int remaining = length;
+
+				@Override
+				public int read(char[] chars, int offset, int count) throws IOException {
+					if (count == 0) {
+						return 0;
+					}
+					if (remaining == 0) {
+						return -1;
+					}
+					int chunk = Math.min(Math.min(count, remaining), stringBuffer.length / Character.BYTES);
+					input.readFully(stringBuffer, 0, chunk * Character.BYTES);
+					for (int i = 0; i < chunk; i++) {
+						chars[offset + i] = (char) ((stringBuffer[i * 2] & 0xff) << 8
+								| stringBuffer[i * 2 + 1] & 0xff);
+					}
+					remaining -= chunk;
+					return chunk;
 				}
-				offset += chunk;
-			}
-			return new String(chars);
+
+				@Override
+				public void close() {
+					// DiskReplay owns the shared record input.
+				}
+			});
 		}
 
 		@Override

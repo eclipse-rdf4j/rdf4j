@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -39,7 +38,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  */
 public final class ValueStoreWalSearch {
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
 	private static final int MAX_CACHED_SEGMENTS = 1024;
 	private static final int MAX_TRIPLE_DEPTH = 64;
 
@@ -189,7 +187,7 @@ public final class ValueStoreWalSearch {
 	}
 
 	private static SegFirst segmentFromPath(Path path) {
-		var matcher = SEGMENT_PATTERN.matcher(path.getFileName().toString());
+		var matcher = ValueStoreWAL.SEGMENT_PATTERN.matcher(path.getFileName().toString());
 		if (!matcher.matches()) {
 			return null;
 		}
@@ -233,7 +231,7 @@ public final class ValueStoreWalSearch {
 	}
 
 	private static ValueStoreWalRecord findInReader(ValueStoreWalReader reader, int targetId) throws IOException {
-		Iterator<ValueStoreWalRecord> records = reader.iterator();
+		Iterator<ValueStoreWalRecord> records = reader.iteratorForId(targetId);
 		try {
 			while (records.hasNext()) {
 				ValueStoreWalRecord record = records.next();
@@ -250,13 +248,12 @@ public final class ValueStoreWalSearch {
 
 	private static final class LookupBudget {
 		private int remainingNodes = 1024;
-		private long remainingBytes = ValueStoreWalMemory.MAX_MATERIALIZED_BYTES;
+		private long remainingBytes = Math.min(512L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 2);
 
 		void consume(ValueStoreWalRecord record) throws IOException {
-			// Account conservatively for strings and reconstructed values, including repeated triple dependencies.
-			long characters = (long) record.lexical().length() + record.datatype().length()
-					+ record.language().length();
-			long estimatedBytes = 256L + 4L * characters;
+			// Simple values retain the strings already checked by the reader rather than copying their lexical
+			// contents. Bound the retained graph separately from transient string reconstruction.
+			long estimatedBytes = ValueStoreWalMemory.retainedRecordBytes(record);
 			if (remainingNodes == 0 || estimatedBytes > remainingBytes) {
 				throw new IOException("WAL value exceeds the bounded lookup reconstruction budget");
 			}

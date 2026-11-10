@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.nativerdf.datastore;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.zip.CRC32;
@@ -118,6 +119,20 @@ public class DataStore implements Closeable {
 		}
 		long offset = idFile.getOffsetNoCache(id);
 		return offset == 0L ? null : dataFile.getData(offset, maxBytes);
+	}
+
+	/**
+	 * Opens a bounded stream over one complete encoded value without populating the ID cache. The caller must close the
+	 * stream; closing it leaves this store open. A corrupt offset or length is rejected before any payload read.
+	 *
+	 * @return a stream limited to this record, or {@code null} if the ID has no value
+	 */
+	public InputStream getDataStream(int id) throws IOException {
+		if (id <= 0 || id > getMaxID()) {
+			return null;
+		}
+		long offset = idFile.getOffsetNoCache(id);
+		return offset == 0L ? null : dataFile.getDataStream(offset);
 	}
 
 	/**
@@ -260,16 +275,20 @@ public class DataStore implements Closeable {
 		}
 
 		HashFile.IDIterator iter = hashFile.getIDIterator(hash);
+		DataFile.RecordMatcher matcher = null;
 		try {
 			while ((id = iter.next()) >= 0) {
 				long offset = idFile.getOffset(id);
-				byte[] data = dataFile.getData(offset);
-				boolean match = Arrays.equals(queryData, data);
+				if (matcher == null) {
+					matcher = dataFile.matcher(queryData);
+				}
+				boolean debug = logger.isDebugEnabled();
+				boolean match = matcher.matches(offset, debug);
 
-				if (logger.isDebugEnabled()) {
+				if (debug) {
 					logger.debug(
 							"getID candidate thread={} hash={} candidateId={} offset={} match={} candidateSummary={}",
-							threadName(), hash, id, offset, match, summarize(data));
+							threadName(), hash, id, offset, match, matcher.summary());
 				}
 
 				if (match) {

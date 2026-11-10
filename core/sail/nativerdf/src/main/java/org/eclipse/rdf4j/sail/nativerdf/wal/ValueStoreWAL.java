@@ -24,6 +24,8 @@ import java.nio.channels.Channels;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
@@ -42,14 +44,16 @@ import java.util.zip.CRC32C;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
-import tools.jackson.core.ObjectReadContext;
 import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.exc.JacksonIOException;
+import tools.jackson.core.exc.UnexpectedEndOfInputException;
 import tools.jackson.core.json.JsonFactory;
 
 /**
@@ -96,7 +100,11 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 	public static final long NO_LSN = -1L;
 
-	static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
+	/** Persistent indication that the WAL does not yet cover every original ValueStore value. */
+	@InternalUseOnly
+	public static final String BOOTSTRAP_PENDING_FILE_NAME = "bootstrap.pending";
+
+	static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)(?:-(\\d+))?\\.v1(?:\\.gz)?");
 	public static final int MAX_FRAME_BYTES = 512 * 1024 * 1024; // 512 MiB safety cap
 
 	private final ValueStoreWalConfig config;
@@ -105,6 +113,9 @@ public final class ValueStoreWAL implements AutoCloseable {
 	private final AtomicLong lastAppendedLsn = new AtomicLong(NO_LSN);
 	private final AtomicLong lastForcedLsn = new AtomicLong(NO_LSN);
 	private final AtomicLong requestedForceLsn = new AtomicLong(NO_LSN);
+	// INTERVAL acknowledges flushes through lastForcedLsn; bootstrap requires an actual force.
+	private final AtomicLong lastDurablyForcedLsn = new AtomicLong(NO_LSN);
+	private final AtomicLong requestedBootstrapForceLsn = new AtomicLong(NO_LSN);
 
 	private final Object ackMonitor = new Object();
 	private final Object memoryMonitor = new Object();
@@ -259,6 +270,59 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 		if (writerFailure != null) {
 			throw propagate(writerFailure);
+		}
+	}
+
+	/**
+	 * Wait for a bootstrap record to be forced even when ordinary writes use the INTERVAL policy. A closed or failed
+	 * writer cannot acknowledge an unforced record. Directory metadata is synced before this method returns where the
+	 * filesystem supports it, so a caller can subsequently remove its persistent bootstrap marker.
+	 */
+	@InternalUseOnly
+	public void awaitBootstrapDurable(long lsn) throws InterruptedException, IOException {
+		if (lsn <= NO_LSN) {
+			return;
+		}
+		ensureOpen();
+		if (lastDurablyForcedLsn.get() < lsn) {
+			requestedBootstrapForceLsn.updateAndGet(previous -> Math.max(previous, lsn));
+			synchronized (ackMonitor) {
+				while (lastDurablyForcedLsn.get() < lsn && writerFailure == null && !closed) {
+					ackMonitor.wait(10);
+				}
+			}
+		}
+		if (writerFailure != null) {
+			throw propagate(writerFailure);
+		}
+		if (lastDurablyForcedLsn.get() < lsn) {
+			throw new IOException("WAL closed before bootstrap record " + lsn + " was forced");
+		}
+		forceDirectoryMetadata();
+	}
+
+	/** Sync changes to WAL and bootstrap-marker directory entries when the filesystem supports directory channels. */
+	@InternalUseOnly
+	public void forceDirectoryMetadata() throws IOException {
+		FileChannel directory;
+		try {
+			directory = FileChannel.open(config.walDirectory(), StandardOpenOption.READ);
+		} catch (AccessDeniedException e) {
+			if (!System.getProperty("os.name", "").startsWith("Windows")) {
+				throw e;
+			}
+			logger.debug("Directory sync is unavailable for {}", config.walDirectory(), e);
+			return;
+		} catch (UnsupportedOperationException e) {
+			logger.debug("Directory sync is unavailable for {}", config.walDirectory(), e);
+			return;
+		}
+		try (directory) {
+			try {
+				directory.force(true);
+			} catch (UnsupportedOperationException e) {
+				logger.debug("Directory sync is unavailable for {}", config.walDirectory(), e);
+			}
 		}
 	}
 
@@ -466,7 +530,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 			LimitedInputStream frame = new LimitedInputStream(in, frameLen);
 			int sequence = 0;
 			JsonFactory factory = ValueStoreWalMemory.newJsonFactory();
-			try (JsonParser parser = factory.createParser(ObjectReadContext.empty(), frame)) {
+			try (JsonParser parser = ValueStoreWalMemory.createParser(factory, frame)) {
 				if (parser.nextToken() != JsonToken.START_OBJECT) {
 					return 0;
 				}
@@ -483,6 +547,15 @@ public final class ValueStoreWAL implements AutoCloseable {
 						parser.skipChildren();
 					}
 				}
+			} catch (UnexpectedEndOfInputException e) {
+				// A crash may leave an incomplete JSON token after a complete frame length.
+				return 0;
+			} catch (JacksonIOException e) {
+				if (frame.prematureEnd) {
+					// A partial UTF-8 character is reported by the strict decoder as an I/O failure.
+					return 0;
+				}
+				throw e.getCause();
 			}
 			try {
 				in.skipNBytes(frame.remaining);
@@ -495,6 +568,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 	private static final class LimitedInputStream extends FilterInputStream {
 		private long remaining;
+		private boolean prematureEnd;
 
 		LimitedInputStream(InputStream input, long remaining) {
 			super(input);
@@ -509,6 +583,8 @@ public final class ValueStoreWAL implements AutoCloseable {
 			int value = in.read();
 			if (value >= 0) {
 				remaining--;
+			} else {
+				prematureEnd = true;
 			}
 			return value;
 		}
@@ -524,6 +600,8 @@ public final class ValueStoreWAL implements AutoCloseable {
 			int read = in.read(bytes, offset, (int) Math.min(length, remaining));
 			if (read > 0) {
 				remaining -= read;
+			} else if (read < 0) {
+				prematureEnd = true;
 			}
 			return read;
 		}
@@ -629,12 +707,13 @@ public final class ValueStoreWAL implements AutoCloseable {
 						}
 					}
 
-					boolean pendingForce = requestedForceLsn.get() > NO_LSN
-							&& requestedForceLsn.get() > lastForcedLsn.get();
+					boolean pendingForce = requestedForceLsn.get() > lastForcedLsn.get();
+					boolean pendingBootstrapForce = requestedBootstrapForceLsn.get() > lastDurablyForcedLsn.get();
 					boolean syncIntervalElapsed = config.syncPolicy() == ValueStoreWalConfig.SyncPolicy.INTERVAL
 							&& System.nanoTime() - lastSyncCheck >= config.syncInterval().toNanos();
 					if (record == null) {
-						if (pendingForce || config.syncPolicy() == ValueStoreWalConfig.SyncPolicy.ALWAYS
+						if (pendingForce || pendingBootstrapForce
+								|| config.syncPolicy() == ValueStoreWalConfig.SyncPolicy.ALWAYS
 								|| syncIntervalElapsed) {
 							flushAndForce();
 							lastSyncCheck = System.nanoTime();
@@ -642,7 +721,8 @@ public final class ValueStoreWAL implements AutoCloseable {
 					} else if (config.syncPolicy() == ValueStoreWalConfig.SyncPolicy.ALWAYS) {
 						flushAndForce();
 						lastSyncCheck = System.nanoTime();
-					} else if (pendingForce && requestedForceLsn.get() <= lastAppendedLsn.get()) {
+					} else if ((pendingForce && requestedForceLsn.get() <= lastAppendedLsn.get())
+							|| (pendingBootstrapForce && requestedBootstrapForceLsn.get() <= lastAppendedLsn.get())) {
 						flushAndForce();
 						lastSyncCheck = System.nanoTime();
 					}
@@ -769,9 +849,12 @@ public final class ValueStoreWAL implements AutoCloseable {
 				getIoBuffer().clear();
 				// Delete all existing segments from disk
 				deleteAllSegments();
+				Files.deleteIfExists(config.walDirectory().resolve(BOOTSTRAP_PENDING_FILE_NAME));
+				forceDirectoryMetadata();
 				// Reset writer state so the next append starts a fresh segment
 				segmentPath = null;
 				segmentChannel = null;
+				segmentSequence = 0;
 				segmentBytes = 0L;
 				segmentFirstMintedId = 0;
 				segmentLastMintedId = 0;
@@ -791,38 +874,51 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		private void flushAndForce(boolean forceEvenForInterval) throws IOException {
-			if (lastAppendedLsn.get() <= lastForcedLsn.get()) {
+			long appended = lastAppendedLsn.get();
+			boolean bootstrapForce = requestedBootstrapForceLsn.get() > lastDurablyForcedLsn.get();
+			boolean shouldForce = forceEvenForInterval || bootstrapForce
+					|| config.syncPolicy() != ValueStoreWalConfig.SyncPolicy.INTERVAL;
+			if (appended <= lastForcedLsn.get()
+					&& (!shouldForce || appended <= lastDurablyForcedLsn.get())) {
 				return;
 			}
 			flushBuffer();
 			if (segmentChannel != null && segmentChannel.isOpen()) {
 				try {
-					boolean shouldForce = forceEvenForInterval
-							|| config.syncPolicy() != ValueStoreWalConfig.SyncPolicy.INTERVAL;
 					if (shouldForce) {
 						segmentChannel.force(false);
 						if (segmentPath != null) {
 							ValueStoreWalDebug.fireForceEvent(segmentPath);
 						}
+						lastDurablyForcedLsn.set(appended);
 					}
 				} catch (ClosedChannelException e) {
+					if (bootstrapForce) {
+						throw e;
+					}
 					// ignore; channel already closed during shutdown
 				}
+			} else if (bootstrapForce && appended > lastDurablyForcedLsn.get()) {
+				throw new IOException("WAL segment closed before bootstrap records were forced");
 			}
-			long forced = lastAppendedLsn.get();
-			lastForcedLsn.set(forced);
+			lastForcedLsn.set(appended);
+			acknowledgeForceRequest(requestedForceLsn, appended);
+			acknowledgeForceRequest(requestedBootstrapForceLsn, lastDurablyForcedLsn.get());
+			synchronized (ackMonitor) {
+				ackMonitor.notifyAll();
+			}
+		}
+
+		private void acknowledgeForceRequest(AtomicLong request, long forced) {
 			// Clear pending force request without dropping newer requests that may arrive concurrently.
 			// Use CAS to only clear if the observed value is still <= forced; if another thread published
 			// a higher LSN in the meantime, we must not overwrite it with NO_LSN.
-			long cur = requestedForceLsn.get();
+			long cur = request.get();
 			while (cur != NO_LSN && cur <= forced) {
-				if (requestedForceLsn.compareAndSet(cur, NO_LSN)) {
+				if (request.compareAndSet(cur, NO_LSN)) {
 					break;
 				}
-				cur = requestedForceLsn.get();
-			}
-			synchronized (ackMonitor) {
-				ackMonitor.notifyAll();
+				cur = request.get();
 			}
 		}
 
@@ -876,19 +972,28 @@ public final class ValueStoreWAL implements AutoCloseable {
 				segmentSequence++;
 			}
 			segmentPath = config.walDirectory().resolve(buildSegmentFileName(firstId));
-			if (Files.exists(segmentPath)) {
-				logger.warn("Overwriting existing WAL segment {}", segmentPath.getFileName());
-			}
-			segmentChannel = openWalChannel(segmentPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
-					StandardOpenOption.TRUNCATE_EXISTING);
+			segmentChannel = openWalChannel(segmentPath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
 			segmentBytes = 0L;
 			segmentFirstMintedId = firstId;
 			segmentLastMintedId = 0;
 			writeHeader(firstId);
 		}
 
-		private String buildSegmentFileName(int firstId) {
-			return "wal-" + firstId + ".v1";
+		private String buildSegmentFileName(int firstId) throws IOException {
+			String name = "wal-" + firstId + ".v1";
+			if (segmentFileExists(name)) {
+				// Retrying bootstrap can mint an earlier ID again. Preserve its prior segment and sequence.
+				name = "wal-" + firstId + "-" + segmentSequence + ".v1";
+				if (segmentFileExists(name)) {
+					throw new FileAlreadyExistsException(config.walDirectory().resolve(name).toString());
+				}
+			}
+			return name;
+		}
+
+		private boolean segmentFileExists(String name) {
+			return Files.exists(config.walDirectory().resolve(name))
+					|| Files.exists(config.walDirectory().resolve(name + ".gz"));
 		}
 
 		private void gzipAndDelete(Path src, int lastMintedId) {

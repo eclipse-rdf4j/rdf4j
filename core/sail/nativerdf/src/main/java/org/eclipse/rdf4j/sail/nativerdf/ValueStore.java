@@ -13,16 +13,25 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES;
 
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
@@ -48,6 +57,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.SailException;
@@ -66,6 +76,7 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeTripleTerm;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalMemory;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalReader;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalRecord;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalRecovery;
@@ -572,6 +583,8 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
+		// Purging queued bootstrap frames would strand their durability waiter and invalidate its coverage marker.
+		awaitWalBootstrap();
 		try {
 			Lock writeLock = lockManager.getWriteLock();
 			try {
@@ -609,6 +622,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void sync() throws IOException {
+		awaitWalBootstrap();
 		dataStore.sync();
 	}
 
@@ -619,18 +633,23 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 	 */
 	@Override
 	public void close() throws IOException {
-		CompletableFuture<Void> bootstrap = walBootstrapFuture;
-		if (bootstrap != null) {
+		Throwable failure = null;
+		try {
+			awaitWalBootstrap();
+		} catch (IOException | RuntimeException | Error e) {
+			failure = e;
+			throw e;
+		} finally {
 			try {
-				bootstrap.join();
-			} catch (CompletionException e) {
-				Throwable cause = e.getCause() == null ? e : e.getCause();
-				logger.warn("ValueStore WAL bootstrap failed during close", cause);
-			} catch (CancellationException e) {
-				logger.warn("ValueStore WAL bootstrap was cancelled during close");
+				dataStore.close();
+			} catch (IOException closeFailure) {
+				if (failure != null) {
+					failure.addSuppressed(closeFailure);
+				} else {
+					throw closeFailure;
+				}
 			}
 		}
-		dataStore.close();
 	}
 
 	/**
@@ -1177,6 +1196,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 	}
 
 	public void awaitWalDurable(long lsn) throws IOException {
+		awaitWalBootstrap();
 		if (!walEnabled() || lsn <= ValueStoreWAL.NO_LSN) {
 			return;
 		}
@@ -1185,6 +1205,27 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while awaiting WAL durability", e);
+		}
+	}
+
+	private void awaitWalBootstrap() throws IOException {
+		CompletableFuture<Void> bootstrap = walBootstrapFuture;
+		if (bootstrap == null) {
+			return;
+		}
+		try {
+			bootstrap.join();
+		} catch (CompletionException e) {
+			Throwable cause = e.getCause() == null ? e : e.getCause();
+			if (cause instanceof UncheckedIOException) {
+				throw ((UncheckedIOException) cause).getCause();
+			}
+			if (cause instanceof IOException) {
+				throw (IOException) cause;
+			}
+			throw new IOException("ValueStore WAL bootstrap failed", cause);
+		} catch (CancellationException e) {
+			throw new IOException("ValueStore WAL bootstrap was cancelled", e);
 		}
 	}
 
@@ -1205,32 +1246,45 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 		recordWalLsn(lsn);
 	}
 
-	private void maybeScheduleWalBootstrap() {
+	private void maybeScheduleWalBootstrap() throws IOException {
 		if (!walEnabled()) {
 			return;
 		}
+		int pendingMaxId = incompleteWalBootstrapMaxId();
 		int maxId = dataStore.getMaxID();
+		if (maxId < pendingMaxId) {
+			throw new IOException("Incomplete ValueStore WAL bootstrap requires the original values through ID "
+					+ pendingMaxId + "; current value store ends at ID " + maxId);
+		}
+		if (pendingMaxId > 0 && !wal.initialSummary().complete()) {
+			// Appending replacement records cannot make a prior truncated frame or missing segment replayable.
+			// Keep both the original history and its coverage marker until the WAL has been repaired.
+			throw new IOException("Cannot resume ValueStore WAL bootstrap: existing WAL segments are incomplete");
+		}
 		if (maxId <= 0) {
 			return;
 		}
-		boolean needsBootstrap = !wal.hasInitialSegments() || walNeedsBootstrap(maxId);
+		boolean needsBootstrap = pendingMaxId > 0 || !wal.hasInitialSegments() || walNeedsBootstrap(maxId);
 		if (!needsBootstrap) {
 			return;
 		}
-		boolean syncBootstrap = false;
-		try {
-			syncBootstrap = wal.config().syncBootstrapOnOpen();
-		} catch (Throwable ignore) {
-			// defensive: if config not accessible, default to async
+		if (walBootstrapFuture != null) {
+			return;
 		}
-		if (syncBootstrap) {
+		// Persist the expected coverage before the first mint or before an asynchronous task can be scheduled.
+		// A failed/crashed bootstrap must never leave a shorter contiguous prefix looking recovery-complete.
+		markWalBootstrapIncomplete(maxId);
+		if (wal.config().syncBootstrapOnOpen()) {
 			// Perform bootstrap synchronously before allowing any further operations
 			rebuildWalFromExistingValues(maxId);
 		} else {
-			if (walBootstrapFuture != null) {
-				return;
-			}
-			CompletableFuture<Void> future = CompletableFuture.runAsync(() -> rebuildWalFromExistingValues(maxId));
+			CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+				try {
+					rebuildWalFromExistingValues(maxId);
+				} catch (IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			});
 			walBootstrapFuture = future;
 			future.whenComplete((unused, throwable) -> {
 				if (throwable != null) {
@@ -1240,124 +1294,146 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 		}
 	}
 
-	private void rebuildWalFromExistingValues(int maxId) {
-		int maxBytes = (int) Math.min(ValueStoreWAL.MAX_FRAME_BYTES, Runtime.getRuntime().maxMemory() / 32);
-		try {
-			for (long nextId = 1; nextId <= maxId; nextId++) {
-				int id = (int) nextId;
-				if (Thread.currentThread().isInterrupted()) {
-					Thread.currentThread().interrupt();
-					return;
-				}
-				if (wal.isClosed()) {
-					return;
-				}
-				byte[] data;
-				try {
-					data = dataStore.getData(id, maxBytes);
-				} catch (IOException e) {
-					logger.warn("Failed to read value {} while rebuilding WAL", id, e);
-					continue;
-				}
-				if (data == null) {
-					continue;
-				}
-				try {
-					logWalDescription(id, describeStoredValueForWal(data, maxBytes));
-				} catch (IOException e) {
-					if (wal.isClosed()) {
-						return;
-					}
-					logger.warn("Failed to rebuild WAL entry for id {}", id, e);
-				} catch (RuntimeException e) {
-					logger.warn("Unexpected failure while rebuilding WAL entry for id {}", id, e);
-				}
+	private void rebuildWalFromExistingValues(int maxId) throws IOException {
+		for (long nextId = 1; nextId <= maxId; nextId++) {
+			int id = (int) nextId;
+			if (Thread.currentThread().isInterrupted()) {
+				throw new IOException("Interrupted while rebuilding ValueStore WAL at ID " + id);
 			}
-			if (!wal.isClosed()) {
-				OptionalLong pending = drainPendingWalHighWaterMark();
-				if (pending.isPresent()) {
-					awaitWalDurable(pending.getAsLong());
-				}
+			if (wal.isClosed()) {
+				throw new IOException("ValueStore WAL closed before bootstrap completed at ID " + id);
 			}
-		} catch (Throwable t) {
-			logger.warn("Error while rebuilding ValueStore WAL", t);
+			try {
+				logWalDescription(id, describeStoredValueForWal(id));
+			} catch (IOException e) {
+				throw new IOException("Cannot bootstrap ValueStore ID " + id + ": " + e.getMessage(), e);
+			}
 		}
+		OptionalLong pending = drainPendingWalHighWaterMark();
+		if (pending.isPresent()) {
+			try {
+				// Unlike ordinary INTERVAL acknowledgments, deleting the marker requires an actual durable barrier.
+				wal.awaitBootstrapDurable(pending.getAsLong());
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while forcing ValueStore WAL bootstrap", e);
+			}
+		}
+		Files.delete(walBootstrapMarker());
+		wal.forceDirectoryMetadata();
 	}
 
 	/**
-	 * Bootstrap reads encoded values directly so references cannot recurse through values or populate caches with the
-	 * entire store. Every referenced namespace/datatype uses the same allocation budget as the original value.
+	 * Bootstrap streams encoded values directly so UTF-8 size does not impose a second, smaller value limit. Decoded
+	 * strings use the WAL materialization budget, including referenced namespaces and datatypes; no ID cache is filled.
 	 */
-	private ValueStoreWalDescription describeStoredValueForWal(byte[] data, int maxBytes) throws IOException {
-		if (data.length == 0) {
-			throw new IOException("Empty value record during WAL bootstrap");
-		}
-		switch (data[0]) {
-		case URI_VALUE:
-			return new ValueStoreWalDescription(ValueStoreWalValueKind.IRI, bootstrapIri(data, maxBytes), "", "");
-		case BNODE_VALUE:
-			return new ValueStoreWalDescription(ValueStoreWalValueKind.BNODE,
-					new String(data, 1, data.length - 1, StandardCharsets.UTF_8), "", "");
-		case LITERAL_VALUE: {
-			if (data.length < 6) {
-				throw new IOException("Incomplete literal during WAL bootstrap");
+	private ValueStoreWalDescription describeStoredValueForWal(int id) throws IOException {
+		try (InputStream data = dataStore.getDataStream(id)) {
+			if (data == null) {
+				throw new IOException("Missing value record during WAL bootstrap");
 			}
-			int languageLength = data[5] & 0xff;
-			if (languageLength > data.length - 6) {
-				throw new IOException("Invalid literal language length during WAL bootstrap");
-			}
-			String language = new String(data, 6, languageLength, StandardCharsets.UTF_8);
-			String datatype;
-			if (!language.isEmpty()) {
-				if (languageWithoutBaseDirection(language).isEmpty()) {
-					throw new IOException("Empty literal language during WAL bootstrap");
+			DataInputStream input = new DataInputStream(data);
+			input.mark(1);
+			switch (input.readUnsignedByte()) {
+			case URI_VALUE:
+				return new ValueStoreWalDescription(ValueStoreWalValueKind.IRI, bootstrapIri(input), "", "");
+			case BNODE_VALUE:
+				return new ValueStoreWalDescription(ValueStoreWalValueKind.BNODE, bootstrapString(input), "", "");
+			case LITERAL_VALUE:
+				return describeStoredLiteralForWal(input);
+			case TRIPLE_VALUE: {
+				int subject = input.readInt();
+				int predicate = input.readInt();
+				int object = input.readInt();
+				if (input.read() != -1 || subject <= 0 || predicate <= 0 || object <= 0) {
+					throw new IOException("Invalid triple term during WAL bootstrap");
 				}
-				datatype = (baseDirectionFromEncodedLanguage(language) == Literal.BaseDirection.NONE
-						? RDF.LANGSTRING
-						: RDF.DIRLANGSTRING).stringValue();
-			} else {
-				int datatypeId = ByteArrayUtil.getInt(data, 1);
-				datatype = datatypeId == NativeValue.UNKNOWN_ID ? XSD.STRING.stringValue()
-						: bootstrapIri(dataStore.getData(datatypeId, maxBytes), maxBytes);
-				if (RDF.LANGSTRING.stringValue().equals(datatype) || RDF.DIRLANGSTRING.stringValue().equals(datatype)) {
-					throw new IOException("Language datatype without a language during WAL bootstrap");
-				}
+				return new ValueStoreWalDescription(ValueStoreWalValueKind.TRIPLE,
+						subject + " " + predicate + " " + object, "", "");
 			}
-			String label = new String(data, 6 + languageLength, data.length - 6 - languageLength,
-					StandardCharsets.UTF_8);
-			return new ValueStoreWalDescription(ValueStoreWalValueKind.LITERAL, label, datatype, language);
-		}
-		case TRIPLE_VALUE: {
-			if (data.length != 13) {
-				throw new IOException("Invalid triple term length during WAL bootstrap");
+			default:
+				input.reset();
+				return new ValueStoreWalDescription(ValueStoreWalValueKind.NAMESPACE, bootstrapString(input), "", "");
 			}
-			int subject = ByteArrayUtil.getInt(data, 1);
-			int predicate = ByteArrayUtil.getInt(data, 5);
-			int object = ByteArrayUtil.getInt(data, 9);
-			if (subject <= 0 || predicate <= 0 || object <= 0) {
-				throw new IOException("Invalid triple term IDs during WAL bootstrap");
-			}
-			return new ValueStoreWalDescription(ValueStoreWalValueKind.TRIPLE,
-					subject + " " + predicate + " " + object, "", "");
-		}
-		default:
-			return new ValueStoreWalDescription(ValueStoreWalValueKind.NAMESPACE, data2namespace(data), "", "");
 		}
 	}
 
-	private String bootstrapIri(byte[] data, int maxBytes) throws IOException {
-		if (data == null || data.length < 5 || data[0] != URI_VALUE) {
-			throw new IOException("Missing or invalid IRI during WAL bootstrap");
+	private ValueStoreWalDescription describeStoredLiteralForWal(DataInputStream input) throws IOException {
+		int datatypeId = input.readInt();
+		byte[] languageBytes = new byte[input.readUnsignedByte()];
+		input.readFully(languageBytes);
+		String language = new String(languageBytes, StandardCharsets.UTF_8);
+		String datatype;
+		if (!language.isEmpty()) {
+			if (languageWithoutBaseDirection(language).isEmpty()) {
+				throw new IOException("Empty literal language during WAL bootstrap");
+			}
+			datatype = (baseDirectionFromEncodedLanguage(language) == Literal.BaseDirection.NONE
+					? RDF.LANGSTRING
+					: RDF.DIRLANGSTRING).stringValue();
+		} else {
+			datatype = datatypeId == NativeValue.UNKNOWN_ID ? XSD.STRING.stringValue() : bootstrapIri(datatypeId);
+			if (RDF.LANGSTRING.stringValue().equals(datatype) || RDF.DIRLANGSTRING.stringValue().equals(datatype)) {
+				throw new IOException("Language datatype without a language during WAL bootstrap");
+			}
 		}
-		byte[] namespace = dataStore.getData(ByteArrayUtil.getInt(data, 1), maxBytes);
-		if (namespace == null) {
-			throw new IOException("Missing IRI namespace during WAL bootstrap");
+		return new ValueStoreWalDescription(ValueStoreWalValueKind.LITERAL, bootstrapString(input), datatype, language);
+	}
+
+	private String bootstrapIri(int id) throws IOException {
+		try (InputStream data = dataStore.getDataStream(id)) {
+			if (data == null) {
+				throw new IOException("Missing datatype IRI during WAL bootstrap");
+			}
+			DataInputStream input = new DataInputStream(data);
+			if (input.readUnsignedByte() != URI_VALUE) {
+				throw new IOException("Invalid datatype IRI during WAL bootstrap");
+			}
+			return bootstrapIri(input);
 		}
-		// Check before decoding/concatenating: one small IRI record can reference a much larger namespace.
-		if ((long) namespace.length + data.length - 5 > maxBytes) {
-			throw new IOException("Combined IRI exceeds WAL bootstrap read budget " + maxBytes);
+	}
+
+	private String bootstrapIri(DataInputStream input) throws IOException {
+		try (InputStream namespace = dataStore.getDataStream(input.readInt())) {
+			if (namespace == null) {
+				throw new IOException("Missing IRI namespace during WAL bootstrap");
+			}
+			return ValueStoreWalMemory.readString(new InputStreamReader(namespace, StandardCharsets.UTF_8),
+					new InputStreamReader(input, StandardCharsets.UTF_8));
 		}
-		return data2namespace(namespace) + new String(data, 5, data.length - 5, StandardCharsets.UTF_8);
+	}
+
+	private String bootstrapString(InputStream input) throws IOException {
+		return ValueStoreWalMemory.readString(new InputStreamReader(input, StandardCharsets.UTF_8));
+	}
+
+	private Path walBootstrapMarker() {
+		return wal.config().walDirectory().resolve(ValueStoreWAL.BOOTSTRAP_PENDING_FILE_NAME);
+	}
+
+	/** A missing or malformed bootstrap target must never make a partial WAL dictionary appear complete. */
+	private int incompleteWalBootstrapMaxId() throws IOException {
+		try (DataInputStream input = new DataInputStream(Files.newInputStream(walBootstrapMarker()))) {
+			int maxId = input.readInt();
+			if (maxId <= 0 || input.read() != -1) {
+				throw new IOException("Invalid ValueStore WAL bootstrap marker");
+			}
+			return maxId;
+		} catch (NoSuchFileException e) {
+			return 0;
+		}
+	}
+
+	private void markWalBootstrapIncomplete(int maxId) throws IOException {
+		try (FileChannel marker = FileChannel.open(walBootstrapMarker(), StandardOpenOption.CREATE,
+				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+			ByteBuffer target = ByteBuffer.allocate(Integer.BYTES).putInt(maxId).flip();
+			while (target.hasRemaining()) {
+				marker.write(target);
+			}
+			marker.force(true);
+		}
+		wal.forceDirectoryMetadata();
 	}
 
 	private boolean walNeedsBootstrap(int maxId) {
@@ -1692,6 +1768,11 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 		if (!config.recoverValueStoreOnOpen()) {
 			return;
 		}
+		if (incompleteWalBootstrapMaxId() > 0) {
+			// An interrupted bootstrap can contain a contiguous prefix while still missing original values.
+			// Keep the native dictionary intact and let bootstrap validate its target and retry below.
+			return;
+		}
 		ValueStoreWalReader.Summary summary = wal.initialSummary();
 		if (!summary.hasRecords()) {
 			return;
@@ -1763,16 +1844,14 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 			byte[] data;
 			switch (record.valueKind()) {
 			case NAMESPACE:
-				data = record.lexical().getBytes(StandardCharsets.UTF_8);
+				data = encodeWalString(record.lexical(), 0, record.lexical().length(), 0);
 				break;
 			case IRI:
 				data = encodeIri(record.lexical(), dataStore);
 				break;
 			case BNODE: {
-				byte[] idBytes = record.lexical().getBytes(StandardCharsets.UTF_8);
-				data = new byte[1 + idBytes.length];
+				data = encodeWalString(record.lexical(), 0, record.lexical().length(), 1);
 				data[0] = BNODE_VALUE;
-				ByteArrayUtil.put(idBytes, data, 1);
 				break;
 			}
 			case LITERAL:
@@ -1814,18 +1893,12 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 	}
 
 	private byte[] encodeIri(String lexical, DataStore ds) throws IOException {
-		IRI iri = createIRI(lexical);
-		String ns = iri.getNamespace();
-		String local = iri.getLocalName();
-		int nsId = ds.getID(ns.getBytes(StandardCharsets.UTF_8));
-		if (nsId == -1) {
-			nsId = ds.storeData(ns.getBytes(StandardCharsets.UTF_8));
-		}
-		byte[] localBytes = local.getBytes(StandardCharsets.UTF_8);
-		byte[] data = new byte[1 + 4 + localBytes.length];
+		createIRI(lexical); // Retain IRI validation without materializing namespace/local-name substrings.
+		int localName = URIUtil.getLocalNameIndex(lexical);
+		int nsId = ds.storeData(encodeWalString(lexical, 0, localName, 0));
+		byte[] data = encodeWalString(lexical, localName, lexical.length(), 5);
 		data[0] = URI_VALUE;
 		ByteArrayUtil.putInt(nsId, data, 1);
-		ByteArrayUtil.put(localBytes, data, 5);
 		return data;
 	}
 
@@ -1836,17 +1909,53 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 			int id = ds.getID(dtBytes);
 			dtId = id == -1 ? ds.storeData(dtBytes) : id;
 		}
-		byte[] langBytes = language == null ? new byte[0] : language.getBytes(StandardCharsets.UTF_8);
-		byte[] labelBytes = label.getBytes(StandardCharsets.UTF_8);
-		byte[] data = new byte[1 + 4 + 1 + langBytes.length + labelBytes.length];
+		String lang = language == null ? "" : language;
+		int langLength = utf8Length(lang, 0, lang.length());
+		byte[] data = encodeWalString(label, 0, label.length(), 6 + langLength);
 		data[0] = LITERAL_VALUE;
 		ByteArrayUtil.putInt(dtId, data, 1);
-		data[5] = (byte) (langBytes.length & 0xFF);
-		if (langBytes.length > 0) {
-			ByteArrayUtil.put(langBytes, data, 6);
-		}
-		ByteArrayUtil.put(labelBytes, data, 6 + langBytes.length);
+		data[5] = (byte) langLength;
+		putUtf8(lang, 0, lang.length(), ByteBuffer.wrap(data, 6, langLength));
 		return data;
+	}
+
+	private static byte[] encodeWalString(String text, int from, int to, int prefix) throws IOException {
+		int encodedLength = utf8Length(text, from, to);
+		if (encodedLength > Integer.MAX_VALUE - prefix) {
+			throw new IOException("WAL value exceeds the native format limit");
+		}
+		byte[] data = ValueStoreWalMemory.allocateBytes(prefix + encodedLength);
+		putUtf8(text, from, to, ByteBuffer.wrap(data, prefix, encodedLength));
+		return data;
+	}
+
+	private static int utf8Length(String text, int from, int to) throws IOException {
+		long bytes = 0;
+		for (int i = from; i < to; i++) {
+			char ch = text.charAt(i);
+			if (ch <= 0x7f) {
+				bytes++;
+			} else if (ch <= 0x7ff) {
+				bytes += 2;
+			} else if (Character.isHighSurrogate(ch) && i + 1 < to && Character.isLowSurrogate(text.charAt(i + 1))) {
+				bytes += 4;
+				i++;
+			} else {
+				bytes += Character.isSurrogate(ch) ? 1 : 3; // String.getBytes replaces unpaired surrogates with '?'.
+			}
+		}
+		if (bytes > Integer.MAX_VALUE) {
+			throw new IOException("WAL value exceeds the native format limit");
+		}
+		return (int) bytes;
+	}
+
+	private static void putUtf8(String text, int from, int to, ByteBuffer target) throws IOException {
+		CharsetEncoder encoder = WAL_UTF8_ENCODER.get().encoder.reset();
+		CoderResult result = encoder.encode(CharBuffer.wrap(text, from, to), target, true);
+		if (!result.isUnderflow() || !encoder.flush(target).isUnderflow()) {
+			throw new IOException("Unexpected UTF-8 encoding length for WAL value");
+		}
 	}
 
 	private byte[] encodeTripleTerm(String lexical) throws IOException {
