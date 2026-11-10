@@ -30,17 +30,20 @@ import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants
 import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.URI_RECORD_MARKER;
 
 import java.io.DataInputStream;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -77,7 +80,8 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 	private static final Logger logger = LoggerFactory.getLogger(BinaryQueryResultParser.class);
 
-	private String[] namespaceArray = new String[32];
+	private final String[] namespaceArray = new String[32];
+	private Map<Integer, String> sparseNamespaces;
 
 	private static final int INVALID_CONTENT_LIMIT = 8 * 1024;
 
@@ -117,106 +121,129 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 			throw new IllegalArgumentException("Input stream can not be 'null'");
 		}
 
-		this.in = new DataInputStream(in);
+		resetDocumentState();
+		try {
+			this.in = new DataInputStream(in);
 
-		// Check magic number
-		byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
-		if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
-			throw new QueryResultParseException("File does not contain a binary RDF table result");
-		}
-
-		// Check format version (parser is backward-compatible with version 1 and
-		// version 2)
-		formatVersion = this.in.readInt();
-		if (formatVersion > FORMAT_VERSION && formatVersion < 1) {
-			throw new QueryResultParseException("Incompatible format version: " + formatVersion);
-		}
-
-		if (formatVersion == 2) {
-			// read format version 2 FLAG byte (ordered and distinct flags) and
-			// ignore them
-			this.in.readByte();
-		}
-
-		// Read column headers
-		int columnCount = this.in.readInt();
-		if (columnCount < 0) {
-			throw new QueryResultParseException("Illegal column count specified: " + columnCount);
-		}
-
-		List<String> columnHeaders = new ArrayList<>(columnCount);
-		for (int i = 0; i < columnCount; i++) {
-			columnHeaders.add(readString());
-		}
-		columnHeaders = Collections.unmodifiableList(columnHeaders);
-
-		if (handler != null) {
-			handler.startQueryResult(columnHeaders);
-		}
-
-		// Read value tuples
-		List<Value> currentTuple = new ArrayList<>(columnCount);
-		List<Value> previousTuple = Collections.nCopies(columnCount, (Value) null);
-
-		int recordTypeMarker = this.in.readByte();
-
-		while (recordTypeMarker != TABLE_END_RECORD_MARKER) {
-			if (recordTypeMarker == ERROR_RECORD_MARKER) {
-				processError();
-			} else if (recordTypeMarker == NAMESPACE_RECORD_MARKER) {
-				processNamespace();
-			} else if (recordTypeMarker == EMPTY_ROW_RECORD_MARKER) {
-				if (handler != null) {
-					handler.handleSolution(EmptyBindingSet.getInstance());
-				}
-			} else {
-				Value value = null;
-				switch (recordTypeMarker) {
-				case NULL_RECORD_MARKER:
-					break; // do nothing
-				case REPEAT_RECORD_MARKER:
-					value = previousTuple.get(currentTuple.size());
-					break;
-				case QNAME_RECORD_MARKER:
-					value = readQName();
-					break;
-				case URI_RECORD_MARKER:
-					value = readURI();
-					break;
-				case BNODE_RECORD_MARKER:
-					value = readBnode();
-					break;
-				case PLAIN_LITERAL_RECORD_MARKER:
-				case LANG_LITERAL_RECORD_MARKER:
-				case DATATYPE_LITERAL_RECORD_MARKER:
-					value = readLiteral(recordTypeMarker);
-					break;
-				case TRIPLE_RECORD_MARKER:
-					value = readTripleTerm();
-					break;
-				default:
-					logger.error(extractInvalidContentAsString(recordTypeMarker));
-					throw new QueryResultParseException("Could not parse the query result.");
-				}
-
-				currentTuple.add(value);
-
-				if (currentTuple.size() == columnCount) {
-					previousTuple = Collections.unmodifiableList(currentTuple);
-					currentTuple = new ArrayList<>(columnCount);
-
-					if (handler != null) {
-						handler.handleSolution(new ListBindingSet(columnHeaders, previousTuple));
-					}
-				}
+			// Check magic number
+			byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
+			if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
+				throw new QueryResultParseException("File does not contain a binary RDF table result");
 			}
 
-			recordTypeMarker = this.in.readByte();
-		}
+			// Check format version (parser is backward-compatible with version 1 and
+			// version 2)
+			formatVersion = this.in.readInt();
+			if (formatVersion < 1 || formatVersion > FORMAT_VERSION) {
+				throw new QueryResultParseException("Incompatible format version: " + formatVersion);
+			}
 
-		if (handler != null) {
-			handler.endQueryResult();
+			if (formatVersion == 2) {
+				// read format version 2 FLAG byte (ordered and distinct flags) and
+				// ignore them
+				this.in.readByte();
+			}
+
+			// Read column headers
+			int columnCount = this.in.readInt();
+			if (columnCount < 0) {
+				throw new QueryResultParseException("Illegal column count specified: " + columnCount);
+			}
+
+			List<String> columnHeaders = new ArrayList<>();
+			for (int i = 0; i < columnCount; i++) {
+				columnHeaders.add(readString());
+			}
+			columnHeaders = Collections.unmodifiableList(columnHeaders);
+
+			if (handler != null) {
+				handler.startQueryResult(columnHeaders);
+			}
+
+			// Read value tuples
+			List<Value> currentTuple = new ArrayList<>();
+			List<Value> previousTuple = Collections.nCopies(columnCount, (Value) null);
+
+			int recordTypeMarker = this.in.readByte();
+
+			while (recordTypeMarker != TABLE_END_RECORD_MARKER) {
+				if (recordTypeMarker == ERROR_RECORD_MARKER) {
+					processError();
+				} else if (recordTypeMarker == NAMESPACE_RECORD_MARKER) {
+					processNamespace();
+				} else if (recordTypeMarker == EMPTY_ROW_RECORD_MARKER) {
+					if (!currentTuple.isEmpty()) {
+						throw new QueryResultParseException("Incomplete row before empty-row marker");
+					}
+					if (handler != null) {
+						handler.handleSolution(EmptyBindingSet.getInstance());
+					}
+				} else {
+					if (columnCount == 0) {
+						throw new QueryResultParseException("Value record in a result with zero columns");
+					}
+					Value value = null;
+					switch (recordTypeMarker) {
+					case NULL_RECORD_MARKER:
+						break; // do nothing
+					case REPEAT_RECORD_MARKER:
+						value = previousTuple.get(currentTuple.size());
+						break;
+					case QNAME_RECORD_MARKER:
+						value = readQName();
+						break;
+					case URI_RECORD_MARKER:
+						value = readURI();
+						break;
+					case BNODE_RECORD_MARKER:
+						value = readBnode();
+						break;
+					case PLAIN_LITERAL_RECORD_MARKER:
+					case LANG_LITERAL_RECORD_MARKER:
+					case DATATYPE_LITERAL_RECORD_MARKER:
+						value = readLiteral(recordTypeMarker);
+						break;
+					case TRIPLE_RECORD_MARKER:
+						value = readTripleTerm();
+						break;
+					default:
+						logger.error(extractInvalidContentAsString(recordTypeMarker));
+						throw new QueryResultParseException("Could not parse the query result.");
+					}
+
+					currentTuple.add(value);
+
+					if (currentTuple.size() == columnCount) {
+						previousTuple = Collections.unmodifiableList(currentTuple);
+						currentTuple = new ArrayList<>();
+
+						if (handler != null) {
+							handler.handleSolution(new ListBindingSet(columnHeaders, previousTuple));
+						}
+					}
+				}
+
+				recordTypeMarker = this.in.readByte();
+			}
+
+			if (!currentTuple.isEmpty()) {
+				throw new QueryResultParseException("Incomplete row at end of binary query result");
+			}
+
+			if (handler != null) {
+				handler.endQueryResult();
+			}
+		} finally {
+			resetDocumentState();
 		}
+	}
+
+	private void resetDocumentState() {
+		in = null;
+		formatVersion = 0;
+		Arrays.fill(namespaceArray, null);
+		sparseNamespaces = null;
+		charsetDecoder.reset();
 	}
 
 	private void processError() throws IOException, QueryResultParseException {
@@ -239,23 +266,34 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 	private void processNamespace() throws IOException {
 		int namespaceID = in.readInt();
+		if (namespaceID < 0) {
+			throw new QueryResultParseException("Invalid namespace ID: " + namespaceID);
+		}
 		String namespace = readString();
 
-		if (namespaceID >= namespaceArray.length) {
-			int newSize = Math.max(namespaceID, namespaceArray.length * 2);
-			String[] newArray = new String[newSize];
-			System.arraycopy(namespaceArray, 0, newArray, 0, namespaceArray.length);
-			namespaceArray = newArray;
+		if (namespaceID < namespaceArray.length) {
+			namespaceArray[namespaceID] = namespace;
+		} else {
+			if (sparseNamespaces == null) {
+				sparseNamespaces = new HashMap<>();
+			}
+			sparseNamespaces.put(namespaceID, namespace);
 		}
-
-		namespaceArray[namespaceID] = namespace;
 	}
 
 	private IRI readQName() throws IOException {
 		int nsID = in.readInt();
+		if (nsID < 0) {
+			throw new QueryResultParseException("Invalid namespace ID: " + nsID);
+		}
+		String namespace = nsID < namespaceArray.length ? namespaceArray[nsID]
+				: sparseNamespaces == null ? null : sparseNamespaces.get(nsID);
+		if (namespace == null) {
+			throw new QueryResultParseException("Undeclared namespace ID: " + nsID);
+		}
 		String localName = readString();
 
-		return valueFactory.createIRI(namespaceArray[nsID], localName);
+		return valueFactory.createIRI(namespace, localName);
 	}
 
 	private IRI readURI() throws IOException {
@@ -354,11 +392,20 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 	 */
 	private String readStringV2() throws IOException {
 		int stringLength = in.readInt();
-		byte[] encodedString = IOUtil.readBytes(in, stringLength);
-
-		if (encodedString.length != stringLength) {
-			throw new EOFException("Attempted to read " + stringLength + " bytes but no more than "
-					+ encodedString.length + " were available");
+		if (stringLength < 0) {
+			throw new IOException("Invalid binary query-result string length: " + stringLength);
+		}
+		byte[] encodedString = new byte[Math.min(stringLength, 1024)];
+		int bytesRead = 0;
+		while (bytesRead < stringLength) {
+			if (bytesRead == encodedString.length) {
+				int doubled = encodedString.length <= Integer.MAX_VALUE / 2 ? encodedString.length * 2
+						: stringLength;
+				encodedString = Arrays.copyOf(encodedString, Math.min(stringLength, doubled));
+			}
+			int chunk = Math.min(stringLength - bytesRead, encodedString.length - bytesRead);
+			in.readFully(encodedString, bytesRead, chunk);
+			bytesRead += chunk;
 		}
 
 		ByteBuffer byteBuf = ByteBuffer.wrap(encodedString);
@@ -368,28 +415,48 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 	}
 
 	private TripleTerm readTripleTerm() throws IOException {
-		Value subject = readDirectValue();
-		if (!(subject instanceof Resource)) {
-			throw new IOException("Unexpected value type: " + subject);
+		Deque<TripleTermFrame> pending = new ArrayDeque<>();
+		pending.push(new TripleTermFrame());
+		while (true) {
+			int marker = in.readByte();
+			while (marker == NAMESPACE_RECORD_MARKER) {
+				processNamespace();
+				marker = in.readByte();
+			}
+			if (marker == TRIPLE_RECORD_MARKER) {
+				pending.push(new TripleTermFrame());
+				continue;
+			}
+
+			Value value = readDirectValue(marker);
+			while (true) {
+				TripleTermFrame frame = pending.peek();
+				if (frame.subject == null) {
+					if (!(value instanceof Resource)) {
+						throw new IOException("Unexpected value type: " + value);
+					}
+					frame.subject = (Resource) value;
+					break;
+				}
+				if (frame.predicate == null) {
+					if (!(value instanceof IRI)) {
+						throw new IOException("Unexpected value type: " + value);
+					}
+					frame.predicate = (IRI) value;
+					break;
+				}
+
+				pending.pop();
+				value = valueFactory.createTripleTerm(frame.subject, frame.predicate, value);
+				if (pending.isEmpty()) {
+					return (TripleTerm) value;
+				}
+			}
 		}
-
-		Value predicate = readDirectValue();
-		if (!(predicate instanceof IRI)) {
-			throw new IOException("Unexpected value type: " + predicate);
-		}
-
-		Value object = readDirectValue();
-
-		return valueFactory.createTripleTerm((Resource) subject, (IRI) predicate, object);
 	}
 
-	private Value readDirectValue() throws IOException {
-		int recordTypeMarker = this.in.readByte();
-
+	private Value readDirectValue(int recordTypeMarker) throws IOException {
 		switch (recordTypeMarker) {
-		case NAMESPACE_RECORD_MARKER:
-			processNamespace();
-			return readDirectValue();
 		case QNAME_RECORD_MARKER:
 			return readQName();
 		case URI_RECORD_MARKER:
@@ -400,10 +467,13 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		case LANG_LITERAL_RECORD_MARKER:
 		case DATATYPE_LITERAL_RECORD_MARKER:
 			return readLiteral(recordTypeMarker);
-		case TRIPLE_RECORD_MARKER:
-			return readTripleTerm();
 		default:
 			throw new IOException("Unexpected record type: " + recordTypeMarker);
 		}
+	}
+
+	private static final class TripleTermFrame {
+		private Resource subject;
+		private IRI predicate;
 	}
 }
