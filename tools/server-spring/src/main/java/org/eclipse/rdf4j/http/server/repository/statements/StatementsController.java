@@ -30,6 +30,10 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.USING_NAMED_GRAPH_PARAM_N
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -41,7 +45,6 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
 import org.eclipse.rdf4j.http.protocol.error.ErrorType;
 import org.eclipse.rdf4j.http.protocol.transaction.TransactionReader;
-import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
@@ -86,6 +89,11 @@ import jakarta.servlet.http.HttpServletResponse;
  * @author Arjohn Kampman
  */
 public class StatementsController extends AbstractController {
+	static final String TRANSACTION_XML_MAX_BYTES_PROPERTY = "org.eclipse.rdf4j.server.transaction.maxXmlBytes";
+
+	static final String TRANSACTION_XML_SPOOL_DIRECTORY_PROPERTY = "org.eclipse.rdf4j.server.transaction.spoolDirectory";
+
+	private static final long DEFAULT_TRANSACTION_XML_MAX_BYTES = 256L * 1024 * 1024;
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -332,19 +340,33 @@ public class StatementsController extends AbstractController {
 	private ModelAndView getTransactionResultResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException, HTTPException {
 		InputStream in = request.getInputStream();
-		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+		try (TransactionSpool spool = TransactionSpool.copy(in, transactionXmlMaxBytes(),
+				transactionSpoolDirectory())) {
 			logger.debug("Processing transaction...");
 
 			TransactionReader reader = new TransactionReader();
-			Iterable<? extends TransactionOperation> txn = reader.parse(in);
-
-			repositoryCon.begin();
-
-			for (TransactionOperation op : txn) {
-				op.execute(repositoryCon);
+			try (InputStream validationInput = spool.open()) {
+				reader.parse(validationInput, op -> {
+				});
 			}
 
-			repositoryCon.commit();
+			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+				repositoryCon.begin();
+				try {
+					try (InputStream replayInput = spool.open()) {
+						reader.parse(replayInput, op -> op.execute(repositoryCon));
+					}
+					spool.close();
+					repositoryCon.commit();
+				} catch (SAXException | IOException | RuntimeException e) {
+					try {
+						repositoryCon.rollback();
+					} catch (RepositoryException rollbackFailure) {
+						e.addSuppressed(rollbackFailure);
+					}
+					throw e;
+				}
+			}
 			logger.debug("Transaction processed ");
 
 			return new ModelAndView(EmptySuccessView.getInstance());
@@ -364,6 +386,77 @@ public class StatementsController extends AbstractController {
 			} else {
 				throw new ServerHTTPException("Repository update error: " + e.getMessage(), e);
 			}
+		}
+	}
+
+	private static long transactionXmlMaxBytes() throws ServerHTTPException {
+		String configured = System.getProperty(TRANSACTION_XML_MAX_BYTES_PROPERTY);
+		if (configured == null) {
+			return DEFAULT_TRANSACTION_XML_MAX_BYTES;
+		}
+		try {
+			long maxBytes = Long.parseLong(configured);
+			if (maxBytes > 0) {
+				return maxBytes;
+			}
+		} catch (NumberFormatException e) {
+			throw new ServerHTTPException("Invalid positive byte limit for " + TRANSACTION_XML_MAX_BYTES_PROPERTY, e);
+		}
+		throw new ServerHTTPException("Invalid positive byte limit for " + TRANSACTION_XML_MAX_BYTES_PROPERTY);
+	}
+
+	private static Path transactionSpoolDirectory() throws ServerHTTPException {
+		String configured = System.getProperty(TRANSACTION_XML_SPOOL_DIRECTORY_PROPERTY,
+				System.getProperty("java.io.tmpdir"));
+		try {
+			return Path.of(configured);
+		} catch (InvalidPathException e) {
+			throw new ServerHTTPException("Invalid transaction spool directory: " + configured, e);
+		}
+	}
+
+	private static final class TransactionSpool implements AutoCloseable {
+		private final Path path;
+
+		private TransactionSpool(Path path) {
+			this.path = path;
+		}
+
+		private static TransactionSpool copy(InputStream input, long maxBytes, Path directory)
+				throws IOException, ClientHTTPException {
+			Path path = Files.createTempFile(directory, "rdf4j-transaction-", ".xml");
+			try {
+				try (OutputStream output = Files.newOutputStream(path)) {
+					byte[] buffer = new byte[8192];
+					long total = 0;
+					int count;
+					while ((count = input.read(buffer)) != -1) {
+						if (count > maxBytes - total) {
+							throw new ClientHTTPException(SC_REQUEST_ENTITY_TOO_LARGE,
+									"Transaction XML exceeds " + maxBytes + " bytes");
+						}
+						output.write(buffer, 0, count);
+						total += count;
+					}
+				}
+				return new TransactionSpool(path);
+			} catch (IOException | ClientHTTPException | RuntimeException e) {
+				try {
+					Files.deleteIfExists(path);
+				} catch (IOException cleanupFailure) {
+					e.addSuppressed(cleanupFailure);
+				}
+				throw e;
+			}
+		}
+
+		private InputStream open() throws IOException {
+			return Files.newInputStream(path);
+		}
+
+		@Override
+		public void close() throws IOException {
+			Files.deleteIfExists(path);
 		}
 	}
 

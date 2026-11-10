@@ -18,15 +18,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
+import org.eclipse.rdf4j.http.protocol.transaction.operations.RemoveNamespaceOperation;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.SPARQLUpdateOperation;
+import org.eclipse.rdf4j.http.protocol.transaction.operations.SetNamespaceOperation;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -60,6 +65,47 @@ public class TransactionReaderTest {
 	private static final IRI context1 = vf.createIRI("http://example.org/context1");
 
 	private static final IRI context2 = vf.createIRI("http://example.org/context2");
+
+	@Test
+	public void incompleteNamespaceElementDoesNotReachStreamingConsumer() {
+		String xml = "<transaction><setNamespace prefix=\"ex\" name=\"urn:example\"><unfinished>";
+		List<TransactionOperation> delivered = new ArrayList<>();
+
+		assertThrows(SAXException.class, () -> new TransactionReader()
+				.parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)), delivered::add));
+		assertTrue(delivered.isEmpty(), "an operation must not be delivered before its closing tag");
+	}
+
+	@Test
+	public void streamedOperationsReachConsumerBeforeLaterInputIsRead() throws Exception {
+		byte[] firstPart = ("<transaction><setNamespace prefix=\"ex\" name=\"urn:example\"/>")
+				.getBytes(StandardCharsets.UTF_8);
+		byte[] laterPart = ("<removeNamespace prefix=\"ex\"/></transaction>")
+				.getBytes(StandardCharsets.UTF_8);
+		AtomicBoolean firstDelivered = new AtomicBoolean();
+		InputStream laterInput = new ByteArrayInputStream(laterPart) {
+			@Override
+			public synchronized int read(byte[] bytes, int offset, int length) {
+				assertTrue(firstDelivered.get(), "the first operation must be delivered before the next input chunk");
+				return super.read(bytes, offset, length);
+			}
+
+			@Override
+			public synchronized int read() {
+				assertTrue(firstDelivered.get(), "the first operation must be delivered before the next input byte");
+				return super.read();
+			}
+		};
+		List<TransactionOperation> delivered = new ArrayList<>();
+
+		new TransactionReader().parse(new SequenceInputStream(new ByteArrayInputStream(firstPart), laterInput), op -> {
+			delivered.add(op);
+			firstDelivered.set(true);
+		});
+
+		assertEquals(List.of(new SetNamespaceOperation("ex", "urn:example"), new RemoveNamespaceOperation("ex")),
+				delivered);
+	}
 
 	@Test
 	public void testRoundtrip() throws Exception {
