@@ -31,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Objects;
@@ -1273,7 +1274,9 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 		}
 		// Persist the expected coverage before the first mint or before an asynchronous task can be scheduled.
 		// A failed/crashed bootstrap must never leave a shorter contiguous prefix looking recovery-complete.
-		markWalBootstrapIncomplete(maxId);
+		if (pendingMaxId != maxId) {
+			markWalBootstrapIncomplete(maxId);
+		}
 		if (wal.config().syncBootstrapOnOpen()) {
 			// Perform bootstrap synchronously before allowing any further operations
 			rebuildWalFromExistingValues(maxId);
@@ -1425,15 +1428,27 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 	}
 
 	private void markWalBootstrapIncomplete(int maxId) throws IOException {
-		try (FileChannel marker = FileChannel.open(walBootstrapMarker(), StandardOpenOption.CREATE,
-				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
-			ByteBuffer target = ByteBuffer.allocate(Integer.BYTES).putInt(maxId).flip();
-			while (target.hasRemaining()) {
-				marker.write(target);
+		Path marker = walBootstrapMarker();
+		Path staged = Files.createTempFile(marker.getParent(), "bootstrap-pending-", ".tmp");
+		try {
+			try (FileChannel channel = FileChannel.open(staged, StandardOpenOption.WRITE)) {
+				ByteBuffer target = ByteBuffer.allocate(Integer.BYTES).putInt(maxId).flip();
+				while (target.hasRemaining()) {
+					channel.write(target);
+				}
+				channel.force(true);
 			}
-			marker.force(true);
+			// Keep the previous durable target intact until its complete replacement is ready.
+			Files.move(staged, marker, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+			wal.forceDirectoryMetadata();
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				Files.deleteIfExists(staged);
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		wal.forceDirectoryMetadata();
 	}
 
 	private boolean walNeedsBootstrap(int maxId) {

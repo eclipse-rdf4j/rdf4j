@@ -14,11 +14,13 @@ package org.eclipse.rdf4j.sail.nativerdf.wal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
@@ -65,6 +67,46 @@ class ValueStoreWalBootstrapFailureSafetyTest {
 				}
 			}
 		}
+	}
+
+	@Test
+	void retryDoesNotRewriteAnUnchangedBootstrapTarget() throws Exception {
+		Path values = createValuesWithUnreadableTail();
+		attemptFailedBootstrap(values);
+		Path marker = config().walDirectory().resolve(ValueStoreWAL.BOOTSTRAP_PENDING_FILE_NAME);
+		assertThat(marker).exists();
+
+		// A previous bootstrap may have durably written this target. Retrying must not open it with TRUNCATE_EXISTING.
+		Files.setLastModifiedTime(marker, FileTime.fromMillis(946684800000L));
+		FileTime beforeRetry = Files.getLastModifiedTime(marker);
+		attemptFailedBootstrap(values);
+
+		assertThat(marker).exists();
+		assertThat(Files.getLastModifiedTime(marker)).isEqualTo(beforeRetry);
+	}
+
+	@Test
+	void retryGrowsBootstrapTargetBeforeAppendingNewHistory() throws Exception {
+		Path values = createValuesWithUnreadableTail();
+		attemptFailedBootstrap(values);
+		Path marker = config().walDirectory().resolve(ValueStoreWAL.BOOTSTRAP_PENDING_FILE_NAME);
+		assertThat(readBootstrapTarget(marker)).isEqualTo(2);
+
+		setTailLength(values, 1 + "tail".length());
+		try (ValueStore store = new ValueStore(values.toFile())) {
+			assertThat(store.storeValue(SimpleValueFactory.getInstance().createBNode("new"))).isEqualTo(3);
+			store.sync();
+		}
+		setValueLength(values, 3, -1);
+		attemptFailedBootstrap(values);
+		assertThat(readBootstrapTarget(marker)).isEqualTo(3);
+
+		setValueLength(values, 3, 1 + "new".length());
+		try (ValueStoreWAL wal = ValueStoreWAL.open(config());
+				ValueStore store = openStore(values, wal)) {
+			assertThat(store.getValue(3).stringValue()).isEqualTo("new");
+		}
+		assertThat(marker).doesNotExist();
 	}
 
 	@Test
@@ -163,11 +205,23 @@ class ValueStoreWalBootstrapFailureSafetyTest {
 	}
 
 	private static void setTailLength(Path values, int length) throws IOException {
+		setValueLength(values, 2, length);
+	}
+
+	private static void setValueLength(Path values, int id, int length) throws IOException {
 		try (RandomAccessFile ids = new RandomAccessFile(values.resolve("values.id").toFile(), "r");
 				RandomAccessFile data = new RandomAccessFile(values.resolve("values.dat").toFile(), "rw")) {
-			ids.seek(2L * Long.BYTES);
+			ids.seek((long) id * Long.BYTES);
 			data.seek(ids.readLong());
 			data.writeInt(length);
+		}
+	}
+
+	private static int readBootstrapTarget(Path marker) throws IOException {
+		try (DataInputStream input = new DataInputStream(Files.newInputStream(marker))) {
+			int target = input.readInt();
+			assertThat(input.read()).isEqualTo(-1);
+			return target;
 		}
 	}
 

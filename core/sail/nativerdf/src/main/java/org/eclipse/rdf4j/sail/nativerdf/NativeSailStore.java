@@ -20,11 +20,13 @@ import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
@@ -94,6 +96,9 @@ class NativeSailStore implements SailStore {
 	 * Boolean indicating whether any {@link NativeSailSink} has started a transaction on the {@link TripleStore}.
 	 */
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
+
+	/** Original values for namespace prefixes modified in the active store transaction. */
+	private final Map<String, Optional<String>> namespaceUndo = new LinkedHashMap<>();
 
 	/**
 	 * Creates a new {@link NativeSailStore} with the default cache sizes.
@@ -612,39 +617,91 @@ class NativeSailStore implements SailStore {
 		public synchronized void flush() throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
+				boolean readyToCommit = false;
+				boolean contextSyncAttempted = false;
 				try {
 					if (walHighWaterMark > ValueStoreWAL.NO_LSN) {
 						valueStore.awaitWalDurable(walHighWaterMark);
 						walHighWaterMark = ValueStoreWAL.NO_LSN;
 					}
 					valueStore.sync();
-				} finally {
-					try {
-						namespaceStore.sync();
-					} finally {
-						try {
-							contextStore.sync();
-						} finally {
-							if (storeTxnStarted.get()) {
-								tripleStore.commit();
-								// do not set flag to false until _after_ commit is succesfully completed.
-								storeTxnStarted.set(false);
-							}
-						}
+					namespaceStore.sync();
+					contextSyncAttempted = true;
+					contextStore.sync();
+					readyToCommit = true;
+					if (storeTxnStarted.get()) {
+						tripleStore.commit();
+						// do not set flag to false until _after_ commit is successfully completed.
+						storeTxnStarted.set(false);
+						namespaceUndo.clear();
 					}
+				} catch (IOException e) {
+					if (!readyToCommit) {
+						rollbackStoreTransaction(e, contextSyncAttempted);
+					}
+					logger.error("Encountered an unexpected problem while trying to commit", e);
+					throw new SailException(e);
+				} catch (RuntimeException e) {
+					if (!readyToCommit) {
+						rollbackStoreTransaction(e, contextSyncAttempted);
+					}
+					logger.error("Encountered an unexpected problem while trying to commit", e);
+					if (e instanceof SailException) {
+						throw e;
+					}
+					// Ensure upstream handles this as a SailException so branch flush clears pending changes
+					throw new SailException(e);
 				}
-			} catch (IOException e) {
-				logger.error("Encountered an unexpected problem while trying to commit", e);
-				throw new SailException(e);
-			} catch (RuntimeException e) {
-				logger.error("Encountered an unexpected problem while trying to commit", e);
-				if (e instanceof SailException) {
-					throw e;
-				}
-				// Ensure upstream handles this as a SailException so branch flush clears pending changes
-				throw new SailException(e);
 			} finally {
 				sinkStoreAccessLock.unlock();
+			}
+		}
+
+		private void rollbackStoreTransaction(Throwable flushFailure, boolean contextSyncAttempted) {
+			if (!storeTxnStarted.get()) {
+				return;
+			}
+
+			try {
+				tripleStore.rollback();
+			} catch (IOException | RuntimeException rollbackFailure) {
+				flushFailure.addSuppressed(rollbackFailure);
+				logger.error("Could not roll back the triple store after a failed flush", rollbackFailure);
+				return;
+			}
+
+			try {
+				for (Entry<String, Optional<String>> entry : namespaceUndo.entrySet()) {
+					if (entry.getValue().isPresent()) {
+						namespaceStore.setNamespace(entry.getKey(), entry.getValue().get());
+					} else {
+						namespaceStore.removeNamespace(entry.getKey());
+					}
+				}
+				namespaceStore.sync();
+			} catch (IOException | RuntimeException restoreFailure) {
+				flushFailure.addSuppressed(restoreFailure);
+				logger.error("Could not restore namespace state after a failed flush", restoreFailure);
+			}
+
+			try {
+				contextStore.restoreAfterRollback(contextSyncAttempted);
+			} catch (IOException | RuntimeException restoreFailure) {
+				flushFailure.addSuppressed(restoreFailure);
+				logger.error("Could not rebuild context state after a failed flush", restoreFailure);
+			}
+
+			storeTxnStarted.set(false);
+			namespaceUndo.clear();
+		}
+
+		private void rememberNamespace(String prefix) {
+			namespaceUndo.putIfAbsent(prefix, Optional.ofNullable(namespaceStore.getNamespace(prefix)));
+		}
+
+		private void rememberNamespaces() {
+			for (Namespace namespace : namespaceStore) {
+				rememberNamespace(namespace.getPrefix());
 			}
 		}
 
@@ -653,6 +710,7 @@ class NativeSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
+				rememberNamespace(prefix);
 				namespaceStore.setNamespace(prefix, name);
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -664,6 +722,7 @@ class NativeSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
+				rememberNamespace(prefix);
 				namespaceStore.removeNamespace(prefix);
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -675,6 +734,7 @@ class NativeSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
+				rememberNamespaces();
 				namespaceStore.clear();
 			} finally {
 				sinkStoreAccessLock.unlock();
