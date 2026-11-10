@@ -32,6 +32,7 @@ public final class WorkbenchPageProtocol {
 	public static final String REPOSITORY_ID_ATTRIBUTE = "org.eclipse.rdf4j.workbench.repositoryId";
 
 	public static final String SERVER_IDENTITY_ATTRIBUTE = "org.eclipse.rdf4j.workbench.serverIdentity";
+	public static final String SERVER_DISPLAY_ATTRIBUTE = "org.eclipse.rdf4j.workbench.serverDisplay";
 	public static final String CLIENT_SCOPE_ATTRIBUTE = "org.eclipse.rdf4j.workbench.clientScope";
 	public static final String SERVER_USER_ATTRIBUTE = "org.eclipse.rdf4j.workbench.serverUser";
 	public static final String SERVER_USER_METADATA = "server-user";
