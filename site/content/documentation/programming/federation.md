@@ -132,6 +132,8 @@ The following snippet depicts an example repository configuration that defines a
 
 In order to deploy a FedX configuration the repository configuration template needs to be placed in a `config.ttl` file in the RDF4J application dir. The full location is `[Rdf4j_DATA]/server/repositories/[REPOSITORY_ID]/config.ttl`, see [here](/documentation/tools/server-workbench/#repository-configuration) for further details.
 
+For a federation created by RDF4J Server or another repository manager, member configuration files, prefix declaration files, and NativeStore member directories must resolve inside that federation repository's data directory. Member configuration and prefix declaration paths are relative to the data directory; relative NativeStore locations are under its `repositories` subdirectory. Absolute paths are accepted only when they resolve inside the same data directory. Move files used by an existing managed federation into that directory before upgrading, and update its configuration paths. Standalone Java applications using `FedXFactory` can continue to configure external files and NativeStore directories.
+
 ## FedX in Java Applications
 
 FedX is implemented as a RDF4J Repository. To initialize FedX and the underlying federation SAIL, we provide the FedXFactory class, which provides various methods for intuitive configuration. In the following, we present various Java code snippets that illustrate how FedX can be used in an application.
