@@ -2877,29 +2877,69 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 				}
 
-				while (changes.size() > 1) {
-					Changeset pop = changes.removeLast();
-					if (pop.isFrozen() || changes.peekLast().isFrozen() || changes.peekLast().isRetained()
-							|| pop.sharesModelWith(changes.peekLast())) {
-						changes.addLast(pop);
-						return;
-					}
-
-					try {
-						prepare(pop, changes.getLast());
-						flush(pop, changes.getLast());
-					} catch (RuntimeException | Error failure) {
-						changes.addLast(pop);
-						throw failure;
-					}
-					StreamingWritePreflight.removed(pop);
-					pop.close();
+				// A merged block always ends up in its oldest member, so fold the mergeable suffix oldest-first: each
+				// generation is copied once. Merging newest-into-predecessor re-copies the growing tail at every step,
+				// which is quadratic when an open SERIALIZABLE observer has pinned one generation per write.
+				while (foldMergeableSuffix()) {
+					// Closing folded generations can release history leases on older ones, so scan again.
 				}
 
 			} finally {
 				semaphore.unlock();
 			}
 
+		}
+	}
+
+	/**
+	 * Applies, oldest first, every generation of the longest mergeable suffix of {@link #changes} onto the suffix's
+	 * oldest member. A newer generation may be merged into its predecessor unless either is frozen, the predecessor is
+	 * retained by a reader or history holder, or both share one model. Caller holds the branch semaphore.
+	 *
+	 * @return whether at least one generation was merged
+	 */
+	private boolean foldMergeableSuffix() {
+		Changeset[] chain = changes.toArray(new Changeset[0]);
+		int start = chain.length - 1;
+		while (start > 0 && canMergeInto(chain[start - 1], chain[start])) {
+			start--;
+		}
+		if (start >= chain.length - 1) {
+			return false;
+		}
+		for (int i = chain.length - 1; i > start; i--) {
+			changes.removeLast();
+		}
+		Changeset target = chain[start];
+		boolean merged = false;
+		for (int i = start + 1; i < chain.length; i++) {
+			Changeset next = chain[i];
+			if (next.sharesModelWith(target)) {
+				restore(chain, i);
+				return merged;
+			}
+			try {
+				prepare(next, target);
+				flush(next, target);
+			} catch (RuntimeException | Error failure) {
+				restore(chain, i);
+				throw failure;
+			}
+			StreamingWritePreflight.removed(next);
+			next.close();
+			merged = true;
+		}
+		return merged;
+	}
+
+	private static boolean canMergeInto(Changeset older, Changeset newer) {
+		return !newer.isFrozen() && !older.isFrozen() && !older.isRetained() && !newer.sharesModelWith(older);
+	}
+
+	/** Puts the not yet merged generations back in their original order. */
+	private void restore(Changeset[] chain, int from) {
+		for (int i = from; i < chain.length; i++) {
+			changes.addLast(chain[i]);
 		}
 	}
 

@@ -142,8 +142,4 @@ public final class KernelExecutionTestAccess {
 	public static void resetMetrics() {
 		LmdbNativeKernelExecution.resetMetrics();
 	}
-
-	public static void resetCostCalibration() {
-		LmdbNativeCostCalibration.reset();
-	}
 }

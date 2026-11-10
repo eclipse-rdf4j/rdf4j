@@ -78,7 +78,8 @@ async function exploreDisplayWorks(page) {
 	await openDisclosure(page, page.locator('#explore-result-options-toggle'));
 	const datatypes = page.locator('#explore-show-datatypes');
 	await expect(datatypes).toBeVisible();
-	for (const control of [datatypes, page.locator('#limit_explore')]) {
+	for (const control of [datatypes, page.locator('#explore-result-layout'), page.locator('#explore-wrap-values')]) {
+		await expect(control).toBeVisible();
 		const top = await topmostAtCentre(control);
 		expect(top.ok, `nothing covers ${await control.getAttribute('id')}: ${top.hit}`).toBe(true);
 	}

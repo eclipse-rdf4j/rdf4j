@@ -282,7 +282,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 	@Test
 	void declineParserReadsOnlyTheNamedMetricAcrossThePlanTree() {
 		GenericPlanNode root = new GenericPlanNode("root");
-		root.setStringMetricActual("nativeAdaptiveCostDecision",
+		root.setStringMetricActual("nativeDecisionOutcome",
 				"irKernel:0:kind=PROBE_COMPLETED;source=STRATEGY_FAMILY");
 		GenericPlanNode child = new GenericPlanNode("child");
 		child.setStringMetricActual("nativeStrategyDeclines",

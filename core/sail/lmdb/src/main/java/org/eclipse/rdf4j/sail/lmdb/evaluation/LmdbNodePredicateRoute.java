@@ -321,7 +321,7 @@ final class LmdbNodePredicateRoute implements AutoCloseable {
 				&& globalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()) {
 			int workers = Math.min(globalPredicateCount, LmdbNativeParallelPipelines.configuredThreads());
 			if (workers > 0) {
-				competing = Math.min(competing, LmdbNativeStrategyProposal.parallelCost(globalWork, workers));
+				competing = Math.min(competing, LmdbNativeWork.parallelCost(globalWork, workers));
 			}
 		}
 		return competing;

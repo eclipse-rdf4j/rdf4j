@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,8 +33,56 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbGcTestMaintenanceTest {
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 4096 })
+	@Timeout(30)
+	void explicitReclamationFitsAvailableCapacityAndRespectsReaders(int maximum, @TempDir Path directory)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setValueDBSize(32L * 1024 * 1024)
+				.setAutoGrow(false)
+				.setAsyncValueCleanup(false);
+		LmdbStore store = new LmdbStore(directory.toFile(), config);
+		try {
+			store.init();
+			ValueStore values = LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			try (SailClosable publication = store.getBackingStore().getExplicitSailSource().beginPublication()) {
+				values.startTransaction(true);
+				Set<Long> ids = new HashSet<>();
+				for (int i = 0; i < 1024; i++) {
+					ids.add(values.storeValue(SimpleValueFactory.getInstance().createBNode("capacity-" + i)));
+				}
+				values.commit();
+				values.startTransaction(true);
+				values.gcIds(ids, new HashSet<>());
+				values.commit();
+			}
+			long before = values.getLmdbStats().get("unused_ids").entries();
+			assertEquals(1024, before);
+			assertEquals(0, values.getLmdbStats().get("free_ids").entries());
+			if (maximum > 1) {
+				assertTrue(values.estimatePersistedUnusedBatchWriteBytes(maximum) > values.mapSizeBytes(),
+						"the requested batch cannot fit the fixed map even before occupied pages");
+			}
+			try (ValueResolutionScope scope = values.openResultValueResolutionScope()) {
+				assertEquals(0, LmdbGcTestMaintenance.reclaimUnusedValues(store, maximum));
+				assertEquals(before, values.getLmdbStats().get("unused_ids").entries(),
+						"an owning reader must keep the pending IDs intact");
+			}
+			int visited = LmdbGcTestMaintenance.reclaimUnusedValues(store, maximum);
+			assertTrue(visited > 0 && visited <= maximum,
+					"a capacity-sized batch must make bounded progress once the reader closes");
+			assertTrue(values.getLmdbStats().get("free_ids").entries() > 0);
+			assertTrue(values.getLmdbStats().get("unused_ids").entries() < before);
+		} finally {
+			store.shutDown();
+		}
+	}
+
 	@Test
 	@Timeout(30)
 	void explicitReclamationWaitsForAsyncNativeWriter(@TempDir Path directory) throws Exception {

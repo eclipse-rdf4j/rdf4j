@@ -114,7 +114,13 @@ final class LmdbNativeJaninoAggregate {
 			}
 			return result;
 		}, estimatedWork(shape.estimatedWork), LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE, () -> {
-		});
+		}).withCostQuote(LmdbNativeCostQuote.streaming(
+				// the compiled aggregate walks the join as a generated-row chain and updates one group per row;
+				// shared access facts make a missing index visible to it like to every other chain
+				LmdbNativeCostVectors.plan(multiJoin, row, row.boundMask(), LmdbNativeCostVector.Feature.GENERATED_ROW)
+						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+								LmdbNativeWork.rowsOut(multiJoin, row, row.boundMask()))),
+				groupSlots.length == 0 ? 1D : Double.NaN));
 	}
 
 	private static List<BindingSet> evaluate(Recognized shape, RowState row, NativeGroupIteration emitter) {

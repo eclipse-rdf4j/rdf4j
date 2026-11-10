@@ -69,6 +69,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
@@ -105,10 +106,34 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	private final RDF4JProtocolSession client;
 
+	private boolean bNodeOriginEnabled;
+
+	private TupleQueryResultFormat previousTupleQueryResultFormat;
+
+	private RDFFormat previousRDFFormat;
+
 	/** Internal opt-in for one Workbench connection; shared repository clients remain unchanged. */
 	@InternalUseOnly
 	public void setBNodeOriginEnabled(boolean enabled) {
-		client.setBNodeOriginEnabled(enabled);
+		if (enabled) {
+			if (!bNodeOriginEnabled) {
+				previousTupleQueryResultFormat = client.getPreferredTupleQueryResultFormat();
+				previousRDFFormat = client.getPreferredRDFFormat();
+				bNodeOriginEnabled = true;
+			}
+			client.setPreferredTupleQueryResultFormat(TupleQueryResultFormat.BINARY);
+			client.setPreferredRDFFormat(RDFFormat.BINARY);
+			client.setBNodeOriginEnabled(true);
+		} else {
+			client.setBNodeOriginEnabled(false);
+			if (bNodeOriginEnabled) {
+				client.setPreferredTupleQueryResultFormat(previousTupleQueryResultFormat);
+				client.setPreferredRDFFormat(previousRDFFormat);
+				previousTupleQueryResultFormat = null;
+				previousRDFFormat = null;
+				bNodeOriginEnabled = false;
+			}
+		}
 	}
 
 	private boolean active;

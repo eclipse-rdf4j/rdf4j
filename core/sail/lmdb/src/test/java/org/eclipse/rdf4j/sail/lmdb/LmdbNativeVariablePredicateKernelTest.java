@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -59,8 +60,10 @@ class LmdbNativeVariablePredicateKernelTest {
 
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
 	private static final String NS = "http://example.org/";
-	private static final String COST_CALIBRATION_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String JANINO_SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
+	private static final String SCAN_SOURCES_PROPERTY = "rdf4j.lmdb.janinoCodegen.scanSources";
+	private static final Pattern ORDINARY_KERNEL_PATH = Pattern.compile("nativeExecutionPath=irKernel(?![A-Za-z])");
+	private static final String WILDCARD_KERNEL_PATH = "nativeExecutionPath=irKernelWildcard";
 	private static final IRI S1 = F.createIRI(NS, "s1");
 	private static final IRI S2 = F.createIRI(NS, "s2");
 	private static final IRI G1 = F.createIRI(NS, "g1");
@@ -92,7 +95,7 @@ class LmdbNativeVariablePredicateKernelTest {
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.irKernelParallel.enabled",
 			"rdf4j.lmdb.nativeBatch.enabled",
-			COST_CALIBRATION_PROPERTY);
+			SCAN_SOURCES_PROPERTY);
 
 	private final Map<String, String> previousProperties = new LinkedHashMap<>();
 
@@ -153,7 +156,6 @@ class LmdbNativeVariablePredicateKernelTest {
 	private void open(File dataDir, boolean compiled, boolean nodePredicateProjection,
 			DirectAdjacencyCoverage coverage) {
 		if (compiled) {
-			System.setProperty(COST_CALIBRATION_PROPERTY, "false");
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
@@ -256,14 +258,30 @@ class LmdbNativeVariablePredicateKernelTest {
 		}
 
 		long rowCompiledBefore = JaninoPipelineTestAccess.openedAny();
-		assertThat(run(rowQuery)).containsExactlyElementsOf(expectedRows);
-		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
-		for (int attempt = 0; attempt < 20 && JaninoPipelineTestAccess.openedAny() == rowCompiledBefore; attempt++) {
+		// the compiled row kernel is admitted only once the shape has been observed and compiled, so the first run
+		// is free (it seeds both); every later run is forced onto the compiled kernel, which the measured selector
+		// would otherwise pass over on this small store
+		System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, "true");
+		try {
 			assertThat(run(rowQuery)).containsExactlyElementsOf(expectedRows);
-			Thread.onSpinWait();
-		}
-		try (RepositoryConnection conn = repo.getConnection()) {
-			executed = conn.prepareTupleQuery(rowQuery).explain(Explanation.Level.Telemetry).toString();
+			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+			for (int attempt = 0; attempt < 20
+					&& JaninoPipelineTestAccess.openedAny() == rowCompiledBefore; attempt++) {
+				assertThat(run(rowQuery, "irKernel,irKernelInterpreted,irKernelWildcard,irKernelWildcardInterpreted"))
+						.containsExactlyElementsOf(expectedRows);
+				Thread.onSpinWait();
+			}
+			try (RepositoryConnection conn = repo.getConnection()) {
+				executed = explain(conn, rowQuery,
+						"irKernel,irKernelInterpreted,irKernelWildcard,irKernelWildcardInterpreted",
+						Explanation.Level.Telemetry);
+			}
+		} finally {
+			if (previousSynchronous == null) {
+				System.clearProperty(JANINO_SYNCHRONOUS_PROPERTY);
+			} else {
+				System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, previousSynchronous);
+			}
 		}
 		assertThat(executed)
 				.as("the row-producing form must use the same mixed IR fallback%n%s", executed)
@@ -292,13 +310,15 @@ class LmdbNativeVariablePredicateKernelTest {
 
 		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_PREDICATES_PROPERTY, "true");
 		open(compiledDir, true, false);
-		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(run(query, "irAggregateParallel,irAggregateParallelInterpreted"))
+				.containsExactlyElementsOf(expected);
 		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS))
 				.as("the grouped wildcard join must finish compiling")
 				.isTrue();
 		String executed;
 		try (RepositoryConnection conn = repo.getConnection()) {
-			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+			executed = explain(conn, query, "irAggregateParallel,irAggregateParallelInterpreted",
+					Explanation.Level.Telemetry);
 		}
 		assertThat(executed)
 				.as("the grouped wildcard join must activate its IR invocation%n%s", executed)
@@ -331,10 +351,10 @@ class LmdbNativeVariablePredicateKernelTest {
 			open(interpretedDir, true, false);
 			// The fixture must not race asynchronous compilation or reuse an already compiled kernel.
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
-			assertThat(run(query)).containsExactlyElementsOf(expected);
+			assertThat(run(query, "irAggregateParallelInterpreted")).containsExactlyElementsOf(expected);
 			String executed;
 			try (RepositoryConnection conn = repo.getConnection()) {
-				executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+				executed = explain(conn, query, "irAggregateParallelInterpreted", Explanation.Level.Telemetry);
 			}
 			assertThat(executed)
 					.as("the explicitly disabled Janino switch must still leave wildcard IR active%n%s", executed)
@@ -379,14 +399,16 @@ class LmdbNativeVariablePredicateKernelTest {
 		System.setProperty("rdf4j.lmdb.irKernelParallel.enabled", "true");
 		long parallelBefore = LmdbNativeKernelIrTestAccess.aggregateParallelRuns();
 		open(compiledDir, true, false);
-		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(run(query, "irAggregateParallel,irAggregateParallelInterpreted"))
+				.containsExactlyElementsOf(expected);
 		assertThat(LmdbNativeKernelIrTestAccess.aggregateParallelRuns())
 				.as("the fused class-domain wildcard sweep must enter the parallel IR worker group")
 				.isGreaterThan(parallelBefore);
 		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
 		String executed;
 		try (RepositoryConnection conn = repo.getConnection()) {
-			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+			executed = explain(conn, query, "irAggregateParallel,irAggregateParallelInterpreted",
+					Explanation.Level.Telemetry);
 		}
 		assertThat(executed)
 				.as("parallel eligibility must not bypass wildcard IR arbitration%n%s", executed)
@@ -396,9 +418,11 @@ class LmdbNativeVariablePredicateKernelTest {
 				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
 
 		long rowParallelBefore = LmdbNativeKernelIrTestAccess.rowParallelRuns();
-		assertThat(run(rowQuery)).containsExactlyElementsOf(expectedRows);
+		assertThat(run(rowQuery, "irKernelParallel,irKernelParallelInterpreted"))
+				.containsExactlyElementsOf(expectedRows);
 		try (RepositoryConnection conn = repo.getConnection()) {
-			executed = conn.prepareTupleQuery(rowQuery).explain(Explanation.Level.Telemetry).toString();
+			executed = explain(conn, rowQuery, "irKernelParallel,irKernelParallelInterpreted",
+					Explanation.Level.Telemetry);
 		}
 		assertThat(LmdbNativeKernelIrTestAccess.rowParallelRuns())
 				.as("the row-producing fused class-domain wildcard sweep must enter the parallel IR worker group%n%s",
@@ -429,12 +453,14 @@ class LmdbNativeVariablePredicateKernelTest {
 		long compiledBefore = JaninoPipelineTestAccess.openedAny();
 		long loweringsBefore = LmdbNativeKernelIrTestAccess.variablePredicateLowerings();
 		open(compiledDir, true, false);
-		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(run(query, "irAggregateWildcard,irAggregateWildcardInterpreted"))
+				.containsExactlyElementsOf(expected);
 		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS))
 				.as("the projection-free aggregate shape must finish compiling")
 				.isTrue();
 		for (int attempt = 0; attempt < 20; attempt++) {
-			assertThat(run(query)).containsExactlyElementsOf(expected);
+			assertThat(run(query, "irAggregateWildcard,irAggregateWildcardInterpreted"))
+					.containsExactlyElementsOf(expected);
 			if (JaninoPipelineTestAccess.openedAny() > compiledBefore) {
 				break;
 			}
@@ -448,9 +474,10 @@ class LmdbNativeVariablePredicateKernelTest {
 				.as("the projection-free variable-predicate pattern must lower to IR")
 				.isGreaterThan(loweringsBefore);
 		try (RepositoryConnection conn = repo.getConnection()) {
-			assertThat(conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString())
-					.as("wildcard aggregate kernels must retain their own arbiter and telemetry route")
-					.contains("nativeExecutionPath=irAggregateWildcard");
+			assertThat(explain(conn, query, "irAggregateWildcard,irAggregateWildcardInterpreted",
+					Explanation.Level.Executed))
+							.as("wildcard aggregate kernels must retain their own arbiter and telemetry route")
+							.contains("nativeExecutionPath=irAggregateWildcard");
 		}
 	}
 
@@ -472,9 +499,9 @@ class LmdbNativeVariablePredicateKernelTest {
 		open(interpretedDir, true, false);
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 
-		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(run(query, "irAggregateWildcardInterpreted")).containsExactlyElementsOf(expected);
 		try (RepositoryConnection conn = repo.getConnection()) {
-			assertThat(conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString())
+			assertThat(explain(conn, query, "irAggregateWildcardInterpreted", Explanation.Level.Executed))
 					.as("projection-free interpreter work must not train the compiled wildcard route")
 					.contains("nativeExecutionPath=irAggregateWildcardInterpreted");
 		}
@@ -591,17 +618,18 @@ class LmdbNativeVariablePredicateKernelTest {
 
 		String rowQuery = truthTable().get("join-through-variable-predicate");
 		String rendered = "";
-		for (int attempt = 0; attempt < 100 && !rendered.contains("nativeExecutionPath=irKernelWildcard"); attempt++) {
-			assertThat(run(rowQuery)).containsExactlyElementsOf(expected.get("join-through-variable-predicate"));
+		for (int attempt = 0; attempt < 100 && !rendered.contains(WILDCARD_KERNEL_PATH); attempt++) {
+			assertThat(run(rowQuery, "irKernelWildcard"))
+					.containsExactlyElementsOf(expected.get("join-through-variable-predicate"));
 			try (RepositoryConnection conn = repo.getConnection()) {
-				rendered = conn.prepareTupleQuery(rowQuery).explain(Explanation.Level.Executed).toString();
+				rendered = explain(conn, rowQuery, "irKernelWildcard", Explanation.Level.Executed);
 			}
 			Thread.onSpinWait();
 		}
 		assertThat(rendered)
-				.as("the multi-pattern wildcard row shape must be selected after compilation; cache=%s",
+				.as("the multi-pattern wildcard row shape must run compiled once forced; cache=%s",
 						JaninoPipelineTestAccess.cacheSummary())
-				.contains("nativeExecutionPath=irKernelWildcard");
+				.contains(WILDCARD_KERNEL_PATH);
 		assertThat(JaninoPipelineTestAccess.openedAny()).isGreaterThan(compiledBefore);
 	}
 
@@ -626,6 +654,52 @@ class LmdbNativeVariablePredicateKernelTest {
 		assertThat(LmdbNativeKernelIrTestAccess.variablePredicateLowerings())
 				.as("at least one variable-predicate pattern must have compiled, or this test proves nothing")
 				.isGreaterThan(loweringsBefore);
+	}
+
+	/**
+	 * The ordinary kernel and its wildcard-view peer are quoted from the same plan, so price cannot separate them and
+	 * offer order would. Measured on FOAF 3000 (spoc,posc with adjacency, 2026-11-05): the peer cannot open on the one
+	 * bound endpoint shapes, costs 68.8 ms against 27.6 ms with both endpoints bound and 51.8 ms against 46.7 ms with
+	 * both free.
+	 */
+	@Test
+	void ordinaryKernelDominatesItsWildcardViewPeer(@TempDir File dataDir) throws InterruptedException {
+		enableProjectionFreeWildcard();
+		open(dataDir, true, false);
+		String query = truthTable().get("join-through-variable-predicate");
+
+		String rendered = executedAfterCompilation(query, ORDINARY_KERNEL_PATH);
+
+		assertThat(rendered).doesNotContain(WILDCARD_KERNEL_PATH);
+		assertThat(ORDINARY_KERNEL_PATH.matcher(rendered).find())
+				.as("the compiled ordinary kernel must win; rendered=%s", rendered)
+				.isTrue();
+	}
+
+	/** The edge orders the peers. It must not cost the wildcard route when the ordinary kernel has no scan to use. */
+	@Test
+	void wildcardViewPeerStillServesWhenTheOrdinaryKernelCannotOpen(@TempDir File dataDir)
+			throws InterruptedException {
+		enableProjectionFreeWildcard();
+		System.setProperty(SCAN_SOURCES_PROPERTY, "false");
+		open(dataDir, true, false);
+		String query = truthTable().get("join-through-variable-predicate");
+
+		String rendered = executedAfterCompilation(query, Pattern.compile(WILDCARD_KERNEL_PATH + "(?![A-Za-z])"));
+
+		assertThat(rendered).contains(WILDCARD_KERNEL_PATH);
+	}
+
+	private String executedAfterCompilation(String query, Pattern path) throws InterruptedException {
+		String rendered = "";
+		for (int attempt = 0; attempt < 100 && !path.matcher(rendered).find(); attempt++) {
+			run(query);
+			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+			try (RepositoryConnection conn = repo.getConnection()) {
+				rendered = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString();
+			}
+		}
+		return rendered;
 	}
 
 	/** The wildcard switch controls projection lowering, not Janino admission of an equivalent scan-backed IR. */
@@ -662,4 +736,16 @@ class LmdbNativeVariablePredicateKernelTest {
 				.as("projection-free wildcard IR must remain compilable when projection lowering is disabled")
 				.isGreaterThan(compiledBefore);
 	}
+
+	/**
+	 * This suite tests one kernel route per method; the measured selector may prefer a rival on these small stores, so
+	 * every native-side run and explanation forces the route the method is about.
+	 */
+	private static String explain(RepositoryConnection conn, String query, String forcedStrategy,
+			Explanation.Level level) {
+		SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+		preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+		return preparedQuery.explain(level).toString();
+	}
+
 }

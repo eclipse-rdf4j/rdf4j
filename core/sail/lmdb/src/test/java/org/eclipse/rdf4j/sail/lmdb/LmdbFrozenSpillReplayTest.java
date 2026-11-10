@@ -16,10 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 
 import java.io.File;
@@ -37,7 +35,6 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -46,7 +43,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 
@@ -56,10 +52,8 @@ import javax.management.NotificationListener;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -68,7 +62,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
@@ -76,7 +69,6 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SeparateModelSnapshotSailStore;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
-import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -1372,7 +1364,8 @@ class LmdbFrozenSpillReplayTest {
 				throws IOException, SailException {
 			super(dataDir, new StoreProperties(), config, false, ValueStore::new,
 					(tripleDirectory, tripleProperties, tripleConfig, valueStore) -> new ProbeTripleStore(
-							tripleDirectory, tripleProperties, tripleConfig, valueStore, probe, true));
+							tripleDirectory, tripleProperties, tripleConfig, valueStore, probe, true),
+					1024, true);
 			this.probe = probe;
 		}
 
@@ -1462,8 +1455,9 @@ class LmdbFrozenSpillReplayTest {
 
 		@Override
 		int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
-				GlobalPreparedIndexOrdersTask orders, ExecutorService executor) throws IOException {
-			int added = super.storeGloballyOrderedFreshTriples(quads, valueIds, count, orders, executor);
+				GlobalPreparedIndexOrdersTask orders, ExecutorService executor, IntConsumer addedConsumer)
+				throws IOException {
+			int added = super.storeGloballyOrderedFreshTriples(quads, valueIds, count, orders, executor, addedConsumer);
 			afterAlignedPrefix(added, true);
 			return added;
 		}

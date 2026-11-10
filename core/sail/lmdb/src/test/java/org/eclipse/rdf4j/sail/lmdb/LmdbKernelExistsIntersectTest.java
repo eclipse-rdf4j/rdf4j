@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -71,8 +72,6 @@ class LmdbKernelExistsIntersectTest {
 		String previousParallelWork = System.getProperty("rdf4j.lmdb.parallel.minWorkEstimate");
 		String previousParallelStartup = System.getProperty("rdf4j.lmdb.parallel.startupWork");
 		String previousParallelAggregate = System.getProperty("rdf4j.lmdb.irAggregateParallel.enabled");
-		String previousAdaptiveCost = System.getProperty("rdf4j.lmdb.costCalibration.enabled");
-		String previousAdaptiveProbe = System.getProperty("rdf4j.lmdb.adaptiveProbe.enabled");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janinoEnabled));
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
@@ -84,8 +83,6 @@ class LmdbKernelExistsIntersectTest {
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "true");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
 		try {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
 					.setNativeEvaluationEnabled(true)
@@ -129,19 +126,21 @@ class LmdbKernelExistsIntersectTest {
 					}
 					Assertions.assertEquals(REFERENCED_ENTITY_COUNT, intersectionCount);
 				}
+				// The parallel rung is priced at one worker start per worker, which no 512-entity fixture amortises
+				// against the serial intersection; the parallel arm is about that rung, so it forces it.
+				String forcedStrategy = parallelEnabled ? "irAggregateParallel" : null;
 				// The referrers themselves are subjects too, and none of them is referenced: expected distinct nodes
 				// with at least one outgoing triple AND at least one incoming reference are the first three quarters.
 				try (SailRepositoryConnection connection = repository.getConnection();
-						TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
+						TupleQueryResult result = prepare(connection, forcedStrategy).evaluate()) {
 					long count = ((org.eclipse.rdf4j.model.Literal) result.next().getValue("count")).longValue();
 					Assertions.assertEquals(REFERENCED_ENTITY_COUNT, count,
 							"distinct referenced subjects, janinoEnabled=" + janinoEnabled
 									+ ", interpreterEnabled=" + interpreterEnabled + ", parallelEnabled="
 									+ parallelEnabled);
 				}
-				KernelExecutionTestAccess.resetCostCalibration();
 				try (SailRepositoryConnection connection = repository.getConnection()) {
-					String plan = connection.prepareTupleQuery(QUERY)
+					String plan = prepare(connection, forcedStrategy)
 							.explain(Explanation.Level.Telemetry)
 							.toString();
 					Assertions.assertTrue(
@@ -196,9 +195,15 @@ class LmdbKernelExistsIntersectTest {
 			restore("rdf4j.lmdb.parallel.minWorkEstimate", previousParallelWork);
 			restore("rdf4j.lmdb.parallel.startupWork", previousParallelStartup);
 			restore("rdf4j.lmdb.irAggregateParallel.enabled", previousParallelAggregate);
-			restore("rdf4j.lmdb.costCalibration.enabled", previousAdaptiveCost);
-			restore("rdf4j.lmdb.adaptiveProbe.enabled", previousAdaptiveProbe);
 		}
+	}
+
+	private static SailTupleQuery prepare(SailRepositoryConnection connection, String forcedStrategy) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+		if (forcedStrategy != null) {
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+		}
+		return prepared;
 	}
 
 	private static void restore(String property, String previousValue) {

@@ -67,10 +67,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 @Experimental
 abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValuesCompiler {
+	QueryAlgebraBindingAnalysis lexicalBindingAnalysis;
 
 	/**
 	 * When set, {@link #compileExtensionCopies(Extension)} may compile a computed, non-inline BIND (e.g.
@@ -815,8 +818,12 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 * fragment. Constants have mask zero and are safe to call as entry-depth hooks.
 	 */
 	private long genericReadMask(ValueExpr expr) {
+		var reads = FilterBindingScope.conditionBindingReads(expr);
+		if (!reads.complete()) {
+			return -1L;
+		}
 		long mask = 0L;
-		for (String name : VarNameCollector.process(expr)) {
+		for (String name : reads.bindingNames()) {
 			Integer slot = slots.get(name);
 			if (slot == null || slot < 0 || slot >= Long.SIZE) {
 				return -1L;
@@ -859,10 +866,12 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 */
 	long placeableFilterMask(ValueExpr condition) {
 		if (containsExists(condition)) {
-			if (!isNativeRepeatable(condition)) {
+			NativeExpressionFacts facts = NativeExpressionFacts.of(condition);
+			if (!facts.repeatable() || !facts.readsComplete()) {
 				return -1L;
 			}
 			long mask = 0L;
+			Set<String> frame = conditionInputFrame(condition);
 			for (String name : conditionVarNames(condition, false)) {
 				Integer slot = slots.get(name);
 				if (slot == null) {
@@ -870,9 +879,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				}
 				mask |= 1L << slot;
 			}
-			for (String name : conditionVarNames(condition, true)) {
+			// Include implicit tuple reads such as VALUES columns, not only Var nodes. Exclude names outside the
+			// owning input frame even if compiling the witness has already allocated slots for them.
+			for (String name : facts.requiredNames()) {
 				Integer slot = slots.get(name);
-				if (slot != null) {
+				if (slot != null && (frame == null || frame.contains(name))) {
 					mask |= 1L << slot;
 				}
 			}
@@ -890,6 +901,27 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			mask |= 1L << slot;
 		}
 		return mask;
+	}
+
+	/**
+	 * Witness compilation allocates its local slots in the same table as the outer plan. Those slots are not outer
+	 * correlations merely because they now exist. Retain the owning condition's possible input names, including
+	 * nullable incoming join bindings. Nested witness scopes remain conservative unless their frame is explicit.
+	 */
+	private Set<String> conditionInputFrame(ValueExpr condition) {
+		if (lexicalBindingAnalysis != null) {
+			return lexicalBindingAnalysis.contextAt(condition).maybeBoundNames();
+		}
+		QueryModelNode root = condition;
+		while (root.getParentNode() != null) {
+			root = root.getParentNode();
+		}
+		if (root instanceof TupleExpr tuple) {
+			return QueryAlgebraBindingAnalysis.withBindingValues(tuple, EmptyBindingSet.getInstance())
+					.contextAt(condition)
+					.maybeBoundNames();
+		}
+		return null;
 	}
 
 	/**
@@ -945,10 +977,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	/**
-	 * Snapshot-local EXISTS over one statement pattern is deterministic for fixed bindings even though the generic
-	 * expression classifier conservatively treats EXISTS as a scope-sensitive operator. Recognizing this narrow form
-	 * lets a null-rejecting OPTIONAL become an inner join while retaining the EXISTS exactly at its algebraic scope;
-	 * the resulting direct adjacency semijoin is especially important for grouped OPTIONAL+EXISTS shapes.
+	 * Snapshot-local witness repeatability is a recursive semantic proof, independent of lexical placement and the
+	 * compiled predicate's read/effect capabilities. Scope-sensitive operators retain their own binding frames.
 	 */
 	static boolean isNativeRepeatable(ValueExpr expr) {
 		return NativeExpressionFacts.of(expr).repeatable();
