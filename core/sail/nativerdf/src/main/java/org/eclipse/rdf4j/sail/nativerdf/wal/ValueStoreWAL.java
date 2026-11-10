@@ -13,8 +13,11 @@ package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
@@ -26,7 +29,7 @@ import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -34,7 +37,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.zip.CRC32;
 import java.util.zip.CRC32C;
 import java.util.zip.GZIPInputStream;
@@ -59,7 +61,15 @@ import tools.jackson.core.json.JsonFactory;
 public final class ValueStoreWAL implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValueStoreWAL.class);
+	private static final int MAX_QUEUE_CAPACITY = 16 * 1024;
+	private static final int MAX_IO_BUFFER_BYTES = 1024 * 1024;
+	private static final int MAX_JSON_BUFFER_BYTES = 64 * 1024;
+	private static final long MAX_PENDING_BYTES = 16L * 1024 * 1024;
 
+	/**
+	 * Legacy diagnostic/test access to the pending queue. Production producers must use {@link #logMint}; direct queue
+	 * mutations bypass its memory admission and failure handling.
+	 */
 	public BlockingQueue<ValueStoreWalRecord> getQueue() {
 		var queue = this.queue;
 		if (queue != null) {
@@ -69,7 +79,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 		synchronized (this) {
 			queue = this.queue;
 			if (queue == null) {
-				queue = new ArrayBlockingQueue<>(config.queueCapacity());
+				queue = new ArrayBlockingQueue<>(Math.min(config.queueCapacity(), MAX_QUEUE_CAPACITY));
 				this.queue = queue;
 			}
 			return queue;
@@ -97,6 +107,12 @@ public final class ValueStoreWAL implements AutoCloseable {
 	private final AtomicLong requestedForceLsn = new AtomicLong(NO_LSN);
 
 	private final Object ackMonitor = new Object();
+	private final Object memoryMonitor = new Object();
+	private final Object enqueueMonitor = new Object();
+	private final long pendingBytesLimit = Math.max(64 * 1024L,
+			Math.min(MAX_PENDING_BYTES, Runtime.getRuntime().maxMemory() / 16));
+	// Includes records already dequeued by the writer until their append has finished.
+	private long pendingBytes;
 
 	private final LogWriter logWriter;
 	private final Thread writerThread;
@@ -114,6 +130,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 	private final boolean initialSegmentsPresent;
 	private final int initialMaxSegmentSeq;
+	private final ValueStoreWalReader.Summary initialSummary;
 
 	static void setChannelOpenerForTesting(FileChannelOpener opener) {
 		channelOpener = opener != null ? opener : DEFAULT_CHANNEL_OPENER;
@@ -137,7 +154,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 		lockChannel = FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
 		try {
 			directoryLock = lockChannel.tryLock();
-		} catch (IOException e) {
+		} catch (IOException | RuntimeException e) {
 			logger.error(
 					"Failed to acquire WAL directory lock {}. Another ValueStoreWAL may be active for this directory.",
 					lockFile.toAbsolutePath(), e);
@@ -145,29 +162,41 @@ public final class ValueStoreWAL implements AutoCloseable {
 			throw e;
 		}
 		if (directoryLock == null) {
+			lockChannel.close();
 			throw new IOException("WAL directory is already locked: " + config.walDirectory());
 		}
 
-		DirectoryState state = analyzeDirectory(config.walDirectory());
-		this.initialSegmentsPresent = state.hasSegments;
-		this.initialMaxSegmentSeq = state.maxSequence;
-		// Seed next LSN from existing WAL, if any, to ensure monotonic LSNs across restarts
-		if (initialSegmentsPresent) {
-			try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
-				var it = reader.iterator();
-				while (it.hasNext()) {
-					it.next();
-				}
-				long last = reader.lastValidLsn();
-				if (last > NO_LSN) {
-					nextLsn.set(last);
+		try {
+			DirectoryState state = analyzeDirectory(config.walDirectory());
+			this.initialSegmentsPresent = state.hasSegments;
+			this.initialMaxSegmentSeq = state.maxSequence;
+			ValueStoreWalReader.Summary summary = ValueStoreWalReader.Summary.empty();
+			if (initialSegmentsPresent) {
+				try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+					summary = reader.summarize();
 				}
 			}
+			this.initialSummary = summary;
+			if (summary.lastValidLsn() > NO_LSN) {
+				nextLsn.set(summary.lastValidLsn());
+			}
+			this.logWriter = new LogWriter(initialMaxSegmentSeq);
+			this.writerThread = new Thread(logWriter, "ValueStoreWalWriter-" + config.storeUuid());
+			this.writerThread.setDaemon(true);
+			this.writerThread.start();
+		} catch (IOException | RuntimeException | Error e) {
+			try {
+				directoryLock.release();
+			} catch (IOException closeFailure) {
+				e.addSuppressed(closeFailure);
+			}
+			try {
+				lockChannel.close();
+			} catch (IOException closeFailure) {
+				e.addSuppressed(closeFailure);
+			}
+			throw e;
 		}
-		this.logWriter = new LogWriter(initialMaxSegmentSeq);
-		this.writerThread = new Thread(logWriter, "ValueStoreWalWriter-" + config.storeUuid());
-		this.writerThread.setDaemon(true);
-		this.writerThread.start();
 	}
 
 	/**
@@ -196,11 +225,13 @@ public final class ValueStoreWAL implements AutoCloseable {
 	 */
 	public long logMint(int id, ValueStoreWalValueKind kind, String lexical, String datatype, String language, int hash)
 			throws IOException {
-		ensureOpen();
-		long lsn = nextLsn.incrementAndGet();
-		ValueStoreWalRecord record = new ValueStoreWalRecord(lsn, id, kind, lexical, datatype, language, hash);
-		enqueue(record);
-		return lsn;
+		synchronized (enqueueMonitor) {
+			ensureOpen();
+			long lsn = nextLsn.incrementAndGet();
+			ValueStoreWalRecord record = new ValueStoreWalRecord(lsn, id, kind, lexical, datatype, language, hash);
+			enqueue(record);
+			return lsn;
+		}
 	}
 
 	/**
@@ -236,6 +267,11 @@ public final class ValueStoreWAL implements AutoCloseable {
 	 */
 	public boolean hasInitialSegments() {
 		return initialSegmentsPresent;
+	}
+
+	/** Metadata collected by the startup scan, without retaining minted values. */
+	public ValueStoreWalReader.Summary initialSummary() {
+		return initialSummary;
 	}
 
 	/**
@@ -290,7 +326,10 @@ public final class ValueStoreWAL implements AutoCloseable {
 		if (closed) {
 			return;
 		}
-		closed = true;
+		synchronized (memoryMonitor) {
+			closed = true;
+			memoryMonitor.notifyAll();
+		}
 		logWriter.shutdown();
 		try {
 			writerThread.join();
@@ -320,24 +359,51 @@ public final class ValueStoreWAL implements AutoCloseable {
 	}
 
 	private void enqueue(ValueStoreWalRecord record) throws IOException {
-		boolean offered = false;
-		int spins = 0;
-		while (!offered) {
-			offered = getQueue().offer(record);
-			if (!offered) {
-				if (spins < 100) {
-					Thread.onSpinWait();
-					spins++;
-				} else {
-					try {
-						getQueue().put(record);
-						offered = true;
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						throw new IOException("Interrupted while enqueueing WAL record", e);
+		long bytes = retainedBytes(record);
+		synchronized (memoryMonitor) {
+			try {
+				while (true) {
+					ensureOpen();
+					// A caller-owned value larger than the budget may proceed on its own. The writer streams
+					// its encoding, so the WAL does not make a second value-sized copy.
+					if ((pendingBytes == 0 || bytes <= pendingBytesLimit - pendingBytes)
+							&& getQueue().offer(record)) {
+						pendingBytes += bytes;
+						return;
 					}
+					// A bounded wait also handles callers using the exposed queue directly.
+					memoryMonitor.wait(100);
 				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while enqueueing WAL record", e);
 			}
+		}
+	}
+
+	private static long retainedBytes(ValueStoreWalRecord record) {
+		return 160L + 2L * (record.lexical().length() + (long) record.datatype().length() + record.language().length());
+	}
+
+	private void releaseRecord(ValueStoreWalRecord record) {
+		synchronized (memoryMonitor) {
+			// getQueue() is exposed; an externally inserted record has no corresponding reservation.
+			pendingBytes = Math.max(0, pendingBytes - retainedBytes(record));
+			memoryMonitor.notifyAll();
+		}
+	}
+
+	private void releaseQueuedRecords() {
+		ValueStoreWalRecord record;
+		while ((record = getQueue().poll()) != null) {
+			releaseRecord(record);
+		}
+	}
+
+	private void recordWriterFailure(Throwable failure) {
+		synchronized (memoryMonitor) {
+			writerFailure = failure;
+			memoryMonitor.notifyAll();
 		}
 	}
 
@@ -363,21 +429,21 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 		int maxSequence = 0;
 		boolean hasSegments = false;
-		List<Path> paths;
 		try (var stream = Files.list(walDirectory)) {
-			paths = stream.collect(Collectors.toList());
-		}
-		for (Path path : paths) {
-			Matcher matcher = SEGMENT_PATTERN.matcher(path.getFileName().toString());
-			if (matcher.matches()) {
-				hasSegments = true;
-				try {
-					int segment = readSegmentSequence(path);
-					if (segment > maxSequence) {
-						maxSequence = segment;
+			var paths = stream.iterator();
+			while (paths.hasNext()) {
+				Path path = paths.next();
+				Matcher matcher = SEGMENT_PATTERN.matcher(path.getFileName().toString());
+				if (matcher.matches()) {
+					hasSegments = true;
+					try {
+						int segment = readSegmentSequence(path);
+						if (segment > maxSequence) {
+							maxSequence = segment;
+						}
+					} catch (IOException e) {
+						logger.warn("Failed to read WAL segment header for {}", path.getFileName(), e);
 					}
-				} catch (IOException e) {
-					logger.warn("Failed to read WAL segment header for {}", path.getFileName(), e);
 				}
 			}
 		}
@@ -397,26 +463,75 @@ public final class ValueStoreWAL implements AutoCloseable {
 			if (frameLen <= 0 || frameLen > MAX_FRAME_BYTES) {
 				return 0;
 			}
-			byte[] jsonBytes = in.readNBytes(frameLen);
-			if (jsonBytes.length < frameLen) {
-				return 0;
-			}
-			// skip CRC
-			in.readNBytes(4);
-			JsonFactory factory = new JsonFactory();
-			try (JsonParser parser = factory.createParser(ObjectReadContext.empty(), jsonBytes)) {
-				while (parser.nextToken() != JsonToken.END_OBJECT) {
-					if (parser.currentToken() == JsonToken.PROPERTY_NAME) {
-						String field = parser.currentName();
-						parser.nextToken();
-						if ("segment".equals(field)) {
-							return parser.getIntValue();
-						}
+			LimitedInputStream frame = new LimitedInputStream(in, frameLen);
+			int sequence = 0;
+			JsonFactory factory = ValueStoreWalMemory.newJsonFactory();
+			try (JsonParser parser = factory.createParser(ObjectReadContext.empty(), frame)) {
+				if (parser.nextToken() != JsonToken.START_OBJECT) {
+					return 0;
+				}
+				JsonToken token;
+				while ((token = parser.nextToken()) != JsonToken.END_OBJECT) {
+					if (token == null) {
+						return 0;
+					}
+					String field = parser.currentName();
+					parser.nextToken();
+					if ("segment".equals(field)) {
+						sequence = parser.getIntValue();
+					} else {
+						parser.skipChildren();
 					}
 				}
 			}
+			try {
+				in.skipNBytes(frame.remaining);
+			} catch (EOFException e) {
+				return 0;
+			}
+			return in.readNBytes(4).length == 4 ? sequence : 0;
 		}
-		return 0;
+	}
+
+	private static final class LimitedInputStream extends FilterInputStream {
+		private long remaining;
+
+		LimitedInputStream(InputStream input, long remaining) {
+			super(input);
+			this.remaining = remaining;
+		}
+
+		@Override
+		public int read() throws IOException {
+			if (remaining == 0) {
+				return -1;
+			}
+			int value = in.read();
+			if (value >= 0) {
+				remaining--;
+			}
+			return value;
+		}
+
+		@Override
+		public int read(byte[] bytes, int offset, int length) throws IOException {
+			if (length == 0) {
+				return 0;
+			}
+			if (remaining == 0) {
+				return -1;
+			}
+			int read = in.read(bytes, offset, (int) Math.min(length, remaining));
+			if (read > 0) {
+				remaining -= read;
+			}
+			return read;
+		}
+
+		@Override
+		public void close() {
+			// The segment owner closes the stream after reading the frame checksum.
+		}
 	}
 
 	private static final class DirectoryState {
@@ -442,12 +557,34 @@ public final class ValueStoreWAL implements AutoCloseable {
 		private volatile ByteBuffer ioBuffer;
 		// Reuse JSON infrastructure to reduce allocations per record
 		private final JsonFactory jsonFactory = new JsonFactory();
-		private final ReusableByteArrayOutputStream jsonBuffer = new ReusableByteArrayOutputStream(256);
+		private final BoundedJsonBuffer jsonBuffer = new BoundedJsonBuffer();
+		private final OutputStream ioOutput = new OutputStream() {
+			@Override
+			public void write(int value) throws IOException {
+				if (!getIoBuffer().hasRemaining()) {
+					flushBuffer();
+				}
+				getIoBuffer().put((byte) value);
+			}
+
+			@Override
+			public void write(byte[] bytes, int offset, int length) throws IOException {
+				while (length > 0) {
+					if (!getIoBuffer().hasRemaining()) {
+						flushBuffer();
+					}
+					int chunk = Math.min(length, getIoBuffer().remaining());
+					getIoBuffer().put(bytes, offset, chunk);
+					offset += chunk;
+					length -= chunk;
+				}
+			}
+		};
 		private volatile boolean running = true;
 
 		LogWriter(int existingSegments) {
 			this.segmentSequence = existingSegments;
-			this.batchSize = config.batchBufferBytes();
+			this.batchSize = Math.min(config.batchBufferBytes(), MAX_IO_BUFFER_BYTES);
 			this.segmentChannel = null;
 			this.segmentPath = null;
 			this.segmentBytes = 0L;
@@ -485,7 +622,11 @@ public final class ValueStoreWAL implements AutoCloseable {
 						continue;
 					}
 					if (record != null) {
-						append(record);
+						try {
+							append(record);
+						} finally {
+							releaseRecord(record);
+						}
 					}
 
 					boolean pendingForce = requestedForceLsn.get() > NO_LSN
@@ -508,14 +649,18 @@ public final class ValueStoreWAL implements AutoCloseable {
 				}
 				flushAndForce();
 			} catch (Throwable t) {
-				writerFailure = t;
+				recordWriterFailure(t);
 			} finally {
 				try {
 					flushAndForce();
 				} catch (Throwable t) {
-					writerFailure = t;
+					recordWriterFailure(t);
 				}
 				closeQuietly(segmentChannel);
+				releaseQueuedRecords();
+				synchronized (memoryMonitor) {
+					memoryMonitor.notifyAll();
+				}
 				synchronized (ackMonitor) {
 					ackMonitor.notifyAll();
 				}
@@ -579,8 +724,10 @@ public final class ValueStoreWAL implements AutoCloseable {
 			if (segmentChannel == null) {
 				startSegment(record.id());
 			}
-			// Encode JSON for the record into reusable buffer without copying
+			// Retain only small JSON frames. For a large frame this pass counts bytes, then a second encoding
+			// writes directly into the fixed I/O buffer, preserving the v1 length/payload/checksum framing.
 			int jsonLength = encodeIntoReusableBuffer(record);
+			int crc = jsonBuffer.checksum();
 			int framedLength = 4 + jsonLength + 4;
 			if (segmentBytes + framedLength > config.maxSegmentBytes()) {
 				flushBuffer();
@@ -593,20 +740,13 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 			getIoBuffer().putInt(jsonLength);
 
-			// Write JSON payload in chunks to avoid BufferOverflowException
-			int offset = 0;
-			byte[] jsonBytes = jsonBuffer.buffer();
-			while (offset < jsonLength) {
-				if (getIoBuffer().remaining() == 0) {
-					flushBuffer();
-				}
-				int toWrite = Math.min(getIoBuffer().remaining(), jsonLength - offset);
-				getIoBuffer().put(jsonBytes, offset, toWrite);
-				offset += toWrite;
+			if (jsonLength <= MAX_JSON_BUFFER_BYTES) {
+				ioOutput.write(jsonBuffer.buffer(), 0, jsonLength);
+			} else {
+				encodeRecord(record, ioOutput);
 			}
 
 			// Write CRC (4 bytes)
-			int crc = checksum(jsonBytes, jsonLength);
 			if (getIoBuffer().remaining() < 4) {
 				flushBuffer();
 			}
@@ -625,9 +765,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 				closeQuietly(segmentChannel);
 				// Drop any frames that were queued prior to purge using dequeue semantics to ensure
 				// any producers blocked in queue.put() are signalled via notFull.
-				while (getQueue().poll() != null) {
-					// intentionally empty: draining via poll() triggers the normal signalling path
-				}
+				releaseQueuedRecords();
 				getIoBuffer().clear();
 				// Delete all existing segments from disk
 				deleteAllSegments();
@@ -638,7 +776,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 				segmentFirstMintedId = 0;
 				segmentLastMintedId = 0;
 			} catch (IOException e) {
-				writerFailure = e;
+				recordWriterFailure(e);
 			} finally {
 				purgeRequested = false;
 				synchronized (purgeMonitor) {
@@ -847,32 +985,37 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		private void writeHeader(int firstId) throws IOException {
-			JsonFactory factory = new JsonFactory();
-			ByteArrayOutputStream baos = new ByteArrayOutputStream(256);
-			try (JsonGenerator gen = factory.createGenerator(ObjectWriteContext.empty(), baos)) {
+			long created = Instant.now().getEpochSecond();
+			BoundedJsonBuffer header = new BoundedJsonBuffer();
+			encodeHeader(header, firstId, created);
+			int length = header.size();
+			getIoBuffer().putInt(length);
+			if (length <= MAX_JSON_BUFFER_BYTES) {
+				ioOutput.write(header.buffer(), 0, length);
+			} else {
+				encodeHeader(ioOutput, firstId, created);
+			}
+			if (getIoBuffer().remaining() < 4) {
+				flushBuffer();
+			}
+			getIoBuffer().putInt(header.checksum());
+			flushBuffer();
+			segmentBytes += 4L + length + 4;
+		}
+
+		private void encodeHeader(OutputStream output, int firstId, long created) throws IOException {
+			try (JsonGenerator gen = jsonFactory.createGenerator(ObjectWriteContext.empty(), output)) {
 				gen.writeStartObject();
 				gen.writeStringProperty("t", "V");
 				gen.writeNumberProperty("ver", 1);
 				gen.writeStringProperty("store", config.storeUuid());
 				gen.writeStringProperty("engine", "valuestore");
-				gen.writeNumberProperty("created", Instant.now().getEpochSecond());
+				gen.writeNumberProperty("created", created);
 				gen.writeNumberProperty("segment", segmentSequence);
 				gen.writeNumberProperty("firstId", firstId);
 				gen.writeEndObject();
 			}
-			// NDJSON: newline-delimited JSON
-			baos.write('\n');
-			byte[] jsonBytes = baos.toByteArray();
-			ByteBuffer buffer = ByteBuffer.allocate(4 + jsonBytes.length + 4).order(ByteOrder.LITTLE_ENDIAN);
-			buffer.putInt(jsonBytes.length);
-			buffer.put(jsonBytes);
-			int crc = checksum(jsonBytes);
-			buffer.putInt(crc);
-			buffer.flip();
-			while (buffer.hasRemaining()) {
-				segmentChannel.write(buffer);
-			}
-			segmentBytes += buffer.limit();
+			output.write('\n');
 		}
 
 		private int checksum(byte[] data) {
@@ -887,7 +1030,12 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 		private int encodeIntoReusableBuffer(ValueStoreWalRecord record) throws IOException {
 			jsonBuffer.reset();
-			try (JsonGenerator gen = jsonFactory.createGenerator(ObjectWriteContext.empty(), jsonBuffer)) {
+			encodeRecord(record, jsonBuffer);
+			return jsonBuffer.size();
+		}
+
+		private void encodeRecord(ValueStoreWalRecord record, OutputStream output) throws IOException {
+			try (JsonGenerator gen = jsonFactory.createGenerator(ObjectWriteContext.empty(), output)) {
 				gen.writeStartObject();
 				gen.writeStringProperty("t", "M");
 				gen.writeNumberProperty("lsn", record.lsn());
@@ -899,8 +1047,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 				gen.writeNumberProperty("hash", record.hash());
 				gen.writeEndObject();
 			}
-			jsonBuffer.write('\n'); // NDJSON newline
-			return jsonBuffer.size();
+			output.write('\n'); // NDJSON newline
 		}
 
 		private void closeQuietly(FileChannel channel) {
@@ -913,35 +1060,81 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 		}
 
-		// Minimal extension to access internal buffer without copying
-		private final class ReusableByteArrayOutputStream extends ByteArrayOutputStream {
-			ReusableByteArrayOutputStream(int size) {
-				super(size);
-			}
+	}
 
-			byte[] buffer() {
-				return this.buf;
+	private void deleteAllSegments() throws IOException {
+		try (var stream = Files.list(config.walDirectory())) {
+			var paths = stream.iterator();
+			while (paths.hasNext()) {
+				Path path = paths.next();
+				if (Files.isRegularFile(path) && SEGMENT_PATTERN.matcher(path.getFileName().toString()).matches()) {
+					try {
+						Files.deleteIfExists(path);
+					} catch (IOException e) {
+						logger.warn("Failed to delete WAL segment {}", path.getFileName(), e);
+						throw e;
+					}
+				}
 			}
 		}
 	}
 
-	private void deleteAllSegments() throws IOException {
-		List<Path> toDelete;
-		try (var stream = Files.list(config.walDirectory())) {
-			toDelete = stream
-					.filter(Files::isRegularFile)
-					.filter(path -> {
-						String name = path.getFileName().toString();
-						return name.matches("wal-[0-9]+\\.v1") || name.matches("wal-[0-9]+\\.v1\\.gz");
-					})
-					.collect(Collectors.toList());
+	/** Counts encoded bytes while retaining at most one small frame. */
+	private static final class BoundedJsonBuffer extends OutputStream {
+		private byte[] bytes = new byte[256];
+		private final CRC32C crc = new CRC32C();
+		private int size;
+
+		void reset() {
+			size = 0;
+			crc.reset();
 		}
-		for (Path p : toDelete) {
-			try {
-				Files.deleteIfExists(p);
-			} catch (IOException e) {
-				logger.warn("Failed to delete WAL segment {}", p.getFileName(), e);
-				throw e;
+
+		int size() {
+			return size;
+		}
+
+		byte[] buffer() {
+			return bytes;
+		}
+
+		int checksum() {
+			return (int) crc.getValue();
+		}
+
+		@Override
+		public void write(int value) throws IOException {
+			checkLength(1);
+			crc.update(value);
+			if (size < MAX_JSON_BUFFER_BYTES) {
+				ensureCapacity(size + 1);
+				bytes[size] = (byte) value;
+			}
+			size++;
+		}
+
+		@Override
+		public void write(byte[] source, int offset, int length) throws IOException {
+			Objects.checkFromIndexSize(offset, length, source.length);
+			checkLength(length);
+			crc.update(source, offset, length);
+			if (size + length <= MAX_JSON_BUFFER_BYTES) {
+				ensureCapacity(size + length);
+				System.arraycopy(source, offset, bytes, size, length);
+			}
+			size += length;
+		}
+
+		private void checkLength(int additional) throws IOException {
+			if ((long) size + additional > MAX_FRAME_BYTES) {
+				throw new IOException("WAL record exceeds the maximum frame length of " + MAX_FRAME_BYTES + " bytes");
+			}
+		}
+
+		private void ensureCapacity(int capacity) {
+			if (capacity > bytes.length) {
+				bytes = Arrays.copyOf(bytes,
+						Math.min(MAX_JSON_BUFFER_BYTES, Math.max(capacity, bytes.length * 2)));
 			}
 		}
 	}
