@@ -514,6 +514,14 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
+		 * An exact predicate catalog whose per-plane ordered key-run opens have bounded setup and can install a
+		 * cancellation callback before traversing rows, or null when that whole-snapshot proof is unavailable.
+		 */
+		default WildcardAdjacency boundedPredicateSweep(boolean bySubject) throws IOException {
+			return null;
+		}
+
+		/**
 		 * Observer-aware form of {@link #adjacency(long, boolean)}. Implementations with richer eligibility state
 		 * should override this method and publish the exact reason the complete view was served or declined.
 		 */
@@ -1142,8 +1150,25 @@ public interface NativeLmdbQuerySource {
 		/** This view cannot answer for the key; the caller must use the store path. */
 		long NOT_COVERED = -2L;
 
+		/**
+		 * True only when key-run cursors enumerate unique keys in unsigned ascending order, opening one uses bounded
+		 * state, and advancing, counting a run and copying contexts in bounded chunks cooperate with the installed
+		 * cancellation poll without retaining unbounded per-run state. Consumers may then merge several plane cursors.
+		 */
+		default boolean orderedKeyRunsWithBoundedOpen() {
+			return false;
+		}
+
 		static KeyRunCursor boundedKeyRunCursor(KeyRunCursor delegate, long fromOrdinal, long toOrdinal) {
 			return new KeyRunCursor() {
+				private Runnable cancellationPoll;
+
+				@Override
+				public void cancellationPoll(Runnable cancellationPoll) {
+					this.cancellationPoll = cancellationPoll;
+					delegate.cancellationPoll(cancellationPoll);
+				}
+
 				@Override
 				public boolean contextSpan(long fromOffset, ContextSpan target) {
 					return delegate.contextSpan(fromOffset, target);
@@ -1171,6 +1196,9 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public boolean advance() {
 					while (ordinal < fromOrdinal) {
+						if (cancellationPoll != null) {
+							cancellationPoll.run();
+						}
 						if (!delegate.advance()) {
 							return false;
 						}
@@ -1201,6 +1229,18 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public long distinctNeighborCount() {
 					return delegate.distinctNeighborCount();
+				}
+
+				@Override
+				public boolean supportsPhysicalFiberCopy() {
+					return delegate.supportsPhysicalFiberCopy();
+				}
+
+				@Override
+				public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
+						long[] multiplicityTarget, int multiplicityOffset) {
+					return delegate.copyFibers(runOffset, length, neighborTarget, neighborOffset, multiplicityTarget,
+							multiplicityOffset);
 				}
 
 				@Override
@@ -1864,6 +1904,10 @@ public interface NativeLmdbQuerySource {
 		 */
 		@Experimental
 		interface KeyRunCursor extends AutoCloseable {
+			/** Installs an optional check invoked during potentially unbounded physical traversal. */
+			default void cancellationPoll(Runnable cancellationPoll) {
+			}
+
 			default boolean contextSpan(long fromOffset, ContextSpan target) {
 				return false;
 			}
@@ -2005,6 +2049,19 @@ public interface NativeLmdbQuerySource {
 			 */
 			default int fillFibers(FiberBatch target, boolean classifyTermTraits) {
 				return fillFibers(target);
+			}
+
+			/**
+			 * Whether the positioned run copies physical fibers without scanning one entry per represented context row.
+			 * The capability may change after each {@link #advance()}. A true result permits a bounded fiber batch
+			 * between cancellation polls, independent of the fibers' logical multiplicities. The scalar fallback in
+			 * {@link #copyFibers(long, int, long[], int, long[], int)} does not provide this guarantee; consumers
+			 * requiring bounded cancellation must keep their bounded quad-copy path when this is false. Current CSF
+			 * providers advertise this only for single-page rows: an extent chain can span arbitrarily many pages for
+			 * one logical fiber, so its complete traversal is not a bounded fiber batch.
+			 */
+			default boolean supportsPhysicalFiberCopy() {
+				return false;
 			}
 
 			/**
@@ -2432,6 +2489,25 @@ public interface NativeLmdbQuerySource {
 	 */
 	default OptionalLong predicateDomainCardinality() {
 		return OptionalLong.empty();
+	}
+
+	/**
+	 * Snapshot-exact whole-plane metadata for the bounded predicate-key sweep. Incidences sum distinct root keys over
+	 * predicate planes; the largest plane is a lower bound, not an estimate, on the union of those root domains.
+	 * Context restrictions only remove entries, so these unfiltered counts remain safe upper bounds for a scoped scan.
+	 */
+	record PredicateProjectionStatistics(long quads, long incidences, long largestRootDomain, long predicates) {
+		public PredicateProjectionStatistics {
+			if (quads < 0L || incidences < 0L || largestRootDomain < 0L || predicates < 0L
+					|| largestRootDomain > incidences || incidences > quads) {
+				throw new IllegalArgumentException("invalid predicate projection statistics");
+			}
+		}
+	}
+
+	/** Null means the complete bounded-open sweep or its snapshot metadata is not established. */
+	default PredicateProjectionStatistics predicateProjectionStatistics(boolean bySubject, Runnable cancellationPoll) {
+		return null;
 	}
 
 	/**

@@ -74,6 +74,25 @@ public class LmdbNativeAggregateExpressionTest {
 		}
 	}
 
+	/** Constants use the same exact term across all rows, including values absent from the stored dictionary. */
+	@Test
+	public void constantAggregateArgumentsPreserveExactValuesAndDistinctMembership() {
+		String query = "SELECT (COUNT(1) AS ?count) (COUNT(DISTINCT \"absent constant\") AS ?distinct) "
+				+ "(SUM(2) AS ?sum) (AVG(2) AS ?average) (MIN(\"absent constant\") AS ?minimum) "
+				+ "(GROUP_CONCAT(\"x\"; SEPARATOR=\"|\") AS ?concat) WHERE { ?s <" + EX + "val> ?v }";
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> rows = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			assertThat(rows).hasSize(1);
+			BindingSet row = rows.get(0);
+			assertThat(((Literal) row.getValue("count")).longValue()).isEqualTo(5L);
+			assertThat(((Literal) row.getValue("distinct")).longValue()).isEqualTo(1L);
+			assertThat(((Literal) row.getValue("sum")).longValue()).isEqualTo(10L);
+			assertThat(((Literal) row.getValue("average")).decimalValue()).isEqualByComparingTo("2");
+			assertThat(row.getValue("minimum")).isEqualTo(conn.getValueFactory().createLiteral("absent constant"));
+			assertThat(row.getValue("concat").stringValue()).isEqualTo("x|x|x|x|x");
+		}
+	}
+
 	/** SUM over an arithmetic expression: erroring inputs ("abc" + 1, "1" + 1) are skipped like the generic arm. */
 	@Test
 	public void sumOverExpressionCompilesNativelyAndSkipsErrorInputs() {

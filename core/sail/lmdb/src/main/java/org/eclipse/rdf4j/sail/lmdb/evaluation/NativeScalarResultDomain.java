@@ -52,6 +52,9 @@ final class NativeScalarResultDomain {
 					.allMatch(NativeScalarResultDomain::exactNumeric);
 		}
 		if (expression instanceof FunctionCall function) {
+			if (LmdbNativeFunctionLibrary.entry(function) == null) {
+				return false;
+			}
 			String uri = function.getURI();
 			if (FN.STRING_LENGTH.stringValue().equals(uri) || FN.YEAR_FROM_DATETIME.stringValue().equals(uri)
 					|| FN.MONTH_FROM_DATETIME.stringValue().equals(uri)

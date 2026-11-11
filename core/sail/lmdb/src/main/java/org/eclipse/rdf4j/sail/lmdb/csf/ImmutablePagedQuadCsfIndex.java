@@ -4788,6 +4788,24 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private int cachedPairPageId;
 		private int cachedPairRow;
 		private int cachedPairLocal;
+		/** Independent coordinates allow alternating neighbor and context copies without replaying either prefix. */
+		private ColumnCopyState neighborCopy;
+		private ColumnCopyState contextCopy;
+		private FiberCopyState fiberCopy;
+		private int overlappingFiberPage = CompactCsfPageFormat.NO_PAGE;
+		private long overlappingFiberPageStart;
+		private Runnable cancellationPoll;
+
+		private static final class FiberCopyState {
+			int pageId = CompactCsfPageFormat.NO_PAGE;
+			long pageStart;
+			long nextQuad;
+			int row;
+			int nextFiber;
+			int skipContexts;
+			long previousNeighbor;
+		}
+
 		private final boolean includeEdgeCount;
 		private long boundContext = -1L;
 		private long ordinal;
@@ -4830,6 +4848,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			while (shardIndex < shardEnd) {
 				CsfShard shard = owner.shards[shardIndex];
 				while (localPage < shard.pageCount()) {
+					poll(cancellationPoll);
 					if (boundContext >= 0) {
 						long address = shard.validatedPageAddress(localPage);
 						if (shard.pageIsContinuation(localPage)) {
@@ -4891,6 +4910,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			distinctNeighborCount = -1;
 			cachedPairOrdinal = -1;
 			cachedContextOrdinal = -1;
+			resetColumnCopies();
 			localRow++;
 			ordinal++;
 			ready = true;
@@ -4938,6 +4958,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			while (copied < maximum && ordinal < endOrdinal && shardIndex < shardEnd) {
 				CsfShard shard = owner.shards[shardIndex];
 				while (copied < maximum && ordinal < endOrdinal && localPage < shard.pageCount()) {
+					poll(cancellationPoll);
 					load(shard);
 					if (continuation()) {
 						localPage++;
@@ -4979,6 +5000,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 					distinctNeighborCount = -1;
 					cachedPairOrdinal = -1;
 					cachedContextOrdinal = -1;
+					resetColumnCopies();
 					ready = true;
 				}
 				if (localPage >= shard.pageCount()) {
@@ -5061,37 +5083,134 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (requested == 0) {
 				return 0;
 			}
-			long global = 0;
-			int pageId = firstPageId;
-			int row = firstLocalRow;
-			int output = 0;
-			CompactCsfPageReader reader = this;
-			while (pageId != CompactCsfPageFormat.NO_PAGE && output < requested) {
-				if (pageId != firstPageId) {
-					reader = extentPage();
-					owner.page(pageId, reader);
-					if (!reader.continuation() || reader.firstRow() != key) {
-						throw new IllegalStateException("CSF extent chain changes row coordinate");
-					}
-				}
-				int pageEdges = reader.rowQuadCount(row);
-				long pageEnd = global + pageEdges;
-				if (fromOrdinal < pageEnd) {
-					int localFrom = (int) Math.max(0, fromOrdinal - global);
-					int take = Math.min(requested - output, pageEdges - localFrom);
-					int copied = reader.copyRow(row, localFrom, take, neighborTarget,
-							neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
-							contextTarget == null ? 0 : contextOffset + output);
-					if (copied != take) {
-						throw new IllegalStateException("CSF key cursor copied " + copied + " of " + take);
-					}
-					output += copied;
-				}
-				global = pageEnd;
-				pageId = nextExtentPageId(pageId, reader);
-				row = 0;
+			if (neighborTarget != null && (neighborOffset < 0 || neighborOffset > neighborTarget.length - requested)
+					|| contextTarget != null
+							&& (contextOffset < 0 || contextOffset > contextTarget.length - requested)) {
+				throw new IllegalArgumentException("invalid CSF key-cursor copy target range");
 			}
-			return output;
+			if (neighborTarget != null && neighborTarget == contextTarget
+					&& neighborOffset < contextOffset + requested && contextOffset < neighborOffset + requested) {
+				int output = 0;
+				while (output < requested) {
+					ColumnCopyState state = positionColumn(fromOrdinal + output, false);
+					CompactCsfPageReader reader = columnPage(state.pageId);
+					int take = Math.min(requested - output, state.rowQuads - state.ordinal);
+					if (reader.singleContextRows()) {
+						// The existing page decoder writes the entire neighbor slice before its context slice.
+						copyColumn(fromOrdinal + output, take, neighborTarget, neighborOffset + output, false);
+						copyColumn(fromOrdinal + output, take, contextTarget, contextOffset + output, true);
+					} else {
+						// A multi-context page writes the neighbor and context of each quad in sequence.
+						for (int i = 0; i < take; i++) {
+							copyColumn(fromOrdinal + output + i, 1, neighborTarget, neighborOffset + output + i, false);
+							copyColumn(fromOrdinal + output + i, 1, contextTarget, contextOffset + output + i, true);
+						}
+					}
+					output += take;
+				}
+				return requested;
+			}
+			if (neighborTarget != null) {
+				copyColumn(fromOrdinal, requested, neighborTarget, neighborOffset, false);
+			}
+			if (contextTarget != null) {
+				copyColumn(fromOrdinal, requested, contextTarget, contextOffset, true);
+			}
+			return requested;
+		}
+
+		private void copyColumn(long fromOrdinal, int length, long[] target, int targetOffset, boolean contexts) {
+			ColumnCopyState state = positionColumn(fromOrdinal, contexts);
+			int output = 0;
+			while (output < length) {
+				poll(cancellationPoll);
+				CompactCsfPageReader reader = columnPage(state.pageId);
+				if (state.ordinal == state.rowQuads) {
+					advanceColumnPage(state, reader, contexts);
+					continue;
+				}
+				int take = Math.min(Math.min(length - output, 256), state.rowQuads - state.ordinal);
+				reader.copySequentialColumn(state, take, contexts, target, targetOffset + output);
+				output += take;
+			}
+		}
+
+		private ColumnCopyState positionColumn(long fromOrdinal, boolean contexts) {
+			ColumnCopyState state = contexts ? contextCopy : neighborCopy;
+			if (state == null) {
+				state = new ColumnCopyState();
+				if (contexts) {
+					contextCopy = state;
+				} else {
+					neighborCopy = state;
+				}
+			}
+			if (state.pageId == CompactCsfPageFormat.NO_PAGE || fromOrdinal < state.pageStart + state.ordinal) {
+				initializeColumn(state, firstPageId, 0L, contexts);
+			}
+			while (state.pageStart + state.ordinal < fromOrdinal || state.ordinal == state.rowQuads) {
+				poll(cancellationPoll);
+				CompactCsfPageReader reader = columnPage(state.pageId);
+				long skip = fromOrdinal - state.pageStart - state.ordinal;
+				int remaining = state.rowQuads - state.ordinal;
+				if (skip >= remaining) {
+					advanceColumnPage(state, reader, contexts);
+					continue;
+				}
+				if (reader.singleContextRows()) {
+					reader.skipSingleContextColumn(state, Math.toIntExact(skip), contexts, cancellationPoll);
+				} else if (skip < state.fiberContexts - state.withinFiber) {
+					reader.skipWithinFiber(state, Math.toIntExact(skip), contexts, cancellationPoll);
+				} else {
+					int take = (int) Math.min(skip, 256L);
+					reader.copySequentialColumn(state, take, contexts, null, 0);
+				}
+			}
+			return state;
+		}
+
+		private void advanceColumnPage(ColumnCopyState state, CompactCsfPageReader reader, boolean contexts) {
+			int next = nextExtentPageId(state.pageId, reader);
+			if (next == CompactCsfPageFormat.NO_PAGE) {
+				throw new IllegalStateException("CSF extent chain ended before requested copy");
+			}
+			initializeColumn(state, next, state.pageStart + state.rowQuads, contexts);
+		}
+
+		private void initializeColumn(ColumnCopyState state, int pageId, long pageStart, boolean contexts) {
+			CompactCsfPageReader reader = columnPage(pageId);
+			reader.initializeColumnCopy(state, pageId, pageStart, pageId == firstPageId ? firstLocalRow : 0,
+					contexts, cancellationPoll);
+		}
+
+		private CompactCsfPageReader columnPage(int pageId) {
+			if (pageId == firstPageId) {
+				return this;
+			}
+			CompactCsfPageReader reader = extentPage();
+			owner.page(pageId, reader);
+			if (!reader.continuation() || reader.firstRow() != key) {
+				throw new IllegalStateException("CSF extent chain changes row coordinate");
+			}
+			return reader;
+		}
+
+		private void resetColumnCopies() {
+			if (neighborCopy != null) {
+				neighborCopy.pageId = CompactCsfPageFormat.NO_PAGE;
+			}
+			if (contextCopy != null) {
+				contextCopy.pageId = CompactCsfPageFormat.NO_PAGE;
+			}
+			if (fiberCopy != null) {
+				fiberCopy.pageId = CompactCsfPageFormat.NO_PAGE;
+			}
+			overlappingFiberPage = CompactCsfPageFormat.NO_PAGE;
+		}
+
+		/** Installs an optional cancellation check for page traversal and bounded decoding work. */
+		public void cancellationPoll(Runnable cancellationPoll) {
+			this.cancellationPoll = cancellationPoll;
 		}
 
 		/**
@@ -5113,12 +5232,112 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (length == 0 || fromOrdinal == edgeCount) {
 				return 0;
 			}
+			if (neighborTarget == multiplicityTarget && neighborOffset < multiplicityOffset + length
+					&& multiplicityOffset < neighborOffset + length) {
+				return copyFibersOverlapping(fromOrdinal, length, neighborTarget, neighborOffset,
+						multiplicityTarget, multiplicityOffset);
+			}
+			FiberCopyState state = fiberCopy;
+			if (state == null) {
+				state = new FiberCopyState();
+				fiberCopy = state;
+			}
+			if (state.pageId == CompactCsfPageFormat.NO_PAGE || fromOrdinal < state.nextQuad) {
+				initializeFiberPage(state, firstPageId, 0L);
+			}
+			while (state.nextQuad < fromOrdinal) {
+				poll(cancellationPoll);
+				CompactCsfPageReader reader = columnPage(state.pageId);
+				int remaining = reader.rowQuadCount(state.row) - Math.toIntExact(state.nextQuad - state.pageStart);
+				if (fromOrdinal - state.nextQuad >= remaining) {
+					nextFiberPage(state, reader);
+					continue;
+				}
+				int skip = Math.toIntExact(fromOrdinal - state.nextQuad);
+				long position = reader.seekFollowingFiber(state.row, state.nextFiber,
+						Math.addExact(state.skipContexts, skip), cancellationPoll);
+				int fiber = (int) (position >>> Integer.SIZE);
+				state.previousNeighbor = reader.neighborBeforeFollowingFiber(state.row, state.nextFiber, fiber,
+						state.previousNeighbor, cancellationPoll);
+				state.nextFiber = fiber;
+				state.skipContexts = (int) position;
+				state.nextQuad += skip;
+			}
+
 			int copied = 0;
-			long global = 0L;
-			int pageId = firstPageId;
-			int row = firstLocalRow;
+			while (copied < length && state.nextQuad < edgeCount) {
+				poll(cancellationPoll);
+				CompactCsfPageReader reader = columnPage(state.pageId);
+				if (state.nextFiber == reader.rowNeighborCount(state.row)) {
+					nextFiberPage(state, reader);
+					continue;
+				}
+				poll(cancellationPoll);
+				int got = reader.copyFollowingFibers(state.row, state.nextFiber, Math.min(256, length - copied),
+						state.previousNeighbor, neighborTarget, neighborOffset + copied, multiplicityTarget,
+						multiplicityOffset + copied);
+				if (got <= 0) {
+					throw new IllegalStateException("CSF key cursor made no progress copying fibers");
+				}
+				multiplicityTarget[multiplicityOffset + copied] -= state.skipContexts;
+				state.skipContexts = 0;
+				for (int i = 0; i < got; i++) {
+					state.nextQuad = Math.addExact(state.nextQuad, multiplicityTarget[multiplicityOffset + copied + i]);
+				}
+				state.nextFiber += got;
+				state.previousNeighbor = neighborTarget[neighborOffset + copied + got - 1];
+				if (copied > 0
+						&& neighborTarget[neighborOffset + copied - 1] == neighborTarget[neighborOffset + copied]) {
+					multiplicityTarget[multiplicityOffset + copied - 1] = Math.addExact(
+							multiplicityTarget[multiplicityOffset + copied - 1],
+							multiplicityTarget[multiplicityOffset + copied]);
+					if (got > 1) {
+						System.arraycopy(neighborTarget, neighborOffset + copied + 1, neighborTarget,
+								neighborOffset + copied, got - 1);
+						System.arraycopy(multiplicityTarget, multiplicityOffset + copied + 1, multiplicityTarget,
+								multiplicityOffset + copied, got - 1);
+					}
+					got--;
+				}
+				copied += got;
+			}
+			return copied;
+		}
+
+		private void initializeFiberPage(FiberCopyState state, int pageId, long pageStart) {
+			state.pageId = pageId;
+			state.pageStart = pageStart;
+			state.nextQuad = pageStart;
+			state.row = pageId == firstPageId ? firstLocalRow : 0;
+			state.nextFiber = 0;
+			state.skipContexts = 0;
+			state.previousNeighbor = 0L;
+		}
+
+		private void nextFiberPage(FiberCopyState state, CompactCsfPageReader reader) {
+			int next = nextExtentPageId(state.pageId, reader);
+			if (next == CompactCsfPageFormat.NO_PAGE) {
+				throw new IllegalStateException("CSF extent chain ended before requested fiber");
+			}
+			initializeFiberPage(state, next, state.pageStart + reader.rowQuadCount(state.row));
+		}
+
+		/**
+		 * Preserve the page decoder's original write order for overlapping destinations. The starting-page checkpoint
+		 * avoids replaying earlier extents; the page-local fiber prefix may still be revisited for a later copy.
+		 */
+		private int copyFibersOverlapping(long fromOrdinal, int length, long[] neighborTarget, int neighborOffset,
+				long[] multiplicityTarget, int multiplicityOffset) {
+			int copied = 0;
+			boolean reuse = overlappingFiberPage != CompactCsfPageFormat.NO_PAGE
+					&& fromOrdinal >= overlappingFiberPageStart;
+			long global = reuse ? overlappingFiberPageStart : 0L;
+			int pageId = reuse ? overlappingFiberPage : firstPageId;
+			int row = pageId == firstPageId ? firstLocalRow : 0;
+			boolean checkpointed = false;
 			CompactCsfPageReader reader = this;
 			while (pageId != CompactCsfPageFormat.NO_PAGE && copied < length) {
+				poll(cancellationPoll);
 				if (pageId != firstPageId) {
 					reader = extentPage();
 					owner.page(pageId, reader);
@@ -5129,19 +5348,25 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				int pageQuads = reader.rowQuadCount(row);
 				long pageEnd = global + pageQuads;
 				if (fromOrdinal < pageEnd) {
+					// The next copy of this offset (or a later one) can start at this page, even if this batch
+					// crosses one or more following extents.
+					if (!checkpointed) {
+						overlappingFiberPage = pageId;
+						overlappingFiberPageStart = global;
+						checkpointed = true;
+					}
 					int localFrom = (int) Math.max(0L, fromOrdinal - global);
 					int pageCopied = reader.copyFibersFromQuadOffset(row, localFrom, length - copied,
-							neighborTarget, neighborOffset + copied, multiplicityTarget, multiplicityOffset + copied);
+							neighborTarget, neighborOffset + copied, multiplicityTarget, multiplicityOffset + copied,
+							cancellationPoll);
 					if (copied > 0 && pageCopied > 0
 							&& neighborTarget[neighborOffset + copied - 1] == neighborTarget[neighborOffset + copied]) {
 						multiplicityTarget[multiplicityOffset + copied - 1] = Math.addExact(
 								multiplicityTarget[multiplicityOffset + copied - 1],
 								multiplicityTarget[multiplicityOffset + copied]);
 						if (pageCopied > 1) {
-							System.arraycopy(neighborTarget, neighborOffset + copied + 1, neighborTarget,
-									neighborOffset + copied, pageCopied - 1);
-							System.arraycopy(multiplicityTarget, multiplicityOffset + copied + 1, multiplicityTarget,
-									multiplicityOffset + copied, pageCopied - 1);
+							shiftOverlappingFibers(neighborTarget, neighborOffset + copied + 1, pageCopied - 1);
+							shiftOverlappingFibers(multiplicityTarget, multiplicityOffset + copied + 1, pageCopied - 1);
 						}
 						pageCopied--;
 					}
@@ -5152,6 +5377,15 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				row = 0;
 			}
 			return copied;
+		}
+
+		private void shiftOverlappingFibers(long[] target, int source, int length) {
+			for (int offset = 0; offset < length;) {
+				poll(cancellationPoll);
+				int take = Math.min(256, length - offset);
+				System.arraycopy(target, source + offset, target, source + offset - 1, take);
+				offset += take;
+			}
 		}
 
 		private void ensurePair(long ordinal) {
@@ -5167,6 +5401,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			int row = firstLocalRow;
 			CompactCsfPageReader reader = this;
 			while (pageId != CompactCsfPageFormat.NO_PAGE) {
+				poll(cancellationPoll);
 				if (pageId != firstPageId) {
 					reader = extentPage();
 					owner.page(pageId, reader);
@@ -5196,6 +5431,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			long count = this.rowQuadCount(firstLocalRow);
 			int next = nextExtentPageId(firstPageId, this);
 			while (next != CompactCsfPageFormat.NO_PAGE) {
+				poll(cancellationPoll);
 				CompactCsfPageReader extent = extentPage();
 				owner.page(next, extent);
 				if (!extent.continuation() || extent.firstRow() != key) {
@@ -5211,6 +5447,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			long count = firstPageCount;
 			int next = pageId + 1;
 			while (next < owner.pageCount && owner.isExtentContinuation(next, root)) {
+				poll(cancellationPoll);
 				CompactCsfPageReader extent = extentPage();
 				owner.page(next, extent);
 				count = Math.addExact(count, extent.rowQuadCount(0));
@@ -5225,6 +5462,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 					Math.subtractExact(this.rowNeighborCount(firstLocalRow), 1));
 			int next = nextExtentPageId(firstPageId, this);
 			while (next != CompactCsfPageFormat.NO_PAGE) {
+				poll(cancellationPoll);
 				CompactCsfPageReader extent = extentPage();
 				owner.page(next, extent);
 				if (!extent.continuation() || extent.firstRow() != key) {

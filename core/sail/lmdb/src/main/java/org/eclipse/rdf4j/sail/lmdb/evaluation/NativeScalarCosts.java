@@ -70,7 +70,7 @@ final class NativeScalarCosts {
 		return total;
 	}
 
-	private static LmdbNativeCostVector expression(NativeScalarPlan scalar) {
+	static LmdbNativeCostVector expression(NativeScalarPlan scalar) {
 		class Operations extends AbstractQueryModelVisitor<RuntimeException> {
 			double operators;
 			long decodedSlots;
@@ -117,6 +117,18 @@ final class NativeScalarCosts {
 				.add(Feature.DECODED_ROW, 0D, Long.bitCount(operations.decodedSlots),
 						Long.bitCount(operations.decodedSlots))
 				.build();
+	}
+
+	/** EXISTS owns a tuple producer whose access work is not described by a scalar expression alone. */
+	static boolean hasUnquotedWitness(NativeScalarPlan scalar) {
+		boolean[] found = { false };
+		scalar.expression().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists exists) {
+				found[0] = true;
+			}
+		});
+		return found[0];
 	}
 
 	static LmdbNativeCostVector forInput(LmdbNativeCostVector work, SlotPlan input, RowState row, long mask) {

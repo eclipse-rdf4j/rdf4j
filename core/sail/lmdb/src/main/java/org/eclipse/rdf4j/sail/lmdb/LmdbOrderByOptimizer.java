@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.lmdb.LmdbIndexOrderFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
@@ -100,6 +102,11 @@ class LmdbOrderByOptimizer implements QueryOptimizer {
 		}
 
 		FunctionCall functionCall = (FunctionCall) expr;
+		if (QueryEvaluationUtility.resolveFunction(functionCall)
+				.filter(function -> function.getClass() == LmdbIndexOrderFunction.class)
+				.isEmpty()) {
+			return null;
+		}
 		if (functionCall.getArgs().size() != 1 || !(functionCall.getArgs().get(0) instanceof Var)) {
 			return null;
 		}

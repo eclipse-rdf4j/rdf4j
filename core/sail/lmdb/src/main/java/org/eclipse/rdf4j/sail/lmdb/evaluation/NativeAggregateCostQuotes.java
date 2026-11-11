@@ -387,9 +387,12 @@ final class NativeAggregateCostQuotes {
 			evidence = evidence
 					.withMissingProof("FULL GROUP_CONCAT additional text materialization/copy work is unproved");
 		}
-		NativePhysicalWorkQuote estimate = NativePhysicalWorkQuote.of(
-				LmdbNativeCostVector.builder().add(OPEN, 1D).build(),
-				operations, outputExpected, evidence);
+		// A fully materializing producer pays its complete contraction, storage and output preparation even when
+		// a downstream LIMIT consumes one row. Streaming producers retain their existing incremental quote.
+		LmdbNativeCostVector startup = actual != null && actual.producer() != null
+				&& actual.producer().blocksBeforeOutput() ? operations
+						: LmdbNativeCostVector.builder().add(OPEN, 1D).build();
+		NativePhysicalWorkQuote estimate = NativePhysicalWorkQuote.of(startup, operations, outputExpected, evidence);
 		if (outputHigh == 0D) {
 			// A grouped reducer cannot emit a key when its input is proved empty. Unlike an estimated zero,
 			// this is a physical output proof that survives the conversion into the selector quote.

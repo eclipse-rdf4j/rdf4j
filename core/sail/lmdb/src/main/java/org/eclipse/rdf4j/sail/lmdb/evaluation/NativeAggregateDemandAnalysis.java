@@ -293,7 +293,8 @@ final class NativeAggregateDemandAnalysis {
 				}
 				return;
 			}
-			if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
+			if (expression instanceof FunctionCall function && LmdbNativeFunctionLibrary.entry(function) != null
+					&& FN.STRING_LENGTH.stringValue().equals(function.getURI())
 					&& function.getArgs().size() == 1 && function.getArgs().get(0) instanceof Var variable
 					&& !variable.hasValue()) {
 				observe(input.get(variable.getName()), LENGTH);

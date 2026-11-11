@@ -215,6 +215,11 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	@Override
+	public boolean orderedKeyRunsWithBoundedOpen() {
+		return true;
+	}
+
+	@Override
 	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor() {
 		return openKeyRunCursor(0, keys.keyCount());
 	}
@@ -370,8 +375,25 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 		}
 
 		@Override
+		public void cancellationPoll(Runnable cancellationPoll) {
+			cursor.cancellationPoll(cancellationPoll);
+		}
+
+		@Override
 		public long distinctNeighborCount() {
 			return cursor.distinctNeighborCount();
+		}
+
+		@Override
+		public boolean supportsPhysicalFiberCopy() {
+			return cursor.singlePageRow();
+		}
+
+		@Override
+		public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
+				long[] multiplicityTarget, int multiplicityOffset) {
+			return cursor.copyFibers(runOffset, length, neighborTarget, neighborOffset, multiplicityTarget,
+					multiplicityOffset);
 		}
 
 		@Override

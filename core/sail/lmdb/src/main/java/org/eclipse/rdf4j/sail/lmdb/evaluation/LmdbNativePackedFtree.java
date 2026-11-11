@@ -464,8 +464,8 @@ final class LmdbNativePackedFtree {
 	}
 
 	/**
-	 * The aggregate site's quote: the f-tree lane by lane with one update per demanded lane, or the set-at-a-time
-	 * ceiling with a group update per joined row when the plan or a fan-out is unknown.
+	 * The aggregate site's quote follows the selected grouped sink's projections, or the set-at-a-time ceiling with a
+	 * group update per joined row when the plan or a fan-out is unknown.
 	 */
 	static LmdbNativeCostQuote aggregateQuote(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates) {
@@ -473,9 +473,9 @@ final class LmdbNativePackedFtree {
 		double groups = groupSlots.length == 0 ? 1D : Double.NaN;
 		Plan plan = enabled() ? Planner.plan(multiJoin, row, aggregateDemandedSlots(groupSlots, aggregates)) : null;
 		if (plan != null && (plan.variableMask & row.boundMask()) == 0L) {
-			LmdbNativeCostQuote quote = LmdbNativePackedFtreeQuote.quote(plan, row,
-					LmdbNativePackedFtreeQuote.Site.AGGREGATE,
-					localDemandedMask(plan, aggregateDemandedSlots(groupSlots, aggregates)), outputRows);
+			LmdbNativeCostQuote quote = LmdbNativePackedFtreeQuote.quoteAggregate(plan, row,
+					localDemandedMask(plan, aggregateDemandedSlots(groupSlots, aggregates)), outputRows,
+					groupSlots, aggregates);
 			if (quote != null) {
 				return quote.withOutputRows(groups);
 			}
@@ -693,7 +693,8 @@ final class LmdbNativePackedFtree {
 	/**
 	 * Executes grouped or ungrouped aggregates directly over packed f-tree chunks. This is the important factorized
 	 * sink: the number of logical rows is computed from subtree cardinalities and aggregate values receive exact
-	 * multiplicity weights, so sibling products are never enumerated.
+	 * multiplicity weights. A grouped projection enumerates combinations needed to distinguish its group keys and
+	 * aggregate arguments.
 	 */
 	static List<BindingSet> tryEvaluateAggregate(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
@@ -1102,13 +1103,7 @@ final class LmdbNativePackedFtree {
 			int[] groupSlots, AggregateSpec[] aggregates, AggContext context) throws IOException {
 		int[] arguments = new int[aggregates.length];
 		boolean[] exact = new boolean[aggregates.length];
-		for (int i = 0; i < aggregates.length; i++) {
-			AggregateSpec spec = aggregates[i];
-			arguments[i] = spec.kind == AggKind.COUNT && !spec.distinct && spec.slot >= 0
-					&& plan.bySlot.containsKey(spec.slot) ? -1 : spec.slot;
-			exact[i] = !spec.distinct && spec.kind != AggKind.MIN && spec.kind != AggKind.MAX;
-		}
-		FactorProjectionLayout layout = new FactorProjectionLayout(groupSlots, arguments, exact);
+		FactorProjectionLayout layout = groupProjectionLayout(plan, groupSlots, aggregates, arguments, exact);
 		int[][] outputs = layout.columns();
 		HashMap<GroupKey, AggState> groups = new HashMap<>();
 		// The calling aggregate owns runtime. This cursor borrows its lifecycle and only its
@@ -1194,6 +1189,18 @@ final class LmdbNativePackedFtree {
 				}
 		}
 		return groups;
+	}
+
+	/** Build the same grouping demands for execution and physical-work estimation. */
+	static FactorProjectionLayout groupProjectionLayout(Plan plan, int[] groupSlots, AggregateSpec[] aggregates,
+			int[] arguments, boolean[] exact) {
+		for (int i = 0; i < aggregates.length; i++) {
+			AggregateSpec spec = aggregates[i];
+			arguments[i] = spec.kind == AggKind.COUNT && !spec.distinct && spec.slot >= 0
+					&& plan.bySlot.containsKey(spec.slot) ? -1 : spec.slot;
+			exact[i] = !spec.distinct && spec.kind != AggKind.MIN && spec.kind != AggKind.MAX;
+		}
+		return new FactorProjectionLayout(groupSlots, arguments, exact);
 	}
 
 	private static void addProjectedGroup(HashMap<GroupKey, AggState> groups, Plan plan, RowState row, Chunk chunk,
@@ -1600,7 +1607,7 @@ final class LmdbNativePackedFtree {
 		return slots;
 	}
 
-	private static long localDemandedMask(Plan plan, int[] demandedSlots) {
+	static long localDemandedMask(Plan plan, int[] demandedSlots) {
 		long mask = 0L;
 		for (int slot : demandedSlots) {
 			if (plan.bySlot.containsKey(slot)) {

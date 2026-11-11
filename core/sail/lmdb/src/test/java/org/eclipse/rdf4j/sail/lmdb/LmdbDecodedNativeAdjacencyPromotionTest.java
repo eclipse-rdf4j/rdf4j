@@ -214,6 +214,15 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 			assertThat(adjacency.borrowNeighbors(FIRST_SUBJECT, slice)).isTrue();
 			assertThat(slice.length()).isEqualTo(1);
 			assertThat(slice.values()[slice.offset()]).isEqualTo(FIRST_OBJECT);
+			try (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor roots = adjacency.openKeyRunCursor()) {
+				assertThat(roots.advance()).isTrue();
+				assertThat(roots.supportsPhysicalFiberCopy()).isTrue();
+				long[] neighbors = new long[1];
+				long[] multiplicities = new long[1];
+				assertThat(roots.copyFibers(0L, 1, neighbors, 0, multiplicities, 0)).isEqualTo(1);
+				assertThat(neighbors).containsExactly(FIRST_OBJECT);
+				assertThat(multiplicities).containsExactly(1L);
+			}
 		}
 	}
 }

@@ -176,6 +176,9 @@ final class LmdbNativeScalarExpressionCompiler {
 		}
 		if (expr instanceof FunctionCall) {
 			FunctionCall call = (FunctionCall) expr;
+			if (LmdbNativeFunctionLibrary.entry(call) == null) {
+				return null;
+			}
 			String uri = call.getURI();
 			if (FN.STRING_LENGTH.stringValue().equals(uri) || numericBuiltin(uri)) {
 				LmdbNativeCompiledNumeric numeric = compileNumeric(expr);
@@ -228,7 +231,7 @@ final class LmdbNativeScalarExpressionCompiler {
 	 * library's single normative evaluator.
 	 */
 	private LmdbNativeCompiledValue compileLibraryFunction(FunctionCall call) {
-		LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(call.getURI());
+		LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(call);
 		if (entry == null) {
 			return null;
 		}
@@ -342,7 +345,8 @@ final class LmdbNativeScalarExpressionCompiler {
 				return decoded.language().orElse("");
 			});
 		}
-		if (expr instanceof FunctionCall call && call.getArgs().size() == 1
+		if (expr instanceof FunctionCall call && LmdbNativeFunctionLibrary.entry(call) != null
+				&& call.getArgs().size() == 1
 				&& (FN.LOWER_CASE.stringValue().equals(call.getURI())
 						|| FN.UPPER_CASE.stringValue().equals(call.getURI()))) {
 			List<ValueExpr> args = call.getArgs();
@@ -401,6 +405,9 @@ final class LmdbNativeScalarExpressionCompiler {
 	}
 
 	LmdbNativeCompiledNumeric compileNumeric(ValueExpr expr) {
+		if (expr instanceof FunctionCall call && LmdbNativeFunctionLibrary.entry(call) == null) {
+			return null;
+		}
 		if (expr instanceof MathExpr) {
 			MathExpr math = (MathExpr) expr;
 			LmdbNativeCompiledNumeric left = compileNumeric(math.getLeftArg());

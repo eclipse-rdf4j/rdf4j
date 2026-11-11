@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.EdgePlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.NodePlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.RootSeed;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.UnaryPlan;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 
 /**
  * Prices a packed f-tree as its runtime works ({@link LmdbNativePackedFtree.Runtime}): the roots are enumerated once
@@ -28,8 +29,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.UnaryPlan;
  * parent lane and its neighbours copied as the child's lanes, a cycle-closing constraint edge is bound once per parent
  * lane and intersected against each candidate, unary and witness checks probe once per lane, filters run once per lane,
  * and every lane is packed once. Only an aggregate runs the subtree-count pass over those lanes. A row consumer pays
- * per logical row (the cursor replays the lanes' product); an aggregate pays one update per demanded lane that carries
- * a count, never per joined row.
+ * per logical row (the cursor replays the lanes' product). A structured or ungrouped aggregate can fold demanded lanes;
+ * a grouped projection instead visits each demanded tuple, including products across sibling branches.
  */
 final class LmdbNativePackedFtreeQuote {
 
@@ -48,6 +49,62 @@ final class LmdbNativePackedFtreeQuote {
 	 */
 	static LmdbNativeCostQuote quote(LmdbNativePackedFtree.Plan plan, RowState row, Site site, long demandedMask,
 			double outputRows) {
+		return quote(plan, row, site, demandedMask, outputRows, null);
+	}
+
+	/** Price grouped fallback projections according to the same demands the actual sink traverses. */
+	static LmdbNativeCostQuote quoteAggregate(LmdbNativePackedFtree.Plan plan, RowState row, long demandedMask,
+			double outputRows, int[] groupSlots, AggregateSpec[] aggregates) {
+		ProjectionDemands projections = null;
+		if (groupSlots.length != 0 && (!LmdbNativePackedFtree.structuredGroupsEnabled()
+				|| LmdbNativePackedFtree.StructuredGroupLayout.analyze(plan, groupSlots, aggregates) == null)) {
+			if ("false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY))) {
+				// The legacy grouped sink enumerates the union of all group and argument demands.
+				projections = new ProjectionDemands(new long[] { demandedMask },
+						new int[] { Math.max(1, aggregates.length) });
+			} else {
+				int[] arguments = new int[aggregates.length];
+				boolean[] exact = new boolean[aggregates.length];
+				FactorProjectionLayout layout = LmdbNativePackedFtree.groupProjectionLayout(plan, groupSlots,
+						aggregates, arguments, exact);
+				long[] masks = new long[layout.size()];
+				int[] channels = new int[layout.size()];
+				for (int i = 0; i < masks.length; i++) {
+					masks[i] = LmdbNativePackedFtree.localDemandedMask(plan, layout.columns(i));
+					channels[i] = layout.channels(i).length;
+				}
+				if (aggregates.length == 0) {
+					// Group identities still need a group-table visit even without aggregate channels.
+					channels[0] = 1;
+				}
+				projections = new ProjectionDemands(masks, channels);
+			}
+		}
+		return quote(plan, row, Site.AGGREGATE, demandedMask, outputRows, projections);
+	}
+
+	/** Group updates for a consumer of the given physical projections, without charging its access twice. */
+	static LmdbNativeCostVector projectedGroupWork(LmdbNativePackedFtree.Plan plan, RowState row,
+			int[][] outputSlots, int[] channels, double outputRows) {
+		long[] masks = new long[outputSlots.length];
+		for (int i = 0; i < masks.length; i++) {
+			masks[i] = LmdbNativePackedFtree.localDemandedMask(plan, outputSlots[i]);
+		}
+		LmdbNativeCostQuote quote = quote(plan, row, Site.AGGREGATE, 0L, outputRows,
+				new ProjectionDemands(masks, channels));
+		if (quote == null) {
+			return null;
+		}
+		LmdbNativeCostVector total = quote.total();
+		return LmdbNativeCostVector.bounds(Feature.GROUP_UPDATE, total.low(Feature.GROUP_UPDATE),
+				total.expected(Feature.GROUP_UPDATE), total.high(Feature.GROUP_UPDATE));
+	}
+
+	private record ProjectionDemands(long[] masks, int[] channels) {
+	}
+
+	private static LmdbNativeCostQuote quote(LmdbNativePackedFtree.Plan plan, RowState row, Site site,
+			long demandedMask, double outputRows, ProjectionDemands projections) {
 		NativeLmdbQuerySource source = row.source;
 		if (source == null) {
 			return null;
@@ -108,19 +165,70 @@ final class LmdbNativePackedFtreeQuote {
 		} else {
 			// Only aggregate consumers run the subtree-count pass, visiting every lane once more.
 			total = total.plus(estimated(Feature.BATCH_ROW, packed, rootsPossible));
-			double updates = 0D;
-			for (NodePlan node : plan.nodes) {
-				if ((demandedMask & (1L << node.slot)) != 0L) {
-					// a lane is updated only when it carries a joined row: at most one update per joined row
-					updates += Double.isNaN(outputRows) ? lanes[node.ordinal]
-							: Math.min(lanes[node.ordinal], outputRows);
-				}
-			}
+			double updates = projections == null ? laneUpdates(plan, lanes, demandedMask, outputRows)
+					: projectedUpdates(plan, lanes, projections, chunks, outputRows);
 			total = total.plus(estimated(Feature.GROUP_UPDATE, updates == 0D ? chunks : updates, true));
 		}
 		return new LmdbNativeCostQuote(startup.plus(LmdbNativeCostVector.bounds(Feature.OPEN, minimumChunks, chunks,
 				maximumChunks)),
 				rootWork.plus(total), outputRows, false, false);
+	}
+
+	private static double laneUpdates(LmdbNativePackedFtree.Plan plan, double[] lanes, long demandedMask,
+			double outputRows) {
+		double updates = 0D;
+		for (NodePlan node : plan.nodes) {
+			if ((demandedMask & (1L << node.slot)) != 0L) {
+				// A lane is updated only when it carries a joined row: at most one update per joined row.
+				updates += Double.isNaN(outputRows) ? lanes[node.ordinal] : Math.min(lanes[node.ordinal], outputRows);
+			}
+		}
+		return updates;
+	}
+
+	private static double projectedUpdates(LmdbNativePackedFtree.Plan plan, double[] lanes,
+			ProjectionDemands projections, double chunks, double outputRows) {
+		double updates = 0D;
+		for (int i = 0; i < projections.masks().length; i++) {
+			int channels = projections.channels()[i];
+			if (channels == 0) {
+				continue;
+			}
+			double rows = projectedRows(plan, lanes, projections.masks()[i], chunks, outputRows);
+			updates += rows * channels;
+		}
+		return updates;
+	}
+
+	/** Each demanded child contributes its average fan-out; separate sibling demands multiply per parent. */
+	private static double projectedRows(LmdbNativePackedFtree.Plan plan, double[] lanes, long demand,
+			double chunks, double outputRows) {
+		if (demand == 0L) {
+			return chunks;
+		}
+		long required = demand;
+		for (int i = plan.nodes.length - 1; i > 0; i--) {
+			NodePlan node = plan.nodes[i];
+			if ((required & (1L << node.slot)) != 0L) {
+				required |= 1L << node.parent.slot;
+			}
+		}
+		double rows = lanes[plan.root.ordinal];
+		for (NodePlan node : plan.nodes) {
+			if (node.parent == null || (required & (1L << node.slot)) == 0L) {
+				continue;
+			}
+			double parent = lanes[node.parent.ordinal];
+			double child = lanes[node.ordinal];
+			if (parent == 0D || child == 0D) {
+				return 0D;
+			}
+			if (!Double.isFinite(parent) || !Double.isFinite(child)) {
+				return Double.isFinite(outputRows) ? outputRows : Double.MAX_VALUE;
+			}
+			rows = rows / parent * child;
+		}
+		return Double.isFinite(outputRows) ? Math.min(rows, outputRows) : rows;
 	}
 
 	private record Roots(double count, LmdbNativeWork.RowBounds bounds, LmdbNativeCostVector access, boolean eager,
