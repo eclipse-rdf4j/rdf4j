@@ -752,7 +752,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 					explicitOnlyBranch = transactionExplicitRoot.fork(this);
 					inferredOnlyBranch = transactionInferredRoot.fork(this);
 				}
-				includeInferredBranch = new UnionSailSource(inferredOnlyBranch, explicitOnlyBranch);
+				// Apply explicit removals before inferred additions so a re-derived statement is not suppressed
+				// by an explicit statement that this transaction removes.
+				includeInferredBranch = new UnionSailSource(explicitOnlyBranch, inferredOnlyBranch);
 			} catch (RuntimeException | Error failure) {
 				SourceClosingSailDataset.closeAfterFailure(failure, explicitOnlyBranch, inferredOnlyBranch);
 				explicitOnlyBranch = null;
