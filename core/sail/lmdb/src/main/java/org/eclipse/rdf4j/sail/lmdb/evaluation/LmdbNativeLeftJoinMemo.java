@@ -570,10 +570,15 @@ final class RightMemoProbe {
 		try {
 			scratch = input.fork();
 			scratch.enableDecodedInputAccounting();
+			// Sweep admission replaces correlated probes with one key-unbound build and keyed lookups. Preserve
+			// that access path even when the future probe-key distribution is unknown: AUTO without a demand
+			// profile chooses SCAN and would replay the entire swept relation for every outer key. INDEX still
+			// uses ledger-accounted storage and spills its postings when they cannot remain resident. Per-frame
+			// memos already contain only one key's results and retain their scan path.
 			try (OptionalCompatibilityIndex.Builder builder = OptionalCompatibilityIndex.builder(scratch,
 					replaySlots, sweepKeySlots == null ? NO_SHARED_SLOTS : sweepKeySlots,
 					sweepKeySlots == null ? OptionalCompatibilityIndex.Strategy.SCAN
-							: OptionalCompatibilityIndex.Strategy.AUTO,
+							: OptionalCompatibilityIndex.Strategy.INDEX,
 					telemetry == null ? null : telemetry.fork())) {
 				if (sweepKeySlots == null || !buildBatch(scratch, builder, progress)) {
 					progress.opened = true;
