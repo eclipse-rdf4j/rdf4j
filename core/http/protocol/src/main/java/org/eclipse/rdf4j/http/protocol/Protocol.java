@@ -68,7 +68,30 @@ public abstract class Protocol {
 		/**
 		 * rollback
 		 */
-		ROLLBACK
+		ROLLBACK,
+		/**
+		 * Retrieve one namespace on the active transaction. Requires {@link Protocol#TRANSACTION_NAMESPACES_HEADER}
+		 * support.
+		 */
+		GET_NAMESPACE,
+		/**
+		 * Retrieve all namespaces on the active transaction. Requires {@link Protocol#TRANSACTION_NAMESPACES_HEADER}
+		 * support.
+		 */
+		GET_NAMESPACES,
+		/**
+		 * Set a namespace on the active transaction. Requires {@link Protocol#TRANSACTION_NAMESPACES_HEADER} support.
+		 */
+		SET_NAMESPACE,
+		/**
+		 * Remove a namespace on the active transaction. Requires {@link Protocol#TRANSACTION_NAMESPACES_HEADER}
+		 * support.
+		 */
+		REMOVE_NAMESPACE,
+		/**
+		 * Clear namespaces on the active transaction. Requires {@link Protocol#TRANSACTION_NAMESPACES_HEADER} support.
+		 */
+		CLEAR_NAMESPACES
 	}
 
 	/**
@@ -317,6 +340,19 @@ public abstract class Protocol {
 	 * Relative location of the transaction resources of a repository.
 	 */
 	public static final String TRANSACTIONS = "transactions";
+
+	/**
+	 * Transaction-start response header with value {@code true} when namespace actions are supported on the returned
+	 * transaction URL. Clients use the ordinary repository namespace endpoints when this capability is absent. The
+	 * capability belongs to the returned transaction and must be negotiated again for each new transaction.
+	 */
+	public static final String TRANSACTION_NAMESPACES_HEADER = "RDF4J-Transaction-Namespaces";
+
+	/**
+	 * Namespace prefix parameter for transaction namespace actions. An empty value selects the default prefix; a
+	 * missing parameter is invalid for operations on one namespace.
+	 */
+	public static final String NAMESPACE_PREFIX_PARAM_NAME = "prefix";
 
 	/**
 	 * Relative location of the context list resource of a repository.
