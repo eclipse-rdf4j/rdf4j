@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -178,10 +179,31 @@ final class AlgebraEvaluationSafety {
 	 * distinguish an unbound input from a bound one when moved across a scope boundary.
 	 */
 	static boolean isPureRelational(TupleExpr expression) {
+		return isPureRelational(expression, null);
+	}
+
+	/**
+	 * Shares a structural proof between overlapping regions. The optional cache must use node identity and be confined
+	 * to one invocation; changing scope flags does not affect this proof, but replacing operators or VALUES does.
+	 */
+	static boolean isPureRelational(TupleExpr expression, Map<TupleExpr, Boolean> cache) {
 		if (expression == null) {
 			return false;
 		}
+		if (cache != null) {
+			Boolean cached = cache.get(expression);
+			if (cached != null) {
+				return cached;
+			}
+		}
+		boolean result = computePureRelational(expression, cache);
+		if (cache != null) {
+			cache.put(expression, result);
+		}
+		return result;
+	}
 
+	private static boolean computePureRelational(TupleExpr expression, Map<TupleExpr, Boolean> cache) {
 		Class<?> expressionClass = expression.getClass();
 		if (expressionClass == StatementPattern.class || expressionClass == SingletonSet.class
 				|| expressionClass == EmptySet.class) {
@@ -191,15 +213,15 @@ final class AlgebraEvaluationSafety {
 			return hasStableBindings((BindingSetAssignment) expression);
 		}
 		if (expressionClass == QueryRoot.class) {
-			return isPureRelational(((QueryRoot) expression).getArg());
+			return isPureRelational(((QueryRoot) expression).getArg(), cache);
 		}
 		if (expressionClass == Join.class) {
 			Join join = (Join) expression;
-			return isPureRelational(join.getLeftArg()) && isPureRelational(join.getRightArg());
+			return isPureRelational(join.getLeftArg(), cache) && isPureRelational(join.getRightArg(), cache);
 		}
 		if (expressionClass == Union.class) {
 			Union union = (Union) expression;
-			return isPureRelational(union.getLeftArg()) && isPureRelational(union.getRightArg());
+			return isPureRelational(union.getLeftArg(), cache) && isPureRelational(union.getRightArg(), cache);
 		}
 		return false;
 	}
