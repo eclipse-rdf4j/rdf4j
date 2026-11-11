@@ -23,15 +23,20 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -83,26 +88,24 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 			if (!union.isVariableScopeChange()) {
 				continue;
 			}
-			// A pure region below an ordinary Join accepts any compatible incoming mapping. Prove the whole
-			// region, including nested marked UNIONs, without repeatedly cloning it or scanning its ancestors.
-			// A direct OPTIONAL right operand also needs the containing operator's input-frame checks below.
-			boolean pureRegion = union.getParentNode() != null && union.getParentNode().getClass() == Join.class
-					&& analysis.contextAt(union).bindingDomainKnown()
-					&& AlgebraEvaluationSafety.isPureRelational(union, pureRelations);
-			if (!pureRegion) {
+			TupleExpr pureRegion = pureJoinRegionRoot(union, analysis, pureRelations);
+			if (pureRegion == null) {
 				CandidateInputs candidateInputs = candidateInputs(union, analysis);
 				if (candidateInputs == null || !canAcceptInputs(union, candidateInputs, analysis)) {
 					continue;
 				}
+				union.setVariableScopeChange(false);
+				clearBranchScopes(union.getLeftArg(), false);
+				clearBranchScopes(union.getRightArg(), false);
+			} else {
+				clearBranchScopes(pureRegion, true);
 			}
 
-			union.setVariableScopeChange(false);
-			clearBranchScopes(union.getLeftArg(), pureRegion);
-			clearBranchScopes(union.getRightArg(), pureRegion);
 			analysis.invalidate(tupleExpr);
 			// A retained nested boundary can be the only reason its nearest enclosing UNION was rejected.
 			// Each successful removal schedules at most one retry; already pending candidates are not duplicated.
-			for (QueryModelNode parent = union.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			TupleExpr clearedRoot = pureRegion == null ? union : pureRegion;
+			for (QueryModelNode parent = clearedRoot.getParentNode(); parent != null; parent = parent.getParentNode()) {
 				if (parent instanceof Union enclosing && enclosing.isVariableScopeChange()) {
 					if (queued.add(enclosing)) {
 						unions.addLast(enclosing);
@@ -111,6 +114,28 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 				}
 			}
 		}
+	}
+
+	private TupleExpr pureJoinRegionRoot(Union union, QueryAlgebraBindingAnalysis analysis,
+			Map<TupleExpr, Boolean> pureRelations) {
+		if (!hasOrdinaryJoinParent(union) || !analysis.contextAt(union).bindingDomainKnown()
+				|| !AlgebraEvaluationSafety.isPureRelational(union, pureRelations)) {
+			return null;
+		}
+		// Clear a containing pure Join as well: otherwise normalization can copy its marker onto a new UNION.
+		// The highest removed boundary must still be an ordinary Join operand. In particular, clearing an
+		// OPTIONAL's direct right operand requires the separate containing-operator proof below.
+		TupleExpr region = union;
+		while (region.getParentNode() instanceof Join parent && parent.getClass() == Join.class
+				&& hasOrdinaryJoinParent(parent) && analysis.contextAt(parent).bindingDomainKnown()
+				&& AlgebraEvaluationSafety.isPureRelational(parent, pureRelations)) {
+			region = parent;
+		}
+		return region;
+	}
+
+	private boolean hasOrdinaryJoinParent(QueryModelNode node) {
+		return node.getParentNode() != null && node.getParentNode().getClass() == Join.class;
 	}
 
 	private CandidateInputs candidateInputs(Union union, QueryAlgebraBindingAnalysis analysis) {
@@ -140,6 +165,11 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 					|| parent.getClass() == Filter.class && current == ((Filter) parent).getArg()
 					|| parent.getClass() == Extension.class && current == ((Extension) parent).getArg()
 					|| parent.getClass() == Projection.class && current == ((Projection) parent).getArg()
+					|| parent.getClass() == Distinct.class && current == ((Distinct) parent).getArg()
+					|| parent.getClass() == Reduced.class && current == ((Reduced) parent).getArg()
+					|| parent.getClass() == Order.class && current == ((Order) parent).getArg()
+					|| parent.getClass() == Slice.class && current == ((Slice) parent).getArg()
+					|| parent.getClass() == Group.class && current == ((Group) parent).getArg()
 					|| parent.getClass() == QueryRoot.class)) {
 				if (hasJoinAncestor(parent)) {
 					reject("unsupported ancestor input transition", parent);
@@ -149,6 +179,7 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 			}
 			// These are a conservative envelope of MAY inputs across modeled evaluator transitions, including
 			// possible later reorderings. A UNION's other arm and an Extension's own targets are not suppliers.
+			// Only the tuple-input edge is modeled for modifiers; their output names are not additional suppliers.
 			// Independent operands can retain invocation inputs, so a lexical marker alone is not a stop rule.
 			if (sibling != null) {
 				ReadOnlyContext siblingInput = analysis.contextAt(sibling);

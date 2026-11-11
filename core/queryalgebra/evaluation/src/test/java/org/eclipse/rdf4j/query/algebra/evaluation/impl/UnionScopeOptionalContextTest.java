@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -87,6 +88,28 @@ class UnionScopeOptionalContextTest {
 
 		assertThat(evaluate(optimized, input)).containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(optionalUnion(optimized, false).isVariableScopeChange()).isTrue();
+	}
+
+	@Test
+	void pureContainingOptionalJoinMustRetainLeftExpressionInput() {
+		Value inputValue = VALUES.createIRI("urn:input");
+		BindingSet input = row("x", inputValue);
+		Extension left = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "copy"));
+		Union union = scopedUnion(statement("urn:first"), statement("urn:second"));
+		Join right = new Join(new SingletonSet(), union);
+		right.setVariableScopeChange(true);
+		QueryRoot original = new QueryRoot(new LeftJoin(left, right));
+		QueryRoot optimized = original.clone();
+		List<Map<String, Value>> expected = List.of(Map.of("x", inputValue, "copy", inputValue));
+
+		assertThat(evaluate(original, input)).containsExactlyInAnyOrderElementsOf(expected);
+
+		new UnionScopeChangeOptimizer().optimize(optimized, null, input);
+
+		assertThat(evaluate(optimized, input)).containsExactlyInAnyOrderElementsOf(expected);
+		Join optimizedRight = (Join) ((LeftJoin) optimized.getArg()).getRightArg();
+		assertThat(optimizedRight.isVariableScopeChange()).isTrue();
+		assertThat(((Union) optimizedRight.getRightArg()).isVariableScopeChange()).isFalse();
 	}
 
 	@Test
@@ -147,6 +170,26 @@ class UnionScopeOptionalContextTest {
 
 		assertThat(randomEvaluations(optimized)).isEqualTo(2);
 		assertThat(optionalUnion(optimized, false).isVariableScopeChange()).isTrue();
+	}
+
+	@Test
+	void pureContainingOptionalJoinMustRetainConditionEvaluationCount() {
+		Union union = scopedUnion(new SingletonSet(), new SingletonSet());
+		Join right = new Join(new SingletonSet(), union);
+		right.setVariableScopeChange(true);
+		Compare condition = new Compare(new FunctionCall("RAND"), new ValueConstant(VALUES.createLiteral(-1)),
+				Compare.CompareOp.GT);
+		QueryRoot original = new QueryRoot(new LeftJoin(new SingletonSet(), right, condition));
+		QueryRoot optimized = original.clone();
+
+		assertThat(randomEvaluations(original)).isEqualTo(2);
+
+		new UnionScopeChangeOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+
+		assertThat(randomEvaluations(optimized)).isEqualTo(2);
+		Join optimizedRight = (Join) ((LeftJoin) optimized.getArg()).getRightArg();
+		assertThat(optimizedRight.isVariableScopeChange()).isTrue();
+		assertThat(((Union) optimizedRight.getRightArg()).isVariableScopeChange()).isFalse();
 	}
 
 	private static Union scopedUnion(TupleExpr left, TupleExpr right) {
