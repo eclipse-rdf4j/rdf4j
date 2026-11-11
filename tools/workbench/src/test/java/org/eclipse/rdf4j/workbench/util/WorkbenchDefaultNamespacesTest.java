@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.workbench.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,39 +21,69 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.OWL;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.model.vocabulary.STRF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.jupiter.api.Test;
 
 class WorkbenchDefaultNamespacesTest {
 
-	private static Map<String, String> byPrefix() {
-		return WorkbenchDefaultNamespaces.get()
+	private static final Set<String> CORE_PREFIXES = Set.of("rdf", "rdfs", "xsd", "owl");
+
+	private static final Set<String> CORE_NAMES = Set.of(RDF.NAMESPACE, RDFS.NAMESPACE, XSD.NAMESPACE, OWL.NAMESPACE);
+
+	private static Map<String, String> fallbackByPrefix() {
+		return WorkbenchDefaultNamespaces.fallback()
 				.stream()
 				.collect(Collectors.toMap(Namespace::getPrefix, Namespace::getName));
 	}
 
 	@Test
-	void containsRdf4jOwnedAndCommonVocabularies() {
-		Map<String, String> map = byPrefix();
+	void alwaysAddedDefaultsAreExactlyRdfRdfsXsdAndOwl() {
+		assertThat(WorkbenchDefaultNamespaces.get()).containsExactly(
+				new SimpleNamespace("rdf", RDF.NAMESPACE),
+				new SimpleNamespace("rdfs", RDFS.NAMESPACE),
+				new SimpleNamespace("xsd", XSD.NAMESPACE),
+				new SimpleNamespace("owl", OWL.NAMESPACE));
+	}
+
+	@Test
+	void fallbackContainsRdf4jOwnedAndCommonVocabularies() {
+		Map<String, String> map = fallbackByPrefix();
 		assertThat(map).containsEntry("rdf4j", RDF4J.NAMESPACE)
 				.containsEntry("config", CONFIG.NAMESPACE)
 				.containsEntry("rsx", RSX.NAMESPACE)
 				.containsEntry("strf", STRF.NAMESPACE)
 				.containsEntry("skos", SKOS.NAMESPACE)
 				.containsEntry("sh", SHACL.NAMESPACE)
+				.containsEntry("dc", DC.NAMESPACE)
+				.containsEntry("xhv", "http://www.w3.org/1999/xhtml/vocab#")
 				.containsKeys("search", "fedx", "lmdb", "rep");
 	}
 
 	@Test
-	void hasNoDuplicatePrefixesOrNamespaces() {
-		List<Namespace> all = WorkbenchDefaultNamespaces.get();
-		assertThat(all).isNotEmpty();
+	void fallbackHasNoneOfTheCoreDefaults() {
+		assertThat(fallbackByPrefix()).doesNotContainKeys("rdf", "rdfs", "xsd", "owl");
+		assertThat(WorkbenchDefaultNamespaces.fallback()).extracting(Namespace::getName)
+				.doesNotContainAnyElementsOf(CORE_NAMES);
+		assertThat(WorkbenchDefaultNamespaces.fallback()).extracting(Namespace::getPrefix)
+				.doesNotContainAnyElementsOf(CORE_PREFIXES);
+	}
+
+	@Test
+	void hasNoDuplicatePrefixesOrNamespacesWithinOrAcrossTheLists() {
+		assertThat(WorkbenchDefaultNamespaces.fallback()).isNotEmpty();
+		List<Namespace> all = new ArrayList<>(WorkbenchDefaultNamespaces.get());
+		all.addAll(WorkbenchDefaultNamespaces.fallback());
 		Set<String> prefixes = new HashSet<>();
 		Set<String> names = new HashSet<>();
 		for (Namespace ns : all) {
@@ -67,12 +98,8 @@ class WorkbenchDefaultNamespacesTest {
 		// as display prefixes they would render http://www.w3.org/1999/xhtml/vocab#license as "license:".
 		assertThat(WorkbenchDefaultNamespaces.get()).allSatisfy(ns -> assertThat(ns.getName()).as(ns.getPrefix())
 				.matches(".*[#/]$"));
-		assertThat(byPrefix()).doesNotContainKeys("license", "role", "describedby", "xml")
-				.containsEntry("xhv", "http://www.w3.org/1999/xhtml/vocab#");
-	}
-
-	@Test
-	void dcMapsToDublinCoreElements() {
-		assertThat(byPrefix()).containsEntry("dc", DC.NAMESPACE);
+		assertThat(WorkbenchDefaultNamespaces.fallback())
+				.allSatisfy(ns -> assertThat(ns.getName()).as(ns.getPrefix()).matches(".*[#/]$"));
+		assertThat(fallbackByPrefix()).doesNotContainKeys("license", "role", "describedby", "xml");
 	}
 }

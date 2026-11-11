@@ -180,7 +180,7 @@ namespace workbench {
 
         /**
          * The namespaces to fall back on for prefixes that the repository does not define: the deployment's list
-         * (namespaces.fallback; the bundled list is empty); none when they cannot be loaded.
+         * (namespaces.fallback; the bundled list is well-known vocabularies and RDF4J namespaces); none when they cannot be loaded.
          */
         function loadFallbackNamespaces(): Promise<{ [prefix: string]: string }> {
             if (!fallbackNamespaces) {

@@ -85,31 +85,47 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema;
 
 /**
- * The namespaces the workbench declares for every repository unless the repository, or workbench.properties, already
- * uses the prefix or the namespace IRI. RDF4J-owned namespaces come first, then the well-known vocabularies of
- * rdf4j-model-vocabulary, then {@link Namespaces#DEFAULT_RDF4J}. An entry is skipped when an earlier entry already has
- * its prefix or its namespace IRI.
+ * The namespaces the workbench knows without a repository defining them. {@link #get()} are the few that the workbench
+ * adds to every repository (rdf, rdfs, xsd and owl) unless the repository, or workbench.properties, already uses the
+ * prefix or the namespace IRI. {@link #fallback()} is the bundled list of other well-known vocabularies and RDF4J
+ * namespaces that the query editor offers as prefix completions: RDF4J-owned namespaces come first, then the well-known
+ * vocabularies of rdf4j-model-vocabulary, then {@link Namespaces#DEFAULT_RDF4J}. An entry is skipped when an earlier
+ * entry already has its prefix or its namespace IRI, or when it is one of the always-added namespaces.
  */
 public final class WorkbenchDefaultNamespaces {
 
-	private static final List<Namespace> NAMESPACES = build();
+	private static final List<Namespace> NAMESPACES = List.of(RDF.NS, RDFS.NS, XSD.NS, OWL.NS);
+
+	private static final List<Namespace> FALLBACK = buildFallback();
 
 	private WorkbenchDefaultNamespaces() {
 	}
 
 	/**
-	 * @return the immutable, ordered default namespaces, without duplicate prefixes or namespace IRIs
+	 * @return the immutable, ordered namespaces that are added to every repository: rdf, rdfs, xsd and owl
 	 */
 	public static List<Namespace> get() {
 		return NAMESPACES;
 	}
 
+	/**
+	 * @return the immutable, ordered bundled fallback namespaces, without duplicate prefixes or namespace IRIs and
+	 *         without the namespaces of {@link #get()}
+	 */
+	public static List<Namespace> fallback() {
+		return FALLBACK;
+	}
+
 	// the legacy openrdf config schemas are deprecated for removal, but their prefixes still occur in stored configs
 	@SuppressWarnings("removal")
-	private static List<Namespace> build() {
+	private static List<Namespace> buildFallback() {
 		List<Namespace> namespaces = new ArrayList<>();
 		Set<String> prefixes = new HashSet<>();
 		Set<String> names = new HashSet<>();
+		for (Namespace core : NAMESPACES) {
+			prefixes.add(core.getPrefix());
+			names.add(core.getName());
+		}
 		add(namespaces, prefixes, names, RDF4J.NS);
 		add(namespaces, prefixes, names, SESAME.NS);
 		add(namespaces, prefixes, names, SESAMEQNAME.NS);
@@ -153,10 +169,7 @@ public final class WorkbenchDefaultNamespaces {
 		add(namespaces, prefixes, names, LOCN.NS);
 		add(namespaces, prefixes, names, ODRL2.NS);
 		add(namespaces, prefixes, names, ORG.NS);
-		add(namespaces, prefixes, names, OWL.NS);
 		add(namespaces, prefixes, names, PROV.NS);
-		add(namespaces, prefixes, names, RDF.NS);
-		add(namespaces, prefixes, names, RDFS.NS);
 		add(namespaces, prefixes, names, ROV.NS);
 		add(namespaces, prefixes, names, SD.NS);
 		add(namespaces, prefixes, names, SHACL.NS);
@@ -172,7 +185,6 @@ public final class WorkbenchDefaultNamespaces {
 		add(namespaces, prefixes, names, VCARD4.NS);
 		add(namespaces, prefixes, names, VOID.NS);
 		add(namespaces, prefixes, names, WGS84.NS);
-		add(namespaces, prefixes, names, XSD.NS);
 		// DEFAULT_RDF4J also binds whole IRIs (license, role, describedby) and xml; a display prefix needs a namespace
 		Namespaces.DEFAULT_RDF4J.stream()
 				.filter(ns -> ns.getName().endsWith("#") || ns.getName().endsWith("/"))

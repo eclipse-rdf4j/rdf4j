@@ -26,9 +26,9 @@ import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Serves the namespaces the query editor falls back on for prefixes that are not defined, as one JSON object of
- * prefixes and namespaces: the bundled (empty) list, or {@code namespaces.fallback} of workbench.properties. The list
- * is the same for every repository and page but changes with workbench.properties, so browsers revalidate it on every
- * page load (an unchanged list costs a {@code 304 Not Modified}) instead of keeping it like the static files.
+ * prefixes and namespaces: the bundled list, or {@code namespaces.fallback} of workbench.properties. The list is the
+ * same for every repository and page but changes with workbench.properties, so browsers revalidate it on every page
+ * load (an unchanged list costs a {@code 304 Not Modified}) instead of keeping it like the static files.
  */
 public class WorkbenchFallbackNamespacesServlet extends HttpServlet {
 
