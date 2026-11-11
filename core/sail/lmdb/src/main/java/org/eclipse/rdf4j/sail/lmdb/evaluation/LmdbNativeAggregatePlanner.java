@@ -2026,18 +2026,21 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return null;
 			}
 			ValueExpr condition = leftJoin.getCondition();
+			NativeBooleanFilter conditionFilter = null;
 			if (condition != null) {
-				NativeBooleanFilter filter = compileBoolean(condition,
+				conditionFilter = compileBoolean(condition,
 						SlotPlan.assuredMask(left) | SlotPlan.assuredMask(right));
-				if (filter == null) {
+				if (conditionFilter == null) {
 					return island(leftJoin);
 				}
-				// A placeable condition keeps the arm's memo mask intact so the left-join acceleration tiers
-				// (per-key memo, replay, payload hash, sweep) stay available; -1 pins the filter in place and
-				// degrades every probe to a per-row nested loop.
-				right = SlotPlan.filter(right, filter, placeableFilterMask(condition));
 			}
 			if (lexicalFrame) {
+				if (conditionFilter != null) {
+					// This path remains correlated. Its right operand sees the temporary lexical frame, so its
+					// condition
+					// stays in that arm and is evaluated for each right candidate as before.
+					right = SlotPlan.filter(right, conditionFilter, placeableFilterMask(condition));
+				}
 				// A non-well-designed OPTIONAL may read bindings supplied by its lexical outer frame even when those
 				// names do not occur in this LeftJoin's own left arm. The mutable row is that exact frame. Keep the
 				// operator as a position-pinned nested loop: do not prune its right arm, materialize it independently,
@@ -2050,23 +2053,37 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			// right operand is the OPTIONAL condition relocated by ConjunctiveConstraintSplitterOptimizer, which
 			// must observe the left row), so the binding-injection contract is not consulted here.
 			TupleExpr rightArg = leftJoin.getRightArg();
+			QueryAlgebraBindingAnalysis optionalInput = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
+					EmptyBindingSet.getInstance());
+			boolean independentEvaluation = TupleExprs.requiresIndependentEvaluation(rightArg)
+					|| TupleExprs.containsResultSetModifier(rightArg, optionalInput)
+					|| TupleExprs.subqueryObservesInjectedBindings(rightArg,
+							leftJoin.getLeftArg().getBindingNames());
 			boolean subqueryHashJoin = TupleExprs.containsSubquery(rightArg)
 					|| TupleExprs.subqueryObservesInjectedBindings(rightArg, leftJoin.getLeftArg().getBindingNames());
 			boolean materializedReplay = !subqueryHashJoin
 					&& !QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
 					&& !QueryEvaluationUtility.isRepeatable(rightArg);
-			if ((subqueryHashJoin || materializedReplay)
+			if ((independentEvaluation || materializedReplay)
 					&& (subqueryFrameInputMask(right) & left.producedMask()) == 0L) {
 				long sharedMask = 0L;
 				for (String name : sharedBindingNames(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
 					sharedMask |= 1L << slot(name);
 				}
-				return SlotPlan.lexicalLeftJoin(left, right, slotsOf(sharedMask), subqueryHashJoin);
+				NativeBooleanFilter scopedCondition = conditionFilter == null ? null
+						: new ScopedNativeBooleanFilter(conditionFilter, leftJoin.getBindingNames());
+				return SlotPlan.lexicalLeftJoin(left, right, slotsOf(sharedMask), subqueryHashJoin,
+						scopedCondition, OptionalRhsContract.analyze(leftJoin));
+			}
+			if (conditionFilter != null && right != EmptyPlan.INSTANCE) {
+				// Preserve this boundary: the OPTIONAL condition is evaluated on each merged occurrence and
+				// cannot be pushed into or cached as part of the correlated RHS relation.
+				right = new FilterPlan(right, conditionFilter, placeableFilterMask(condition));
 			}
 			// A lexical boundary inside the right arm that is parameterized by a frame the left arm binds (a subquery
 			// nested in GRAPH ?g whose ?g comes from the left) cannot be materialized once in the entry frame: it must
 			// be opened per left row so the active frame is bound when its subquery evaluates.
-			return SlotPlan.leftJoin(left, right);
+			return SlotPlan.leftJoin(left, right, OptionalRhsContract.analyze(leftJoin), conditionFilter != null);
 		}
 		if (expr instanceof org.eclipse.rdf4j.query.algebra.Union) {
 			org.eclipse.rdf4j.query.algebra.Union union = (org.eclipse.rdf4j.query.algebra.Union) expr;

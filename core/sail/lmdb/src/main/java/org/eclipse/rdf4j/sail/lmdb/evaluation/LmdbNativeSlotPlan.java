@@ -267,37 +267,57 @@ interface SlotPlan {
 	 * its ownership and expression-repeatability rules are reviewed.
 	 */
 	static boolean encounterOrderReplaySafe(SlotPlan plan) {
+		// Preserve the established placement contract for ordinary operators. OPTIONAL's RHS is a separate
+		// evaluation/reuse boundary and must carry affirmative predicate proofs of its own.
+		return kernelStructureSafe(plan, true, true);
+	}
+
+	/** A placement mask alone cannot authorize OPTIONAL cross-input replay or coalesced occurrences. */
+	static boolean optionalReplaySafe(SlotPlan plan) {
+		return kernelStructureSafe(plan, false, true);
+	}
+
+	/**
+	 * A declared placement mask permits lowering that predicate at its existing cut. This does not prove purity or
+	 * authorize a cached verdict. OPTIONAL conditions still require their independent repeatability proof before the
+	 * owning semantic cursor may be replaced by direct probes.
+	 */
+	static boolean kernelLoweringPreservesPlacement(SlotPlan plan) {
+		return kernelStructureSafe(plan, true, false);
+	}
+
+	private static boolean kernelStructureSafe(SlotPlan plan, boolean placedFilters, boolean strictOptional) {
 		if (plan instanceof NativeAliasJoinPlan alias) {
-			return encounterOrderReplaySafe(alias.original);
+			return kernelStructureSafe(alias.original, placedFilters, strictOptional);
 		}
 		if (plan instanceof NativeAliasJoinMemoPlan memo) {
-			return encounterOrderReplaySafe(memo.original);
+			return kernelStructureSafe(memo.original, placedFilters, strictOptional);
 		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.workerBindable();
 		}
 		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
-			return keyed.subPlan.workerBindable() && encounterOrderReplaySafe(keyed.probe);
+			return keyed.subPlan.workerBindable() && kernelStructureSafe(keyed.probe, placedFilters, strictOptional);
 		}
 		if (plan instanceof NativeGraphPlan graph) {
 			return graph.workerBindable();
 		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
-			return encounterOrderReplaySafe(leaf.template);
+			return kernelStructureSafe(leaf.template, placedFilters, strictOptional);
 		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
 				|| plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
 			return true;
 		}
 		if (plan instanceof FilterPlan filter) {
-			return (filter.filterMask >= 0L
-					|| filter.filter.capabilities().atPlacement(filter.filterMask).replaySafe())
-					&& encounterOrderReplaySafe(filter.arg);
+			return (filter.filter.capabilities().replaySafe() || placedFilters && filter.filterMask >= 0L)
+					&& (placedFilters || filter.groupedReadMask() >= 0L)
+					&& kernelStructureSafe(filter.arg, placedFilters, strictOptional);
 		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
-			return encounterOrderReplaySafe(entry.arg);
+			return kernelStructureSafe(entry.arg, placedFilters, strictOptional);
 		}
 		if (plan instanceof ExtensionPlan extension) {
-			if (!encounterOrderReplaySafe(extension.arg)) {
+			if (!kernelStructureSafe(extension.arg, placedFilters, strictOptional)) {
 				return false;
 			}
 			for (CopyBinding copy : extension.copies) {
@@ -308,45 +328,64 @@ interface SlotPlan {
 			return true;
 		}
 		if (plan instanceof JoinPlan join) {
-			return encounterOrderReplaySafe(join.left) && encounterOrderReplaySafe(join.right);
+			return kernelStructureSafe(join.left, placedFilters, strictOptional)
+					&& kernelStructureSafe(join.right, placedFilters, strictOptional);
 		}
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			for (SlotPlan child : multiJoin.children) {
-				if (!encounterOrderReplaySafe(child)) {
+				if (!kernelStructureSafe(child, placedFilters, strictOptional)) {
 					return false;
 				}
 			}
 			for (MaskedFilter filter : multiJoin.filters) {
-				if (filter.mask < 0L && !filter.filter.capabilities().atPlacement(filter.mask).replaySafe()) {
+				if (!(filter.filter.capabilities().replaySafe() || placedFilters && filter.mask >= 0L)
+						|| !placedFilters
+								&& NativePredicateCapabilities.groupedReadMask(filter.filter, filter.mask) < 0L) {
 					return false;
 				}
 			}
 			return true;
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
+			if (leftJoin.correlatedConditionInRight
+					&& (!(leftJoin.right instanceof FilterPlan condition)
+							|| !condition.filter.capabilities().replaySafe())) {
+				return false;
+			}
 			if ((leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null)
 					&& !NativeWorkerPlanBinder.canBind(plan)) {
 				return false;
 			}
-			return encounterOrderReplaySafe(leftJoin.left) && encounterOrderReplaySafe(leftJoin.right);
+			if (leftJoin.lexicalCondition != null
+					&& !leftJoin.lexicalCondition.capabilities().replaySafe()) {
+				return false;
+			}
+			return kernelStructureSafe(leftJoin.left, placedFilters, strictOptional)
+					&& (strictOptional ? optionalReplaySafe(leftJoin.right)
+							: kernelStructureSafe(leftJoin.right, placedFilters, false));
 		}
 		if (plan instanceof UnionPlan union) {
-			return encounterOrderReplaySafe(union.left) && encounterOrderReplaySafe(union.right);
+			return kernelStructureSafe(union.left, placedFilters, strictOptional)
+					&& kernelStructureSafe(union.right, placedFilters, strictOptional);
 		}
 		if (plan instanceof OrderedUnionPlan union) {
-			return encounterOrderReplaySafe(union.left) && encounterOrderReplaySafe(union.right);
+			return kernelStructureSafe(union.left, placedFilters, strictOptional)
+					&& kernelStructureSafe(union.right, placedFilters, strictOptional);
 		}
 		if (plan instanceof MinusPlan minus) {
-			return encounterOrderReplaySafe(minus.left) && encounterOrderReplaySafe(minus.right);
+			return kernelStructureSafe(minus.left, placedFilters, strictOptional)
+					&& kernelStructureSafe(minus.right, placedFilters, strictOptional);
 		}
 		if (plan instanceof LateralPlan lateral) {
-			return encounterOrderReplaySafe(lateral.left) && encounterOrderReplaySafe(lateral.right);
+			return kernelStructureSafe(lateral.left, placedFilters, strictOptional)
+					&& kernelStructureSafe(lateral.right, placedFilters, strictOptional);
 		}
 		if (plan instanceof RowDistinctPlan distinct) {
-			return encounterOrderReplaySafe(distinct.arg);
+			return kernelStructureSafe(distinct.arg, placedFilters, strictOptional);
 		}
 		if (plan instanceof DrainGuardPlan guard) {
-			return encounterOrderReplaySafe(guard.delegate) && encounterOrderReplaySafe(guard.drained);
+			return kernelStructureSafe(guard.delegate, placedFilters, strictOptional)
+					&& kernelStructureSafe(guard.drained, placedFilters, strictOptional);
 		}
 		return false;
 	}
@@ -507,23 +546,46 @@ interface SlotPlan {
 	}
 
 	static SlotPlan leftJoin(SlotPlan left, SlotPlan right) {
+		return leftJoin(left, right, OptionalRhsContract.unknown(), false);
+	}
+
+	static SlotPlan leftJoin(SlotPlan left, SlotPlan right, OptionalRhsContract contract,
+			boolean correlatedConditionInRight) {
 		if (left == EmptyPlan.INSTANCE) {
 			return EmptyPlan.INSTANCE;
 		}
 		if (right == EmptyPlan.INSTANCE) {
 			return left;
 		}
-		return new LeftJoinPlan(left, right);
+		return new LeftJoinPlan(left, right, null, false, null, null, contract, correlatedConditionInRight);
 	}
 
 	static SlotPlan lexicalLeftJoin(SlotPlan left, SlotPlan right, int[] sharedSlots, boolean hashKeys) {
+		return lexicalLeftJoin(left, right, sharedSlots, hashKeys, null, null);
+	}
+
+	static SlotPlan lexicalLeftJoin(SlotPlan left, SlotPlan right, int[] sharedSlots, boolean hashKeys,
+			NativeBooleanFilter condition) {
+		return lexicalLeftJoin(left, right, sharedSlots, hashKeys, condition, null);
+	}
+
+	static SlotPlan lexicalLeftJoin(SlotPlan left, SlotPlan right, int[] sharedSlots, boolean hashKeys,
+			NativeBooleanFilter condition, OptionalRhsContract contract) {
 		if (left == EmptyPlan.INSTANCE) {
-			return EmptyPlan.INSTANCE;
+			if (condition != null) {
+				condition.close();
+			}
+			boolean discardableRight = contract == null ? discardable(right) : contract.discardable();
+			return discardableRight ? EmptyPlan.INSTANCE : new DrainGuardPlan(EmptyPlan.INSTANCE, right, true);
 		}
 		if (right == EmptyPlan.INSTANCE) {
+			if (condition != null) {
+				condition.close();
+			}
 			return left;
 		}
-		return new LeftJoinPlan(left, right, sharedSlots, hashKeys);
+		return new LeftJoinPlan(left, right, sharedSlots, hashKeys, null, condition,
+				contract == null ? OptionalRhsContract.unknown() : contract);
 	}
 
 	static SlotPlan lexicalFrameLeftJoin(SlotPlan left, SlotPlan right, int[] problemSlots) {

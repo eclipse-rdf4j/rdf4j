@@ -28,6 +28,14 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Exact RDF spelling codec shared by payload spilling and physical result replay. One bounded I/O scratch buffer. */
 final class NativeSpillValueCodec {
+	/** One pre-admitted cumulative allocation allowance for a complete decoded row. */
+	@FunctionalInterface
+	interface DecodeBudget {
+		void beforeAllocation(long bytes) throws IOException;
+	}
+
+	// Value/datatype wrappers, canonical-long spelling, representative lookup and a transferable payload claim.
+	private static final long DECODE_VALUE_BYTES = 1024L;
 	static final int BUFFER_BYTES = 1024;
 	/** A term of the codec's dictionary source: one long ID that replays as that source's lazy term. */
 	static final int TAG_STORE_TERM = 0x7D;
@@ -63,6 +71,38 @@ final class NativeSpillValueCodec {
 
 	void write(DataOutput output, Value value) throws IOException {
 		write(output, value, 0);
+	}
+
+	/** Exact lexical encoding size, excluding dictionary-ID encoding which OPTIONAL never requests. */
+	static long lexicalBytes(Value value) {
+		return lexicalBytes(value, 0);
+	}
+
+	private static long lexicalBytes(Value value, int depth) {
+		if (depth > 256) {
+			throw new IllegalArgumentException("Spilled triple-term nesting exceeds 256 levels");
+		}
+		if (value instanceof Literal literal) {
+			if (literal.getCoreDatatype() == CoreDatatype.XSD.INTEGER
+					&& canonicalLong(literal.getLabel()) != Long.MIN_VALUE) {
+				return 9L;
+			}
+			long bytes = Math.addExact(3L, Math.addExact(lexicalStringBytes(literal.getLabel()),
+					lexicalStringBytes(literal.getDatatype().stringValue())));
+			return literal.getLanguage().isPresent()
+					? Math.addExact(bytes, lexicalStringBytes(literal.getLanguage().get()))
+					: bytes;
+		}
+		if (value instanceof TripleTerm triple) {
+			return Math.addExact(1L, Math.addExact(lexicalBytes(triple.getSubject(), depth + 1),
+					Math.addExact(lexicalBytes(triple.getPredicate(), depth + 1),
+							lexicalBytes(triple.getObject(), depth + 1))));
+		}
+		return Math.addExact(1L, lexicalStringBytes(value.stringValue()));
+	}
+
+	private static long lexicalStringBytes(String value) {
+		return 4L + 2L * value.length();
 	}
 
 	private void write(DataOutput output, Value value, int depth) throws IOException {
@@ -101,16 +141,24 @@ final class NativeSpillValueCodec {
 	}
 
 	Value read(DataInput input) throws IOException {
-		return read(input, 0);
+		return read(input, 0, null);
 	}
 
-	private Value read(DataInput input, int depth) throws IOException {
-		Value value = readValue(input, depth);
+	Value read(DataInput input, DecodeBudget budget) throws IOException {
+		return read(input, 0, budget);
+	}
+
+	private Value read(DataInput input, int depth, DecodeBudget budget) throws IOException {
+		Value value = readValue(input, depth, budget);
 		return representative == null ? value : representative.apply(value);
 	}
 
-	private Value readValue(DataInput input, int depth) throws IOException {
+	private Value readValue(DataInput input, int depth, DecodeBudget budget) throws IOException {
 		checkDepth(depth);
+		if (budget != null) {
+			// Value wrappers, datatype/optional/direction metadata, and representative lookup scratch.
+			budget.beforeAllocation(DECODE_VALUE_BYTES);
+		}
 		SimpleValueFactory factory = SimpleValueFactory.getInstance();
 		int type = input.readUnsignedByte();
 		if (type == TAG_STORE_TERM) {
@@ -127,15 +175,15 @@ final class NativeSpillValueCodec {
 			return factory.createLiteral(Long.toString(input.readLong()), CoreDatatype.XSD.INTEGER);
 		}
 		if (type == Value.Type.IRI.ordinal()) {
-			return factory.createIRI(readString(input));
+			return factory.createIRI(readString(input, budget));
 		}
 		if (type == Value.Type.BNode.ordinal()) {
-			return factory.createBNode(readString(input));
+			return factory.createBNode(readString(input, budget));
 		}
 		if (type == Value.Type.Literal.ordinal()) {
-			String label = readString(input);
-			String language = input.readBoolean() ? readString(input) : null;
-			String datatype = readString(input);
+			String label = readString(input, budget);
+			String language = input.readBoolean() ? readString(input, budget) : null;
+			String datatype = readString(input, budget);
 			int direction = input.readByte();
 			if (direction < -1 || direction >= Literal.BaseDirection.values().length) {
 				throw new IOException("Invalid spilled literal direction");
@@ -145,9 +193,9 @@ final class NativeSpillValueCodec {
 							: factory.createLiteral(label, language, Literal.BaseDirection.values()[direction]);
 		}
 		if (type == Value.Type.TripleTerm.ordinal()) {
-			Value subject = read(input, depth + 1);
-			Value predicate = read(input, depth + 1);
-			Value object = read(input, depth + 1);
+			Value subject = read(input, depth + 1, budget);
+			Value predicate = read(input, depth + 1, budget);
+			Value object = read(input, depth + 1, budget);
 			if (!(subject instanceof Resource resource) || !(predicate instanceof IRI iri)) {
 				throw new IOException("Invalid spilled triple term");
 			}
@@ -228,9 +276,17 @@ final class NativeSpillValueCodec {
 	}
 
 	String readString(DataInput input) throws IOException {
+		return readString(input, null);
+	}
+
+	private String readString(DataInput input, DecodeBudget budget) throws IOException {
 		int length = input.readInt();
-		if (length < 0) {
+		if (length < 0 || length > Integer.MAX_VALUE - 8) {
 			throw new IOException("Invalid spilled lexical length");
+		}
+		if (budget != null) {
+			// char[] and the String's worst-case UTF-16 byte[] coexist during the constructor copy.
+			budget.beforeAllocation(stringAllocationBytes(length));
 		}
 		char[] chars = new char[length];
 		for (int from = 0; from < length;) {
@@ -243,6 +299,91 @@ final class NativeSpillValueCodec {
 			from += count;
 		}
 		return new String(chars);
+	}
+
+	/** Upper bound for all cumulative allocations made by the lexical decoder for this value. */
+	static long decodeAllocationBytes(Value value) {
+		return decodeAllocationBytes(value, 0);
+	}
+
+	private static long decodeAllocationBytes(Value value, int depth) {
+		if (depth > 256) {
+			throw new IllegalArgumentException("Spilled triple-term nesting exceeds 256 levels");
+		}
+		long bytes = DECODE_VALUE_BYTES;
+		if (value instanceof Literal literal) {
+			bytes = Math.addExact(bytes, stringAllocationBytes(literal.getLabel().length()));
+			String language = literal.getLanguage().orElse(null);
+			if (language != null) {
+				bytes = Math.addExact(bytes, stringAllocationBytes(language.length()));
+			}
+			return Math.addExact(bytes, stringAllocationBytes(literal.getDatatype().stringValue().length()));
+		}
+		if (value instanceof TripleTerm triple) {
+			bytes = Math.addExact(bytes, decodeAllocationBytes(triple.getSubject(), depth + 1));
+			bytes = Math.addExact(bytes, decodeAllocationBytes(triple.getPredicate(), depth + 1));
+			return Math.addExact(bytes, decodeAllocationBytes(triple.getObject(), depth + 1));
+		}
+		return Math.addExact(bytes, stringAllocationBytes(value.stringValue().length()));
+	}
+
+	private static long stringAllocationBytes(int length) {
+		return 64L + 4L * length;
+	}
+
+	/** Measures and skips an encoded value without allocating its lexical payload. The caller can then rewind. */
+	long skipAndMeasure(DataInput input) throws IOException {
+		return skipAndMeasure(input, 0);
+	}
+
+	private long skipAndMeasure(DataInput input, int depth) throws IOException {
+		checkDepth(depth);
+		int type = input.readUnsignedByte();
+		long bytes = DECODE_VALUE_BYTES;
+		if (type == TAG_STORE_TERM || type == TAG_INTEGER_LITERAL) {
+			input.readLong();
+			return bytes;
+		}
+		if (type == Value.Type.IRI.ordinal() || type == Value.Type.BNode.ordinal()) {
+			return Math.addExact(bytes, skipString(input));
+		}
+		if (type == Value.Type.Literal.ordinal()) {
+			bytes = Math.addExact(bytes, skipString(input));
+			if (input.readBoolean()) {
+				bytes = Math.addExact(bytes, skipString(input));
+			}
+			bytes = Math.addExact(bytes, skipString(input));
+			int direction = input.readByte();
+			if (direction < -1 || direction >= Literal.BaseDirection.values().length) {
+				throw new IOException("Invalid spilled literal direction");
+			}
+			return bytes;
+		}
+		if (type == Value.Type.TripleTerm.ordinal()) {
+			for (int i = 0; i < 3; i++) {
+				bytes = Math.addExact(bytes, skipAndMeasure(input, depth + 1));
+			}
+			return bytes;
+		}
+		throw new IOException("Invalid spilled RDF term type: " + type);
+	}
+
+	private long skipString(DataInput input) throws IOException {
+		int length = input.readInt();
+		if (length < 0 || length > Integer.MAX_VALUE - 8) {
+			throw new IOException("Invalid spilled lexical length");
+		}
+		long remaining = 2L * length;
+		while (remaining != 0L) {
+			checkCancelled();
+			int skipped = input.skipBytes((int) Math.min(remaining, 65536L));
+			if (skipped == 0) {
+				input.readByte();
+				skipped = 1;
+			}
+			remaining -= skipped;
+		}
+		return stringAllocationBytes(length);
 	}
 
 	private void checkDepth(int depth) throws IOException {

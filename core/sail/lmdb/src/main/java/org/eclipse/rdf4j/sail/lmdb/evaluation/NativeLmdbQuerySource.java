@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.LongConsumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * LMDB-local bridge used by the native query compilers. This internal interface lets the root LMDB store integrate with
@@ -77,6 +79,19 @@ public interface NativeLmdbQuerySource {
 	}
 
 	Value lazyValue(long id) throws QueryEvaluationException;
+
+	/**
+	 * Internal pre-allocation gate for a cold native value. The source resolves the value's own captured revision,
+	 * including its pinned snapshot and overlay, and calls {@code admission} before allocating lexical payload. Each
+	 * callback reports additional bytes; callers retain the cumulative admission through initialization. The caller
+	 * supplies a private temporary shell: shared source models must not be initialized with temporary accounting. The
+	 * implementation must not publish newly decoded payloads into store-wide caches. Returns false without initializing
+	 * the value when this source cannot provide that authority. A callback refusal propagates unchanged. This
+	 * implementation bridge is not a supported application API.
+	 */
+	default boolean initializeAdmittedValue(LmdbValue value, LongConsumer admission) {
+		return false;
+	}
 
 	/** Materializes a value using the complete static position mask of its lexical binding. */
 	default Value lazyValue(long id, int positionMask) throws QueryEvaluationException {

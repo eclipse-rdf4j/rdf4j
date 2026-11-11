@@ -562,7 +562,8 @@ final class LmdbNativeAggregateCompiler {
 				return -1L;
 			}
 			LeftJoinPlan leftJoin = (LeftJoinPlan) plan;
-			if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
+			if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null
+					|| leftJoin.correlatedConditionInRight) {
 				return -1L;
 			}
 			long left = memoReadMask(leftJoin.left);

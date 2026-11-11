@@ -522,13 +522,11 @@ final class LmdbNativeKernelLowering {
 		List<SlotPlan> optionalArms = new ArrayList<>(0);
 		List<MaskedFilter> outerFilters = new ArrayList<>(0);
 		SlotPlan core = arg;
-		while (SlotPlan.encounterOrderReplaySafe(arg)) {
+		while (SlotPlan.kernelLoweringPreservesPlacement(arg)) {
 			if (core instanceof LeftJoinPlan) {
 				LeftJoinPlan leftJoin = (LeftJoinPlan) core;
-				if (leftJoin.lexicalSharedSlots != null) {
-					// Lexical subquery OPTIONAL deliberately remains on the stateful semantic native row tier. Lower
-					// the complete root as one PlanRows producer so its independent-right materialization and
-					// compatibility rules are not split across generated scopes.
+				SlotPlan arm = directOptionalKernelArm(leftJoin, row);
+				if (arm == null) {
 					return lowerRowsWithPlanProducer(arg, row, null);
 				}
 				if (leftJoin.lexicalProblemSlots != null) {
@@ -544,7 +542,7 @@ final class LmdbNativeKernelLowering {
 					// list. Leave the complete subtree for Builder.lowerJoinOperand.
 					break;
 				}
-				optionalArms.add(0, leftJoin.right);
+				optionalArms.add(0, arm);
 				core = leftJoin.left;
 			} else if (core instanceof FilterPlan) {
 				FilterPlan filterPlan = (FilterPlan) core;
@@ -580,7 +578,7 @@ final class LmdbNativeKernelLowering {
 			int[] distinctSlots, java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
 		List<MaskedFilter> outerFilters = new ArrayList<>(0);
 		SlotPlan core = arg;
-		while (SlotPlan.encounterOrderReplaySafe(arg) && core instanceof FilterPlan) {
+		while (SlotPlan.kernelLoweringPreservesPlacement(arg) && core instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) core;
 			outerFilters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
 			core = filterPlan.arg;
@@ -1161,7 +1159,7 @@ final class LmdbNativeKernelLowering {
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
 		SlotPlan core = arg;
-		while (SlotPlan.encounterOrderReplaySafe(arg)) {
+		while (SlotPlan.kernelLoweringPreservesPlacement(arg)) {
 			if (core instanceof FilterPlan) {
 				FilterPlan filterPlan = (FilterPlan) core;
 				filters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
@@ -1552,6 +1550,48 @@ final class LmdbNativeKernelLowering {
 	// MultiJoinPlan lowering
 	// ------------------------------------------------------------------
 
+	/** Direct probes retain no relation or verdict across inputs; each operand still proves its own lowering. */
+	private static SlotPlan directOptionalKernelArm(LeftJoinPlan optional, RowState row) {
+		if (optional.lexicalSharedSlots != null) {
+			if (!optional.hasDirectStatementCompatibility(row)) {
+				return null;
+			}
+			if (optional.lexicalCondition == null) {
+				return optional.right;
+			}
+			NativePredicateCapabilities proof = optional.lexicalCondition.capabilities();
+			long reads = proof.groupedReadMask(optional.lexicalCondition.batchReadMask());
+			// Preserve the scoped predicate and place it inside LeftGroup, where rejected/error candidates
+			// still cause the original left mapping to be emitted once if no compatible candidate survives.
+			return proof.replaySafe() && reads >= 0L ? new FilterPlan(optional.right, optional.lexicalCondition, reads)
+					: null;
+		}
+		if (optional.lexicalCondition != null || !repeatableOptionalCondition(optional)
+				|| !SlotPlan.kernelLoweringPreservesPlacement(optional.right)) {
+			return null;
+		}
+		// Keep the existing direct statement probe. Other independently repeatable relations have an execution-owned
+		// materialization: lowering their raw producers would repeat callbacks and discard reuse on physical reopen.
+		OptionalExecutionStrategy strategy = OptionalExecutionStrategy.describe(optional);
+		boolean direct = optional.right instanceof PatternPlan || !strategy.mayBuildCorrelatedMemo(row)
+				|| (LeftJoinPlan.optionalReadMask(strategy.rawRight(), row, optional.rhsContract)
+						& optional.left.producedMask()) != 0L;
+		return direct ? optional.right : null;
+	}
+
+	private static boolean repeatableOptionalCondition(LeftJoinPlan optional) {
+		return !optional.correlatedConditionInRight
+				|| optional.right instanceof FilterPlan condition && condition.filter.capabilities().replaySafe();
+	}
+
+	private static boolean directOptionalWitness(LeftJoinPlan optional) {
+		// This lowers one boolean probe, not a retained relation or cross-input verdict cache. The recursive
+		// witness lowerer still proves nullable correlation and physical source access at each operand.
+		return optional.lexicalCondition == null && optional.lexicalSharedSlots == null
+				&& optional.lexicalProblemSlots == null && repeatableOptionalCondition(optional)
+				&& RightMemoProbe.structurallyRepeatable(optional.right);
+	}
+
 	/**
 	 * Lowers the producer core of a row plan, its OPTIONAL arms and its filters.
 	 *
@@ -1568,6 +1608,7 @@ final class LmdbNativeKernelLowering {
 	 * Filters keep this rung's three-tier treatment (id, hook, then residual re-applied by the row cursor) rather than
 	 * the aggregate rung's strict one, so a filter still never causes a decline here.
 	 */
+
 	private static Lowered lowerRowCore(SlotPlan original, SlotPlan core, List<SlotPlan> optionalArms,
 			List<MaskedFilter> outerFilters, RowState row, TupleExpr declineTarget, boolean preferScans,
 			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates, boolean suppressHash) {
@@ -2533,7 +2574,7 @@ final class LmdbNativeKernelLowering {
 			// A SERVICE, volatile expression, lexical subquery, or future unknown operator must not be
 			// flattened into the reorderable bag. Keep its evaluation boundary, not the whole query,
 			// on the semantic cursor. The same boundary is consumed by both kernel tiers.
-			if (!SlotPlan.encounterOrderReplaySafe(plan)) {
+			if (!SlotPlan.kernelLoweringPreservesPlacement(plan)) {
 				return lowerOrderedOperand(plan, row);
 			}
 			if (plan instanceof NativeAliasJoinMemoPlan) {
@@ -2658,13 +2699,14 @@ final class LmdbNativeKernelLowering {
 				// Reached from both rungs — the row rung sees it for an OPTIONAL nested below another operand (its own
 				// entry point only peels a left-deep chain at the root), the aggregate rung for any OPTIONAL at all.
 				LeftJoinPlan leftJoin = (LeftJoinPlan) plan;
-				if (leftJoin.lexicalSharedSlots != null) {
+				SlotPlan arm = directOptionalKernelArm(leftJoin, row);
+				if (arm == null) {
 					return lowerNativeOperator(leftJoin);
 				}
 				if (leftJoin.lexicalProblemSlots != null) {
 					return lowerLexicalFrameLeftJoin(leftJoin, filters, row);
 				}
-				return lowerJoinOperand(leftJoin.left, filters, row, false) && lowerOptionalArm(leftJoin.right);
+				return lowerJoinOperand(leftJoin.left, filters, row, false) && lowerOptionalArm(arm);
 			}
 			if (plan instanceof GeneralPathPlan || plan instanceof ZeroLengthPathPlan
 					|| plan instanceof NativeSubqueryPlan || plan instanceof NativeKeyedSubqueryJoinPlan
@@ -5294,7 +5336,14 @@ final class LmdbNativeKernelLowering {
 				return lowerWitnessUnion(union, witnessCols, pipeline);
 			}
 			if (plan instanceof LeftJoinPlan leftJoin) {
-				if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
+				// A direct witness does not retain RHS rows. Pure alias/constant extensions over native patterns
+				// preserve its per-input boolean semantics just like the bare pattern fast path.
+				if (!directOptionalWitness(leftJoin)) {
+					reason = "agg:witness-optional-owner";
+					return false;
+				}
+				if (leftJoin.lexicalCondition != null || leftJoin.lexicalSharedSlots != null
+						|| leftJoin.lexicalProblemSlots != null) {
 					reason = "agg:witness-lexical-left-join";
 					return false;
 				}

@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjace
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
 import org.junit.jupiter.api.Test;
@@ -247,7 +248,17 @@ class LmdbNativePackedFtreeTest {
 		RowState row = row(graph.source(), "a", "b", "c", "d", "e");
 		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(1, P2, 2), pattern(2, P3, 3), pattern(3, P4, 4));
 		// Multi-member parts stay borrowed; singleton parts are inline. The sibling stays borrowed.
-		FilterPlan filter = new FilterPlan(join, state -> state.slots[0] != -1L, 1L);
+		FilterPlan filter = new FilterPlan(join, new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState state) {
+				return state.slots[0] != -1L;
+			}
+
+			@Override
+			public NativePredicateCapabilities capabilities() {
+				return new NativePredicateCapabilities(1L, EffectClass.PURE, false, true, false, false, true);
+			}
+		}, 1L);
 		long total = 0L;
 		try (LmdbNativeFactorCursor cursor = filter.openFactors(row)) {
 			assertNotNull(cursor);
@@ -708,7 +719,17 @@ class LmdbNativePackedFtreeTest {
 		SlotPlan bound = new ExtensionPlan(path, new CopyBinding[] { CopyBinding.slot(5, 0),
 				CopyBinding.constant(6, 777L) });
 		SlotPlan optional = new LeftJoinPlan(new UnionPlan(bound, bound),
-				new FilterPlan(SingletonPlan.INSTANCE, ignored -> false, 0L));
+				new FilterPlan(SingletonPlan.INSTANCE, new NativeBooleanFilter() {
+					@Override
+					public boolean accept(RowState ignored) {
+						return false;
+					}
+
+					@Override
+					public NativePredicateCapabilities capabilities() {
+						return new NativePredicateCapabilities(0L, EffectClass.PURE, false, true, false, false, true);
+					}
+				}, 0L));
 		long total = 0L;
 		try (RowCursor cursor = LmdbNativeFactorRows.asRows(LmdbNativeFactorAlgebra.open(optional, row), row)) {
 			while (cursor.next()) {

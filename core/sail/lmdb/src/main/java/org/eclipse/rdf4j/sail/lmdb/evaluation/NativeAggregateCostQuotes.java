@@ -142,6 +142,10 @@ final class NativeAggregateCostQuotes {
 				estimate = proposal.directTimingQuote();
 			}
 		}
+		if (estimate != null && proposal.costQuote() != null) {
+			estimate = new NativePhysicalWorkQuote(estimate.quote().withOptionalCostFrom(proposal.costQuote()),
+					estimate.workEvidence());
+		}
 		if (physical != null || representation != null) {
 			if (estimate.workEvidence().isComplete()) {
 				proposal.withPhysicalQuote(estimate);
@@ -176,6 +180,13 @@ final class NativeAggregateCostQuotes {
 			json.append("null");
 		} else {
 			vector(json, total);
+		}
+		OptionalCostCompleteness optional = estimate == null ? OptionalCostCompleteness.COMPLETE
+				: estimate.quote().optionalCost();
+		json.append(",\"optionalCostComplete\":").append(!optional.incomplete());
+		if (optional.incomplete()) {
+			json.append(",\"optionalCostMissing\":");
+			string(json, optional.reason());
 		}
 		json.append(",\"workEvidenceComplete\":")
 				.append(estimate != null && estimate.workEvidence().isComplete());

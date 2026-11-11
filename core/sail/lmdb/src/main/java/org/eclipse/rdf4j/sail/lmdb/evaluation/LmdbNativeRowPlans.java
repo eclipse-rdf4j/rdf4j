@@ -218,7 +218,7 @@ final class FilterPlan implements SlotPlan {
 			return LmdbNativeFactorRows.asRows(grouped, row);
 		// A pinned filter can observe each logical solution in encounter order. Its input must be opened under
 		// that boundary, including lazy probes performed after the filter cursor has been constructed.
-		boolean logicalReplay = groupedReadMask() < 0L;
+		boolean logicalReplay = groupedReadMask() < 0L || NativeFilterLease.requiresLogicalRhsRows(filter);
 		RowCursor input = logicalReplay ? LmdbNativeFactorAlgebra.openOrdered(arg, row) : arg.open(row);
 		return new FilterCursor(logicalReplay ? LmdbNativeFactorAlgebra.logical(input, row) : input, filter, row);
 	}
@@ -245,7 +245,7 @@ final class FilterPlan implements SlotPlan {
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
 		long reads = groupedReadMask();
-		if (reads < 0L) {
+		if (reads < 0L || NativeFilterLease.requiresLogicalRhsRows(filter)) {
 			RowCursor input = LmdbNativeFactorAlgebra.logical(LmdbNativeFactorAlgebra.openOrdered(arg, row), row);
 			return new RowBatchCursor(new FilterCursor(input, filter, row), row);
 		}

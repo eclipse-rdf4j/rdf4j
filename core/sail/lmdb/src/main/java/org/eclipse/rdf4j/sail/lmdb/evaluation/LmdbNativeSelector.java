@@ -19,8 +19,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 /**
  * The one ranking rule of the native engine. Given admitted candidates in registry order it prices each with the static
  * prior, removes every candidate another admitted candidate structurally dominates, removes every candidate whose whole
- * interval lies above another's, and selects the lowest expected price among the survivors. Registry order breaks exact
- * ties only. A last-resort candidate competes only when no ordinary candidate is admitted.
+ * interval lies above another's, and selects the lowest complete expected price among the survivors. Missing OPTIONAL
+ * components cannot compete on their known subtotal; if no complete price is available they preserve registry order. A
+ * last-resort candidate competes only when no ordinary candidate is admitted.
  * <p>
  * The rule is a pure function of its inputs: no clock, no declaration-order dependence beyond the final tie break.
  * Learned state enters only as the advice of a {@link LmdbNativeAdvisoryLearner.Scope}, which narrows a price inside
@@ -32,10 +33,11 @@ final class LmdbNativeSelector {
 	/**
 	 * The outcome of ranking: the winner's index (or -1), and per candidate its proven interval, expected price, the
 	 * expected price as quoted before any learned advice, what eliminated it (null while eligible), and the interval a
-	 * run is estimated to land in. Only the proven interval can eliminate a candidate.
+	 * run is estimated to land in. Missing OPTIONAL components identify known subtotals. Only a proven complete
+	 * interval can establish a candidate's ceiling.
 	 */
 	record Ranking(int winner, LmdbNativeWork[] nanos, double[] expectedNanos, double[] quotedExpectedNanos,
-			String[] eliminatedBy, String reason, LmdbNativeWork[] estimated) {
+			String[] eliminatedBy, String reason, LmdbNativeWork[] estimated, String[] incompleteOptional) {
 	}
 
 	private LmdbNativeSelector() {
@@ -86,9 +88,10 @@ final class LmdbNativeSelector {
 		int[] candidateWorkers = new int[n];
 		String[] eliminatedBy = new String[n];
 		LmdbNativeWork[] estimated = new LmdbNativeWork[n];
+		String[] incompleteOptional = new String[n];
 		if (n == 0) {
 			return new Ranking(-1, nanos, expected, quotedExpected, eliminatedBy,
-					"No strategy was admitted at this decision point", estimated);
+					"No strategy was admitted at this decision point", estimated, incompleteOptional);
 		}
 		boolean[] hasPrice = new boolean[n];
 		boolean ordinary = false;
@@ -108,14 +111,24 @@ final class LmdbNativeSelector {
 			// Unknown output cardinality must not erase a known execution-work quote. Materialization still
 			// keeps the total ceiling unbounded, so that quote cannot establish interval dominance.
 			// Otherwise an expectation above the floor is an estimate; a floor alone is not a price.
-			hasPrice[i] = executionBounded(vector) || nanos[i].known() || expected[i] > nanos[i].low();
-			if (advice != null) {
+			boolean incomplete = candidate.quote()
+					.optionalCost()
+					.incompleteFor(
+							consumableRows(candidate.quote(), sliceRows, distinctConsumer));
+			incompleteOptional[i] = incomplete ? candidate.quote().optionalCost().reason() : null;
+			if (incomplete) {
+				// A finite upper bound on known components does not bound missing spill/retention work.
+				nanos[i] = LmdbNativeWork.between(nanos[i].low(), Double.POSITIVE_INFINITY);
+			}
+			hasPrice[i] = !incomplete && (executionBounded(vector) || nanos[i].known() || expected[i] > nanos[i].low());
+			if (advice != null && !incomplete) {
 				LmdbNativeAdvisoryLearner.Narrowed narrowed = advice.narrow(candidate.id(), candidate.quote(), nanos[i],
 						expected[i]);
 				nanos[i] = narrowed.nanos();
 				expected[i] = narrowed.expectedNanos();
 			}
-			estimated[i] = estimatedInterval(expected[i], nanos[i], candidate.quote().inputSpread());
+			estimated[i] = incomplete ? nanos[i]
+					: estimatedInterval(expected[i], nanos[i], candidate.quote().inputSpread());
 			ordinary |= !candidates.get(i).lastResort();
 			anyPriced |= !candidates.get(i).lastResort() && hasPrice[i];
 		}
@@ -125,7 +138,10 @@ final class LmdbNativeSelector {
 			} else if (anyPriced && !hasPrice[i]) {
 				// A quote with neither a ceiling nor an estimate has only its floor, and a floor is not a price. It
 				// competes only when no candidate could price itself at all.
-				eliminatedBy[i] = "Unpriced: quotes neither a ceiling nor an estimate while priced candidates exist";
+				eliminatedBy[i] = incompleteOptional[i] == null
+						? "Unpriced: quotes neither a ceiling nor an estimate while priced candidates exist"
+						: "Incomplete OPTIONAL cost: " + incompleteOptional[i]
+								+ "; known subtotal is not a complete expected price";
 			}
 		}
 		// Structural edges are evaluated simultaneously. A dominated admitted strategy still establishes its own
@@ -188,18 +204,28 @@ final class LmdbNativeSelector {
 		}
 		int winner = -1;
 		int eligible = 0;
+		String missing = null;
+		for (int i = 0; i < n; i++) {
+			if (eliminatedBy[i] == null && incompleteOptional[i] != null) {
+				missing = incompleteOptional[i];
+				break;
+			}
+		}
 		for (int i = 0; i < n; i++) {
 			if (eliminatedBy[i] != null) {
 				continue;
 			}
 			eligible++;
-			if (winner < 0 || expected[i] < expected[winner]) {
+			if (winner < 0 || missing == null && expected[i] < expected[winner]) {
 				winner = i;
 			}
 		}
 		String reason;
 		if (winner < 0) {
 			reason = "No candidate survived elimination";
+		} else if (missing != null) {
+			reason = "Incomplete OPTIONAL costs; stable fallback among admitted candidates ("
+					+ missing + ")";
 		} else if (eligible == 1 && n == 1) {
 			reason = "Only admitted candidate";
 		} else if (eligible == 1) {
@@ -208,7 +234,8 @@ final class LmdbNativeSelector {
 			reason = String.format("Lowest expected price (%.0f ns) among %d eligible candidates",
 					expected[winner], eligible);
 		}
-		return new Ranking(winner, nanos, expected, quotedExpected, eliminatedBy, reason, estimated);
+		return new Ranking(winner, nanos, expected, quotedExpected, eliminatedBy, reason, estimated,
+				incompleteOptional);
 	}
 
 	/** Output uncertainty does not remove the price supplied by bounded producer work. */

@@ -165,7 +165,7 @@ final class NativeRuntimeValueSpill implements AutoCloseable {
 			return null;
 		}
 		payload.seek(offset - 1L);
-		return codec.read(payload);
+		return NativeValuePayloads.read(codec, payload);
 	}
 
 	synchronized long metadata(long id) {

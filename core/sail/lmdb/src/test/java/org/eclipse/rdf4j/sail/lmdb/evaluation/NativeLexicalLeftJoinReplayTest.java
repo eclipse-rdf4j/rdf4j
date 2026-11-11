@@ -26,8 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -38,6 +36,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordingFile;
@@ -76,24 +76,31 @@ class NativeLexicalLeftJoinReplayTest {
 			SlotPlan right = track(SlotPlan.values(rightRows), rightCounts, null);
 			SlotPlan leftPlan = track(SlotPlan.values(new ValuesRow[] {
 					new ValuesRow(new int[] { KEY, LEFT }, new long[] { key, left }) }), leftCounts, null);
+			OptionalMaterialization registry = fixture.source.executionContext().optionalMaterializations();
 			long baseline = manager.usedBytes();
-			try (Recording recording = new Recording()) {
+			long directoryBaseline = registry.metrics().retainedDirectoryBytes();
+			try (OptionalOccurrence occurrence = new OptionalOccurrence(registry);
+					Recording recording = new Recording()) {
 				recording.enable("org.eclipse.rdf4j.lmdb.NativeExecutionPhase")
 						.withThreshold(Duration.ZERO)
 						.withStackTrace();
 				recording.start();
-				try (LexicalLeftJoinCursor cursor = new LexicalLeftJoinCursor(leftPlan, right, new int[] { KEY },
-						fixture.row)) {
-					long retained = manager.usedBytes() - baseline;
+				try (LexicalLeftJoinCursor cursor = occurrence.open(leftPlan, right, new int[] { KEY }, fixture.row)) {
+					assertThat(rightCounts.opens).as("construction leaves the RHS unopened until the first pull")
+							.hasValue(0);
+					assertThat(rightCounts.advances).hasValue(0);
+					long scopeBaseline = manager.usedBytes();
+					assertThat(cursor.next()).isTrue();
+					long retained = manager.usedBytes() - scopeBaseline;
 					assertThat(retained).as("the materialized right side must have a query-ledger owner")
 							.isPositive()
-							.isLessThanOrEqualTo(REPLAY_LIMIT);
+							.isLessThanOrEqualTo(4L << 20);
 					List<Long> actual = new ArrayList<>();
-					while (cursor.next()) {
+					do {
 						assertThat(fixture.row.id(KEY)).isEqualTo(key);
 						assertThat(fixture.row.id(LEFT)).isEqualTo(left);
 						actual.add(fixture.row.id(RIGHT));
-					}
+					} while (cursor.next());
 					assertThat(actual).containsExactlyElementsOf(expected);
 					assertThat(rightCounts.opens).hasValue(1);
 					assertThat(rightCounts.advances).hasValue(rightRows.length + 1);
@@ -101,14 +108,23 @@ class NativeLexicalLeftJoinReplayTest {
 					assertThat(leftCounts.opens).hasValue(1);
 					assertThat(leftCounts.closes).hasValue(1);
 					assertThat(fixture.row.boundMask()).isZero();
+					assertThat(manager.usedBytes())
+							.as("the completed mandatory replay remains owned by this semantic occurrence")
+							.isGreaterThan(scopeBaseline);
 				} finally {
 					recording.stop();
 					recording.dump(recordingPath);
 				}
 			}
+			OptionalMaterialization.Metrics registryAfter = registry.metrics();
+			assertThat(registryAfter.entries()).as("ending the semantic occurrence releases its registry entries")
+					.isZero();
+			long directoryDelta = registryAfter.retainedDirectoryBytes() - directoryBaseline;
+			assertThat(directoryDelta).as("registry directory accounting is high-water only")
+					.isGreaterThanOrEqualTo(0L);
 			assertThat(manager.usedBytes())
-					.as("closing the lexical result releases its replay reservation without touching the term owner")
-					.isEqualTo(baseline);
+					.as("ending the semantic occurrence releases its replay reservation without touching the term owner")
+					.isEqualTo(Math.addExact(baseline, directoryDelta));
 			assertThat(hasReplaySpill(recordingPath))
 					.as("the large right relation must use the bounded spill replay")
 					.isTrue();
@@ -120,7 +136,7 @@ class NativeLexicalLeftJoinReplayTest {
 	}
 
 	@Test
-	void cancellationDuringRightMaterializationIsTerminalAndDoesNotOpenLeft() {
+	void cancellationDuringRightMaterializationIsTerminalAndClosesBothOperands() throws IOException {
 		try (Fixture fixture = new Fixture("key", "right", "left")) {
 			long key = fixture.term(SimpleValueFactory.getInstance().createIRI("urn:lexical-left:cancel-during"));
 			long value = fixture.term(SimpleValueFactory.getInstance().createLiteral("right"));
@@ -132,22 +148,75 @@ class NativeLexicalLeftJoinReplayTest {
 			SlotPlan leftPlan = track(SlotPlan.values(new ValuesRow[] {
 					new ValuesRow(new int[] { KEY, LEFT }, new long[] { key, value }) }), leftCounts, null);
 
-			AtomicReference<LexicalLeftJoinCursor> opened = new AtomicReference<>();
-			Throwable failure = catchThrowable(() -> opened.set(
-					new LexicalLeftJoinCursor(leftPlan, right, new int[] { KEY }, fixture.row)));
-			try {
+			try (OptionalOccurrence occurrence = fixture.occurrence();
+					LexicalLeftJoinCursor cursor = occurrence.open(leftPlan, right, new int[] { KEY }, fixture.row)) {
+				assertThat(rightCounts.opens).as("construction leaves the RHS unopened until the first pull")
+						.hasValue(0);
+				Throwable failure = catchThrowable(cursor::next);
 				assertOwnedCancellation(failure, fixture.row.cancellation);
 				assertThat(failure).as("a prefix observed before cancellation is not a successful right relation")
 						.isInstanceOf(KernelQueryCancelledException.class);
 				assertThat(rightCounts.opens).hasValue(1);
 				assertThat(rightCounts.advances).hasValue(1);
 				assertThat(rightCounts.closes).hasValue(1);
-				assertThat(leftCounts.opens).hasValue(0);
+				assertThat(leftCounts.opens).hasValue(1);
+				assertThat(leftCounts.advances).hasValue(1);
+				assertThat(leftCounts.closes).hasValue(1);
 				assertThat(fixture.row.boundMask()).isZero();
-			} finally {
-				if (opened.get() != null) {
-					opened.get().close();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nestedAdmissionRefusalAfterRightEvaluationStartsIsTerminal(boolean duringAdvance) throws Exception {
+		try (Fixture fixture = new Fixture("key", "right", "left")) {
+			OptionalMaterialization registry = fixture.source.executionContext().optionalMaterializations();
+			// A reclaimable entry ensures an outer registry would retry if it mistakes the nested signal for its own
+			// pre-effects workspace refusal.
+			try (OptionalMaterialization.Lease<AutoCloseable> ignored = registry.acquire(registry.root(),
+					new Object(), 16, () -> "reclaimable", true, () -> () -> {
+					})) {
+				// Publish and unpin before the tested build starts.
+			}
+			AtomicInteger opens = new AtomicInteger();
+			OptionalMaterialization.AdmissionRefused nested = new OptionalMaterialization.AdmissionRefused(1024L);
+			SlotPlan right = new SlotPlan() {
+				@Override
+				public RowCursor open(RowState row) {
+					opens.incrementAndGet();
+					if (!duringAdvance) {
+						throw nested;
+					}
+					return new RowCursor() {
+						@Override
+						public boolean next() {
+							throw nested;
+						}
+
+						@Override
+						public void close() {
+						}
+					};
 				}
+
+				@Override
+				public long producedMask() {
+					return 0L;
+				}
+			};
+			try (OptionalOccurrence occurrence = fixture.occurrence()) {
+				Throwable first;
+				try (LexicalLeftJoinCursor cursor = occurrence.open(SingletonPlan.INSTANCE, right, new int[0],
+						fixture.row)) {
+					first = catchThrowable(cursor::next);
+				}
+				assertThat(first).isNotNull();
+				try (LexicalLeftJoinCursor cursor = occurrence.open(SingletonPlan.INSTANCE, right, new int[0],
+						fixture.row)) {
+					assertThat(catchThrowable(cursor::next)).isSameAs(first);
+				}
+				assertThat(opens).as("nested refusal cannot restart an already opened outer RHS").hasValue(1);
 			}
 		}
 	}
@@ -163,8 +232,12 @@ class NativeLexicalLeftJoinReplayTest {
 					new ValuesRow(new int[] { KEY, RIGHT }, new long[] { key, value }) }), rightCounts, null);
 			SlotPlan leftPlan = track(SlotPlan.values(new ValuesRow[] {
 					new ValuesRow(new int[] { KEY, LEFT }, new long[] { key, value }) }), leftCounts, null);
-			try (LexicalLeftJoinCursor cursor = new LexicalLeftJoinCursor(leftPlan, right, new int[] { KEY },
-					fixture.row)) {
+			try (OptionalOccurrence occurrence = fixture.occurrence();
+					LexicalLeftJoinCursor cursor = occurrence.open(leftPlan, right, new int[] { KEY }, fixture.row)) {
+				assertThat(rightCounts.opens).as("construction leaves the RHS unopened until the first pull")
+						.hasValue(0);
+				assertThat(cursor.next()).as("the first pull completes RHS materialization and yields its match")
+						.isTrue();
 				fixture.row.cancellation.requestCancellation();
 				Throwable failure = catchThrowable(cursor::next);
 				assertOwnedCancellation(failure, fixture.row.cancellation);
@@ -196,14 +269,28 @@ class NativeLexicalLeftJoinReplayTest {
 				@Override
 				public RowCursor open(RowState row) {
 					return new RowCursor() {
+						private boolean emitted;
+						private int mark = -1;
+
 						@Override
 						public boolean next() {
-							return false;
+							if (emitted) {
+								return false;
+							}
+							emitted = true;
+							mark = row.mark();
+							assertThat(row.bind(KEY, key)).isTrue();
+							assertThat(row.bind(LEFT, value)).isTrue();
+							return true;
 						}
 
 						@Override
 						public void close() {
 							leftCloseCalls.incrementAndGet();
+							if (mark >= 0) {
+								row.rollback(mark);
+								mark = -1;
+							}
 							throw cleanupFailure;
 						}
 					};
@@ -214,11 +301,15 @@ class NativeLexicalLeftJoinReplayTest {
 					return 1L << LEFT;
 				}
 			}, leftCounts, null);
+			OptionalMaterialization registry = fixture.source.executionContext().optionalMaterializations();
 			long baseline = manager.usedBytes();
-			LexicalLeftJoinCursor cursor = new LexicalLeftJoinCursor(throwingLeft, right, new int[] { KEY },
-					fixture.row);
-			try {
-				assertThat(manager.usedBytes()).as("the right replay is admitted before left iteration")
+			long directoryBaseline = registry.metrics().retainedDirectoryBytes();
+			try (OptionalOccurrence occurrence = new OptionalOccurrence(registry);
+					LexicalLeftJoinCursor cursor = occurrence.open(throwingLeft, right, new int[] { KEY },
+							fixture.row)) {
+				assertThat(cursor.next()).as("the first pull completes right materialization and yields a match")
+						.isTrue();
+				assertThat(manager.usedBytes()).as("the right replay is admitted on the first pull")
 						.isGreaterThan(baseline);
 				assertThat(rightCounts.closes).hasValue(1);
 				assertThat(leftCounts.opens).hasValue(1);
@@ -236,12 +327,18 @@ class NativeLexicalLeftJoinReplayTest {
 				assertThat(leftCloseCalls).hasValue(1);
 				assertThat(leftCounts.closes).hasValue(1);
 				assertThat(rightCounts.closes).hasValue(1);
-				assertThat(manager.usedBytes()).as("the terminal failure releases the replay ledger")
-						.isEqualTo(baseline);
+				assertThat(manager.usedBytes()).as("the scoped replay remains owned until its semantic occurrence ends")
+						.isGreaterThan(baseline);
 				assertThat(fixture.row.boundMask()).isZero();
-			} finally {
-				cursor.close();
 			}
+			OptionalMaterialization.Metrics registryAfter = registry.metrics();
+			assertThat(registryAfter.entries()).as("ending the semantic occurrence releases its registry entries")
+					.isZero();
+			long directoryDelta = registryAfter.retainedDirectoryBytes() - directoryBaseline;
+			assertThat(directoryDelta).as("registry directory accounting is high-water only")
+					.isGreaterThanOrEqualTo(0L);
+			assertThat(manager.usedBytes()).as("ending the semantic occurrence releases the replay ledger")
+					.isEqualTo(Math.addExact(baseline, directoryDelta));
 		} finally {
 			LmdbNativeHashJoin.queryMemoryOverride = previousManager;
 		}
@@ -287,29 +384,38 @@ class NativeLexicalLeftJoinReplayTest {
 					return 1L << LEFT;
 				}
 			}, leftCounts, null);
+			OptionalMaterialization registry = fixture.source.executionContext().optionalMaterializations();
 			long baseline = manager.usedBytes();
-			LexicalLeftJoinCursor cursor = new LexicalLeftJoinCursor(throwingLeft, right, new int[] { KEY },
-					fixture.row);
-			try {
-				assertThat(manager.usedBytes()).as("the right relation is materialized before left iteration")
-						.isGreaterThan(baseline);
-				Throwable first = catchThrowable(cursor::next);
-				assertThat(first).as("the delegate failure remains primary").isSameAs(primaryFailure);
-				Throwable repeated = catchThrowable(cursor::next);
-				assertThat(repeated).as("repeated next rethrows the original delegate failure")
-						.isSameAs(primaryFailure);
-				assertThat(primaryFailure.getSuppressed()).as("cleanup failure is captured exactly once")
-						.containsExactly(cleanupFailure);
-				assertThat(leftNextCalls).hasValue(1);
-				assertThat(leftCloseCalls).hasValue(1);
-				assertThat(leftCounts.closes).hasValue(1);
-				assertThat(rightCounts.closes).hasValue(1);
-				assertThat(manager.usedBytes()).as("terminal failure releases the replay ledger")
-						.isEqualTo(baseline);
-				assertThat(fixture.row.boundMask()).isZero();
-			} finally {
-				cursor.close();
+			long directoryBaseline = registry.metrics().retainedDirectoryBytes();
+			try (OptionalOccurrence occurrence = new OptionalOccurrence(registry)) {
+				long occurrenceBaseline = manager.usedBytes();
+				try (LexicalLeftJoinCursor cursor = occurrence.open(throwingLeft, right, new int[] { KEY },
+						fixture.row)) {
+					Throwable first = catchThrowable(cursor::next);
+					assertThat(first).as("the delegate failure remains primary").isSameAs(primaryFailure);
+					Throwable repeated = catchThrowable(cursor::next);
+					assertThat(repeated).as("repeated next rethrows the original delegate failure")
+							.isSameAs(primaryFailure);
+					assertThat(primaryFailure.getSuppressed()).as("cleanup failure is captured exactly once")
+							.containsExactly(cleanupFailure);
+					assertThat(leftNextCalls).hasValue(1);
+					assertThat(leftCloseCalls).hasValue(1);
+					assertThat(leftCounts.closes).hasValue(1);
+					assertThat(rightCounts.opens).as("left failure happens before RHS materialization").hasValue(0);
+					assertThat(rightCounts.closes).hasValue(0);
+					assertThat(manager.usedBytes())
+							.as("failure before the first RHS pull releases the entry frame")
+							.isEqualTo(occurrenceBaseline);
+					assertThat(fixture.row.boundMask()).isZero();
+				}
 			}
+			OptionalMaterialization.Metrics registryAfter = registry.metrics();
+			assertThat(registryAfter.entries()).as("ending the semantic occurrence releases its registry entries")
+					.isZero();
+			long directoryDelta = registryAfter.retainedDirectoryBytes() - directoryBaseline;
+			assertThat(directoryDelta).as("registry directory accounting is high-water only")
+					.isGreaterThanOrEqualTo(0L);
+			assertThat(manager.usedBytes()).isEqualTo(Math.addExact(baseline, directoryDelta));
 		} finally {
 			LmdbNativeHashJoin.queryMemoryOverride = previousManager;
 		}
@@ -330,8 +436,9 @@ class NativeLexicalLeftJoinReplayTest {
 			SlotPlan leftPlan = track(SlotPlan.values(new ValuesRow[] {
 					new ValuesRow(new int[] { KEY, LEFT }, new long[] { firstKey, firstLeft }),
 					new ValuesRow(new int[] { KEY, LEFT }, new long[] { secondKey, secondLeft }) }), leftCounts, null);
-			try (LexicalLeftJoinCursor cursor = new LexicalLeftJoinCursor(leftPlan, right,
-					new int[] { KEY }, fixture.row)) {
+			try (OptionalOccurrence occurrence = fixture.occurrence();
+					LexicalLeftJoinCursor cursor = occurrence.open(leftPlan, right,
+							new int[] { KEY }, fixture.row)) {
 				assertThat(cursor.next()).isTrue();
 				assertThat(fixture.row.summaryCell(SUMMARY)).as("the typed nonshared result cell must survive replay")
 						.isNotNull();
@@ -353,32 +460,23 @@ class NativeLexicalLeftJoinReplayTest {
 	}
 
 	@Test
-	void leftOpenFailureReleasesMaterializedRightOwnerAndCursor(@TempDir Path directory) throws Exception {
+	void leftOpenFailureDoesNotOpenRightOrLeakEntryFrame() throws Exception {
 		String previousBudget = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		LmdbQueryMemoryManager previousManager = LmdbNativeHashJoin.queryMemoryOverride;
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(4L << 20, 4L << 20);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, Long.toString(REPLAY_LIMIT));
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
-		Path recordingPath = directory.resolve("lexical-left-open-failure.jfr");
 		try (Fixture fixture = new Fixture("key", "right", "left")) {
 			long key = fixture.term(SimpleValueFactory.getInstance().createIRI("urn:lexical-left:open-failure"));
-			ValuesRow[] values = new ValuesRow[48];
-			for (int index = 0; index < values.length; index++) {
-				long payload = fixture.term(SimpleValueFactory.getInstance()
-						.createLiteral("failure-" + index + "-" + "🚀".repeat(512)));
-				values[index] = new ValuesRow(new int[] { KEY, RIGHT }, new long[] { key, payload });
-			}
 			Counts rightCounts = new Counts();
-			SlotPlan right = track(SlotPlan.values(values), rightCounts, null);
-			long baseline = manager.usedBytes();
-			AtomicLong memoryAtLeftOpen = new AtomicLong();
+			SlotPlan right = track(SlotPlan.values(new ValuesRow[] {
+					new ValuesRow(new int[] { KEY, RIGHT }, new long[] { key, key }) }), rightCounts, null);
 			AtomicInteger leftOpens = new AtomicInteger();
-			IOException openFailure = new IOException("left-open-after-right-materialization");
+			IOException openFailure = new IOException("left-open-before-right-materialization");
 			SlotPlan failingLeft = new SlotPlan() {
 				@Override
 				public RowCursor open(RowState row) throws IOException {
 					leftOpens.incrementAndGet();
-					memoryAtLeftOpen.set(manager.usedBytes());
 					throw openFailure;
 				}
 
@@ -387,29 +485,29 @@ class NativeLexicalLeftJoinReplayTest {
 					return 1L << LEFT;
 				}
 			};
-			try (Recording recording = new Recording()) {
-				recording.enable("org.eclipse.rdf4j.lmdb.NativeExecutionPhase")
-						.withThreshold(Duration.ZERO)
-						.withStackTrace();
-				recording.start();
-				try {
-					Throwable failure = catchThrowable(
-							() -> new LexicalLeftJoinCursor(failingLeft, right, new int[] { KEY }, fixture.row));
-					assertThat(failure).isSameAs(openFailure);
-				} finally {
-					recording.stop();
-					recording.dump(recordingPath);
-				}
+			OptionalMaterialization registry = fixture.source.executionContext().optionalMaterializations();
+			long baseline = manager.usedBytes();
+			long directoryBaseline = registry.metrics().retainedDirectoryBytes();
+			try (OptionalOccurrence occurrence = new OptionalOccurrence(registry)) {
+				long occurrenceBaseline = manager.usedBytes();
+				Throwable failure = catchThrowable(
+						() -> occurrence.open(failingLeft, right, new int[] { KEY }, fixture.row));
+				assertThat(failure).isSameAs(openFailure);
+				assertThat(rightCounts.opens).as("failed left open must precede any RHS open").hasValue(0);
+				assertThat(rightCounts.advances).hasValue(0);
+				assertThat(rightCounts.closes).hasValue(0);
+				assertThat(manager.usedBytes()).as("failed construction releases its entry-frame reservation")
+						.isEqualTo(occurrenceBaseline);
 			}
 			assertThat(leftOpens).hasValue(1);
-			assertThat(rightCounts.advances).hasValue(values.length + 1);
-			assertThat(rightCounts.closes).hasValue(1);
-			assertThat(manager.usedBytes())
-					.as("a failed left open cannot retain the completed right replay reservation")
-					.isEqualTo(baseline);
-			assertThat(memoryAtLeftOpen.get()).as("right replay ownership must be acquired before opening left")
-					.isGreaterThan(baseline);
-			assertThat(hasReplaySpill(recordingPath)).isTrue();
+			OptionalMaterialization.Metrics registryAfter = registry.metrics();
+			assertThat(registryAfter.entries()).as("ending the semantic scope releases its registry entries")
+					.isZero();
+			long directoryDelta = registryAfter.retainedDirectoryBytes() - directoryBaseline;
+			assertThat(directoryDelta).as("registry directory accounting is high-water only")
+					.isGreaterThanOrEqualTo(0L);
+			assertThat(manager.usedBytes()).as("ending the semantic scope releases its identity reservation")
+					.isEqualTo(Math.addExact(baseline, directoryDelta));
 		} finally {
 			LmdbNativeHashJoin.queryMemoryOverride = previousManager;
 			restoreProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBudget);
@@ -447,9 +545,10 @@ class NativeLexicalLeftJoinReplayTest {
 					new ValuesRow(new int[] { KEY, LEFT }, new long[] { differentId, leftC }) };
 			Counts rightCounts = new Counts();
 			Counts leftCounts = new Counts();
-			try (LexicalLeftJoinCursor cursor = new LexicalLeftJoinCursor(
-					track(SlotPlan.values(leftRows), leftCounts, null),
-					track(SlotPlan.values(rightRows), rightCounts, null), new int[] { KEY }, fixture.row)) {
+			try (OptionalOccurrence occurrence = fixture.occurrence();
+					LexicalLeftJoinCursor cursor = occurrence.open(
+							track(SlotPlan.values(leftRows), leftCounts, null),
+							track(SlotPlan.values(rightRows), rightCounts, null), new int[] { KEY }, fixture.row)) {
 				List<Output> actual = new ArrayList<>();
 				while (cursor.next()) {
 					actual.add(new Output(fixture.row.id(KEY), fixture.row.id(RIGHT), fixture.row.id(LEFT)));
@@ -480,12 +579,15 @@ class NativeLexicalLeftJoinReplayTest {
 			long secondLeft = fixture.term(SimpleValueFactory.getInstance().createLiteral("left-b"));
 			Counts rightCounts = new Counts();
 			Counts leftCounts = new Counts();
-			try (LexicalLeftJoinCursor cursor = new LexicalLeftJoinCursor(
-					track(SlotPlan.values(new ValuesRow[] {
-							new ValuesRow(new int[] { KEY, LEFT }, new long[] { firstKey, firstLeft }),
-							new ValuesRow(new int[] { KEY, LEFT }, new long[] { secondKey, secondLeft }) }), leftCounts,
-							null),
-					track(SlotPlan.values(new ValuesRow[0]), rightCounts, null), new int[] { KEY }, fixture.row)) {
+			try (OptionalOccurrence occurrence = fixture.occurrence();
+					LexicalLeftJoinCursor cursor = occurrence.open(
+							track(SlotPlan.values(new ValuesRow[] {
+									new ValuesRow(new int[] { KEY, LEFT }, new long[] { firstKey, firstLeft }),
+									new ValuesRow(new int[] { KEY, LEFT }, new long[] { secondKey, secondLeft }) }),
+									leftCounts,
+									null),
+							track(SlotPlan.values(new ValuesRow[0]), rightCounts, null), new int[] { KEY },
+							fixture.row)) {
 				assertThat(cursor.next()).isTrue();
 				assertThat(fixture.row.id(KEY)).isEqualTo(firstKey);
 				assertThat(fixture.row.id(LEFT)).isEqualTo(firstLeft);
@@ -593,10 +695,12 @@ class NativeLexicalLeftJoinReplayTest {
 						&& event.getStackTrace()
 								.getFrames()
 								.stream()
-								.anyMatch(frame -> frame.getMethod()
-										.getType()
-										.getName()
-										.equals(NativeResultReplay.class.getName())));
+								.anyMatch(frame -> {
+									String owner = frame.getMethod().getType().getName();
+									String index = OptionalCompatibilityIndex.class.getName();
+									return owner.equals(NativeResultReplay.class.getName()) || owner.equals(index)
+											|| owner.startsWith(index + "$");
+								}));
 	}
 
 	private static void restoreProperty(String property, String previous) {
@@ -612,6 +716,31 @@ class NativeLexicalLeftJoinReplayTest {
 		KernelQueryCancelledException signal = (KernelQueryCancelledException) failure;
 		assertThat(signal.origin()).as("query cancellation must retain its exact token origin").isSameAs(token);
 		assertThat(signal.observedBy(token)).isTrue();
+	}
+
+	private static final class OptionalOccurrence implements AutoCloseable {
+		private final OptionalEvaluationIdentity identity;
+		private final OptionalEvaluationIdentity.Activation activation;
+		private final OptionalRhsContract rhsContract = OptionalRhsContract.unknown();
+
+		OptionalOccurrence(OptionalMaterialization registry) {
+			identity = registry.child(registry.root());
+			activation = identity.activate();
+		}
+
+		LexicalLeftJoinCursor open(SlotPlan left, SlotPlan right, int[] sharedSlots, RowState row)
+				throws IOException {
+			return new LexicalLeftJoinCursor(left, right, sharedSlots, null, rhsContract, row);
+		}
+
+		@Override
+		public void close() {
+			try {
+				activation.close();
+			} finally {
+				identity.close();
+			}
+		}
 	}
 
 	private static final class Counts {
@@ -632,6 +761,7 @@ class NativeLexicalLeftJoinReplayTest {
 		Fixture(String... names) {
 			delegate = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
 			when(delegate.idSpace()).thenReturn(delegate);
+			when(delegate.valueLookupScope()).thenReturn(delegate);
 			when(delegate.idOf(any(Value.class), anyInt())).thenReturn(UNKNOWN);
 			source = SyntheticValueSource.forEvaluation(delegate);
 			source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
@@ -654,10 +784,18 @@ class NativeLexicalLeftJoinReplayTest {
 			return id;
 		}
 
+		OptionalOccurrence occurrence() {
+			return new OptionalOccurrence(source.executionContext().optionalMaterializations());
+		}
+
 		@Override
 		public void close() {
 			row.closeDecodedInputs();
-			source.executionContext().close();
+			try {
+				source.executionContext().close();
+			} finally {
+				row.memoryScope.close();
+			}
 		}
 	}
 }

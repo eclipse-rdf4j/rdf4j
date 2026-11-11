@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_MEMO_ENABLED;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_MEMO_MATERIALIZATIONS;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_ENABLED;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_BUILDS;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_ENABLED;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_MAX_ROWS;
@@ -21,92 +23,331 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
+/** Physical handles borrow complete, per-frame RHS relations from the execution-owned OPTIONAL registry. */
 @Experimental
 final class RightMemoProbe {
-	static final int MAX_MEMO_ROWS = 1 << 14;
-	static final int MAX_SWEEP_KEY_SLOTS = 4;
-	static final long[][] TOO_LARGE = new long[0][];
+	private static final int MAX_SWEEP_KEY_SLOTS = 4;
+	private static final int[] NO_SHARED_SLOTS = new int[0];
+	private static final long READER_BYTES = 512L;
 
-	final SlotPlan right;
-	final int[] keySlots;
-	final int[] replaySlots;
-	final HashMap<GroupKey, long[][]> rowsByKey = new HashMap<>();
-	final GroupKey probeKey;
-	/**
-	 * Plan-09 work item 5.3: when the left-side row estimate makes per-key fragment runs cost at least one key-unbound
-	 * sweep of the fragment, the fragment is executed ONCE with the correlated slots unbound and every probe (hit or
-	 * miss) is answered from the swept table. Correlated slots only — entry-bound slots stay bound during the sweep.
-	 */
-	int[] sweepKeySlots;
-	GroupKey sweepProbeKey;
-	HashMap<GroupKey, long[][]> sweptRows;
-	boolean sweepPending;
+	private final SlotPlan right;
+	private final int[] replaySlots;
+	private final int[] sweepKeySlots;
+	private final boolean independentRight;
+	private final Set<String> keyNames;
+	private final Object operator;
+	private final Object executionOwner;
+	private final LmdbQueryMemoryManager.Reservation ownership;
+	private final OptionalExecutionTelemetry.Channel telemetry;
+	private final NativeFilterLease.ExecutionRhs rawOwner;
+	private boolean ownershipReleased;
+	private int readers;
+	private boolean closed;
 
-	RightMemoProbe(SlotPlan right, int[] keySlots, int[] replaySlots) {
-		this.right = right;
-		this.keySlots = keySlots;
-		this.replaySlots = replaySlots;
-		this.probeKey = new GroupKey(new long[keySlots.length]);
+	private RightMemoProbe(SlotPlan right, long readMask, RowState row, OptionalRhsContract contract,
+			int[] sweepKeySlots, boolean independentRight, LmdbQueryMemoryManager.Reservation ownership,
+			OptionalExecutionTelemetry.Channel telemetry, NativeFilterLease.ExecutionRhs rawOwner) {
+		this.right = rawOwner == null ? right : rawOwner.plan();
+		this.rawOwner = rawOwner;
+		this.replaySlots = slotsOf(right.producedMask());
+		this.sweepKeySlots = sweepKeySlots;
+		this.independentRight = independentRight;
+		this.ownership = ownership;
+		this.telemetry = telemetry;
+		this.operator = contract == null ? right : contract.operatorIdentity();
+		executionOwner = ((SyntheticValueSource) row.source).executionContext().optionalExecutionOwner();
+		if (contract != null && contract.observedNames() == null) {
+			keyNames = null;
+		} else {
+			LinkedHashSet<String> names = new LinkedHashSet<>();
+			for (int slot : slotsOf(readMask | right.producedMask())) {
+				names.add(row.layout.slotName(slot));
+			}
+			if (contract != null) {
+				names.addAll(contract.observedNames());
+			}
+			keyNames = Set.copyOf(names);
+		}
 	}
 
 	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
 		return tryCreate(right, leftProducedMask, readMask, row, row.boundMask(), expectedProbes, perProbeRows,
-				sweepEstimate);
+				sweepEstimate, null, false);
 	}
 
 	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
 			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate) {
-		if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_MEMO_ENABLED, "true"))) {
-			return null;
-		}
-		if (readMask < 0L || (readMask & leftProducedMask) == 0L) {
-			return null;
-		}
-		if (right instanceof PatternPlan
-				|| right instanceof FilterPlan && ((FilterPlan) right).arg instanceof PatternPlan) {
-			return null;
-		}
-		int[] replaySlots = slotsOf(right.producedMask());
-		if (replaySlots.length == 0) {
-			return null;
-		}
-		RightMemoProbe probe = new RightMemoProbe(right, slotsOf(readMask), replaySlots);
-		long correlatedMask = readMask & leftProducedMask;
-		// A sweep re-binds the key slots from the fragment's own rows, so every correlated slot must be produced by
-		// the fragment; a slot the fragment only reads (filter-only) cannot key the table. Entry-bound correlated
-		// slots are constant for this cursor, so the per-key memo already answers them in one fragment run.
-		if (sweepEnabled() && correlatedMask != 0L && Long.bitCount(correlatedMask) <= MAX_SWEEP_KEY_SLOTS
-				&& (correlatedMask & entryBoundMask) == 0L && (correlatedMask & ~right.producedMask()) == 0L
-				&& sweepJustified(expectedProbes, perProbeRows, sweepEstimate)) {
-			probe.sweepKeySlots = slotsOf(correlatedMask);
-			probe.sweepPending = true;
-		}
-		return probe;
+		return tryCreate(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes, perProbeRows,
+				sweepEstimate, null, false);
 	}
 
-	/**
-	 * Milestone 4 (three-tier parity ExecPlan): the estimate-triggered key-unbound sweep for INNER correlated
-	 * fragments. Unlike {@link #tryCreate} this engages ONLY when the sweep is justified, keeping the inner
-	 * {@code JoinCursor} untouched everywhere else; an aborted sweep degrades to the per-key memo, same as LEFT.
-	 */
+	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate,
+			OptionalRhsContract contract) {
+		return tryCreate(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes, perProbeRows,
+				sweepEstimate, contract, false);
+	}
+
+	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate,
+			OptionalRhsContract contract, boolean includesOptionalCondition) {
+		return tryCreate(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes, perProbeRows,
+				sweepEstimate, contract, includesOptionalCondition, null);
+	}
+
+	/** The returned physical handle owns the channel; a declined proposal closes it immediately. */
+	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate,
+			OptionalRhsContract contract, boolean includesOptionalCondition,
+			OptionalExecutionTelemetry.Channel telemetry) {
+		return tryCreate(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes, perProbeRows,
+				sweepEstimate, contract, includesOptionalCondition, telemetry, false);
+	}
+
+	/** An outer OPTIONAL owner may already supply a recursively borrowed raw RHS. */
+	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate,
+			OptionalRhsContract contract, boolean includesOptionalCondition,
+			OptionalExecutionTelemetry.Channel telemetry,
+			boolean rawFiltersAlreadyBorrowed) {
+		RightMemoProbe result = null;
+		Throwable primary = null;
+		try {
+			result = create(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes, perProbeRows,
+					sweepEstimate, contract, includesOptionalCondition, telemetry, rawFiltersAlreadyBorrowed);
+			return result;
+		} catch (RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			if (result == null) {
+				Throwable cleanup = KernelRuntime.closeResource(telemetry, primary);
+				if (primary == null) {
+					KernelRuntime.rethrowCloseFailure(cleanup);
+				}
+			}
+		}
+	}
+
+	private static RightMemoProbe create(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate,
+			OptionalRhsContract contract, boolean includesOptionalCondition,
+			OptionalExecutionTelemetry.Channel telemetry, boolean rawFiltersAlreadyBorrowed) {
+		if (includesOptionalCondition || !Boolean.parseBoolean(System.getProperty(LEFTJOIN_MEMO_ENABLED, "true"))
+				|| readMask < 0L
+				|| !(row.source instanceof SyntheticValueSource synthetic) || synthetic.executionContext() == null
+				|| row.termAuthority() == null || row.termAuthority().token() == null
+				|| row.source.valueLookupScope() == null || row.source.pinnedLmdbSweepProfile() == null
+				|| !(contract == null ? structurallyRepeatable(right) : contract.repeatableAcrossEvaluations())) {
+			return null;
+		}
+		boolean independentRight = (readMask & leftProducedMask) == 0L;
+		// The execution-owned index supersedes the cursor-local replay, but the existing switch still governs
+		// discretionary replay of an uncorrelated relation. Mandatory lexical replay is a separate semantic path.
+		if (independentRight && !Boolean.parseBoolean(System.getProperty(LEFTJOIN_REPLAY_ENABLED, "true"))) {
+			return null;
+		}
+		// Correlated single patterns retain their specialized payload path. An independent pattern, or a
+		// zero-column relation, still has an execution-owned result bag that can survive physical reopens.
+		if ((readMask & leftProducedMask) != 0L
+				&& (right instanceof PatternPlan
+						|| right instanceof FilterPlan filter && filter.arg instanceof PatternPlan)) {
+			return null;
+		}
+		long observed = contract == null || contract.observedNames() == null ? 0L : contract.observedNames().size();
+		long bytes = 2048L + 256L * (Long.bitCount(readMask | right.producedMask()) + observed);
+		LmdbQueryMemoryManager.Reservation memory = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+				.reserve(bytes, null);
+		if (memory == null) {
+			return null;
+		}
+		NativeFilterLease.ExecutionRhs rawOwner = null;
+		try {
+			if (!rawFiltersAlreadyBorrowed) {
+				rawOwner = NativeFilterLease.prepareRhs(right, row);
+			}
+			long correlated = readMask & leftProducedMask;
+			int[] sweepSlots = sweepEnabled() && correlated != 0L
+					&& Long.bitCount(correlated) <= MAX_SWEEP_KEY_SLOTS && (correlated & entryBoundMask) == 0L
+					&& (correlated & ~SlotPlan.assuredMask(right)) == 0L
+					&& sweepSafe(right, correlated, entryBoundMask)
+					&& sweepJustified(expectedProbes, perProbeRows, sweepEstimate) ? slotsOf(correlated) : null;
+			return new RightMemoProbe(right, readMask, row, contract, sweepSlots, independentRight, memory, telemetry,
+					rawOwner);
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeResource(rawOwner, failure);
+			KernelRuntime.closeResource(memory, failure);
+			throw failure;
+		}
+	}
+
 	static RightMemoProbe tryCreateSweepOnly(SlotPlan right, long leftProducedMask, long readMask, RowState row,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
-		return tryCreateSweepOnly(right, leftProducedMask, readMask, row, row.boundMask(), expectedProbes, perProbeRows,
-				sweepEstimate);
+		return tryCreateSweepOnly(right, leftProducedMask, readMask, row, row.boundMask(), expectedProbes,
+				perProbeRows, sweepEstimate, null, false);
 	}
 
 	static RightMemoProbe tryCreateSweepOnly(SlotPlan right, long leftProducedMask, long readMask, RowState row,
 			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate) {
+		return tryCreateSweepOnly(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes,
+				perProbeRows, sweepEstimate, null, false);
+	}
+
+	static RightMemoProbe tryCreateSweepOnly(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate,
+			OptionalRhsContract contract, boolean includesOptionalCondition) {
 		RightMemoProbe probe = tryCreate(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes,
-				perProbeRows, sweepEstimate);
-		return probe != null && probe.sweepPending ? probe : null;
+				perProbeRows, sweepEstimate, contract, includesOptionalCondition);
+		if (probe != null && probe.sweepKeySlots == null) {
+			probe.close();
+			return null;
+		}
+		return probe;
+	}
+
+	static boolean structurallyRepeatable(SlotPlan plan) {
+		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf) {
+			return structurallyRepeatable(leaf.template);
+		}
+		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan
+				|| plan instanceof EmptyPlan
+				|| plan instanceof SingletonPlan || plan instanceof PathPlan) {
+			return true;
+		}
+		if (plan instanceof FilterPlan filter) {
+			NativePredicateCapabilities capabilities = filter.filter.capabilities();
+			return capabilities.replaySafe() && capabilities.correlationReads() >= 0L
+					&& structurallyRepeatable(filter.arg);
+		}
+		if (plan instanceof MultiJoinPlan multi) {
+			for (SlotPlan child : multi.children) {
+				if (!structurallyRepeatable(child)) {
+					return false;
+				}
+			}
+			for (MaskedFilter filter : multi.filters) {
+				NativePredicateCapabilities capabilities = filter.filter.capabilities();
+				if (!capabilities.replaySafe() || capabilities.correlationReads() < 0L) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof JoinPlan join) {
+			return structurallyRepeatable(join.left) && structurallyRepeatable(join.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return structurallyRepeatable(union.left) && structurallyRepeatable(union.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return structurallyRepeatable(minus.left) && structurallyRepeatable(minus.right);
+		}
+		if (plan instanceof LeftJoinPlan join) {
+			return join.lexicalSharedSlots == null && join.lexicalProblemSlots == null
+					&& !join.correlatedConditionInRight
+					&& structurallyRepeatable(join.left) && structurallyRepeatable(join.right);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return structurallyRepeatable(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return structurallyRepeatable(memo.original);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return structurallyRepeatable(distinct.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			for (CopyBinding copy : extension.copies) {
+				if (copy.computed != null || copy.computedValue != null || copy.semanticValue != null) {
+					return false;
+				}
+			}
+			return structurallyRepeatable(extension.arg);
+		}
+		return false;
+	}
+
+	/** Removed input keys must be produced before any operation can inspect their value or boundness. */
+	private static boolean sweepSafe(SlotPlan plan, long keys, long available) {
+		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf) {
+			return sweepSafe(leaf.template, keys, available);
+		}
+		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan
+				|| plan instanceof PathPlan || plan instanceof EmptyPlan || plan instanceof SingletonPlan) {
+			return true;
+		}
+		if (plan instanceof FilterPlan filter) {
+			NativePredicateCapabilities capabilities = filter.filter.capabilities();
+			return capabilities.replaySafe() && capabilities.correlationReads() >= 0L
+					&& (capabilities.correlationReads() & keys & ~(available | SlotPlan.assuredMask(filter.arg))) == 0L
+					&& sweepSafe(filter.arg, keys, available);
+		}
+		if (plan instanceof JoinPlan join) {
+			return sweepSafe(join.left, keys, available)
+					&& sweepSafe(join.right, keys, available | SlotPlan.assuredMask(join.left));
+		}
+		if (plan instanceof UnionPlan union) {
+			return sweepSafe(union.left, keys, available) && sweepSafe(union.right, keys, available);
+		}
+		if (plan instanceof MinusPlan minus) {
+			// Key-bound rows in both arms can only remove rows from the same key partition.
+			return (keys & ~(SlotPlan.assuredMask(minus.left) & SlotPlan.assuredMask(minus.right)
+					& minus.sharedMask)) == 0L
+					&& sweepSafe(minus.left, keys, available) && sweepSafe(minus.right, keys, available);
+		}
+		if (plan instanceof LeftJoinPlan join) {
+			return join.lexicalSharedSlots == null && join.lexicalProblemSlots == null
+					&& !join.correlatedConditionInRight && (keys & ~SlotPlan.assuredMask(join.left)) == 0L
+					&& sweepSafe(join.left, keys, available)
+					&& sweepSafe(join.right, keys, available | SlotPlan.assuredMask(join.left));
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			for (CopyBinding copy : extension.copies) {
+				if (copy.computed != null || copy.computedValue != null || copy.semanticValue != null
+						|| copy.sourceSlot >= 0 && ((1L << copy.sourceSlot) & keys
+								& ~(available | SlotPlan.assuredMask(extension.arg))) != 0L) {
+					return false;
+				}
+			}
+			return sweepSafe(extension.arg, keys, available);
+		}
+		if (plan instanceof MultiJoinPlan multi) {
+			long bound = available;
+			for (SlotPlan child : multi.derivedPlan(available & ~keys).order) {
+				if (!sweepSafe(child, keys, bound)) {
+					return false;
+				}
+				bound |= SlotPlan.assuredMask(child);
+			}
+			for (MaskedFilter filter : multi.filters) {
+				NativePredicateCapabilities capabilities = filter.filter.capabilities();
+				if (!capabilities.replaySafe() || capabilities.correlationReads() < 0L
+						|| (capabilities.correlationReads() & keys & ~bound) != 0L) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return sweepSafe(distinct.arg, keys, available);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return sweepSafe(alias.original, keys, available);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return sweepSafe(memo.original, keys, available);
+		}
+		return false;
 	}
 
 	static boolean sweepEnabled() {
@@ -163,261 +404,396 @@ final class RightMemoProbe {
 	}
 
 	RowCursor open(RowState row) throws IOException {
-		if (sweepPending) {
-			sweep(row);
-		}
-		if (sweptRows != null) {
-			for (int slot : sweepKeySlots) {
-				if (row.slots[slot] == UNKNOWN) {
-					// an unbound key matches any fragment key; only a per-row fragment run answers it
-					return null;
-				}
-			}
-			long[][] cached = sweptRows.get(sweepProbeKey.refill(row.slots, sweepKeySlots));
-			return cached == null ? EmptyCursor.INSTANCE : new MemoReplayCursor(row, replaySlots, cached);
-		}
-		probeKey.refill(row.slots, keySlots);
-		long[][] cached = rowsByKey.get(probeKey);
-		if (cached == TOO_LARGE) {
+		if (!(row.source instanceof SyntheticValueSource source) || source.executionContext() == null
+				|| source.executionContext().optionalExecutionOwner() != executionOwner
+				|| row.source.pinnedLmdbSweepProfile() == null) {
 			return null;
 		}
-		if (cached != null) {
-			return cached.length == 0 ? EmptyCursor.INSTANCE : new MemoReplayCursor(row, replaySlots, cached);
+		LmdbQueryMemoryManager.Reservation readerMemory = retainReader(row);
+		if (readerMemory == null) {
+			return null;
 		}
-		GroupKey storedKey = probeKey.storedCopy();
-		return new MemoRecordingCursor(right.open(row), row, replaySlots, rowsByKey, storedKey);
-	}
-
-	/**
-	 * Runs the fragment once with the correlated key slots unbound, bucketing every produced row by key. On success all
-	 * later probes resolve from the table (absent key = no matches). A row cap overshoot or a fragment row that leaves
-	 * a key slot unbound (it would match any probe key) abandons the sweep and keeps per-key evaluation.
-	 */
-	private void sweep(RowState row) throws IOException {
-		sweepPending = false;
-		long maxRows = sweepMaxRows();
-		long[] savedKeys = new long[sweepKeySlots.length];
-		for (int i = 0; i < sweepKeySlots.length; i++) {
-			savedKeys[i] = row.replaceSlot(sweepKeySlots[i], UNKNOWN);
-		}
-		HashMap<GroupKey, ArrayList<long[]>> collected = new HashMap<>();
-		GroupKey scratch = new GroupKey(new long[sweepKeySlots.length]);
-		boolean complete;
-		int mark = row.mark();
+		NativeExecutionContext.Lease contextLease = null;
+		OptionalMaterialization.Lease<OptionalCompatibilityIndex> materialization = null;
+		OptionalCompatibilityIndex.Probe probe = null;
+		BuildProgress progress = new BuildProgress();
 		try {
-			// With the correlated keys unbound the fragment is an uncorrelated join, which is exactly the batch
-			// strategies' territory (merge/hash: one scan per side) — per-row nested loops would re-probe the
-			// trailing patterns once per produced row and dominate the sweep.
-			BatchCursor batch = right instanceof MultiJoinPlan
-					? ((MultiJoinPlan) right).openBatch(row, NativeBatch.DEFAULT_ROWS)
-					: null;
-			if (batch != null) {
-				LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_BATCHES.incrementAndGet();
-				complete = drainBatch(batch, row.slots.length, collected, scratch, maxRows);
-			} else {
-				complete = drainRows(row, collected, scratch, maxRows);
+			NativeExecutionContext context = ((SyntheticValueSource) row.source).executionContext();
+			contextLease = context.retainLease();
+			OptionalMaterialization registry = context.optionalMaterializations();
+			OptionalEvaluationIdentity scope = row.optionalEvaluationIdentity();
+			if (scope == null) {
+				throw new FrameUnavailable(null);
 			}
-		} finally {
-			row.rollback(mark);
-			for (int i = 0; i < sweepKeySlots.length; i++) {
-				row.replaceSlot(sweepKeySlots[i], savedKeys[i]);
-			}
-		}
-		if (!complete) {
-			return;
-		}
-		HashMap<GroupKey, long[][]> table = new HashMap<>(collected.size() * 2);
-		for (Map.Entry<GroupKey, ArrayList<long[]>> entry : collected.entrySet()) {
-			ArrayList<long[]> bucket = entry.getValue();
-			table.put(entry.getKey(), bucket.toArray(new long[bucket.size()][]));
-		}
-		sweptRows = table;
-		sweepProbeKey = scratch;
-		LEFTJOIN_SWEEP_BUILDS.incrementAndGet();
-	}
-
-	/** Row-path sweep drain for fragments the batch strategies decline. Returns false on abort. */
-	private boolean drainRows(RowState row, HashMap<GroupKey, ArrayList<long[]>> collected, GroupKey scratch,
-			long maxRows) throws IOException {
-		long total = 0;
-		try (RowCursor sweep = right.open(row)) {
-			while (sweep.next()) {
-				boolean keyKnown = true;
-				for (int slot : sweepKeySlots) {
-					if (row.slots[slot] == UNKNOWN) {
-						keyKnown = false;
-						break;
+			long[] saved = sweepKeySlots == null ? null : new long[sweepKeySlots.length];
+			try {
+				if (saved != null) {
+					for (int i = 0; i < saved.length; i++) {
+						saved[i] = row.replaceSlot(sweepKeySlots[i], UNKNOWN);
 					}
 				}
-				if (!keyKnown || ++total > maxRows) {
-					return false;
-				}
-				record(row.slots, collected, scratch);
-			}
-		}
-		return true;
-	}
-
-	/** Batch-path sweep drain: one merge/hash-joined pass over the key-unbound fragment. Returns false on abort. */
-	private boolean drainBatch(BatchCursor cursor, int slotCount, HashMap<GroupKey, ArrayList<long[]>> collected,
-			GroupKey scratch, long maxRows) throws IOException {
-		long total = 0;
-		try (cursor) {
-			NativeBatch batch = new NativeBatch(slotCount, NativeBatch.DEFAULT_ROWS);
-			long[] scratchRow = new long[slotCount];
-			int rows;
-			while ((rows = cursor.fill(batch)) > 0) {
-				for (int i = 0; i < rows; i++) {
-					batch.copyToRow(batch.selection[i], scratchRow);
-					boolean keyKnown = true;
-					for (int slot : sweepKeySlots) {
-						if (scratchRow[slot] == UNKNOWN) {
-							keyKnown = false;
-							break;
-						}
+				materialization = registry.acquire(scope, operator,
+						OptionalEvaluationFrame.captureBytes(row, keyNames), () -> capture(row), true,
+						row.cancellation, () -> build(row, progress), telemetry);
+			} finally {
+				if (saved != null) {
+					for (int i = 0; i < saved.length; i++) {
+						row.replaceSlot(sweepKeySlots[i], saved[i]);
 					}
-					if (!keyKnown || ++total > maxRows) {
-						return false;
-					}
-					record(scratchRow, collected, scratch);
 				}
 			}
+			probe = materialization.value().probe(row, telemetry);
+			return new Reader(row, probe, materialization, contextLease, readerMemory);
+		} catch (FrameUnavailable unavailable) {
+			Throwable failure = KernelRuntime.closeResource(probe, null);
+			failure = KernelRuntime.closeResource(materialization, failure);
+			failure = KernelRuntime.closeResource(readerMemory, failure);
+			failure = KernelRuntime.closeResource(this::releaseReader, failure);
+			failure = KernelRuntime.closeResource(contextLease, failure);
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+			return null;
+		} catch (OptionalMaterialization.AdmissionRefused refused) {
+			if (progress.opened) {
+				KernelRuntime.closeResource(probe, refused);
+				KernelRuntime.closeResource(materialization, refused);
+				KernelRuntime.closeResource(readerMemory, refused);
+				KernelRuntime.closeResource(this::releaseReader, refused);
+				KernelRuntime.closeResource(contextLease, refused);
+				throw refused;
+			}
+			Throwable failure = KernelRuntime.closeResource(probe, null);
+			failure = KernelRuntime.closeResource(materialization, failure);
+			failure = KernelRuntime.closeResource(readerMemory, failure);
+			failure = KernelRuntime.closeResource(this::releaseReader, failure);
+			failure = KernelRuntime.closeResource(contextLease, failure);
+			if (failure != null) {
+				failure.addSuppressed(refused);
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+			return null;
+		} catch (IOException | RuntimeException | Error failure) {
+			KernelRuntime.closeResource(probe, failure);
+			KernelRuntime.closeResource(materialization, failure);
+			KernelRuntime.closeResource(readerMemory, failure);
+			KernelRuntime.closeResource(this::releaseReader, failure);
+			KernelRuntime.closeResource(contextLease, failure);
+			throw failure;
 		}
-		return true;
 	}
 
-	private void record(long[] slots, HashMap<GroupKey, ArrayList<long[]>> collected, GroupKey scratch) {
-		ArrayList<long[]> bucket = collected.get(scratch.refill(slots, sweepKeySlots));
-		if (bucket == null) {
-			bucket = new ArrayList<>();
-			collected.put(scratch.storedCopy(), bucket);
+	private static final class BuildProgress {
+		boolean opened;
+	}
+
+	private OptionalEvaluationFrame capture(RowState row) {
+		try {
+			return OptionalEvaluationFrame.capture(row, keyNames);
+		} catch (OptionalEvaluationFrame.Unavailable unavailable) {
+			throw new FrameUnavailable(unavailable);
 		}
-		long[] values = new long[replaySlots.length];
-		for (int i = 0; i < replaySlots.length; i++) {
-			values[i] = slots[replaySlots[i]];
+	}
+
+	/** Only capture unavailability may decline before the producer is opened. */
+	static final class FrameUnavailable extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		FrameUnavailable(Throwable cause) {
+			super(cause);
 		}
-		bucket.add(values);
+	}
+
+	private synchronized LmdbQueryMemoryManager.Reservation retainReader(RowState row) {
+		if (closed) {
+			throw new IllegalStateException("correlated memo handle is closed");
+		}
+		row.cancellation.check();
+		LmdbQueryMemoryManager.Reservation memory = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+				.reserve(READER_BYTES, null);
+		if (memory != null) {
+			readers++;
+		}
+		return memory;
+	}
+
+	private void releaseReader() {
+		boolean release;
+		synchronized (this) {
+			if (--readers < 0) {
+				throw new IllegalStateException("correlated memo reader released twice");
+			}
+			release = closed && readers == 0;
+		}
+		if (release) {
+			closeOwnership();
+		}
+	}
+
+	private void closeOwnership() {
+		synchronized (this) {
+			if (ownershipReleased) {
+				return;
+			}
+			ownershipReleased = true;
+		}
+		Throwable failure = KernelRuntime.closeResource(rawOwner, null);
+		failure = KernelRuntime.closeResource(telemetry, failure);
+		failure = KernelRuntime.closeResource(ownership, failure);
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	void close() {
-		rowsByKey.clear();
-		if (sweptRows != null) {
-			sweptRows.clear();
-		}
-	}
-}
-
-@Experimental
-final class MemoRecordingCursor implements RowCursor {
-	final RowCursor delegate;
-	final RowState row;
-	final int[] replaySlots;
-	final HashMap<GroupKey, long[][]> rowsByKey;
-	final GroupKey key;
-	ArrayList<long[]> rows = new ArrayList<>();
-	boolean finished;
-
-	MemoRecordingCursor(RowCursor delegate, RowState row, int[] replaySlots,
-			HashMap<GroupKey, long[][]> rowsByKey, GroupKey key) {
-		this.delegate = delegate;
-		this.row = row;
-		this.replaySlots = replaySlots;
-		this.rowsByKey = rowsByKey;
-		this.key = key;
-	}
-
-	@Override
-	public boolean next() throws IOException {
-		if (delegate.next()) {
-			record();
-			return true;
-		}
-		finish();
-		return false;
-	}
-
-	void record() {
-		if (rows == null) {
-			return;
-		}
-		if (rows.size() >= RightMemoProbe.MAX_MEMO_ROWS) {
-			rows = null;
-			rowsByKey.put(key, RightMemoProbe.TOO_LARGE);
-			return;
-		}
-		long[] values = new long[replaySlots.length];
-		for (int i = 0; i < replaySlots.length; i++) {
-			values[i] = row.slots[replaySlots[i]];
-		}
-		rows.add(values);
-	}
-
-	void finish() {
-		if (finished) {
-			return;
-		}
-		finished = true;
-		if (rows != null) {
-			rowsByKey.put(key, rows.toArray(new long[rows.size()][]));
-			LEFTJOIN_MEMO_MATERIALIZATIONS.incrementAndGet();
-		}
-	}
-
-	@Override
-	public void close() {
-		delegate.close();
-	}
-}
-
-@Experimental
-final class MemoReplayCursor implements RowCursor {
-	final RowState row;
-	final int[] replaySlots;
-	final long[][] rows;
-	int index;
-	int activeMark = -1;
-
-	MemoReplayCursor(RowState row, int[] replaySlots, long[][] rows) {
-		this.row = row;
-		this.replaySlots = replaySlots;
-		this.rows = rows;
-	}
-
-	@Override
-	public boolean next() {
-		release();
-		while (index < rows.length) {
-			long[] values = rows[index++];
-			int mark = row.mark();
-			if (bind(values)) {
-				activeMark = mark;
-				return true;
+		boolean release;
+		synchronized (this) {
+			if (closed) {
+				return;
 			}
-			row.rollback(mark);
+			closed = true;
+			release = readers == 0;
 		}
-		return false;
+		if (release) {
+			closeOwnership();
+		}
 	}
 
-	boolean bind(long[] values) {
-		for (int i = 0; i < replaySlots.length; i++) {
-			long value = values[i];
-			if (value != UNKNOWN && !row.bind(replaySlots[i], value)) {
+	private OptionalCompatibilityIndex build(RowState input, BuildProgress progress) throws IOException {
+		long bytes = 2048L + 256L * input.slots.length;
+		LmdbQueryMemoryManager.Reservation scratchMemory = input.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+				.reserve(bytes, null);
+		if (scratchMemory == null) {
+			throw new OptionalMaterialization.AdmissionRefused(bytes);
+		}
+		RowState scratch = null;
+		OptionalCompatibilityIndex result = null;
+		Throwable primary = null;
+		try {
+			scratch = input.fork();
+			scratch.enableDecodedInputAccounting();
+			try (OptionalCompatibilityIndex.Builder builder = OptionalCompatibilityIndex.builder(scratch,
+					replaySlots, sweepKeySlots == null ? NO_SHARED_SLOTS : sweepKeySlots,
+					sweepKeySlots == null ? OptionalCompatibilityIndex.Strategy.SCAN
+							: OptionalCompatibilityIndex.Strategy.AUTO,
+					telemetry == null ? null : telemetry.fork())) {
+				if (sweepKeySlots == null || !buildBatch(scratch, builder, progress)) {
+					progress.opened = true;
+					try (RowCursor cursor = right.open(scratch)) {
+						long rows = 0L;
+						while (cursor.next()) {
+							scratch.cancellation.poll((int) rows++);
+							builder.appendCurrent(scratch, weight(cursor));
+						}
+					}
+				}
+				scratch.cancellation.check();
+				result = builder.finish();
+			}
+		} catch (OptionalMaterialization.AdmissionRefused refused) {
+			RuntimeException failure = progress.opened
+					? new QueryEvaluationException("Correlated OPTIONAL admission failed after opening its RHS",
+							refused)
+					: refused;
+			primary = failure;
+			throw failure;
+		} catch (FrameUnavailable unavailable) {
+			RuntimeException failure = progress.opened
+					? new QueryEvaluationException("Correlated OPTIONAL frame failed after opening its RHS",
+							unavailable)
+					: unavailable;
+			primary = failure;
+			throw failure;
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			Throwable failure = primary;
+			if (scratch != null) {
+				failure = KernelRuntime.closeResource(scratch::closeDecodedInputs, failure);
+			}
+			failure = KernelRuntime.closeResource(scratchMemory, failure);
+			if (failure != null) {
+				if (progress.opened && telemetry != null) {
+					failure = KernelRuntime.closeResource(() -> {
+						telemetry.add(OptionalExecutionTelemetry.Counter.BUILD_FAILURES, 1L);
+						telemetry.flush();
+					}, failure);
+				}
+				failure = KernelRuntime.closeResource(result, failure);
+				if (primary == null) {
+					NativeContextClosingIteration.throwFailure(failure);
+				}
+			}
+		}
+		if (telemetry != null) {
+			telemetry.add(OptionalExecutionTelemetry.Counter.BUILDS, 1L);
+			telemetry.flush();
+		}
+		if (independentRight) {
+			// Count completed uncorrelated materializations at their real build boundary, including empty bags.
+			// Registry hits and failed/declined builds never reach this point.
+			LEFTJOIN_REPLAY_MATERIALIZATIONS.incrementAndGet();
+		}
+		if (sweepKeySlots == null) {
+			LEFTJOIN_MEMO_MATERIALIZATIONS.incrementAndGet();
+		} else {
+			LEFTJOIN_SWEEP_BUILDS.incrementAndGet();
+		}
+		return result;
+	}
+
+	/** A declined batch proposal has not consumed a result; the row path remains the same pure evaluation. */
+	private boolean buildBatch(RowState row, OptionalCompatibilityIndex.Builder builder, BuildProgress progress)
+			throws IOException {
+		if (!(right instanceof MultiJoinPlan multi)) {
+			return false;
+		}
+		long bytes = 128L + 8L * row.slots.length * NativeBatch.DEFAULT_ROWS + 4L * NativeBatch.DEFAULT_ROWS;
+		LmdbQueryMemoryManager.Reservation batchMemory = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+				.reserve(bytes, null);
+		if (batchMemory == null) {
+			return false;
+		}
+		try (batchMemory) {
+			NativeBatch batch = new NativeBatch(row.slots.length, NativeBatch.DEFAULT_ROWS);
+			progress.opened = true;
+			BatchCursor cursor = multi.openBatch(row, batch.capacity);
+			if (cursor == null) {
 				return false;
 			}
+			try (cursor) {
+				LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_BATCHES.incrementAndGet();
+				int rows;
+				while ((rows = cursor.fill(batch)) > 0) {
+					for (int i = 0; i < rows; i++) {
+						row.cancellation.poll(i);
+						batch.copyToRow(batch.selection[i], row.slots);
+						row.recomputeBoundMask();
+						builder.appendCurrent(row);
+					}
+				}
+			}
+			return true;
 		}
-		return true;
 	}
 
-	@Override
-	public void close() {
-		release();
-		index = rows.length;
+	private static long weight(RowCursor cursor) {
+		long multiplicity = cursor instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+		if (multiplicity <= 0L) {
+			throw new IllegalStateException("invalid correlated memo row multiplicity");
+		}
+		return multiplicity;
 	}
 
-	void release() {
-		if (activeMark >= 0) {
-			row.rollback(activeMark);
-			activeMark = -1;
+	private final class Reader implements FactorizedRowCursor {
+		private final RowState row;
+		private final OptionalCompatibilityIndex.Probe probe;
+		private final OptionalMaterialization.Lease<OptionalCompatibilityIndex> materialization;
+		private final NativeExecutionContext.Lease contextLease;
+		private final LmdbQueryMemoryManager.Reservation readerMemory;
+		private int mark = -1;
+		private long repeat;
+		private boolean done;
+
+		Reader(RowState row, OptionalCompatibilityIndex.Probe probe,
+				OptionalMaterialization.Lease<OptionalCompatibilityIndex> materialization,
+				NativeExecutionContext.Lease contextLease, LmdbQueryMemoryManager.Reservation readerMemory) {
+			this.row = row;
+			this.probe = probe;
+			this.materialization = materialization;
+			this.contextLease = contextLease;
+			this.readerMemory = readerMemory;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (done) {
+				return false;
+			}
+			try {
+				row.cancellation.check();
+				if (repeat > 0L) {
+					repeat--;
+					return true;
+				}
+				releaseRow();
+				while (probe.next()) {
+					try (NativeValuePayloads.Scope ignored = probe.activateCurrent()) {
+						if (bind(probe.current())) {
+							repeat = probe.multiplicity() - 1L;
+							return true;
+						}
+					}
+				}
+				close();
+				return false;
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		private boolean bind(NativeResultRow values) {
+			mark = row.mark();
+			for (int i = 0; i < values.schema().size(); i++) {
+				Integer slot = row.layout.slot(values.schema().name(i));
+				if (slot == null) {
+					continue;
+				}
+				NativeResultCell cell = values.cell(i);
+				if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
+					row.bindSummary(slot, cell);
+				} else if (cell.state() == NativeResultCell.State.BOUND) {
+					if (row.slots[slot] != UNKNOWN) {
+						Value current = row.source.lazyValue(row.slots[slot]);
+						if (current == null) {
+							throw new QueryEvaluationException("Unresolved correlated OPTIONAL input term");
+						}
+						if (!NativeValuePayloads.beforeInspection(current, row.source).equals(cell.value())) {
+							releaseRow();
+							return false;
+						}
+					} else {
+						long id = ((SyntheticValueSource) row.source).internComputedValue(cell.value(),
+								row.positionMask(slot));
+						if (id == UNKNOWN) {
+							throw new QueryEvaluationException("Replayed OPTIONAL term has no native authority");
+						}
+						row.bind(slot, id);
+					}
+				}
+			}
+			return true;
+		}
+
+		private void releaseRow() {
+			if (mark >= 0) {
+				row.rollback(mark);
+				mark = -1;
+			}
+		}
+
+		@Override
+		public long multiplicity() {
+			long result = repeat + 1L;
+			repeat = 0L;
+			return result;
+		}
+
+		@Override
+		public void close() {
+			if (done) {
+				return;
+			}
+			done = true;
+			Throwable failure = KernelRuntime.closeResource(this::releaseRow, null);
+			failure = KernelRuntime.closeResource(probe, failure);
+			failure = KernelRuntime.closeResource(materialization, failure);
+			failure = KernelRuntime.closeResource(readerMemory, failure);
+			failure = KernelRuntime.closeResource(RightMemoProbe.this::releaseReader, failure);
+			failure = KernelRuntime.closeResource(contextLease, failure);
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
 		}
 	}
 }

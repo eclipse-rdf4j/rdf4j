@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.LongConsumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * Query source over a compiled plan's synthetic id spaces. Two lifetimes share this class:
@@ -410,11 +412,21 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		return delegate.valueLookupScope();
 	}
 
+	/** A parallel-family certificate is valid only with the dictionary view observed when it was created. */
+	Object optionalSnapshotFamily(Object lookupScope) {
+		return null;
+	}
+
 	@Override
 	public LmdbNativeValueCodec nativeValueCodec() {
 		// Synthetic ids are resolved by this facade, but stored ids still need the worker's backing dictionary codec.
 		// Delegate once here so WorkerContext.forSource can bind every worker evaluator to its own sibling codec.
 		return delegate.nativeValueCodec();
+	}
+
+	@Override
+	public boolean initializeAdmittedValue(LmdbValue value, LongConsumer admission) {
+		return delegate.initializeAdmittedValue(value, admission);
 	}
 
 	@Override
@@ -850,13 +862,31 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			if (delegateIdSpace == null) {
 				return null;
 			}
+			Object commonLookupScope = count == 0 ? null : opened[0] == null ? null : opened[0].valueLookupScope();
+			long snapshotId = count == 0 || opened[0] == null ? ParallelSource.UNKNOWN_SNAPSHOT_ID
+					: opened[0].snapshotId();
 			for (int i = 0; i < count; i++) {
 				if (opened[i] == null || opened[i].idSpace() != delegateIdSpace) {
 					return null;
 				}
+				long siblingSnapshot = opened[i].snapshotId();
+				if (opened[i].valueLookupScope() != commonLookupScope
+						|| snapshotId != ParallelSource.UNKNOWN_SNAPSHOT_ID
+								&& siblingSnapshot != ParallelSource.UNKNOWN_SNAPSHOT_ID
+								&& snapshotId != siblingSnapshot) {
+					commonLookupScope = null;
+				}
+				if (snapshotId == ParallelSource.UNKNOWN_SNAPSHOT_ID) {
+					snapshotId = siblingSnapshot;
+				}
+			}
+			// The factory contract proves one statement snapshot; a matching dictionary capability independently proves
+			// the visible value mapping. Neither proof alone licenses sharing across physical sources.
+			Object family = commonLookupScope == null ? null : new Object();
+			for (int i = 0; i < count; i++) {
 				// Compile-scoped siblings have no runtime context yet, but already own the repository policy.
 				result[i] = new SyntheticParallelSource(opened[i], catalog, context, idSpace(), generatedKeyPlan,
-						queryExecutionPolicy);
+						queryExecutionPolicy, family, commonLookupScope);
 			}
 			complete = true;
 			return result;
@@ -896,19 +926,28 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	private static final class SyntheticParallelSource extends SyntheticValueSource implements ParallelSource {
 
 		private final ParallelSource owned;
+		private final Object optionalFamily;
+		private final Object certifiedLookupScope;
 		private boolean closed;
 
 		private SyntheticParallelSource(ParallelSource owned, PlanValueCatalog catalog,
 				NativeExecutionContext context, Object syntheticIdSpace, NativeGeneratedKeyPlan generatedKeyPlan,
-				QueryExecutionPolicy policy) {
+				QueryExecutionPolicy policy, Object optionalFamily, Object certifiedLookupScope) {
 			super(owned, catalog, context, syntheticIdSpace, policy);
 			this.owned = owned;
+			this.optionalFamily = optionalFamily;
+			this.certifiedLookupScope = certifiedLookupScope;
 			// All sibling facades share the query-owned runtime table through the context, but each receives a
 			// delegate-bound
 			// generated-key authority so store lookups and payload decoding remain worker-local. Generated ids
 			// themselves
 			// stay in the shared id space and therefore remain valid when partial results are merged before close.
 			installGeneratedKeyPolicy(generatedKeyPlan);
+		}
+
+		@Override
+		Object optionalSnapshotFamily(Object lookupScope) {
+			return lookupScope != null && lookupScope == certifiedLookupScope ? optionalFamily : null;
 		}
 
 		@Override

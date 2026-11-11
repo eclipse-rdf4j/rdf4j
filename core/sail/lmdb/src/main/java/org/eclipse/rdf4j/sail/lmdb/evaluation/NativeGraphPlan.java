@@ -16,11 +16,14 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 
 /**
  * Semantic GRAPH boundary. Selection follows the shared graph evaluator; the body is compiled under the selected
@@ -112,6 +115,81 @@ final class NativeGraphPlan implements SlotPlan {
 		WORKER_BINDINGS.incrementAndGet();
 		return new NativeGraphPlan(copy, structural, workerStrategy, worker.source(), outSlots, outNames,
 				frameInputSlots, frameInputNames, inheritedFrameInputs, lateralFrameInputs);
+	}
+
+	/**
+	 * A fixed GRAPH containing one statement is a pure relation whose shared variables are all bound. Restricting its
+	 * physical statement access to compatible left keys therefore preserves independent GRAPH evaluation. Selection
+	 * itself still goes through the shared evaluator, including dataset membership and default-graph aliases.
+	 */
+	PreparedPattern prepareCompatibilityPattern(RowState row) throws IOException {
+		if (row.encounterOrderRequired || !hasStatementCompatibilityShape()
+				|| !(row.source instanceof SyntheticValueSource synthetic) || synthetic.executionContext() == null
+				|| row.source.pinnedLmdbSweepProfile() == null || row.source.valueLookupScope() == null
+				|| row.termAuthority() == null || row.termAuthority().token() == null) {
+			return null;
+		}
+		StatementPattern statement = (StatementPattern) graph.getArg();
+		NativeExecutionContext execution = synthetic.executionContext();
+		Dataset dataset = structural.getDataset();
+		long names = dataset == null ? 0L : dataset.getNamedGraphResources().size();
+		long bytes = Math.addExact(4096L,
+				Math.addExact(Math.multiplyExact(256L, row.slots.length), Math.multiplyExact(128L, names)));
+		LmdbQueryMemoryManager.Reservation memory = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+				.reserve(bytes, null);
+		if (memory == null) {
+			return null;
+		}
+		boolean transferred = false;
+		try {
+			QueryEvaluationContext scoped = execution.genericContext(structural, strategy);
+			PatternPlan[] selected = new PatternPlan[1];
+			QueryEvaluationStep selection = GraphQueryEvaluationStep.supply(graph, strategy.graphTripleSource(), scoped,
+					(body, activeGraph) -> {
+						LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(activeGraph, strategy,
+								row.source);
+						for (int slot = 0; slot < row.slots.length; slot++) {
+							String name = row.layout.slotName(slot);
+							if (name == null || compiler.slot(name) != slot) {
+								return QueryEvaluationStep.empty();
+							}
+						}
+						selected[0] = compiler.compileStatementPattern(statement);
+						// Trigger graph selection only. No statement row or caller/left binding reaches the body.
+						return QueryEvaluationStep.empty();
+					});
+			try (var iterator = selection.evaluate(row.base)) {
+				iterator.hasNext();
+			}
+			PatternPlan pattern = selected[0];
+			if (pattern == null || pattern.producedMask() != produced || !pattern.p.hasSlot()
+					|| pattern.p.isConstant()) {
+				return null;
+			}
+			PreparedPattern prepared = new PreparedPattern(pattern, memory);
+			transferred = true;
+			return prepared;
+		} finally {
+			if (!transferred) {
+				memory.close();
+			}
+		}
+	}
+
+	boolean hasStatementCompatibilityShape() {
+		return graph.getGraphName().isConstant() && graph.getGraphName().hasValue()
+		// Backend subclasses can carry annotations that an ordinary physical statement cannot reproduce.
+				&& graph.getArg().getClass() == StatementPattern.class
+				&& !((StatementPattern) graph.getArg()).getPredicateVar().hasValue()
+				&& produced == assured;
+	}
+
+	/** The batch reader retains bounded graph-selection/planner metadata until it closes. */
+	record PreparedPattern(PatternPlan pattern, LmdbQueryMemoryManager.Reservation memory) implements AutoCloseable {
+		@Override
+		public void close() {
+			memory.close();
+		}
 	}
 
 	@Override

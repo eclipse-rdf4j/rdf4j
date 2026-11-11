@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 
 /**
@@ -26,6 +28,9 @@ final class NativeFilterLease {
 	private final IdentityHashMap<NativeBooleanFilter, Entry> borrowed = new IdentityHashMap<>();
 	private final ArrayList<Entry> entries = new ArrayList<>();
 	private final boolean suppressFeedback;
+	private final RawBudget rawBudget;
+	private final OptionalMaterialization rawRegistry;
+	private final NativeExecutionContext rawContext;
 	private boolean finished;
 
 	NativeFilterLease() {
@@ -33,7 +38,268 @@ final class NativeFilterLease {
 	}
 
 	NativeFilterLease(boolean suppressFeedback) {
+		this(suppressFeedback, null, null, null);
+	}
+
+	private NativeFilterLease(boolean suppressFeedback, RawBudget budget,
+			OptionalMaterialization registry, NativeExecutionContext context) {
 		this.suppressFeedback = suppressFeedback;
+		this.rawBudget = budget;
+		this.rawRegistry = registry;
+		this.rawContext = context;
+	}
+
+	/** Prepare before either operand opens. Idle raw predicates remain with the same execution registry. */
+	static ExecutionRhs prepareRhs(SlotPlan right, RowState row) {
+		if (filterFree(right)) {
+			return new ExecutionRhs(right, null);
+		}
+		NativeExecutionContext context = row.source instanceof SyntheticValueSource synthetic
+				? synthetic.executionContext()
+				: null;
+		OptionalMaterialization registry = context == null ? null : context.optionalMaterializations();
+		LmdbQueryMemoryManager.QueryLedger ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+		LmdbQueryMemoryManager.Reservation memory;
+		while ((memory = ledger.reserve(1024L, null)) == null) {
+			if (registry == null || !registry.reclaimForPreparation()) {
+				throw new OptionalMaterialization.AdmissionRefused("raw RHS owners", 1024L);
+			}
+		}
+		NativeFilterLease filters = null;
+		try {
+			RawBudget budget = new RawBudget(memory, registry);
+			filters = new NativeFilterLease(false, budget,
+					registry, context);
+			return new ExecutionRhs(filters.borrow(right), filters);
+		} catch (RuntimeException | Error failure) {
+			if (filters == null) {
+				memory.close();
+			} else {
+				filters.abort(failure);
+			}
+			throw failure;
+		}
+	}
+
+	/** Only known transparent shapes prove the absence of a predicate owner. */
+	private static boolean filterFree(SlotPlan plan) {
+		if (plan instanceof LmdbNativeFactorAlgebra.Boundary boundary) {
+			return filterFree(boundary.delegate());
+		}
+		if (plan instanceof FilterPlan) {
+			return false;
+		}
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
+				|| plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
+			return true;
+		}
+		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf) {
+			return filterFree(leaf.template);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return filterFree(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return filterFree(memo.original);
+		}
+		if (plan instanceof MultiJoinPlan multi) {
+			if (multi.filters.length != 0) {
+				return false;
+			}
+			for (SlotPlan child : multi.children) {
+				if (!filterFree(child)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof JoinPlan join) {
+			return filterFree(join.left) && filterFree(join.right);
+		}
+		if (plan instanceof LeftJoinPlan join) {
+			return join.lexicalCondition == null && !join.correlatedConditionInRight
+					&& filterFree(join.left) && filterFree(join.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return filterFree(union.left) && filterFree(union.right);
+		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return filterFree(union.left) && filterFree(union.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return filterFree(minus.left) && filterFree(minus.right);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return filterFree(lateral.left) && filterFree(lateral.right);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return filterFree(extension.arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return filterFree(entry.arg);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return filterFree(distinct.arg);
+		}
+		if (plan instanceof MergeOrderedJoinPlan merge) {
+			return filterFree(merge.join) && filterFree(merge.orderedFallback);
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return filterFree(guard.delegate) && filterFree(guard.drained);
+		}
+		return false;
+	}
+
+	static final class ExecutionRhs implements AutoCloseable {
+		private SlotPlan plan;
+		private NativeFilterLease filters;
+
+		ExecutionRhs(SlotPlan plan, NativeFilterLease filters) {
+			this.plan = plan;
+			this.filters = filters;
+		}
+
+		synchronized SlotPlan plan() {
+			if (plan == null) {
+				throw new IllegalStateException("raw RHS owner is closed");
+			}
+			return plan;
+		}
+
+		@Override
+		public void close() {
+			NativeFilterLease closing;
+			synchronized (this) {
+				closing = filters;
+				plan = null;
+				filters = null;
+			}
+			if (closing != null) {
+				closing.commit();
+			}
+		}
+	}
+
+	private void reserveRaw(long bytes) {
+		if (rawBudget != null) {
+			rawBudget.reserve(bytes);
+		}
+	}
+
+	private void finishRaw() {
+		if (rawBudget != null) {
+			borrowed.clear();
+			entries.clear();
+			rawBudget.finish();
+		}
+	}
+
+	/** A physical raw-RHS view must not install a fresh execution-nativeState entry on every rebuild. */
+	private static final class RawExists implements NativeBooleanFilter {
+		final ExistsFilter delegate;
+		private RowState frameParent;
+		private ScopedNativeBooleanFilter.ConditionFrame frame;
+
+		RawExists(ExistsFilter delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public boolean accept(RowState row) {
+			if (delegate.retainedBindingNames == null) {
+				return delegate.exists(row);
+			}
+			if (frame == null || frameParent != row) {
+				close();
+				ScopedNativeBooleanFilter projected = new ScopedNativeBooleanFilter(delegate::exists,
+						delegate.retainedBindingNames);
+				frame = projected.newFrame(row);
+				frameParent = row;
+			}
+			return frame.accept(row);
+		}
+
+		@Override
+		public NativePredicateCapabilities capabilities() {
+			NativePredicateCapabilities proof = delegate.capabilities();
+			return NativePredicateCapabilities.snapshot(proof.correlationReads(),
+					SlotPlan.optionalReplaySafe(delegate.subPlan), proof.workerBindable());
+		}
+
+		@Override
+		public boolean parallelWorkerForkable() {
+			return delegate.parallelWorkerForkable();
+		}
+
+		@Override
+		public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+			return delegate.forkForParallelWorker(context);
+		}
+
+		@Override
+		public void explainStrategies() {
+			delegate.explainStrategies();
+		}
+
+		@Override
+		public void close() {
+			ScopedNativeBooleanFilter.ConditionFrame closing = frame;
+			frame = null;
+			frameParent = null;
+			if (closing != null) {
+				closing.close();
+			}
+		}
+	}
+
+	private static final class RawBudget {
+		private final LmdbQueryMemoryManager.Reservation memory;
+		private final OptionalMaterialization registry;
+		private int entries;
+		private boolean finished;
+
+		RawBudget(LmdbQueryMemoryManager.Reservation memory, OptionalMaterialization registry) {
+			this.memory = memory;
+			this.registry = registry;
+		}
+
+		void reserve(long bytes) {
+			while (true) {
+				synchronized (this) {
+					if (finished) {
+						throw new IllegalStateException("raw RHS owner is closed");
+					}
+					if (memory.tryGrow(bytes)) {
+						return;
+					}
+				}
+				if (registry == null || !registry.reclaimForPreparation()) {
+					throw new OptionalMaterialization.AdmissionRefused("raw RHS owners", bytes);
+				}
+			}
+		}
+
+		synchronized void born() {
+			entries = Math.addExact(entries, 1);
+		}
+
+		synchronized void released() {
+			if (--entries < 0) {
+				throw new IllegalStateException("raw RHS entry released twice");
+			}
+			if (finished && entries == 0) {
+				memory.close();
+			}
+		}
+
+		synchronized void finish() {
+			if (!finished) {
+				finished = true;
+				if (entries == 0) {
+					memory.close();
+				}
+			}
+		}
 	}
 
 	/**
@@ -48,12 +314,91 @@ final class NativeFilterLease {
 		while (true) {
 			if (filter instanceof BorrowedFilter borrowed) {
 				filter = borrowed.entry.attempt;
+			} else if (filter instanceof RawExists raw) {
+				filter = raw.delegate;
 			} else if (filter instanceof PlannedNativeBooleanFilter planned) {
 				filter = planned.delegate;
 			} else {
 				return filter;
 			}
 		}
+	}
+
+	/**
+	 * Raw OPTIONAL predicates have one invocation per logical mapping unless they affirmatively prove repeatability.
+	 * Ordinary positive-mask filters retain their established placement contract; a raw-owner facade is the scope proof
+	 * that enables this stronger input-expansion rule without changing unrelated operators.
+	 */
+	static boolean requiresLogicalRhsRows(NativeBooleanFilter filter) {
+		if (filter.capabilities().replaySafe()) {
+			return false;
+		}
+		while (true) {
+			if (filter instanceof BorrowedFilter borrowed) {
+				if (borrowed.entry.rawBudget != null) {
+					return true;
+				}
+				filter = borrowed.entry.attempt;
+			} else if (filter instanceof RawExists) {
+				return true;
+			} else if (filter instanceof PlannedNativeBooleanFilter planned) {
+				filter = planned.delegate;
+			} else if (filter instanceof RecordingNativeBooleanFilter recording) {
+				filter = recording.delegate;
+			} else if (filter instanceof ScopedNativeBooleanFilter scoped) {
+				filter = scoped.delegate();
+			} else {
+				return false;
+			}
+		}
+	}
+
+	/** Opens an execution-time scoped condition frame through its ownership facade. */
+	static ScopedNativeBooleanFilter.ConditionFrame openScopedConditionFrame(NativeBooleanFilter filter,
+			RowState parent) {
+		if (filter instanceof BorrowedFilter borrowed) {
+			return borrowed.openScopedConditionFrame(parent);
+		}
+		return filter instanceof ScopedNativeBooleanFilter scoped ? scoped.newFrame(parent) : null;
+	}
+
+	/** Applies physical-cursor close semantics without prematurely releasing plan-owned scoped conditions. */
+	static void closeAfterCursor(NativeBooleanFilter filter, RowState row) {
+		if (filter instanceof BorrowedFilter borrowed) {
+			borrowed.close();
+		} else if (filter instanceof ScopedNativeBooleanFilter scoped) {
+			scoped.closeAfterCursor(row);
+		} else {
+			filter.close();
+		}
+	}
+
+	/** A physical OPTIONAL reader pins an existing worker/attempt owner until it has stopped invoking it. */
+	static AutoCloseable retainConditionOwner(NativeBooleanFilter condition) {
+		if (condition instanceof BorrowedFilter borrowed) {
+			return borrowed.entry.retain();
+		}
+		if (condition instanceof ScopedNativeBooleanFilter scoped) {
+			return retainConditionOwner(scoped.delegate());
+		}
+		if (condition instanceof PlannedNativeBooleanFilter planned) {
+			return retainConditionOwner(planned.delegate);
+		}
+		return null;
+	}
+
+	/** Releases the root-registry entry when a worker-owned predicate has reached its real terminal close. */
+	static AutoCloseable onConditionOwnerClosed(NativeBooleanFilter condition, Runnable callback) {
+		if (condition instanceof BorrowedFilter borrowed) {
+			return borrowed.entry.onClosed(callback);
+		}
+		if (condition instanceof ScopedNativeBooleanFilter scoped) {
+			return onConditionOwnerClosed(scoped.delegate(), callback);
+		}
+		if (condition instanceof PlannedNativeBooleanFilter planned) {
+			return onConditionOwnerClosed(planned.delegate, callback);
+		}
+		return null;
 	}
 
 	NativeBooleanFilter borrow(NativeBooleanFilter original) {
@@ -65,6 +410,7 @@ final class NativeFilterLease {
 			return existing.facade;
 		}
 
+		reserveRaw(1024L);
 		NativeBooleanFilter attempt;
 		RecordingNativeBooleanFilter recorder = null;
 		if (original instanceof RecordingNativeBooleanFilter recording) {
@@ -72,19 +418,56 @@ final class NativeFilterLease {
 			recorder = new RecordingNativeBooleanFilter(delegate, recording.filter, recording.statistics,
 					recording.adaptive);
 			attempt = recorder;
+		} else if (original instanceof ScopedNativeBooleanFilter scoped) {
+			attempt = scoped.withDelegate(borrow(scoped.delegate()));
 		} else if (original instanceof ExistsFilter exists) {
-			attempt = new ExistsFilter(borrow(exists.subPlan), exists.retainedBindingNames);
+			ExistsFilter borrowedExists = new ExistsFilter(borrow(exists.subPlan), exists.retainedBindingNames);
+			attempt = rawBudget == null ? borrowedExists : new RawExists(borrowedExists);
+		} else if (rawBudget != null && original instanceof PlannedNativeBooleanFilter planned) {
+			attempt = planned.withDelegate(borrow(planned.delegate));
+		} else if (rawBudget != null && original instanceof NegatedNativeBooleanFilter negated) {
+			attempt = new NegatedNativeBooleanFilter(borrow(negated.delegate), negated.errorFreeOperand);
+		} else if (rawBudget != null && original instanceof BooleanCombinationFilter combined) {
+			attempt = new BooleanCombinationFilter(borrow(combined.left), borrow(combined.right), combined.conjunction);
+		} else if (rawBudget != null && original instanceof NativeConstantFalseWhenUnboundFilter guarded) {
+			attempt = new NativeConstantFalseWhenUnboundFilter(guarded.requiredNames, borrow(guarded.fallback));
 		} else {
 			attempt = original;
 		}
 
-		Entry entry = new Entry(attempt, recorder, attempt != original);
-		borrowed.put(original, entry);
-		entries.add(entry);
-		return entry.facade;
+		OptionalMaterialization.ConditionLease executionLease = rawRegistry != null && attempt == original
+				? rawRegistry.acquireCondition(original, rawContext)
+				: null;
+		Entry entry;
+		boolean retained = false;
+		try {
+			if (rawBudget != null) {
+				rawBudget.born();
+				retained = true;
+			}
+			entry = new Entry(attempt, recorder, attempt != original, executionLease, rawBudget);
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeResource(executionLease, failure);
+			if (retained) {
+				rawBudget.released();
+			}
+			throw failure;
+		}
+		try {
+			borrowed.put(original, entry);
+			entries.add(entry);
+			return entry.facade;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeResource(entry::requestClose, failure);
+			throw failure;
+		}
 	}
 
 	SlotPlan borrow(SlotPlan plan) {
+		reserveRaw(512L);
+		if (plan instanceof LmdbNativeFactorAlgebra.Boundary boundary) {
+			return new LmdbNativeFactorAlgebra.Boundary(borrow(boundary.delegate()));
+		}
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			return borrow(multiJoin);
 		}
@@ -92,6 +475,7 @@ final class NativeFilterLease {
 			return new FilterPlan(borrow(filter.arg), borrow(filter.filter), filter.filterMask, filter.termKindFilter);
 		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			reserveRaw(64L + 4L * entry.slots.length + 8L * entry.ids.length);
 			return new EntryBindingCompatibilityPlan(borrow(entry.arg), entry.slots, entry.ids, entry.restoredMask);
 		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
@@ -100,6 +484,12 @@ final class NativeFilterLease {
 		if (plan instanceof NativeAliasJoinMemoPlan memo) {
 			return new NativeAliasJoinMemoPlan(new JoinPlan(borrow(memo.original.left), borrow(memo.original.right)));
 		}
+		if (rawBudget != null && plan instanceof LateralPlan lateral) {
+			return new LateralPlan(borrow(lateral.left), borrow(lateral.right), lateral.rightInputMask);
+		}
+		if (rawBudget != null && plan instanceof MergeOrderedJoinPlan ordered) {
+			return new MergeOrderedJoinPlan(borrow(ordered.join), borrow(ordered.orderedFallback), ordered.keySeqSlots);
+		}
 		if (plan instanceof JoinPlan join) {
 			// Reapply relational identity/flattening while cloning the attempt. Otherwise an unused VALUES
 			// table that was folded to SingletonPlan can be resurrected as a nested JoinPlan barrier here,
@@ -107,13 +497,15 @@ final class NativeFilterLease {
 			return SlotPlan.join(borrow(join.left), borrow(join.right));
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			return new LeftJoinPlan(borrow(leftJoin.left), borrow(leftJoin.right), leftJoin.lexicalSharedSlots,
-					leftJoin.lexicalHashKeys, leftJoin.lexicalProblemSlots);
+			LeftJoinPlan copy = leftJoin.withChildren(borrow(leftJoin.left), borrow(leftJoin.right));
+			return leftJoin.lexicalCondition == null ? copy
+					: copy.withLexicalCondition(borrow(leftJoin.lexicalCondition));
 		}
 		if (plan instanceof UnionPlan union) {
 			return new UnionPlan(borrow(union.left), borrow(union.right));
 		}
 		if (plan instanceof OrderedUnionPlan union) {
+			reserveRaw(32L + 4L * union.orderSlots.length);
 			return new OrderedUnionPlan(borrow(union.left), borrow(union.right), union.orderSlots);
 		}
 		if (plan instanceof RowDistinctPlan distinct) {
@@ -132,6 +524,7 @@ final class NativeFilterLease {
 	}
 
 	MultiJoinPlan borrow(MultiJoinPlan plan) {
+		reserveRaw(512L + 24L * plan.children.length + 64L * plan.filters.length);
 		SlotPlan[] children = new SlotPlan[plan.children.length];
 		for (int i = 0; i < children.length; i++) {
 			children[i] = borrow(plan.children[i]);
@@ -145,7 +538,11 @@ final class NativeFilterLease {
 	}
 
 	void commit() {
-		finish(!suppressFeedback, null);
+		try {
+			finish(!suppressFeedback, null);
+		} finally {
+			finishRaw();
+		}
 	}
 
 	void discard() {
@@ -166,10 +563,15 @@ final class NativeFilterLease {
 			// LmdbNativeParallelAggregationCleanupTest). Recorders are skipped: they hold no native state and
 			// closing one would cascade into its possibly-shared delegate.
 			if (!entry.used || !entry.owned || entry.recorder != null) {
+				try {
+					entry.retire();
+				} catch (RuntimeException | Error closeFailure) {
+					failure = addFailure(failure, closeFailure);
+				}
 				continue;
 			}
 			try {
-				entry.attempt.close();
+				entry.requestClose();
 			} catch (RuntimeException | Error closeFailure) {
 				failure = addFailure(failure, closeFailure);
 			}
@@ -180,7 +582,11 @@ final class NativeFilterLease {
 	}
 
 	void abort(Throwable primary) {
-		finish(false, primary);
+		try {
+			finish(false, primary);
+		} finally {
+			finishRaw();
+		}
 	}
 
 	private void finish(boolean publishFeedback, Throwable primary) {
@@ -192,13 +598,18 @@ final class NativeFilterLease {
 		for (int i = entries.size() - 1; i >= 0; i--) {
 			Entry entry = entries.get(i);
 			if (!entry.used && !suppressFeedback) {
+				try {
+					entry.retire();
+				} catch (RuntimeException | Error closeFailure) {
+					failure = addFailure(failure, closeFailure);
+				}
 				continue;
 			}
 			if (!publishFeedback && entry.recorder != null) {
 				entry.recorder.discardOutcomes();
 			}
 			try {
-				entry.attempt.close();
+				entry.requestClose();
 			} catch (RuntimeException | Error closeFailure) {
 				failure = addFailure(failure, closeFailure);
 			}
@@ -231,12 +642,174 @@ final class NativeFilterLease {
 		/** True when {@code attempt} is a lease-constructed copy the lease may close on every terminal path. */
 		final boolean owned;
 		final NativeBooleanFilter facade = new BorrowedFilter(this);
-		boolean used;
+		final OptionalMaterialization.ConditionLease executionLease;
+		final RawBudget rawBudget;
+		volatile boolean used;
+		private int readers;
+		private boolean closeRequested;
+		private boolean closeDelegate;
+		private boolean closed;
+		private boolean released;
+		private OwnerCloseListener listeners;
 
-		Entry(NativeBooleanFilter attempt, RecordingNativeBooleanFilter recorder, boolean owned) {
+		Entry(NativeBooleanFilter attempt, RecordingNativeBooleanFilter recorder, boolean owned,
+				OptionalMaterialization.ConditionLease executionLease, RawBudget rawBudget) {
 			this.attempt = attempt;
 			this.recorder = recorder;
 			this.owned = owned;
+			this.executionLease = executionLease;
+			this.rawBudget = rawBudget;
+		}
+
+		synchronized AutoCloseable retain() {
+			if (closeRequested) {
+				throw new IllegalStateException("native filter owner is closed");
+			}
+			OwnerPin pin = new OwnerPin(this);
+			readers = Math.addExact(readers, 1);
+			// Retaining a physical consumer transfers close responsibility even before its first invocation.
+			used = true;
+			return pin;
+		}
+
+		void requestClose() {
+			boolean close;
+			synchronized (this) {
+				closeRequested = true;
+				closeDelegate = true;
+				close = readers == 0 && !closed;
+				closed |= close;
+			}
+			if (close) {
+				closeAttempt();
+			}
+		}
+
+		void retire() {
+			boolean close;
+			synchronized (this) {
+				closeRequested = true;
+				close = readers == 0 && !closed;
+				closed |= close;
+			}
+			if (close) {
+				closeAttempt();
+			}
+		}
+
+		void release() {
+			boolean close;
+			synchronized (this) {
+				if (--readers < 0) {
+					throw new IllegalStateException("native filter ownership pin released twice");
+				}
+				close = closeRequested && readers == 0 && !closed;
+				closed |= close;
+			}
+			if (close) {
+				closeAttempt();
+			}
+		}
+
+		AutoCloseable onClosed(Runnable callback) {
+			OwnerCloseListener listener = new OwnerCloseListener(callback);
+			boolean immediate;
+			synchronized (this) {
+				immediate = released;
+				if (!immediate) {
+					listener.owner = this;
+					listener.next = listeners;
+					if (listeners != null) {
+						listeners.previous = listener;
+					}
+					listeners = listener;
+				}
+			}
+			if (immediate) {
+				listener.callback = null;
+				callback.run();
+			}
+			return listener;
+		}
+
+		private synchronized void remove(OwnerCloseListener listener) {
+			if (listener.owner != this) {
+				return;
+			}
+			if (listener.previous == null) {
+				listeners = listener.next;
+			} else {
+				listener.previous.next = listener.next;
+			}
+			if (listener.next != null) {
+				listener.next.previous = listener.previous;
+			}
+			listener.owner = null;
+			listener.callback = null;
+			listener.previous = listener.next = null;
+		}
+
+		private void closeAttempt() {
+			Throwable failure = executionLease != null ? KernelRuntime.closeResource(executionLease, null)
+					: closeDelegate ? KernelRuntime.closeResource(attempt::close, null) : null;
+			while (true) {
+				Runnable callback;
+				synchronized (this) {
+					OwnerCloseListener listener = listeners;
+					if (listener == null) {
+						released = true;
+						break;
+					}
+					callback = listener.callback;
+					remove(listener);
+				}
+				failure = KernelRuntime.closeResource(callback::run, failure);
+			}
+			if (rawBudget != null) {
+				failure = KernelRuntime.closeResource(rawBudget::released, failure);
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+
+	}
+
+	private static final class OwnerCloseListener implements AutoCloseable {
+		private volatile Entry owner;
+		private OwnerCloseListener previous, next;
+		private Runnable callback;
+
+		OwnerCloseListener(Runnable callback) {
+			this.callback = callback;
+		}
+
+		@Override
+		public void close() {
+			Entry current = owner;
+			if (current != null) {
+				current.remove(this);
+			}
+		}
+	}
+
+	private static final class OwnerPin implements AutoCloseable {
+		private Entry entry;
+
+		OwnerPin(Entry entry) {
+			this.entry = entry;
+		}
+
+		@Override
+		public void close() {
+			Entry releasing;
+			synchronized (this) {
+				releasing = entry;
+				entry = null;
+			}
+			if (releasing != null) {
+				releasing.release();
+			}
 		}
 	}
 
@@ -251,6 +824,11 @@ final class NativeFilterLease {
 		public boolean accept(RowState row) {
 			entry.used = true;
 			return entry.attempt.accept(row);
+		}
+
+		ScopedNativeBooleanFilter.ConditionFrame openScopedConditionFrame(RowState parent) {
+			entry.used = true;
+			return entry.attempt instanceof ScopedNativeBooleanFilter scoped ? scoped.newFrame(parent) : null;
 		}
 
 		@Override

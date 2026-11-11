@@ -256,6 +256,34 @@ class LmdbNativeServiceQueryCompletenessTest {
 		}
 	}
 
+	@Test
+	void unopenedOptionalWithUnboundServiceMatchesGenericSemantics() {
+		String query = "PREFIX : <urn:query-boundary:>\n"
+				+ "SELECT ?x WHERE {\n"
+				+ "  ?s :unmatchedLeft ?left .\n"
+				+ "  OPTIONAL { SERVICE ?endpoint { ?x :q ?value } }\n"
+				+ "}";
+		List<BindingSet> genericRows = evaluate(query, false, null);
+		assertTrue(genericRows.isEmpty(), "the empty left input must leave the OPTIONAL RHS unopened");
+
+		List<BindingSet> nativeRows = evaluate(query, true, "nestedLoop");
+		assertEquals(bag(genericRows), bag(nativeRows), "native and generic OPTIONAL result bags must match");
+
+		try (var connection = local.getConnection()) {
+			SailTupleQuery audit = (SailTupleQuery) connection.prepareTupleQuery(query);
+			audit.setForcedLmdbExecutionStrategy("nestedLoop");
+			audit.setMaxExecutionTime(15);
+			GenericPlanNode plan = audit.explain(Explanation.Level.Executed).toGenericPlanNode();
+			List<String> paths = executionPaths(plan);
+			assertTrue(paths.contains("nestedLoop"), "the query must execute the forced native nestedLoop: " + plan);
+			assertFalse(paths.stream().anyMatch(path -> path.startsWith("genericFallback")),
+					"the reproduced OPTIONAL must not silently use generic fallback: " + plan);
+			assertTrue(plan.toString().contains("NativeRows"), "the empty-left pattern must execute natively: " + plan);
+			assertTrue(plan.toString().contains("NativeRows(arg=Empty"),
+					"the proven-empty left input must leave the mapping-parameterized SERVICE unopened: " + plan);
+		}
+	}
+
 	private long binds(boolean compiled, boolean aggregate) {
 		return aggregate ? (compiled ? LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get()
 				: LmdbNativeKernelExecution.AGG_INTERPRETED_BINDS.get())
