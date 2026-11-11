@@ -474,6 +474,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
+			// Independent FILTER/OPTIONAL groups retain their invocation scope; the score pattern has no bound s.
 			assertExplainTextEqualsIgnoringAnnotations(actual,
 					"""
 							Projection
@@ -482,65 +483,65 @@ public class QueryPlanRetrievalTest {
 							║     ProjectionElem "o"
 							║     ProjectionElem "score"
 							║     ProjectionElem "lvl"
-							╚══ Join (JoinIterator)
-							   ├── BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00) [left]
-							   └── Join (JoinIterator) [right]
-							      ╠══ Filter (new scope) (costEstimate=1.00, resultSizeEstimate=1.00) [left]
-							      ║  ├── Not
-							      ║  │     Exists
-							      ║  │        StatementPattern (resultSizeEstimate=0)
-							      ║  │           s: Var (name=s)
-							      ║  │           p: Var (name=_const_1, value=http://example.com/deprecated, anonymous)
-							      ║  │           o: Var (name=_const_2, value="true"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)
-							      ║  └── BindingSetAssignment ([])
-							      ╚══ Join (HashJoinIteration) [right]
+							╚══ Join (HashJoinIteration)
+							   ├── Join (HashJoinIteration) [left]
+							   │  ╠══ Join (JoinIterator) [left]
+							   │  ║  ├── BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00) [left]
+							   │  ║  └── Filter [right]
+							   │  ║     ╠══ Compare (!=)
+							   │  ║     ║     Var (name=o)
+							   │  ║     ║     ValueConstant (value=http://example.com/Forbidden)
+							   │  ║     ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
+							   │  ║           s: Var (name=s)
+							   │  ║           p: Var (name=_const_0, value=http://example.com/prop, anonymous)
+							   │  ║           o: Var (name=o)
+							   │  ╚══ Filter (new scope) [right]
+							   │     ├── Not
+							   │     │     Exists
+							   │     │        StatementPattern (resultSizeEstimate=0)
+							   │     │           s: Var (name=s)
+							   │     │           p: Var (name=_const_1, value=http://example.com/deprecated, anonymous)
+							   │     │           o: Var (name=_const_2, value="true"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)
+							   │     └── BindingSetAssignment ([])
+							   └── LeftJoin (new scope) (LeftJoinIterator) [right]
+							      ╠══ Join (JoinIterator) [left]
+							      ║  ├── BindingSetAssignment ([]) (new scope) [left]
+							      ║  └── Filter [right]
+							      ║     ╠══ And
+							      ║     ║  ├── Compare (!=)
+							      ║     ║  │  ╠══ MathExpr (-)
+							      ║     ║  │  ║     Var (name=score)
+							      ║     ║  │  ║     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							      ║     ║  │  ╚══ ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							      ║     ║  └── Compare (>)
+							      ║     ║        Var (name=score)
+							      ║     ║        ValueConstant (value="10"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							      ║     ╚══ StatementPattern (costEstimate=24, resultSizeEstimate=0)
+							      ║           s: Var (name=s)
+							      ║           p: Var (name=_const_3, value=http://example.com/score, anonymous)
+							      ║           o: Var (name=score)
+							      ╚══ Join (JoinIterator) [right]
 							         ├── Filter [left]
-							         │  ╠══ Compare (!=)
-							         │  ║     Var (name=o)
-							         │  ║     ValueConstant (value=http://example.com/Forbidden)
-							         │  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
+							         │  ╠══ Regex
+							         │  ║  ├── Str
+							         │  ║  │     Var (name=reviewer)
+							         │  ║  └── ValueConstant (value="^http://example\\.com/user")
+							         │  ╚══ StatementPattern (costEstimate=0.89, resultSizeEstimate=0)
 							         │        s: Var (name=s)
-							         │        p: Var (name=_const_0, value=http://example.com/prop, anonymous)
-							         │        o: Var (name=o)
-							         └── LeftJoin (new scope) (LeftJoinIterator) [right]
-							            ╠══ Join (HashJoinIteration) [left]
-							            ║  ├── Filter [left]
-							            ║  │  ╠══ And
-							            ║  │  ║  ├── Compare (!=)
-							            ║  │  ║  │  ╠══ MathExpr (-)
-							            ║  │  ║  │  ║     Var (name=score)
-							            ║  │  ║  │  ║     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
-							            ║  │  ║  │  ╚══ ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
-							            ║  │  ║  └── Compare (>)
-							            ║  │  ║        Var (name=score)
-							            ║  │  ║        ValueConstant (value="10"^^<http://www.w3.org/2001/XMLSchema#integer>)
-							            ║  │  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
-							            ║  │        s: Var (name=s)
-							            ║  │        p: Var (name=_const_3, value=http://example.com/score, anonymous)
-							            ║  │        o: Var (name=score)
-							            ║  └── BindingSetAssignment ([]) (new scope) [right]
-							            ╚══ Join (JoinIterator) [right]
-							               ├── Filter [left]
-							               │  ╠══ Regex
-							               │  ║  ├── Str
-							               │  ║  │     Var (name=reviewer)
-							               │  ║  └── ValueConstant (value="^http://example\\.com/user")
-							               │  ╚══ StatementPattern (costEstimate=0.89, resultSizeEstimate=0)
-							               │        s: Var (name=s)
-							               │        p: Var (name=_const_4, value=http://example.com/reviewedBy, anonymous)
-							               │        o: Var (name=reviewer)
-							               └── Filter [right]
-							                  ╠══ And
-							                  ║  ├── Compare (>=)
-							                  ║  │     Var (name=lvl)
-							                  ║  │     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
-							                  ║  └── Compare (<=)
-							                  ║        Var (name=lvl)
-							                  ║        ValueConstant (value="8"^^<http://www.w3.org/2001/XMLSchema#integer>)
-							                  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
-							                        s: Var (name=reviewer)
-							                        p: Var (name=_const_5, value=http://example.com/level, anonymous)
-							                        o: Var (name=lvl)
+							         │        p: Var (name=_const_4, value=http://example.com/reviewedBy, anonymous)
+							         │        o: Var (name=reviewer)
+							         └── Filter [right]
+							            ╠══ And
+							            ║  ├── Compare (>=)
+							            ║  │     Var (name=lvl)
+							            ║  │     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							            ║  └── Compare (<=)
+							            ║        Var (name=lvl)
+							            ║        ValueConstant (value="8"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							            ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
+							                  s: Var (name=reviewer)
+							                  p: Var (name=_const_5, value=http://example.com/level, anonymous)
+							                  o: Var (name=lvl)
 							""");
 		}
 		sailRepository.shutDown();
