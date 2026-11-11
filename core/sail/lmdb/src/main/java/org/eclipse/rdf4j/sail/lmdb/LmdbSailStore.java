@@ -9852,6 +9852,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public SailDataset datasetForRead(IsolationLevel level) throws SailException {
+			return dataset(level);
+		}
+
+		@Override
 		public SailSink sink(IsolationLevel level) throws SailException {
 			return new LmdbSailSink(explicit, level, writerOwner, directWriterOwner);
 		}

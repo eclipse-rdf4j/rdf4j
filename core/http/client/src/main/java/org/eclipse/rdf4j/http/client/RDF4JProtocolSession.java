@@ -124,6 +124,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	private String transactionURL;
 
+	/** Negotiated per transaction; older servers retain their existing namespace endpoints. */
+	private boolean transactionNamespacesSupported;
+
 	private final ScheduledExecutorService pingScheduler;
 
 	private ScheduledFuture<?> ping;
@@ -215,6 +218,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			super.close();
 		} finally {
 			transactionURL = null;
+			transactionNamespacesSupported = false;
 			if (ping != null) {
 				ping.cancel(false);
 				ping = null;
@@ -225,6 +229,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	private synchronized String getTransactionURL() {
 		return transactionURL;
+	}
+
+	private synchronized String getNamespaceTransactionURL() {
+		return transactionNamespacesSupported ? transactionURL : null;
 	}
 
 	/*-----------------*
@@ -535,9 +543,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			RepositoryException, UnauthorizedException, QueryInterruptedException {
 		checkRepositoryURL();
 
-		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.get(Protocol.getNamespacesLocation(getQueryURL())))
-						.build();
+		HttpRequest method = applyAdditionalHeaders(namespaceRequest(Action.GET_NAMESPACES, null))
+				.build();
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -550,9 +557,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	public String getNamespace(String prefix) throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.get(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)))
-						.build();
+		HttpRequest method = applyAdditionalHeaders(namespaceRequest(Action.GET_NAMESPACE, prefix))
+				.build();
 
 		try (HttpResponse response = execute(method)) {
 			int code = response.getStatusCode();
@@ -573,7 +579,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		checkRepositoryURL();
 
 		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.put(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix))
+				namespaceRequest(Action.SET_NAMESPACE, prefix)
 						.body(HttpRequestBody.ofString(name, "text/plain", StandardCharsets.UTF_8)))
 								.build();
 
@@ -589,9 +595,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	public void removeNamespacePrefix(String prefix) throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.delete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)))
-						.build();
+		HttpRequest method = applyAdditionalHeaders(namespaceRequest(Action.REMOVE_NAMESPACE, prefix))
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -605,9 +610,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	public void clearNamespaces() throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.delete(Protocol.getNamespacesLocation(getQueryURL())))
-						.build();
+		HttpRequest method = applyAdditionalHeaders(namespaceRequest(Action.CLEAR_NAMESPACES, null))
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -616,6 +620,33 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
+	}
+
+	private HttpRequest.Builder namespaceRequest(Action action, String prefix) {
+		boolean prefixRequired = action == Action.GET_NAMESPACE || action == Action.SET_NAMESPACE
+				|| action == Action.REMOVE_NAMESPACE;
+		if (prefixRequired) {
+			Objects.requireNonNull(prefix, "prefix must not be null");
+		}
+		String transactionURL = getNamespaceTransactionURL();
+		if (transactionURL != null) {
+			UriBuilder url = UriBuilder.from(transactionURL);
+			url.addParameter(Protocol.ACTION_PARAM_NAME, action.toString());
+			if (prefixRequired) {
+				url.addParameter(Protocol.NAMESPACE_PREFIX_PARAM_NAME, prefix);
+			}
+			pingTransaction();
+			return HttpRequests.put(url.build());
+		}
+
+		String location = prefixRequired ? Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)
+				: Protocol.getNamespacesLocation(getQueryURL());
+		return switch (action) {
+		case GET_NAMESPACE, GET_NAMESPACES -> HttpRequests.get(location);
+		case SET_NAMESPACE -> HttpRequests.put(location);
+		case REMOVE_NAMESPACE, CLEAR_NAMESPACES -> HttpRequests.delete(location);
+		default -> throw new IllegalArgumentException("Not a namespace operation: " + action);
+		};
 	}
 
 	/*-------------*
@@ -738,6 +769,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				transactionURL = response.getHeader("Location")
 						.orElseThrow(() -> new RepositoryException(
 								"no valid transaction ID received in server response."));
+				transactionNamespacesSupported = response.getHeader(Protocol.TRANSACTION_NAMESPACES_HEADER)
+						.map(Boolean::parseBoolean)
+						.orElse(false);
 				pingTransaction();
 			} else {
 				throw new RepositoryException("unable to start transaction. HTTP error code " + code);
@@ -782,6 +816,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			if (code == HttpURLConnection.HTTP_OK) {
 				// we're done.
 				transactionURL = null;
+				transactionNamespacesSupported = false;
 				if (ping != null) {
 					ping.cancel(false);
 				}
@@ -808,6 +843,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			if (code == HttpURLConnection.HTTP_NO_CONTENT) {
 				// we're done.
 				transactionURL = null;
+				transactionNamespacesSupported = false;
 				if (ping != null) {
 					ping.cancel(false);
 				}
