@@ -44,8 +44,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * End-to-end coverage for forcing a named LMDB execution strategy, from
  * {@code SailQuery.setForcedLmdbExecutionStrategy(String)} through {@code SlowQueryContextHolder},
- * {@link LmdbNativeEvaluationStrategy}, and {@link LmdbNativeStrategyArbiter}. Every test drives a real query against a
- * real {@link LmdbStore} rather than an internal test seam, so a break anywhere along that chain shows up here.
+ * {@link LmdbNativeEvaluationStrategy}, and the dispatch loop. Every test drives a real query against a real
+ * {@link LmdbStore} rather than an internal test seam, so a break anywhere along that chain shows up here.
  */
 class LmdbNativeForcedExecutionStrategyTest {
 
@@ -147,12 +147,12 @@ class LmdbNativeForcedExecutionStrategyTest {
 	}
 
 	/**
-	 * Pins the mandatory/soft distinction on {@code LmdbNativeStrategyArbiter}: the {@code ORDER BY} fusion site (which
-	 * forces "where applicable") must quietly decline when the forced tag is not part of its own candidate family and
-	 * let the caller's own fallback to {@code openUnorderedInput} (the mandatory row/join dispatch site) try the forced
-	 * tag there instead. Before that distinction existed, forcing {@code nestedLoop} on a query with an
-	 * {@code ORDER BY} would fail at the {@code ORDER BY} site for no reason, even though {@code nestedLoop} is always
-	 * legal at row/join dispatch.
+	 * Pins the mandatory/soft distinction on the dispatch loop: the {@code ORDER BY} fusion site (which forces "where
+	 * applicable") must quietly decline when the forced tag is not part of its own candidate family and let the
+	 * caller's own fallback to {@code openUnorderedInput} (the mandatory row/join dispatch site) try the forced tag
+	 * there instead. Before that distinction existed, forcing {@code nestedLoop} on a query with an {@code ORDER BY}
+	 * would fail at the {@code ORDER BY} site for no reason, even though {@code nestedLoop} is always legal at row/join
+	 * dispatch.
 	 */
 	@Test
 	void forcingATagOnlyLegalAtRowDispatchStillSucceedsWhenTheQueryAlsoHasAnOrderBy() {

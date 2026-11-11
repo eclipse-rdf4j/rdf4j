@@ -581,6 +581,86 @@ More up-to-date information about LMDB can be found at: https://www.symas.com/sy
 Especially the [SSD-benchmarks](http://www.lmdb.tech/bench/optanessd/imdt.html) may be of interest.
 
 ## Backup and restore
+
+`LmdbStore.getBackupService()` provides coordinated native full snapshots by default. A full
+snapshot holds one publication boundary across the separate value and triple databases and includes
+namespace and store-format metadata. It does not require incremental journaling and is safe while
+writers are active. Do not replace it with separate live copies of the two LMDB environments.
+
+Incremental backups and point-in-time recovery (PITR) are an explicit, startup-only opt-in:
+
+```java
+LmdbStoreConfig config = new LmdbStoreConfig().setBackupJournalEnabled(true);
+LmdbStore store = new LmdbStore(dataDirectory, config);
+store.init();
+// First create a FULL backup. Use its end transaction ID as the incremental baseline.
+```
+
+The RDF configuration property is `lmdb:backupJournalEnabled`, where `lmdb:` is
+`http://rdf4j.org/config/sail/lmdb#`. Its default is `false`, including when an older configuration
+omits it. Changing the configuration object after opening a store does not change the running mode.
+Close and reopen the store to change modes.
+
+With journaling disabled, ordinary writes do not capture backup records, create an outbox or publish
+transaction journals. Their existing `forceSync` durability policy is unchanged. Full snapshots
+force their copied files, metadata and directory entries independently of journaling. A full-only
+snapshot restores its exact transaction boundary; it cannot recover intervening writes.
+
+### Enabling, disabling, and upgrading
+
+After first enabling journaling, upgrading an existing store to this explicit-opt-in implementation,
+or reopening after any disabled interval, create a **fresh full backup** before requesting an
+incremental. A full backup taken while journaling was disabled is not an incremental baseline.
+An uninterrupted enabled restart retains its existing generation, usable baseline and pending
+publication recovery. Incrementals also require a retained full baseline of that generation in
+the requested backup directory.
+
+Backup transaction IDs identify committed logical mutations, including namespace-only commits;
+they are not native LMDB transaction IDs. They continue advancing during disabled writes, without
+producing recovery records. The durable `backup-journal.properties` file records the journal
+generation and baseline. New journal headers and artifact metadata carry that generation, so
+missing journals or a disabled interval cannot be silently joined into a recovery chain, even if
+no writes occurred during the disabled interval. Keep this file with the complete live store.
+Malformed state fails closed. Missing state starts a fresh generation and requires a new full backup.
+
+Already published legacy full/incremental backups and version-1/version-2 journals remain readable.
+They cannot consume new-generation journals. Older RDF4J versions cannot read version-3 journals;
+keep pre-upgrade backups and test any downgrade using a separate copy rather than downgrading a
+live journaled store in place. A recreated store or restored fork should use a separate backup
+directory; conflicting journal filenames are rejected, never overwritten.
+
+Enabled commits retain records in a durable, store-local `backup-outbox` until an ordered background
+publisher has persisted their journals. Publication runs after native writer locks are released.
+If publication fails, later journals cannot skip the failed change. Repair the destination and
+reopen with journaling still enabled to retry retained changes. Disabling journaling abandons this
+automatic publication continuity. On the next enable, any old outbox is preserved under
+`backup-outbox-archive` as diagnostic/recovery evidence, but those unpublished stages are **not**
+automatically replayed as part of the new generation. Published historical artifacts remain intact;
+only targets with complete published journal coverage remain restorable. Archives are excluded
+from new full snapshots and are not automatically pruned.
+
+Journaled commits explicitly flush native dictionary state before the authoritative triples commit
+and flush both environments before external publication acknowledgement. These flushes also apply
+with `forceSync=false` and add durability-related I/O to writes. Store shutdown settles admitted
+writers and backup operations, then drains publication while the service remains available.
+Durability requires a filesystem and storage stack that honor file and directory flushes.
+
+### Safe restore destinations
+
+A restore validates its full snapshot and journal predecessor/generation chain, replays only changes
+after that snapshot through the requested transaction, and publishes a complete restored directory
+from a sibling staging directory. The destination must be **absent or empty** and must not overlap
+the live store or backup directory, including through symbolic links. Nonempty destinations are
+rejected and left untouched. This is stricter than the earlier implementation, which deleted the
+destination: choose a new empty directory, validate the restored store, then switch your application
+to it. Atomic directory moves must be supported by the destination filesystem.
+
+Restored stores start with journaling disabled and a restore-local backup directory. Replay and later
+writes never publish into the source backup. To journal a restored fork, explicitly enable journaling
+when opening it and create another full baseline. Full snapshots preserve the source's persisted
+format and capabilities in `store.properties` and establish an independent publication baseline
+rather than copying the source's pending outbox.
+
 LMDB provides a set of [command line tools](http://www.lmdb.tech/doc/tools.html) that can be used
 to backup and restore the value and triple databases.
 Those tools can typically be used while the databases are in use as LMDB permits concurrent use

@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -169,6 +170,33 @@ public final class KernelRuntime {
 
 		public AllocationDeniedException() {
 			super("aggregate memory budget", null, true, false);
+		}
+	}
+
+	/** A private hash build could not be completed before any of its probe rows were published. */
+	@Experimental
+	public static final class HashBuildRefusedException extends IllegalStateException {
+		private static final long serialVersionUID = 1L;
+
+		HashBuildRefusedException(String message) {
+			super(message);
+		}
+	}
+
+	/** Covers one serial kernel hash table using its existing preflight reservation. */
+	@Experimental
+	public static final class HashBuildMemory {
+		private final LmdbQueryMemoryManager.Reservation reservation;
+
+		public HashBuildMemory(LmdbQueryMemoryManager.Reservation reservation) {
+			this.reservation = Objects.requireNonNull(reservation);
+		}
+
+		void cover(long bytes) {
+			long reserved = reservation.bytes();
+			if (bytes > reserved && !reservation.tryGrow(bytes - reserved)) {
+				throw new HashBuildRefusedException("kernel hash build exceeded its memory reservation");
+			}
 		}
 	}
 
@@ -383,6 +411,7 @@ public final class KernelRuntime {
 	private static boolean isControlSignal(Throwable problem) {
 		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
 				|| problem instanceof KernelPeerCancelledException || problem instanceof AllocationDeniedException
+				|| problem instanceof HashBuildRefusedException
 				|| problem instanceof SuppressionDisabledControl;
 	}
 
@@ -758,6 +787,7 @@ public final class KernelRuntime {
 		private final int keyWidth;
 		private final int payloadWidth;
 		private final int maxRows;
+		private final HashBuildMemory memory;
 		private long[] keys;
 		/** Full hash in the low word, head payload ordinal + 1 in the high word; zero is empty. */
 		private long[] entries;
@@ -769,13 +799,19 @@ public final class KernelRuntime {
 		private int distinctKeys;
 
 		public LongRowMap(int keyWidth, int payloadWidth, int maxRows) {
+			this(keyWidth, payloadWidth, maxRows, null);
+		}
+
+		public LongRowMap(int keyWidth, int payloadWidth, int maxRows, HashBuildMemory memory) {
 			if (keyWidth < 0 || payloadWidth < 0 || maxRows < 0) {
 				throw new IllegalArgumentException("negative hash build dimension");
 			}
 			this.keyWidth = keyWidth;
 			this.payloadWidth = payloadWidth;
 			this.maxRows = maxRows;
+			this.memory = memory;
 			int capacity = 32;
+			cover(capacity, capacity);
 			this.keys = new long[Math.multiplyExact(keyWidth, capacity)];
 			this.entries = new long[capacity];
 			this.controls = new byte[capacity];
@@ -787,7 +823,7 @@ public final class KernelRuntime {
 		/** Inserts one build row; duplicate keys chain. Aborts the kernel when the build exceeds its row cap. */
 		public void add(long[] key, long[] payload) {
 			if (payloadCount >= maxRows) {
-				throw new IllegalStateException("kernel hash build exceeded its row cap of " + maxRows);
+				throw new HashBuildRefusedException("kernel hash build exceeded its row cap of " + maxRows);
 			}
 			int hash = hash(key);
 			int bucket = find(key, hash);
@@ -915,6 +951,7 @@ public final class KernelRuntime {
 
 		private void growBuckets() {
 			int capacity = Math.multiplyExact(entries.length, 2);
+			cover(capacity, next.length);
 			long[] newKeys = new long[Math.multiplyExact(keyWidth, capacity)];
 			long[] newEntries = new long[capacity];
 			byte[] newControls = new byte[capacity];
@@ -942,11 +979,20 @@ public final class KernelRuntime {
 
 		private void growPayloads() {
 			int capacity = Math.multiplyExact(next.length, 2);
+			cover(entries.length, capacity);
 			long[] newPayloads = payloadWidth == 0 ? payloads
 					: java.util.Arrays.copyOf(payloads, Math.multiplyExact(payloadWidth, capacity));
 			int[] newNext = java.util.Arrays.copyOf(next, capacity);
 			payloads = newPayloads;
 			next = newNext;
+		}
+
+		private void cover(int buckets, int payloadRows) {
+			if (memory != null) {
+				long bucketBytes = Math.multiplyExact((long) buckets, 8L * keyWidth + 8L + 1L + 4L);
+				long payloadBytes = Math.multiplyExact((long) payloadRows, 8L * payloadWidth + 4L);
+				memory.cover(Math.addExact(bucketBytes, payloadBytes));
+			}
 		}
 	}
 
