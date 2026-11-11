@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -29,10 +31,12 @@ import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -314,6 +318,45 @@ class Transaction implements AutoCloseable {
 	long getSize(Resource[] contexts) throws InterruptedException, ExecutionException {
 		Future<Long> result = submit(() -> txnConnection.size(contexts));
 		return getFromFuture(result);
+	}
+
+	String getNamespace(String prefix) throws InterruptedException, ExecutionException {
+		return getFromFuture(submit(() -> txnConnection.getNamespace(prefix)));
+	}
+
+	/** Detach namespaces on the owner thread so response serialization never consumes a live repository cursor. */
+	List<Namespace> getNamespaces() throws InterruptedException, ExecutionException {
+		return getFromFuture(submit(() -> {
+			List<Namespace> result = new ArrayList<>();
+			try (var namespaces = txnConnection.getNamespaces()) {
+				while (namespaces.hasNext()) {
+					Namespace namespace = namespaces.next();
+					result.add(new SimpleNamespace(namespace.getPrefix(), namespace.getName()));
+				}
+			}
+			return result;
+		}));
+	}
+
+	void setNamespace(String prefix, String name) throws InterruptedException, ExecutionException {
+		getFromFuture(submit(() -> {
+			txnConnection.setNamespace(prefix, name);
+			return null;
+		}));
+	}
+
+	void removeNamespace(String prefix) throws InterruptedException, ExecutionException {
+		getFromFuture(submit(() -> {
+			txnConnection.removeNamespace(prefix);
+			return null;
+		}));
+	}
+
+	void clearNamespaces() throws InterruptedException, ExecutionException {
+		getFromFuture(submit(() -> {
+			txnConnection.clearNamespaces();
+			return null;
+		}));
 	}
 
 	/**
