@@ -13,21 +13,15 @@
 package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
+import java.io.UncheckedIOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.regex.Pattern;
-import java.util.zip.CRC32C;
-import java.util.zip.GZIPInputStream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -35,28 +29,20 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-import tools.jackson.core.JsonParser;
-import tools.jackson.core.JsonToken;
-import tools.jackson.core.ObjectReadContext;
-import tools.jackson.core.StreamReadConstraints;
-import tools.jackson.core.json.JsonFactory;
-
 /**
  * Utility to search a ValueStore WAL for a specific minted value ID efficiently.
  *
- * Strategy: scan the first minted record in each segment to determine the best candidate segment (binary search on the
- * first IDs), then scan only that segment to locate the requested ID.
+ * The segment whose first ID is closest to the requested ID is tried first. Segment metadata is cached only for small
+ * directories; larger directories are streamed with constant memory. A streaming fallback handles IDs written out of
+ * order during background bootstrap. Frame decoding is shared with {@link ValueStoreWalReader}.
  */
 public final class ValueStoreWalSearch {
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
+	private static final int MAX_CACHED_SEGMENTS = 1024;
+	private static final int MAX_TRIPLE_DEPTH = 64;
 
 	private final ValueStoreWalConfig config;
-	private final JsonFactory jsonFactory = JsonFactory.builder()
-			.streamReadConstraints(
-					StreamReadConstraints.builder().maxStringLength(ValueStoreWAL.MAX_FRAME_BYTES).build())
-			.build();
-	private volatile List<SegFirst> cachedSegments;
+	private volatile SegmentSnapshot cachedSegments;
 
 	private ValueStoreWalSearch(ValueStoreWalConfig config) {
 		this.config = Objects.requireNonNull(config, "config");
@@ -70,20 +56,39 @@ public final class ValueStoreWalSearch {
 	 * Find and reconstruct a {@link org.eclipse.rdf4j.model.Value} by its ValueStore id using WAL contents only.
 	 *
 	 * @return the reconstructed value if present; {@code null} otherwise
+	 * @throws IOException if reading fails or reconstruction exceeds the bounded memory, node, or nesting budget
 	 */
 	public Value findValueById(int id) throws IOException {
+		return findValueById(id, 0, new LookupBudget());
+	}
+
+	private Value findValueById(int id, int depth, LookupBudget budget) throws IOException {
+		if (depth >= MAX_TRIPLE_DEPTH) {
+			throw new IOException("WAL triple term exceeds the maximum lookup nesting depth");
+		}
+		if (id <= 0) {
+			return null;
+		}
 		if (!Files.isDirectory(config.walDirectory())) {
 			invalidateSegmentCache();
 			return null;
 		}
 
-		LookupOutcome firstAttempt = locateCandidate(id, false);
+		LookupOutcome firstAttempt = locateCandidate(id, false, depth, budget);
 		if (firstAttempt.value != null || !firstAttempt.retry) {
 			return firstAttempt.value;
 		}
 
-		LookupOutcome secondAttempt = locateCandidate(id, true);
-		return secondAttempt.value;
+		LookupOutcome secondAttempt = locateCandidate(id, true, depth, budget);
+		if (secondAttempt.value != null) {
+			return secondAttempt.value;
+		}
+		// Background bootstrap may place an older ID in a segment whose filename starts with a newer ID.
+		ValueStoreWalRecord record;
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			record = findInReader(reader, id);
+		}
+		return record == null ? null : toValue(record, depth, budget);
 	}
 
 	private static final class SegFirst {
@@ -96,36 +101,45 @@ public final class ValueStoreWalSearch {
 		}
 	}
 
-	private LookupOutcome locateCandidate(int targetId, boolean forceRefresh) throws IOException {
-		List<SegFirst> segments = loadSegments(forceRefresh);
-		if (segments.isEmpty()) {
-			return LookupOutcome.miss(!forceRefresh);
-		}
+	private static final class SegmentSnapshot {
+		final List<SegFirst> segments;
+		final boolean complete;
 
-		SegFirst candidate = selectSegment(segments, targetId);
+		SegmentSnapshot(List<SegFirst> segments, boolean complete) {
+			this.segments = segments;
+			this.complete = complete;
+		}
+	}
+
+	private LookupOutcome locateCandidate(int targetId, boolean forceRefresh, int depth, LookupBudget budget)
+			throws IOException {
+		SegmentSnapshot snapshot = loadSegments(forceRefresh);
+		SegFirst candidate = snapshot.complete ? selectSegment(snapshot.segments, targetId)
+				: selectSegmentFromDisk(targetId);
 		if (candidate == null) {
 			return LookupOutcome.miss(!forceRefresh);
 		}
 
-		Optional<Value> value;
-		try {
-			value = scanSegmentForId(candidate.path, targetId);
+		ValueStoreWalRecord record;
+		try (ValueStoreWalReader reader = ValueStoreWalReader.openSegment(config, candidate.path)) {
+			record = findInReader(reader, targetId);
 		} catch (NoSuchFileException missingSegment) {
 			invalidateSegmentCache();
 			return LookupOutcome.miss(!forceRefresh);
 		}
-		if (value.isPresent()) {
-			return LookupOutcome.hit(value.get());
+		Value value = record == null ? null : toValue(record, depth, budget);
+		if (value != null) {
+			return LookupOutcome.hit(value);
 		}
 		return LookupOutcome.miss(!forceRefresh);
 	}
 
-	private List<SegFirst> loadSegments(boolean forceRefresh) throws IOException {
+	private SegmentSnapshot loadSegments(boolean forceRefresh) throws IOException {
 		if (forceRefresh) {
 			invalidateSegmentCache();
 		}
 
-		List<SegFirst> snapshot = cachedSegments;
+		SegmentSnapshot snapshot = cachedSegments;
 		if (snapshot != null) {
 			return snapshot;
 		}
@@ -139,32 +153,55 @@ public final class ValueStoreWalSearch {
 		}
 	}
 
-	private List<SegFirst> readSegmentsFromDisk() throws IOException {
+	private SegmentSnapshot readSegmentsFromDisk() throws IOException {
 		if (!Files.isDirectory(config.walDirectory())) {
-			return List.of();
+			return new SegmentSnapshot(List.of(), true);
 		}
 		List<SegFirst> segments = new ArrayList<>();
-		try (var stream = Files.list(config.walDirectory())) {
-			stream.forEach(p -> {
-				var m = SEGMENT_PATTERN.matcher(p.getFileName().toString());
-				if (m.matches()) {
-					long firstId1 = Long.parseLong(m.group(1));
-					if (firstId1 >= Integer.MIN_VALUE && firstId1 <= Integer.MAX_VALUE) {
-						segments.add(new SegFirst(p, (int) firstId1));
+		try (DirectoryStream<Path> stream = Files.newDirectoryStream(config.walDirectory())) {
+			for (Path path : stream) {
+				SegFirst segment = segmentFromPath(path);
+				if (segment != null) {
+					if (segments.size() == MAX_CACHED_SEGMENTS) {
+						return new SegmentSnapshot(List.of(), false);
 					}
+					segments.add(segment);
 				}
-			});
+			}
 		}
-		return List.copyOf(segments);
+		return new SegmentSnapshot(List.copyOf(segments), true);
+	}
+
+	private SegFirst selectSegmentFromDisk(int targetId) throws IOException {
+		SegFirst best = null;
+		try (DirectoryStream<Path> stream = Files.newDirectoryStream(config.walDirectory())) {
+			for (Path path : stream) {
+				SegFirst segment = segmentFromPath(path);
+				if (segment != null && segment.firstId <= targetId
+						&& (best == null || segment.firstId > best.firstId)) {
+					best = segment;
+				}
+			}
+		}
+		return best;
+	}
+
+	private static SegFirst segmentFromPath(Path path) {
+		var matcher = ValueStoreWAL.SEGMENT_PATTERN.matcher(path.getFileName().toString());
+		if (!matcher.matches()) {
+			return null;
+		}
+		try {
+			return new SegFirst(path, Integer.parseInt(matcher.group(1)));
+		} catch (NumberFormatException invalidId) {
+			return null;
+		}
 	}
 
 	private SegFirst selectSegment(List<SegFirst> segments, int targetId) {
 		SegFirst best = null;
 		for (SegFirst segment : segments) {
-			if (segment.firstId > targetId) {
-				continue;
-			}
-			if (best == null || segment.firstId > best.firstId) {
+			if (segment.firstId <= targetId && (best == null || segment.firstId > best.firstId)) {
 				best = segment;
 			}
 		}
@@ -193,146 +230,69 @@ public final class ValueStoreWalSearch {
 		}
 	}
 
-	private Optional<Value> scanSegmentForId(Path segment, int targetId) throws IOException {
-		if (segment.getFileName().toString().endsWith(".gz")) {
-			try (GZIPInputStream in = new GZIPInputStream(Files.newInputStream(segment))) {
-				while (true) {
-					int length = readIntLE(in);
-					if (length == -1)
-						return Optional.empty();
-					if (length <= 0 || (long) length > ValueStoreWAL.MAX_FRAME_BYTES)
-						return Optional.empty();
-					byte[] data = in.readNBytes(length);
-					if (data.length < length)
-						return Optional.empty();
-					int expectedCrc = readIntLE(in);
-					CRC32C crc32c = new CRC32C();
-					crc32c.update(data, 0, data.length);
-					if ((int) crc32c.getValue() != expectedCrc)
-						return Optional.empty();
-					Parsed p = parseJson(data);
-					if (p.type == 'M' && p.id == targetId) {
-						Value value = toValue(p);
-						if (value != null) {
-							return Optional.of(value);
-						}
-					}
+	private static ValueStoreWalRecord findInReader(ValueStoreWalReader reader, int targetId) throws IOException {
+		Iterator<ValueStoreWalRecord> records = reader.iteratorForId(targetId);
+		try {
+			while (records.hasNext()) {
+				ValueStoreWalRecord record = records.next();
+				if (record.id() == targetId) {
+					return record;
 				}
 			}
+		} catch (UncheckedIOException e) {
+			throw e.getCause();
 		}
-		try (FileChannel ch = FileChannel.open(segment, StandardOpenOption.READ)) {
-			ByteBuffer header = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-			while (true) {
-				header.clear();
-				int r = ch.read(header);
-				if (r == -1)
-					return Optional.empty();
-				if (r < 4)
-					return Optional.empty();
-				header.flip();
-				int length = header.getInt();
-				if (length <= 0 || (long) length > ValueStoreWAL.MAX_FRAME_BYTES)
-					return Optional.empty();
-				byte[] data = new byte[length];
-				ByteBuffer dataBuf = ByteBuffer.wrap(data);
-				int total = 0;
-				while (total < length) {
-					int n = ch.read(dataBuf);
-					if (n < 0)
-						return Optional.empty();
-					total += n;
-				}
-				ByteBuffer crcBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-				int crcRead = ch.read(crcBuf);
-				if (crcRead < 4)
-					return Optional.empty();
-				crcBuf.flip();
-				int expectedCrc = crcBuf.getInt();
-				CRC32C crc32c = new CRC32C();
-				crc32c.update(data, 0, data.length);
-				if ((int) crc32c.getValue() != expectedCrc)
-					return Optional.empty();
-				Parsed p = parseJson(data);
-				if (p.type == 'M' && p.id == targetId) {
-					Value value = toValue(p);
-					if (value != null) {
-						return Optional.of(value);
-					}
-				}
+
+		return null;
+	}
+
+	private static final class LookupBudget {
+		private int remainingNodes = 1024;
+		private long remainingBytes = Math.min(512L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 2);
+
+		void consume(ValueStoreWalRecord record) throws IOException {
+			// Simple values retain the strings already checked by the reader rather than copying their lexical
+			// contents. Bound the retained graph separately from transient string reconstruction.
+			long estimatedBytes = ValueStoreWalMemory.retainedRecordBytes(record);
+			if (remainingNodes == 0 || estimatedBytes > remainingBytes) {
+				throw new IOException("WAL value exceeds the bounded lookup reconstruction budget");
 			}
+			remainingNodes--;
+			remainingBytes -= estimatedBytes;
 		}
 	}
 
-	private int readIntLE(InputStream in) throws IOException {
-		byte[] b = in.readNBytes(4);
-		if (b.length < 4)
-			return -1;
-		return (b[0] & 0xFF) | ((b[1] & 0xFF) << 8) | ((b[2] & 0xFF) << 16) | ((b[3] & 0xFF) << 24);
-	}
-
-	private Parsed parseJson(byte[] jsonBytes) throws IOException {
-		Parsed parsed = new Parsed();
-		try (JsonParser jp = jsonFactory.createParser(ObjectReadContext.empty(), jsonBytes)) {
-			if (jp.nextToken() != JsonToken.START_OBJECT) {
-				return parsed;
-			}
-			while (jp.nextToken() != JsonToken.END_OBJECT) {
-				String field = jp.currentName();
-				jp.nextToken();
-				if ("t".equals(field)) {
-					String t = jp.getValueAsString("");
-					parsed.type = t.isEmpty() ? '?' : t.charAt(0);
-				} else if ("lsn".equals(field)) {
-					parsed.lsn = jp.getValueAsLong(ValueStoreWAL.NO_LSN);
-				} else if ("id".equals(field)) {
-					parsed.id = jp.getValueAsInt(0);
-				} else if ("vk".equals(field)) {
-					String code = jp.getValueAsString("");
-					parsed.kind = ValueStoreWalValueKind.fromCode(code);
-				} else if ("lex".equals(field)) {
-					parsed.lex = jp.getValueAsString("");
-				} else if ("dt".equals(field)) {
-					parsed.dt = jp.getValueAsString("");
-				} else if ("lang".equals(field)) {
-					parsed.lang = jp.getValueAsString("");
-				} else if ("hash".equals(field)) {
-					parsed.hash = jp.getValueAsInt(0);
-				} else {
-					jp.skipChildren();
-				}
-			}
-		}
-		return parsed;
-	}
-
-	private Value toValue(Parsed p) throws IOException {
+	private Value toValue(ValueStoreWalRecord record, int depth, LookupBudget budget) throws IOException {
+		budget.consume(record);
 		var vf = SimpleValueFactory.getInstance();
-		switch (p.kind) {
+		switch (record.valueKind()) {
 		case IRI:
-			return vf.createIRI(p.lex);
+			return vf.createIRI(record.lexical());
 		case BNODE:
-			return vf.createBNode(p.lex);
+			return vf.createBNode(record.lexical());
 		case LITERAL:
-			if (p.lang != null && !p.lang.isEmpty()) {
-				Literal.BaseDirection baseDirection = baseDirectionFromEncodedLanguage(p.lang);
+			String language = record.language();
+			if (language != null && !language.isEmpty()) {
+				Literal.BaseDirection baseDirection = baseDirectionFromEncodedLanguage(language);
 				if (baseDirection != Literal.BaseDirection.NONE) {
-					return vf.createLiteral(p.lex, languageWithoutBaseDirection(p.lang), baseDirection);
+					return vf.createLiteral(record.lexical(), languageWithoutBaseDirection(language), baseDirection);
 				}
-				return vf.createLiteral(p.lex, p.lang);
+				return vf.createLiteral(record.lexical(), language);
 			}
-			if (p.dt != null && !p.dt.isEmpty()) {
-				return vf.createLiteral(p.lex, vf.createIRI(p.dt));
+			if (record.datatype() != null && !record.datatype().isEmpty()) {
+				return vf.createLiteral(record.lexical(), vf.createIRI(record.datatype()));
 			}
-			return vf.createLiteral(p.lex);
+			return vf.createLiteral(record.lexical());
 		case TRIPLE:
-			return toTripleTerm(vf, p);
+			return toTripleTerm(vf, record, depth, budget);
 		default:
 			return null;
 		}
 	}
 
-	private Value toTripleTerm(SimpleValueFactory vf, Parsed p) throws IOException {
-		String[] ids = p.lex.split(" ");
+	private Value toTripleTerm(SimpleValueFactory vf, ValueStoreWalRecord record, int depth, LookupBudget budget)
+			throws IOException {
+		String[] ids = record.lexical().split(" ", 4);
 		if (ids.length != 3) {
 			return null;
 		}
@@ -346,12 +306,14 @@ public final class ValueStoreWalSearch {
 		} catch (NumberFormatException e) {
 			return null;
 		}
-		if (subjectId == p.id || predicateId == p.id || objectId == p.id) {
+		// Dependencies are minted before the triple term. Reject corrupt forward references and cycles.
+		if (subjectId <= 0 || predicateId <= 0 || objectId <= 0
+				|| subjectId >= record.id() || predicateId >= record.id() || objectId >= record.id()) {
 			return null;
 		}
-		Value subject = findValueById(subjectId);
-		Value predicate = findValueById(predicateId);
-		Value object = findValueById(objectId);
+		Value subject = findValueById(subjectId, depth + 1, budget);
+		Value predicate = findValueById(predicateId, depth + 1, budget);
+		Value object = findValueById(objectId, depth + 1, budget);
 		if (!(subject instanceof Resource) || !(predicate instanceof IRI) || object == null) {
 			return null;
 		}
@@ -374,16 +336,5 @@ public final class ValueStoreWalSearch {
 			return language;
 		}
 		return language.substring(0, language.length() - baseDirection.toString().length());
-	}
-
-	private static final class Parsed {
-		char type = '?';
-		long lsn = ValueStoreWAL.NO_LSN;
-		int id = 0;
-		ValueStoreWalValueKind kind = ValueStoreWalValueKind.NAMESPACE;
-		String lex = "";
-		String dt = "";
-		String lang = "";
-		int hash = 0;
 	}
 }
