@@ -113,6 +113,12 @@ class TransactionStartControllerTest {
 	}
 
 	@Test
+	void transactionStartAdvertisesNamespaceOperations() throws Exception {
+		ModelAndView result = controller.handleRequest(request, response);
+		assertThat(getHeaders(result)).containsEntry("RDF4J-Transaction-Namespaces", "true");
+	}
+
+	@Test
 	void strictEndpointPolicySurvivesTransactionWorkerBoundary() throws Exception {
 		request.setAttribute(QueryParseOptions.class.getName(), QueryParseOptions.STRICT);
 		ModelAndView result = controller.handleRequest(request, response);
