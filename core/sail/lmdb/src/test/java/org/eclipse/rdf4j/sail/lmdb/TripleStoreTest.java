@@ -48,6 +48,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexEntries;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalPreparedIndexOrdersTask;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexes;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesTask;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -142,9 +146,9 @@ public class TripleStoreTest {
 			long[] contexts = { 0, 1, 0, 1 };
 			IllegalStateException workerFailure = new IllegalStateException("deliberate index worker failure");
 			FailingSecondTaskExecutor executor = new FailingSecondTaskExecutor(workerFailure);
-			TripleStore.PreparedSecondaryIndexesTask task = preparedStore.prepareSecondaryIndexesAsync(executor,
+			PreparedSecondaryIndexesTask task = preparedStore.prepareSecondaryIndexesAsync(executor,
 					subjects, predicates, objects, contexts, subjects.length);
-			TripleStore.EncodedIndexKeys main = task.awaitMain();
+			EncodedIndexEntries main = task.awaitMain();
 			try {
 				IllegalStateException failure = assertThrows(IllegalStateException.class, task::await);
 				assertEquals(workerFailure, failure);
@@ -168,10 +172,10 @@ public class TripleStoreTest {
 			long[] predicates = { 2, 3, 1, 1, 2, 1, 3, 2 };
 			long[] objects = { 9, 8, 9, 9, 7, 8, 7, 8 };
 			long[] contexts = { 1, 0, 0, 2, 1, 0, 2, 0 };
-			TripleStore.PreparedSecondaryIndexesTask task = preparedStore.prepareSecondaryIndexesAsync(executor,
+			PreparedSecondaryIndexesTask task = preparedStore.prepareSecondaryIndexesAsync(executor,
 					subjects, predicates, objects, contexts, subjects.length);
-			try (TripleStore.EncodedIndexKeys main = task.awaitMain();
-					TripleStore.PreparedSecondaryIndexes secondary = task.await()) {
+			try (EncodedIndexEntries main = task.awaitMain();
+					PreparedSecondaryIndexes secondary = task.await()) {
 				assertArrayEquals(expectedOrder("ospc", subjects, predicates, objects, contexts),
 						secondary.statementOrder(1));
 				assertArrayEquals(expectedOrder("posc", subjects, predicates, objects, contexts),
@@ -207,7 +211,7 @@ public class TripleStoreTest {
 				quads[4 * i + 3] = (int) contexts[i];
 			}
 
-			TripleStore.GlobalPreparedIndexOrdersTask task = preparedStore.prepareGlobalIndexOrdersAsync(executor,
+			GlobalPreparedIndexOrdersTask task = preparedStore.prepareGlobalIndexOrdersAsync(executor,
 					quads, valueIds, subjects.length);
 			assertArrayEquals(expectedOrder("spoc", subjects, predicates, objects, contexts), task.awaitMain());
 			assertArrayEquals(expectedOrder("ospc", subjects, predicates, objects, contexts), task.awaitSecondary(1));

@@ -132,7 +132,10 @@ import org.eclipse.rdf4j.sail.base.SailWriteContinuation;
 import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.base.StreamingWritePreflight;
 import org.eclipse.rdf4j.sail.base.TemporaryFlushingException;
-import org.eclipse.rdf4j.sail.lmdb.TxnManager.ReaderReservation;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexEntries;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalPreparedIndexOrdersTask;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexes;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesTask;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -3438,7 +3441,7 @@ class LmdbSailStore implements SailStore {
 		private final boolean lexicalBatch;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean(false);
 		Consumer<Statement> estimatorCallback;
-		Future<TripleStore.PreparedSecondaryIndexes> preparedSecondaryIndexes;
+		Future<PreparedSecondaryIndexes> preparedSecondaryIndexes;
 		int size;
 
 		BulkAddQuadsOperation(boolean explicit, int capacity) {
@@ -3627,7 +3630,7 @@ class LmdbSailStore implements SailStore {
 			releaseReservation();
 		}
 
-		private TripleStore.PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
+		private PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
 			try {
 				return preparedSecondaryIndexes.get();
 			} catch (InterruptedException e) {
@@ -3696,7 +3699,7 @@ class LmdbSailStore implements SailStore {
 			return tripleStore.getLegacySemanticTriplesForWrite(subject, predicate, object, context, explicit,
 					expected);
 		}
-		RecordIterator physical = tripleStore.getTriplesForWrite(subject, predicate,
+		RecordIterator physical = tripleStore.getTriples(tripleStore.getTxnManager().createReadTxn(), subject, predicate,
 				semantic ? LmdbValue.UNKNOWN_ID : object, context, explicit);
 		if (!semantic) {
 			return physical;
@@ -3776,7 +3779,7 @@ class LmdbSailStore implements SailStore {
 		private final long[] contexts;
 		private final int statementCount;
 		private final AtomicBoolean arraysReleased = new AtomicBoolean();
-		private TripleStore.PreparedSecondaryIndexesTask preparedSecondaryIndexes;
+		private PreparedSecondaryIndexesTask preparedSecondaryIndexes;
 
 		private PreparedImportOperation(int statementCount) {
 			this.statementCount = statementCount;
@@ -3795,7 +3798,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			try {
-				TripleStore.EncodedIndexKeys preparedMainIndex = preparedSecondaryIndexes.awaitMain();
+				EncodedIndexEntries preparedMainIndex = preparedSecondaryIndexes.awaitMain();
 				tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, statementCount, true,
 						mayHaveInferred, null, preparedMainIndex,
 						this::awaitPreparedSecondaryIndexes);
@@ -3829,7 +3832,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private TripleStore.PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
+		private PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
 			return preparedSecondaryIndexes.await();
 		}
 	}
@@ -3857,7 +3860,7 @@ class LmdbSailStore implements SailStore {
 		private final int statementCount;
 		private final int reservation;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean();
-		private final TripleStore.GlobalPreparedIndexOrdersTask preparedOrders;
+		private final GlobalPreparedIndexOrdersTask preparedOrders;
 
 		private GlobalPreparedImportOperation(int[] quads, long[] valueIds, int statementCount, int reservation) {
 			this.quads = quads;
@@ -12804,9 +12807,6 @@ class LmdbSailStore implements SailStore {
 
 		private long storeFreshPreparedStatements(PreparedStatementBatch prepared,
 				ValueStore.FreshValueSession session) throws IOException {
-			if (prepared.size() > preparedImportOperationCapacity() && tripleStore.supportsGlobalPreparedOrder()) {
-				return storeGlobalFreshPreparedStatements(prepared, session);
-			}
 			Value[] values = prepared.values();
 			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, values,
 					prepared.predicateValueIndexes());
@@ -12856,37 +12856,6 @@ class LmdbSailStore implements SailStore {
 			return statementCount;
 		}
 
-		private long storeGlobalFreshPreparedStatements(PreparedStatementBatch prepared,
-				ValueStore.FreshValueSession session) throws IOException {
-			Value[] values = prepared.values();
-			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, values,
-					prepared.predicateValueIndexes());
-			GlobalPreparedImportOperation operation = newGlobalPreparedImportOperation(prepared.quads(),
-					assignment.ids(),
-					prepared.size());
-			boolean submitted = false;
-			try {
-				submitOperation(operation);
-				submitted = true;
-				pendingFreshValueBatches.add(assignment.publication());
-				ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);
-				ValueStore.PreparedValueBatch preparedValues;
-				while ((preparedValues = encoder.next(MAX_BULK_OPERATION_CAPACITY)) != null) {
-					if (tripleStoreException != null) {
-						rethrowTripleStoreException();
-					}
-					valueStore.persistPreparedValues(preparedValues);
-					preparedValues.releasePersistenceData();
-					pendingFreshValueBatches.add(preparedValues);
-				}
-			} finally {
-				if (!submitted) {
-					operation.cancel();
-				}
-			}
-			return prepared.size();
-		}
-
 		private void sortForIndex(BulkAddQuadsOperation operation, char[] fieldSequence, int[] statementOrder,
 				int[] scratchOrder, long[] sortValues, long[] scratchValues, int[] radixCounts,
 				int[] radixOffsets) {
@@ -12899,13 +12868,6 @@ class LmdbSailStore implements SailStore {
 					operation.statements[index] = original[statementOrder[index]];
 				}
 			}
-		}
-
-		private void sortForIndex(long[] subjects, long[] predicates, long[] objects, long[] contexts,
-				char[] fieldSequence) {
-			int size = subjects.length;
-			sortForIndex(subjects, predicates, objects, contexts, size, fieldSequence, new int[size],
-					new int[size], new long[size], new long[size], new int[256], new int[256]);
 		}
 
 		private void sortForIndex(long[] subjects, long[] predicates, long[] objects, long[] contexts, int size,

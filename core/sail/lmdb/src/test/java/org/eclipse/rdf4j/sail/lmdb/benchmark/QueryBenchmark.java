@@ -130,7 +130,7 @@ public class QueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark.ordered_union_limit") // adapt to run other benchmark tests
+				.include("QueryBenchmark.complex") // adapt to run other benchmark tests
 				.forks(0)
 				.build();
 
@@ -263,9 +263,20 @@ public class QueryBenchmark {
 		}
 	}
 
+	boolean first = true;
+
 	@Benchmark
 	public long complexQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			if (first) {
+				first = false;
+				var count = count(connection
+						.prepareTupleQuery(query4)
+						.evaluate()
+				);
+				System.out.println("Count: " + count);
+				return count;
+			}
 			return count(connection
 					.prepareTupleQuery(query4)
 					.evaluate()

@@ -32,13 +32,11 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
-import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -47,10 +45,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_dcmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
@@ -102,15 +98,12 @@ import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
@@ -135,10 +128,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexBlock;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexEntries;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalEncodedIndexBlocks;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalPreparedIndexOrdersTask;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexes;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesSupplier;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesTask;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
-import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.WriteRecordBatch;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
@@ -187,8 +186,6 @@ class TripleStore implements Closeable {
 	static final int MAX_READERS = 256;
 	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
 	private static final long PREPARED_WRITE_BYTES_PER_INDEX_ENTRY = 256L;
-	private static final int GLOBAL_ENCODE_BLOCK_STATEMENTS = 64 * 1024;
-	private static final AtomicInteger OPEN_PREPARED_KEY_ARENAS = new AtomicInteger();
 
 	@FunctionalInterface
 	interface BulkIndexTupleSource {
@@ -237,6 +234,7 @@ class TripleStore implements Closeable {
 	private final List<PartialIndex> partialIndexes = new ArrayList<>();
 	private final int splitPosition = 0;
 	private volatile List<TripleIndex> indexes = new ArrayList<>();
+	private final TripleStoreIndexUpdater indexUpdater = new TripleStoreIndexUpdater(() -> indexes);
 	private final Map<String, TripleIndex> indexHandles = new LinkedHashMap<>();
 	private volatile IndexGeneration queryGeneration;
 	private volatile IndexGeneration previousQueryGeneration;
@@ -324,7 +322,6 @@ class TripleStore implements Closeable {
 	 */
 	private volatile TripleIndex[] bestIndexByBoundMask = new TripleIndex[16];
 	private volatile boolean[] rangeSearchByBoundMask = new boolean[16];
-	private TripleIndex spoContextWildcardIndex;
 	private final ValueStore valueStore;
 	private LegacyWriterRecords legacyWriterRecords;
 	private final Supplier<? extends CollectionFactory> legacyCollections;
@@ -332,13 +329,6 @@ class TripleStore implements Closeable {
 
 	void setLegacyPendingScanObserver(LongConsumer observer) {
 		legacyPendingScanObserver = observer;
-		if (recordCache != null) {
-			recordCache.setWriteScanObserver(observer);
-		}
-	}
-
-	boolean hasPendingRecordCache() {
-		return recordCache != null;
 	}
 
 	private record LegacyQuadKey(long subject, long predicate, long context, boolean explicit, Value object)
@@ -401,7 +391,7 @@ class TripleStore implements Closeable {
 			if (!seeded) {
 				for (boolean explicit : new boolean[] { true, false }) {
 					long visited = 0L;
-					try (RecordIterator records = getTriplesForWrite(-1, -1, -1, -1, explicit)) {
+					try (RecordIterator records = getTriples(txnManager.createTxn(writeTxn), -1, -1, -1, -1, explicit)) {
 						long[] quad;
 						while ((quad = records.next()) != null) {
 							add(quad, explicit);
@@ -535,7 +525,6 @@ class TripleStore implements Closeable {
 	private final TxnManager txnManager;
 	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
 	private volatile LmdbSailStore.MapGrowthRequestListener mapGrowthRequestListener;
-	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
 	private int[] leadingFieldScratchIndices = new int[0];
@@ -548,8 +537,6 @@ class TripleStore implements Closeable {
 	private final LongIntHashMap alignedContextIncrements = new LongIntHashMap();
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
-	private final ThreadLocal<PreparedSortWorkspace> preparedSortWorkspace = ThreadLocal
-			.withInitial(PreparedSortWorkspace::new);
 	private final LmdbPageCardinalityEstimator pageEstimator;
 	/** Exact aggregate page access remains available independently of sampled cardinality estimation. */
 	private final LmdbPageCardinalityEstimator exactIndexReader;
@@ -558,7 +545,6 @@ class TripleStore implements Closeable {
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
 	private final AtomicLong mappingGeneration = new AtomicLong();
 
-	private TxnRecordCache recordCache = null;
 	/**
 	 * One record per committed data revision, appended inside the commit critical section whether or not an adjacency
 	 * collector is attached; the single channel from commits to the direct adjacency index.
@@ -573,26 +559,6 @@ class TripleStore implements Closeable {
 	private int trackedResizeChecks;
 	private final Set<String> bulkAppendedExplicitIndexes = new HashSet<>();
 	private boolean bulkContextsAppended;
-
-	private static final class PreparedSortWorkspace {
-		private int[] mainOrder = new int[0];
-		private int[] currentOrder = new int[0];
-		private int[] scratchOrder = new int[0];
-		private long[] fieldValues = new long[0];
-		private long[] scratchValues = new long[0];
-		private final int[] radixCounts = new int[256];
-		private final int[] radixOffsets = new int[256];
-
-		private void ensureCapacity(int count) {
-			if (mainOrder.length < count) {
-				mainOrder = new int[count];
-				currentOrder = new int[count];
-				scratchOrder = new int[count];
-				fieldValues = new long[count];
-				scratchValues = new long[count];
-			}
-		}
-	}
 
 	private long[] capturedDerivedEvents = new long[256];
 	private int capturedDerivedEventCount;
@@ -895,7 +861,7 @@ class TripleStore implements Closeable {
 		boolean hasPreviousTuple = false;
 		boolean exhausted = false;
 		long uniqueStatements = 0L;
-		byte[] lastCommittedKey = null;
+		long[] lastCommittedTuple = null;
 		while (!exhausted) {
 			int count = 0;
 			while (count < batchRecords) {
@@ -920,7 +886,7 @@ class TripleStore implements Closeable {
 			if (count == 0) {
 				continue;
 			}
-			lastCommittedKey = appendBulkIndexBatch(index, specification, batch, count, lastCommittedKey);
+			lastCommittedTuple = appendBulkIndexBatch(index, specification, batch, count, lastCommittedTuple);
 			uniqueStatements += count;
 		}
 		return uniqueStatements;
@@ -943,7 +909,7 @@ class TripleStore implements Closeable {
 		long[] previousQuad = new long[4];
 		boolean exhausted = false;
 		long uniqueStatements = 0L;
-		byte[] lastCommittedKey = null;
+		long[] lastCommittedTuple = null;
 		while (!exhausted) {
 			int count = 0;
 			while (count < batchRecords) {
@@ -976,7 +942,7 @@ class TripleStore implements Closeable {
 			if (count == 0) {
 				continue;
 			}
-			lastCommittedKey = appendBulkIndexBatch(index, specification, batch, count, lastCommittedKey);
+			lastCommittedTuple = appendBulkIndexBatch(index, specification, batch, count, lastCommittedTuple);
 			uniqueStatements += count;
 		}
 		return uniqueStatements;
@@ -1054,8 +1020,8 @@ class TripleStore implements Closeable {
 		};
 	}
 
-	private byte[] appendBulkIndexBatch(TripleIndex index, String specification, long[] batch, int count,
-			byte[] lastCommittedKey) throws IOException {
+	private long[] appendBulkIndexBatch(TripleIndex index, String specification, long[] batch, int count,
+			long[] lastCommittedTuple) throws IOException {
 		long reservation = Math.multiplyExact((long) count, 128L);
 		while (true) {
 			reserveWriteCapacity(reservation);
@@ -1064,10 +1030,10 @@ class TripleStore implements Closeable {
 			nativeMutation = true;
 			tripleMutation = true;
 			try {
-				byte[] finalKey = appendBulkIndexBatchInTransaction(index, specification, batch, count,
-						lastCommittedKey);
+				long[] finalTuple = appendBulkIndexBatchInTransaction(index, specification, batch, count,
+						lastCommittedTuple);
 				endTransaction(true);
-				return finalKey;
+				return finalTuple;
 			} catch (MapFullException e) {
 				endTransaction(false);
 				if (!autoGrow) {
@@ -1084,34 +1050,28 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private byte[] appendBulkIndexBatchInTransaction(TripleIndex index, String specification, long[] batch, int count,
-			byte[] lastCommittedKey) throws IOException {
+	private long[] appendBulkIndexBatchInTransaction(TripleIndex index, String specification, long[] batch, int count,
+			long[] lastCommittedTuple) throws IOException {
 		int subjectPosition = specification.indexOf('s');
 		int predicatePosition = specification.indexOf('p');
 		int objectPosition = specification.indexOf('o');
 		int contextPosition = specification.indexOf('c');
-		byte[] previousKey = lastCommittedKey == null ? new byte[TripleIndex.MAX_KEY_LENGTH]
-				: Arrays.copyOf(lastCommittedKey, TripleIndex.MAX_KEY_LENGTH);
-		int previousKeyLength = lastCommittedKey == null ? 0 : lastCommittedKey.length;
+		long[] previousTuple = lastCommittedTuple == null ? new long[4]
+				: Arrays.copyOf(lastCommittedTuple, 4);
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal keyVal = MDBVal.malloc(stack);
-			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			long tuple[] = new long[4];
 			for (int row = 0; row < count; row++) {
 				int offset = row * 4;
 				long subject = batch[offset + subjectPosition];
 				long predicate = batch[offset + predicatePosition];
 				long object = batch[offset + objectPosition];
 				long context = batch[offset + contextPosition];
-				keyBuffer.clear();
-				index.toKey(keyBuffer, subject, predicate, object, context);
-				keyBuffer.flip();
-				if (previousKeyLength > 0 && compareUnsignedKey(previousKey, previousKeyLength, keyBuffer) >= 0) {
+				index.toEntry(tuple, subject, predicate, object, context);
+				if (previousTuple[0] != 0 && compareUnsignedTuple(previousTuple, tuple) >= 0) {
 					throw new IOException("Unsigned tuple order does not match encoded LMDB key order for "
 							+ specification);
 				}
-				LmdbUtil.setMDBValData(keyVal, keyBuffer);
-				int rc = putIndexEntry(index, true, keyVal);
+				int rc = putIndexEntry(index, true, tuple);
 				if (rc == MDB_MAP_FULL) {
 					throw new MapFullException();
 				}
@@ -1122,13 +1082,10 @@ class TripleStore implements Closeable {
 				if (index == indexes.getFirst()) {
 					updatePartialIndexes(subject, predicate, object, context, new long[4], true, true);
 				}
-				previousKeyLength = keyBuffer.remaining();
-				for (int i = 0; i < previousKeyLength; i++) {
-					previousKey[i] = keyBuffer.get(keyBuffer.position() + i);
-				}
+				System.arraycopy(tuple, 0, previousTuple, 0, tuple.length);
 			}
 		}
-		return Arrays.copyOf(previousKey, previousKeyLength);
+		return previousTuple;
 	}
 
 	private void appendBulkContextBatch(long[] batch, int count) throws IOException {
@@ -1185,18 +1142,6 @@ class TripleStore implements Closeable {
 			}
 		}
 		return 0;
-	}
-
-	private static int compareUnsignedKey(byte[] left, int leftLength, ByteBuffer right) {
-		int length = Math.min(leftLength, right.remaining());
-		for (int i = 0; i < length; i++) {
-			int comparison = Integer.compare(Byte.toUnsignedInt(left[i]),
-					Byte.toUnsignedInt(right.get(right.position() + i)));
-			if (comparison != 0) {
-				return comparison;
-			}
-		}
-		return Integer.compare(leftLength, right.remaining());
 	}
 
 	long lastTransactionId() throws IOException {
@@ -1318,11 +1263,11 @@ class TripleStore implements Closeable {
 	}
 
 	boolean supportsGlobalPreparedOrder() {
-		return hasFourIndexPreparedOrder();
+		return indexUpdater.hasFourIndexPreparedOrder();
 	}
 
 	static int openPreparedKeyArenaCount() {
-		return OPEN_PREPARED_KEY_ARENAS.get();
+		return TripleStoreIndexUpdater.openPreparedKeyArenaCount();
 	}
 
 	void startTrackingResizeChecks() {
@@ -1347,867 +1292,20 @@ class TripleStore implements Closeable {
 		});
 	}
 
-	PreparedSecondaryIndexes prepareSecondaryIndexes(long[] subj, long[] pred, long[] obj, long[] context,
-			int count) {
-		if (count == 0 || indexes.size() == 1) {
-			return PreparedSecondaryIndexes.EMPTY;
-		}
-		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
-		workspace.ensureCapacity(count);
-		int[] mainOrder = workspace.mainOrder;
-		for (int i = 0; i < count; i++) {
-			mainOrder[i] = i;
-		}
-		return prepareSecondaryIndexes(mainOrder, subj, pred, obj, context, count);
+	PreparedSecondaryIndexes prepareSecondaryIndexes(long[] subj, long[] pred, long[] obj,
+			long[] context, int count) {
+		return indexUpdater.prepareSecondaryIndexes(subj, pred, obj, context, count);
 	}
 
-	private PreparedSecondaryIndexes prepareSecondaryIndexes(int[] mainOrder, long[] subj, long[] pred,
-			long[] obj, long[] context, int count) {
-		return prepareSecondaryIndexes(indexes, mainOrder, subj, pred, obj, context, count);
-	}
-
-	private PreparedSecondaryIndexes prepareSecondaryIndexes(List<TripleIndex> indexes, int[] mainOrder, long[] subj,
-			long[] pred,
-			long[] obj, long[] context, int count) {
-		if (count == 0 || indexes.size() == 1) {
-			return PreparedSecondaryIndexes.EMPTY;
-		}
-		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
-		workspace.ensureCapacity(count);
-		int[] currentOrder = workspace.currentOrder;
-		int[] scratchOrder = workspace.scratchOrder;
-		long[] fieldValues = workspace.fieldValues;
-		long[] scratchValues = workspace.scratchValues;
-		int[] radixCounts = workspace.radixCounts;
-		int[] radixOffsets = workspace.radixOffsets;
-		System.arraycopy(mainOrder, 0, currentOrder, 0, count);
-
-		EncodedIndexKeys[] encodedIndexes = new EncodedIndexKeys[indexes.size() - 1];
-		TripleIndex mainIndex = indexes.getFirst();
-		char[] currentFieldSequence = mainIndex.getFieldSeq();
-		try {
-			for (int indexPosition = 1; indexPosition < indexes.size(); indexPosition++) {
-				TripleIndex index = indexes.get(indexPosition);
-				if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSequence,
-						index.getFieldSeq())) {
-					System.arraycopy(mainOrder, 0, currentOrder, 0, count);
-				}
-				sortStatementIndicesByLeadingField(currentOrder, count, index, subj, pred, obj, context,
-						fieldValues, scratchOrder, scratchValues, radixCounts, radixOffsets);
-				currentFieldSequence = index.getFieldSeq();
-				encodedIndexes[indexPosition - 1] = encodeIndexKeys(indexPosition, index, currentOrder, subj, pred,
-						obj, context, count);
-			}
-			return new PreparedSecondaryIndexes(encodedIndexes);
-		} catch (RuntimeException | Error e) {
-			closeEncodedIndexes(encodedIndexes);
-			throw e;
-		}
-	}
-
-	PreparedSecondaryIndexesTask prepareSecondaryIndexesAsync(ExecutorService executor, long[] subj, long[] pred,
-			long[] obj, long[] context, int count) {
-		return prepareSecondaryIndexesAsync(executor, subj, pred, obj, context, count, null);
-	}
-
-	PreparedSecondaryIndexesTask prepareSecondaryIndexesAsync(ExecutorService executor, long[] subj, long[] pred,
-			long[] obj, long[] context, int count, Runnable beforePreparation) {
-		List<TripleIndex> preparedIndexes = indexes;
-		CountDownLatch preparationReady = new CountDownLatch(1);
-		AtomicReference<Throwable> preparationFailure = new AtomicReference<>();
-		AtomicReference<int[]> mainOrder = new AtomicReference<>();
-		Future<EncodedIndexKeys> main = executor
-				.submit(() -> {
-					try {
-						if (beforePreparation != null) {
-							beforePreparation.run();
-						}
-						mainOrder.set(sortMainIndexOrder(preparedIndexes.getFirst(), subj, pred, obj, context, count));
-					} catch (RuntimeException | Error e) {
-						preparationFailure.set(e);
-						throw e;
-					} finally {
-						preparationReady.countDown();
-					}
-					return encodeIndexKeys(0, preparedIndexes.getFirst(), mainOrder.get(), subj, pred, obj, context,
-							count);
-				});
-		if (hasFourIndexPreparedOrder(preparedIndexes)) {
-			Future<EncodedIndexKeys[]> objectChain = executor
-					.submit(() -> {
-						awaitPreparation(preparationReady, preparationFailure);
-						return prepareSecondaryIndexChain(preparedIndexes, new int[] { 1, 2 }, mainOrder.get(), subj,
-								pred, obj,
-								context, count);
-					});
-			Future<EncodedIndexKeys[]> predicateChain = executor
-					.submit(() -> {
-						awaitPreparation(preparationReady, preparationFailure);
-						return prepareSecondaryIndexChain(preparedIndexes, new int[] { 3 }, mainOrder.get(), subj, pred,
-								obj,
-								context, count);
-					});
-			return new PreparedSecondaryIndexesTask(preparedIndexes.size() - 1, main, objectChain, predicateChain);
-		}
-		Future<EncodedIndexKeys[]> sequential = executor
-				.submit(() -> {
-					awaitPreparation(preparationReady, preparationFailure);
-					return prepareSecondaryIndexes(preparedIndexes, mainOrder.get(), subj, pred, obj, context,
-							count).indexes;
-				});
-		return new PreparedSecondaryIndexesTask(preparedIndexes.size() - 1, main, sequential, null);
-	}
-
-	GlobalPreparedIndexOrdersTask prepareGlobalIndexOrdersAsync(ExecutorService executor, int[] quads,
-			long[] valueIds, int count) {
-		List<TripleIndex> preparedIndexes = indexes;
-		if (!hasFourIndexPreparedOrder(preparedIndexes)) {
-			throw new IllegalStateException("Global prepared order requires spoc,ospc,posc,psoc indexes");
-		}
-		CountDownLatch preparationReady = new CountDownLatch(1);
-		AtomicReference<Throwable> preparationFailure = new AtomicReference<>();
-		AtomicReference<int[]> mainOrder = new AtomicReference<>();
-		Future<int[]> valueRanks = executor.submit(() -> rankGlobalValues(valueIds));
-		Future<int[]> main = executor.submit(() -> {
-			try {
-				mainOrder.set(sortGlobalIndexOrder(preparedIndexes.getFirst().getFieldSeq(), null, quads,
-						awaitGlobalOrder(valueRanks, "value ranks"), count));
-				return mainOrder.get();
-			} catch (RuntimeException | Error e) {
-				preparationFailure.set(e);
-				throw e;
-			} finally {
-				preparationReady.countDown();
-			}
-		});
-		Future<int[]> ospc = executor.submit(() -> {
-			awaitPreparation(preparationReady, preparationFailure);
-			int[] ranks = awaitGlobalOrder(valueRanks, "value ranks");
-			return sortGlobalIndexOrder(new char[] { 'o' }, mainOrder.get(), quads, ranks, count);
-		});
-		Future<int[]> predicate = executor.submit(() -> {
-			awaitPreparation(preparationReady, preparationFailure);
-			return sortGlobalIndexOrder(new char[] { 'p' }, mainOrder.get(), quads,
-					awaitGlobalOrder(valueRanks, "value ranks"), count);
-		});
-		Future<int[]> posc = executor.submit(() -> sortGlobalIndexOrder(new char[] { 'p' },
-				awaitGlobalOrder(ospc, "ospc order"), quads, awaitGlobalOrder(valueRanks, "value ranks"), count));
-		return new GlobalPreparedIndexOrdersTask(preparedIndexes.stream().map(TripleIndex::toString).toList(),
-				valueRanks, main,
-				ospc, posc, predicate);
-	}
-
-	private int[] rankGlobalValues(long[] valueIds) {
-		int count = valueIds.length;
-		int[] localIds = new int[count];
-		int[] scratchIds = new int[count];
-		long[] orderedIds = Arrays.copyOf(valueIds, count);
-		long[] scratchValues = new long[count];
-		for (int i = 0; i < count; i++) {
-			localIds[i] = i;
-		}
-		LeadingFieldSorters.lsdRadixSort(localIds, orderedIds, count, scratchIds, scratchValues, new int[256],
-				new int[256]);
-		int[] ranks = new int[count];
-		for (int rank = 0; rank < count; rank++) {
-			ranks[localIds[rank]] = rank + 1;
-		}
-		return ranks;
-	}
-
-	private static int[] awaitGlobalOrder(Future<int[]> future, String description) throws IOException {
-		try {
-			return future.get();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException("Interrupted while preparing global " + description, e);
-		} catch (ExecutionException e) {
-			Throwable cause = e.getCause();
-			if (cause instanceof RuntimeException runtimeException) {
-				throw runtimeException;
-			}
-			if (cause instanceof Error error) {
-				throw error;
-			}
-			throw new IOException("Failed to prepare global " + description, cause);
-		}
-	}
-
-	private int[] sortGlobalIndexOrder(char[] fieldSequence, int[] initialOrder, int[] quads, int[] valueRanks,
-			int count) {
-		int[] order = initialOrder == null ? new int[count] : Arrays.copyOf(initialOrder, count);
-		if (initialOrder == null) {
-			for (int i = 0; i < count; i++) {
-				order[i] = i;
-			}
-			if (Arrays.equals(fieldSequence, new char[] { 's', 'p', 'o', 'c' })
-					&& subjectsAreMonotonic(order, quads, valueRanks, count)) {
-				sortSpocWithinSubjectRuns(order, quads, valueRanks, count);
-				return order;
-			}
-		}
-		int[] scratch = new int[count];
-		int[] counts = new int[256];
-		int[] offsets = new int[256];
-		for (int fieldIndex = fieldSequence.length - 1; fieldIndex >= 0; fieldIndex--) {
-			radixSortGlobalField(order, scratch, globalFieldOffset(fieldSequence[fieldIndex]), quads, valueRanks, count,
-					counts, offsets);
-		}
-		return order;
-	}
-
-	private boolean subjectsAreMonotonic(int[] order, int[] quads, int[] valueRanks, int count) {
-		int previous = 0;
-		for (int i = 0; i < count; i++) {
-			int subject = globalFieldRank(order[i], 0, quads, valueRanks);
-			if (subject < previous) {
-				return false;
-			}
-			previous = subject;
-		}
-		return true;
-	}
-
-	private void sortSpocWithinSubjectRuns(int[] order, int[] quads, int[] valueRanks, int count) {
-		int runStart = 0;
-		while (runStart < count) {
-			int subject = globalFieldRank(order[runStart], 0, quads, valueRanks);
-			int runEnd = runStart + 1;
-			while (runEnd < count && globalFieldRank(order[runEnd], 0, quads, valueRanks) == subject) {
-				runEnd++;
-			}
-			if (runEnd - runStart <= 64) {
-				insertionSortSpocTail(order, runStart, runEnd, quads, valueRanks);
-			} else {
-				int[] run = Arrays.copyOfRange(order, runStart, runEnd);
-				int[] sorted = sortGlobalIndexOrder(new char[] { 'p', 'o', 'c' }, run, quads, valueRanks,
-						run.length);
-				System.arraycopy(sorted, 0, order, runStart, sorted.length);
-			}
-			runStart = runEnd;
-		}
-	}
-
-	private void insertionSortSpocTail(int[] order, int from, int to, int[] quads, int[] valueRanks) {
-		for (int i = from + 1; i < to; i++) {
-			int statementIndex = order[i];
-			int position = i;
-			while (position > from
-					&& compareSpocTail(statementIndex, order[position - 1], quads, valueRanks) < 0) {
-				order[position] = order[position - 1];
-				position--;
-			}
-			order[position] = statementIndex;
-		}
-	}
-
-	private int compareSpocTail(int left, int right, int[] quads, int[] valueRanks) {
-		int comparison = Integer.compare(globalFieldRank(left, 1, quads, valueRanks),
-				globalFieldRank(right, 1, quads, valueRanks));
-		if (comparison != 0) {
-			return comparison;
-		}
-		comparison = Integer.compare(globalFieldRank(left, 2, quads, valueRanks),
-				globalFieldRank(right, 2, quads, valueRanks));
-		return comparison != 0 ? comparison
-				: Integer.compare(globalFieldRank(left, 3, quads, valueRanks),
-						globalFieldRank(right, 3, quads, valueRanks));
-	}
-
-	private void radixSortGlobalField(int[] order, int[] scratch, int fieldOffset, int[] quads, int[] valueRanks,
-			int count, int[] counts, int[] offsets) {
-		if (count < 2) {
-			return;
-		}
-		int firstValue = globalFieldRank(order[0], fieldOffset, quads, valueRanks);
-		int differingBits = 0;
-		for (int i = 1; i < count; i++) {
-			differingBits |= firstValue ^ globalFieldRank(order[i], fieldOffset, quads, valueRanks);
-		}
-		if (differingBits == 0) {
-			return;
-		}
-
-		int activePasses = 0;
-		for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
-			if (((differingBits >>> shift) & 0xFF) != 0) {
-				activePasses++;
-			}
-		}
-		int[] source = order;
-		int[] target = scratch;
-		if ((activePasses & 1) != 0) {
-			System.arraycopy(order, 0, scratch, 0, count);
-			source = scratch;
-			target = order;
-		}
-		for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
-			if (((differingBits >>> shift) & 0xFF) == 0) {
-				continue;
-			}
-			Arrays.fill(counts, 0);
-			for (int i = 0; i < count; i++) {
-				int value = globalFieldRank(source[i], fieldOffset, quads, valueRanks);
-				counts[(value >>> shift) & 0xFF]++;
-			}
-			int offset = 0;
-			for (int bucket = 0; bucket < counts.length; bucket++) {
-				offsets[bucket] = offset;
-				offset += counts[bucket];
-			}
-			for (int i = 0; i < count; i++) {
-				int statementIndex = source[i];
-				int value = globalFieldRank(statementIndex, fieldOffset, quads, valueRanks);
-				int bucket = (value >>> shift) & 0xFF;
-				target[offsets[bucket]++] = statementIndex;
-			}
-			int[] swap = source;
-			source = target;
-			target = swap;
-		}
-	}
-
-	private static int globalFieldOffset(char field) {
-		return switch (field) {
-		case 's' -> 0;
-		case 'p' -> 1;
-		case 'o' -> 2;
-		case 'c' -> 3;
-		default -> throw new IllegalArgumentException("Unknown index field " + field);
-		};
-	}
-
-	private int globalFieldRank(int statementIndex, int fieldOffset, int[] quads, int[] valueRanks) {
-		int localId = quads[(statementIndex << 2) + fieldOffset];
-		return localId < 0 ? 0 : valueRanks[localId];
-	}
-
-	private static void awaitPreparation(CountDownLatch ready, AtomicReference<Throwable> failure) throws IOException {
-		try {
-			ready.await();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException("Interrupted while waiting for the main LMDB index order", e);
-		}
-		Throwable cause = failure.get();
-		if (cause instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		if (cause instanceof Error error) {
-			throw error;
-		}
-	}
-
-	private int[] sortMainIndexOrder(long[] subj, long[] pred, long[] obj, long[] context, int count) {
-		return sortMainIndexOrder(indexes.getFirst(), subj, pred, obj, context, count);
-	}
-
-	private int[] sortMainIndexOrder(TripleIndex mainIndex, long[] subj, long[] pred, long[] obj, long[] context,
-			int count) {
-		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
-		workspace.ensureCapacity(count);
-		int[] statementIndices = workspace.mainOrder;
-		int[] scratchIndices = workspace.scratchOrder;
-		long[] fieldValues = workspace.fieldValues;
-		long[] scratchValues = workspace.scratchValues;
-		int[] radixCounts = workspace.radixCounts;
-		int[] radixOffsets = workspace.radixOffsets;
-		for (int i = 0; i < count; i++) {
-			statementIndices[i] = i;
-		}
-		StatementFieldValueAccessor[] accessors = mainIndex.fieldValueAccessors;
-		for (int fieldIndex = accessors.length - 1; fieldIndex >= 0; fieldIndex--) {
-			StatementFieldValueAccessor accessor = accessors[fieldIndex];
-			for (int i = 0; i < count; i++) {
-				fieldValues[i] = accessor.get(subj, pred, obj, context, statementIndices[i]);
-			}
-			LeadingFieldSorters.lsdRadixSort(statementIndices, fieldValues, count, scratchIndices, scratchValues,
-					radixCounts, radixOffsets);
-		}
-		return statementIndices;
-	}
-
-	private boolean hasFourIndexPreparedOrder() {
-		return hasFourIndexPreparedOrder(indexes);
-	}
-
-	private static boolean hasFourIndexPreparedOrder(List<TripleIndex> indexes) {
-		return indexes.size() == 4
-				&& "spoc".contentEquals(new String(indexes.get(0).getFieldSeq()))
-				&& "ospc".contentEquals(new String(indexes.get(1).getFieldSeq()))
-				&& "posc".contentEquals(new String(indexes.get(2).getFieldSeq()))
-				&& "psoc".contentEquals(new String(indexes.get(3).getFieldSeq()));
-	}
-
-	private EncodedIndexKeys[] prepareSecondaryIndexChain(int[] indexPositions, int[] mainOrder, long[] subj,
+	PreparedSecondaryIndexesTask prepareSecondaryIndexesAsync(ExecutorService executor, long[] subj,
 			long[] pred, long[] obj, long[] context, int count) {
-		return prepareSecondaryIndexChain(indexes, indexPositions, mainOrder, subj, pred, obj, context, count);
-	}
-
-	private EncodedIndexKeys[] prepareSecondaryIndexChain(List<TripleIndex> indexes, int[] indexPositions,
-			int[] mainOrder, long[] subj,
-			long[] pred, long[] obj, long[] context, int count) {
-		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
-		workspace.ensureCapacity(count);
-		int[] currentOrder = workspace.currentOrder;
-		int[] scratchOrder = workspace.scratchOrder;
-		long[] fieldValues = workspace.fieldValues;
-		long[] scratchValues = workspace.scratchValues;
-		int[] radixCounts = workspace.radixCounts;
-		int[] radixOffsets = workspace.radixOffsets;
-		System.arraycopy(mainOrder, 0, currentOrder, 0, count);
-
-		TripleIndex mainIndex = indexes.getFirst();
-		char[] currentFieldSequence = mainIndex.getFieldSeq();
-		EncodedIndexKeys[] encodedIndexes = new EncodedIndexKeys[indexPositions.length];
-		try {
-			for (int resultIndex = 0; resultIndex < indexPositions.length; resultIndex++) {
-				int indexPosition = indexPositions[resultIndex];
-				TripleIndex index = indexes.get(indexPosition);
-				if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSequence,
-						index.getFieldSeq())) {
-					System.arraycopy(mainOrder, 0, currentOrder, 0, count);
-				}
-				sortStatementIndicesByLeadingField(currentOrder, count, index, subj, pred, obj, context,
-						fieldValues, scratchOrder, scratchValues, radixCounts, radixOffsets);
-				currentFieldSequence = index.getFieldSeq();
-				encodedIndexes[resultIndex] = encodeIndexKeys(indexPosition, index, currentOrder, subj, pred, obj,
-						context, count);
-			}
-			return encodedIndexes;
-		} catch (RuntimeException | Error e) {
-			closeEncodedIndexes(encodedIndexes);
-			throw e;
-		}
-	}
-
-	private static void closeEncodedIndexes(EncodedIndexKeys[] indexes) {
-		for (EncodedIndexKeys index : indexes) {
-			if (index != null) {
-				index.close();
-			}
-		}
-	}
-
-	private void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index,
-			long[] subj, long[] pred, long[] obj, long[] context, long[] fieldValues, int[] scratchIndices,
-			long[] scratchValues, int[] radixCounts, int[] radixOffsets) {
-		StatementFieldValueAccessor accessor = index.leadingFieldValueAccessor;
-		for (int i = 0; i < length; i++) {
-			fieldValues[i] = accessor.get(subj, pred, obj, context, statementIndices[i]);
-		}
-		LeadingFieldSorters.lsdRadixSort(statementIndices, fieldValues, length, scratchIndices, scratchValues,
-				radixCounts, radixOffsets);
+		return indexUpdater.prepareSecondaryIndexesAsync(executor, subj, pred, obj, context, count);
 	}
 
 	void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index,
 			long[] subj, long[] pred, long[] obj, long[] context) {
-		sortStatementIndicesByLeadingField(statementIndices, length, index, subj, pred, obj, context,
-				ensureLeadingFieldValues(length), ensureLeadingFieldScratchIndices(length),
-				ensureLeadingFieldScratchValues(length), leadingFieldRadixCounts, leadingFieldRadixOffsets);
-	}
-
-	private EncodedIndexKeys encodeIndexKeys(int indexPosition, TripleIndex index, int[] statementIndices,
-			long[] subj, long[] pred, long[] obj, long[] context, int count) {
-		ByteBuffer keys = memAlloc(Math.multiplyExact(count, TripleIndex.MAX_KEY_LENGTH));
-		int[] offsets = new int[count + 1];
-		int[] encodedStatementIndices = Arrays.copyOf(statementIndices, count);
-		for (int i = 0; i < count; i++) {
-			offsets[i] = keys.position();
-			int statementIndex = encodedStatementIndices[i];
-			index.toKey(keys, subj[statementIndex], pred[statementIndex], obj[statementIndex],
-					context[statementIndex]);
-		}
-		offsets[count] = keys.position();
-		keys.flip();
-		return new EncodedIndexKeys(indexPosition, index.toString(), encodedStatementIndices, offsets, keys);
-	}
-
-	static final class PreparedSecondaryIndexes implements AutoCloseable {
-		private static final PreparedSecondaryIndexes EMPTY = new PreparedSecondaryIndexes(new EncodedIndexKeys[0]);
-		private final EncodedIndexKeys[] indexes;
-
-		private PreparedSecondaryIndexes(EncodedIndexKeys[] indexes) {
-			this.indexes = indexes;
-		}
-
-		int[] statementOrder(int indexPosition) {
-			for (EncodedIndexKeys index : indexes) {
-				if (index.indexPosition == indexPosition) {
-					return Arrays.copyOf(index.statementIndices, index.statementIndices.length);
-				}
-			}
-			throw new IllegalArgumentException("No prepared index at position " + indexPosition);
-		}
-
-		@Override
-		public synchronized void close() {
-			for (EncodedIndexKeys index : indexes) {
-				if (index != null) {
-					index.close();
-				}
-			}
-		}
-	}
-
-	static final class PreparedSecondaryIndexesTask {
-		private final int encodedIndexCount;
-		private final Future<EncodedIndexKeys> main;
-		private final Future<EncodedIndexKeys[]> first;
-		private final Future<EncodedIndexKeys[]> second;
-		private boolean mainTransferred;
-		private boolean secondaryTransferred;
-
-		private PreparedSecondaryIndexesTask(int encodedIndexCount, Future<EncodedIndexKeys> main,
-				Future<EncodedIndexKeys[]> first, Future<EncodedIndexKeys[]> second) {
-			this.encodedIndexCount = encodedIndexCount;
-			this.main = main;
-			this.first = first;
-			this.second = second;
-		}
-
-		synchronized PreparedSecondaryIndexes await() throws IOException {
-			EncodedIndexKeys[] combined = new EncodedIndexKeys[encodedIndexCount];
-			try {
-				copyPreparedIndexes(await(first), combined);
-				if (second != null) {
-					copyPreparedIndexes(await(second), combined);
-				}
-				secondaryTransferred = true;
-				return new PreparedSecondaryIndexes(combined);
-			} catch (IOException | RuntimeException | Error e) {
-				closeEncodedIndexes(combined);
-				throw e;
-			}
-		}
-
-		synchronized EncodedIndexKeys awaitMain() throws IOException {
-			EncodedIndexKeys preparedMain = main == null ? null : awaitMain(main);
-			mainTransferred = true;
-			return preparedMain;
-		}
-
-		synchronized void cancel() {
-			if (!mainTransferred && main != null) {
-				closeMainFuture(main);
-			}
-			if (!secondaryTransferred) {
-				closeSecondaryFuture(first);
-				if (second != null) {
-					closeSecondaryFuture(second);
-				}
-			}
-		}
-
-		private static void closeMainFuture(Future<EncodedIndexKeys> future) {
-			try {
-				EncodedIndexKeys index = future.get();
-				if (index != null) {
-					index.close();
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			} catch (ExecutionException | RuntimeException ignored) {
-				// Failed workers own no successfully transferred arena.
-			}
-		}
-
-		private static void closeSecondaryFuture(Future<EncodedIndexKeys[]> future) {
-			try {
-				closeEncodedIndexes(future.get());
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			} catch (ExecutionException | RuntimeException ignored) {
-				// Failed workers close any partially prepared arenas themselves.
-			}
-		}
-
-		private static EncodedIndexKeys[] await(Future<EncodedIndexKeys[]> future) throws IOException {
-			try {
-				return future.get();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while preparing secondary LMDB index keys", e);
-			} catch (ExecutionException e) {
-				Throwable cause = e.getCause();
-				if (cause instanceof RuntimeException runtimeException) {
-					throw runtimeException;
-				}
-				if (cause instanceof Error error) {
-					throw error;
-				}
-				throw new IOException("Failed to prepare secondary LMDB index keys", cause);
-			}
-		}
-
-		private static EncodedIndexKeys awaitMain(Future<EncodedIndexKeys> future) throws IOException {
-			try {
-				return future.get();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while preparing the main LMDB index keys", e);
-			} catch (ExecutionException e) {
-				Throwable cause = e.getCause();
-				if (cause instanceof RuntimeException runtimeException) {
-					throw runtimeException;
-				}
-				if (cause instanceof Error error) {
-					throw error;
-				}
-				throw new IOException("Failed to prepare the main LMDB index keys", cause);
-			}
-		}
-
-		private static void copyPreparedIndexes(EncodedIndexKeys[] source, EncodedIndexKeys[] target) {
-			for (EncodedIndexKeys encodedIndex : source) {
-				target[encodedIndex.indexPosition - 1] = encodedIndex;
-			}
-		}
-	}
-
-	static final class GlobalPreparedIndexOrdersTask {
-		private final List<String> specifications;
-		private final Future<int[]> valueRanks;
-		private final Future<int[]> main;
-		private final Future<int[]> ospc;
-		private final Future<int[]> posc;
-		private final Future<int[]> predicate;
-
-		private GlobalPreparedIndexOrdersTask(List<String> specifications, Future<int[]> valueRanks, Future<int[]> main,
-				Future<int[]> ospc, Future<int[]> posc,
-				Future<int[]> predicate) {
-			this.specifications = specifications;
-			this.valueRanks = valueRanks;
-			this.main = main;
-			this.ospc = ospc;
-			this.posc = posc;
-			this.predicate = predicate;
-		}
-
-		int[] awaitMain() throws IOException {
-			return awaitFuture(main, "main LMDB index order");
-		}
-
-		int[] awaitSecondary(int indexPosition) throws IOException {
-			return switch (indexPosition) {
-			case 1 -> awaitFuture(ospc, "ospc LMDB index order");
-			case 2 -> awaitFuture(posc, "posc LMDB index order");
-			case 3 -> awaitFuture(predicate, "psoc LMDB index order");
-			default -> throw new IllegalArgumentException("Unknown secondary index position " + indexPosition);
-			};
-		}
-
-		void cancel() {
-			valueRanks.cancel(true);
-			main.cancel(true);
-			ospc.cancel(true);
-			posc.cancel(true);
-			predicate.cancel(true);
-		}
-
-		private static <T> T awaitFuture(Future<T> future, String description) throws IOException {
-			try {
-				return future.get();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while preparing the " + description, e);
-			} catch (ExecutionException e) {
-				Throwable cause = e.getCause();
-				if (cause instanceof RuntimeException runtimeException) {
-					throw runtimeException;
-				}
-				if (cause instanceof Error error) {
-					throw error;
-				}
-				throw new IOException("Failed to prepare the " + description, cause);
-			}
-		}
-	}
-
-	@FunctionalInterface
-	interface PreparedSecondaryIndexesSupplier {
-		PreparedSecondaryIndexes get() throws IOException;
-	}
-
-	static final class EncodedIndexKeys implements AutoCloseable {
-		private final int indexPosition;
-		private final String specification;
-		private final int[] statementIndices;
-		private final int[] offsets;
-		private final ByteBuffer keys;
-		private final long address;
-		private boolean closed;
-
-		private EncodedIndexKeys(int indexPosition, String specification, int[] statementIndices, int[] offsets,
-				ByteBuffer keys) {
-			this.indexPosition = indexPosition;
-			this.specification = specification;
-			this.statementIndices = statementIndices;
-			this.offsets = offsets;
-			this.keys = keys;
-			this.address = LmdbUtil.directBufferAddress(keys);
-			OPEN_PREPARED_KEY_ARENAS.incrementAndGet();
-		}
-
-		@Override
-		public synchronized void close() {
-			if (!closed) {
-				closed = true;
-				memFree(keys);
-				OPEN_PREPARED_KEY_ARENAS.decrementAndGet();
-			}
-		}
-	}
-
-	private GlobalEncodedIndexBlocks prepareGlobalIndexBlocks(ExecutorService executor, int indexPosition,
-			int[] statementOrder, int[] quads, long[] valueIds) {
-		GlobalEncodedIndexBlocks blocks = new GlobalEncodedIndexBlocks(indexPosition, statementOrder, quads,
-				valueIds);
-		blocks.start(executor);
-		return blocks;
-	}
-
-	private final class GlobalEncodedIndexBlocks implements AutoCloseable {
-		private final int indexPosition;
-		private final int[] statementOrder;
-		private final int[] quads;
-		private final long[] valueIds;
-		private final ArrayBlockingQueue<EncodedIndexBlock> blocks = new ArrayBlockingQueue<>(2);
-		private final AtomicReference<Throwable> failure = new AtomicReference<>();
-		private Future<?> producer;
-
-		private GlobalEncodedIndexBlocks(int indexPosition, int[] statementOrder, int[] quads, long[] valueIds) {
-			this.indexPosition = indexPosition;
-			this.statementOrder = statementOrder;
-			this.quads = quads;
-			this.valueIds = valueIds;
-		}
-
-		private void start(ExecutorService executor) {
-			producer = executor.submit(this::produce);
-		}
-
-		private void produce() {
-			try {
-				TripleIndex index = indexes.get(indexPosition);
-				for (int offset = 0; offset < statementOrder.length; offset += GLOBAL_ENCODE_BLOCK_STATEMENTS) {
-					if (Thread.currentThread().isInterrupted()) {
-						throw new InterruptedException("Global index encoding cancelled");
-					}
-					int length = Math.min(GLOBAL_ENCODE_BLOCK_STATEMENTS, statementOrder.length - offset);
-					EncodedIndexBlock block = encodeGlobalIndexBlock(index, statementOrder, offset, length, quads,
-							valueIds);
-					try {
-						blocks.put(block);
-					} catch (InterruptedException e) {
-						block.close();
-						throw e;
-					}
-				}
-			} catch (Throwable e) {
-				failure.compareAndSet(null, e);
-			} finally {
-				try {
-					blocks.put(EncodedIndexBlock.END);
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					failure.compareAndSet(null, e);
-				}
-			}
-		}
-
-		private EncodedIndexBlock next() throws IOException {
-			EncodedIndexBlock block;
-			try {
-				block = blocks.take();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while awaiting encoded LMDB index keys", e);
-			}
-			if (block != EncodedIndexBlock.END) {
-				return block;
-			}
-			Throwable cause = failure.get();
-			if (cause instanceof RuntimeException runtimeException) {
-				throw runtimeException;
-			}
-			if (cause instanceof Error error) {
-				throw error;
-			}
-			if (cause != null) {
-				throw new IOException("Failed to encode global LMDB index keys", cause);
-			}
-			return null;
-		}
-
-		@Override
-		public void close() {
-			if (producer != null) {
-				producer.cancel(true);
-			}
-			EncodedIndexBlock block;
-			while ((block = blocks.poll()) != null) {
-				if (block != EncodedIndexBlock.END) {
-					block.close();
-				}
-			}
-		}
-	}
-
-	private EncodedIndexBlock encodeGlobalIndexBlock(TripleIndex index, int[] statementOrder, int from, int count,
-			int[] quads, long[] valueIds) {
-		ByteBuffer keys = memAlloc(Math.multiplyExact(count, TripleIndex.MAX_KEY_LENGTH));
-		int[] offsets = new int[count + 1];
-		int[] statementIndices = Arrays.copyOfRange(statementOrder, from, from + count);
-		try {
-			for (int i = 0; i < count; i++) {
-				offsets[i] = keys.position();
-				int quadOffset = Math.multiplyExact(statementIndices[i], 4);
-				int contextId = quads[quadOffset + 3];
-				index.toKey(keys, valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
-						valueIds[quads[quadOffset + 2]], contextId < 0 ? 0 : valueIds[contextId]);
-			}
-			offsets[count] = keys.position();
-			keys.flip();
-			return new EncodedIndexBlock(statementIndices, offsets, keys);
-		} catch (RuntimeException | Error e) {
-			memFree(keys);
-			throw e;
-		}
-	}
-
-	private static final class EncodedIndexBlock implements AutoCloseable {
-		private static final EncodedIndexBlock END = new EncodedIndexBlock();
-		private final int[] statementIndices;
-		private final int[] offsets;
-		private final ByteBuffer keys;
-		private final long address;
-		private boolean closed;
-
-		private EncodedIndexBlock() {
-			statementIndices = null;
-			offsets = null;
-			keys = null;
-			address = 0;
-		}
-
-		private EncodedIndexBlock(int[] statementIndices, int[] offsets, ByteBuffer keys) {
-			this.statementIndices = statementIndices;
-			this.offsets = offsets;
-			this.keys = keys;
-			address = LmdbUtil.directBufferAddress(keys);
-			OPEN_PREPARED_KEY_ARENAS.incrementAndGet();
-		}
-
-		@Override
-		public void close() {
-			if (!closed && keys != null) {
-				closed = true;
-				memFree(keys);
-				OPEN_PREPARED_KEY_ARENAS.decrementAndGet();
-			}
-
-		}
+		indexUpdater.sortStatementIndicesByLeadingField(statementIndices, length, index, subj, pred, obj,
+				context);
 	}
 
 	long getNativeCommitGeneration() {
@@ -3080,17 +2178,12 @@ class TripleStore implements Closeable {
 	}
 
 	private void verifyStagingCounts(TripleIndex source) throws IOException {
-		/* try (MemoryStack stack = stackPush()) {
-			MDBStat stat = MDBStat.malloc(stack);
-			for (boolean explicit : new boolean[] { true, false }) {
-				long entries = logicalIndexCount(writeTxn, source, explicit);
-				for (TripleIndex stage : stagingIndexes) {
-					if (logicalIndexCount(writeTxn, stage, explicit) != entries) {
-						throw new IOException("Statement index build membership count differs from committed source");
-					}
-				}
-			}
-		} */
+		/*
+		 * try (MemoryStack stack = stackPush()) { MDBStat stat = MDBStat.malloc(stack); for (boolean explicit : new
+		 * boolean[] { true, false }) { long entries = logicalIndexCount(writeTxn, source, explicit); for (TripleIndex
+		 * stage : stagingIndexes) { if (logicalIndexCount(writeTxn, stage, explicit) != entries) { throw new
+		 * IOException("Statement index build membership count differs from committed source"); } } } }
+		 */
 	}
 
 	/** Mandatory native maintenance: independent of suppressible derived collectors and replay event publication. */
@@ -3101,21 +2194,14 @@ class TripleStore implements Closeable {
 			return;
 		}
 		try (MemoryStack stack = stackPush()) {
-			MDBVal key = MDBVal.calloc(stack);
-			MDBVal value = MDBVal.calloc(stack);
-			ByteBuffer buffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			TripleIndex source = indexes.getFirst();
-			source.toKey(buffer, subject, predicate, object, context);
-			key.mv_data(buffer.flip());
 			boolean exists = tripleExistsInMainIndex(new long[] { subject, predicate, object, context }, explicit);
+			long[] tuple = new long[4];
 			for (TripleIndex index : stage) {
-				buffer.clear();
-				index.toKey(buffer, subject, predicate, object, context);
-				key.mv_data(buffer.flip());
+				index.toEntry(tuple, subject, predicate, object, context);
 				if (exists) {
-					checkMutationResult(putIndexEntry(index, explicit, key));
+					checkMutationResult(putIndexEntry(index, explicit, tuple));
 				} else {
-					int rc = deleteIndexEntry(index, explicit, key);
+					int rc = deleteIndexEntry(index, explicit, tuple);
 					if (rc != MDB_NOTFOUND) {
 						checkMutationResult(rc);
 					}
@@ -4448,74 +3534,6 @@ class TripleStore implements Closeable {
 				index.getPatternScore(subj, pred, obj, context))) {
 			return records.next() != null;
 		}
-	}
-
-	/** The writer's physical view includes pending cache additions and excludes pending removals. */
-	RecordIterator getTriplesForWrite(long subj, long pred, long obj, long context, boolean explicit)
-			throws IOException {
-		RecordIterator base = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
-		if (recordCache == null) {
-			return base;
-		}
-		return new RecordIterator() {
-			private Iterator<Record> pending = Collections.emptyIterator();
-			private byte[] resumeKey;
-			private boolean baseExhausted;
-			private boolean pendingExhausted;
-			private boolean closed;
-
-			@Override
-			public long[] next() {
-				if (closed) {
-					return null;
-				}
-				try {
-					if (!baseExhausted) {
-						long[] quad;
-						while ((quad = base.next()) != null) {
-							if (recordCache.getRecordState(quad, explicit) != TxnRecordCache.RecordState.REMOVE) {
-								return quad;
-							}
-						}
-						base.close();
-						baseExhausted = true;
-					}
-					while (true) {
-						while (pending.hasNext()) {
-							Record record = pending.next();
-							if (record.add && matchesPattern(record.quad, subj, pred, obj, context)
-									&& !tripleExistsInMainIndex(record.quad, explicit)) {
-								return record.quad;
-							}
-						}
-						if (pendingExhausted) {
-							close();
-							return null;
-						}
-						// Existing bounded batches close the cache cursor before callbacks can resize or mutate it.
-						WriteRecordBatch batch = recordCache.getWriteRecords(explicit, resumeKey);
-						pending = batch.records().iterator();
-						resumeKey = batch.resumeKey();
-						pendingExhausted = batch.records().isEmpty() || resumeKey == null;
-					}
-				} catch (IOException e) {
-					close();
-					throw new SailException(e);
-				} catch (RuntimeException | Error e) {
-					close();
-					throw e;
-				}
-			}
-
-			@Override
-			public void close() {
-				if (!closed) {
-					closed = true;
-					pending = Collections.emptyIterator();
-					base.close();
-				}
-			}
-		};
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
@@ -5877,18 +4895,16 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private int putIndexEntry(TripleIndex index, boolean explicit, MDBVal encodedKey) throws IOException {
-		return mutateIndexEntry(index, explicit, encodedKey, true);
+	private int putIndexEntry(TripleIndex index, boolean explicit, long[] tuple) throws IOException {
+		return mutateIndexEntry(index, explicit, tuple, true);
 	}
 
-	private int deleteIndexEntry(TripleIndex index, boolean explicit, MDBVal encodedKey) throws IOException {
-		return mutateIndexEntry(index, explicit, encodedKey, false);
+	private int deleteIndexEntry(TripleIndex index, boolean explicit, long[] tuple) throws IOException {
+		return mutateIndexEntry(index, explicit, tuple, false);
 	}
 
-	private int mutateIndexEntry(TripleIndex index, boolean explicit, MDBVal encodedKey, boolean add)
+	private int mutateIndexEntry(TripleIndex index, boolean explicit, long[] tuple, boolean add)
 			throws IOException {
-		long[] tuple = new long[4];
-		Varint.readListUnsigned(encodedKey.mv_data().duplicate(), tuple);
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);
 			E(mdb_cursor_open(writeTxn, index.getDB(explicit), handle));
@@ -7142,7 +6158,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void storeTriplesAligned(long[] subject, long[] predicate, long[] object, long[] context, int count,
-			boolean explicit, boolean mayHaveInferred, IntConsumer addedConsumer, EncodedIndexKeys main,
+			boolean explicit, boolean mayHaveInferred, IntConsumer addedConsumer, EncodedIndexEntries main,
 			PreparedSecondaryIndexesSupplier secondary) throws IOException {
 		writeLogicalAlignedBatch(new AlignedInput(subject, predicate, object, context), count, explicit, addedConsumer,
 				added -> storeTriplesAlignedOptimized(subject, predicate, object, context, count, explicit,
@@ -7230,16 +6246,11 @@ class TripleStore implements Closeable {
 			throws IOException {
 		TripleIndex mainIndex = indexes.getFirst();
 		boolean stAdded;
+		long[] tuple = new long[4];
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal keyVal = MDBVal.malloc(stack);
-			// use calloc to get an empty data value
-			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			mainIndex.toKey(keyBuf, subj, pred, obj, context);
-			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
+			mainIndex.toEntry(tuple, subj, pred, obj, context);
 
-			int rc = putIndexEntry(mainIndex, explicit, keyVal);
+			int rc = putIndexEntry(mainIndex, explicit, tuple);
 			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 				checkMutationResult(rc);
 			}
@@ -7248,7 +6259,7 @@ class TripleStore implements Closeable {
 
 			boolean foundImplicit = false;
 			if (explicit && stAdded) {
-				int result = deleteIndexEntry(mainIndex, false, keyVal);
+				int result = deleteIndexEntry(mainIndex, false, tuple);
 				if (result != MDB_SUCCESS && result != MDB_NOTFOUND) {
 					checkMutationResult(result);
 				}
@@ -7262,20 +6273,14 @@ class TripleStore implements Closeable {
 				}
 				for (int i = 1; i < indexes.size(); i++) {
 					TripleIndex index = indexes.get(i);
-					keyBuf.clear();
-					index.toKey(keyBuf, subj, pred, obj, context);
-					keyBuf.flip();
-
-					// update buffer positions in MDBVal
-					keyVal.mv_data(keyBuf);
+					index.toEntry(tuple, subj, pred, obj, context);
 
 					if (foundImplicit) {
-						checkMutationResult(deleteIndexEntry(index, false, keyVal));
+						checkMutationResult(deleteIndexEntry(index, false, tuple));
 					}
-					checkMutationResult(putIndexEntry(index, explicit, keyVal));
+					checkMutationResult(putIndexEntry(index, explicit, tuple));
 				}
 
-				long[] tuple = new long[4];
 				updatePartialIndexes(subj, pred, obj, context, tuple, explicit, true);
 				if (foundImplicit) {
 					updatePartialIndexes(subj, pred, obj, context, tuple, false, false);
@@ -7325,7 +6330,7 @@ class TripleStore implements Closeable {
 	}
 
 	void storePreparedTriples(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
-			boolean mayHaveInferred, IntConsumer addedIndexConsumer, EncodedIndexKeys preparedMainIndex,
+			boolean mayHaveInferred, IntConsumer addedIndexConsumer, EncodedIndexEntries preparedMainIndex,
 			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
 			throws IOException {
 		try {
@@ -7373,8 +6378,8 @@ class TripleStore implements Closeable {
 			long mainCursor = REUSE_ALIGNED_WRITE_CURSOR
 					? getAlignedWriteCursor(0, mainIndex, true, cursorHandle)
 					: 0;
-			try (GlobalEncodedIndexBlocks encodedBlocks = prepareGlobalIndexBlocks(encoderExecutor, 0, mainOrder,
-					quads, valueIds)) {
+			try (GlobalEncodedIndexBlocks encodedBlocks = indexUpdater.prepareGlobalIndexBlocks(encoderExecutor, 0,
+					mainOrder, quads, valueIds)) {
 				EncodedIndexBlock block;
 				while ((block = encodedBlocks.next()) != null) {
 					try (EncodedIndexBlock currentBlock = block) {
@@ -7420,7 +6425,7 @@ class TripleStore implements Closeable {
 				long cursor = REUSE_ALIGNED_WRITE_CURSOR
 						? getAlignedWriteCursor(indexPosition, index, true, cursorHandle)
 						: 0;
-				try (GlobalEncodedIndexBlocks encodedSecondary = prepareGlobalIndexBlocks(encoderExecutor,
+				try (GlobalEncodedIndexBlocks encodedSecondary = indexUpdater.prepareGlobalIndexBlocks(encoderExecutor,
 						indexPosition, secondaryOrder, quads, valueIds)) {
 					EncodedIndexBlock block;
 					while ((block = encodedSecondary.next()) != null) {
@@ -7690,7 +6695,7 @@ class TripleStore implements Closeable {
 
 	private void storeTriplesAlignedOptimized(long[] subj, long[] pred, long[] obj, long[] context, int count,
 			boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer,
-			EncodedIndexKeys preparedMainIndex,
+			EncodedIndexEntries preparedMainIndex,
 			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
 			throws IOException {
 		if (count == 0) {
@@ -7699,7 +6704,7 @@ class TripleStore implements Closeable {
 		if (!partialIndexes.isEmpty()) {
 			for (int row = 0; row < count; row++) {
 				if (storeTripleDirect(subj[row], pred[row], obj[row], context[row], explicit)
-						&& addedIndexConsumer != null) {
+					&& addedIndexConsumer != null) {
 					addedIndexConsumer.accept(row);
 				}
 			}
@@ -7719,30 +6724,30 @@ class TripleStore implements Closeable {
 		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer cursorHandle = REUSE_ALIGNED_WRITE_CURSOR
-					? stack.mallocPointer(1)
-					: null;
+				? stack.mallocPointer(1)
+				: null;
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			int[] sortedIndices = ensureAlignedWriteSortedIndices(count);
 			boolean[] addedStatements = preparedSecondaryIndexesSupplier == null ? null
-					: ensureAlignedWriteAddedStatements(count);
+				: ensureAlignedWriteAddedStatements(count);
 			if (addedStatements != null) {
 				Arrays.fill(addedStatements, 0, count, false);
 			}
 			boolean[] promotedFromImplicit = explicit && mayHaveInferred
-					? ensureAlignedWritePromotedFromImplicit(count)
-					: null;
+				? ensureAlignedWritePromotedFromImplicit(count)
+				: null;
 			if (promotedFromImplicit != null) {
 				Arrays.fill(promotedFromImplicit, 0, count, false);
 			}
 			LongIntHashMap contextIncrements = alignedContextIncrements;
 			contextIncrements.clear();
 			long mainWriteCursor = REUSE_ALIGNED_WRITE_CURSOR
-					? getAlignedWriteCursor(0, mainIndex, explicit, cursorHandle)
-					: 0;
-			EncodedIndexKeys encodedMainIndex = preparedMainIndex != null
-					&& preparedMainIndex.specification.equals(mainIndex.toString()) ? preparedMainIndex : null;
+				? getAlignedWriteCursor(0, mainIndex, explicit, cursorHandle)
+				: 0;
+			EncodedIndexEntries encodedMainIndex = preparedMainIndex != null
+				&& preparedMainIndex.specification.equals(mainIndex.toString()) ? preparedMainIndex : null;
 
 			for (int i = 0; i < count; i++) {
 				if (!preparedWrite && shouldFallBackFromAlignedWrite()) {
@@ -7759,7 +6764,7 @@ class TripleStore implements Closeable {
 					statementIndex = encodedMainIndex.statementIndices[i];
 					int offset = encodedMainIndex.offsets[i];
 					LmdbUtil.setMDBValData(keyVal, encodedMainIndex.address + offset,
-							encodedMainIndex.offsets[i + 1] - offset);
+						encodedMainIndex.offsets[i + 1] - offset);
 				}
 
 				int rc = putIndexEntry(mainIndex, explicit, keyVal);
@@ -7789,15 +6794,15 @@ class TripleStore implements Closeable {
 						promotedFromImplicit[statementIndex] = removeResult == MDB_SUCCESS;
 					}
 					synchronizeStagingQuad(subj[statementIndex], pred[statementIndex], obj[statementIndex],
-							context[statementIndex], explicit);
+						context[statementIndex], explicit);
 					if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
 						synchronizeStagingQuad(subj[statementIndex], pred[statementIndex], obj[statementIndex],
-								context[statementIndex], false);
+							context[statementIndex], false);
 						recordFanOutRemoved(subj[statementIndex], pred[statementIndex], obj[statementIndex],
-								context[statementIndex], false);
+							context[statementIndex], false);
 					}
 					recordFanOutAdded(subj[statementIndex], pred[statementIndex], obj[statementIndex],
-							context[statementIndex], explicit);
+						context[statementIndex], explicit);
 					if (promotedFromImplicit == null || !promotedFromImplicit[statementIndex]) {
 						contextIncrements.addToValue(context[statementIndex], 1);
 					}
@@ -7813,15 +6818,15 @@ class TripleStore implements Closeable {
 			}
 
 			try (PreparedSecondaryIndexes preparedIndexes = preparedSecondaryIndexesSupplier == null
-					? null
-					: preparedSecondaryIndexesSupplier.get()) {
+				? null
+				: preparedSecondaryIndexesSupplier.get()) {
 				if (preparedIndexes != null && preparedIndexesMatchGeneration(preparedIndexes)) {
-					for (EncodedIndexKeys encodedIndex : preparedIndexes.indexes) {
+					for (EncodedIndexEntries encodedIndex : preparedIndexes.indexes) {
 						int indexPosition = encodedIndex.indexPosition;
 						TripleIndex index = indexes.get(indexPosition);
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
-								? getAlignedWriteCursor(indexPosition, index, explicit, cursorHandle)
-								: 0;
+							? getAlignedWriteCursor(indexPosition, index, explicit, cursorHandle)
+							: 0;
 						int encodedCount = encodedIndex.statementIndices.length;
 						for (int keyIndex = 0; keyIndex < encodedCount; keyIndex++) {
 							int statementIndex = encodedIndex.statementIndices[keyIndex];
@@ -7830,7 +6835,7 @@ class TripleStore implements Closeable {
 							}
 							int offset = encodedIndex.offsets[keyIndex];
 							LmdbUtil.setMDBValData(keyVal, encodedIndex.address + offset,
-									encodedIndex.offsets[keyIndex + 1] - offset);
+								encodedIndex.offsets[keyIndex + 1] - offset);
 
 							if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
 								int removeResult = deleteIndexEntry(index, false, keyVal);
@@ -7851,14 +6856,14 @@ class TripleStore implements Closeable {
 					for (int i = 1; i < indexes.size(); i++) {
 						TripleIndex index = indexes.get(i);
 						if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSeq,
-								index.getFieldSeq())) {
+							index.getFieldSeq())) {
 							System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
 						}
 						sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj, context);
 						currentFieldSeq = index.getFieldSeq();
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
-								? getAlignedWriteCursor(i, index, explicit, cursorHandle)
-								: 0;
+							? getAlignedWriteCursor(i, index, explicit, cursorHandle)
+							: 0;
 						for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
 							int statementIndex = sortedIndices[sortedIndex];
 							if (shouldFallBackFromAlignedWrite()) {
@@ -7866,7 +6871,7 @@ class TripleStore implements Closeable {
 							}
 							keyBuf.clear();
 							index.toKey(keyBuf, subj[statementIndex], pred[statementIndex], obj[statementIndex],
-									context[statementIndex]);
+								context[statementIndex]);
 							keyBuf.flip();
 							LmdbUtil.setMDBValData(keyVal, keyBuf);
 
@@ -7895,14 +6900,13 @@ class TripleStore implements Closeable {
 				}
 			}
 		}
-
 	}
 
 	private boolean preparedIndexesMatchGeneration(PreparedSecondaryIndexes prepared) {
 		if (prepared.indexes.length != indexes.size() - 1) {
 			return false;
 		}
-		for (EncodedIndexKeys keys : prepared.indexes) {
+		for (EncodedIndexEntries keys : prepared.indexes) {
 			if (keys == null || keys.indexPosition >= indexes.size()
 					|| !keys.specification.equals(indexes.get(keys.indexPosition).toString())) {
 				return false;
@@ -8278,24 +7282,16 @@ class TripleStore implements Closeable {
 	private boolean removeQuadDirect(long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
 		try (MemoryStack stack = stackPush()) {
-			MDBVal keyValue = MDBVal.calloc(stack);
-			MDBVal ignored = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			TripleIndex first = indexes.getFirst();
-			first.toKey(keyBuf, subj, pred, obj, context);
-			keyValue.mv_data(keyBuf.flip());
 			if (!tripleExistsInMainIndex(new long[] { subj, pred, obj, context }, explicit)) {
 				return false;
 			}
+			long[] tuple = new long[4];
 			for (TripleIndex index : indexes) {
-				keyBuf.clear();
-				index.toKey(keyBuf, subj, pred, obj, context);
-				keyBuf.flip();
-				keyValue.mv_data(keyBuf);
-				int result = deleteIndexEntry(index, explicit, keyValue);
+				index.toEntry(tuple, subj, pred, obj, context);
+				int result = deleteIndexEntry(index, explicit, tuple);
 				checkMutationResult(result);
 			}
-			updatePartialIndexes(subj, pred, obj, context, new long[4], explicit, false);
+			updatePartialIndexes(subj, pred, obj, context, tuple, explicit, false);
 			synchronizeStagingQuad(subj, pred, obj, context, explicit);
 			decrementContext(stack, context);
 			return true;

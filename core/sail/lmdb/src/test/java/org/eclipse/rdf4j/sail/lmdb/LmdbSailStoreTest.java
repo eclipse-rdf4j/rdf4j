@@ -25,7 +25,6 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
@@ -89,6 +88,8 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexEntries;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesSupplier;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.AfterEach;
@@ -987,8 +988,8 @@ public class LmdbSailStoreTest {
 		}).when(tripleStoreSpy)
 				.storePreparedTriples(any(long[].class), any(long[].class), any(long[].class), any(long[].class),
 						anyInt(), anyBoolean(), anyBoolean(), nullable(IntConsumer.class),
-						nullable(TripleStore.EncodedIndexKeys.class),
-						any(TripleStore.PreparedSecondaryIndexesSupplier.class));
+						nullable(EncodedIndexEntries.class),
+						any(PreparedSecondaryIndexesSupplier.class));
 
 		tripleStoreField.set(backingStore, tripleStoreSpy);
 		try {

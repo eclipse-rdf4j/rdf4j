@@ -80,6 +80,9 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexEntries;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalPreparedIndexOrdersTask;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesSupplier;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -5649,7 +5652,7 @@ class LmdbFrozenReplayTest {
 		@Override
 		void storePreparedTriples(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
 				boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer,
-				EncodedIndexKeys preparedMainIndex, PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
+				EncodedIndexEntries preparedMainIndex, PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
 				throws IOException {
 			beforeNativeApplication(explicit);
 			boolean wasApplyingAligned = applyingAligned;
