@@ -94,9 +94,11 @@ class NativeOptionalSweepLookupTest {
 				measured = query.explain(Explanation.Level.Telemetry);
 			}
 			assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_BUILDS.get() - sweepsBefore)
-					.as("the real query must use exactly one correlated sweep").isOne();
+					.as("the real query must use exactly one correlated sweep")
+					.isOne();
 			assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_MEMO_MATERIALIZATIONS.get() - memosBefore)
-					.as("the sweep must not silently become one materialization per key").isZero();
+					.as("the sweep must not silently become one materialization per key")
+					.isZero();
 
 			GenericPlanNode optional = nodes(measured.toGenericPlanNode()).stream()
 					.filter(node -> node.getLongMetricActual("nativeOptionalBuilds") != null)
@@ -112,7 +114,8 @@ class NativeOptionalSweepLookupTest {
 			long candidates = optional.getLongMetricActual("nativeOptionalCandidateRows");
 			assertThat(candidates)
 					.as("misses visit no candidates; repeated keys may only revisit their own matching rows")
-					.isPositive().isLessThanOrEqualTo((long) (MATCHING_KEYS + 1) * FAN_OUT);
+					.isPositive()
+					.isLessThanOrEqualTo((long) (MATCHING_KEYS + 1) * FAN_OUT);
 			assertThat(optional.getLongMetricActual("nativeOptionalDecodedRows"))
 					.as("spilled probes decode only selected candidates, never the complete RHS per key")
 					.isEqualTo(spill ? candidates : 0L);
