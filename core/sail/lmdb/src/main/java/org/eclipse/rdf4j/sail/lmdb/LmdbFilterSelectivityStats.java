@@ -78,6 +78,7 @@ class LmdbFilterSelectivityStats
 	private static final String SIDECAR_SUFFIX = ".filters";
 	private static final int PERSIST_VERSION = 3;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
+	private static final int MIN_SAMPLE_EVIDENCE = 16;
 	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
 	private static final double LOW_BENEFIT_ROWS_THRESHOLD = 32.0d;
 	private static final double LOW_BENEFIT_RATIO_THRESHOLD = 0.25d;
@@ -280,7 +281,8 @@ class LmdbFilterSelectivityStats
 
 		synchronized (this) {
 			SampledPassRatio cached = sampledByFilter.get(key);
-			if (isUsableSampledPassRatio(cached)) {
+			if (candidate != null && isUsableSampledPassRatio(cached)
+					&& cached.sampleSize >= minimumSamplingEvidence(candidate.expectedRuntimeRows)) {
 				return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(cached.passRatio, cached.sampleSize);
 			}
 		}
@@ -537,7 +539,8 @@ class LmdbFilterSelectivityStats
 
 		int scanBudget = samplingRowBudget(candidate.expectedRuntimeRows, candidate.expectedBenefitRows, 1.0d,
 				foregroundSampling);
-		if (scanBudget <= 0) {
+		int minimumEvidence = minimumSamplingEvidence(candidate.expectedRuntimeRows);
+		if (scanBudget < minimumEvidence) {
 			return null;
 		}
 
@@ -609,7 +612,7 @@ class LmdbFilterSelectivityStats
 					break;
 				}
 			}
-			if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, scanBudget)) {
+			if (samples.size() < minimumEvidence) {
 				return null;
 			}
 
@@ -747,7 +750,7 @@ class LmdbFilterSelectivityStats
 				return cached == null ? sanitizedRows : cached;
 			}
 		} catch (IOException | RuntimeException e) {
-			return optimizerSamplingMaxRows;
+			return 0.0d;
 		}
 	}
 
@@ -793,11 +796,12 @@ class LmdbFilterSelectivityStats
 		return clamp01(potential[0]);
 	}
 
-	private static int minimumSamplingEvidence(double expectedRuntimeRows, int scanBudget) {
-		if (!Double.isFinite(expectedRuntimeRows) || expectedRuntimeRows <= 64.0d) {
-			return 1;
+	private static int minimumSamplingEvidence(double expectedRuntimeRows) {
+		if (!Double.isFinite(expectedRuntimeRows) || expectedRuntimeRows <= 0.0d) {
+			return MIN_SAMPLE_EVIDENCE;
 		}
-		return Math.min(scanBudget, 16);
+		// A short budget must not let one matching row stand in for an entire small population.
+		return (int) Math.min(MIN_SAMPLE_EVIDENCE, Math.ceil(expectedRuntimeRows));
 	}
 
 	private static boolean samplingDeadlineExceeded(long deadlineNanos) {
