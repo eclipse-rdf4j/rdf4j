@@ -178,17 +178,17 @@ test('a Graph page open in another tab takes the additions as they are made', as
     await other.close();
 });
 
-test('Find shows a loaded node, and its last choice searches the repository and adds what it finds', async ({ page }) => {
+test('Find shows loaded nodes and a separate action searches the repository', async ({ page }) => {
     const explorer = await openGraphPage(page);
     const find = explorer.getByRole('combobox', { name: /Find a node/ });
     await find.fill('Acme');
-    await expect(explorer.getByRole('option')).toHaveText(['Search the repository for “Acme”']);
-    await find.press('Enter');
+    await expect(explorer.getByText('No matches in the loaded graph')).toBeVisible();
+    await explorer.getByRole('button', { name: 'Search entire repository', exact: true }).click();
     await expect(node(explorer, 'Acme')).toBeAttached({ timeout: 30000 });
 
     await find.fill('bo');
-    await expect(explorer.getByRole('option')).toHaveText(['Search the repository for “bo”']);
-    await explorer.getByRole('option', { name: /Search the repository/ }).click();
+    await expect(explorer.getByText('No matches in the loaded graph')).toBeVisible();
+    await explorer.getByRole('button', { name: 'Search entire repository', exact: true }).click();
     await expect(node(explorer, 'Bob')).toBeAttached({ timeout: 30000 });
     await expect(node(explorer, 'Acme')).toBeAttached();
 
@@ -213,17 +213,17 @@ test('the repository search waits for a running query instead of dropping the ch
     });
     const find = explorer.getByRole('combobox', { name: /Find a node/ });
     await find.fill('Acme');
-    await find.press('Enter');
+    await explorer.getByRole('button', { name: 'Search entire repository', exact: true }).click();
     await find.fill('bo');
-    const search = explorer.getByRole('option', { name: /Search the repository for “bo”/ });
-    await expect(search, 'unavailable while the Acme search runs').toHaveAttribute('aria-disabled', 'true');
-    await search.click({ force: true });
+    const search = explorer.getByRole('button', { name: 'Search entire repository', exact: true });
+    await expect(search, 'unavailable while the Acme search runs').toBeDisabled();
+    await find.press('Enter');
     await expect(search, 'the choice is kept, not dropped').toBeVisible();
 
     holding = false;
     releaseQueries();
     await expect(node(explorer, 'Acme')).toBeAttached({ timeout: 30000 });
-    await expect(search).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(search).toBeEnabled();
     await search.click();
     await expect(node(explorer, 'Bob')).toBeAttached({ timeout: 30000 });
 });

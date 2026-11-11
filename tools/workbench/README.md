@@ -219,6 +219,15 @@ deployment policy (`query-execution`, `menu.item.graph.visible`) applies.
   `query-fixtures-current.test.mjs` (the generated SPARQL under `src/test/resources/graph-explorer-queries` is what the
   generators produce; refresh it with `npm run fixtures:queries`). `GraphExplorerQueryTest` runs those queries on a
   MemoryStore from Maven.
+- Find searches loaded nodes while typing. The separate **Search entire repository** action performs a label search.
+  For repositories above 100,000 explicit statements, or whose size is unknown, Enter never starts that label search
+  implicitly. Known smaller repositories retain Enter as a fallback when no loaded node matches. Exact absolute
+  IRIs (and repository blank-node references) still support direct lookup with Enter.
+  Focusing Find requests `graph?search-size=true`, a statement-only `RepositoryConnection.size()` probe with a
+  two-second server wait budget and bounded shared workers. Failure or timeout means unknown, not empty. Its
+  server-identity-checked result expires after 60 seconds and is invalidated by Workbench data revisions; it is not
+  requested on each keystroke. The size is a heuristic: inferred statements and writes outside Workbench can make
+  query-visible data larger, so the threshold does not guarantee a cheap search. Query inference semantics are unchanged.
 - `graph-canvas-scope.ts` decides what the Graph view draws: resources and the links between them, while literal
   values and `rdf:type` links stay in the data (details card, tables, cards, timeline, map) unless “Values” is pressed.
   The 300- and 50,000-node stress tests in the Tools menu exist only under `npm run dev`.
