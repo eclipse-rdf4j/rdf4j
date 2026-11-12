@@ -18,6 +18,7 @@ const output = path.resolve(__dirname, '../test-results/find-field-fixture');
 test.beforeAll(async () => {
     const { build } = await import(pathToFileURL(path.join(root, 'tools/workbench/node_modules/vite/dist/node/index.js')).href);
     await build({configFile:false, root:path.join(root, 'tools/workbench'),
+        define:{'process.env.NODE_ENV':'"production"'},
         resolve:{alias:{react:path.join(root,'tools/workbench/node_modules/react'), 'react-dom':path.join(root,'tools/workbench/node_modules/react-dom')}},
         build:{outDir:output, emptyOutDir:false, lib:{entry:path.join(root,'e2e/fixtures/graph-find/main.tsx'), name:'FindFieldFixture', formats:['iife'], fileName:()=> 'fixture.js'}}});
 });
