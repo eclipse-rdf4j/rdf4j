@@ -132,8 +132,6 @@ import org.eclipse.rdf4j.sail.base.SailWriteContinuation;
 import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.base.StreamingWritePreflight;
 import org.eclipse.rdf4j.sail.base.TemporaryFlushingException;
-import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexEntries;
-import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalPreparedIndexOrdersTask;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexes;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesTask;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -3798,7 +3796,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			try {
-				EncodedIndexEntries preparedMainIndex = preparedSecondaryIndexes.awaitMain();
+				SortedIndexEntries preparedMainIndex = preparedSecondaryIndexes.awaitMain();
 				tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, statementCount, true,
 						mayHaveInferred, null, preparedMainIndex,
 						this::awaitPreparedSecondaryIndexes);
@@ -3835,83 +3833,6 @@ class LmdbSailStore implements SailStore {
 		private PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
 			return preparedSecondaryIndexes.await();
 		}
-	}
-
-	private GlobalPreparedImportOperation newGlobalPreparedImportOperation(int[] quads, long[] valueIds,
-			int statementCount) {
-		int reservation = preparedImportBudget.statementLimit();
-		try {
-			preparedImportBudget.reserve(reservation);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new InterruptedSailException(e);
-		}
-		try {
-			return new GlobalPreparedImportOperation(quads, valueIds, statementCount, reservation);
-		} catch (RuntimeException | Error e) {
-			preparedImportBudget.release(reservation);
-			throw e;
-		}
-	}
-
-	private final class GlobalPreparedImportOperation implements Operation {
-		private final int[] quads;
-		private final long[] valueIds;
-		private final int statementCount;
-		private final int reservation;
-		private final AtomicBoolean reservationReleased = new AtomicBoolean();
-		private final GlobalPreparedIndexOrdersTask preparedOrders;
-
-		private GlobalPreparedImportOperation(int[] quads, long[] valueIds, int statementCount, int reservation) {
-			this.quads = quads;
-			this.valueIds = valueIds;
-			this.statementCount = statementCount;
-			this.reservation = reservation;
-			preparedOrders = tripleStore.prepareGlobalIndexOrdersAsync(indexPreparationExecutor, quads, valueIds,
-					statementCount);
-		}
-
-		@Override
-		public void execute() throws IOException {
-			try {
-				int added = tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount,
-						preparedOrders, indexPreparationExecutor);
-			} finally {
-				try {
-					preparedOrders.cancel();
-				} finally {
-					releaseReservation();
-				}
-			}
-		}
-
-		@Override
-		public void cancel() {
-			try {
-				preparedOrders.cancel();
-			} finally {
-				releaseReservation();
-			}
-		}
-
-		private void releaseReservation() {
-			if (reservationReleased.compareAndSet(false, true)) {
-				preparedImportBudget.release(reservation);
-			}
-		}
-	}
-
-	private IOException preparedIndexFailure(Throwable cause) {
-		if (cause instanceof IOException ioException) {
-			return ioException;
-		}
-		if (cause instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		if (cause instanceof Error error) {
-			throw error;
-		}
-		return new IOException("Failed to prepare secondary LMDB index keys", cause);
 	}
 
 	/**

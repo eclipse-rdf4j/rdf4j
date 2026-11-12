@@ -151,7 +151,7 @@ class LmdbLegacyIngestionComplexityTest {
 						VALUES.createLiteral("pending cache filler " + index), CONTEXT);
 			}
 			int nativeSeedRows = 0;
-			try (RecordIterator rows = tripleStore.getTriplesForWrite(-1, -1, -1, -1, !inferred)) {
+			try (RecordIterator rows = tripleStore.getTriples(tripleStore.getTxnManager().createReadTxn(), -1, -1, -1, -1, !inferred)) {
 				while (rows.next() != null) {
 					nativeSeedRows++;
 				}

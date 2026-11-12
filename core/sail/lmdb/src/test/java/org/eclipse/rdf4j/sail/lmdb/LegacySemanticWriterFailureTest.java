@@ -184,7 +184,7 @@ class LegacySemanticWriterFailureTest {
 			assertThat(callbacks).as("failed derived publication has not completed the mandatory row callbacks")
 					.hasValue(0);
 			for (int i = 0; i < 2; i++) {
-				try (RecordIterator physical = triples.getTriplesForWrite(subjects[i], predicate, objects[i], 0,
+				try (RecordIterator physical = triples.getTriples(triples.getTxnManager().createReadTxn(), subjects[i], predicate, objects[i], 0,
 						true)) {
 					if (removal && i == 0) {
 						assertThat(physical.next()).isNull();

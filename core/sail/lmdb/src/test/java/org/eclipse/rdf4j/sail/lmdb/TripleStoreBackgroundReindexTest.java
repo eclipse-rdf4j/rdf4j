@@ -502,45 +502,6 @@ class TripleStoreBackgroundReindexTest {
 		}
 	}
 
-	@Test
-	void globalPreparedOrdersDualWriteAndSurviveAChangedIndexGeneration(@TempDir Path directory) throws Exception {
-		seed(directory, 600, "spoc,ospc,posc,psoc");
-		try (ControlledStore store = new ControlledStore(directory, "cspo");
-				var executor = Executors.newFixedThreadPool(4)) {
-			store.pauseRead = true;
-			store.startBackgroundIndexRebuild();
-			await(store.read);
-			int[] quads = { 0, 1, 2, -1, 3, 1, 4, -1 };
-			long[] values = { 8_001, 2, 18_001, 8_002, 18_002 };
-			long[] laterValues = { 8_101, 2, 18_101, 8_102, 18_102 };
-			var orders = store.prepareGlobalIndexOrdersAsync(executor, quads, values, 2);
-			var staleOrders = store.prepareGlobalIndexOrdersAsync(executor, quads, laterValues, 2);
-			try {
-				staleOrders.awaitMain();
-				synchronized (store.writerLock) {
-					store.startTransaction();
-					assertEquals(2, store.storeGloballyOrderedFreshTriples(quads, values, 2, orders, executor));
-					store.commit();
-				}
-				store.release.countDown();
-				assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS), store.indexRebuildStatus());
-				store.startTransaction();
-				assertEquals(2, store.storeGloballyOrderedFreshTriples(quads, laterValues, 2, staleOrders, executor));
-				store.commit();
-				assertEquals(604L, store.explicitIndexEntryCounts().get("cspo"));
-				try (Txn reader = store.getTxnManager().createReadTxn()) {
-					assertTrue(store.hasTriples(reader, 8_001, 2, 18_001, 0, true));
-					assertTrue(store.hasTriples(reader, 8_102, 2, 18_102, 0, true));
-					assertEquals(604, count(store.getTriples(reader, -1, -1, -1, -1, true)));
-				}
-			} finally {
-				store.release.countDown();
-				orders.cancel();
-				staleOrders.cancel();
-			}
-		}
-	}
-
 	@ParameterizedTest
 	@EnumSource(CommitMode.class)
 	void descriptorPutCapacityFailureUsesTheAdmittedCommitRecovery(CommitMode mode, @TempDir Path directory)

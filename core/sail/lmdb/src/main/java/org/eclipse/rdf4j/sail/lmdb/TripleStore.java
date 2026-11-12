@@ -45,6 +45,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
@@ -128,23 +129,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
-import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexBlock;
-import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexEntries;
-import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalEncodedIndexBlocks;
-import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalPreparedIndexOrdersTask;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexes;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesSupplier;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesTask;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
-import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
-import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.WriteRecordBatch;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
+import org.eclipse.rdf4j.sail.lmdb.util.ChunkOutput;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -1262,10 +1258,6 @@ class TripleStore implements Closeable {
 		return Math.max(0, indexes.size() - 1);
 	}
 
-	boolean supportsGlobalPreparedOrder() {
-		return indexUpdater.hasFourIndexPreparedOrder();
-	}
-
 	static int openPreparedKeyArenaCount() {
 		return TripleStoreIndexUpdater.openPreparedKeyArenaCount();
 	}
@@ -1567,7 +1559,6 @@ class TripleStore implements Closeable {
 			nativeMutation = true;
 			unjournaledMutation = true;
 		}
-		resetSpoContextWildcardIndex();
 		rebuildIndexSelectionTable();
 	}
 
@@ -3282,18 +3273,6 @@ class TripleStore implements Closeable {
 			}
 		}
 		return true;
-	}
-
-	private void resetSpoContextWildcardIndex() {
-		spoContextWildcardIndex = null;
-		for (TripleIndex index : indexes) {
-			char[] fieldSeq = index.getFieldSeq();
-			if (fieldSeq.length == 4 && fieldSeq[0] == 's' && fieldSeq[1] == 'p' && fieldSeq[2] == 'o'
-					&& fieldSeq[3] == 'c') {
-				spoContextWildcardIndex = index;
-				return;
-			}
-		}
 	}
 
 	private void closeSpoExistenceCursors() {
@@ -6158,17 +6137,11 @@ class TripleStore implements Closeable {
 	}
 
 	private void storeTriplesAligned(long[] subject, long[] predicate, long[] object, long[] context, int count,
-			boolean explicit, boolean mayHaveInferred, IntConsumer addedConsumer, EncodedIndexEntries main,
+			boolean explicit, boolean mayHaveInferred, IntConsumer addedConsumer, SortedIndexEntries main,
 			PreparedSecondaryIndexesSupplier secondary) throws IOException {
 		writeLogicalAlignedBatch(new AlignedInput(subject, predicate, object, context), count, explicit, addedConsumer,
 				added -> storeTriplesAlignedOptimized(subject, predicate, object, context, count, explicit,
 						mayHaveInferred, index -> added[index] = true, main, secondary));
-	}
-
-	int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
-			GlobalPreparedIndexOrdersTask orders, ExecutorService executor) throws IOException {
-		return writeLogicalAlignedBatch(new GlobalInput(quads, valueIds), count, true, null,
-				added -> storeGloballyOrderedFreshTriplesDirect(quads, valueIds, count, orders, executor, added));
 	}
 
 	static LongAdder statementsAdded = new LongAdder();
@@ -6330,7 +6303,7 @@ class TripleStore implements Closeable {
 	}
 
 	void storePreparedTriples(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
-			boolean mayHaveInferred, IntConsumer addedIndexConsumer, EncodedIndexEntries preparedMainIndex,
+			boolean mayHaveInferred, IntConsumer addedIndexConsumer, SortedIndexEntries preparedMainIndex,
 			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
 			throws IOException {
 		try {
@@ -6341,115 +6314,6 @@ class TripleStore implements Closeable {
 				preparedMainIndex.close();
 			}
 		}
-	}
-
-	private int storeGloballyOrderedFreshTriplesDirect(int[] quads, long[] valueIds, int count,
-			GlobalPreparedIndexOrdersTask preparedOrders, ExecutorService encoderExecutor, boolean[] addedResults)
-			throws IOException {
-		if (count == 0) {
-			return 0;
-		}
-
-		if (!preparedOrders.specifications.equals(indexes.stream().map(TripleIndex::toString).toList())) {
-			int added = 0;
-			for (int row = 0; row < count; row++) {
-				int offset = row * 4;
-				int context = quads[offset + 3];
-				boolean stored = storeTripleDirect(valueIds[quads[offset]], valueIds[quads[offset + 1]],
-						valueIds[quads[offset + 2]], context < 0 ? 0 : valueIds[context], true);
-				addedResults[row] = stored;
-				if (stored) {
-					added++;
-				}
-			}
-			return added;
-		}
-		int[] mainOrder = preparedOrders.awaitMain();
-		boolean[] addedStatements = addedResults;
-		Arrays.fill(addedStatements, 0, count, false);
-		LongIntHashMap contextIncrements = alignedContextIncrements;
-		contextIncrements.clear();
-		int addedCount = 0;
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer cursorHandle = REUSE_ALIGNED_WRITE_CURSOR ? stack.mallocPointer(1) : null;
-			MDBVal keyVal = MDBVal.malloc(stack);
-			MDBVal dataVal = MDBVal.calloc(stack);
-			TripleIndex mainIndex = indexes.getFirst();
-			long mainCursor = REUSE_ALIGNED_WRITE_CURSOR
-					? getAlignedWriteCursor(0, mainIndex, true, cursorHandle)
-					: 0;
-			try (GlobalEncodedIndexBlocks encodedBlocks = indexUpdater.prepareGlobalIndexBlocks(encoderExecutor, 0,
-					mainOrder, quads, valueIds)) {
-				EncodedIndexBlock block;
-				while ((block = encodedBlocks.next()) != null) {
-					try (EncodedIndexBlock currentBlock = block) {
-						for (int i = 0; i < currentBlock.statementIndices.length; i++) {
-							int statementIndex = currentBlock.statementIndices[i];
-							int offset = currentBlock.offsets[i];
-							LmdbUtil.setMDBValData(keyVal, currentBlock.address + offset,
-									currentBlock.offsets[i + 1] - offset);
-							int rc = putIndexEntry(mainIndex, true, keyVal);
-							if (rc == MDB_MAP_FULL) {
-								throw new MapFullException();
-							}
-							if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
-								E(rc);
-							}
-							if (rc == MDB_SUCCESS) {
-								addedStatements[statementIndex] = true;
-								int quadOffset = Math.multiplyExact(statementIndex, 4);
-								int contextId = quads[quadOffset + 3];
-								long context = contextId < 0 ? 0 : valueIds[contextId];
-								contextIncrements.addToValue(context, 1);
-								updatePartialIndexes(valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
-										valueIds[quads[quadOffset + 2]], context, new long[4], true, true);
-								synchronizeStagingQuad(valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
-										valueIds[quads[quadOffset + 2]], context, true);
-								recordFanOutAdded(valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
-										valueIds[quads[quadOffset + 2]], context, true);
-								addedCount++;
-							}
-						}
-					}
-				}
-			}
-			LongIterator contextIterator = contextIncrements.keysView().longIterator();
-			while (contextIterator.hasNext()) {
-				long contextId = contextIterator.next();
-				incrementAlignedContext(stack, contextId, contextIncrements.get(contextId));
-			}
-
-			for (int indexPosition = 1; indexPosition < indexes.size(); indexPosition++) {
-				int[] secondaryOrder = preparedOrders.awaitSecondary(indexPosition);
-				TripleIndex index = indexes.get(indexPosition);
-				long cursor = REUSE_ALIGNED_WRITE_CURSOR
-						? getAlignedWriteCursor(indexPosition, index, true, cursorHandle)
-						: 0;
-				try (GlobalEncodedIndexBlocks encodedSecondary = indexUpdater.prepareGlobalIndexBlocks(encoderExecutor,
-						indexPosition, secondaryOrder, quads, valueIds)) {
-					EncodedIndexBlock block;
-					while ((block = encodedSecondary.next()) != null) {
-						try (EncodedIndexBlock currentBlock = block) {
-							for (int i = 0; i < currentBlock.statementIndices.length; i++) {
-								int statementIndex = currentBlock.statementIndices[i];
-								if (!addedStatements[statementIndex]) {
-									continue;
-								}
-								int offset = currentBlock.offsets[i];
-								LmdbUtil.setMDBValData(keyVal, currentBlock.address + offset,
-										currentBlock.offsets[i + 1] - offset);
-								int rc = putIndexEntry(index, true, keyVal);
-								if (rc == MDB_MAP_FULL) {
-									throw new MapFullException();
-								}
-								E(rc);
-							}
-						}
-					}
-				}
-			}
-		}
-		return addedCount;
 	}
 
 	/** Positions of s, p, o and c (0 to 3) in each active index's key order, most significant first. */
@@ -6482,17 +6346,19 @@ class TripleStore implements Closeable {
 	}
 
 	private static final int INITIAL_IMPORT_BLOCK_BYTES = 4 << 20;
-	private static final InitialImportBlock INITIAL_IMPORT_END = new InitialImportBlock(null, null, 0, null, null);
+	private static final InitialImportBlock INITIAL_IMPORT_END = new InitialImportBlock(null, null, null, 0, 0, null,
+			null);
 
-	/** Encoded keys of one index in append order; the main index's blocks also carry their quads. */
-	private record InitialImportBlock(ByteBuffer keys, int[] offsets, int count, long[] quads, Throwable failure) {
+	/** Encoded anchor/value pairs in append order; the main index also carries every distinct quad in the block. */
+	private record InitialImportBlock(ByteBuffer data, int[] offsets, int[] keyLengths, int chunkCount, int tupleCount,
+			long[] quads, Throwable failure) {
 	}
 
 	/**
 	 * Writes the merged runs of an initial run import into this store's empty indexes within the active write
-	 * transaction. One thread per index merges that index's runs, skipping duplicate quads, and encodes the keys; this
-	 * thread appends them with {@code MDB_APPEND}. Each distinct quad is counted for its context and recorded in the
-	 * fan-out statistics exactly as a regular insert would.
+	 * transaction. One thread per index merges that index's runs, skipping duplicate quads, and encodes chunks sharing
+	 * the index prefix. This thread appends each anchor and its compressed value with {@code MDB_APPEND}. Each distinct
+	 * quad is counted for its context and recorded in the fan-out statistics exactly as a regular insert would.
 	 *
 	 * @param runsByIndex the run files of each active index, in the order of {@link #initialImportFieldOrders()}
 	 * @return the number of distinct statements written
@@ -6558,8 +6424,8 @@ class TripleStore implements Closeable {
 			for (ArrayBlockingQueue<InitialImportBlock> queue : queues) {
 				InitialImportBlock block;
 				while ((block = queue.poll()) != null) {
-					if (block.keys() != null) {
-						memFree(block.keys());
+					if (block.data() != null) {
+						memFree(block.data());
 					}
 				}
 			}
@@ -6569,49 +6435,74 @@ class TripleStore implements Closeable {
 	private static void mergeInitialImportIndex(LmdbSortedRuns.Runs runs, int[] fieldOrder, TripleIndex target,
 			boolean main,
 			ArrayBlockingQueue<InitialImportBlock> queue) {
-		int maxKeys = INITIAL_IMPORT_BLOCK_BYTES / 8;
-		ByteBuffer keys = null;
+		int maxTuples = INITIAL_IMPORT_BLOCK_BYTES / 8;
+		int splitPoint = target.getIndexSplitPosition();
+		ByteBuffer data = null;
 		try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(runs, fieldOrder, true)) {
 			long[] row = new long[LmdbSortedRuns.ROW_LONGS];
-			keys = memAlloc(INITIAL_IMPORT_BLOCK_BYTES);
-			int[] offsets = new int[maxKeys + 1];
-			long[] quads = main ? new long[LmdbSortedRuns.ROW_LONGS * maxKeys] : null;
-			int count = 0;
-			while (merge.next(row)) {
-				if (keys.remaining() < TripleIndex.MAX_KEY_LENGTH || count == maxKeys) {
-					offsets[count] = keys.position();
-					ByteBuffer full = keys;
-					keys = null;
-					queue.put(new InitialImportBlock(full, offsets, count, quads, null));
-					keys = memAlloc(INITIAL_IMPORT_BLOCK_BYTES);
-					offsets = new int[maxKeys + 1];
-					quads = main ? new long[LmdbSortedRuns.ROW_LONGS * maxKeys] : null;
-					count = 0;
+			long[] tuple = new long[LmdbSortedRuns.ROW_LONGS];
+			long[] previous = new long[LmdbSortedRuns.ROW_LONGS];
+			ChunkOutput output = new ChunkOutput(Chunks.MAX_CHUNK_SIZE, LmdbSortedRuns.ROW_LONGS, splitPoint);
+			ByteBuffer value = ByteBuffer.allocate(4096);
+			int maxChunkBytes = TripleIndex.MAX_KEY_LENGTH + value.capacity();
+			data = memAlloc(INITIAL_IMPORT_BLOCK_BYTES);
+			int[] offsets = new int[maxTuples + 1];
+			int[] keyLengths = new int[maxTuples];
+			long[] quads = main ? new long[LmdbSortedRuns.ROW_LONGS * maxTuples] : null;
+			int chunkCount = 0;
+			int tupleCount = 0;
+			while (true) {
+				boolean hasRow = merge.next(row);
+				if (hasRow) {
+					target.toEntry(tuple, row[0], row[1], row[2], row[3]);
 				}
-				offsets[count] = keys.position();
-				target.toKey(keys, row[0], row[1], row[2], row[3]);
+				if (output.size() > 0 && (!hasRow || output.size() == Chunks.MAX_CHUNK_SIZE
+						|| tupleCount == maxTuples || !Arrays.equals(previous, 0, splitPoint, tuple, 0, splitPoint))) {
+					int start = data.position();
+					output.write(data, value.clear());
+					keyLengths[chunkCount] = data.position() - start;
+					data.put(value.flip());
+					offsets[++chunkCount] = data.position();
+					output.reset(LmdbSortedRuns.ROW_LONGS, splitPoint);
+					if (hasRow && (data.remaining() < maxChunkBytes || tupleCount == maxTuples)) {
+						queue.put(new InitialImportBlock(data, offsets, keyLengths, chunkCount, tupleCount, quads,
+								null));
+						data = null;
+						data = memAlloc(INITIAL_IMPORT_BLOCK_BYTES);
+						offsets = new int[maxTuples + 1];
+						keyLengths = new int[maxTuples];
+						quads = main ? new long[LmdbSortedRuns.ROW_LONGS * maxTuples] : null;
+						chunkCount = 0;
+						tupleCount = 0;
+					}
+				}
+				if (!hasRow) {
+					break;
+				}
+				output.addTuple(tuple);
 				if (quads != null) {
-					System.arraycopy(row, 0, quads, LmdbSortedRuns.ROW_LONGS * count, LmdbSortedRuns.ROW_LONGS);
+					System.arraycopy(row, 0, quads, LmdbSortedRuns.ROW_LONGS * tupleCount, LmdbSortedRuns.ROW_LONGS);
 				}
-				count++;
+				System.arraycopy(tuple, 0, previous, 0, LmdbSortedRuns.ROW_LONGS);
+				tupleCount++;
 			}
-			offsets[count] = keys.position();
-			ByteBuffer last = keys;
-			keys = null;
-			queue.put(new InitialImportBlock(last, offsets, count, quads, null));
+			if (chunkCount > 0) {
+				queue.put(new InitialImportBlock(data, offsets, keyLengths, chunkCount, tupleCount, quads, null));
+				data = null;
+			}
 			queue.put(INITIAL_IMPORT_END);
 		} catch (InterruptedException interrupted) {
 			// The writer abandoned this merge and drains the queue itself.
 			Thread.currentThread().interrupt();
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
-				queue.put(new InitialImportBlock(null, null, 0, null, failure));
+				queue.put(new InitialImportBlock(null, null, null, 0, 0, null, failure));
 			} catch (InterruptedException interrupted) {
 				Thread.currentThread().interrupt();
 			}
 		} finally {
-			if (keys != null) {
-				memFree(keys);
+			if (data != null) {
+				memFree(data);
 			}
 		}
 	}
@@ -6624,6 +6515,7 @@ class TripleStore implements Closeable {
 			PointerBuffer handle = stack.mallocPointer(1);
 			MDBVal key = MDBVal.calloc(stack);
 			MDBVal value = MDBVal.calloc(stack);
+			long[] tuple = new long[4];
 			long[] cursors = new long[targets.size()];
 			try {
 				for (int t = 0; t < targets.size(); t++) {
@@ -6653,28 +6545,37 @@ class TripleStore implements Closeable {
 							throw new IOException("Merging initial import runs failed", block.failure());
 						}
 						try {
-							long base = memAddress(block.keys(), 0);
+							long base = memAddress(block.data(), 0);
 							int[] offsets = block.offsets();
+							int[] keyLengths = block.keyLengths();
 							long[] quads = block.quads();
-							for (int i = 0; i < block.count(); i++) {
-								LmdbUtil.setMDBValData(key, base + offsets[i], offsets[i + 1] - offsets[i]);
-								int rc = putIndexEntry(targets.get(t), true, key);
+							for (int i = 0; i < block.chunkCount(); i++) {
+								int valueStart = offsets[i] + keyLengths[i];
+								LmdbUtil.setMDBValData(key, base + offsets[i], keyLengths[i]);
+								LmdbUtil.setMDBValData(value, base + valueStart, offsets[i + 1] - valueStart);
+								int rc = mdb_cursor_put(cursors[t], key, value, MDB_APPEND);
 								if (rc == MDB_MAP_FULL) {
 									throw new MapFullException();
 								}
+								if (rc == MDB_KEYEXIST) {
+									throw new IOException("Initial import chunks are not in append order for "
+											+ targets.get(t));
+								}
 								E(rc);
-								if (quads != null) {
+							}
+							if (quads != null) {
+								for (int i = 0; i < block.tupleCount(); i++) {
 									int offset = LmdbSortedRuns.ROW_LONGS * i;
 									contexts.addToValue(quads[offset + 3], 1L);
 									updatePartialIndexes(quads[offset], quads[offset + 1], quads[offset + 2],
-											quads[offset + 3], new long[4], true, true);
+											quads[offset + 3], tuple, true, true);
 									recordFanOutAdded(quads[offset], quads[offset + 1], quads[offset + 2],
 											quads[offset + 3], true);
 									added++;
 								}
 							}
 						} finally {
-							memFree(block.keys());
+							memFree(block.data());
 						}
 					}
 				}
@@ -6695,7 +6596,7 @@ class TripleStore implements Closeable {
 
 	private void storeTriplesAlignedOptimized(long[] subj, long[] pred, long[] obj, long[] context, int count,
 			boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer,
-			EncodedIndexEntries preparedMainIndex,
+			SortedIndexEntries preparedMainIndex,
 			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
 			throws IOException {
 		if (count == 0) {
@@ -6728,7 +6629,7 @@ class TripleStore implements Closeable {
 				: null;
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			long[] tupleScratch = new long[4];
 			int[] sortedIndices = ensureAlignedWriteSortedIndices(count);
 			boolean[] addedStatements = preparedSecondaryIndexesSupplier == null ? null
 				: ensureAlignedWriteAddedStatements(count);
@@ -6746,28 +6647,32 @@ class TripleStore implements Closeable {
 			long mainWriteCursor = REUSE_ALIGNED_WRITE_CURSOR
 				? getAlignedWriteCursor(0, mainIndex, explicit, cursorHandle)
 				: 0;
-			EncodedIndexEntries encodedMainIndex = preparedMainIndex != null
+			SortedIndexEntries sortedMainIndex = preparedMainIndex != null
 				&& preparedMainIndex.specification.equals(mainIndex.toString()) ? preparedMainIndex : null;
+			SortedIndexEntries.Reader mainReader = sortedMainIndex == null ? null
+				: sortedMainIndex.reader();
+			updater.reset(4, mainIndex.getIndexSplitPosition());
+			updater.setSortedInsertion(mainReader != null);
 
 			for (int i = 0; i < count; i++) {
 				if (!preparedWrite && shouldFallBackFromAlignedWrite()) {
 					throw new MapFullException();
 				}
 				int statementIndex;
-				if (encodedMainIndex == null) {
+				long[] tuple;
+				if (mainReader == null) {
 					statementIndex = i;
-					keyBuf.clear();
-					mainIndex.toKey(keyBuf, subj[i], pred[i], obj[i], context[i]);
-					keyBuf.flip();
-					LmdbUtil.setMDBValData(keyVal, keyBuf);
+					tuple = tupleScratch;
+					mainIndex.toEntry(tuple, subj[i], pred[i], obj[i], context[i]);
 				} else {
-					statementIndex = encodedMainIndex.statementIndices[i];
-					int offset = encodedMainIndex.offsets[i];
-					LmdbUtil.setMDBValData(keyVal, encodedMainIndex.address + offset,
-						encodedMainIndex.offsets[i + 1] - offset);
+					tuple = mainReader.next();
+					if (tuple == null) {
+						break;
+					}
+					statementIndex = mainReader.statementIndex();
 				}
 
-				int rc = putIndexEntry(mainIndex, explicit, keyVal);
+				int rc = updater.add(mainWriteCursor, keyVal, dataVal, tuple);
 				if (rc == MDB_MAP_FULL) {
 					throw new MapFullException();
 				}
@@ -6784,7 +6689,7 @@ class TripleStore implements Closeable {
 					}
 					sortedIndices[addedCount++] = statementIndex;
 					if (promotedFromImplicit != null) {
-						int removeResult = deleteIndexEntry(mainIndex, false, keyVal);
+						int removeResult = deleteIndexEntry(mainIndex, false, tuple);
 						if (removeResult == MDB_MAP_FULL) {
 							throw new MapFullException();
 						}
@@ -6808,6 +6713,7 @@ class TripleStore implements Closeable {
 					}
 				}
 			}
+			updater.flush(mainWriteCursor, keyVal, dataVal);
 			int[] mainOrderIndices = ensureAlignedWriteMainOrderIndices(addedCount);
 			System.arraycopy(sortedIndices, 0, mainOrderIndices, 0, addedCount);
 			LongIterator contextIterator = contextIncrements.keysView().longIterator();
@@ -6821,35 +6727,35 @@ class TripleStore implements Closeable {
 				? null
 				: preparedSecondaryIndexesSupplier.get()) {
 				if (preparedIndexes != null && preparedIndexesMatchGeneration(preparedIndexes)) {
-					for (EncodedIndexEntries encodedIndex : preparedIndexes.indexes) {
-						int indexPosition = encodedIndex.indexPosition;
+					for (SortedIndexEntries sortedIndex : preparedIndexes.indexes) {
+						int indexPosition = sortedIndex.indexPosition;
 						TripleIndex index = indexes.get(indexPosition);
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
 							? getAlignedWriteCursor(indexPosition, index, explicit, cursorHandle)
 							: 0;
-						int encodedCount = encodedIndex.statementIndices.length;
-						for (int keyIndex = 0; keyIndex < encodedCount; keyIndex++) {
-							int statementIndex = encodedIndex.statementIndices[keyIndex];
+						updater.reset(4, index.getIndexSplitPosition());
+						updater.setSortedInsertion(true);
+						SortedIndexEntries.Reader reader = sortedIndex.reader();
+						long[] tuple;
+						while ((tuple = reader.next()) != null) {
+							int statementIndex = reader.statementIndex();
 							if (!addedStatements[statementIndex]) {
 								continue;
 							}
-							int offset = encodedIndex.offsets[keyIndex];
-							LmdbUtil.setMDBValData(keyVal, encodedIndex.address + offset,
-								encodedIndex.offsets[keyIndex + 1] - offset);
-
 							if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
-								int removeResult = deleteIndexEntry(index, false, keyVal);
+								int removeResult = deleteIndexEntry(index, false, tuple);
 								if (removeResult == MDB_MAP_FULL) {
 									throw new MapFullException();
 								}
 								E(removeResult);
 							}
-							int rc = putIndexEntry(index, explicit, keyVal);
+							int rc = updater.add(secondaryWriteCursor, keyVal, dataVal, tuple);
 							if (rc == MDB_MAP_FULL) {
 								throw new MapFullException();
 							}
 							E(rc);
 						}
+						updater.flush(secondaryWriteCursor, keyVal, dataVal);
 					}
 				} else {
 					char[] currentFieldSeq = mainIndex.getFieldSeq();
@@ -6864,41 +6770,35 @@ class TripleStore implements Closeable {
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
 							? getAlignedWriteCursor(i, index, explicit, cursorHandle)
 							: 0;
+						updater.reset(4, index.getIndexSplitPosition());
+						updater.setSortedInsertion(true);
 						for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
 							int statementIndex = sortedIndices[sortedIndex];
 							if (shouldFallBackFromAlignedWrite()) {
 								throw new MapFullException();
 							}
-							keyBuf.clear();
-							index.toKey(keyBuf, subj[statementIndex], pred[statementIndex], obj[statementIndex],
+							index.toEntry(tupleScratch, subj[statementIndex], pred[statementIndex], obj[statementIndex],
 								context[statementIndex]);
-							keyBuf.flip();
-							LmdbUtil.setMDBValData(keyVal, keyBuf);
 
 							if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
-								int removeResult = deleteIndexEntry(index, false, keyVal);
+								int removeResult = deleteIndexEntry(index, false, tupleScratch);
 								if (removeResult == MDB_MAP_FULL) {
 									throw new MapFullException();
 								}
 								E(removeResult);
 							}
-							if (REUSE_ALIGNED_WRITE_CURSOR) {
-								int rc = putIndexEntry(index, explicit, keyVal);
-								if (rc == MDB_MAP_FULL) {
-									throw new MapFullException();
-								}
-								E(rc);
-							} else {
-								int rc = putIndexEntry(index, explicit, keyVal);
-								if (rc == MDB_MAP_FULL) {
-									throw new MapFullException();
-								}
-								E(rc);
+							int rc = updater.add(secondaryWriteCursor, keyVal, dataVal, tupleScratch);
+							if (rc == MDB_MAP_FULL) {
+								throw new MapFullException();
 							}
+							E(rc);
 						}
+						updater.flush(secondaryWriteCursor, keyVal, dataVal);
 					}
 				}
 			}
+		} catch (LmdbUtil.MapFullException capacity) {
+			throw new MapFullException();
 		}
 	}
 
@@ -6906,7 +6806,7 @@ class TripleStore implements Closeable {
 		if (prepared.indexes.length != indexes.size() - 1) {
 			return false;
 		}
-		for (EncodedIndexEntries keys : prepared.indexes) {
+		for (SortedIndexEntries keys : prepared.indexes) {
 			if (keys == null || keys.indexPosition >= indexes.size()
 					|| !keys.specification.equals(indexes.get(keys.indexPosition).toString())) {
 				return false;
@@ -6951,7 +6851,6 @@ class TripleStore implements Closeable {
 		closeSpoExistenceCursors();
 		explicitAlignedWriteCursors = new long[indexes.size()];
 		inferredAlignedWriteCursors = new long[indexes.size()];
-		resetSpoContextWildcardIndex();
 	}
 
 	private long getAlignedWriteCursor(int indexPosition, TripleIndex index, boolean explicit,

@@ -12,7 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
@@ -101,6 +104,128 @@ class ChunkUpdaterTest {
 		if (environment != 0) {
 			mdb_env_close(environment);
 		}
+	}
+
+	@Test
+	void preparesSortedEntriesWithSourceStatementIndices() {
+		long[][] tuples = { { 1, 2, 20, 0 }, { 1, 3, 10, 0 }, { 1, 2, 20, 0 }, { 1, 2, 10, 0 } };
+		int[] order = { 3, 0, 2, 1 };
+		try (var prepared = SortedIndexEntries.prepare(0, "spoc", order, 0, order.length,
+				(statement, tuple) -> System.arraycopy(tuples[statement], 0, tuple, 0, 4))) {
+			assertArrayEquals(order, prepared.statementIndices);
+			var reader = prepared.reader();
+			for (int statement : new int[] { 3, 0, 1 }) {
+				assertArrayEquals(tuples[statement], reader.next());
+				assertEquals(statement, reader.statementIndex());
+			}
+			assertNull(reader.next());
+		}
+		assertArrayEquals(new int[] { 3, 0, 2, 1 }, order, "preparation must retain the full input order");
+	}
+
+	@Test
+	void sortedEntriesSnapshotOrderAndBorrowTupleData() {
+		long[][] tuples = { { 1, 2, 20, 0 }, { 1, 2, 10, 0 } };
+		int[] order = { 1, 0 };
+		int[] reads = { 0 };
+		try (var prepared = SortedIndexEntries.prepare(0, "spoc", order, 0, order.length,
+				(statement, tuple) -> {
+					reads[0]++;
+					System.arraycopy(tuples[statement], 0, tuple, 0, 4);
+				})) {
+			Arrays.fill(order, -1);
+			long[] tuple = new long[4];
+			int preparationReads = reads[0];
+			prepared.readTuple(0, tuple);
+			assertArrayEquals(tuples[1], tuple);
+			prepared.readTuple(1, tuple);
+			assertArrayEquals(tuples[0], tuple);
+			assertEquals(preparationReads + 2, reads[0]);
+			assertArrayEquals(new int[] { 1, 0 }, prepared.statementIndices);
+
+			var first = prepared.reader();
+			var second = prepared.reader();
+			assertArrayEquals(tuples[1], first.next());
+			assertArrayEquals(tuples[0], first.next());
+			assertArrayEquals(tuples[1], second.next());
+			assertArrayEquals(tuples[0], second.next());
+			assertNull(first.next());
+			assertNull(second.next());
+			assertEquals(preparationReads + 6, reads[0]);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 128, 132 })
+	void preparedEntriesRetainOnlySelectedOrderRange(int count) {
+		int[] order = new int[count + 2];
+		for (int i = 0; i < count; i++) {
+			order[i + 1] = i;
+		}
+		try (var prepared = SortedIndexEntries.prepare(0, "spoc", order, 1, count, (statement, tuple) -> {
+			tuple[0] = statement == count - 1 ? 2 : 1;
+			tuple[1] = 7;
+			tuple[2] = statement;
+			tuple[3] = 0;
+		})) {
+			assertEquals(count, prepared.statementIndices.length);
+			var reader = prepared.reader();
+			for (int i = 0; i < count; i++) {
+				assertArrayEquals(new long[] { i == count - 1 ? 2 : 1, 7, i, 0 }, reader.next());
+				assertEquals(i, reader.statementIndex());
+			}
+			assertNull(reader.next());
+		}
+	}
+
+	@Test
+	void preparesEmptyEntries() {
+		try (var prepared = SortedIndexEntries.prepare(0, "spoc", new int[0], 0, 0,
+				(statement, tuple) -> {
+					throw new AssertionError("an empty preparation must not read tuples");
+				})) {
+			assertEquals(0, prepared.statementIndices.length);
+			assertNull(prepared.reader().next());
+		}
+	}
+
+	@Test
+	void rejectsUnsortedPreparedTuples() {
+		assertThrows(IllegalArgumentException.class,
+				() -> SortedIndexEntries.prepare(0, "spoc", new int[] { 1, 0 }, 0, 2, (statement, tuple) -> {
+					tuple[0] = 1;
+					tuple[1] = 2;
+					tuple[2] = statement;
+					tuple[3] = 0;
+				}));
+	}
+
+	@Test
+	void mergesPreparedEntriesWithExistingAndPendingDuplicates() throws Exception {
+		seed(2, tuple(1, 10), tuple(1, 30));
+		long[][] tuples = { tuple(1, 10), tuple(1, 20), tuple(1, 20), tuple(1, 40), tuple(2, 10) };
+		int[] order = { 0, 1, 2, 3, 4 };
+		try (var prepared = SortedIndexEntries.prepare(0, "spoc", order, 0, order.length,
+				(statement, tuple) -> System.arraycopy(tuples[statement], 0, tuple, 0, 4));
+				MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal data = MDBVal.malloc(stack);
+			updater.setSortedInsertion(true);
+			var reader = prepared.reader();
+			long[] tuple;
+			int added = 0;
+			while ((tuple = reader.next()) != null) {
+				int result = updater.add(cursor, key, data, tuple);
+				if (result == MDB_SUCCESS) {
+					added++;
+				} else {
+					assertEquals(MDB_KEYEXIST, result);
+				}
+			}
+			updater.flush(cursor, key, data);
+			assertEquals(3, added);
+		}
+		assertTuples(4, 2, tuple(1, 10), tuple(1, 20), tuple(1, 30), tuple(1, 40), tuple(2, 10));
 	}
 
 	@Test

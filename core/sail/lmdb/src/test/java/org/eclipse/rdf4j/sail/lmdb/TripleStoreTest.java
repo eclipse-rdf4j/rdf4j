@@ -48,8 +48,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.EncodedIndexEntries;
-import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.GlobalPreparedIndexOrdersTask;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexes;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesTask;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -148,7 +146,7 @@ public class TripleStoreTest {
 			FailingSecondTaskExecutor executor = new FailingSecondTaskExecutor(workerFailure);
 			PreparedSecondaryIndexesTask task = preparedStore.prepareSecondaryIndexesAsync(executor,
 					subjects, predicates, objects, contexts, subjects.length);
-			EncodedIndexEntries main = task.awaitMain();
+			SortedIndexEntries main = task.awaitMain();
 			try {
 				IllegalStateException failure = assertThrows(IllegalStateException.class, task::await);
 				assertEquals(workerFailure, failure);
@@ -174,7 +172,7 @@ public class TripleStoreTest {
 			long[] contexts = { 1, 0, 0, 2, 1, 0, 2, 0 };
 			PreparedSecondaryIndexesTask task = preparedStore.prepareSecondaryIndexesAsync(executor,
 					subjects, predicates, objects, contexts, subjects.length);
-			try (EncodedIndexEntries main = task.awaitMain();
+			try (SortedIndexEntries main = task.awaitMain();
 					PreparedSecondaryIndexes secondary = task.await()) {
 				assertArrayEquals(expectedOrder("ospc", subjects, predicates, objects, contexts),
 						secondary.statementOrder(1));
@@ -184,52 +182,6 @@ public class TripleStoreTest {
 						secondary.statementOrder(3));
 			} finally {
 				task.cancel();
-			}
-		}
-	}
-
-	@Test
-	public void globalPreparedFourIndexOrdersAndDuplicateFilteringAreExact() throws Exception {
-		File preparedDir = new File(dataDir, "global-prepared-index-order");
-		try (TripleStore preparedStore = new TripleStore(preparedDir,
-				new LmdbStoreConfig("spoc,ospc,psoc,posc"), null);
-				var executor = Executors.newFixedThreadPool(3)) {
-			long[] subjects = { 1, 1, 2, 2, 2, 3, 4, 4, 5 };
-			long[] predicates = { 2, 3, 1, 1, 1, 2, 1, 3, 2 };
-			long[] objects = { 9, 8, 9, 9, 9, 7, 8, 7, 8 };
-			long[] contexts = { 1, 0, 0, 2, 0, 1, 0, 2, 0 };
-			long[] valueIds = new long[10];
-			for (int i = 0; i < valueIds.length; i++) {
-				valueIds[i] = i;
-			}
-
-			int[] quads = new int[subjects.length * 4];
-			for (int i = 0; i < subjects.length; i++) {
-				quads[4 * i] = (int) subjects[i];
-				quads[4 * i + 1] = (int) predicates[i];
-				quads[4 * i + 2] = (int) objects[i];
-				quads[4 * i + 3] = (int) contexts[i];
-			}
-
-			GlobalPreparedIndexOrdersTask task = preparedStore.prepareGlobalIndexOrdersAsync(executor,
-					quads, valueIds, subjects.length);
-			assertArrayEquals(expectedOrder("spoc", subjects, predicates, objects, contexts), task.awaitMain());
-			assertArrayEquals(expectedOrder("ospc", subjects, predicates, objects, contexts), task.awaitSecondary(1));
-			assertArrayEquals(expectedOrder("posc", subjects, predicates, objects, contexts), task.awaitSecondary(2));
-			assertArrayEquals(expectedOrder("psoc", subjects, predicates, objects, contexts), task.awaitSecondary(3));
-
-			preparedStore.startTransaction();
-			try {
-				preparedStore.storeGloballyOrderedFreshTriples(quads, valueIds, subjects.length, task, executor);
-				preparedStore.commit();
-			} catch (Throwable e) {
-				preparedStore.rollback();
-				throw e;
-			} finally {
-				task.cancel();
-			}
-			for (long count : preparedStore.explicitIndexEntryCounts().values()) {
-				assertEquals(8L, count);
 			}
 		}
 	}
@@ -250,30 +202,6 @@ public class TripleStoreTest {
 					quad -> assertTrue("A deleted quad must not reappear", removed.add(Arrays.toString(quad))));
 			assertEquals(1, removed.size());
 			store.commit();
-		}
-	}
-
-	@Test
-	public void globalPreparedWritesMaintainPartialIndexes() throws Exception {
-		File directory = new File(dataDir, "partial-global-prepared");
-		try (TripleStore store = new TripleStore(directory,
-				new LmdbStoreConfig("spoc,ospc,posc,psoc,cs,sp,op"), null);
-				var executor = Executors.newFixedThreadPool(2)) {
-			long[] values = { 11, 22, 33, ValueIds.NULL_CONTEXT };
-			int[] quads = { 0, 1, 2, 3 };
-			var orders = store.prepareGlobalIndexOrdersAsync(executor, quads, values, 1);
-			try {
-				store.startTransaction();
-				assertEquals(1, store.storeGloballyOrderedFreshTriples(quads, values, 1, orders, executor));
-				store.commit();
-			} finally {
-				orders.cancel();
-			}
-			try (Txn txn = store.getTxnManager().createReadTxn();
-					RecordIterator rows = store.getTriples(txn, -1, -1, -1, ValueIds.NULL_CONTEXT, true)) {
-				assertNotNull(rows.next());
-				assertNull(rows.next());
-			}
 		}
 	}
 
