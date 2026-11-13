@@ -242,6 +242,7 @@ final class PartialIndex {
 		private final IndexResolutionPlan resolution;
 		private long lastSecond = -1;
 		private RecordIterator child;
+		private long[] childBuffer;
 		private boolean closed;
 		private long scanned, matched, filtered;
 		private long rejected;
@@ -268,8 +269,7 @@ final class PartialIndex {
 						if (quad != null) {
 							// The pair is only a candidate. Enforce every original constraint on the resolved quad,
 							// in particular context 0, which is a value rather than a wildcard.
-							if ((s < 0 || s == quad[0]) && (p < 0 || p == quad[1])
-									&& (o < 0 || o == quad[2]) && (c < 0 || c == quad[3])) {
+							if (matches(quad, 0)) {
 								matched++;
 								return quad;
 							}
@@ -278,21 +278,67 @@ final class PartialIndex {
 						}
 						closeChild();
 					}
-					long nextSecond = nextSecond();
-					if (nextSecond < 0) {
-						close();
+					if (!openNextChild()) {
 						return null;
 					}
-					long[] pattern = { s, p, o, c };
-					pattern[firstField] = first;
-					pattern[secondField] = nextSecond;
-					child = resolution.iterator(txn, pattern[0], pattern[1], pattern[2], pattern[3], explicit);
 				}
 				return null;
 			} catch (IOException | RuntimeException e) {
 				close();
 				throw new SailException(e);
 			}
+		}
+
+		@Override
+		public int fill(long[] buffer, int maxRows) {
+			try {
+				int rows = 0;
+				while (!closed && rows < maxRows) {
+					if (child == null && !openNextChild()) {
+						break;
+					}
+					int remaining = maxRows - rows;
+					if (childBuffer == null || childBuffer.length < remaining * 4) {
+						childBuffer = new long[remaining * 4];
+					}
+					int childRows = child.fill(childBuffer, remaining);
+					for (int row = 0; row < childRows; row++) {
+						int offset = row * 4;
+						if (matches(childBuffer, offset)) {
+							System.arraycopy(childBuffer, offset, buffer, rows * 4, 4);
+							rows++;
+							matched++;
+						} else {
+							rejected++;
+						}
+					}
+					if (childRows < remaining) {
+						closeChild();
+					}
+				}
+				return rows;
+			} catch (IOException | RuntimeException e) {
+				close();
+				throw new SailException(e);
+			}
+		}
+
+		private boolean matches(long[] buffer, int offset) {
+			return (s < 0 || s == buffer[offset]) && (p < 0 || p == buffer[offset + 1])
+					&& (o < 0 || o == buffer[offset + 2]) && (c < 0 || c == buffer[offset + 3]);
+		}
+
+		private boolean openNextChild() throws IOException {
+			long nextSecond = nextSecond();
+			if (nextSecond < 0) {
+				close();
+				return false;
+			}
+			long[] pattern = { s, p, o, c };
+			pattern[firstField] = first;
+			pattern[secondField] = nextSecond;
+			child = resolution.iterator(txn, pattern[0], pattern[1], pattern[2], pattern[3], explicit);
+			return true;
 		}
 
 		private long nextSecond() throws IOException {
