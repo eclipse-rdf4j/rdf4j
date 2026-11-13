@@ -321,6 +321,7 @@ function createScriptHarness(options = {}) {
             }
         },
         URL,
+        URLSearchParams,
         Viz: undefined,
         YASQE: {
             defaults: {},

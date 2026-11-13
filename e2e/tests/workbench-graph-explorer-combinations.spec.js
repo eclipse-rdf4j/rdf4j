@@ -221,7 +221,7 @@ test('hiding, pinning, Values and added results leave the arranged nodes where t
 
     const find = explorer.getByRole('combobox', { name: /Find a node/ });
     await find.fill('Dave');
-    await explorer.getByRole('option', { name: /Search the repository/ }).click();
+    await explorer.getByRole('button', { name: 'Search entire repository', exact: true }).click();
     await expect(node(page, 'Dave')).toBeAttached({ timeout: 30000 });
     await page.waitForTimeout(2000);
     expect(moved(before, await nodePositions(page))).toEqual([]);

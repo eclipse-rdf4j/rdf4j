@@ -3576,19 +3576,19 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   white-space: nowrap;
 }
 
-.graph-explorer #graph-explorer-app .graph-find-results .is-repository-search {
+.graph-explorer #graph-explorer-app .graph-find-results .graph-find-repository {
   margin-top: 2px;
   border-top: 1px solid var(--line-soft);
   color: var(--accent);
 }
 
-.graph-explorer #graph-explorer-app .graph-find-results .is-repository-search .workbench-action-icon {
+.graph-explorer #graph-explorer-app .graph-find-results .graph-find-repository .workbench-action-icon {
   width: 14px;
   height: 14px;
 }
 
 /* The repository search waits while a query runs. */
-.graph-explorer #graph-explorer-app .graph-find-results li[aria-disabled="true"] {
+.graph-explorer #graph-explorer-app .graph-find-results .graph-find-repository:disabled {
   color: var(--muted);
   cursor: default;
 }
@@ -3620,4 +3620,23 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 /* "Showing 500 of 300,000 statements. Show 500 more" under the Triples table. */
 .graph-explorer #graph-explorer-app .table-more {
   margin: 12px 0 0;
+}
+
+/* The remote action is outside the local combobox options, so Enter cannot select it accidentally. */
+.graph-explorer #graph-explorer-app .graph-find-results ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.graph-explorer #graph-explorer-app .graph-find-empty,
+.graph-explorer #graph-explorer-app .graph-find-hint {
+  margin: 6px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.graph-explorer #graph-explorer-app .graph-find-repository {
+  width: 100%;
+  margin-top: 4px;
+  justify-content: flex-start;
+  color: var(--accent);
 }

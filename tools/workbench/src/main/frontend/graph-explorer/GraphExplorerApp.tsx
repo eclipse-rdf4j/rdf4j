@@ -42,6 +42,8 @@ import { LoadHistoryPanel, NavigatorPanel } from "./side-panels.tsx";
 import { StatusBar } from "./status-bar.tsx";
 import { ExplorerToolbar } from "./explorer-toolbar.tsx";
 import { QueryDrawer } from "./query-drawer.tsx";
+import { exactSearchResource } from "./repository-search.ts";
+import { useRepositorySearchSize } from "./use-repository-search-size.ts";
 import { FindField } from "./find-field.tsx";
 import { EdgeView, NodeView, stableCurves, type NodeHandlers } from "./graph-canvas-view.tsx";
 import { useFacetFilters } from "./use-facet-filters.ts";
@@ -900,6 +902,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   restoreNamedSnapshotRef.current = workspaceLibrary.restoreActive;
 
   const endpoint = useMemo(() => graphEndpoint(basePath, repositoryId), [basePath, repositoryId]);
+  const repositorySearchSize = useRepositorySearchSize(basePath, repositoryId, serverIdentity, endpoint);
   const rdf4jRepository = useMemo(
     () => ({ id: repositoryId, title: repositoryId, endpoint, workbench: queryPageUrl(basePath, repositoryId, "") }),
     [basePath, repositoryId, endpoint],
@@ -2205,8 +2208,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const searchRequestId = entitySearchRef.current + 1;
     entitySearchRef.current = searchRequestId;
     // An absolute IRI (with "//" or a urn:) loads that resource; anything else, "foaf:Person" included, searches labels.
-    const resource = resourceNodeId(term);
-    const looksLikeResource = resource !== undefined && (term.startsWith("<_:") || /^<?([A-Za-z][A-Za-z0-9+.-]*:\/\/|urn:)/i.test(term));
+    const resource = exactSearchResource(term);
+    const looksLikeResource = resource !== undefined;
     const nextQuery = looksLikeResource ? seedQuery([resource!],graphScope) : entitySearchQuery(term,[...explorer.properties],graphScope);
     setQuery(nextQuery);
     await execute(nextQuery, !graphRef.current.nodes.length);
@@ -4122,6 +4125,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
           >
           <div ref={canvasWrapRef} className="canvas-wrap" data-dragging={draggingNodeId ? "" : undefined}>
             <FindField
+              repositorySize={repositorySearchSize.size}
+              onFocusSearch={repositorySearchSize.refresh}
               nodes={drawnGraph.nodes}
               busy={isQuerying}
               inputRef={findInputRef}
