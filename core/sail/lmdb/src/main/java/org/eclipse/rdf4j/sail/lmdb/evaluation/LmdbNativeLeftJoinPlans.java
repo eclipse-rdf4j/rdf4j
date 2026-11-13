@@ -19,10 +19,12 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 @Experimental
@@ -44,6 +46,15 @@ final class LeftJoinPlan implements SlotPlan {
 	final boolean lexicalHashKeys;
 	/** Optional variables removed from a non-well-designed OPTIONAL's dynamic entry frame. */
 	final int[] lexicalProblemSlots;
+	/**
+	 * Condition evaluated for each compatible merged mapping when the right relation is independently materialized.
+	 * Such a condition cannot be applied while the right relation is built because it may read left-side bindings.
+	 */
+	final NativeBooleanFilter lexicalCondition;
+	/** Immutable semantic proof and operator identity, preserved through physical plan transformations. */
+	final OptionalRhsContract rhsContract;
+	/** A correlated RHS filter that is the OPTIONAL condition, not part of the cached relation. */
+	final boolean correlatedConditionInRight;
 
 	LeftJoinPlan(SlotPlan left, SlotPlan right) {
 		this(left, right, null, false, null);
@@ -59,12 +70,53 @@ final class LeftJoinPlan implements SlotPlan {
 
 	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
 			int[] lexicalProblemSlots) {
+		this(left, right, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots, null);
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
+			int[] lexicalProblemSlots, NativeBooleanFilter lexicalCondition) {
+		this(left, right, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots, lexicalCondition,
+				OptionalRhsContract.unknown());
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
+			int[] lexicalProblemSlots, NativeBooleanFilter lexicalCondition, OptionalRhsContract rhsContract) {
+		this(left, right, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots, lexicalCondition, rhsContract,
+				false);
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
+			int[] lexicalProblemSlots, NativeBooleanFilter lexicalCondition, OptionalRhsContract rhsContract,
+			boolean correlatedConditionInRight) {
+		if (lexicalCondition != null && lexicalSharedSlots == null) {
+			throw new IllegalArgumentException(
+					"a separately evaluated OPTIONAL condition requires lexical shared slots");
+		}
 		this.left = left;
 		this.right = right;
 		this.producedMask = left.producedMask() | right.producedMask();
 		this.lexicalSharedSlots = lexicalSharedSlots;
 		this.lexicalHashKeys = lexicalHashKeys;
 		this.lexicalProblemSlots = lexicalProblemSlots;
+		this.lexicalCondition = lexicalCondition;
+		this.rhsContract = rhsContract;
+		this.correlatedConditionInRight = correlatedConditionInRight;
+	}
+
+	/** Rebuilds this operator around transformed children without dropping semantic OPTIONAL metadata. */
+	LeftJoinPlan withChildren(SlotPlan newLeft, SlotPlan newRight) {
+		return new LeftJoinPlan(newLeft, newRight, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots,
+				lexicalCondition, rhsContract, correlatedConditionInRight);
+	}
+
+	/** Rebuilds this operator with an attempt-local condition while preserving its semantic identity metadata. */
+	LeftJoinPlan withLexicalCondition(NativeBooleanFilter newCondition) {
+		return new LeftJoinPlan(left, right, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots, newCondition,
+				rhsContract, correlatedConditionInRight);
+	}
+
+	boolean canDiscardRight() {
+		return rhsContract.observedNames() == null ? SlotPlan.discardable(right) : rhsContract.discardable();
 	}
 
 	@Override
@@ -111,49 +163,550 @@ final class LeftJoinPlan implements SlotPlan {
 			return new LexicalFrameLeftJoinCursor(left, right, lexicalProblemSlots, row);
 		}
 		if (lexicalSharedSlots != null) {
-			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, row);
+			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, lexicalCondition, rhsContract,
+					canDiscardRight(), row);
+		}
+		return openCorrelated(row);
+	}
+
+	RowCursor openCorrelated(RowState row) throws IOException {
+		FilterPlan condition = null;
+		NativeBooleanFilter conditionOwner = null;
+		if (correlatedConditionInRight) {
+			if (!(right instanceof FilterPlan filter)) {
+				throw new IllegalStateException("correlated OPTIONAL condition lost its evaluation boundary");
+			}
+			condition = filter;
+			conditionOwner = filter.filter;
 		}
 		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
-		RowCursor leftCursor = left.open(row);
+		OccurrenceCondition occurrence = null;
+		OptionalMaterialization.ConditionLease conditionLease = null;
+		NativeFilterLease.ExecutionRhs rawOwner = null;
+		OptionalExecutionTelemetry.Channel telemetry = null;
+		RowCursor leftCursor = null;
+		RowCursor result = null;
+		boolean conditionTransferred = false;
 		try {
-			return new LeftJoinCursor(leftCursor, right, row, left.producedMask(), estimates.entryBoundMask(),
-					estimates.expectedProbes(), estimates.perProbeRows(), estimates.sweepEstimate());
-		} catch (RuntimeException | Error failure) {
-			closeSuppressing(leftCursor, failure);
+			NativeExecutionContext context = row.source instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext()
+					: null;
+			if (context != null && rhsContract != null) {
+				telemetry = context.optionalTelemetry(rhsContract.operatorIdentity(), row.telemetryTarget);
+			}
+			// An RHS filter may be opened repeatedly even when memoization is unavailable. Its resources belong to
+			// the enclosing OPTIONAL, not to an individual physical RHS cursor.
+			rawOwner = NativeFilterLease.prepareRhs(condition == null ? right : condition.arg, row);
+			if (conditionOwner != null && context != null) {
+				conditionLease = context.optionalMaterializations().acquireCondition(conditionOwner, context);
+			}
+			NativeBooleanFilter predicate = conditionLease == null ? conditionOwner : conditionLease.filter();
+			occurrence = condition == null ? null
+					: new OccurrenceCondition(condition, rawOwner.plan(), predicate, row, left.producedMask(),
+							estimates,
+							rhsContract, telemetry);
+			SlotPlan input = occurrence == null ? rawOwner.plan() : occurrence;
+			leftCursor = correlatedConditionInRight || !mayGroupLeftOccurrences(rawOwner.plan(), row)
+					? LmdbNativeFactorAlgebra.logical(LmdbNativeFactorAlgebra.openOrdered(left, row), row)
+					: left.open(row);
+			result = new LeftJoinCursor(leftCursor, input, row, left.producedMask(), estimates.entryBoundMask(),
+					estimates.expectedProbes(), estimates.perProbeRows(), estimates.sweepEstimate(), rhsContract,
+					correlatedConditionInRight, telemetry, true);
+			if (conditionOwner != null) {
+				result = new ConditionOwnedCursor(result, occurrence, conditionOwner, conditionLease, row);
+				conditionTransferred = true;
+			}
+			result = new RhsOwnedCursor(result, rawOwner);
+			rawOwner = null;
+			return telemetry == null ? result : new OptionalObservedCursor(result, telemetry);
+		} catch (IOException | RuntimeException | Error failure) {
+			if (result != null) {
+				closeSuppressing(result, failure);
+			} else if (leftCursor != null) {
+				closeSuppressing(leftCursor, failure);
+			}
+			if (!conditionTransferred) {
+				KernelRuntime.closeResource(occurrence, failure);
+				if (conditionLease != null) {
+					KernelRuntime.closeResource(conditionLease, failure);
+				} else if (conditionOwner != null) {
+					NativeBooleanFilter closing = conditionOwner;
+					KernelRuntime.closeResource(() -> NativeFilterLease.closeAfterCursor(closing, row), failure);
+				}
+			}
+			KernelRuntime.closeResource(rawOwner, failure);
+			KernelRuntime.closeResource(telemetry, failure);
 			throw failure;
 		}
 	}
 
-	@Override
-	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
-		if (lexicalSharedSlots != null || lexicalProblemSlots != null) {
-			return null;
+	/** Expand RHS weights before applying this condition, which belongs to each merged occurrence. */
+	private static final class OccurrenceCondition implements SlotPlan, AutoCloseable {
+		private final FilterPlan condition;
+		private final SlotPlan rawRight;
+		private final NativeBooleanFilter predicate;
+		private final RightMemoProbe rawMemo;
+		private final OptionalExecutionTelemetry.Channel telemetry;
+
+		OccurrenceCondition(FilterPlan condition, SlotPlan rawRight, NativeBooleanFilter predicate, RowState row,
+				long leftProducedMask,
+				JoinSweepEstimates estimates, OptionalRhsContract contract,
+				OptionalExecutionTelemetry.Channel telemetry) {
+			this.condition = condition;
+			this.rawRight = rawRight;
+			this.predicate = predicate;
+			this.telemetry = telemetry;
+			this.rawMemo = RightMemoProbe.tryCreate(rawRight, leftProducedMask,
+					optionalReadMask(rawRight, row, contract), row, estimates.entryBoundMask(),
+					estimates.expectedProbes(), estimates.perProbeRows(), estimates.sweepEstimate(), contract, false,
+					telemetry == null ? null : telemetry.fork(), true);
 		}
-		if (right instanceof PatternPlan pattern) {
-			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenOptional(left, pattern, row, capacity);
-			if (wildcard != null) {
-				return wildcard;
+
+		@Override
+		public RowCursor open(RowState row) throws IOException {
+			RowCursor input = rawMemo == null ? null : rawMemo.open(row);
+			if (input == null) {
+				input = LmdbNativeFactorAlgebra.openOrdered(rawRight, row);
+			}
+			input = LmdbNativeFactorAlgebra.logical(input, row);
+			// Each RHS cursor borrows the predicate; the enclosing OPTIONAL owns its final close.
+			return new FilterCursor(input, current -> {
+				if (telemetry != null) {
+					telemetry.add(OptionalExecutionTelemetry.Counter.CONDITION_CALLS, 1L);
+				}
+				return predicate.accept(current);
+			}, row);
+		}
+
+		@Override
+		public long producedMask() {
+			return condition.producedMask();
+		}
+
+		@Override
+		public void close() {
+			if (rawMemo != null) {
+				rawMemo.close();
 			}
 		}
-		// Capture the entry mask before opening the batch producer. A batch cursor may materialize or restore rows
-		// while
-		// opening; sweep admission must use the same entry-bound shape as scalar LeftJoinPlan.open.
-		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
-		BatchCursor batch = left.openBatch(row, capacity);
-		if (batch == null) {
+	}
+
+	private static final class OptionalObservedCursor implements FactorizedRowCursor {
+		private final RowCursor input;
+		private final OptionalExecutionTelemetry.Channel telemetry;
+		private boolean closed;
+
+		OptionalObservedCursor(RowCursor input, OptionalExecutionTelemetry.Channel telemetry) {
+			this.input = input;
+			this.telemetry = telemetry;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			try {
+				if (!input.next()) {
+					return false;
+				}
+				long occurrences = input instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+				telemetry.add(OptionalExecutionTelemetry.Counter.OUTPUT_ROWS, occurrences);
+				return true;
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public long multiplicity() {
+			return input instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = KernelRuntime.closeResource(input, null);
+			failure = KernelRuntime.closeResource(telemetry, failure);
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+	}
+
+	private static final class ConditionOwnedCursor implements FactorizedRowCursor {
+		private final RowCursor input;
+		private final OccurrenceCondition occurrence;
+		private final NativeBooleanFilter condition;
+		private final OptionalMaterialization.ConditionLease conditionLease;
+		private final RowState row;
+		private boolean closed;
+
+		ConditionOwnedCursor(RowCursor input, OccurrenceCondition occurrence, NativeBooleanFilter condition,
+				OptionalMaterialization.ConditionLease conditionLease, RowState row) {
+			this.input = input;
+			this.occurrence = occurrence;
+			this.condition = condition;
+			this.conditionLease = conditionLease;
+			this.row = row;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			try {
+				return input.next();
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public long multiplicity() {
+			return input instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = KernelRuntime.closeResource(input, null);
+			failure = KernelRuntime.closeResource(occurrence, failure);
+			failure = KernelRuntime.closeResource(conditionLease == null
+					? () -> NativeFilterLease.closeAfterCursor(condition, row)
+					: conditionLease, failure);
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+	}
+
+	/** Keep recursively borrowed RHS predicates alive until all readers and memo handles are closed. */
+	private static final class RhsOwnedCursor implements FactorizedRowCursor {
+		private final RowCursor input;
+		private final NativeFilterLease.ExecutionRhs owner;
+		private boolean closed;
+
+		RhsOwnedCursor(RowCursor input, NativeFilterLease.ExecutionRhs owner) {
+			this.input = input;
+			this.owner = owner;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			try {
+				return input.next();
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public long multiplicity() {
+			return input instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = KernelRuntime.closeResource(input, null);
+			failure = KernelRuntime.closeResource(owner, failure);
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+	}
+
+	/** Keep the input open at exhaustion so the batch adapter can restore its active row before cleanup. */
+	private static final class BatchExpansionCursor implements RowCursor {
+		private final RowCursor input;
+		private final RowState row;
+		private long remaining;
+		private int tick;
+		private boolean closed;
+
+		BatchExpansionCursor(RowCursor input, RowState row) {
+			this.input = input;
+			this.row = row;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed || LmdbNativeFactorRows.cancelled(row, ++tick)) {
+				return false;
+			}
+			try {
+				if (remaining > 0L) {
+					remaining--;
+					return true;
+				}
+				if (!input.next()) {
+					return false;
+				}
+				long weight = input instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+				if (weight <= 0L) {
+					throw new IllegalStateException("invalid logical bag weight");
+				}
+				remaining = weight - 1L;
+				return true;
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				input.close();
+			}
+		}
+	}
+
+	/** Account the weighted direct wildcard probe without changing its vectorized representation. */
+	private static final class ObservedBatchCursor implements WeightedBatchCursor {
+		private final BatchCursor input;
+		private final OptionalExecutionTelemetry.Channel telemetry;
+		private final AutoCloseable preparation;
+		private boolean closed;
+
+		ObservedBatchCursor(BatchCursor input, OptionalExecutionTelemetry.Channel telemetry,
+				AutoCloseable preparation) {
+			this.input = input;
+			this.telemetry = telemetry;
+			this.preparation = preparation;
+		}
+
+		@Override
+		public int fill(NativeBatch batch) throws IOException {
+			if (closed) {
+				return 0;
+			}
+			try {
+				int count = input.fill(batch);
+				if (telemetry != null) {
+					if (count > 0) {
+						telemetry.add(OptionalExecutionTelemetry.Counter.COMPATIBILITY_BATCHES, 1L);
+					}
+					for (int index = 0; index < batch.selectedCount; index++) {
+						telemetry.add(OptionalExecutionTelemetry.Counter.OUTPUT_ROWS, weight(batch.selection[index]));
+					}
+				}
+				return count;
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public long weight(int physicalRow) {
+			return input instanceof WeightedBatchCursor weighted ? weighted.weight(physicalRow) : 1L;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = KernelRuntime.closeResource(input, null);
+			failure = KernelRuntime.closeResource(telemetry, failure);
+			failure = KernelRuntime.closeResource(preparation, failure);
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+	}
+
+	/** Coalescing duplicate left occurrences also coalesces RHS evaluation, which requires an affirmative proof. */
+	private boolean mayGroupLeftOccurrences(SlotPlan rawRight, RowState row) {
+		return row.source != null && row.source.pinnedLmdbSweepProfile() != null
+				&& row.source.valueLookupScope() != null && row.termAuthority() != null
+				&& row.termAuthority().token() != null
+				&& (rhsContract == null || rhsContract.repeatableAcrossEvaluations())
+				&& RightMemoProbe.structurallyRepeatable(rawRight);
+	}
+
+	static long optionalReadMask(SlotPlan right, RowState row, OptionalRhsContract contract) {
+		long mask = memoReadMask(right);
+		if (mask >= 0L || contract == null || !contract.repeatableAcrossEvaluations()
+				|| contract.mappingParameterized() || contract.observedNames() == null) {
+			return mask;
+		}
+		mask = right.producedMask();
+		for (String name : contract.observedNames()) {
+			Integer slot = row.layout.slot(name);
+			if (slot != null) {
+				if (slot < 0 || slot >= Long.SIZE) {
+					return -1L;
+				}
+				mask |= 1L << slot;
+			}
+		}
+		return mask;
+	}
+
+	/** A pure statement relation binds every shared name, so compatibility keys may restrict its physical access. */
+	boolean hasDirectStatementCompatibility(RowState row) {
+		if (row.encounterOrderRequired || !hasAssuredStatementCompatibility()
+				|| !SlotPlan.optionalReplaySafe(left) || row.source.pinnedLmdbSweepProfile() == null
+				|| row.source.valueLookupScope() == null || row.termAuthority() == null
+				|| row.termAuthority().token() == null) {
+			return false;
+		}
+		return true;
+	}
+
+	boolean hasAssuredStatementCompatibility() {
+		if (lexicalSharedSlots == null || lexicalProblemSlots != null || !(right instanceof PatternPlan)) {
+			return false;
+		}
+		long assured = SlotPlan.assuredMask(right);
+		for (int slot : lexicalSharedSlots) {
+			if ((assured & 1L << slot) == 0L) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		if (lexicalProblemSlots != null || correlatedConditionInRight) {
 			return null;
 		}
-		RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
-		if (rows == null) {
+		BatchCursor wildcard = tryOpenPatternBatch(row, capacity);
+		if (wildcard != null) {
+			return wildcard;
+		}
+		if (lexicalSharedSlots != null) {
 			return null;
 		}
+		return openCorrelatedBatch(row, capacity);
+	}
+
+	/** Direct statement batches preserve their own weights, source scope and OPTIONAL observation owner. */
+	BatchCursor tryOpenPatternBatch(RowState row, int capacity) throws IOException {
+		if (lexicalProblemSlots != null || lexicalCondition != null
+				|| correlatedConditionInRight) {
+			return null;
+		}
+		OptionalExecutionTelemetry.Channel observed = null;
+		NativeGraphPlan.PreparedPattern prepared = null;
+		BatchCursor wildcard = null;
 		try {
-			return new RowBatchCursor(
-					new LeftJoinCursor(rows, right, row, left.producedMask(), estimates.entryBoundMask(),
-							estimates.expectedProbes(), estimates.perProbeRows(), estimates.sweepEstimate()),
-					row);
-		} catch (RuntimeException | Error failure) {
-			closeSuppressing(rows, failure);
+			PatternPlan pattern;
+			if (right instanceof PatternPlan direct
+					&& (lexicalSharedSlots == null || hasDirectStatementCompatibility(row))) {
+				pattern = direct;
+			} else if (right instanceof NativeGraphPlan graph && SlotPlan.optionalReplaySafe(left)) {
+				prepared = graph.prepareCompatibilityPattern(row);
+				if (prepared == null) {
+					return null;
+				}
+				pattern = prepared.pattern();
+			} else {
+				return null;
+			}
+			NativeExecutionContext context = row.source instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext()
+					: null;
+			if (context != null && rhsContract != null) {
+				observed = context.optionalTelemetry(rhsContract.operatorIdentity(), row.telemetryTarget);
+				OptionalExecutionStrategy.describe(this).explainPlanned(row.telemetryTarget);
+			}
+			wildcard = LmdbWildcardPredicateBatch.tryOpenOptional(left, pattern, row, capacity);
+			if (wildcard == null) {
+				Throwable failure = KernelRuntime.closeResource(observed, null);
+				observed = null;
+				failure = KernelRuntime.closeResource(prepared, failure);
+				prepared = null;
+				KernelRuntime.rethrowCloseFailure(failure);
+				return null;
+			}
+			return observed == null && prepared == null ? wildcard
+					: new ObservedBatchCursor(wildcard, observed, prepared);
+		} catch (IOException | RuntimeException | Error failure) {
+			KernelRuntime.closeResource(wildcard, failure);
+			KernelRuntime.closeResource(observed, failure);
+			KernelRuntime.closeResource(prepared, failure);
+			throw failure;
+		}
+	}
+
+	private BatchCursor openCorrelatedBatch(RowState row, int capacity) throws IOException {
+		// Capture the entry mask before opening the batch producer. A batch cursor may materialize or restore rows
+		// while opening; sweep admission must use the same entry-bound shape as scalar LeftJoinPlan.open.
+		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
+		NativeFilterLease.ExecutionRhs owner = null;
+		OptionalExecutionTelemetry.Channel telemetry = null;
+		RowCursor rows = null;
+		RowCursor result = null;
+		try {
+			NativeExecutionContext context = row.source instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext()
+					: null;
+			if (context != null && rhsContract != null) {
+				telemetry = context.optionalTelemetry(rhsContract.operatorIdentity(), row.telemetryTarget);
+			}
+			owner = NativeFilterLease.prepareRhs(right, row);
+			BatchCursor batch = left.openBatch(row, capacity);
+			if (batch == null) {
+				owner.close();
+				if (telemetry != null) {
+					telemetry.close();
+				}
+				return null;
+			}
+			rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
+			if (rows == null) {
+				owner.close();
+				if (telemetry != null) {
+					telemetry.close();
+				}
+				return null;
+			}
+			if (!mayGroupLeftOccurrences(owner.plan(), row)) {
+				rows = new BatchExpansionCursor(rows, row);
+			}
+			result = new LeftJoinCursor(rows, owner.plan(), row, left.producedMask(), estimates.entryBoundMask(),
+					estimates.expectedProbes(), estimates.perProbeRows(), estimates.sweepEstimate(), rhsContract,
+					false, telemetry, true);
+			result = new RhsOwnedCursor(result, owner);
+			owner = null;
+			if (telemetry != null) {
+				result = new OptionalObservedCursor(result, telemetry);
+				telemetry = null;
+			}
+			// A batch lane represents one solution unless it exposes a weight. Expand both input weights before
+			// handing the result to the ordinary, unweighted row-to-batch adapter.
+			return new RowBatchCursor(new BatchExpansionCursor(result, row), row);
+		} catch (IOException | RuntimeException | Error failure) {
+			if (result != null) {
+				closeSuppressing(result, failure);
+			} else if (rows != null) {
+				closeSuppressing(rows, failure);
+			}
+			KernelRuntime.closeResource(owner, failure);
+			KernelRuntime.closeResource(telemetry, failure);
 			throw failure;
 		}
 	}
@@ -171,6 +724,186 @@ final class LeftJoinPlan implements SlotPlan {
 	@Override
 	public long producedMask() {
 		return producedMask;
+	}
+}
+
+/**
+ * Restricts an OPTIONAL condition to the operator's own visible bindings and gives every merged candidate a fresh
+ * native solution identity. This matches the generic scoped-condition boundary, including hidden inherited names and
+ * per-occurrence blank-node allocation.
+ */
+@Experimental
+final class ScopedNativeBooleanFilter implements NativeBooleanFilter {
+	private final NativeBooleanFilter delegate;
+	private final Set<String> retainedBindingNames;
+
+	ScopedNativeBooleanFilter(NativeBooleanFilter delegate, Set<String> retainedBindingNames) {
+		this.delegate = delegate;
+		this.retainedBindingNames = Set.copyOf(retainedBindingNames);
+	}
+
+	ScopedNativeBooleanFilter withDelegate(NativeBooleanFilter replacement) {
+		return new ScopedNativeBooleanFilter(replacement, retainedBindingNames);
+	}
+
+	NativeBooleanFilter delegate() {
+		return delegate;
+	}
+
+	ConditionFrame newFrame(RowState parent) {
+		return new ConditionFrame(this, parent);
+	}
+
+	void closeAfterCursor(RowState parent) {
+		NativeExecutionContext context = parent.source instanceof SyntheticValueSource synthetic
+				? synthetic.executionContext()
+				: null;
+		if (context == null) {
+			close();
+			return;
+		}
+		context.nativeState(this, () -> new ConditionClose(this));
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		RowState projected = row.projectConditionInput(retainedBindingNames);
+		try {
+			projected.inheritDecodedInputAccounting(row);
+			projected.beginLogicalSolution();
+			return delegate.accept(projected);
+		} finally {
+			projected.closeDecodedInputs();
+		}
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return delegate.capabilities();
+	}
+
+	@Override
+	public boolean variablePredicateExists() {
+		return delegate.variablePredicateExists();
+	}
+
+	@Override
+	public long batchReadMask() {
+		return delegate.batchReadMask();
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return delegate.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker();
+		return forked == null ? null : new ScopedNativeBooleanFilter(forked, retainedBindingNames);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker(context);
+		return forked == null ? null : new ScopedNativeBooleanFilter(forked, retainedBindingNames);
+	}
+
+	@Override
+	public void explainStrategies() {
+		delegate.explainStrategies();
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
+	}
+
+	/** Reuses one projected row for all candidate mappings owned by a single physical OPTIONAL cursor. */
+	static final class ConditionFrame implements AutoCloseable {
+		private final ScopedNativeBooleanFilter owner;
+		private final RowState parent;
+		private final RowState projected;
+		private final LmdbQueryMemoryManager.Reservation projectionReservation;
+		private boolean closed;
+
+		private ConditionFrame(ScopedNativeBooleanFilter owner, RowState parent) {
+			this.owner = owner;
+			this.parent = parent;
+			long projectionBytes = projectionBytes(parent);
+			LmdbQueryMemoryManager.QueryLedger ledger = parent.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			LmdbQueryMemoryManager.Reservation reservation = ledger.reserve(projectionBytes, null);
+			if (reservation == null) {
+				throw new QueryEvaluationException(
+						"native OPTIONAL condition frame refused by query memory limit");
+			}
+			RowState projectedRow = null;
+			try {
+				projectedRow = parent.projectConditionInput(owner.retainedBindingNames);
+				projectedRow.inheritDecodedInputAccounting(parent);
+			} catch (RuntimeException | Error failure) {
+				if (projectedRow != null) {
+					KernelRuntime.closeResource(projectedRow::closeDecodedInputs, failure);
+				}
+				KernelRuntime.closeResource(reservation, failure);
+				throw failure;
+			}
+			this.projected = projectedRow;
+			this.projectionReservation = reservation;
+		}
+
+		private static long projectionBytes(RowState parent) {
+			long slots = parent.slots.length;
+			long trailEntries = Math.max(8L, Math.multiplyExact(slots, 4L));
+			long baseBindings = 0L;
+			for (String name : parent.base.getBindingNames()) {
+				baseBindings++;
+			}
+			// Reserve the projected row, its slot/trail/summary arrays, view, and full temporary base-map copy. The
+			// projection removes hidden entries after copying; decoded value arrays and payloads have separate claims.
+			long rowArrays = Math.addExact(96L, Math.multiplyExact(slots, Long.BYTES));
+			long trailArrays = Math.addExact(64L,
+					Math.multiplyExact(trailEntries, Integer.BYTES + Long.BYTES));
+			long summaryArrays = Math.addExact(64L,
+					Math.multiplyExact(Math.addExact(slots, trailEntries), Long.BYTES));
+			long projectedBase = Math.addExact(160L, Math.multiplyExact(baseBindings, 192L));
+			return Math.addExact(256L,
+					Math.addExact(rowArrays, Math.addExact(trailArrays, Math.addExact(summaryArrays, projectedBase))));
+		}
+
+		boolean accept(RowState candidate) {
+			if (candidate != parent) {
+				throw new IllegalArgumentException("condition frame belongs to a different OPTIONAL row");
+			}
+			projected.copyConditionInput(parent, owner.retainedBindingNames);
+			projected.beginLogicalSolution();
+			return owner.delegate.accept(projected);
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				Throwable failure = KernelRuntime.closeResource(projected::closeDecodedInputs, null);
+				failure = KernelRuntime.closeResource(projectionReservation, failure);
+				if (failure != null) {
+					NativeContextClosingIteration.throwFailure(failure);
+				}
+			}
+		}
+	}
+
+	private static final class ConditionClose implements AutoCloseable {
+		private final ScopedNativeBooleanFilter filter;
+
+		private ConditionClose(ScopedNativeBooleanFilter filter) {
+			this.filter = filter;
+		}
+
+		@Override
+		public void close() {
+			filter.close();
+		}
 	}
 }
 
@@ -336,11 +1069,29 @@ final class LexicalFrameLeftJoinCursor implements RowCursor {
 @Experimental
 final class LexicalLeftJoinCursor implements RowCursor {
 	private final RowState row;
+	private final SlotPlan leftPlan;
 	private final RowCursor left;
+	private final SlotPlan rightPlan;
+	private final OptionalRhsContract rhsContract;
+	/** The identity proved at the semantic boundary, captured before either physical operand opens. */
+	private final OptionalEvaluationIdentity semanticScope;
+	private final OptionalExecutionTelemetry.Channel telemetry;
+	private final boolean discardableRight;
 	private final int[] sharedSlots;
 	private final int[] rightSlots;
-	private final NativeResultReplay rightRows;
-	private NativeResultCursor right;
+	private final NativeBooleanFilter condition;
+	private final boolean executionOwnedCondition;
+	private NativeFilterLease.ExecutionRhs rawOwner;
+	private OptionalMaterialization.ConditionLease conditionLease;
+	private ScopedNativeBooleanFilter.ConditionFrame conditionFrame;
+	private RowState rightEntry;
+	private LmdbQueryMemoryManager.Reservation entryReservation;
+	private OptionalCompatibilityIndex rightRows;
+	private OptionalMaterialization.Lease<OptionalCompatibilityIndex> materializationLease;
+	private NativeExecutionContext.Lease executionLease;
+	private OptionalCompatibilityIndex.Probe right;
+	/** Remaining logical occurrences represented by the current materialized physical row. */
+	private long rightOccurrences;
 	private int activeMark = -1;
 	private boolean haveLeft;
 	private boolean matchedLeft;
@@ -350,63 +1101,200 @@ final class LexicalLeftJoinCursor implements RowCursor {
 
 	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots, RowState row)
 			throws IOException {
+		this(leftPlan, rightPlan, sharedSlots, null, row);
+	}
+
+	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots,
+			NativeBooleanFilter condition, RowState row) throws IOException {
+		this(leftPlan, rightPlan, sharedSlots, condition, null, row);
+	}
+
+	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots,
+			NativeBooleanFilter condition, OptionalRhsContract rhsContract, RowState row) throws IOException {
+		this(leftPlan, rightPlan, sharedSlots, condition, rhsContract,
+				rhsContract == null || rhsContract.observedNames() == null
+						? SlotPlan.discardable(rightPlan)
+						: rhsContract.discardable(),
+				row);
+	}
+
+	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots,
+			NativeBooleanFilter condition, OptionalRhsContract rhsContract, boolean discardableRight, RowState row)
+			throws IOException {
+		if ((rhsContract == null || !rhsContract.repeatableAcrossEvaluations())
+				&& LmdbNativeProbeDeadline.currentOrNull() != null) {
+			// A discarded trial could not repeat a volatile RHS safely. Decline before opening either operand.
+			throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+		}
+		NativeExecutionContext context = row.source instanceof SyntheticValueSource synthetic
+				? synthetic.executionContext()
+				: null;
+		OptionalEvaluationIdentity active = context == null ? null
+				: OptionalEvaluationIdentity.activeFor(context.optionalExecutionOwner());
+		if (context != null && (row.source.valueLookupScope() == null || row.termAuthority() == null
+				|| row.termAuthority().token() == null)) {
+			throw new QueryEvaluationException("native OPTIONAL has no stable value-lookup scope or term authority");
+		}
+		if (rhsContract == null || !rhsContract.repeatableAcrossEvaluations()
+				&& (context == null || active == null && !rhsContract.rootScopeOwned())) {
+			throw new QueryEvaluationException("native OPTIONAL has no proven semantic evaluation scope");
+		}
 		this.row = row;
-		this.sharedSlots = sharedSlots;
-		this.rightSlots = slotsOf(rightPlan.producedMask());
-		this.rightRows = materializeRight(rightPlan);
+		this.leftPlan = leftPlan;
+		this.executionOwnedCondition = context != null;
+		this.rhsContract = rhsContract;
+		OptionalEvaluationIdentity identity;
+		OptionalExecutionTelemetry.Channel channel;
 		try {
-			this.left = leftPlan.open(row);
+			identity = context == null ? null : context.optionalEvaluationIdentity();
+			channel = context == null ? null
+					: context.optionalTelemetry(rhsContract.operatorIdentity(),
+							row.telemetryTarget);
+		} catch (RuntimeException | Error failure) {
+			throw failure;
+		}
+		this.semanticScope = identity;
+		this.telemetry = channel;
+		this.discardableRight = discardableRight;
+		this.sharedSlots = sharedSlots;
+		this.condition = condition;
+		this.rightSlots = slotsOf(rightPlan.producedMask());
+		try {
+			if (telemetry != null) {
+				OptionalExecutionStrategy.explainPolicy(row.telemetryTarget, row.memoryScope.optionalStoragePolicy());
+			}
+			rawOwner = NativeFilterLease.prepareRhs(rightPlan, row);
+			this.rightPlan = rawOwner.plan();
+			if (condition != null && context != null) {
+				conditionLease = context.optionalMaterializations().acquireCondition(condition, context);
+			}
+			long slots = row.slots.length;
+			long trails = Math.max(8L, Math.multiplyExact(4L, slots));
+			long bytes = Math.addExact(1024L,
+					Math.addExact(Math.multiplyExact(32L, slots), Math.multiplyExact(24L, trails)));
+			entryReservation = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).reserve(bytes, null);
+			if (entryReservation == null) {
+				throw new QueryEvaluationException("native OPTIONAL entry frame refused by query memory limit");
+			}
+			rightEntry = row.fork();
+			rightEntry.enableDecodedInputAccounting();
+			this.conditionFrame = NativeFilterLease.openScopedConditionFrame(condition, row);
+		} catch (RuntimeException | Error failure) {
+			closeSuppressing(conditionFrame, failure);
+			closeSuppressing(this::closeEntry, failure);
+			closePredicateOwners(failure);
+			closeSuppressing(telemetry, failure);
+			throw failure;
+		}
+		try {
+			this.left = LmdbNativeFactorAlgebra.logical(leftPlan.open(row), row);
 		} catch (IOException | RuntimeException | Error failure) {
-			closeSuppressing(rightRows, failure);
+			closeSuppressing(this::closeEntry, failure);
+			closeSuppressing(conditionFrame, failure);
+			closePredicateOwners(failure);
+			closeSuppressing(telemetry, failure);
 			throw failure;
 		}
 	}
 
-	private NativeResultReplay materializeRight(SlotPlan rightPlan) throws IOException {
-		String[] names = new String[rightSlots.length];
-		for (int i = 0; i < rightSlots.length; i++) {
-			names[i] = row.layout.slotName(rightSlots[i]);
+	private void materializeRight(OptionalExecutionStrategy.ProbeDemand demand) throws IOException {
+		if (rightRows != null) {
+			return;
 		}
-		NativeResultRow.Schema schema = new NativeResultRow.Schema(names);
-		NativeExecutionContext context = row.source instanceof SyntheticValueSource synthetic
+		RowState entry = rightEntry;
+		if (entry == null) {
+			throw new IllegalStateException("OPTIONAL entry frame has already been released");
+		}
+		NativeExecutionContext context = entry.source instanceof SyntheticValueSource synthetic
 				? synthetic.executionContext()
 				: null;
-		// This replay belongs to the enclosing cursor. It must not retain a context whose source cleanup
-		// can itself be waiting for that cursor; external lexical readers retain their owners separately.
-		NativeResultReplay materialized = new NativeResultReplay(schema, context, row.cancellation,
-				row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()),
-				Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false)
-						.resolvingStoreTermsWith(row.source);
-		int entryMark = row.mark();
 		try {
-			try (RowCursor cursor = rightPlan.open(row)) {
-				while (true) {
-					check();
-					boolean next = cursor.next();
-					check();
-					if (!next) {
-						break;
-					}
-					NativeResultCell[] cells = new NativeResultCell[rightSlots.length];
-					for (int i = 0; i < rightSlots.length; i++) {
-						int slot = rightSlots[i];
-						NativeResultCell summary = row.summaryCell(slot);
-						cells[i] = summary != null ? summary
-								: row.slots[slot] == UNKNOWN
-										? NativeResultCell.unbound()
-										: NativeResultCell.term(term(row.slots[slot]));
-					}
-					materialized.append(new NativeResultRow(schema, cells));
-				}
+			if (context != null) {
+				executionLease = context.retainLease();
 			}
-			check();
-			materialized.finish();
-			return materialized;
+			if (semanticScope != null) {
+				OptionalMaterialization registry = context.optionalMaterializations();
+				materializationLease = registry.acquire(semanticScope, rhsContract.operatorIdentity(),
+						OptionalEvaluationFrame.captureBytes(entry, rhsContract),
+						() -> OptionalEvaluationFrame.capture(entry, rhsContract),
+						rhsContract.repeatableAcrossEvaluations() && entry.source.pinnedLmdbSweepProfile() != null,
+						entry.cancellation, () -> buildRight(entry, demand), telemetry);
+				rightRows = materializationLease.value();
+			} else {
+				// A repeatable operand without a semantic owner may be evaluated locally, but never shared.
+				rightRows = buildRight(entry, demand);
+			}
+			closeEntry();
 		} catch (IOException | RuntimeException | Error failure) {
-			closeSuppressing(materialized, failure);
+			closeSuppressing(this::closeEntry, failure);
+			closeSuppressing(materializationLease == null ? rightRows : materializationLease, failure);
+			materializationLease = null;
+			rightRows = null;
+			closeSuppressing(executionLease, failure);
+			executionLease = null;
+			throw failure;
+		}
+	}
+
+	private OptionalCompatibilityIndex buildRight(RowState entry, OptionalExecutionStrategy.ProbeDemand demand)
+			throws IOException {
+		int mark = entry.mark();
+		boolean started = false;
+		try (OptionalCompatibilityIndex.Builder builder = OptionalCompatibilityIndex.builder(entry, rightSlots,
+				sharedSlots, OptionalCompatibilityIndex.Strategy.AUTO,
+				telemetry == null ? null : telemetry.fork(), demand)) {
+			try {
+				started = true;
+				try (RowCursor cursor = rightPlan.open(entry)) {
+					while (true) {
+						check();
+						boolean next = cursor.next();
+						check();
+						if (!next) {
+							break;
+						}
+						long multiplicity = cursor instanceof FactorizedRowCursor weighted
+								? weighted.multiplicity()
+								: 1L;
+						builder.appendCurrent(entry, multiplicity);
+					}
+				}
+				check();
+				OptionalCompatibilityIndex finished = builder.finish();
+				try {
+					if (telemetry != null) {
+						telemetry.add(OptionalExecutionTelemetry.Counter.BUILDS, 1L);
+						telemetry.flush();
+					}
+				} catch (RuntimeException | Error failure) {
+					KernelRuntime.closeResource(finished, failure);
+					throw failure;
+				}
+				return finished;
+			} catch (OptionalMaterialization.AdmissionRefused refused) {
+				// A nested builder may decline after this operand has started. Retrying the outer factory would
+				// repeat its effects, so only this builder's pre-open workspace refusal remains retryable.
+				throw new QueryEvaluationException("OPTIONAL admission failed after opening its RHS", refused);
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			if (started && telemetry != null) {
+				telemetry.add(OptionalExecutionTelemetry.Counter.BUILD_FAILURES, 1L);
+			}
 			throw failure;
 		} finally {
-			row.rollback(entryMark);
+			entry.rollback(mark);
+		}
+	}
+
+	private void closeEntry() {
+		RowState entry = rightEntry;
+		rightEntry = null;
+		LmdbQueryMemoryManager.Reservation reservation = entryReservation;
+		entryReservation = null;
+		Throwable failure = entry == null ? null : KernelRuntime.closeResource(entry::closeDecodedInputs, null);
+		failure = KernelRuntime.closeResource(reservation, failure);
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
@@ -423,12 +1311,20 @@ final class LexicalLeftJoinCursor implements RowCursor {
 			while (true) {
 				check();
 				if (haveLeft) {
-					NativeResultRow values;
-					while ((values = right.next()) != null) {
+					while (rightOccurrences != 0L || right.next()) {
+						if (rightOccurrences == 0L) {
+							rightOccurrences = right.multiplicity();
+						}
+						rightOccurrences--;
 						check();
-						if (sharedKeyMatches(values) && bindRight(values)) {
-							matchedLeft = true;
-							return true;
+						try (NativeValuePayloads.Scope ignored = right.activateCurrent()) {
+							if (sharedKeyMatches(right) && bindRight(right.current())) {
+								if (condition == null || acceptCondition()) {
+									matchedLeft = true;
+									return emitted();
+								}
+								releaseRight();
+							}
 						}
 					}
 					check();
@@ -436,16 +1332,21 @@ final class LexicalLeftJoinCursor implements RowCursor {
 					right = null;
 					haveLeft = false;
 					if (!matchedLeft) {
-						return true;
+						return emitted();
 					}
 				}
 				boolean next = left.next();
 				check();
 				if (!next) {
+					if (rightRows == null && !discardableRight) {
+						materializeRight(null);
+					}
 					close();
 					return false;
 				}
-				right = rightRows.cursor();
+				materializeForProbe();
+				right = rightRows.probe(row, telemetry);
+				rightOccurrences = 0L;
 				haveLeft = true;
 				matchedLeft = false;
 			}
@@ -456,16 +1357,55 @@ final class LexicalLeftJoinCursor implements RowCursor {
 		}
 	}
 
+	private void materializeForProbe() throws IOException {
+		if (rightRows != null) {
+			return;
+		}
+		// probeDemand currently returns at most one sample. This charge covers the record, its source/clone arrays,
+		// and the small proof string while the builder consumes it.
+		long workspaceBytes = Math.addExact(512L, Math.multiplyExact(32L, sharedSlots.length));
+		LmdbQueryMemoryManager.Reservation workspace = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+				.reserve(workspaceBytes, null);
+		try {
+			// If the small proof record cannot be admitted, use the conservative unknown-demand scan path.
+			OptionalExecutionStrategy.ProbeDemand demand = workspace == null ? null
+					: OptionalExecutionStrategy.probeDemand(leftPlan, row, sharedSlots, rhsContract);
+			materializeRight(demand);
+		} finally {
+			if (workspace != null) {
+				workspace.close();
+			}
+		}
+	}
+
 	private void check() {
 		row.cancellation.check();
 		LmdbNativeProbeDeadline.poll(++pollTick);
 	}
 
-	private boolean sharedKeyMatches(NativeResultRow rightValues) {
-		for (int sharedSlot : sharedSlots) {
+	private boolean acceptCondition() {
+		if (telemetry != null) {
+			telemetry.add(OptionalExecutionTelemetry.Counter.CONDITION_CALLS, 1L);
+		}
+		if (conditionFrame != null) {
+			return conditionFrame.accept(row);
+		}
+		return condition.accept(row);
+	}
+
+	private boolean emitted() {
+		if (telemetry != null) {
+			telemetry.add(OptionalExecutionTelemetry.Counter.OUTPUT_ROWS, 1L);
+		}
+		return true;
+	}
+
+	private boolean sharedKeyMatches(OptionalCompatibilityIndex.Probe candidate) {
+		for (int column = 0; column < sharedSlots.length; column++) {
+			int sharedSlot = sharedSlots[column];
 			row.requireRdfTerm(sharedSlot);
 			long leftValue = row.slots[sharedSlot];
-			NativeResultCell rightValue = valueForSlot(rightValues, sharedSlot);
+			NativeResultCell rightValue = candidate.sharedCell(row.layout.slotName(sharedSlot));
 			if (rightValue.kind() != NativeResultCell.Kind.RDF_TERM) {
 				throw new IllegalStateException("Unconsumed summary at lexical OPTIONAL compatibility boundary");
 			}
@@ -480,22 +1420,12 @@ final class LexicalLeftJoinCursor implements RowCursor {
 		return true;
 	}
 
-	private NativeResultCell valueForSlot(NativeResultRow values, int slot) {
-		for (int i = 0; i < rightSlots.length; i++) {
-			if (rightSlots[i] == slot) {
-				return values.cell(i);
-			}
-		}
-		Value inherited = row.base.getValue(row.layout.slotName(slot));
-		return inherited == null ? NativeResultCell.unbound() : NativeResultCell.term(inherited);
-	}
-
 	private boolean bindRight(NativeResultRow values) {
 		int mark = row.mark();
 		activeMark = mark;
 		for (int i = 0; i < rightSlots.length; i++) {
 			int slot = rightSlots[i];
-			NativeResultCell value = values.cell(i);
+			NativeResultCell value = values.cell(row.layout.slotName(slot));
 			if (value.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
 				row.bindSummary(slot, value);
 			} else if (value.state() == NativeResultCell.State.BOUND) {
@@ -525,7 +1455,7 @@ final class LexicalLeftJoinCursor implements RowCursor {
 		if (value == null) {
 			throw new QueryEvaluationException("Native lexical OPTIONAL term is unresolved: " + id);
 		}
-		return value;
+		return NativeValuePayloads.beforeInspection(value, row.source);
 	}
 
 	private void releaseRight() {
@@ -544,8 +1474,17 @@ final class LexicalLeftJoinCursor implements RowCursor {
 		Throwable failure = KernelRuntime.closeResource(this::releaseRight, null);
 		failure = KernelRuntime.closeResource(right, failure);
 		right = null;
-		failure = KernelRuntime.closeResource(rightRows, failure);
+		failure = KernelRuntime.closeResource(materializationLease == null ? rightRows : materializationLease,
+				failure);
+		materializationLease = null;
+		rightRows = null;
+		failure = KernelRuntime.closeResource(this::closeEntry, failure);
 		failure = KernelRuntime.closeResource(left, failure);
+		failure = KernelRuntime.closeResource(conditionFrame, failure);
+		failure = closePredicateOwners(failure);
+		failure = KernelRuntime.closeResource(telemetry, failure);
+		failure = KernelRuntime.closeResource(executionLease, failure);
+		executionLease = null;
 		if (failure != null) {
 			if (terminalFailure == null) {
 				terminalFailure = failure;
@@ -557,6 +1496,21 @@ final class LexicalLeftJoinCursor implements RowCursor {
 	private static void closeSuppressing(AutoCloseable resource, Throwable failure) {
 		KernelRuntime.closeResource(resource, failure);
 	}
+
+	private Throwable closePredicateOwners(Throwable primary) {
+		NativeFilterLease.ExecutionRhs closingRaw = rawOwner;
+		rawOwner = null;
+		Throwable failure = KernelRuntime.closeResource(closingRaw, primary);
+		OptionalMaterialization.ConditionLease closingCondition = conditionLease;
+		conditionLease = null;
+		if (closingCondition != null) {
+			failure = KernelRuntime.closeResource(closingCondition, failure);
+		} else if (condition != null && !executionOwnedCondition) {
+			failure = KernelRuntime.closeResource(() -> NativeFilterLease.closeAfterCursor(condition, row), failure);
+		}
+		return failure;
+	}
+
 }
 
 @Experimental
@@ -568,6 +1522,7 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 	final PatternPayloadProbe payloadProbe;
 	final RightMemoProbe rightMemo;
 	final PatternPlan patternRight;
+	final boolean reusableRight;
 	RowCursor rightCursor;
 	NativeLmdbQuerySource.NativeProbe rightProbe;
 	PatternCursor patternCursor;
@@ -604,18 +1559,48 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 
 	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask, long entryBoundMask,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
+		this(leftCursor, right, row, leftProducedMask, entryBoundMask, expectedProbes, perProbeRows, sweepEstimate,
+				null, false);
+	}
+
+	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask, long entryBoundMask,
+			double expectedProbes, double perProbeRows, double sweepEstimate, OptionalRhsContract rhsContract,
+			boolean includesOptionalCondition) {
+		this(leftCursor, right, row, leftProducedMask, entryBoundMask, expectedProbes, perProbeRows, sweepEstimate,
+				rhsContract, includesOptionalCondition, null);
+	}
+
+	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask, long entryBoundMask,
+			double expectedProbes, double perProbeRows, double sweepEstimate, OptionalRhsContract rhsContract,
+			boolean includesOptionalCondition, OptionalExecutionTelemetry.Channel telemetry) {
+		this(leftCursor, right, row, leftProducedMask, entryBoundMask, expectedProbes, perProbeRows, sweepEstimate,
+				rhsContract, includesOptionalCondition, telemetry, false);
+	}
+
+	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask, long entryBoundMask,
+			double expectedProbes, double perProbeRows, double sweepEstimate, OptionalRhsContract rhsContract,
+			boolean includesOptionalCondition, OptionalExecutionTelemetry.Channel telemetry,
+			boolean rawFiltersAlreadyBorrowed) {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.row = row;
 		this.patternRight = right instanceof PatternPlan pattern ? pattern : null;
-		long readMask = memoReadMask(right);
-		this.replaySlots = Boolean.parseBoolean(System.getProperty(LEFTJOIN_REPLAY_ENABLED, "true"))
+		long readMask = LeftJoinPlan.optionalReadMask(right, row, rhsContract);
+		boolean snapshot = row.source != null && row.source.pinnedLmdbSweepProfile() != null;
+		boolean repeatable = rhsContract == null ? RightMemoProbe.structurallyRepeatable(right)
+				: rhsContract.repeatableAcrossEvaluations();
+		this.reusableRight = !includesOptionalCondition && snapshot && repeatable;
+		this.rightMemo = RightMemoProbe.tryCreate(right, leftProducedMask, readMask, row, entryBoundMask,
+				expectedProbes, perProbeRows, sweepEstimate, rhsContract, includesOptionalCondition,
+				telemetry == null ? null : telemetry.fork(), rawFiltersAlreadyBorrowed);
+		this.replaySlots = rightMemo == null && reusableRight
+				&& Boolean.parseBoolean(System.getProperty(LEFTJOIN_REPLAY_ENABLED, "true"))
 				&& readMask >= 0L && (readMask & leftProducedMask) == 0L
 						? slotsOf(right.producedMask())
 						: null;
-		this.payloadProbe = PatternPayloadProbe.tryCreate(right, expectedProbes, perProbeRows, sweepEstimate);
-		this.rightMemo = RightMemoProbe.tryCreate(right, leftProducedMask, readMask, row, entryBoundMask,
-				expectedProbes, perProbeRows, sweepEstimate);
+		this.payloadProbe = rightMemo == null && snapshot && !includesOptionalCondition
+				? PatternPayloadProbe.tryCreate(right, expectedProbes, perProbeRows, sweepEstimate)
+				: null;
 	}
 
 	@Override
@@ -632,7 +1617,7 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 						payloadProbe.recordDirectMatch();
 					}
 					if (capturingReplay) {
-						recordReplay();
+						recordReplay(1L);
 					}
 					return true;
 				}
@@ -646,13 +1631,15 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 			} else if (rightCursor != null) {
 				if (rightCursor.next()) {
 					matchedCurrentLeft = true;
-					currentMultiplicity = Math.multiplyExact(leftMultiplicity,
-							rightCursor instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L);
+					long rightMultiplicity = rightCursor instanceof FactorizedRowCursor factorized
+							? factorized.multiplicity()
+							: 1L;
+					currentMultiplicity = Math.multiplyExact(leftMultiplicity, rightMultiplicity);
 					if (!rightCursorFromPayload && payloadProbe != null) {
 						payloadProbe.recordDirectMatch();
 					}
 					if (capturingReplay) {
-						recordReplay();
+						recordReplay(rightMultiplicity);
 					}
 					return true;
 				}
@@ -749,7 +1736,8 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 				rightProbe = row.source.newProbe();
 			}
 			if (!pathMemoInitialized) {
-				pathMemo = replaySlots == null ? PathResultMemo.tryCreate((PathPlan) right, row) : null;
+				pathMemo = reusableRight && replaySlots == null ? PathResultMemo.tryCreate((PathPlan) right, row)
+						: null;
 				pathMemoInitialized = true;
 			}
 			return ((PathPlan) right).open(row, rightProbe, pathMemo);
@@ -838,7 +1826,7 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 					if (bindReplay(rowIndex)) {
 						replayMatchedCurrentLeft = true;
 						replayMark = mark;
-						currentMultiplicity = leftMultiplicity;
+						currentMultiplicity = Math.multiplyExact(leftMultiplicity, replayMultiplicity(rowIndex));
 						return true;
 					}
 					row.rollback(mark);
@@ -867,10 +1855,8 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 
 	boolean bindReplay(int rowIndex) {
 		int width = replaySlots.length;
-		if (width == 0) {
-			return true;
-		}
-		int offset = rowIndex * width;
+		int stride = width + 1;
+		int offset = rowIndex * stride;
 		long[] replayValues = replayMemory.values();
 		for (int i = 0; i < replaySlots.length; i++) {
 			long value = replayValues[offset + i];
@@ -881,38 +1867,44 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 		return true;
 	}
 
-	void recordReplay() {
+	private long replayMultiplicity(int rowIndex) {
+		int width = replaySlots.length;
+		int stride = width + 1;
+		return replayMemory.values()[rowIndex * stride + width];
+	}
+
+	void recordReplay(long rightMultiplicity) {
 		if (replayRows >= JoinCursor.MAX_MATERIALIZED_ROWS) {
 			disableReplay();
 			return;
 		}
 		int width = replaySlots.length;
-		if (width != 0) {
-			if (!ensureReplayCapacity(replayRows + 1, width)) {
-				disableReplay();
-				return;
-			}
-			long[] replayValues = replayMemory.values();
-			int offset = replayRows * width;
-			for (int i = 0; i < width; i++) {
-				replayValues[offset + i] = row.slots[replaySlots[i]];
-			}
+		int stride = width + 1;
+		if (!ensureReplayCapacity(replayRows + 1, stride)) {
+			disableReplay();
+			return;
 		}
+		long[] replayValues = replayMemory.values();
+		int offset = replayRows * stride;
+		for (int i = 0; i < width; i++) {
+			replayValues[offset + i] = row.slots[replaySlots[i]];
+		}
+		replayValues[offset + width] = rightMultiplicity;
 		replayRows++;
 	}
 
-	private boolean ensureReplayCapacity(int requiredRows, int width) {
-		int required = Math.multiplyExact(requiredRows, width);
+	private boolean ensureReplayCapacity(int requiredRows, int stride) {
+		int required = Math.multiplyExact(requiredRows, stride);
 		if (replayMemory != null && replayMemory.length() >= required) {
 			return true;
 		}
-		int currentRows = replayMemory == null ? 0 : replayMemory.length() / width;
+		int currentRows = replayMemory == null ? 0 : replayMemory.length() / stride;
 		int grownRows = currentRows == 0 ? Math.min(16, JoinCursor.MAX_MATERIALIZED_ROWS)
 				: Math.min(JoinCursor.MAX_MATERIALIZED_ROWS, currentRows << 1);
 		if (grownRows < requiredRows) {
 			grownRows = requiredRows;
 		}
-		int grownLength = Math.multiplyExact(grownRows, width);
+		int grownLength = Math.multiplyExact(grownRows, stride);
 		if (replayMemory == null) {
 			replayMemory = LmdbAdaptiveLongArray.tryCreate(row, grownLength);
 			return replayMemory != null;

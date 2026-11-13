@@ -87,7 +87,8 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return canBind(join.left) && canBind(join.right);
 		}
 		if (input instanceof LeftJoinPlan optional) {
-			return canBind(optional.left) && canBind(optional.right);
+			return canBind(optional.left) && canBind(optional.right)
+					&& (optional.lexicalCondition == null || optional.lexicalCondition.parallelWorkerForkable());
 		}
 		if (input instanceof UnionPlan union) {
 			return canBind(union.left) && canBind(union.right);
@@ -119,7 +120,10 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 		if (forked == null) {
 			throw new QueryEvaluationException("native predicate worker binding is unavailable");
 		}
-		NativeBooleanFilter borrowed = filters.borrow(new CloseOnceNativeBooleanFilter(forked));
+		NativeBooleanFilter closeOwned = forked instanceof ScopedNativeBooleanFilter scoped
+				? scoped.withDelegate(new CloseOnceNativeBooleanFilter(scoped.delegate()))
+				: new CloseOnceNativeBooleanFilter(forked);
+		NativeBooleanFilter borrowed = filters.borrow(closeOwned);
 		copies.put(filter, borrowed);
 		return borrowed;
 	}
@@ -163,8 +167,9 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return new JoinPlan(bind(join.left), bind(join.right));
 		}
 		if (input instanceof LeftJoinPlan optional) {
-			return new LeftJoinPlan(bind(optional.left), bind(optional.right), optional.lexicalSharedSlots,
-					optional.lexicalHashKeys, optional.lexicalProblemSlots);
+			LeftJoinPlan copy = optional.withChildren(bind(optional.left), bind(optional.right));
+			return optional.lexicalCondition == null ? copy
+					: copy.withLexicalCondition(bindFilter(optional.lexicalCondition));
 		}
 		if (input instanceof UnionPlan union) {
 			return new UnionPlan(bind(union.left), bind(union.right));

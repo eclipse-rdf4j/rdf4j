@@ -129,6 +129,10 @@ final class PlannedNativeBooleanFilter implements NativeBooleanFilter {
 		this.plan = plan;
 	}
 
+	PlannedNativeBooleanFilter withDelegate(NativeBooleanFilter replacement) {
+		return new PlannedNativeBooleanFilter(replacement, plan);
+	}
+
 	@Override
 	public NativePredicateCapabilities capabilities() {
 		return NativePredicateCapabilities.scalar(plan).withRuntimeReads(delegate.capabilities());

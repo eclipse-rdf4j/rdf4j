@@ -64,7 +64,7 @@ final class LmdbNativeExplain {
 		physical.setRuntimeTelemetryEnabled(origin.isRuntimeTelemetryEnabled());
 	}
 
-	private static TupleExpr logicalOrigin(TupleExpr expression) {
+	static TupleExpr logicalOrigin(TupleExpr expression) {
 		if (expression == null) {
 			return null;
 		}

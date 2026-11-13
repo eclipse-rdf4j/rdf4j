@@ -141,7 +141,10 @@ final class LmdbNativeDispatchLoop<C, T> {
 	/** Starts this run's observation, reporting at once when opening was the whole run. */
 	private LmdbNativeCostObservation observation(LmdbNativeCandidate<T> chosen, double quotedExpected,
 			long openStarted) {
-		if (advice == null) {
+		if (advice == null || chosen.quote()
+				.optionalCost()
+				.incompleteFor(
+						LmdbNativeSelector.consumableRows(chosen.quote(), sliceRows, distinctConsumer))) {
 			return null;
 		}
 		LmdbNativeCostObservation observation = advice.observation(chosen.id(), chosen.quote(), quotedExpected);
@@ -261,7 +264,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 				entries.add(new LmdbNativeDecisionRecord.Entry(candidates.get(i).id(), true, null,
 						ranking.nanos()[i], ranking.expectedNanos()[i], ranking.eliminatedBy()[i],
-						consumedQuote(candidates.get(i)), ranking.quotedExpectedNanos()[i], ranking.estimated()[i]));
+						consumedQuote(candidates.get(i)), ranking.quotedExpectedNanos()[i], ranking.estimated()[i],
+						ranking.incompleteOptional()[i]));
 			}
 			for (String id : asked) {
 				if (declines.containsKey(id)) {
@@ -310,7 +314,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 					if (directTag.equals(admitted.candidates.get(i).id())) {
 						ranking = new LmdbNativeSelector.Ranking(i, ranking.nanos(), ranking.expectedNanos(),
 								ranking.quotedExpectedNanos(), new String[admitted.candidates.size()], directReason,
-								ranking.estimated());
+								ranking.estimated(), ranking.incompleteOptional());
 						mode = "direct";
 						break;
 					}
@@ -619,12 +623,24 @@ final class LmdbNativeDispatchLoop<C, T> {
 		}
 		StringBuilder rendered = new StringBuilder();
 		StringBuilder features = new StringBuilder();
+		StringBuilder incomplete = new StringBuilder();
 		for (LmdbNativeCandidate<T> candidate : admitted.candidates) {
 			if (rendered.length() > 0) {
 				rendered.append(',');
 				features.append(',');
 			}
 			LmdbNativeCostVector vector = consumedQuote(candidate);
+			if (candidate.quote()
+					.optionalCost()
+					.incompleteFor(
+							LmdbNativeSelector.consumableRows(candidate.quote(), sliceRows, distinctConsumer))) {
+				if (!incomplete.isEmpty()) {
+					incomplete.append("; ");
+				}
+				incomplete.append(candidate.id())
+						.append(": known subtotal only; ")
+						.append(candidate.quote().optionalCost().reason());
+			}
 			rendered.append(candidate.id())
 					.append('=')
 					.append(String.format(java.util.Locale.ROOT, "%.0f",
@@ -644,6 +660,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 		}
 		LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, rendered.toString());
 		LmdbNativeExplain.recordStrategyProposalFeatures(explainTarget, features.toString());
+		if (!incomplete.isEmpty()) {
+			LmdbNativeExplain.setRuntimeMetric(explainTarget, "nativeOptionalIncompleteCosts", incomplete.toString());
+		}
 	}
 
 	private QueryEvaluationException forcedUnavailable(String declineReason, boolean returnedNull) {

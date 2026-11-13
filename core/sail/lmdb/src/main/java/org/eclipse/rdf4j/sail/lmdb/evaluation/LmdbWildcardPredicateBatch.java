@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.Demand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.DuplicatePolicy;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.Scope;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -600,6 +601,66 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	/**
+	 * Whether evaluating this plan can cross an OPTIONAL result boundary. A non-repeatable filter above such a boundary
+	 * cannot be evaluated once per weighted row because its result may vary for each logical occurrence. Unknown plan
+	 * wrappers are treated conservatively because they may hide a result boundary.
+	 */
+	private static boolean containsOptionalResult(SlotPlan plan) {
+		if (plan instanceof LeftJoinPlan) {
+			return true;
+		}
+		if (plan instanceof FilterPlan filter) {
+			return containsOptionalResult(filter.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return containsOptionalResult(extension.arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return containsOptionalResult(entry.arg);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return containsOptionalResult(distinct.arg);
+		}
+		if (plan instanceof DrainGuardPlan drain) {
+			return containsOptionalResult(drain.delegate) || containsOptionalResult(drain.drained);
+		}
+		if (plan instanceof UnionPlan union) {
+			return containsOptionalResult(union.left) || containsOptionalResult(union.right);
+		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return containsOptionalResult(union.left) || containsOptionalResult(union.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return containsOptionalResult(minus.left) || containsOptionalResult(minus.right);
+		}
+		if (plan instanceof JoinPlan join) {
+			return containsOptionalResult(join.left) || containsOptionalResult(join.right);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return containsOptionalResult(lateral.left) || containsOptionalResult(lateral.right);
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			for (SlotPlan child : join.children) {
+				if (containsOptionalResult(child)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return containsOptionalResult(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan alias) {
+			return containsOptionalResult(alias.original);
+		}
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
+				|| plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
 	 * Opening a weighted pipeline acquires scratch and probes without advancing its input. A refused allocation closes
 	 * that attempt, so retry smaller batches against the same snapshot before conceding the exact scalar fallback.
 	 */
@@ -628,7 +689,12 @@ final class LmdbWildcardPredicateBatch {
 					: refactorize(new ExtensionCursor(child, extension.copies, row), row, liveMask, capacity);
 		}
 		if (plan instanceof FilterPlan filter) {
-			if (filter.filterMask < 0L) {
+			// A filter above an OPTIONAL observes logical result occurrences, not just distinct weighted rows. If it is
+			// not proven repeatable, decline before opening the child; raw OPTIONAL-owned callbacks have their own
+			// guard.
+			if (filter.filterMask < 0L
+					|| !filter.filter.capabilities().replaySafe() && containsOptionalResult(filter.arg)
+					|| NativeFilterLease.requiresLogicalRhsRows(filter.filter)) {
 				return null;
 			}
 			RowCursor child = openWeighted(filter.arg, row, liveMask | filter.filterMask, capacity);
@@ -636,34 +702,75 @@ final class LmdbWildcardPredicateBatch {
 					: refactorize(new FilterCursor(child, filter.filter, row), row, liveMask, capacity);
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
+			if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null
+					|| leftJoin.lexicalCondition != null || leftJoin.correlatedConditionInRight) {
 				return null;
 			}
-			long rightReads = LmdbNativeAggregateCompiler.memoReadMask(leftJoin.right);
-			if (rightReads < 0L) {
-				return null;
-			}
-			long childLive = (liveMask & leftJoin.left.producedMask())
-					| (rightReads & leftJoin.left.producedMask());
-			RowCursor left = openWeighted(leftJoin.left, row, childLive, capacity);
-			if (left == null) {
-				return null;
-			}
-			if (leftJoin.right instanceof PatternPlan pattern
-					&& left instanceof FactorizedRowCursor factorized) {
-				long assuredLeft = SlotPlan.assuredMask(leftJoin.left);
-				RowCursor batched = Shape.isWildcardPredicate(pattern)
-						? WeightedWildcardPatternCursor.open(factorized, pattern, row, assuredLeft, liveMask, true,
-								capacity)
-						: WeightedOptionalPatternCursor.open(factorized, pattern, row, assuredLeft, capacity);
-				if (batched != null) {
-					return refactorize(batched, row, liveMask, capacity);
+			long entryMask = row.boundMask();
+			OptionalExecutionOwner owner = OptionalExecutionOwner.prepareCursor(leftJoin, row);
+			RowCursor left = null;
+			RowCursor result = null;
+			RowCursor owned = null;
+			try {
+				SlotPlan right = owner.right();
+				long rightReads = LeftJoinPlan.optionalReadMask(right, row, leftJoin.rhsContract);
+				// The raw-RHS owner may replace filters with execution facades that impose stricter occurrence
+				// semantics
+				// than the planner's original capability view. Check its proof before opening or grouping the left
+				// side.
+				boolean directPatternSnapshot = right instanceof PatternPlan
+						&& RightMemoProbe.structurallyRepeatable(right)
+						&& row.source != null && row.source.pinnedLmdbSweepProfile() != null
+						&& row.source.valueLookupScope() != null && row.termAuthority() != null
+						&& row.termAuthority().token() != null;
+				OptionalRhsContract contract = leftJoin.rhsContract;
+				boolean canGroup = (contract == null || !contract.mappingParameterized())
+						&& (owner.groupOccurrences() || directPatternSnapshot);
+				boolean structurallyRepeatable = RightMemoProbe.structurallyRepeatable(right);
+				if (rightReads < 0L || (!canGroup && !structurallyRepeatable)) {
+					owner.close();
+					owner = null;
+					return null;
 				}
-				left.close();
-				return null;
+				long childLive = (liveMask & leftJoin.left.producedMask())
+						| (rightReads & leftJoin.left.producedMask());
+				left = openWeighted(leftJoin.left, row, childLive, capacity);
+				if (left == null) {
+					owner.close();
+					return null;
+				}
+				if (!canGroup) {
+					left = new UnitWeightFactorizedCursor(LmdbNativeFactorAlgebra.logical(left, row));
+				}
+				if (right instanceof PatternPlan pattern && left instanceof FactorizedRowCursor factorized) {
+					long assuredLeft = SlotPlan.assuredMask(leftJoin.left);
+					result = Shape.isWildcardPredicate(pattern)
+							? WeightedWildcardPatternCursor.open(factorized, pattern, row, assuredLeft, liveMask, true,
+									capacity)
+							: WeightedOptionalPatternCursor.open(factorized, pattern, row, assuredLeft, capacity);
+					if (result == null) {
+						left.close();
+						left = null;
+						owner.close();
+						return null;
+					}
+				} else {
+					boolean perOccurrenceRhs = !canGroup;
+					// This cursor flag also disables memo/replay shortcuts, so each expanded row invokes the RHS
+					// separately.
+					result = new LeftJoinCursor(left, right, row, leftJoin.left.producedMask(),
+							entryMask, Double.NaN, Double.NaN, Double.NaN, leftJoin.rhsContract,
+							perOccurrenceRhs, owner.telemetry(), true);
+				}
+				owned = new OwnedOptionalRows(result, owner);
+				left = null;
+				owner = null;
+				return refactorize(owned, row, liveMask, capacity);
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(owned != null ? owned : result == null ? left : result, failure);
+				KernelRuntime.closeResource(owner, failure);
+				throw failure;
 			}
-			return refactorize(new LeftJoinCursor(left, leftJoin.right, row, leftJoin.left.producedMask(),
-					Double.NaN, Double.NaN, Double.NaN), row, liveMask, capacity);
 		}
 		if (plan instanceof UnionPlan union) {
 			RowCursor left = openWeighted(union.left, row, liveMask, capacity);
@@ -744,6 +851,12 @@ final class LmdbWildcardPredicateBatch {
 			}
 			return refactorize(new LateralCursor(left, lateral.right, visibleInputMask, row), row, liveMask, capacity);
 		}
+		if (plan instanceof ValuesPlan values) {
+			// VALUES is already an exact bounded row producer. Keep it batch-capable as the left input of a weighted
+			// OPTIONAL so a direct RHS pattern can use its specialized probe without first materializing scalar rows.
+			BatchCursor batch = values.openBatch(row, capacity);
+			return batch == null ? null : asRows(batch, row, capacity);
+		}
 		MultiJoinPlan join = plan instanceof MultiJoinPlan multi ? multi
 				: plan instanceof PatternPlan ? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0]) : null;
 		if (join == null) {
@@ -772,6 +885,93 @@ final class LmdbWildcardPredicateBatch {
 		}
 		FactorizingBatchCursor factorized = FactorizingBatchCursor.open(rows, row, liveMask, capacity);
 		return factorized == null ? null : new BatchFactorizedRowCursor(factorized, row, capacity);
+	}
+
+	/** One physical weighted OPTIONAL owns its raw predicates and reports logical rows before regrouping. */
+	private static final class OwnedOptionalRows implements FactorizedRowCursor {
+		private final RowCursor input;
+		private final OptionalExecutionOwner owner;
+		private long weight;
+		private boolean closed;
+
+		OwnedOptionalRows(RowCursor input, OptionalExecutionOwner owner) {
+			this.input = input;
+			this.owner = owner;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			try {
+				if (!input.next()) {
+					close();
+					return false;
+				}
+				weight = input instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+				owner.emitted(weight, null);
+				return true;
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public long multiplicity() {
+			return weight;
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				Throwable failure = KernelRuntime.closeResource(input, null);
+				failure = KernelRuntime.closeResource(owner, failure);
+				KernelRuntime.rethrowCloseFailure(failure);
+			}
+		}
+	}
+
+	/** Exposes each logical left occurrence with unit weight before a non-coalesced RHS invocation. */
+	private static final class UnitWeightFactorizedCursor implements FactorizedRowCursor {
+		private final RowCursor input;
+		private boolean closed;
+
+		UnitWeightFactorizedCursor(RowCursor input) {
+			this.input = input;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			try {
+				if (input.next()) {
+					return true;
+				}
+				close();
+				return false;
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public long multiplicity() {
+			return 1L;
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				KernelRuntime.rethrowCloseFailure(KernelRuntime.closeResource(input, null));
+			}
+		}
 	}
 
 	/** Sequential UNION adapter which preserves the exact factor weight supplied by the active arm. */

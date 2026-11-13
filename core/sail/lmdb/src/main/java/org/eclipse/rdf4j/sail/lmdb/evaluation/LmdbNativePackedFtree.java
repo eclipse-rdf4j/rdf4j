@@ -172,9 +172,10 @@ final class LmdbNativePackedFtree {
 			LmdbNativeExplain.recordExecutionPath(explainTarget, ROWS_SERIAL);
 			return NativeUnorderedInput.rows(row, rows);
 		}, input.estimateWork(row, row.boundMask()), ROWS_SERIAL, () -> {
-		}).withCostQuote(LmdbNativeCostQuote.streaming(
+		}).withCostQuote(LmdbNativePlanExecutionProfile.preserveOptionalDemand(LmdbNativeCostQuote.streaming(
 				LmdbNativeCostVectors.plan(input, row, row.boundMask(), LmdbNativeCostVector.Feature.GENERATED_ROW),
-				LmdbNativeWork.rowsOut(input, row, row.boundMask())));
+				LmdbNativeWork.rowsOut(input, row, row.boundMask())), input, row, row.boundMask(),
+				LmdbNativePlanExecutionProfile.Mode.KERNEL));
 	}
 
 	static List<BindingSet> tryEvaluateAggregate(SlotPlan input, RowState row, int[] groups,
@@ -308,6 +309,8 @@ final class LmdbNativePackedFtree {
 								.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
 										LmdbNativeWork.rowsOut(input, row, row.boundMask()), row)),
 						groups.length == 0 ? 1D : Double.NaN);
+		serial = LmdbNativePlanExecutionProfile.preserveOptionalDemand(serial, input, row, row.boundMask(),
+				LmdbNativePlanExecutionProfile.Mode.KERNEL);
 		LmdbNativeCostQuote quote = parallelQuote(serial, input, row, capacity, groups,
 				LmdbNativePackedMorsels.usesSharedAggregateStore(aggregates));
 		return new LmdbNativeStrategyProposal<>(
@@ -354,7 +357,7 @@ final class LmdbNativePackedFtree {
 			chunked = chunked.scaled(factor, wave);
 		}
 		return new LmdbNativeCostQuote(startup, streaming, serial.outputRows(),
-				serial.ordered(), serial.distinct(), chunked);
+				serial.ordered(), serial.distinct(), chunked).withOptionalCostFrom(serial);
 	}
 
 	/** A page counts projected entries, so only a proven unit-multiplicity shape can use logical rows here. */
@@ -384,7 +387,7 @@ final class LmdbNativePackedFtree {
 		return new LmdbNativeCostQuote(quote.startup(), remaining.build(), quote.outputRows(), quote.ordered(),
 				quote.distinct(), quote.chunked()
 						.withBufferedConsumer(quote.outputRows(), pageRows)
-						.withIndependentPhase(replayPage));
+						.withIndependentPhase(replayPage)).withOptionalCostFrom(quote);
 	}
 
 	private static int projectionReplayPageRows(LmdbNativeCostQuote quote, SlotPlan input, RowState row,

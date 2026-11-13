@@ -47,7 +47,8 @@ final class LmdbNativeFactorRows {
 
 	private static LmdbNativeFactorCursor filter(FilterPlan plan, RowState row, long scalarDemand) throws IOException {
 		long reads = plan.groupedReadMask();
-		if (!enabled() || row.encounterOrderRequired || reads < 0L)
+		if (!enabled() || row.encounterOrderRequired || reads < 0L
+				|| NativeFilterLease.requiresLogicalRhsRows(plan.filter))
 			return null;
 		boolean retainSelection = !"false".equals(System.getProperty("rdf4j.lmdb.factor.selection.enabled"))
 				&& (reads & ~scalarDemand) != 0L;

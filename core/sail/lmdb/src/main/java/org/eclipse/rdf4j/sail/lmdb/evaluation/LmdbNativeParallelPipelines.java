@@ -291,7 +291,10 @@ final class LmdbNativeParallelPipelines {
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
 				LmdbNativeWork.exact(startupCost), outputRows,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close)
-						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
+						.withCostQuote(LmdbNativePlanExecutionProfile.preserveOptionalDemand(
+								new LmdbNativeCostQuote(startup, streaming, outputRows, false, false), plan,
+								consumerRow, boundMask,
+								LmdbNativePlanExecutionProfile.Mode.BATCH));
 	}
 
 	private static RowCursor open(ParallelCandidate candidate) throws IOException {
@@ -1109,87 +1112,94 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void runWorker(int worker, MultiJoinPlan plan) throws IOException {
-			NativeLmdbQuerySource source = sources[worker];
-			RowState row = new RowState(source, step.layout, consumerRow.base, consumerRow.exactValuesMetrics,
-					consumerRow.cancellation);
-			row.parallelOwnership = RowState.ParallelOwnership.OUTER_PIPELINE;
-			row.memoryScope = consumerRow.memoryScope;
-			row.runtimePlan = consumerRow.runtimePlan;
-			row.scalarFilterTelemetryEnabled = consumerRow.scalarFilterTelemetryEnabled;
-			row.scalarFilterAttempt = consumerRow.scalarFilterAttempt;
-			if (!NativeRowSeeder.seed(row.slots, step.layout, consumerRow.base, source)) {
-				throw new IllegalStateException("worker seeding diverged from the query thread");
-			}
-			row.recomputeBoundMask();
-			LmdbNativeAttemptMetrics metrics = workerMetrics[worker];
-			// must match the consumer's tryOpen order: the shared morsel root is derived.order[0]
-			MultiJoinPlan.OrderedPlan derived = LmdbNativeFactorizedRows.selectFactorizedOrder(plan,
-					row.boundMask(), 0L, 1);
-			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreateFromExternalRoot(plan, derived, row,
-					row.boundMask(), step.sourceSlots, step.distinct, metrics);
-			RowCursor leftmost = partitions != null
-					? new LmdbNativeExchange.PartitionCursor(partitions, root, row, failure, cancelled)
-					: new LmdbNativeExchange.MorselCursor(input, root, row, failure, cancelled);
-			RowCursor pipeline;
-			try {
-				if (factorized != null) {
-					pipeline = factorized.openFrom(row, leftmost);
-				} else {
-					pipeline = LmdbNativeAdaptiveFilterPlacement.tryOpenFrom(step.originalExpr, plan, row, leftmost);
-					if (pipeline == null) {
-						FactorizedTail.MemoBudget prefixBudget = new FactorizedTail.MemoBudget(
-								FactorizedTail.MEMO_BYPASSES, metrics);
-						pipeline = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
-								? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, derived.order.length, row,
-										leftmost, prefixBudget)
-								: null;
-						if (pipeline == null) {
-							pipeline = plan.openChainFrom(derived, leftmost, derived.order.length, row);
-						}
-					}
+			try (var optionalScope = workerMetrics[worker].optionalScope(
+					sources[worker] instanceof SyntheticValueSource ? sources[worker] : consumerRow.source)) {
+				NativeLmdbQuerySource source = sources[worker];
+				RowState row = new RowState(source, step.layout, consumerRow.base, consumerRow.exactValuesMetrics,
+						consumerRow.cancellation);
+				row.parallelOwnership = RowState.ParallelOwnership.OUTER_PIPELINE;
+				row.memoryScope = consumerRow.memoryScope;
+				row.runtimePlan = consumerRow.runtimePlan;
+				row.scalarFilterTelemetryEnabled = consumerRow.scalarFilterTelemetryEnabled;
+				row.scalarFilterAttempt = consumerRow.scalarFilterAttempt;
+				if (!NativeRowSeeder.seed(row.slots, step.layout, consumerRow.base, source)) {
+					throw new IllegalStateException("worker seeding diverged from the query thread");
 				}
-			} catch (IOException | RuntimeException | Error problem) {
+				row.recomputeBoundMask();
+				LmdbNativeAttemptMetrics metrics = workerMetrics[worker];
+				// must match the consumer's tryOpen order: the shared morsel root is derived.order[0]
+				MultiJoinPlan.OrderedPlan derived = LmdbNativeFactorizedRows.selectFactorizedOrder(plan,
+						row.boundMask(), 0L, 1);
+				LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreateFromExternalRoot(plan, derived,
+						row,
+						row.boundMask(), step.sourceSlots, step.distinct, metrics);
+				RowCursor leftmost = partitions != null
+						? new LmdbNativeExchange.PartitionCursor(partitions, root, row, failure, cancelled)
+						: new LmdbNativeExchange.MorselCursor(input, root, row, failure, cancelled);
+				RowCursor pipeline;
 				try {
-					leftmost.close();
-				} catch (RuntimeException | Error closeFailure) {
-					if (problem != closeFailure) {
-						problem.addSuppressed(closeFailure);
-					}
-				}
-				throw problem;
-			}
-			Throwable failure = null;
-			try {
-				NativeBatch batch = new NativeBatch(row.slots.length, OUTPUT_ROWS);
-				int rows = 0;
-				while (!cancelled.get() && row.advance(pipeline)) {
-					long multiplicity = pipeline instanceof FactorizedRowCursor
-							? ((FactorizedRowCursor) pipeline).multiplicity()
-							: 1L;
-					while (multiplicity-- > 0 && !cancelled.get()
-							&& !row.cancellation.isCancellationRequested()) {
-						batch.copyFromRow(row.slots, rows++);
-						if (rows == batch.capacity) {
-							emit(batch, rows);
-							batch = new NativeBatch(row.slots.length, OUTPUT_ROWS);
-							rows = 0;
+					if (factorized != null) {
+						pipeline = factorized.openFrom(row, leftmost);
+					} else {
+						pipeline = LmdbNativeAdaptiveFilterPlacement.tryOpenFrom(step.originalExpr, plan, row,
+								leftmost);
+						if (pipeline == null) {
+							FactorizedTail.MemoBudget prefixBudget = new FactorizedTail.MemoBudget(
+									FactorizedTail.MEMO_BYPASSES, metrics);
+							pipeline = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
+									? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, derived.order.length,
+											row,
+											leftmost, prefixBudget)
+									: null;
+							if (pipeline == null) {
+								pipeline = plan.openChainFrom(derived, leftmost, derived.order.length, row);
+							}
 						}
 					}
+				} catch (IOException | RuntimeException | Error problem) {
+					try {
+						leftmost.close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (problem != closeFailure) {
+							problem.addSuppressed(closeFailure);
+						}
+					}
+					throw problem;
 				}
-				if (rows > 0 && !cancelled.get() && !row.cancellation.isCancellationRequested()) {
-					emit(batch, rows);
+				Throwable failure = null;
+				try {
+					NativeBatch batch = new NativeBatch(row.slots.length, OUTPUT_ROWS);
+					int rows = 0;
+					while (!cancelled.get() && row.advance(pipeline)) {
+						long multiplicity = pipeline instanceof FactorizedRowCursor
+								? ((FactorizedRowCursor) pipeline).multiplicity()
+								: 1L;
+						while (multiplicity-- > 0 && !cancelled.get()
+								&& !row.cancellation.isCancellationRequested()) {
+							batch.copyFromRow(row.slots, rows++);
+							if (rows == batch.capacity) {
+								emit(batch, rows);
+								batch = new NativeBatch(row.slots.length, OUTPUT_ROWS);
+								rows = 0;
+							}
+						}
+					}
+					if (rows > 0 && !cancelled.get() && !row.cancellation.isCancellationRequested()) {
+						emit(batch, rows);
+					}
+				} catch (IOException | RuntimeException | Error problem) {
+					failure = problem;
+					throw problem;
+				} finally {
+					KernelRuntime.closeCursor(pipeline, failure, this::recordCleanupFailure);
 				}
-			} catch (IOException | RuntimeException | Error problem) {
-				failure = problem;
-				throw problem;
-			} finally {
-				KernelRuntime.closeCursor(pipeline, failure, this::recordCleanupFailure);
-			}
-			if (!cancelled.get()) {
-				// RowState.advance may return false because the shared token stopped, not because this worker
-				// reached EOF. Publish that outcome so the consumer cannot wait forever for an END page.
-				row.cancellation.check();
-				offerOutput(OutputPage.END);
+				if (!cancelled.get()) {
+					// RowState.advance may return false because the shared token stopped, not because this worker
+					// reached EOF. Publish that outcome so the consumer cannot wait forever for an END page.
+					row.cancellation.check();
+					offerOutput(OutputPage.END);
+				}
+
 			}
 		}
 
@@ -1395,6 +1405,10 @@ final class LmdbNativeParallelPipelines {
 			if (!noWorkerRan && !exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
 				CANCELLED_RUNS.incrementAndGet();
 			}
+			for (LmdbNativeAttemptMetrics metrics : workerMetrics) {
+				metrics.discardOptionalTelemetry();
+			}
+			attemptMetrics.discardOptionalTelemetry();
 			reservation.close();
 			System.arraycopy(entrySlots, 0, consumerRow.slots, 0, entrySlots.length);
 			consumerRow.recomputeBoundMask();
