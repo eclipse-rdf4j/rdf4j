@@ -1,0 +1,27 @@
+Source entries: META-INF/versions/22/com/github/luben/zstd/Zstd.java#L1529-L1553, com/github/luben/zstd/Zstd.java#L1197-L1221
+/*
+
+        if (!srcBuf.isDirect()) {
+            throw new IllegalArgumentException("srcBuf must be a direct buffer");
+        }
+
+        if (!dstBuf.isDirect()) {
+            throw new IllegalArgumentException("dstBuf must be a direct buffer");
+        }
+
+        long size = compressDirectByteBuffer(dstBuf, // compress into dstBuf
+                dstBuf.position(),                   // write compressed data starting at offset position()
+                dstBuf.limit() - dstBuf.position(),  // write no more than limit() - position() bytes
+                srcBuf,                              // read data to compress from srcBuf
+                srcBuf.position(),                   // start reading at position()
+                srcBuf.limit() - srcBuf.position(),  // read limit() - position() bytes
+                level,                               // use this compression level
+                checksumFlag);                       // enable or disable checksum based on this flag
+        if (isError(size)) {
+            throw new ZstdException(size);
+        }
+        srcBuf.position(srcBuf.limit());
+        dstBuf.position(dstBuf.position() + (int) size);
+        return (int) size;
+        */
+

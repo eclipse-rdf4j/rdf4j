@@ -1,0 +1,19 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-ppc64le/1.23.0/native-linux-ppc64le-1.23.0-sources.jar",
+  "archiveSha256": "34a0c42f2b8dd357ea36822efd530673816e0f851a552e5548ee0729dea0d8ab",
+  "blocks": [
+    {
+      "commentSha256": "269974a7b6406e9f1aadae96666154a1288426133d9b2412441293a68bfa1429",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/linux/ppc64le/NativeLoader.java",
+          "sourceSha256": "82087042076916aec30ccac9644307fc0880381581f28942b639e69a48b4fe08",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    }
+  ]
+}

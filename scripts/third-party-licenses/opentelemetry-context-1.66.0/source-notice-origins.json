@@ -1,0 +1,353 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-context/1.66.0/opentelemetry-context-1.66.0-sources.jar",
+  "archiveSha256": "6d78432825359de3aa253e524fee3059dbbe70adf219c6abffa756924113c693",
+  "blocks": [
+    {
+      "commentSha256": "69e6a2d07573af06af1613cec2ac54b4ec63cf012b9d2c8a9c76be3cc9e15043",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/context/ArrayBasedContext.java",
+          "sourceSha256": "1ecf47a0120d81fb1b6938fec8fe9645004580a06d649d28c51544a5e5fdd18b",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/Context.java",
+          "sourceSha256": "1945f649ea9f0d90f2365013f76332733f7524f8f472cd50a095c7e1b2a649c1",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ContextExecutorService.java",
+          "sourceSha256": "fd906e172fc184b282ba849326ffa069a25be406b5ad240f138631ca53f7fa1f",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ContextKey.java",
+          "sourceSha256": "43c7296443106361f9219d8e8b72b13199281d2c9116f0598d1576d7c5586f69",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ContextScheduledExecutorService.java",
+          "sourceSha256": "eac3c9b9449af5fd55063f9406d9afb28febe51c0775bf3f387178d90cfac98d",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ContextStorage.java",
+          "sourceSha256": "69bf4afa3d58a8f8d5cdacaa54c2b139fc5cbfb9f4ebb43e68e41b8bfac54139",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ContextStorageProvider.java",
+          "sourceSha256": "304dcf77649306a8054a3076464c049ef49c1c385c6f924146610b3382d76f31",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ContextStorageWrappers.java",
+          "sourceSha256": "cf70c5a965c22d9878b81abcc47d9ce2b3e565bece2374678610a982d10b89ed",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/CurrentContextExecutorService.java",
+          "sourceSha256": "555ea6ba08ec1866a1986566640e5e36b0125a4171428b7972a707af1cfc125d",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/CurrentContextScheduledExecutorService.java",
+          "sourceSha256": "6a0d47b749591d8efe7af5d17df3c94f66cc0cdbe0f59ec8bf9ad41e89494919",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/DefaultContextKey.java",
+          "sourceSha256": "c9a6aed43aea3b4be979fa04c5ff50463ba160f5a0f3e315db4f9bf73eb6be8a",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ForwardingExecutorService.java",
+          "sourceSha256": "625df7c7f96958e07b6fb4f11dcb89550469567b05ca7fcda024b3882baabc95",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ImplicitContextKeyed.java",
+          "sourceSha256": "4cc1c04d28a0ae08edf5297f826cc404ec6598427bf28b0c876b7adcf4d49533",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/LazyStorage.java",
+          "sourceSha256": "ace1ef16707cf3a3280fa926ac418a98ece1df807d67a348c22361a39e822c06",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/Scope.java",
+          "sourceSha256": "cefd202f3d8924b32c51d80e4560f3da3aaf0899cb9c2c86a2e33d828e1403e5",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/StrictContextStorage.java",
+          "sourceSha256": "a54a92c00ca0d6cec31591f7de0268e9bb0441af4964a429e98e5f450e31e2d0",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/ThreadLocalContextStorage.java",
+          "sourceSha256": "62b0c03caed8aca14ef00be1ecb5c9719d304f460a552328d060018188e1d697",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/package-info.java",
+          "sourceSha256": "53fe3f6483a93de4a698afc5297ab993e88ea3f5bbb776b90fda96747471e310",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/internal/shaded/AbstractWeakConcurrentMap.java",
+          "sourceSha256": "45cb62ae6f85e1094af0e8a284d74270d177a5348e375d29fb6e32180e426057",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/internal/shaded/WeakConcurrentMap.java",
+          "sourceSha256": "275ca8453c2991ec9637325df8e5503b01b05f7f4e57be35608b0f029d40ce8b",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/ContextPropagators.java",
+          "sourceSha256": "feea547b03f7b87a1cc6a7144ba137e9021c9e7517f92d383a81db614a704319",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/DefaultContextPropagators.java",
+          "sourceSha256": "790f285a3a63289f341031913a46f92a1123fdc6085d21de45681acd4ee5eeed",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/MultiTextMapPropagator.java",
+          "sourceSha256": "c3461124b3df6bb55a5bd3eb87c25cf42098516e3c1a4a1c49f54951577ba220",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/NoopTextMapPropagator.java",
+          "sourceSha256": "e9f36b2b359c83c7a4ccd9a03f53d5c2022b7c727cfe987361b79cfa5515f6da",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/TextMapGetter.java",
+          "sourceSha256": "b189f6d4ea669946a16bc88f23883224997008e754364a41d8317c393525cc4e",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/TextMapPropagator.java",
+          "sourceSha256": "2266eaa990def94f946a1fb76ec6ed6491b986730c5a46ccc1fc507a9c89660a",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/TextMapSetter.java",
+          "sourceSha256": "6fbcb58a7b31fe0aa7e5e1f8b6153d50c138f63928b20941bf3eaea82a62eb92",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/package-info.java",
+          "sourceSha256": "602a3013e467aca7117f52818989ed46fc94809dfc5d5199cf56de8bb24081fc",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/context/propagation/internal/ExtendedTextMapGetter.java",
+          "sourceSha256": "89d207b391692261646348c27ce5dfb229fdbeeab1b726e646ca49a415ac7564",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "6b85086349005930628cbcb111f4ceefe1edf60484e464ff93cf99faf41d19d8",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/context/ArrayBasedContext.java",
+          "sourceSha256": "1ecf47a0120d81fb1b6938fec8fe9645004580a06d649d28c51544a5e5fdd18b",
+          "startByte": 109,
+          "endByteExclusive": 708,
+          "startLine": 7,
+          "endLine": 21
+        },
+        {
+          "entry": "io/opentelemetry/context/Context.java",
+          "sourceSha256": "1945f649ea9f0d90f2365013f76332733f7524f8f472cd50a095c7e1b2a649c1",
+          "startByte": 109,
+          "endByteExclusive": 708,
+          "startLine": 7,
+          "endLine": 21
+        },
+        {
+          "entry": "io/opentelemetry/context/LazyStorage.java",
+          "sourceSha256": "ace1ef16707cf3a3280fa926ac418a98ece1df807d67a348c22361a39e822c06",
+          "startByte": 109,
+          "endByteExclusive": 708,
+          "startLine": 7,
+          "endLine": 21
+        }
+      ]
+    },
+    {
+      "commentSha256": "e7d258396a4a1f93a1d3e6b729921baf47f71b7da7f8e4e689f401e1f86fddee",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/context/ContextStorage.java",
+          "sourceSha256": "69bf4afa3d58a8f8d5cdacaa54c2b139fc5cbfb9f4ebb43e68e41b8bfac54139",
+          "startByte": 109,
+          "endByteExclusive": 742,
+          "startLine": 7,
+          "endLine": 21
+        },
+        {
+          "entry": "io/opentelemetry/context/LazyStorage.java",
+          "sourceSha256": "ace1ef16707cf3a3280fa926ac418a98ece1df807d67a348c22361a39e822c06",
+          "startByte": 709,
+          "endByteExclusive": 1342,
+          "startLine": 22,
+          "endLine": 36
+        }
+      ]
+    },
+    {
+      "commentSha256": "51e15f7bd9be474dca339a95540f2d7a5841de30bd6a970c4441dd9d51a9788f",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/context/StrictContextStorage.java",
+          "sourceSha256": "a54a92c00ca0d6cec31591f7de0268e9bb0441af4964a429e98e5f450e31e2d0",
+          "startByte": 109,
+          "endByteExclusive": 709,
+          "startLine": 7,
+          "endLine": 19
+        }
+      ]
+    },
+    {
+      "commentSha256": "94da3cc096ec6d5f1db808b90910e9b78c4087e2ee0b30f931f472c79910dc7d",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/context/internal/shaded/AbstractWeakConcurrentMap.java",
+          "sourceSha256": "45cb62ae6f85e1094af0e8a284d74270d177a5348e375d29fb6e32180e426057",
+          "startByte": 109,
+          "endByteExclusive": 706,
+          "startLine": 7,
+          "endLine": 21
+        },
+        {
+          "entry": "io/opentelemetry/context/internal/shaded/WeakConcurrentMap.java",
+          "sourceSha256": "275ca8453c2991ec9637325df8e5503b01b05f7f4e57be35608b0f029d40ce8b",
+          "startByte": 109,
+          "endByteExclusive": 706,
+          "startLine": 7,
+          "endLine": 21
+        }
+      ]
+    },
+    {
+      "commentSha256": "bb10d659d6477ddb8fdd63d71475bbf793c45b0325c2fcea571b580d238f556d",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/context/internal/shaded/AbstractWeakConcurrentMap.java",
+          "sourceSha256": "45cb62ae6f85e1094af0e8a284d74270d177a5348e375d29fb6e32180e426057",
+          "startByte": 1115,
+          "endByteExclusive": 1912,
+          "startLine": 37,
+          "endLine": 49
+        }
+      ]
+    },
+    {
+      "commentSha256": "303d041e122668aeb5badeef9523120fafe38fb8440d5b2a62939e0cb2db9486",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/context/internal/shaded/WeakConcurrentMap.java",
+          "sourceSha256": "275ca8453c2991ec9637325df8e5503b01b05f7f4e57be35608b0f029d40ce8b",
+          "startByte": 1016,
+          "endByteExclusive": 1737,
+          "startLine": 34,
+          "endLine": 45
+        }
+      ]
+    }
+  ]
+}

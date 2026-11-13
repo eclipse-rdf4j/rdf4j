@@ -1,0 +1,173 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/io/opentelemetry/semconv/opentelemetry-semconv/1.41.1/opentelemetry-semconv-1.41.1-sources.jar",
+  "archiveSha256": "45f2c6a3c7ea4f21ea205b701a8b794e66e219fe3ecb04499fe64c341d4cfa9c",
+  "blocks": [
+    {
+      "commentSha256": "69e6a2d07573af06af1613cec2ac54b4ec63cf012b9d2c8a9c76be3cc9e15043",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/semconv/AttributeKeyTemplate.java",
+          "sourceSha256": "9032044e40cbf07624f967028bce27cf3cfcc37d95f05000663dee883fa0c2e7",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/ClientAttributes.java",
+          "sourceSha256": "01ed93f958beacf9a1432a84f7241c2804aebb05d2ad7000c3126be4cb978f4a",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/CodeAttributes.java",
+          "sourceSha256": "1f3af99a5e2bcead4fb6475726bd2ec96c43291872732961699514b2734a5fc5",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/DbAttributes.java",
+          "sourceSha256": "eb071cc46c80532f833bd6a7e108f6079f7d2a94c75ef9679a325dfdedd37bc3",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/DeploymentAttributes.java",
+          "sourceSha256": "6def4f936950f555faa126c51065a5f484a08853f64bb1cebcd719a4a654620f",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/ErrorAttributes.java",
+          "sourceSha256": "95e7df135a3f5acb110128fafc52453a5b07fc4721acd7eca7c99f4a3aeeaecb",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/ExceptionAttributes.java",
+          "sourceSha256": "a2d5215584396d74196e4838e4a04efd629522d1dc0171a460bb29a23483216d",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/HttpAttributes.java",
+          "sourceSha256": "ffb104e169a7b86568c9eb8aa771fa3cb565494db4d0884ea4430dbb4d1d182d",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/JvmAttributes.java",
+          "sourceSha256": "3a23abf00ce1a30f9b599a0e33f430484d1933e5cd32a3030f51c6e62dc1ea0d",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/NetworkAttributes.java",
+          "sourceSha256": "d2c6f417050cf7761ba6720bc4b68a714eec10581ade0380bc47bed37d7d0ce9",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/OtelAttributes.java",
+          "sourceSha256": "695578dbffecd41f8f63f25a4e5c00d5941a91dd8fda1b2b54df4c514b264267",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/SchemaUrls.java",
+          "sourceSha256": "fe0eb4708f462671d74996bffe1226d3a3ea3a26192a8c4dab1eb55e9ab9a936",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/ServerAttributes.java",
+          "sourceSha256": "a640dea4a236c0076c84d60ebd9ab7c00fb278efc9e189e724a6378f822ecdfb",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/ServiceAttributes.java",
+          "sourceSha256": "8a9ee2fafedf57fae4a6ef519fc36517bb127a4bc9c5d87911b1cad7dd53dba9",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/TelemetryAttributes.java",
+          "sourceSha256": "16cccca6b8b72ad7021a0d634d930dcc120b250dfd5260eb9e8c5943cc358dbc",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/UrlAttributes.java",
+          "sourceSha256": "d2afdf9412c8d729bb995f6b2fe12f8015dae2e8a3caf322320e6d44d4cb4500",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/semconv/UserAgentAttributes.java",
+          "sourceSha256": "4889e1b3fe71c03fe2692bdb9964b67ba1b00c8802edc21347145e6aa31b873f",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "062a8495e97037449c2fd157f94cf169273a9275839ca2e8d12e56615cc3584a",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/semconv/DbAttributes.java",
+          "sourceSha256": "eb071cc46c80532f833bd6a7e108f6079f7d2a94c75ef9679a325dfdedd37bc3",
+          "startByte": 6310,
+          "endByteExclusive": 6708,
+          "startLine": 145,
+          "endLine": 153
+        }
+      ]
+    },
+    {
+      "commentSha256": "19d32a0494b899ccd25b9fd3d6cce53b124006e22d384b6a45b52fe8b155da7a",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/semconv/ServiceAttributes.java",
+          "sourceSha256": "8a9ee2fafedf57fae4a6ef519fc36517bb127a4bc9c5d87911b1cad7dd53dba9",
+          "startByte": 426,
+          "endByteExclusive": 2701,
+          "startLine": 16,
+          "endLine": 50
+        }
+      ]
+    }
+  ]
+}

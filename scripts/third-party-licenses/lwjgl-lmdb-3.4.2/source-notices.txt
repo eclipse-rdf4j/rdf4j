@@ -1,0 +1,13 @@
+Source entries: META-INF/versions/11/module-info.java#L1-L4
+/*
+ * Copyright LWJGL. All rights reserved.
+ * License terms: https://www.lwjgl.org/license
+ */
+
+Source entries: org/lwjgl/util/lmdb/LMDB.java#L1-L5, org/lwjgl/util/lmdb/LibLMDB.java#L1-L5, org/lwjgl/util/lmdb/MDBCmpFunc.java#L1-L5, org/lwjgl/util/lmdb/MDBCmpFuncI.java#L1-L5, org/lwjgl/util/lmdb/MDBEnvInfo.java#L1-L5, org/lwjgl/util/lmdb/MDBMsgFunc.java#L1-L5, org/lwjgl/util/lmdb/MDBMsgFuncI.java#L1-L5, org/lwjgl/util/lmdb/MDBRelFunc.java#L1-L5, org/lwjgl/util/lmdb/MDBRelFuncI.java#L1-L5, org/lwjgl/util/lmdb/MDBStat.java#L1-L5, org/lwjgl/util/lmdb/MDBVal.java#L1-L5, org/lwjgl/util/lmdb/package-info.java#L1-L5
+/*
+ * Copyright LWJGL. All rights reserved.
+ * License terms: https://www.lwjgl.org/license
+ * MACHINE GENERATED FILE, DO NOT EDIT
+ */
+

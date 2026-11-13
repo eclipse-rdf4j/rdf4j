@@ -1,0 +1,911 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/opencsv/opencsv/5.12.0/opencsv-5.12.0-sources.jar",
+  "archiveSha256": "590bac981c873443361a8e063b46aa5ae9a7975f5709e464f3a3a9eb341934bc",
+  "blocks": [
+    {
+      "commentSha256": "574926affa36910ea1ee19762eb1abc6488c817cdbbc67124bca5129f1372f59",
+      "sources": [
+        {
+          "entry": "com/opencsv/ResultSetColumnNameHelperService.java",
+          "sourceSha256": "606dad7eb68d87c6657b35b032f5ee78ac243d2ccea5b72befbc6e856c572def",
+          "startByte": 22,
+          "endByteExclusive": 616,
+          "startLine": 3,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "c57cf5f09dd017e0b20417cd3ae51bbef11325a35fef7f690bfa4c42c1baef51",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVParser.java",
+          "sourceSha256": "24aaed9f88a8171a66ffba2688fd69aaf3ac4723a89536c5a8d60c333d897485",
+          "startByte": 22,
+          "endByteExclusive": 592,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "com/opencsv/CSVReader.java",
+          "sourceSha256": "24d3cb4401b7bdbbfb715a7a9e6a1c10f33b5ebd80e26f6e300549683d8b9fb2",
+          "startByte": 22,
+          "endByteExclusive": 592,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "com/opencsv/CSVReaderBuilder.java",
+          "sourceSha256": "7753b870688f07437b998aef622846ba2e3652aac82a163cee7ab9cebbb7fcc6",
+          "startByte": 0,
+          "endByteExclusive": 570,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/CSVParserBuilder.java",
+          "sourceSha256": "d74361376730df3db0c9e9a57f27683bb1cf178a0240d3122e7994848157eb72",
+          "startByte": 0,
+          "endByteExclusive": 570,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/ResultSetHelper.java",
+          "sourceSha256": "ff41c8340668d2f68e91a21922013f1360580de6059d0a821cdbdbf691660e16",
+          "startByte": 21,
+          "endByteExclusive": 591,
+          "startLine": 2,
+          "endLine": 16
+        },
+        {
+          "entry": "com/opencsv/ResultSetHelperService.java",
+          "sourceSha256": "3842d51c4eca17c1a192b343988d50a53530f82eec52d1fc4887751710d3d2b1",
+          "startByte": 21,
+          "endByteExclusive": 591,
+          "startLine": 2,
+          "endLine": 16
+        }
+      ]
+    },
+    {
+      "commentSha256": "64fac21a596782625e3a8cd41281660de99be609c556239fed1275cb0ebafc01",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVParser.java",
+          "sourceSha256": "24aaed9f88a8171a66ffba2688fd69aaf3ac4723a89536c5a8d60c333d897485",
+          "startByte": 921,
+          "endByteExclusive": 1696,
+          "startLine": 30,
+          "endLine": 45
+        }
+      ]
+    },
+    {
+      "commentSha256": "a01d22d18a00c3727047eb22ebe7d73fc5686db1ce0f8854a12c0d5b81528589",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/AbstractFieldMap.java",
+          "sourceSha256": "02b477e3a0d0bd1bb03408a5578fb42bf159856573da5fca036f913c2cca26f7",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/comparator/LiteralComparator.java",
+          "sourceSha256": "85962302c1cf7d7ed182df23a1cbc4305f510fb5faf816a603b60083063dd892",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/comparator/package-info.java",
+          "sourceSha256": "79fdbe70f03466e7cd497199d7f0ce4efef9032265a513ba84dcef5495f26bae",
+          "startByte": 282,
+          "endByteExclusive": 886,
+          "startLine": 8,
+          "endLine": 22
+        },
+        {
+          "entry": "com/opencsv/bean/RegexToBeanField.java",
+          "sourceSha256": "13f47b4fa288345274a2219b35af0693ea2983e5851c38dc123ff90b65319a80",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/BeanFieldJoinStringIndex.java",
+          "sourceSha256": "150ee3809915e58fd5c2eef9497338addb12224a0bbe26da648e669ad0ab82a6",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/FieldMapByPositionEntry.java",
+          "sourceSha256": "1171555f1d9334f6a314320c64e61b1e25d26a02fb41d19625cd7fadc826d25d",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/PositionToBeanField.java",
+          "sourceSha256": "7f2c5478fb0cce049be15bc28d04d98c155185b99d8a554db31b6044fb5dd382",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/AbstractFieldMapEntry.java",
+          "sourceSha256": "1687871a5d1e30f101a56f0bf8958e6b5f68443341a91bd2f0f931f0230e9bff",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/FieldMap.java",
+          "sourceSha256": "310d7492e4c99ad58510f9983c665483a59f5960e1c27c2bc52e7e440acdf32c",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/FieldMapByPosition.java",
+          "sourceSha256": "056288b24d78c8225002d9c8baae1af069ad7366c9e150ca0b4ce7e0b915c62c",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/BeanFieldJoinIntegerIndex.java",
+          "sourceSha256": "4ca90da4f657dbc95b3f33ac615be640105fa92ed6340c2f1748585f0a7431d3",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/ConverterNumber.java",
+          "sourceSha256": "f0be5b72f904253bfcafdd3c58271e876b6087fc5769b5cbfa289b2bbbab8058",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/AbstractMappingStrategy.java",
+          "sourceSha256": "a810f70336e083b3e96e4fc610875ed22666dd56a11a824824f852bbc67e0259",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvNumber.java",
+          "sourceSha256": "737e634c90edd7bc58093c7d7bbba4d5fa7b614f677c0247c1c30f0b33264270",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/HeaderIndex.java",
+          "sourceSha256": "0a0ca1a444d7e56ab0c8b479835da574947d492e3f4ac178b233fa7d506eff94",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/ComplexFieldMapEntry.java",
+          "sourceSha256": "e051d3b4ea37e115f05b48f4162d524dbc003ca6dc84d0daccc1fc2baf0f513e",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "ac3a38dd4ebc3b11b890ec8ee567bdf0efe093a83f5b6eb358316862e0eaf6b6",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/AbstractCsvConverter.java",
+          "sourceSha256": "db6598fee47cf69851ce16ebf0d9e2c45c22a4dc9c0d46131585102046c13018",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/BeanFieldSingleValue.java",
+          "sourceSha256": "195e4d5495e67c5f86f19caef275751d2167935faa40609e462abf307f2fade2",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/BeanFieldJoin.java",
+          "sourceSha256": "27411078d4b3c6f3881a7c1d02dd8395f07a52833a4914bf8fd25203b3046ae9",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/util/OrderedObject.java",
+          "sourceSha256": "df2fe7c271500f4827ac55934f4ed919da136117f11a44d4a7312a6adbb7e5e9",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvConverter.java",
+          "sourceSha256": "f31a33719ca2c3db3db4e9670c1a943e0570009c08fc15a8a8e12bbe49260bae",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/FieldMapByName.java",
+          "sourceSha256": "0f308c5729c6f76829ca0bf825dbd813377fcaf3e4955432445c9fefe44f7474",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvBindAndJoinByPosition.java",
+          "sourceSha256": "2ce9186819b5d62612190200d1872ea3b3594f8f722589e676d3bbdc1b299b20",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvBindAndSplitByPosition.java",
+          "sourceSha256": "0296f5af51dcf4e2ec21eb474ba9eb9730fd3935ff16e60bb6eae21c0e672164",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvBindAndJoinByName.java",
+          "sourceSha256": "bb6d2e3f5d077d455e5e67f123e597bf5c382bd45f79a6e2a8b3e1497cd41487",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/FieldMapByNameEntry.java",
+          "sourceSha256": "fc2e2c59e8b5bb04f0c83df87390a0e421371732aa87900d0647ac0b72554576",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/concurrent/IntolerantThreadPoolExecutor.java",
+          "sourceSha256": "17856ac230509bcc0888d47de3999d693805a11d5e32dbc0050bfef1f09df208",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/concurrent/AccumulateCsvResults.java",
+          "sourceSha256": "68fe256471bdba5f14ac45241407b185ac74e98b5fdcd9e12e3d3d80532d7e07",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/concurrent/ProcessCsvLine.java",
+          "sourceSha256": "b51073c460f60fd2f269e8edcfe6abf6496f3bfff2f70967853fd499c8208d3e",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/concurrent/ProcessCsvBean.java",
+          "sourceSha256": "415b3687d9236923f55b8e3e9dca90746e3f38c99312e4026eca8852a64ed586",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvBindAndSplitByName.java",
+          "sourceSha256": "b001b0870382a06d4d7c3b96c26aa27ad3a60264eacb3068444ee40c04dabda3",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/BeanFieldSplit.java",
+          "sourceSha256": "57b1b8b47a4017bf7324c76c5678327097e7466d789df17117109d1fdcdcf081",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "bede80d696fae49d5f8f5947c090aa46a58113adec8489f889b56ce7d7d37f24",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/CsvCustomBindByName.java",
+          "sourceSha256": "2beb8098de56cb4b0adc01695141faff61c5c0d507e3b187016f8a11c01f5ef8",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/ConverterDate.java",
+          "sourceSha256": "408e32949a5221c61a332401a5c16b64b0d8a19b309265997983da18bfbe8109",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/util/OpencsvUtils.java",
+          "sourceSha256": "a2c77e872075b67126b83eb1717144a072fe114094620bb4b82394eeddbd8d7d",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvDate.java",
+          "sourceSha256": "eea117adaea71093243492f00536c76dd6eb53810a1a5c044ec25763963e55a4",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/StatefulBeanToCsvBuilder.java",
+          "sourceSha256": "87148a3819b965cf460c781a9b8fce220057f573187c796ab5112e6cc58d9a49",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvCustomBindByPosition.java",
+          "sourceSha256": "3220c66d12eda1a10a643416e88bcc4d7e4dc3588e658c7692f836dd72508588",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/customconverter/ConvertFrenchToBoolean.java",
+          "sourceSha256": "801fbace7d3da395d71f8e7b844ac16d77c4137b7ed666d8f52378c315740b06",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/customconverter/ConvertGermanToBoolean.java",
+          "sourceSha256": "b1da63728f2fe54ef90535736bbdf98ec571985b1f1dc52ffc303cd2f3344632",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/customconverter/package-info.java",
+          "sourceSha256": "82f98080c5bf4a6b6f031881e94d822957efd3f5eb7d881955428b0f25b71eca",
+          "startByte": 403,
+          "endByteExclusive": 1007,
+          "startLine": 9,
+          "endLine": 23
+        },
+        {
+          "entry": "com/opencsv/bean/AbstractBeanField.java",
+          "sourceSha256": "60b67f4e34cb1dd3ab42dbf420fedb114e5fef330c7c1c1f3fc32b8b91747522",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/StatefulBeanToCsv.java",
+          "sourceSha256": "7c690429008dce70cdee8c11a1d6a97daa2f799414818b9ff7695304e87078b1",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvToBeanBuilder.java",
+          "sourceSha256": "b70216f5e3b433fef71fc52039f1c4ff4565246665f48d3139d626a1fec29fb8",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvBindByPosition.java",
+          "sourceSha256": "3e80dbf31fb59d80b916c18d1ea492e0b80c31b4387b5a69574630e8dc0feb2a",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/package-info.java",
+          "sourceSha256": "4506b856880be3f73f26df1f034cfbfba1116b6e01b7a9e2fc27a2fb8285e52e",
+          "startByte": 165,
+          "endByteExclusive": 769,
+          "startLine": 7,
+          "endLine": 21
+        },
+        {
+          "entry": "com/opencsv/bean/ConverterPrimitiveTypes.java",
+          "sourceSha256": "49598380372b077ce78da1687ddcdd6d8336f9642bd873f997511940a3c5d0b0",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/bean/CsvBindByName.java",
+          "sourceSha256": "be35b6124bfec65e0bb193a7f142b2e544c490f35d5981a0b472996597d60501",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/stream/reader/package-info.java",
+          "sourceSha256": "61e122202221877988b4328ca2ac671726175c614534e37ec769306e1d65aad4",
+          "startByte": 99,
+          "endByteExclusive": 703,
+          "startLine": 5,
+          "endLine": 19
+        },
+        {
+          "entry": "com/opencsv/enums/package-info.java",
+          "sourceSha256": "976e6c2dd84dd87853a982dbaaa874f7ee5cf7d9405f8cf2614172841f2626b6",
+          "startByte": 94,
+          "endByteExclusive": 698,
+          "startLine": 5,
+          "endLine": 19
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvBadConverterException.java",
+          "sourceSha256": "9c8a6ce5d34e65fadcafffeae1717723b2ee0b0fbac81e8c72ab10cf72bb3505",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvRuntimeException.java",
+          "sourceSha256": "3bbca9201d4e66fdf7a2bab66446cf8cef48fd3faee6e295f6bfef3a934ae507",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvMalformedLineException.java",
+          "sourceSha256": "7166fb43838d1358497d7169955e1a8d0067e750bb1bbbbfe7125d2aaf1f5282",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvMultilineLimitBrokenException.java",
+          "sourceSha256": "a9790374d9ae620494724abd1d70a8c054216d946ca3e4228334a0e9951e3465",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvConstraintViolationException.java",
+          "sourceSha256": "06313d1a63615458cdec6cccf3d5f4e26ae503f97b71728397db2dda4029388e",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvRequiredFieldEmptyException.java",
+          "sourceSha256": "1eff630ec3a7559f726324ba9e6ec248e02f0d9956b0c8c764ff7fb3b6c0a42c",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvBeanIntrospectionException.java",
+          "sourceSha256": "3ecb7a6c29cd5c28456af6c8c957d57f5fb6178276c779852bcd7261305d7e52",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvDataTypeMismatchException.java",
+          "sourceSha256": "219bbf37e2a38c8925c65c425201c444fc7ac0a290a5c726d296cddee3b78140",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/CsvException.java",
+          "sourceSha256": "5674710f5af6b612db1dd68df665348e3a71b12c5ef4abd7ef1a3204d56ea739",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/opencsv/exceptions/package-info.java",
+          "sourceSha256": "5b65fa279347b5e814282690aa55cbbc67f66c558bcdc439c0c04ff6b19c618f",
+          "startByte": 108,
+          "endByteExclusive": 712,
+          "startLine": 5,
+          "endLine": 19
+        },
+        {
+          "entry": "com/opencsv/package-info.java",
+          "sourceSha256": "f409269d24b1089a13d3467039879360e8268a70dd9a7f965d3f5915d7470caf",
+          "startByte": 193,
+          "endByteExclusive": 797,
+          "startLine": 7,
+          "endLine": 21
+        }
+      ]
+    },
+    {
+      "commentSha256": "b08e54d21d67db6099291bdf3e5090411cdeac2d036db5857f03a2244c7ebe2e",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/ConverterDate.java",
+          "sourceSha256": "408e32949a5221c61a332401a5c16b64b0d8a19b309265997983da18bfbe8109",
+          "startByte": 3933,
+          "endByteExclusive": 5445,
+          "startLine": 106,
+          "endLine": 130
+        }
+      ]
+    },
+    {
+      "commentSha256": "c2fa3a25126f39147351d8b120e7bca77351ed9665c9e0d0c68a14ac29ce2ba0",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/CsvToBean.java",
+          "sourceSha256": "5fad07e85aaf8d8b2734863fe51aad1bcc878330c07b005b1793efd1e9c9c237",
+          "startByte": 27,
+          "endByteExclusive": 592,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "com/opencsv/bean/MappingStrategy.java",
+          "sourceSha256": "54705c21acc8369e6950ece9f8a5822937d8fc5fcbea0e456f9f58816ef69a8f",
+          "startByte": 27,
+          "endByteExclusive": 592,
+          "startLine": 3,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "e4fb15aa58f03e8fc110b1e0186a3f73ebc359983cd2888ecbe3f182e54c9be3",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/CsvToBean.java",
+          "sourceSha256": "5fad07e85aaf8d8b2734863fe51aad1bcc878330c07b005b1793efd1e9c9c237",
+          "startByte": 3719,
+          "endByteExclusive": 4052,
+          "startLine": 116,
+          "endLine": 124
+        }
+      ]
+    },
+    {
+      "commentSha256": "b0ecb9b88e356509e76ba62982b74b1d8ab16c4a03bb950e68f6d6065cfaa10a",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/CsvToBean.java",
+          "sourceSha256": "5fad07e85aaf8d8b2734863fe51aad1bcc878330c07b005b1793efd1e9c9c237",
+          "startByte": 4176,
+          "endByteExclusive": 4811,
+          "startLine": 129,
+          "endLine": 141
+        }
+      ]
+    },
+    {
+      "commentSha256": "0b0f04dc07abd5d92e459ddbf1ee88f658963854f56ec1ef2881edfefcec8783",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/MappingStrategy.java",
+          "sourceSha256": "54705c21acc8369e6950ece9f8a5822937d8fc5fcbea0e456f9f58816ef69a8f",
+          "startByte": 1794,
+          "endByteExclusive": 3030,
+          "startLine": 50,
+          "endLine": 69
+        }
+      ]
+    },
+    {
+      "commentSha256": "1e1ab6a4fdfda50eb874ebac7b6afd19d38053008f4877b6c66c4b88e42281f9",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/processor/StringProcessor.java",
+          "sourceSha256": "613901ea2a274b36df0fe29af3d46e4d5fca97208868eaba0a6084efcf3d05be",
+          "startByte": 37,
+          "endByteExclusive": 948,
+          "startLine": 3,
+          "endLine": 19
+        }
+      ]
+    },
+    {
+      "commentSha256": "a3a02534104c5a1ed6c5ebec10d40bf768f34eb37020ab77ab07b52b02a67dc3",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/CsvBindAndJoinByPosition.java",
+          "sourceSha256": "2ce9186819b5d62612190200d1872ea3b3594f8f722589e676d3bbdc1b299b20",
+          "startByte": 4595,
+          "endByteExclusive": 6353,
+          "startLine": 113,
+          "endLine": 139
+        },
+        {
+          "entry": "com/opencsv/bean/CsvBindAndJoinByName.java",
+          "sourceSha256": "bb6d2e3f5d077d455e5e67f123e597bf5c382bd45f79a6e2a8b3e1497cd41487",
+          "startByte": 4482,
+          "endByteExclusive": 6240,
+          "startLine": 112,
+          "endLine": 138
+        }
+      ]
+    },
+    {
+      "commentSha256": "152e2301bf07af9d1bf10592c4cb85bebd12440e0d69f780fe1e50f09db94cfe",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/CsvToBeanFilter.java",
+          "sourceSha256": "16dc445e7f1596ba707a039cc6617ea9dc80cb557d83253675d66e2fb2e95bce",
+          "startByte": 0,
+          "endByteExclusive": 596,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "1b60e5e950bdf1a2eeedebfba11fd4d7aab59df1275010890b1b23b29008e817",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/CsvBindAndSplitByPosition.java",
+          "sourceSha256": "0296f5af51dcf4e2ec21eb474ba9eb9730fd3935ff16e60bb6eae21c0e672164",
+          "startByte": 4809,
+          "endByteExclusive": 6806,
+          "startLine": 124,
+          "endLine": 154
+        },
+        {
+          "entry": "com/opencsv/bean/CsvBindAndSplitByName.java",
+          "sourceSha256": "b001b0870382a06d4d7c3b96c26aa27ad3a60264eacb3068444ee40c04dabda3",
+          "startByte": 4785,
+          "endByteExclusive": 6782,
+          "startLine": 124,
+          "endLine": 154
+        }
+      ]
+    },
+    {
+      "commentSha256": "fe08426375d4f1ace9a4950240b54f68f0f474be2c1bcadc351a648bf1bb47f4",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/HeaderColumnNameMappingStrategy.java",
+          "sourceSha256": "a9580bce067aabd6a10c17ab79da078db3a2ef42ca10a793426574c580c3494b",
+          "startByte": 220,
+          "endByteExclusive": 811,
+          "startLine": 10,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "2fb333d0a9bb7f90c0cb11342fd370cb6d821f8a87180ac0050b722b5f9d0037",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/concurrent/package-info.java",
+          "sourceSha256": "73f2a90fda967722e0e51e3aed44f8c19c0a8cc062237d5b63809700136c6ac0",
+          "startByte": 0,
+          "endByteExclusive": 592,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "76d02f1cd71cc452281ca429d8d55dcc8dcd2db6c9c3c536476087633a661b1d",
+      "sources": [
+        {
+          "entry": "com/opencsv/bean/HeaderColumnNameTranslateMappingStrategy.java",
+          "sourceSha256": "e752c83956cd65ce27029f4b1f9f4bdaadc557a9e9c979f1cd0bdfac72c6316d",
+          "startByte": 76,
+          "endByteExclusive": 672,
+          "startLine": 6,
+          "endLine": 20
+        }
+      ]
+    },
+    {
+      "commentSha256": "08f234f3f91781e374c5d8c2c152b0dbddaa5988b7b90bdd0dc8fe2dccd0d2f4",
+      "sources": [
+        {
+          "entry": "com/opencsv/processor/RowProcessor.java",
+          "sourceSha256": "91f533802784ee23f454eef8a450353a9ee5b51d01a4e6030957b90a81f9e492",
+          "startByte": 32,
+          "endByteExclusive": 951,
+          "startLine": 3,
+          "endLine": 19
+        }
+      ]
+    },
+    {
+      "commentSha256": "ab198a952df45e8abc0429809f21831b80972eaab0597a08ece399a67b035738",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVReaderHeaderAwareBuilder.java",
+          "sourceSha256": "a313e398e92dd674f3e43d98ce002465c206c5282fc450effbeadfe18fbaa4c1",
+          "startByte": 5124,
+          "endByteExclusive": 5372,
+          "startLine": 159,
+          "endLine": 164
+        }
+      ]
+    },
+    {
+      "commentSha256": "bebcd43af494df9334f184e3c94d8eef577e13673e8e90d6a3611e26f0b9266e",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVReader.java",
+          "sourceSha256": "24d3cb4401b7bdbbfb715a7a9e6a1c10f33b5ebd80e26f6e300549683d8b9fb2",
+          "startByte": 1132,
+          "endByteExclusive": 1238,
+          "startLine": 34,
+          "endLine": 38
+        }
+      ]
+    },
+    {
+      "commentSha256": "8afa907765823d0e02bf26a118e9a183fe272dc5c788688c1c7baa35a1e1b305",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVReaderHeaderAware.java",
+          "sourceSha256": "21869f70604c45693f38d278b770a40fcdb38d13524dc5dc2a00dd39e95a3a4e",
+          "startByte": 2694,
+          "endByteExclusive": 3388,
+          "startLine": 60,
+          "endLine": 69
+        }
+      ]
+    },
+    {
+      "commentSha256": "5c0c4fcca94a476265dc7c4a336546ef78d2ecbedf3a0e8115069b5fe18884b1",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVWriter.java",
+          "sourceSha256": "50b3d4eb5956825006e69bf26169e02a1f5e057f3a77ebe1f751523dee8eec61",
+          "startByte": 22,
+          "endByteExclusive": 592,
+          "startLine": 3,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "500bfb9c82b10ec472e53c624cf22a9cd7b1900b41dd5ad459376cad5127764d",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVWriter.java",
+          "sourceSha256": "50b3d4eb5956825006e69bf26169e02a1f5e057f3a77ebe1f751523dee8eec61",
+          "startByte": 646,
+          "endByteExclusive": 752,
+          "startLine": 22,
+          "endLine": 26
+        }
+      ]
+    },
+    {
+      "commentSha256": "fb27d9e64350323174e1b33108cdb972b497cc4dcf33d87ddd2e8040b6feaa8e",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVReaderBuilder.java",
+          "sourceSha256": "7753b870688f07437b998aef622846ba2e3652aac82a163cee7ab9cebbb7fcc6",
+          "startByte": 2678,
+          "endByteExclusive": 2791,
+          "startLine": 89,
+          "endLine": 92
+        }
+      ]
+    },
+    {
+      "commentSha256": "28801b230f4fbb5c0959c1286e158e69cbc4a551d9764cf3db05701e339fe877",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVWriterBuilder.java",
+          "sourceSha256": "002b750bb92b7e83efd1a43ba51d9a739db37b4e7f74ae476f451adf95edbfae",
+          "startByte": 5348,
+          "endByteExclusive": 5450,
+          "startLine": 129,
+          "endLine": 133
+        }
+      ]
+    },
+    {
+      "commentSha256": "f203f9c2317dd0aca5c119bf7f5ba919828192e7a3f5acb157017976d71349a0",
+      "sources": [
+        {
+          "entry": "com/opencsv/ResultSetHelper.java",
+          "sourceSha256": "ff41c8340668d2f68e91a21922013f1360580de6059d0a821cdbdbf691660e16",
+          "startByte": 1953,
+          "endByteExclusive": 2524,
+          "startLine": 55,
+          "endLine": 65
+        }
+      ]
+    },
+    {
+      "commentSha256": "1aec5e16bc5b2bf5f0053d89db80946e0914ba3a917918b9a1472c517f705866",
+      "sources": [
+        {
+          "entry": "com/opencsv/package-info.java",
+          "sourceSha256": "f409269d24b1089a13d3467039879360e8268a70dd9a7f965d3f5915d7470caf",
+          "startByte": 0,
+          "endByteExclusive": 171,
+          "startLine": 1,
+          "endLine": 5
+        }
+      ]
+    },
+    {
+      "commentSha256": "b99225f1085aa822619f704155ef9d126e82105c58872480b1b4a810258d6635",
+      "sources": [
+        {
+          "entry": "com/opencsv/CSVParserWriter.java",
+          "sourceSha256": "06165f30dc36c578281937a615a25688b4849b98bd837721c42a49c8bf268dd8",
+          "startByte": 22,
+          "endByteExclusive": 592,
+          "startLine": 3,
+          "endLine": 17
+        }
+      ]
+    }
+  ]
+}

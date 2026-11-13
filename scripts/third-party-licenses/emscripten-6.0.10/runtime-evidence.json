@@ -1,0 +1,28 @@
+{
+  "scope": "Observed Emscripten JS support and libc++abi in the shipped Viz backend. The exact per-object C/C++ runtime link map is unavailable. Additional runtime license texts are reference evidence, not an assertion that every listed runtime library was linked.",
+  "containingPackage": "@viz-js/viz@3.31.0",
+  "backendSha256": "881b3c3dc511a38c90f1df16983776d7cdfd9f6900544b3a184289ff062aaafe",
+  "provenanceSha256": "1460f3745ba300377ba738fee8c3f7faf547455190e509490d110c4f69ee7379",
+  "packageProvenanceSubjectMatches": true,
+  "buildRecipe": "https://raw.githubusercontent.com/mdaines/viz-js/c8ce050d28eb0dc1ed1629ea32ab7f3dc117db0f/packages/viz/backend/Dockerfile",
+  "declaredToolchain": "emscripten/emsdk:6.0.10",
+  "declaredToolchainImageDigest": "sha256:e077d54e2b8970575ebc4f185ac1de0b95c05f2b266134d4ba27449af7aebf65",
+  "observedEmbeddedSourcePath": "/emsdk/emscripten/system/lib/libcxxabi/src/private_typeinfo.cpp",
+  "observedEmbeddedSourcePathPresent": true,
+  "referenceRuntimeLibraries": [
+    "musl libc",
+    "libc++",
+    "libc++abi",
+    "compiler-rt",
+    "libunwind"
+  ],
+  "sourceArchiveMatches": {
+    "graphviz": {
+      "sha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84"
+    },
+    "expat": {
+      "sha256": "920dde485e15eda0cce8d2310b41d492c534e5e3d89ad407a0b4176dd2ff88fe"
+    }
+  },
+  "confidence": "Publisher-supplied provenance matches the delivered bytes and source archives. This is not independent signature authentication or a reproduced build."
+}

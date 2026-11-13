@@ -1,0 +1,2340 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl/3.4.2/lwjgl-3.4.2-sources.jar",
+  "archiveSha256": "cd8fe9c56b14a88ce35bf8a45373f4a8925caee36a46bf68a968e36c04379968",
+  "blocks": [
+    {
+      "commentSha256": "e647707adf87b2474c6748bdc6f1268535cde1a3feb455c166536a5d9ed6b9df",
+      "sources": [
+        {
+          "entry": "org/lwjgl/BufferUtils.java",
+          "sourceSha256": "5f8923b421fda3c88d23608f6ad197461e5a4aa3237aa3e506e5c75c38e2c86b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/CLongBuffer.java",
+          "sourceSha256": "052e8871f1aba6310ea22bc319df2a43f1ff0cf4cb00821e640b126bfebe4dff",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/PointerBuffer.java",
+          "sourceSha256": "836a34ddff87df5055c527f501ee8ec165b032820eb8a9f3f6b64b297d0ed468",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/Version.java",
+          "sourceSha256": "1111e628ebe7e30dfef0a02fd43124ee717237a74a46d355971fd0ac907babba",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/VersionImpl.java",
+          "sourceSha256": "84277fe6fc27248474e64d6173f60a76a66032b2659dff9218578c81e70b7e55",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/package-info.java",
+          "sourceSha256": "0ad5eb34d8a0a80ed50a6a70707422e5252c2676814b451a48b9c62c801c1e9d",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/APIUtil.java",
+          "sourceSha256": "fc9e8f516a4767d026f9f45a27cf1e9aff7174a2d435fa08f9ac29351f148441",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/Callback.java",
+          "sourceSha256": "cedf46dd904bef7d3f6a31122ef7cc7ab67df77c6c37afc681ca8abcd5adcf8e",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/CallbackI.java",
+          "sourceSha256": "8744302f74d1a26a907110b63cb5a1b6ad54450666fbc96760db4d0a088112e0",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/CheckIntrinsics.java",
+          "sourceSha256": "25f0d1d9720c8b6628ea434667ced2df66205133061982c8058682f593a83a2b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/Checks.java",
+          "sourceSha256": "55de58721fe493ec28b7e1a5fdeeafe8a3e18bfa5e66f5a613cd6ecdb5f01528",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/Configuration.java",
+          "sourceSha256": "bb811e86c859b4d6f79fbbc32084003d73fe1b64fb4bfffeb6b695c25c6de259",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/CustomBuffer.java",
+          "sourceSha256": "83c6ecdc2f432d418c13f8a9faf43ec4bcd7fe4e51f1c2de5e6e004c9d6e72a3",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/FunctionProvider.java",
+          "sourceSha256": "782bd0848f9c2e80ee7f38f9b5463e0000118d8064e2e73a25382695d31a4c9b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/FunctionProviderLocal.java",
+          "sourceSha256": "68e803497a483691d7c4f5c16841490ad540733b78a813421376bde1aa07cda6",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/Library.java",
+          "sourceSha256": "ec87813512317f1c4e0b7ea3211b8eaf1f710c9931ea9e58a4d8a5e0f41ebbc2",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/LibraryResource.java",
+          "sourceSha256": "99c0e4b8f9909202edfb1a1f8f62c426a6befd56fdc455309bc83f5a1933a420",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MathUtil.java",
+          "sourceSha256": "1b589b259376fabbac30e9e6f974edc0c900ac610881271c9b2c82f3e910ddf2",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryBackend.java",
+          "sourceSha256": "6063f668be90d14b025b6f72ec8bb787d097c66572945c2527bcf648f66773a9",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryBackendUnsafeLegacy.java",
+          "sourceSha256": "61088f6a54f3f797b5b6209f65a16af50d0a27ee7c11283aff9cfeea1bc5ddcc",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryBackendUnsafeLegacy17.java",
+          "sourceSha256": "d599b7515eb9ac07dbb5ae4f2665f9a413207d37fdc980963789ae7aaa5106f4",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryBackendUnsafeLegacy22.java",
+          "sourceSha256": "90368625e440f0cff5eafaef7501e237843913148e2cde118dd5dc63ac899f5a",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryBackendUnsafeLegacy9.java",
+          "sourceSha256": "687ea49754c18bb08a98ee801f158c5032fd0e37ffe78937ac2d1418c10c26ff",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryManage.java",
+          "sourceSha256": "7b6870938ee91d0e4a87cdbee4df289c19b8f6128f62c353a4bfdc95877f6488",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryStack.java",
+          "sourceSha256": "f2d2084c42c595366eb1ae8b3823bd612fe133701fe4de583d029bc1c04f14bf",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryUtil.java",
+          "sourceSha256": "c8d84cc82907c66d0c40d2ce07602b0482915e888b7d8adb2fa88b662ba417d8",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/NativeResource.java",
+          "sourceSha256": "0823e6b6ba81255020136d98e8cec05cf8723f3c62c9266f3e30f41c46e1cbf3",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/NativeType.java",
+          "sourceSha256": "d163512d6961c9f2bd78834af7e9f31bc360cde29b7589ebcf4f06d04b056a3b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/Platform.java",
+          "sourceSha256": "0b3093df7948997ba3ee9749e7f6d08143b480fccd4a710a59629cb79de4479a",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/Pointer.java",
+          "sourceSha256": "d7d713f81242367324e0d609d9725178975283fe8006adc3c933231e0a1c7e65",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/SharedLibrary.java",
+          "sourceSha256": "dd105db9c931aa7d523521bffe4932355fe3f92045165722b62193e43ae5e378",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/SharedLibraryLoader.java",
+          "sourceSha256": "ac488cf7987c4ead8c8203685a070d4915ae592f8c5c00e7a11fe62347f2a448",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/SharedLibraryUtil.java",
+          "sourceSha256": "e3cb2583faf953d0e963e31bb7d93e96ee4f1aa336edf31c9d4b8bb6cfabee8a",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/StackWalkUtil.java",
+          "sourceSha256": "05e413b6a4b2de2d5f52ef14fda4dff666984d91ba13883034a1c2986381be2e",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/Struct.java",
+          "sourceSha256": "02b97835ef3024ae2e126af1b0313ea4b801469962e53e9bc90aebbec7afe6da",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/StructBuffer.java",
+          "sourceSha256": "6bbc7c0a1a79967222c7df49bce412d44f97dccc1428f5a22c6f0f4132219ad6",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/ThreadLocalUtil.java",
+          "sourceSha256": "014cd7e6886180e481ba9e587eb00228388923a0f9089a3595ed74a37d5ece56",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/Upcalls.java",
+          "sourceSha256": "4b0c13c071022e86692494429929335f310ec30a118c6108bb50b20042cf4eed",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/freebsd/FreeBSDLibrary.java",
+          "sourceSha256": "1da241893a66ad0ca77be3c14f951868cfbefe13d9a92ceb3e4d30954a300f9b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/linux/LinuxLibrary.java",
+          "sourceSha256": "db7eceaeb36ba1f8270fa266182ba154607236949145a46b7c2a715b6cf52b47",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/MacOSXLibrary.java",
+          "sourceSha256": "ffe4f5b8ffd392ea1f97afab99b16288648cd9a4e0792650d04cedd1d06ab508",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/MacOSXLibraryBundle.java",
+          "sourceSha256": "208198c9e757312db6f78f9cd741531af7a9839edb7c2ffcf11c138092cc7d34",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/MacOSXLibraryDL.java",
+          "sourceSha256": "11062c80890d22d429a61f986c9f1134c8e53a04812b87e9c699ba2540a09030",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/package-info.java",
+          "sourceSha256": "3d47e33c2b509a66d36c5f31dd76476e5b474a522caacf7dd264005a48b20b3c",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/windows/WindowsLibrary.java",
+          "sourceSha256": "89cca7968c97b30219a912bc00aee564c1f8c7b307bf6ab014f3048851283973",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/lwjgl/system/windows/WindowsUtil.java",
+          "sourceSha256": "1d26966b8fc1594058c258cd3dcb7f8c045dc46d22441780e65ac26295406d58",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/11/module-info.java",
+          "sourceSha256": "dfa69e3f7c56822666035909b9f9f7a8c5f65a7b80dae3bd8fac12bb11e12b9f",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/11/org/lwjgl/VersionImpl.java",
+          "sourceSha256": "a25ff536d75034c4e40aec9a6054a3a5e89a298c3c63dc9d22054961c6eeb498",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/11/org/lwjgl/system/CheckIntrinsics.java",
+          "sourceSha256": "1338e9044107e35512d67cc52d9d849d01a164c6989d53931ed218260e627ecd",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/11/org/lwjgl/system/Pointer.java",
+          "sourceSha256": "714c54ed424123eccf2b59058d8dffca2005729595ffa831fc5a9c4012c5bc54",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/11/org/lwjgl/system/StackWalkUtil.java",
+          "sourceSha256": "1ca6b810ccfc8b6a994e4f87b4f7a145f4fae0f19bf887a658566583161cea4b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/module-info.java",
+          "sourceSha256": "823c19e323fa4db22828e32b4d5f31979eee9fe6d4ea4135eef4485a46a42815",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/MemoryBackendFFM.java",
+          "sourceSha256": "40b997213d2c85430bf3326850a80aa24760b49557f788e713b324660fca26c0",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/MemoryBackendFFM26.java",
+          "sourceSha256": "251acf16244a555f1718292e011d79b577f547b8ee3a7472b5451a574a0d9794",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/MemoryBackendUnsafe.java",
+          "sourceSha256": "822c229ab9ceae6c669b153906827e135b30b7ed35e6a1a45990403cf97c9a80",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/MemoryBackendUnsafe26.java",
+          "sourceSha256": "4be8a910a9676dfd3c7f514103d07e6390b6bb3bdc526504125a791bf4afe1ce",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/MemoryBackendUnsafeLegacy25.java",
+          "sourceSha256": "7db11a62dee0c1b4d55abaec0038abadb39492691b250d3a9311021007c8b98a",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/MemoryBackendUnsafeLegacy26.java",
+          "sourceSha256": "f1ce7d5321d55a625931dee6cbc8a1a34c7b15fab78aa3fcc2730f897b067b72",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/SegmentStack.java",
+          "sourceSha256": "0a5da6980009ce6206b9fd1fbf875fd8b42e0dffb8b116482886976eb4aa0610",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/Upcalls.java",
+          "sourceSha256": "3413f69c87dd6f9581b3d9602b74a5cfe01c2f5a72c9eb408ed57fc172008050",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/BCCall.java",
+          "sourceSha256": "1291cf6e8c03a09745c3fad61584b36bdab4fac29c89726b8af07ef8d5568eff",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/BCCallDown.java",
+          "sourceSha256": "38a2ebd01f15eb71d0bce604b5cc349328140ad3fcb941a83601aeae0a15e2bd",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/BCCallUp.java",
+          "sourceSha256": "fe1b732bc99a0e5ede855a948f5b255ad282ba252549ce7317c4968e318c2372",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/BCDescriptors.java",
+          "sourceSha256": "aaa8859e25cbd0b1dd5f9643b33618449c48b59241982f391dda40488b8ecdbf",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/BCGroup.java",
+          "sourceSha256": "c901b4d897ba147dfa079c267c3ac5f7be974a2b07a23f660e8e3870ce1f5318",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/BCReturnTransform.java",
+          "sourceSha256": "ec7ea67587a5abca3aaa67d0574bf71f42acfabee6753b351b0fcc570d21e707",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/BCUtil.java",
+          "sourceSha256": "58ced9da37e4d45e825e6824e7abe5e099d39789b7a878aafb5eae93af0860d0",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/Binder.java",
+          "sourceSha256": "0963c5e525ced4f24138743708a0758ed059ca4ec8c5c05304bdfa1a66219016",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFM.java",
+          "sourceSha256": "b45f9d81ba05932508dc55cd22e97ceae1a752d0d6eee4add4c78247a50285ed",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMBooleanInt.java",
+          "sourceSha256": "0ebf08132d10babb46f42558d9a5c58a6f223a3105753e5f92e28d5f5c089e51",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMByValue.java",
+          "sourceSha256": "a33c3e5f63fcdd711881d1dfe63dedc890ba8e9e3121dba087dc0226bfab7b5a",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMCLong.java",
+          "sourceSha256": "3c06b33d84f53a83231c501ec3049f70655795088bb3d12ed7c45da68f83086e",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMCanonical.java",
+          "sourceSha256": "156e0205297f6c19d27e9cce30b59cddddee8673830710fd4a3efde7ab4d6a47",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMCaptureCallState.java",
+          "sourceSha256": "39a16b5c136cc80fd8082c395bb0f2716de3786206ea2ad6e34401c3dace18fa",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMCharset.java",
+          "sourceSha256": "4ac1b250cd1fce14d0c60a956c1235a1f4ebe5edd35d96374622f13911583cb7",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMConfig.java",
+          "sourceSha256": "5d85483fc1db7f577e902d9be392f0d9ef98bf4c585185db4fe3b0489f31b733",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMCritical.java",
+          "sourceSha256": "671806dc57a053270224580777b72a8065ef6df9bb80a5ebfc7fc678f399174d",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMDefinition.java",
+          "sourceSha256": "fc52d312de3cce0495ac5fac1c8e1d39213020befad287866ae87b05bb2f7514",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMFirstVariadicArg.java",
+          "sourceSha256": "00a2beb3bb69e8df4daf940b42051f893a4b570b958e42122747337cf037cdc8",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMFunctionAddress.java",
+          "sourceSha256": "97fbff5b80dad82d68a876c1d752628a68113cac0435aea10e4c70800c59d3b5",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMJNI.java",
+          "sourceSha256": "b0b20b49db396c4d09ab37b382758b329f598c819a910f336a464b51c970113d",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMName.java",
+          "sourceSha256": "7c35268e301b0cf32d1d2aec0504ab445fc003fd6179a59a2913ceba84733c61",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMNoPrefix.java",
+          "sourceSha256": "5cbab4e2b436842928d467f9a794b2d3ebc693abdfb1c207786d0533f1fa1b7f",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMNullable.java",
+          "sourceSha256": "7f1744e89cbb4f9134dfae3096739a0052feb169fa46aaa2831018dab9b8f4ba",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMPointer.java",
+          "sourceSha256": "6b12acaefed64b644f66a25701fff0aad68ecaa62e1c841f51ec26894bee49cf",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMPrefix.java",
+          "sourceSha256": "150e5f3504d60b0cdc141a180201e72c2635545644912215b52ada52596e26bc",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMReturn.java",
+          "sourceSha256": "63e2131d1301c6da9027c616d2bb5985667be918ff2e14a6ab0dd23437d4e179",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/FFMSize.java",
+          "sourceSha256": "bf05eaa42ea8bac9f3380fbd3e5878b796f31d0070774643102f0ece93ecb8a2",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/Group.java",
+          "sourceSha256": "34bc3f78b7816cc66d43cb5234f7b00118bed4a87ac077c15dff3ca8ae4db1ce",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/GroupArray.java",
+          "sourceSha256": "5510cdece520dbf8d529f7375dc6a03c990dd7164d00e5c420babd04cfa63ee4",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/GroupBinder.java",
+          "sourceSha256": "6435269172eae5550a4f0e2d77284e428f2747242829bea25dcaf55db14c5cfd",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/GroupSpliterator.java",
+          "sourceSha256": "576c48ab4ff06cce5d0cbded576e7f14127b03587d874362e2a13bf656c53f9f",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/MemoryUtilFFM.java",
+          "sourceSha256": "80a034a55c496696c5de0d8723da6fa06083095111003e706306402f4be5cca4",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/SizeCarrier.java",
+          "sourceSha256": "a8fa1ce16c8fbe297d88e007375fbacd71e4a28151660cbe4596ffba978b4739",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/StackAllocator.java",
+          "sourceSha256": "26d062b03508f933185b7ae5fdde01518b52e8e2fa0808356539aa8d171fbd5b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/Struct.java",
+          "sourceSha256": "b9e3bf5017793e367797309f5ae6adfeff545409b4da61ab0320549f2c70b5fa",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/StructArray.java",
+          "sourceSha256": "92c35841f33aa6c39e6d5a9ce13d6f02d178b5c0c8ff8e5ee4354919edf8048a",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/StructBinder.java",
+          "sourceSha256": "d9774348f0d23d3c6d9d85b9ebd7ab226c0e04b01827d30c2bfe7120470b350e",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/TraceConsumer.java",
+          "sourceSha256": "74cc70f379723599d4ff1dee00b6365c4df8353bfdd8296e4f9455b4c3c745a4",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/Union.java",
+          "sourceSha256": "2adac643591ee91bf929e79a4bc0eb141afb7aba1cc12066e44dd2fc88285d90",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/UnionArray.java",
+          "sourceSha256": "721ec91411662ca015e02c28c59cde19b74a101d93fae7eb118858868980d544",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/UnionBinder.java",
+          "sourceSha256": "5cdec0dff8470d38768a16ef0437165ba6a3738ef9127da240c92ab4cb8a915c",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/UpcallBinder.java",
+          "sourceSha256": "88598b0e1df3385e3e3bcf5edd31fa690d9677100fee28ba343b3aca7165f29d",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/DataMapping.java",
+          "sourceSha256": "6963da3d8c97e4055d98b00f29e652643714a0d2fc5e2933fdff44b5a8bd14ef",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/GroupMapping.java",
+          "sourceSha256": "02423a18bf37cfb06c2e387d107ba0057e1b91180f9b38fef967bae2f7c8dcf1",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/IntegerMapping.java",
+          "sourceSha256": "3a9baa5335fd196ed76ea9b83d4d7ecb6689a3303e7effa6f125b39e89571552",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/IntegerMappings.java",
+          "sourceSha256": "e6068e89f586046cc26a4e5aa90ede7489472a22ca09616646d29056e422148c",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/Mapping.java",
+          "sourceSha256": "85713055cf837d070afd5bd0677d77c0a2b3b6788690d51c89011d07db07452b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/Mappings.java",
+          "sourceSha256": "1e435260258293c69c037332bbcefcdd34b88aabb509ad66319964b1e1af685b",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/PrimitiveMapping.java",
+          "sourceSha256": "399dc8abf5858900e02c1be7fda5e02d31a3f3b06408e7e6b1e7d0b4202c7b54",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/PrimitiveMappings.java",
+          "sourceSha256": "5d6eb3e94a9cdf53db6bc2292ddabb05dcb2a4c6e6b66e3185b63e62004e16ab",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/mapping/package-info.java",
+          "sourceSha256": "04dc04ca46de529a5e500f365a45060d611ce6e0f5ef6d8297dd5d28ea8904f2",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/ffm/package-info.java",
+          "sourceSha256": "9883ef829a56363ac5cc5cb0cbb73ef79a61f9902db0c47deef8947f4cef2e18",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/27/org/lwjgl/system/MemoryBackendFFM27.java",
+          "sourceSha256": "311f977cf9fa9147d72b9b1f50a87b8ab8fdb1694fc89b9791e20daeba4e13b9",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/27/org/lwjgl/system/MemoryBackendUnsafe27.java",
+          "sourceSha256": "8565d742ae78ad022a4f0286a5a9bb183981ee575597357fee0071c49f2a8cd8",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/27/org/lwjgl/system/MemoryBackendUnsafeLegacy27.java",
+          "sourceSha256": "7db82426d5d4a36820959da11a9fc72171ae8e386c2abd210713d250ab610935",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "6fcc5427e5239ada122875409f754ac1622d07e8b4751a1651b8aef31acc403a",
+      "sources": [
+        {
+          "entry": "org/lwjgl/system/Configuration.java",
+          "sourceSha256": "bb811e86c859b4d6f79fbbc32084003d73fe1b64fb4bfffeb6b695c25c6de259",
+          "startByte": 6350,
+          "endByteExclusive": 7792,
+          "startLine": 149,
+          "endLine": 170
+        }
+      ]
+    },
+    {
+      "commentSha256": "62198e7ef400c814bb9c02699b95df0fd43cefb0ab6af31fdda2c9d12fd9c8a6",
+      "sources": [
+        {
+          "entry": "org/lwjgl/system/MemoryUtil.java",
+          "sourceSha256": "c8d84cc82907c66d0c40d2ce07602b0482915e888b7d8adb2fa88b662ba417d8",
+          "startByte": 31940,
+          "endByteExclusive": 32211,
+          "startLine": 806,
+          "endLine": 809
+        }
+      ]
+    },
+    {
+      "commentSha256": "20e54c724cb6f22625e84f544d13a76a448bb526585179f6cf48cdffa027a45f",
+      "sources": [
+        {
+          "entry": "org/lwjgl/system/MemoryUtil.java",
+          "sourceSha256": "c8d84cc82907c66d0c40d2ce07602b0482915e888b7d8adb2fa88b662ba417d8",
+          "startByte": 32253,
+          "endByteExclusive": 32327,
+          "startLine": 811,
+          "endLine": 811
+        }
+      ]
+    },
+    {
+      "commentSha256": "5c0c1d1e1ac10e96c6130bca15a938e6e3544ecece9b2b6dcb99be08a92c3389",
+      "sources": [
+        {
+          "entry": "META-INF/versions/25/org/lwjgl/system/Upcalls.java",
+          "sourceSha256": "3413f69c87dd6f9581b3d9602b74a5cfe01c2f5a72c9eb408ed57fc172008050",
+          "startByte": 3513,
+          "endByteExclusive": 3771,
+          "startLine": 112,
+          "endLine": 117
+        }
+      ]
+    },
+    {
+      "commentSha256": "3ce7cb3bbcec66f9f734d5a81e1b0f042f35bc4ed30e448aa1d1dff06f89883f",
+      "sources": [
+        {
+          "entry": "org/lwjgl/system/JNI.java",
+          "sourceSha256": "50185e87820c4c44c93cf56f06a4f2480176e2d7207458a91d208f30164da40c",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/MemoryAccessJNI.java",
+          "sourceSha256": "6f119e9e4ac5dfa2566ec6a3e30df1f5921453ef9dfa3fa88531498a54c69736",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/freebsd/DynamicLinkLoader.java",
+          "sourceSha256": "36aa12267f9b06fb7885b5b35905d0b16f4d83705ec9810a3e30ce2704c56b75",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/freebsd/package-info.java",
+          "sourceSha256": "998e94edd280cf71cdd39eb75b808d7a6820094e3ff21a27d5f326184ba62e4c",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/jni/JNINativeInterface.java",
+          "sourceSha256": "8e98d40c2f900db6e42b1f6a9275629fb912078baaaf27b8b351f8d7f5ad4252",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/jni/JNINativeMethod.java",
+          "sourceSha256": "b147b057367135bfdaf5ef29869b87583cdf209091c0b221383756e5d7356e13",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/jni/package-info.java",
+          "sourceSha256": "b6bd9395a14352783bc8612809087162ee7a95ca3203e86823d4668d86d513c5",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libc/LibCErrno.java",
+          "sourceSha256": "dcf27d1a110cd9ce1608a7cf68b33c0a217082c0479efeadce012941a8af5ecf",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libc/LibCLocale.java",
+          "sourceSha256": "357be901ec88e247052c12359bfa44ea556d27cf178637468d28c142ffd9865a",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libc/LibCStdio.java",
+          "sourceSha256": "31f3e7071535c4724ecedac3c07780c032f68969cf078f653f5b2b6b72395c49",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libc/LibCStdlib.java",
+          "sourceSha256": "833f8b5c649045fc6bd985d68c7b0c081e1f56d5fc6f27b96ff601a62a4e9acb",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libc/LibCString.java",
+          "sourceSha256": "efdbd601e42ab2df0ed6a542c69ca40448a2e7a317946d8cf7d255083f62b1d3",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libc/package-info.java",
+          "sourceSha256": "c8a4d472496cecb84cb33c1f9f7d588fe91a826221b6a48133e8cbbe71c627fe",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libffi/FFICIF.java",
+          "sourceSha256": "1feeab63c065e4fe8e02ed89efbeefc0c539f276b98dd2bbfc5be3edd86cfcc0",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libffi/FFIClosure.java",
+          "sourceSha256": "92121093b3231b352e4ce68ff1bc778fa20c93e61518bcc89328407b0ef475ed",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libffi/FFIType.java",
+          "sourceSha256": "476398674ef5053ffb325ed57409e974058ef72d348eedff141c0e76e3b8b4f9",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libffi/LibFFI.java",
+          "sourceSha256": "1f16c3be2c9774dd1645bc27ecda82642dcadae59592ec6239b1a23d8a06f05d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/libffi/package-info.java",
+          "sourceSha256": "16a0142e82a099138f192c7cfd94c15cf41bc3e026bd6ccd29d4a773fc6d6f50",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/CMsghdr.java",
+          "sourceSha256": "524f901c35669d557f5c75905e0f3379c12602c333f1895a2313806818323f06",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/DynamicLinkLoader.java",
+          "sourceSha256": "2c14c3b6c43a491e2f13c09005ecbcc14b079d957c5ad11b540a6134e4775f74",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/EpollData.java",
+          "sourceSha256": "6053c32a83db6f71559f242a564132e6a08c6c8b985f12cb8a9150db63403da0",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/EpollEvent.java",
+          "sourceSha256": "0ee267276009982494818e2c7a4bb32a559c2703f87e9208354debf8b7e57fb1",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/FCNTL.java",
+          "sourceSha256": "2d519ff6ed7e05fa5e41884f90b02164d27c51f19aadcd311fc00a20d9b4902e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/FOwnerEx.java",
+          "sourceSha256": "34fd431c02eb013f95fee5ca851d3bb2453ce2155b61441a168afe0f91e67e8f",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/Flock.java",
+          "sourceSha256": "a01a6b591e298b3156618ae3f58b0c172c1edbb897ecb88513539fff2ac3b6d8",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/IOVec.java",
+          "sourceSha256": "aa9bb01ef2cbeaac4f3548ff11f8db150e042f919947c8e0f3359a830821e747",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/KernelTimespec.java",
+          "sourceSha256": "0cb8167bbdfb286f9be390fa70ef8b0d4c00335c19904fcbd1b1c12244251836",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/MMAN.java",
+          "sourceSha256": "d8febde7f1664dd1f98ab033700df07a0ee2b69dc454a2fbfdb447215fe2ea74",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/Msghdr.java",
+          "sourceSha256": "f7c71191ad9b589b2f91452ae75b24cd79d1130c4c69f1e357becf660ceafb77",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/OpenHow.java",
+          "sourceSha256": "29ac3374d31a3facbcf2b5e11998afa39156d14c2be9663f90a1c5884164fdbc",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/PThread.java",
+          "sourceSha256": "9424c1d2dd2a138247e40f7f2bf626d16e91f32c8f4ed095b3071000a2fbdf48",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/Sockaddr.java",
+          "sourceSha256": "8f37cd6cb594d31a76b04af5fe34678bd937876ac665c13100155b5b765cf48c",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/Socket.java",
+          "sourceSha256": "70d91c208b0f8d61844c20dbbfafa5522ac197d6736835cab1e8a23788e9f239",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/Stat.java",
+          "sourceSha256": "9dfc483cc9411bf837095bcfb22c0cb0f596c33fb2280008911eeab4079e0942",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/Statx.java",
+          "sourceSha256": "36cfebbbd0f46658696e48818530fdd5dd9a56750f74f75a424408f99a6508b2",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/StatxTimestamp.java",
+          "sourceSha256": "0a47d8052aaa3937d1d71146fe7c52a637fc44fd4beb4dbc0f6763bc7af415af",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/UIO.java",
+          "sourceSha256": "406aca49543fd3111d0f9cd7bc499a1f6d4fe6c3fb4d8a1b12c4e6afc17c3428",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/UNISTD.java",
+          "sourceSha256": "f008c011059b27076775cd42a8e6d03b8d001b4e83e4f2c6ba97fe92a6b86a88",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/Visual.java",
+          "sourceSha256": "4f86f9a6d2b4ec6c341fbb7511c9d0abb455928ebee027c0dd2fe678639c7e15",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/X11.java",
+          "sourceSha256": "47163e1d7c84eb768c4a7e701a6c621ff05cfa76afbf4165444ac303f4d853c6",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XAnyEvent.java",
+          "sourceSha256": "41daf4b8217d36125efdf9f5d9c5211acbd854ac01d10f27795ee07d95bcc7ba",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XButtonEvent.java",
+          "sourceSha256": "caa1a5c3e2bd9b66e73e4bb8ba0598afd4fa48f4c26aadf65b187ce155467cff",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XCirculateEvent.java",
+          "sourceSha256": "09de6c2bc734b56ae18a44adde90753aff1c6bbf6fd5be8fe51b45fe387d97e1",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XCirculateRequestEvent.java",
+          "sourceSha256": "9d49b62548a929d54f37fb5c6d8d793cbadc54288732bb168d94b7523deb9939",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XClientMessageEvent.java",
+          "sourceSha256": "d240335e6825053b5ba4fe285e2d92b08b443c3664adf585a735c0712803c922",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XColormapEvent.java",
+          "sourceSha256": "6f9add38db5c19da4257b8f58ac904875b4c898dd319415011e0f4b564ad111d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XConfigureEvent.java",
+          "sourceSha256": "6825465a1515682f16a1b9d8db3d7dc01f41b5de31eaba4879628e700d577ac1",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XConfigureRequestEvent.java",
+          "sourceSha256": "61cf18d267bed9e209a044e1f60716212d75421e0465554cfe82fe2020a61740",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XCreateWindowEvent.java",
+          "sourceSha256": "43347648d6df62ac72c97d2ab8b24eeb41ca5eae9e9c0333df36640faad6219b",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XCrossingEvent.java",
+          "sourceSha256": "a97e675b9df6f8c5ed18ce086756f749edd0c20fe47b6e2eb11abf4f118f25ab",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XDestroyWindowEvent.java",
+          "sourceSha256": "75cdaa43b32cc39dd659ef79ee727c981d4d7cb71fb615c40496974e45a20658",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XErrorEvent.java",
+          "sourceSha256": "6291c9067dc034adf5150272e2fed6157dfba78414cda6c34d839c8ba26fc43b",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XEvent.java",
+          "sourceSha256": "cb3647415bc2f88263ec48bd203b07976f7dd701ad1ded3938149423aabf6e4c",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XExposeEvent.java",
+          "sourceSha256": "b57fa86190ca3dd37539312aad14d5908594a9261aba2920493147a553f797fb",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XFocusChangeEvent.java",
+          "sourceSha256": "0c8027fcdf513024ea4759a9c336859e022e46157b2210d1bcaf00bf887f0af9",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XGenericEvent.java",
+          "sourceSha256": "01f757250e7d1b6bce4bfe4cff9275bd85b364bb5a38830d42d69dddd8bffeab",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XGenericEventCookie.java",
+          "sourceSha256": "4d4b82ec3060827532ea72e0ba0967deea3da20a8a0bf560bfd59bfb0035cb5e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XGraphicsExposeEvent.java",
+          "sourceSha256": "0ccf114d573af052a192c9313a2521bda9e2ff65a598129c5003765e0289978e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XGravityEvent.java",
+          "sourceSha256": "accec4a4b4dd77f982de3b121565eaced5367f752a9c8e0c11ef9a0b1c61abaa",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XKeyEvent.java",
+          "sourceSha256": "8165f8b69502589347e6a9a4d7b4292fbc700b2dde7bd9ca2c2d50153dd8b33d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XKeymapEvent.java",
+          "sourceSha256": "e196b6a68b43599ed8fc95449e8d2d508e8220141176a6014c6f36c2acb4f8b1",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XMapEvent.java",
+          "sourceSha256": "09d46719001e8256454946e9b518961f6f9783792162a6acf600c26f4f7091d2",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XMapRequestEvent.java",
+          "sourceSha256": "fec768088140f647d04788ba2376b56705ff6fb5e206e14c43939e216b517cd8",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XMappingEvent.java",
+          "sourceSha256": "4c9ae3587dbc06f7c5e08336630c7a95164ac2312462d3cd8d38a02aae5ca5e8",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XMotionEvent.java",
+          "sourceSha256": "53f4fbf4aca6a02589d833049c32025d398aded6366b822f97fbc697706a204a",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XNoExposeEvent.java",
+          "sourceSha256": "7c9c472e49b032546e7f65aaddaeebacebd3426dddf7cdbc2cfa19bf9c8c33f6",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XPropertyEvent.java",
+          "sourceSha256": "fe1ad87bac86e29fc537a39780ce9d3927e46e58b84b415c7d811590ab743d78",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XReparentEvent.java",
+          "sourceSha256": "3232071a9894f3cb6f96d9bc350ffadd55a9f32013b4b8102eab7f2b65327a18",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XResizeRequestEvent.java",
+          "sourceSha256": "dfc0fd6768b630d2d45c302e8a5c45d2c080ee20b1fe3ae7e36cd8bbc7888b8e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XSelectionClearEvent.java",
+          "sourceSha256": "fcf06fdc0c6edb3de0fa15da961956bf74865bdbc25c33c55a1ed2956ec5e0c2",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XSelectionEvent.java",
+          "sourceSha256": "e3dd3f7bc829a7e181f8bce95d3e5105bfd389fef605fb352a2f1779a75f88ef",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XSelectionRequestEvent.java",
+          "sourceSha256": "6ae425177046b4e37bd0754c77ad4c3bd80578da4d944e9f1b7d144f8a318843",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XSetWindowAttributes.java",
+          "sourceSha256": "85c0a61c67dc3035b71e1fe2ddb23f78c748f5a7132c69f409281366ab8893cb",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XTimeCoord.java",
+          "sourceSha256": "a8f9d13a497356480f648c830fd5b8f07a6b8130240342e5cc52b1b663ba6779",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XUnmapEvent.java",
+          "sourceSha256": "860b4cf91aa9bdcc721cd3252d2392b586ae33715cb19997b4ab3875029e5c52",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XVisibilityEvent.java",
+          "sourceSha256": "d2c5c789541f1e99b111e68220a9925ce060e9f5f3e9f0a2efc1f6ceb37bedc1",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/XVisualInfo.java",
+          "sourceSha256": "65c4bde35330b3542ed7383f6b5d00cb6b365b2de64095b6310d6ef7311ff617",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOCQRingOffsets.java",
+          "sourceSha256": "7e7794a0cc7e4f2e974f2d79be56448bd6aa72a12e442ecefe2f6e69dcd89541",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOSQRingOffsets.java",
+          "sourceSha256": "6fbc0997386d4fe13f07fce6ac781d928dbd3007a9ad20d1e5377a4a689fa769",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOTimespec.java",
+          "sourceSha256": "197306784e6b1dbf0012bb610056360496c5cb1c49868d310b98b1f4fea80e4e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURing.java",
+          "sourceSha256": "3a4bceb5748ea304988394fe00463d332bbf6104a60af70607ba60d177e0dc71",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingAttrPI.java",
+          "sourceSha256": "bdb0f4843d20e8f722b761c5d1e8ab6321540f6307301e94e532c1656e5eea0f",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingBPF.java",
+          "sourceSha256": "ae05b2a1e23b0a1a18df8f487e336020f0a3b3d00e07a4ade6ea7cedf880ce2b",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingBPFContext.java",
+          "sourceSha256": "0a631eee45ee3fc7a77b3624cb8427b39bb0892c7b1665b456870d5b402c93c2",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingBPFFilter.java",
+          "sourceSha256": "d9667d14996a57b29470b6c0b73c976d583970b74a1ef46a5f639c37a6c23b29",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingBuf.java",
+          "sourceSha256": "ddbe3e365817dd831bd8049da221b6ec289f141413459880f8261ca7b1bd4d66",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingBufReg.java",
+          "sourceSha256": "52e939c8a42a95388b6bcd5fcf18f8b9b122a78d40354e0c3935334a332eadff",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingBufRing.java",
+          "sourceSha256": "dc7a8630a57c664f10861b539cf083feae1b80d723da7e5c3f529bb6f7338375",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingBufStatus.java",
+          "sourceSha256": "80257b19f03b5bcf0bddb8143884005e7468e78c1b76557222b430300828c83d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingCQ.java",
+          "sourceSha256": "2e4dd6a31fbadae9bce4b15f8a46d7d5529e787c1155d1725613f10c61b19875",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingCQE.java",
+          "sourceSha256": "58ab287617ce0615e8ec770b5d799738f8f58fd10926ed51217d60272c11bf4b",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingClockRegister.java",
+          "sourceSha256": "a5d834a1cb6821de541fb4a8d2b232f518f7bfa13d4739b4cc0d69e2e881650d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingCloneBuffers.java",
+          "sourceSha256": "7eb8ad9fe9167ae2d84a82febd20636ee2b9cabe2ba1447c64890e80fb27dfcf",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingFileIndexRange.java",
+          "sourceSha256": "e72fb2f9842c3dde3ca12f7a43902225eb4a5a420ba5b0a1abc14c273396e5cb",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingGeteventsArg.java",
+          "sourceSha256": "2a6cfae7649154cdf8d40df567ec7320d8fd9a48597f7b5f5941865d147c77a3",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingMemRegionReg.java",
+          "sourceSha256": "e796d58acdd29436909e1f2fee0fa05b1526e674b0e0d1934e334623a200814a",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingNAPI.java",
+          "sourceSha256": "c24fb466b69445aacdebe20fe09734efd00ad1eeca9213271f99f280e7f37d60",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingParams.java",
+          "sourceSha256": "1a223768b3ddc409b1de4cebf79aa8fd80aa3f011a24ea9a4278f171f11fe142",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingProbe.java",
+          "sourceSha256": "f1dcfe6b609f8d3aac642c88c544c37ccd3e0d896222c1a79761969e0a7c57e4",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingProbeOp.java",
+          "sourceSha256": "e444158643341498723800f9b89a6ca16a29b318975c717962668a422d52c6bd",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingQueryHdr.java",
+          "sourceSha256": "2172369856c9ed47aa44891f45453eff811c5a01250aeaa717ab5d207611cf88",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingQueryOpcode.java",
+          "sourceSha256": "6d8753ed97dd3aa526766d1a32574f5c8d17a836648f88d52db02a9c2e314d62",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingRSRCRegister.java",
+          "sourceSha256": "01d42d964d3d4edc9a1eb6c529ab4e4ac22d71bbf6b836fdd85708ec239e2f44",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingRSRCUpdate.java",
+          "sourceSha256": "2ae6fee4022547516fc05fa99004ea35d5e92289328758c298d6bdd5611b3c35",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingRSRCUpdate2.java",
+          "sourceSha256": "0397dda3eb573fe06cc44307a2f7777b869f213cc4ed72ed4a4ee427acce0a0c",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingRecvmsgOut.java",
+          "sourceSha256": "3f04435473c7c9cc86867f442b7ccec4df75e5e6d9e23c48d6ce1673e5b7b765",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingRegWait.java",
+          "sourceSha256": "846b2f6dd3c294a0399714805ea0e6bc00ce87278ec44c537f8b4e22ea3d6bc3",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingRestriction.java",
+          "sourceSha256": "f4817cacd68a0a6aeb3151dc6588b8cbf0f9c62927e46c9ef7c4b55ef1e8666a",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingSQ.java",
+          "sourceSha256": "cd905908f4434fbf231a38165e95e22d0b4cde2876fcbf76e94249e7a506f8bc",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingSQE.java",
+          "sourceSha256": "5b582ca23b14d4afe42cb128406c0e41b2f62ee565505e93e52f159ad4739ef8",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingSyncCancelReg.java",
+          "sourceSha256": "f74037d984db5ce70d4b629093634c7b39b8c4c76ac63118f1832d509c793e2a",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingTaskRestriction.java",
+          "sourceSha256": "2c37d2c5ec8de2b208b34f49334ee7cff2b6cf29a1af89ac1816a72a8ac2276c",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXAreaReg.java",
+          "sourceSha256": "5ad239c86b07811a97b906c7bde5fa477f43fe6458d30869109dc4623ba02c1d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXCQE.java",
+          "sourceSha256": "6f9ee7bdd110e5f0945147148512d22dbbab4d185a92fb7ce84f197996871d46",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXCtrl.java",
+          "sourceSha256": "3514a1274c7d11cfc095906b89c92fcd87861389fbd5ea18c6dae8dc69815ec4",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXCtrlExport.java",
+          "sourceSha256": "f692d4f1d6a913b3bcaa65892b247914eed892a515c493b5a3a79b06ef54e7d2",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXCtrlFlushRQ.java",
+          "sourceSha256": "e69f322133baee91634db6a086f8457c980b6bea2a6c59ad842341dea5723c48",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXIfqReg.java",
+          "sourceSha256": "ab116d5bc10f0285de22cda77e8c7a469346d59f17e5e15571a6e26f93f2f59b",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXOffsets.java",
+          "sourceSha256": "4868cd7943b8311798cd096a7f7737653fc92466c66612bb6d36ca760c668def",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXRQ.java",
+          "sourceSha256": "6de38253a5eae4713d744e6b7dd9483bebe3fbe8622322a262d0266b5a5a1b34",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOURingZCRXRQE.java",
+          "sourceSha256": "28e0f9100ae14db58b8be0b8eb31670044d2f8341841a555215566423836824d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/IOUringRegionDesc.java",
+          "sourceSha256": "8116305ac3d03cb954a4e10f33d7576c1279fe40104877b990798620e3c02cd5",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/LibIOURing.java",
+          "sourceSha256": "834e92f708897ce7394d2ab9481501cac0130cc95404cf19e22d7047d7f83882",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/LibURing.java",
+          "sourceSha256": "5899894b7b56193b174f8f4cf9c16d77d5b458fe736894926cb436c579ca69f0",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/liburing/package-info.java",
+          "sourceSha256": "fd445c17195236fabe35721756c602a5ea014169cf7c35692ad690ec4e11278e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/linux/package-info.java",
+          "sourceSha256": "bf13655607684f76fef976f7c0797b1d662de523b980efe12a7ee0a32d1acd0e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/CGEventTapCallBack.java",
+          "sourceSha256": "cb19c75c6c8a98ed02cd4bb50da0577862f1e861ab4b7e5dab654349c6381987",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/CGEventTapCallBackI.java",
+          "sourceSha256": "2a6eb2746a027283854416c8fb42def6bbaf9422b43dbd2ccaa353d9898963bf",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/CGEventTapInformation.java",
+          "sourceSha256": "cfe5b5c155600e4bc092d36b14d954cb00339523de2d4bfce572bab54ad2cfe6",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/CGPoint.java",
+          "sourceSha256": "b78a6faa8eba8b3104ce2ce29d92a8ad4acc881b4aed94e1c6519f13c80a7b9d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/CoreFoundation.java",
+          "sourceSha256": "52a0082a7bc1437693636a617b6e3630db86bbb5e8d83c8939962241e9606289",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/CoreGraphics.java",
+          "sourceSha256": "765b5d62112c0d39b462b8fa165a843253ee8ffbc4aaba249d51e8ae11aa631f",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/DynamicLinkLoader.java",
+          "sourceSha256": "97221ee011fc9b41ff433d59fcc5d27ae63bb295a5c4963a7086dc46ce1693c4",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/EnumerationMutationHandler.java",
+          "sourceSha256": "9749fe1c5063ffe0ca9b2f417752b49a367d5c1d062c4fbf8b9a1d0791f6883f",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/EnumerationMutationHandlerI.java",
+          "sourceSha256": "b409abbe514fa63a52fb953925b30f31568e374829c111de4444a06dce037efc",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/LibC.java",
+          "sourceSha256": "f03b563b670931ecfd306e3046d13acf3c283369aba450ca74ce9961ab7e1718",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/LibSystem.java",
+          "sourceSha256": "2c857ebebfaaddb68594794cc4e217dc7332ede4a0ccc58caa23b087d9f2ba7a",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/ObjCMethodDescription.java",
+          "sourceSha256": "12ee4260bf2faf9c77d00919dea6869d942f2a002025a759084c35342d4dd9eb",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/ObjCPropertyAttribute.java",
+          "sourceSha256": "573d3f2934c216e8a24158a2fce9ee41f92c94b4d2c80ec0ee78c83bacda63e5",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/ObjCRuntime.java",
+          "sourceSha256": "cd7ab2bd7a042a9f3ce4e54296117a1033a8d23d058e0699b1cf2101d0184b0a",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/macosx/package-info.java",
+          "sourceSha256": "e2d9193f3361de845c39b4be0bfc03bba8ae0fef818985355dadaee3e7130ebf",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/CRYPTPROTECT_PROMPTSTRUCT.java",
+          "sourceSha256": "4d3a309c1fefc236c18372c2aadfe8b03661439d419a25ffd65862b8ee5d2d90",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/Crypt32.java",
+          "sourceSha256": "62dc60cf5d0673d948dad204a8c403253f1b8ef6fbae0afbfb2530dd0d0bfaaf",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/DATA_BLOB.java",
+          "sourceSha256": "5181e38eb705cf04cf56d97f0f51daff4a327ec19522a0502d344caeffddee13",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/DEVMODE.java",
+          "sourceSha256": "a40c783690ce9c51156054119fd3b29f0e883356d5bbd791a214049d84f47988",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/DISPLAY_DEVICE.java",
+          "sourceSha256": "9f0021ac7dc9d4ec5a464a37e155f5512745e9a4fe864c02b2129b91574d1ccd",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/GDI32.java",
+          "sourceSha256": "2e2c08d02df54cf57d8e38578e404ef192021f0533eee36867355a26e8c53a87",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/HARDWAREINPUT.java",
+          "sourceSha256": "430dc70e61a8e13fffb2681ff52857e27288fe3006f036147e06bddba69b2296",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/INPUT.java",
+          "sourceSha256": "55f1baab90187ea69ab2baca8621d537de72fb3d09f3b6cc1fef2bff62994c47",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/KEYBDINPUT.java",
+          "sourceSha256": "fd6e6b34b248f33094aeafc53964cc0ce5b0e1a9ddcdd74107852460aa9c1f2f",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/Kernel32.java",
+          "sourceSha256": "cedebb09c8dfb1f59a65afd5e49f1045b82233b83f622185284db7555ad4b68d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/LARGE_INTEGER.java",
+          "sourceSha256": "c7c62621b6fc7e9265293880ac10c20700f747dab2b496c9917e59f2fd2ce325",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/MONITORINFOEX.java",
+          "sourceSha256": "59102c512b435e28d87a7497b764d04a8814fd9cf80913ba301616cfa47c5570",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/MOUSEINPUT.java",
+          "sourceSha256": "2f21ff53aff8f337b080dd8f2dd8719634a8f45cccf44b6b3712ea70bc5f301e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/MSG.java",
+          "sourceSha256": "6238e754e6662c362675d56f6a091ad9733aceb1d14b645fa767a84f1df6672b",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/PIXELFORMATDESCRIPTOR.java",
+          "sourceSha256": "9bd751796527f445435e53bb3165394b223188e46c819c69fc890814fe87efa9",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/POINT.java",
+          "sourceSha256": "54b3c4159b3ac2f313fe4f9a8664e1a28ff2af1f5656726547763966fad89ab8",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/POINTL.java",
+          "sourceSha256": "de146185a284d3a4892581872a2ffcc091310bed62b87393454705f626836828",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/RECT.java",
+          "sourceSha256": "981a91a1cd60a677462252f0aae955efc188db41d23b63b364b3d44019787cda",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/SECURITY_ATTRIBUTES.java",
+          "sourceSha256": "61f83af89fa84628b3d7ed4892789f7f0353fd59e1afa69954c987befbec1e80",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/TOUCHINPUT.java",
+          "sourceSha256": "1dd4a059addef80bc8144f16e5eecdb3d21646b28b37c98e1fc9d36f858186bc",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/User32.java",
+          "sourceSha256": "ae7a381c37d72c13dee5d893d052ed8dc0b2ba631232df6e6b4ea9c6e47def1e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/WINDOWPLACEMENT.java",
+          "sourceSha256": "664d3a3de48785f75c1e934baf07d82e84bb52dde8b96ee0862deada7a6de3fa",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/WNDCLASSEX.java",
+          "sourceSha256": "96c9b0b58f0d57e867880744c534c4a2d7bced157919ec832d1920710abce61e",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/WinBase.java",
+          "sourceSha256": "50902eb8b639aa3c2d57ee2807a6c571a5dd8489bb5b36f117523acf11f9afe3",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/WindowProc.java",
+          "sourceSha256": "c3c2dec36c072e1a6fca0b1ebc7f40b09f5fd1acc2fe8057e5be21fa4bb6627a",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/WindowProcI.java",
+          "sourceSha256": "d12aeb3363204905e0252f2c93295670ee6b0ee72f46a2bf985e39438c887e3f",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/system/windows/package-info.java",
+          "sourceSha256": "8d9f4e1b6ca88f511dec1317d1e76cc9e20cecc1ebe13d3d774de1291215076b",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        }
+      ]
+    }
+  ]
+}

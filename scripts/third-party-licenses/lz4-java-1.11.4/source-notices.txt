@@ -1,0 +1,97 @@
+Source entries: net/jpountz/lz4/AbstractLZ4JNIFastResetCompressor.java#L3-L17, net/jpountz/lz4/LZ4BlockInputStream.java#L3-L17, net/jpountz/lz4/LZ4BlockOutputStream.java#L3-L17, net/jpountz/lz4/LZ4ByteBufferUtils.java#L3-L17, net/jpountz/lz4/LZ4Compressor.java#L3-L17, net/jpountz/lz4/LZ4Constants.java#L3-L17, net/jpountz/lz4/LZ4Decompressor.java#L3-L17, net/jpountz/lz4/LZ4Exception.java#L3-L17, net/jpountz/lz4/LZ4Factory.java#L3-L17, net/jpountz/lz4/LZ4FastDecompressor.java#L5-L19, net/jpountz/lz4/LZ4HCJNICompressor.java#L3-L17, net/jpountz/lz4/LZ4JNI.java#L3-L17, net/jpountz/lz4/LZ4JNICompressor.java#L3-L17, net/jpountz/lz4/LZ4JNIFastDecompressor.java#L3-L17, net/jpountz/lz4/LZ4JNIFastResetCompressor.java#L3-L17, net/jpountz/lz4/LZ4JNIHCFastResetCompressor.java#L3-L17, net/jpountz/lz4/LZ4JNISafeDecompressor.java#L3-L17, net/jpountz/lz4/LZ4SafeDecompressor.java#L3-L17, net/jpountz/lz4/LZ4SafeUtils.java#L3-L17, net/jpountz/lz4/LZ4UnknownSizeDecompressor.java#L3-L17, net/jpountz/lz4/LZ4Utils.java#L3-L17, net/jpountz/util/ByteBufferUtils.java#L3-L17, net/jpountz/util/Native.java#L3-L17, net/jpountz/util/SafeUtils.java#L3-L17, net/jpountz/util/Utils.java#L3-L17, net/jpountz/xxhash/AbstractStreamingXXHash32Java.java#L3-L17, net/jpountz/xxhash/StreamingXXHash32.java#L6-L20, net/jpountz/xxhash/StreamingXXHash32JNI.java#L5-L19, net/jpountz/xxhash/XXHash32.java#L5-L19, net/jpountz/xxhash/XXHash32JNI.java#L3-L17, net/jpountz/xxhash/XXHashConstants.java#L3-L17, net/jpountz/xxhash/XXHashFactory.java#L3-L17, net/jpountz/xxhash/XXHashJNI.java#L3-L17, net/jpountz/lz4/LZ4UnsafeUtils.java#L3-L17, net/jpountz/util/UnsafeUtils.java#L3-L17
+/*
+ * Copyright 2020 Adrien Grand and the lz4-java contributors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: net/jpountz/lz4/LZ4CompressorWithLength.java#L3-L17, net/jpountz/lz4/LZ4DecompressorWithLength.java#L3-L17
+/*
+ * Copyright 2020 Rei Odaira and the lz4-java contributors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: net/jpountz/lz4/LZ4FrameInputStream.java#L3-L17, net/jpountz/lz4/LZ4FrameOutputStream.java#L3-L17
+/*
+ * Copyright 2020 The Apache Software Foundation and the lz4-java contributors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: net/jpountz/lz4/LZ4FrameInputStream.java#L32-L43
+/**
+ * Implementation of the v1.5.1 LZ4 Frame format. This class is NOT thread safe.
+ * <p>
+ * Not Supported:<ul>
+ * <li>Dependent blocks</li>
+ * <li>Legacy streams</li>
+ * </ul>
+ * <p>
+ * Originally based on kafka's KafkaLZ4BlockInputStream.
+ *
+ * @see <a href="https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md">LZ4 Framing Format Spec 1.5.1</a>
+ */
+
+Source entries: net/jpountz/lz4/LZ4FrameOutputStream.java#L34-L46
+/**
+ * Implementation of the v1.5.1 LZ4 Frame format. This class is NOT thread safe.
+ * <p>
+ * Not Supported:<ul>
+ * <li>Dependent blocks</li>
+ * <li>Legacy streams</li>
+ * <li>Multiple frames (one LZ4FrameOutputStream is one frame)</li>
+ * </ul>
+ * <p>
+ * Originally based on kafka's KafkaLZ4BlockOutputStream.
+ *
+ * @see <a href="https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md">LZ4 Framing Format Spec 1.5.1</a>
+ */
+
+Source entries: net/jpountz/xxhash/AbstractStreamingXXHash64Java.java#L3-L17, net/jpountz/xxhash/StreamingXXHash64.java#L6-L20, net/jpountz/xxhash/StreamingXXHash64JNI.java#L5-L19, net/jpountz/xxhash/XXHash64.java#L5-L19, net/jpountz/xxhash/XXHash64JNI.java#L3-L17
+/*
+ * Copyright 2020 Linnaea Von Lavia and the lz4-java contributors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+

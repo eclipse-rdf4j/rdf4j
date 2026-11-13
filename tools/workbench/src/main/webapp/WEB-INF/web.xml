@@ -54,13 +54,14 @@
 		<filter-name>CacheFilter</filter-name>
 		<url-pattern>*</url-pattern>
 	</filter-mapping>
-	<!-- Scripts and stylesheets keep their names across releases (the graph explorer's entries also load hashed
+	<!-- Scripts, stylesheets and legal notices keep their names across releases (the graph explorer's entries also load hashed
 	     chunks and workers): browsers revalidate them, so after an upgrade they never run the previous release's
-	     scripts against the new server, nor pair an old entry with chunks that are gone. -->
+	     scripts against the new server, pair an old entry with chunks that are gone, or display outdated notices. -->
 	<filter-mapping>
 		<filter-name>RevalidatedAssetFilter</filter-name>
 		<url-pattern>/scripts/*</url-pattern>
 		<url-pattern>/styles/*</url-pattern>
+		<url-pattern>/legal/*</url-pattern>
 	</filter-mapping>
 	<servlet>
 		<servlet-name>workbench</servlet-name>
@@ -235,5 +236,10 @@
 	<mime-mapping>
 		<extension>mjs</extension>
 		<mime-type>text/javascript</mime-type>
+	</mime-mapping>
+	<!-- Show the version-bundled project notice directly in the browser. -->
+	<mime-mapping>
+		<extension>md</extension>
+		<mime-type>text/plain</mime-type>
 	</mime-mapping>
 </web-app>

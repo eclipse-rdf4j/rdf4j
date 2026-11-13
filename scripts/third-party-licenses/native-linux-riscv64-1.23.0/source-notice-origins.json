@@ -1,0 +1,19 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-riscv64/1.23.0/native-linux-riscv64-1.23.0-sources.jar",
+  "archiveSha256": "acd056ef612661c05817960d326559ea4aaad5fc9b8961b56f468016a4dd2088",
+  "blocks": [
+    {
+      "commentSha256": "269974a7b6406e9f1aadae96666154a1288426133d9b2412441293a68bfa1429",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/linux/riscv64/NativeLoader.java",
+          "sourceSha256": "7079e374310edaf8b5dd722b9f44b9dc3af41793efe4a4fc4ba413fec1278b76",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    }
+  ]
+}

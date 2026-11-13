@@ -1,0 +1,43 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2-sources.jar",
+  "archiveSha256": "1c9e85e272d0708c6a591dc74828c71603053b48cc75ae83cce56912a2aa063b",
+  "blocks": [
+    {
+      "commentSha256": "126a1126efb3c2ec7abe38fbb520ca6459525ac353bf0b259d78d759cc75b58e",
+      "sources": [
+        {
+          "entry": "javax/annotation/concurrent/GuardedBy.java",
+          "sourceSha256": "394a92efceb1e774e5fcb3a2636fef41eee51042d26673bb6350fe46ae0f6a17",
+          "startByte": 0,
+          "endByteExclusive": 187,
+          "startLine": 1,
+          "endLine": 6
+        },
+        {
+          "entry": "javax/annotation/concurrent/Immutable.java",
+          "sourceSha256": "6f95c78b0412c79b82eb34a44a5f2667d6e10bfe6af2471f3d9202a5e6633724",
+          "startByte": 0,
+          "endByteExclusive": 187,
+          "startLine": 1,
+          "endLine": 6
+        },
+        {
+          "entry": "javax/annotation/concurrent/NotThreadSafe.java",
+          "sourceSha256": "4f87edf90c26f47873aa8199310b18d9b4786304119cfe795a9ada526888c519",
+          "startByte": 0,
+          "endByteExclusive": 187,
+          "startLine": 1,
+          "endLine": 6
+        },
+        {
+          "entry": "javax/annotation/concurrent/ThreadSafe.java",
+          "sourceSha256": "58c3192ce6f8ec7b54d20af2781f56ab54a5b8a12ff87e179e4f1b9ed419eaeb",
+          "startByte": 0,
+          "endByteExclusive": 187,
+          "startLine": 1,
+          "endLine": 6
+        }
+      ]
+    }
+  ]
+}
