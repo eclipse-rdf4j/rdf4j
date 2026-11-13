@@ -13,6 +13,7 @@
 	<modules>
 		<module>api</module>
 		<module>binary</module>
+		<module>jelly</module>
 		<module>sparqljson</module>
 		<module>sparqlxml</module>
 		<module>xlsx</module>
