@@ -117,36 +117,6 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository,
         onKeyDown={onKeyDown}
       />
       {shown ? (
-<<<<<<< HEAD
-        <ul id={listId} role="listbox" className="graph-find-results" aria-label="Matches">
-          {options.map((option, index) => (
-            <li
-              key={option.kind === "node" ? option.node.id : "repository"}
-              id={`${listId}-${index}`}
-              role="option"
-              aria-selected={index === current}
-              aria-disabled={option.kind === "repository" && busy ? true : undefined}
-              title={option.kind === "repository" && busy ? "Available when the current query is done" : undefined}
-              className={optionClass(option, index === current)}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => setActive(index)}
-              onClick={() => choose(option)}
-            >
-              {option.kind === "node" ? (
-                <>
-                  <span className="graph-find-label" title={termTooltip(option.node.id)}>{option.node.label}</span>
-                  {option.detail ? <small title={termTooltip(option.node.id)}>{option.detail}</small> : null}
-                </>
-              ) : (
-                <span className="graph-find-label">
-                  <Icon name="search" />
-                  Search the repository for “{deferredTerm.trim()}”
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-=======
         <div className="graph-find-results">
           {listboxShown ? (
             <ul id={listId} role="listbox" aria-label="Loaded graph matches">
@@ -155,8 +125,10 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository,
                   aria-selected={index === current} className={index === current ? "is-active" : ""}
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseEnter={() => setActive(index)} onClick={() => chooseNode(index)}>
-                  <span className="graph-find-label">{match.node.label}</span>
-                  <small>{match.in === "iri" ? compactTerm(match.node.id, 48) : (match.node.types?.[0]?.label ?? "")}</small>
+                  <span className="graph-find-label" title={termTooltip(match.node.id)}>{match.node.label}</span>
+                  <small title={termTooltip(match.node.id)}>
+                    {match.in === "iri" ? compactTerm(match.node.id, 48) : (match.node.types?.[0]?.label ?? "")}
+                  </small>
                 </li>
               ))}
             </ul>
@@ -169,7 +141,6 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository,
             {repositorySize == null ? "Repository size is unknown." : "More than 100,000 statements."} Search may take time.
           </p> : null}
         </div>
->>>>>>> origin/main
       ) : null}
     </div>
   );
