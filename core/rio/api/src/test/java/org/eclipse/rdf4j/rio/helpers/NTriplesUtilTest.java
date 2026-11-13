@@ -59,6 +59,13 @@ public class NTriplesUtilTest {
 	}
 
 	@Test
+	public void testAppendSupplementaryUnicodeCharacter() throws Exception {
+		String supplementaryCharacter = "\uD840\uDC00";
+		NTriplesUtil.escapeString(supplementaryCharacter, appendable, true);
+		assertEquals(supplementaryCharacter, appendable.toString());
+	}
+
+	@Test
 	public void testParseDirectedLanguageLiteral() {
 		Literal literal = NTriplesUtil.parseLiteral("\"שלום\"@he--rtl", f);
 
