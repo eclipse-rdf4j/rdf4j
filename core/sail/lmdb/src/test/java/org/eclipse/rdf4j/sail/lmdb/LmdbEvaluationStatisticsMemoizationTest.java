@@ -24,10 +24,12 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -72,8 +74,10 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -91,6 +95,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactor
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class LmdbEvaluationStatisticsMemoizationTest {
 
@@ -521,11 +527,158 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			double filterCardinality = statistics.getCardinality(filter);
 
 			assertTrue(filterCardinality < patternCardinality,
-					"Expected filter cardinality to use sketch selectivity instead of raw statement pattern cardinality");
+					() -> "Expected filter cardinality to use sketch selectivity instead of raw statement pattern cardinality"
+							+ ": pattern=" + patternCardinality + ", filter=" + filterCardinality);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
+	}
+
+	@Test
+	void doesNotLetOneRowSampleOverrideSelectiveFilterCardinality() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-partial-filter-cardinality").toFile();
+		LmdbStoreConfig config = sketchEnabledConfig()
+				.setOptimizerSamplingMaxMillis(5_000L)
+				.setOptimizerSamplingMaxRows(1)
+				.setBackgroundRawSamplingEnabled(false);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:test:name")),
+					Var.of("name"));
+			Filter filter = new Filter(pattern.clone(),
+					new Compare(Var.of("name"), new ValueConstant(vf.createLiteral("u0")), Compare.CompareOp.EQ));
+
+			double patternCardinality = statistics.getCardinality(pattern);
+			EvaluationStatistics.FilterPassEstimate passEstimate = statistics.estimateFilterPass(filter);
+			double filterCardinality = statistics.getCardinality(filter);
+
+			assertEquals(8.0d, patternCardinality);
+			assertEquals(1.0d, filterCardinality,
+					() -> "One matching sampled row must not make all eight distinct names pass the filter: pattern="
+							+ patternCardinality + ", filter=" + filterCardinality + ", pass ratio="
+							+ passEstimate.getPassRatio() + ", source=" + passEstimate.getSource() + ", evidence="
+							+ passEstimate.getEvidenceCount());
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({
+			"1, 1, SAMPLED, 1, 1.0",
+			"8, 7, HEURISTIC, -1, 0.125",
+			"8, 8, SAMPLED, 8, 0.125",
+			"128, 15, HEURISTIC, -1, 0.05",
+			"128, 16, SAMPLED, 16, 0.0625"
+	})
+	void requiresEnoughEvidenceForFilterSampling(int rowCount, int rowBudget,
+			EvaluationStatistics.FilterPassEstimate.Source expectedSource, long expectedEvidence,
+			double expectedRatio) throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-filter-evidence").toFile();
+		LmdbStoreConfig config = sketchEnabledConfig()
+				.setOptimizerSamplingMaxMillis(5_000L)
+				.setOptimizerSamplingMaxRows(rowBudget)
+				.setBackgroundRawSamplingEnabled(false);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadNameData(repository, rowCount);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter(
+					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(?name = \"sample-0\") }");
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+
+			assertEquals(expectedSource, estimate.getSource(),
+					() -> "Population=" + rowCount + ", row budget=" + rowBudget + ", pass ratio="
+							+ estimate.getPassRatio() + ", evidence=" + estimate.getEvidenceCount());
+			assertEquals(expectedEvidence, estimate.getEvidenceCount());
+			// The existing heuristic fallback retains its 5% floor; sampled ratios use the observed evidence.
+			assertEquals(expectedRatio, estimate.getPassRatio(), 1.0e-9d);
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({
+			"1, 1, true, NONE",
+			"8, 1, false, NONE",
+			"8, 7, false, NONE",
+			"8, 8, true, NONE",
+			"128, 15, false, NONE",
+			"128, 16, true, NONE",
+			"NaN, 1, false, NONE",
+			"NaN, 16, true, NONE",
+			"NaN, 1, false, IO",
+			"NaN, 16, true, IO",
+			"NaN, 1, false, RUNTIME",
+			"NaN, 16, true, RUNTIME"
+	})
+	void revalidatesPersistedFilterSamplingEvidence(double expectedRows, int sampleSize, boolean available,
+			String cardinalityFailure, @TempDir Path directory) throws Exception {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("urn:test:name");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("name"));
+		Filter filter = new Filter(pattern.clone(),
+				new Compare(Var.of("name"), new ValueConstant(vf.createLiteral("u0")), Compare.CompareOp.EQ));
+		Path estimatorPath = Files.createDirectory(directory.resolve("join-estimator.rjes"));
+		Path metadata = Files.write(estimatorPath.resolve("metadata.bin"), new byte[] { 0 });
+		// Existing version-3 sidecars may contain samples collected under the previous one-row evidence policy.
+		try (DataOutputStream out = new DataOutputStream(
+				Files.newOutputStream(directory.resolve("join-estimator.rjes.filters")))) {
+			out.writeInt(3);
+			out.writeLong(Files.size(metadata));
+			out.writeLong(Files.getLastModifiedTime(metadata).toMillis());
+			out.writeInt(0); // Learned filter entries.
+			out.writeInt(0); // Learned template entries.
+			out.writeInt(1); // Sampled filter entries.
+			out.writeBoolean(true);
+			byte[] predicateBytes = predicate.stringValue().getBytes(StandardCharsets.UTF_8);
+			out.writeInt(predicateBytes.length);
+			out.write(predicateBytes);
+			out.writeInt(PatternKey.PREDICATE_BOUND);
+			byte[] filterBytes = FilterSelectivityKeys.filterKeyFor(filter.getCondition())
+					.getBytes(StandardCharsets.UTF_8);
+			out.writeInt(filterBytes.length);
+			out.write(filterBytes);
+			out.writeDouble(1.0d);
+			out.writeInt(sampleSize);
+		}
+
+		TripleStore tripleStore = mock(TripleStore.class);
+		ValueStore valueStore = mock(ValueStore.class);
+		when(valueStore.getId(predicate)).thenReturn(7L);
+		var cardinality = when(
+				tripleStore.cardinality(LmdbValue.UNKNOWN_ID, 7L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID));
+		switch (cardinalityFailure) {
+		case "IO" -> cardinality.thenThrow(new IOException("Cardinality unavailable"));
+		case "RUNTIME" -> cardinality.thenThrow(new IllegalStateException("Cardinality unavailable"));
+		default -> cardinality.thenReturn(expectedRows);
+		}
+		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+				false, 0L, 1, false);
+
+		SketchBasedJoinEstimator.PatternFilterSampleEstimate estimate = stats.estimateFilterPass(filter, pattern);
+
+		assertEquals(available ? 1.0d : -1.0d, estimate.passRatio(),
+				() -> "Persisted sample size=" + sampleSize + ", expected rows=" + expectedRows
+						+ ", cardinality failure=" + cardinalityFailure);
+		assertEquals(available ? sampleSize : -1L, estimate.sampleSize());
 	}
 
 	@Test

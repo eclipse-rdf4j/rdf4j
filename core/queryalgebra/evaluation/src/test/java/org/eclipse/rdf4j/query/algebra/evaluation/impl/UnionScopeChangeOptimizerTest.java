@@ -209,6 +209,73 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void optionalAncestorAndLaterJoinPermitLocallyBoundBranchExpressions() throws Exception {
+		String query = """
+				SELECT ?seed ?local ?out ?tail WHERE {
+				  VALUES ?seed { <urn:seed> }
+				  OPTIONAL {
+				    VALUES ?link { <urn:link> }
+				    { VALUES ?local { <urn:left> } BIND(STR(?local) AS ?out) }
+				    UNION
+				    { VALUES ?local { <urn:right> } BIND(STR(?local) AS ?out) }
+				  }
+				  VALUES ?tail { <urn:tail> }
+				}
+				""";
+		List<Map<String, String>> expected = List.of(
+				Map.of("seed", "urn:seed", "local", "urn:left", "out", "urn:left", "tail", "urn:tail"),
+				Map.of("seed", "urn:seed", "local", "urn:right", "out", "urn:right", "tail", "urn:tail"));
+
+		assertParsedUnionCase(query, expected, false, true);
+		TupleExpr optimized = parse(query);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.optimize(optimized, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void enclosingFilterDoesNotBlockStableBranchExpressions() throws Exception {
+		String query = """
+				SELECT ?local ?out ?tail WHERE {
+				  {
+				    { VALUES ?local { <urn:left> } BIND(STR(?local) AS ?out) }
+				    UNION
+				    { VALUES ?local { <urn:right> } BIND(STR(?local) AS ?out) }
+				    FILTER(BOUND(?local))
+				  }
+				  VALUES ?tail { <urn:tail> }
+				}
+				""";
+		assertParsedUnionCase(query, List.of(
+				Map.of("local", "urn:left", "out", "urn:left", "tail", "urn:tail"),
+				Map.of("local", "urn:right", "out", "urn:right", "tail", "urn:tail")), false, true);
+	}
+
+	@Test
+	public void laterAncestorInputCannotChangeBranchBoundExpressionThroughOptional() throws Exception {
+		String query = """
+				SELECT ?x ?out WHERE {
+				  VALUES ?seed { <urn:seed> }
+				  OPTIONAL {
+				    VALUES ?link { <urn:link> }
+				    { BIND(BOUND(?x) AS ?out) }
+				    UNION
+				    { BIND(false AS ?out) }
+				  }
+				  VALUES ?x { <urn:later> }
+				}
+				""";
+		List<Map<String, String>> expected = List.of(
+				Map.of("x", "urn:later", "out", "false"),
+				Map.of("x", "urn:later", "out", "false"));
+		assertParsedUnionCase(query, expected, true);
+		TupleExpr optimized = parse(query);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.optimize(optimized, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
 	public void clearsScopeForBindReadingLocallyGuaranteedIncomingName() throws Exception {
 		String query = "SELECT ?x ?out WHERE { VALUES ?x { <urn:shared> } "
 				+ "{ VALUES ?x { <urn:shared> } BIND(STR(?x) AS ?out) } "

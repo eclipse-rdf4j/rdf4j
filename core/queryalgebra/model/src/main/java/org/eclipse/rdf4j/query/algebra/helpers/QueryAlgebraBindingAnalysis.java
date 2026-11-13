@@ -409,6 +409,11 @@ public final class QueryAlgebraBindingAnalysis {
 		invalidate();
 	}
 
+	/**
+	 * Drops derived facts while preserving the identities of existing lexical boundaries. Optimizers may retain
+	 * contexts and physical prefixes while visiting sibling operands; rebuilding the facts must not assign a different
+	 * identity to the same boundary. New boundary nodes still receive distinct identities.
+	 */
 	public void invalidate() {
 		contextCache.clear();
 		if (root != null) {
@@ -418,7 +423,6 @@ public final class QueryAlgebraBindingAnalysis {
 		resultSetModifierCache.clear();
 		childInputCache.clear();
 		leftJoinInputCache.clear();
-		scopeIdentities.clear();
 	}
 
 	/** Creates a local mutable owner; consumers must export an immutable snapshot before sharing it. */
