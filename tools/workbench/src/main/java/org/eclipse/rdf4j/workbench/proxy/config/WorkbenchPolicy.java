@@ -99,7 +99,7 @@ public final class WorkbenchPolicy {
 			"result-page-previous", "result-page-next", "result-download", "result-download-format",
 			"result-download-format-tuple", "result-download-format-graph", "result-download-limit",
 			"result-show-datatypes", "result-fullscreen", "query-rerun", "query-cancel",
-			"editor-namespaces", "editor-sidebar", "editor-fullscreen");
+			"editor-namespaces", "editor-sidebar", "editor-fullscreen", "query-tabs");
 	private static final Set<String> BUILT_IN_FEATURE_IDS = Collections.unmodifiableSet(
 			new LinkedHashSet<>(BUILT_IN_FEATURE_ID_LIST));
 	private static final Set<String> BUILT_IN_GROUP_IDS = Set.copyOf(DEFAULT_GROUP_IDS);

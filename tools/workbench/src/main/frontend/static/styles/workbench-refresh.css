@@ -5906,3 +5906,109 @@ body.workbench-body :is(.query-result-table-wrap, .query-result-records):focus-v
 		min-height: 48px;
 	}
 }
+
+/* A choice between a few answers (confirmDialog.choose): each a button with its label and what it does. */
+body.workbench-body .workbench-dialog__choices {
+	display: grid;
+	gap: 8px;
+	margin: 16px 0 0;
+}
+
+body.workbench-body .workbench-dialog__choice {
+	display: grid;
+	gap: 2px;
+	width: 100%;
+	padding: 10px 12px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+body.workbench-body .workbench-dialog__choice:hover,
+body.workbench-body .workbench-dialog__choice:focus-visible {
+	border-color: var(--workbench-teal);
+}
+
+body.workbench-body .workbench-dialog__choice-label {
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-dialog__choice-detail {
+	color: var(--workbench-muted);
+	font-size: 13px;
+}
+
+/* A notice that something happened, with Undo (toast.show). */
+body.workbench-body .workbench-toast-region {
+	position: fixed;
+	right: 24px;
+	bottom: 24px;
+	z-index: 60;
+	display: grid;
+	justify-items: end;
+	max-width: calc(100vw - 48px);
+	pointer-events: none;
+}
+
+body.workbench-body .workbench-toast {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	max-width: 480px;
+	padding: 10px 10px 10px 16px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	box-shadow: 0 12px 32px rgba(15, 23, 42, .14);
+	color: var(--workbench-ink);
+	font-size: var(--workbench-body-font-size);
+	pointer-events: auto;
+}
+
+body.workbench-body .workbench-toast__message {
+	margin: 0;
+	min-width: 0;
+}
+
+body.workbench-body .workbench-toast__action {
+	flex: none;
+	padding: 4px 10px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: transparent;
+	color: var(--workbench-teal);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+body.workbench-body .workbench-toast__close {
+	flex: none;
+	width: 28px;
+	height: 28px;
+	border: 0;
+	border-radius: var(--workbench-radius);
+	background: transparent;
+	color: var(--workbench-muted);
+	font-size: 18px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+body.workbench-body .workbench-toast__action:hover,
+body.workbench-body .workbench-toast__close:hover {
+	background: color-mix(in srgb, var(--workbench-ink) 6%, transparent);
+}
+
+@media (max-width: 640px) {
+	body.workbench-body .workbench-toast-region {
+		right: 16px;
+		bottom: 16px;
+		left: 16px;
+		max-width: none;
+	}
+}

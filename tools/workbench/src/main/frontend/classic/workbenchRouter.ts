@@ -39,6 +39,19 @@ namespace workbench {
              * a page of the same view, C22) instead of the page heading.
              */
             focus?: string;
+            /** Chosen in the repository switcher: the repository opens as it was left (workbench.workspace). */
+            repositorySwitch?: boolean;
+            /** Set by navigate: the page state a repository switch brings back once the page is ready. */
+            workspaceRestore?: WorkspaceRestore;
+            /** Run once the page left is gone and before the next one mounts (Undo of a restore). */
+            prepare?: () => void;
+        }
+
+        /** A repository switch that opens the repository on the page it was left on. */
+        interface WorkspaceRestore {
+            page: any;
+            to: { repositoryId: string; scope: any };
+            from: { repositoryId: string; viewId: string; scope: any };
         }
 
         /**
@@ -283,6 +296,175 @@ namespace workbench {
             }
         }
 
+        function workspace(): any {
+            const shared: any = (workbench as any).workspace;
+            return shared && typeof shared.rememberPage === 'function' ? shared : null;
+        }
+
+        function scopeOfRoute(route: ShownRoute, repositoryId?: string): any {
+            const shared = workspace();
+            return shared && route && route.context ? shared.scopeOf(route.context.serverIdentity || '',
+                route.context.serverUser || '', repositoryId === undefined ? route.repositoryId : repositoryId) : null;
+        }
+
+        /**
+         * Remember the page being left as its repository's workspace: its address, scroll position, what was typed
+         * and the page's own state (instance.snapshot). The Query page keeps its own (query tabs).
+         */
+        function rememberWorkspace(): void {
+            const shared = workspace();
+            if (!shared || !currentRoute || !currentRoute.repositoryId || !currentRoute.model || currentRoute.model.error
+                    || typeof views().isRepositoryScoped !== 'function' || !views().isRepositoryScoped(currentRoute.viewId)) {
+                return;
+            }
+            const scope = scopeOfRoute(currentRoute);
+            if (!scope) {
+                return;
+            }
+            const instance: any = currentRoute.instance;
+            let extra: any = null;
+            try {
+                extra = instance && typeof instance.snapshot === 'function' ? instance.snapshot() : null;
+            } catch (error) {
+                // The page's own state is left out.
+            }
+            const shown = new URL(currentRoute.url);
+            shared.rememberPage(scope, currentRoute.viewId, {
+                url: shown.pathname + shown.search + shown.hash,
+                scrollY: (window as any).scrollY,
+                form: currentRoute.viewId === 'query' ? [] : captureDraft(outlet()),
+                extra: extra,
+                at: Date.now()
+            });
+        }
+
+        /** The page a switch to the target's repository brings back, when it was left in this browser. */
+        function workspaceRestoreFor(target: URL): WorkspaceRestore {
+            const shared = workspace();
+            const repositoryId = repositoryIdOf(target);
+            if (!shared || !currentRoute || !repositoryId || repositoryId === currentRoute.repositoryId) {
+                return null;
+            }
+            const scope = scopeOfRoute(currentRoute, repositoryId);
+            const saved = scope ? shared.readWorkspace(scope) : null;
+            const page = saved ? saved.pages[saved.lastView] : null;
+            if (!page) {
+                return null;
+            }
+            let url: URL;
+            try {
+                url = new URL(page.url, target.href);
+            } catch (error) {
+                return null;
+            }
+            const prefix = session.basePath + '/repositories/' + encodeURIComponent(repositoryId) + '/';
+            if (url.origin !== target.origin || url.pathname.indexOf(prefix) !== 0 || !routes.isRouterReady(viewIdOf(url))) {
+                return null;
+            }
+            return { page: Object.assign({}, page, { url: url.href }), to: { repositoryId, scope },
+                from: { repositoryId: currentRoute.repositoryId, viewId: currentRoute.viewId,
+                    scope: scopeOfRoute(currentRoute) } };
+        }
+
+        /** Bring the page's typed values, own state and scroll position back, then say so with Undo. */
+        function applyWorkspaceRestore(restore: WorkspaceRestore, instance: any): void {
+            const page = restore.page;
+            if (page.form && page.form.length) {
+                restoreDraft(outlet(), page.form);
+            }
+            if (page.extra && instance && typeof instance.restore === 'function') {
+                try {
+                    instance.restore(page.extra);
+                } catch (error) {
+                    console.error('The Workbench could not restore the state of ' + page.url + '.', error);
+                }
+            }
+            afterTwoFrames(() => restoreScroll(page.scrollY || 0));
+            announceRestore(restore);
+        }
+
+        function announceRestore(restore: WorkspaceRestore): void {
+            const toast: any = (workbench as any).toast;
+            if (!toast || typeof toast.show !== 'function') {
+                return;
+            }
+            const shared = workspace();
+            const tabs = shared ? shared.queryTabsState(restore.to.scope) : null;
+            const open = tabs ? tabs.tabs.filter((tab: any) => tab && String(tab.query || '').trim()).length : 0;
+            const name = typeof views().pageName === 'function' ? views().pageName(viewIdOf(new URL(restore.page.url))) : '';
+            toast.show({
+                message: 'Restored ' + restore.to.repositoryId + ' as you left it' + (name ? ': ' + name + ' page' : '')
+                    + (open ? ', ' + open + (open === 1 ? ' query tab' : ' query tabs') : '') + '.',
+                actionLabel: 'Undo',
+                onAction: () => undoRestore(restore)
+            });
+        }
+
+        /**
+         * Undo a restore: the repository's query tabs are replaced by a copy of the queries of the repository the
+         * switch came from, or by one empty tab, and it opens on the page of the kind the switch came from.
+         */
+        function undoRestore(restore: WorkspaceRestore): void {
+            const shared = workspace();
+            const dialog: any = (workbench as any).confirmDialog;
+            if (!shared || !dialog || typeof dialog.choose !== 'function') {
+                return;
+            }
+            const fromTabs = shared.queryTabsState(restore.from.scope);
+            const queries = fromTabs ? fromTabs.tabs.filter((tab: any) => tab && String(tab.query || '').trim()).length : 0;
+            const choices = [];
+            if (queries) {
+                choices.push({ value: 'copy', label: 'Copy the ' + (queries === 1 ? 'query' : queries + ' queries')
+                    + ' from ' + restore.from.repositoryId,
+                    detail: 'Their text only: results stay with ' + restore.from.repositoryId + '.' });
+            }
+            choices.push({ value: 'empty', label: 'Start with one empty tab',
+                detail: 'The queries ' + restore.to.repositoryId + ' had open are closed.' });
+            dialog.choose({
+                title: 'Undo restoring ' + restore.to.repositoryId,
+                body: 'Replace the query tabs ' + restore.to.repositoryId + ' had open, and its saved results, with:',
+                choices
+            }).then((choice: string) => {
+                if (!choice) {
+                    return;
+                }
+                const target = views().repositorySwitchTarget(session.basePath, restore.from.viewId,
+                    restore.to.repositoryId);
+                navigate(target, { history: 'replace', prepare: () => {
+                    shared.replaceQueryTabs(restore.to.scope, choice === 'copy' ? fromTabs : null);
+                    shared.forgetWorkspace(restore.to.scope);
+                    const page: any = (workbench as any).queryPage;
+                    if (page && typeof page.forgetShelved === 'function') {
+                        const context = currentRoute && currentRoute.context || {};
+                        page.forgetShelved(restore.to.repositoryId, context.serverIdentity, context.basePath);
+                    }
+                    if (kept && kept.route.repositoryId === restore.to.repositoryId) {
+                        // A kept-alive Query page of the repository holds the tabs replaced.
+                        disposeKept('navigate');
+                    }
+                } });
+            });
+        }
+
+        /**
+         * A deleted repository leaves nothing behind in this browser: once a deletion started here reaches the
+         * Repositories list, or a page says the repository is not found, its tabs, saved results and pages go.
+         */
+        function forgetDeletedRepository(viewId: string, model: any, context: any): void {
+            const shared: any = (workbench as any).workspace;
+            if (!shared || typeof shared.forgetRepository !== 'function') {
+                return;
+            }
+            try {
+                shared.deletionDone(viewId || 'repositories', !!model.error);
+                if (context && context.missingRepositoryId && context.serverIdentity) {
+                    shared.forgetRepository(shared.serverDigest(context.serverIdentity), context.missingRepositoryId);
+                }
+            } catch (error) {
+                // What the browser keeps for it stays.
+            }
+        }
+
         function markRoute(viewId: string, ready: boolean): void {
             const element = outlet();
             element.setAttribute('data-workbench-route', viewId);
@@ -477,7 +659,8 @@ namespace workbench {
             event.preventDefault();
             // A link to the page already shown loads it again in the same history entry, as the browser does.
             const shown = (window as any).location.href;
-            navigate(url.href, { history: url.href === shown ? 'replace' : 'push' });
+            navigate(url.href, { history: url.href === shown ? 'replace' : 'push',
+                repositorySwitch: anchor.hasAttribute('data-workbench-repository-switch') });
         }
 
         /** The router-ready link an event happened in, if any. */
@@ -795,6 +978,7 @@ namespace workbench {
         }
 
         function onPageHide(event: any): void {
+            rememberWorkspace();
             if (!event.persisted) {
                 currentRoute.instance.dispose('pagehide');
                 disposeKept('pagehide');
@@ -848,6 +1032,7 @@ namespace workbench {
             }
             positions[currentRoute.key] = windowObject.scrollY;
             keepDraft();
+            rememberWorkspace();
             if (options.history !== 'none') {
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
             }
@@ -967,10 +1152,17 @@ namespace workbench {
                 return confirmLeavingUpload().then((leave): Outcome | Promise<Outcome> => leave
                     ? navigate(url, Object.assign({}, options, { leaveUpload: true })) : 'abandoned');
             }
-            const target = new URL(url, windowObject.location.href);
+            let target = new URL(url, windowObject.location.href);
             // Back and Forward show their entry as it was.
             if (!options.body && options.history !== 'none') {
                 exploreAgain(target);
+            }
+            // The repository switcher opens a repository on the page it was left on in this browser.
+            const restoring = options.repositorySwitch && !options.body && !options.workspaceRestore
+                ? workspaceRestoreFor(target) : null;
+            if (restoring) {
+                target = new URL(restoring.page.url);
+                options = Object.assign({}, options, { workspaceRestore: restoring });
             }
             const viewId = viewIdOf(target);
             const definition = routes.get(viewId);
@@ -980,7 +1172,7 @@ namespace workbench {
             }
             if (kept && !options.body && !kept.route.context?.serverIdentity
                     && target.href.split('#')[0] === kept.route.url.split('#')[0]) {
-                return Promise.resolve(restoreKept(target, options));
+                return Promise.resolve(keptRestored(target, options));
             }
             const mine = ++generation;
             pendingRoute = options.inPlace ? null : target.href;
@@ -1088,7 +1280,7 @@ namespace workbench {
                                 && target.href.split('#')[0] === kept.route.url.split('#')[0]) {
                             model.rowStore.dispose();
                             model = null;
-                            return restoreKept(target, options);
+                            return keptRestored(target, options);
                         }
                         return show();
                     }
@@ -1148,6 +1340,15 @@ namespace workbench {
                 });
         }
 
+        /** The kept route shown again; a repository switch to it says the repository is as it was left. */
+        function keptRestored(url: URL, options: NavigateOptions): Outcome {
+            const outcome = restoreKept(url, options);
+            if (options.workspaceRestore) {
+                announceRestore(options.workspaceRestore);
+            }
+            return outcome;
+        }
+
         /** The visible swap, in one synchronous step; the new route then mounts (possibly asynchronously). */
         function commit(definition: routes.RouteDefinition, model: any, url: URL, options: NavigateOptions,
                         mine: number): void {
@@ -1155,6 +1356,7 @@ namespace workbench {
             const history = windowObject.history;
             positions[currentRoute.key] = windowObject.scrollY;
             keepDraft();
+            rememberWorkspace();
             if (options.history !== 'none') {
                 // The current entry still belongs to the page being left (after Back it already does not).
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
@@ -1183,6 +1385,8 @@ namespace workbench {
             } else {
                 session.mount.removeAttribute('data-workbench-server-identity');
             }
+            // The signed-in user of the page shown: what the Workbench keeps in this browser is kept per user.
+            session.mount.setAttribute('data-workbench-server-user', context.serverUser || '');
             views().render(session.mount, model, context, session.runtime);
             adoptBusy();
             if (parked) {
@@ -1197,10 +1401,14 @@ namespace workbench {
             const viewId = viewIdOf(url);
             currentRoute = { url: url.href, viewId, repositoryId: repositoryIdOf(url), key,
                 instance: { dispose() {} }, model, context };
+            forgetDeletedRepository(viewId, model, context);
             if (!model.error) {
                 rememberExplored(url, context.serverIdentity);
             }
             markRoute(viewId, false);
+            if (options.prepare) {
+                options.prepare();
+            }
             // An error page holds nothing but its row store; any other route mounts (possibly asynchronously).
             const showsOwnError = views().showsOwnError;
             const mounted = model.error && !(typeof showsOwnError === 'function' && showsOwnError(model))
@@ -1233,6 +1441,9 @@ namespace workbench {
                         }
                     }
                     announce(options.focus);
+                    if (options.workspaceRestore) {
+                        applyWorkspaceRestore(options.workspaceRestore, instance);
+                    }
                 });
             }).then(null, (error: any) => {
                 if (mine !== generation) {

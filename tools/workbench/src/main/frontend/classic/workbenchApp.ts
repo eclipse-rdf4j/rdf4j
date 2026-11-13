@@ -766,8 +766,8 @@ namespace workbench {
 
         function loadSharedRuntime(basePath: string, dependencies: any): Promise<void> {
             // Requested together: scripts inserted with async=false still run in the order they were inserted.
-            const loads = ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js',
-                'graphAdditions.js', 'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
+            const loads = ['workbenchWorkspace.js', 'workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js',
+                'queryStream.js', 'graphAdditions.js', 'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
             return Promise.all(loads).then(() => {
                 if (!workbench.views || typeof workbench.views.render !== 'function') {
                     throw new Error('The Workbench route renderer is unavailable');
@@ -1298,14 +1298,28 @@ namespace workbench {
             }
         }
 
+        /** A repository deletion started on the page before: the Repositories list it leads to confirms it. */
+        function settleRepositoryDeletion(mount: any, failed: boolean): void {
+            const shared: any = (workbench as any).workspace;
+            if (shared && typeof shared.deletionDone === 'function') {
+                try {
+                    shared.deletionDone(attribute(mount, 'data-workbench-view') || '', failed);
+                } catch (error) {
+                    // What the browser keeps for it stays.
+                }
+            }
+        }
+
         export function bootstrap(mount: any, dependencies?: any): Promise<any> {
             const basePath = basePathFor(mount);
             scriptSource = { basePath, dependencies };
             return loadSharedRuntime(basePath, dependencies)
                 .then(() => bootstrapPage(mount, dependencies, basePath).then((result) => {
+                    settleRepositoryDeletion(mount, false);
                     scheduleRowStoreCleanup();
                     return result;
                 }, (error: any) => {
+                    settleRepositoryDeletion(mount, true);
                     scheduleRowStoreCleanup();
                     throw error;
                 }), (error: any) => {

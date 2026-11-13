@@ -44,6 +44,12 @@ namespace workbench {
             resume?(): void;
             /** Settles once the route is fully mounted, for example when its row windows are bound. */
             ready?: Promise<void>;
+            /**
+             * What the page keeps beyond its address, scroll position and typed fields (JSON), when it is left: a
+             * repository switch brings it back with restore (workbench.workspace, the router).
+             */
+            snapshot?(): any;
+            restore?(state: any): void;
         }
 
         export interface RouteDefinition {
@@ -158,6 +164,19 @@ namespace workbench {
                     },
                     resume(): void {
                         cleanups.forEach((cleanup) => cleanup.resume && cleanup.resume());
+                    },
+                    snapshot(): any {
+                        const states = cleanups.map((cleanup) => cleanup.snapshot ? cleanup.snapshot() : null);
+                        return states.some((state) => state !== null && state !== undefined) ? states : null;
+                    },
+                    restore(states: any): void {
+                        if (Array.isArray(states)) {
+                            cleanups.forEach((cleanup, index) => {
+                                if (cleanup.restore && states[index] !== null && states[index] !== undefined) {
+                                    cleanup.restore(states[index]);
+                                }
+                            });
+                        }
                     }
                 };
             };
@@ -171,6 +190,9 @@ namespace workbench {
             (reason?: 'navigate' | 'pagehide'): void;
             suspend?: () => void;
             resume?: () => void;
+            /** The page's own state for its repository's workspace, and how it is brought back (RouteInstance). */
+            snapshot?: () => any;
+            restore?: (state: any) => void;
         }
 
         /**
@@ -293,7 +315,7 @@ namespace workbench {
         // shown (M11.1).
         register(staticRoute('query', ['queryStream.js', 'vendor/codemirror-5.65.21/codemirror.js', 'yasqe.min.js',
             'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js', 'paging.js',
-            'query.js'], routeMount(mountQuery), true));
+            'queryTabs.js', 'query.js'], routeMount(mountQuery), true));
         const createRoute: RouteDefinition = {
             viewId: 'create',
             routerReady: true,

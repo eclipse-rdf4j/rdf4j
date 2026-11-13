@@ -94,7 +94,8 @@ function storedGraph(page, suffix = '') {
         const appRepositoryId = app?.getAttribute('data-workbench-repository-id');
         if (!app || !serverIdentity || appRepositoryId !== repositoryId) return resolve('');
         const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
-        const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
+        const scope = JSON.stringify(['repository-v3', basePath, serverIdentity.split(':').slice(0, 2).join(':'),
+            app.getAttribute('data-workbench-server-user') || '', repositoryId]);
         const request = indexedDB.open('graph-field-workspaces');
         request.onupgradeneeded = () => {
             if (!request.result.objectStoreNames.contains('workspaces')) request.result.createObjectStore('workspaces');
@@ -146,7 +147,8 @@ test('a stored graph this version cannot read is kept, not saved over when the p
         const appRepositoryId = app?.getAttribute('data-workbench-repository-id');
         if (!app || !serverIdentity || appRepositoryId !== repositoryId) throw new Error('Workbench server identity is unavailable');
         const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
-        const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
+        const scope = JSON.stringify(['repository-v3', basePath, serverIdentity.split(':').slice(0, 2).join(':'),
+            app.getAttribute('data-workbench-server-user') || '', repositoryId]);
         const request = indexedDB.open('graph-field-workspaces');
         request.onupgradeneeded = () => {
             if (!request.result.objectStoreNames.contains('workspaces')) request.result.createObjectStore('workspaces');

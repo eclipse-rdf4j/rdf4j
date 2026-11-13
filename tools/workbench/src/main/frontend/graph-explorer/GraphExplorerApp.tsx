@@ -113,7 +113,7 @@ import type { WorkspacePayload, WorkspaceViewState } from "./workspace";
 import { useWorkspaceLibrary } from "./use-workspace-library.tsx";
 import { snapshotSourceOrNull } from "./workspace-snapshots.ts";
 import type { WorkspaceSnapshotMetadata } from "./workspace-snapshot-store.ts";
-import { repositoryScope } from "./repository-identity.ts";
+import { repositoryScope, sessionRepositoryScope } from "./repository-identity.ts";
 import { copyToClipboard } from "./clipboard.ts";
 
 export type GraphExplorerProps = {
@@ -123,6 +123,8 @@ export type GraphExplorerProps = {
   repositoryId: string;
   /** Credential-free identity of the RDF4J server selected by the backend. */
   serverIdentity: string;
+  /** The signed-in server user, "" when nobody is signed in: the graph is kept per user. */
+  serverUser?: string;
   /** The Graph servlet's limits (page data): results stop at maxResultRows without saying so. */
   limits?: { maxResultRows?: number; maxQueryLength?: number };
 };
@@ -143,8 +145,10 @@ function browserStorage() {
   }
 }
 
-export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limits }: GraphExplorerProps) {
-  const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity);
+export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serverUser = "", limits }: GraphExplorerProps) {
+  const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity, serverUser);
+  // This browser session's graph from before graphs were kept per user, brought along once.
+  const sessionWorkspaceScope = sessionRepositoryScope(basePath, repositoryId, serverIdentity);
   // The explorer's own queries go first: the Filters panel's background loading waits while any of them runs.
   const [foreground] = useState(foregroundTracker);
   const queryRepository = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
@@ -854,6 +858,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     restored: workspaceRestored, checkForNewer, unreadable: unreadableWorkspace, recoverUnreadable, discardUnreadable,
   } = useStoredWorkspace({
     scope: workspaceScope,
+    legacyScope: sessionWorkspaceScope,
     snapshot: captureWorkspace,
     // Label preferences followed from other tabs or the browser are not this page's change (labelPolicyChanges).
     changes: [graph, transform, query, provenanceBatches, namedGroups, manualSelectedNodeIds, focusedNodeId, graphScope,
@@ -1006,6 +1011,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     basePath,
     repositoryId,
     serverIdentity,
+    serverUser,
     endpoint,
     execute: backgroundQuery,
     scope: graphScope as GraphScope,
@@ -2839,11 +2845,11 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     let applying = false;
     const take = () => {
       if (stopped || applying || !additionsIdleRef.current || document.visibilityState === "hidden") return;
-      const additions = takeAdditions(basePath, repositoryId, undefined, serverIdentity);
+      const additions = takeAdditions(basePath, repositoryId, undefined, serverIdentity, serverUser);
       if (!additions.length) return;
       applying = true;
       void addFromWorkbenchRef.current(additions)
-        .then((left) => returnAdditions(basePath, repositoryId, left, undefined, serverIdentity))
+        .then((left) => returnAdditions(basePath, repositoryId, left, undefined, serverIdentity, serverUser))
         .catch(() => {})
         .finally(() => {
           applying = false;
@@ -2851,7 +2857,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         });
     };
     takeAdditionsRef.current = take;
-    const key = additionsKey(basePath, repositoryId, serverIdentity);
+    const key = additionsKey(basePath, repositoryId, serverIdentity, serverUser);
     const onStorage = (event: StorageEvent) => {
       if (event.key === key && event.newValue) take();
     };
@@ -2870,7 +2876,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [workspaceRestored, basePath, repositoryId, serverIdentity, checkForNewer, invalidateAsyncRequests]);
+  }, [workspaceRestored, basePath, repositoryId, serverIdentity, serverUser, checkForNewer, invalidateAsyncRequests]);
   useEffect(() => {
     if (additionsIdle) takeAdditionsRef.current();
   }, [additionsIdle]);

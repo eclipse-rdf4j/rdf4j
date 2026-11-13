@@ -307,6 +307,46 @@ namespace workbench {
             count(): Promise<number>;
             truncate(count: number): Promise<number>;
             dispose(): Promise<void>;
+            /**
+             * Moves every row to browser storage and waits until all of them are written: the store can then be
+             * kept (retain) and opened again by a later page (openRowStore). Rejects where browser storage fails.
+             */
+            persist?(): Promise<SavedRowStore>;
+            /**
+             * Records the persisted store as kept for a query tab: cleanup keeps it until the space is needed, and
+             * neither disposing it nor this page's unload deletes it any more (discardRowStore does). False where the
+             * registry cannot record it.
+             */
+            retain?(retained: RetainedRowStore): boolean;
+            /** Closes the store without deleting its rows: a kept store stays for openRowStore. */
+            release?(): Promise<void>;
+            /**
+             * After a write that browser storage refused: keeps the rows written, drops those still waiting, and
+             * takes rows again. Resolves the rows kept.
+             */
+            keepWritten?(): Promise<number>;
+        }
+
+        /** A persisted store, as openRowStore opens it again. */
+        export interface SavedRowStore {
+            id: string;
+            /** Rows the store held when it was persisted. */
+            count: number;
+            /** The registry's size of the store: UTF-16 code units of its rows' JSON text. */
+            bytes: number;
+            created: number;
+        }
+
+        /** What the registry records about a store kept for a query tab. */
+        export interface RetainedRowStore {
+            /** The JSON scope of the query tab's repository (workbench.workspace). */
+            scope: string;
+            tabId: string;
+            /** The page that saved the store (rowStoreDocumentOwner): only that page deletes it with its tab. */
+            owner: string;
+            /** When the tab last showed the result: the least recently shown results are trimmed first. */
+            shownAt: number;
+            rows: number;
         }
 
         export type RowStoreBudgetCategory = 'retained' | 'temporary';
@@ -367,6 +407,8 @@ namespace workbench {
         export var STORAGE_TIMEOUT = 30000;
         /** How long one IndexedDB call (deleting a database, listing them) may take before the page stops waiting. */
         export var STORAGE_CALL_TIMEOUT = 5000;
+        /** The most rows of a window a stored result keeps to answer the same read again (a result table's window). */
+        export var ROW_STORE_WINDOW_CACHE_ROWS = 2000;
 
         /**
          * A row store that moved to browser storage (a "stored result") is an IndexedDB database of its own, named
@@ -394,6 +436,8 @@ namespace workbench {
 
         /** The stored results of this document, flagged for cleanup when it is unloaded. */
         var currentDocumentRowStoreIds: string[] = [];
+        /** The stores this document has open now (a worker serves each): trimming never touches them. */
+        var openHereRowStoreIds: { [id: string]: boolean } = {};
 
         /**
          * A stored result no page holds is deleted once it has not been used for three days. Where Web Locks are
@@ -465,6 +509,126 @@ namespace workbench {
             };
         }
 
+        /**
+         * Takes a saved store's lock only when no page holds it, so one page at a time has a saved store open and two
+         * windows never write to it (Load more, trimming) or delete it at once. Tries a few times: a reloaded page
+         * starts before the page it replaces has let its stores go. Resolves the release, or null while another page
+         * holds the store. Where Web Locks are unavailable a lease in the registry stands in for the lock.
+         */
+        function acquireRowStoreLock(storeId: string): Promise<() => void> {
+            var locks = browserLocks();
+            if (!locks) {
+                return acquireRowStoreLease(storeId);
+            }
+            var attempt = function(left: number): Promise<() => void> {
+                return new Promise<() => void>(function(resolve) {
+                    var answered = false;
+                    var answer = function(release: () => void | Promise<() => void>) {
+                        if (!answered) {
+                            answered = true;
+                            resolve(<any>release);
+                        }
+                    };
+                    try {
+                        Promise.resolve(locks.request(ROW_STORE_LOCK_PREFIX + storeId,
+                            { mode: 'exclusive', ifAvailable: true }, function(lock: any) {
+                                if (!lock) {
+                                    answer(null);
+                                    return undefined;
+                                }
+                                return new Promise<void>(function(release) {
+                                    var released = false;
+                                    answer(function() {
+                                        if (!released) {
+                                            released = true;
+                                            release();
+                                        }
+                                    });
+                                });
+                            })).then(null, function() {
+                            answer(<any>acquireRowStoreLease(storeId));
+                        });
+                    } catch (error) {
+                        answer(<any>acquireRowStoreLease(storeId));
+                    }
+                }).then(function(release: () => void) {
+                    if (release || left <= 1) {
+                        return release;
+                    }
+                    return new Promise<() => void>(function(resolve) {
+                        startTimer(function() { resolve(attempt(left - 1)); }, rowStoreOpenRetryDelay);
+                    });
+                });
+            };
+            return attempt(rowStoreOpenAttempts);
+        }
+
+        /** The lock's stand-in where Web Locks are unavailable: a lease this page renews while it has the store. */
+        function acquireRowStoreLease(storeId: string): Promise<() => void> {
+            var storage = rowStoreRegistryStorage();
+            var attempt = function(left: number): Promise<() => void> {
+                var now = Date.now();
+                var entry = storage ? readRowStoreEntry(storage, storeId) : null;
+                if (!entry) {
+                    // Nothing to lease: the caller finds the store gone.
+                    return Promise.resolve(function() {});
+                }
+                if (entry.lease && entry.lease.owner !== rowStoreDocumentOwner && entry.lease.until > now) {
+                    if (left <= 1) {
+                        return Promise.resolve(null);
+                    }
+                    return new Promise<() => void>(function(resolve) {
+                        startTimer(function() { resolve(attempt(left - 1)); }, rowStoreOpenRetryDelay);
+                    });
+                }
+                var renew = function(): boolean {
+                    var current = readRowStoreEntry(storage, storeId);
+                    if (!current || current.lease && current.lease.owner !== rowStoreDocumentOwner
+                            && current.lease.until > Date.now()) {
+                        return false;
+                    }
+                    current.lease = { owner: rowStoreDocumentOwner, until: Date.now() + rowStoreLeaseTime };
+                    return writeRowStoreEntry(storage, storeId, current);
+                };
+                renew();
+                var stopRenewing = startRepeating(function() {
+                    if (!renew()) {
+                        stopRenewing();
+                    }
+                }, Math.round(rowStoreLeaseTime / 3));
+                var released = false;
+                return Promise.resolve(function() {
+                    if (released) {
+                        return;
+                    }
+                    released = true;
+                    stopRenewing();
+                    var current = readRowStoreEntry(storage, storeId);
+                    if (current && current.lease && current.lease.owner === rowStoreDocumentOwner) {
+                        delete current.lease;
+                        writeRowStoreEntry(storage, storeId, current);
+                    }
+                });
+            };
+            return attempt(rowStoreOpenAttempts);
+        }
+
+        function startRepeating(callback: () => void, ms: number): () => void {
+            var view: any = typeof window !== 'undefined' ? window : null;
+            var timer: any = view && typeof view.setInterval === 'function' ? view.setInterval(callback, ms)
+                : typeof setInterval === 'function' ? setInterval(callback, ms) : null;
+            return function() {
+                if (timer !== null) {
+                    if (view && typeof view.clearInterval === 'function') {
+                        view.clearInterval(timer);
+                    } else if (typeof clearInterval === 'function') {
+                        clearInterval(timer);
+                    }
+                    timer = null;
+                }
+            };
+        }
+
         function rowStoreRegistryStorage(): any {
             try {
                 return typeof window !== 'undefined' ? (window as any).localStorage || null : null;
@@ -478,7 +642,21 @@ namespace workbench {
             used: number;
             bytes: number;
             dispose?: boolean;
+            /** Kept for a query tab (RowStore.retain). */
+            retained?: RetainedRowStore;
+            /** Where Web Locks are unavailable: the page that has the store open, until the lease runs out. */
+            lease?: { owner: string; until: number };
         }
+
+        /** This document, for the stores it saves and the leases it holds; a reload is another document. */
+        export const rowStoreDocumentOwner = 'page-' + Date.now().toString(36) + '-'
+            + Math.random().toString(36).substring(2);
+
+        /** How long a lease (no Web Locks) keeps a store to its page; renewed a third of the way. */
+        var rowStoreLeaseTime = 2 * 60 * 1000;
+        /** A reloaded page waits this long for the old page to let a store go: attempts × delay. */
+        var rowStoreOpenAttempts = 5;
+        var rowStoreOpenRetryDelay = 150;
 
         function readRowStoreEntry(storage: any, id: string): RowStoreRegistryEntry {
             try {
@@ -1362,6 +1540,11 @@ namespace workbench {
             capBytes?: number;
             /** scheduleRowStoreMaintenance: milliseconds before a requested run (default 1000). */
             delay?: number;
+            /**
+             * The kept stores some query tab in this browser still refers to (default: workbench.workspace's
+             * referencedRowStores), or null where that is not known: then every kept store counts as referred to.
+             */
+            referenced?: () => { [id: string]: boolean };
         }
 
         export interface RowStoreMaintenanceReport {
@@ -1379,6 +1562,7 @@ namespace workbench {
             now: () => number;
             timeout: number;
             capBytes: number;
+            referenced: () => { [id: string]: boolean };
         }
 
         function rowStoreMaintenanceEnvironment(options: RowStoreMaintenanceOptions): RowStoreMaintenanceEnvironment {
@@ -1400,8 +1584,14 @@ namespace workbench {
                 document: options.document || (view ? view.document : null),
                 now: options.now || function() { return Date.now(); },
                 timeout: countOption(options.storageTimeout, STORAGE_CALL_TIMEOUT),
-                capBytes: countOption(options.capBytes, ROW_STORE_CAP_BYTES)
+                capBytes: countOption(options.capBytes, ROW_STORE_CAP_BYTES),
+                referenced: options.referenced || defaultReferencedRowStores
             };
+        }
+
+        function defaultReferencedRowStores(): { [id: string]: boolean } {
+            var shared: any = (<any>workbench).workspace;
+            return shared && typeof shared.referencedRowStores === 'function' ? shared.referencedRowStores() : null;
         }
 
         /** Settles like promise, or with fallback once ms have passed. */
@@ -1564,7 +1754,22 @@ namespace workbench {
                             }
                         };
                         var lastUse = function(entry: RowStoreRegistryEntry): number {
-                            return isFinite(entry.used) ? entry.used : entry.created;
+                            var used = isFinite(entry.used) ? entry.used : entry.created;
+                            var shown = entry.retained && isFinite(entry.retained.shownAt) ? entry.retained.shownAt : 0;
+                            return Math.max(used, shown);
+                        };
+                        var referenced: { [id: string]: boolean } = null;
+                        try {
+                            referenced = environment.referenced();
+                        } catch (error) {
+                            // Unknown: every kept store counts as referred to.
+                        }
+                        /**
+                         * A store kept for a query tab stays until the space is needed (trimming decides), unless no
+                         * tab refers to it any more: such an orphan is cleaned up like any other store.
+                         */
+                        var keptForTab = function(id: string): boolean {
+                            return !!registry[id].retained && (!referenced || referenced[id] === true);
                         };
                         Object.keys(registry).forEach(function(id) {
                             var entry = registry[id];
@@ -1578,7 +1783,7 @@ namespace workbench {
                                 // Its database is gone (deleted elsewhere, or never created).
                                 removeRowStoreEntry(storage, id);
                                 delete registry[id];
-                            } else if (full && !(now - lastUse(entry) <= maxAge)) {
+                            } else if (full && !(now - lastUse(entry) <= maxAge) && !keptForTab(id)) {
                                 doom(id);
                             }
                         });
@@ -1597,7 +1802,9 @@ namespace workbench {
                             });
                         }
                         var total = 0;
-                        var kept = Object.keys(registry).filter(function(id) { return doomed.indexOf(id) < 0; });
+                        var kept = Object.keys(registry).filter(function(id) {
+                            return doomed.indexOf(id) < 0 && !keptForTab(id);
+                        });
                         kept.forEach(function(id) { total += Math.max(0, Number(registry[id].bytes) || 0); });
                         if (total > environment.capBytes) {
                             kept.filter(function(id) { return !isHeld(id); })
@@ -1869,6 +2076,374 @@ namespace workbench {
          */
         export function createRowStore(options?: RowStoreOptions): Promise<RowStore> {
             return Promise.resolve(createSpillingRowStore(options || {}));
+        }
+
+        function savedRowStoreError(code: string, message: string): Error {
+            var error: any = new Error(message);
+            error.code = code;
+            error[code] = true;
+            return error;
+        }
+
+        /**
+         * Opens a store an earlier page persisted and kept (RowStore.persist, retain) for this page alone. Rejects with
+         * code 'gone' when the store no longer exists, and 'busy' while another page has it open. Its rows can be read,
+         * and appended to (Load more). Disposing or releasing it keeps it; discardRowStore gives it up.
+         */
+        export function openRowStore(saved: SavedRowStore, options?: RowStoreOptions): Promise<RowStore> {
+            var config = options || {};
+            if (config.memoryBudget) {
+                return Promise.reject(new Error('A saved query result cannot be opened under a shared memory budget.'));
+            }
+            var gone = function() {
+                return savedRowStoreError('gone', 'The saved query result is no longer stored in this browser.');
+            };
+            var registry = rowStoreRegistryStorage();
+            var known = function(): RowStoreRegistryEntry {
+                var entry = registry && saved && typeof saved.id === 'string' ? readRowStoreEntry(registry, saved.id) : null;
+                return entry && entry.retained && !entry.dispose ? entry : null;
+            };
+            if (!known()) {
+                return Promise.reject(gone());
+            }
+            return acquireRowStoreLock(saved.id).then(function(releaseLock: () => void) {
+                if (!releaseLock) {
+                    throw savedRowStoreError('busy', 'This saved query result is open in another window.');
+                }
+                // Cleanup may have deleted it before this page held it.
+                var entry = known();
+                if (!entry) {
+                    releaseLock();
+                    throw gone();
+                }
+                var index = new RowStoreTextIndex(function() {});
+                return createWorkerRowStore(config, index, undefined, {
+                    id: saved.id,
+                    count: saved.count,
+                    bytes: isFinite(entry.bytes) ? entry.bytes : saved.bytes,
+                    created: isFinite(entry.created) ? entry.created : saved.created,
+                    releaseLock: releaseLock
+                }).then(function(store: RowStore) {
+                    return createSpillingRowStore(config, {
+                        store: store,
+                        count: (<WorkerRowStore>store).saved().count,
+                        textIndex: index
+                    });
+                });
+            });
+        }
+
+        /** Trimming keeps at least this many rows of a saved result while trimming other results can make room. */
+        export var TRIM_FLOOR_ROWS = 10000;
+        /** The budget where the browser does not say how much it allows (registry units, as bytes). */
+        export var ROW_STORE_FALLBACK_BUDGET = 2 * 1024 * 1024 * 1024;
+        /** How long the browser's storage estimate is trusted before it is asked again. */
+        var rowStoreBudgetLifetime = 5 * 60 * 1000;
+        var rowStoreBudgetOverride: number = null;
+        var rowStoreBudgetPromise: Promise<number> = null;
+        var rowStoreBudgetAskedAt = 0;
+
+        export interface TrimCandidate {
+            id: string;
+            /** Rows the store holds, and its registry size. */
+            rows: number;
+            bytes: number;
+            /** When the store was last used or its tab last showed it: the least recent is trimmed first. */
+            recency: number;
+            /** Nothing refers to it any more (no query tab, or flagged for cleanup): deleted whole, before any other. */
+            orphan?: boolean;
+        }
+
+        export interface TrimStep {
+            id: string;
+            rows: number;
+            /** Rows to keep, the first ones; 0 deletes the store. */
+            keep: number;
+            /** The registry size this frees, estimated from the store's average row. */
+            freed: number;
+        }
+
+        /**
+         * How to free `need` registry bytes from saved results (ExecPlan .agent/execplan-query-tabs-g2.md, Part 2):
+         * orphans go first, whole; then the least recently shown results are trimmed, each only as much as needed and
+         * not below `floor` rows, moving to the next one only once a result reaches the floor; only when that is not
+         * enough do the results go below the floor, again least recently shown first, down to deleting them.
+         * `whole` deletes results instead of trimming them (least recently shown first), for a browser storage that is
+         * full: a deleted database frees its space at once, rows deleted from one may not.
+         */
+        export function planTrim(stores: TrimCandidate[], need: number, floor?: number,
+                                 whole?: boolean): { steps: TrimStep[]; freed: number; enough: boolean } {
+            var minimum = countOption(floor, TRIM_FLOOR_ROWS);
+            var steps: { [id: string]: TrimStep } = {};
+            var order: string[] = [];
+            var freed = 0;
+            var perRow = function(store: TrimCandidate): number {
+                return store.rows > 0 ? Math.max(0, store.bytes) / store.rows : 0;
+            };
+            var keep = function(store: TrimCandidate, rows: number): void {
+                var step = steps[store.id];
+                if (!step) {
+                    step = steps[store.id] = { id: store.id, rows: store.rows, keep: store.rows, freed: 0 };
+                    order.push(store.id);
+                }
+                var kept = Math.max(0, Math.min(store.rows, rows));
+                var frees = kept === 0 ? Math.max(0, store.bytes)
+                    : Math.min(Math.max(0, store.bytes), Math.round((store.rows - kept) * perRow(store)));
+                freed += frees - step.freed;
+                step.keep = kept;
+                step.freed = frees;
+            };
+            var rowsFor = function(store: TrimCandidate): number {
+                var each = perRow(store);
+                return each > 0 ? Math.ceil((need - freed) / each) : Infinity;
+            };
+            var byRecency = function(a: TrimCandidate, b: TrimCandidate): number {
+                return (a.recency || 0) - (b.recency || 0);
+            };
+            var candidates = (stores || []).filter(store => store && typeof store.id === 'string'
+                && Number.isSafeInteger(store.rows) && store.rows >= 0);
+            candidates.filter(store => store.orphan).sort(byRecency).forEach(store => {
+                if (freed < need) {
+                    keep(store, 0);
+                }
+            });
+            var kept = candidates.filter(store => !store.orphan).sort(byRecency);
+            kept.forEach(store => {
+                if (whole && freed < need) {
+                    keep(store, 0);
+                }
+            });
+            kept.forEach(store => {
+                if (freed < need && store.rows > minimum) {
+                    keep(store, store.rows - Math.min(store.rows - minimum, rowsFor(store)));
+                }
+            });
+            kept.forEach(store => {
+                var current = steps[store.id] ? steps[store.id].keep : store.rows;
+                if (freed < need && (current > 0 || !steps[store.id])) {
+                    keep(store, current - Math.min(current, rowsFor(store)));
+                }
+            });
+            return {
+                steps: order.map(id => steps[id]).filter(step => step.keep < step.rows || step.keep === 0),
+                freed: freed,
+                enough: freed >= need
+            };
+        }
+
+        /** Tests: the budget saved results share, in registry units; null asks the browser again. */
+        export function setRowStoreBudget(bytes: number): void {
+            rowStoreBudgetOverride = Number.isSafeInteger(bytes) && bytes >= 0 ? bytes : null;
+            rowStoreBudgetPromise = null;
+        }
+
+        /**
+         * What saved results may hold in all, in registry units (UTF-16 code units of the rows' JSON text, which take
+         * up to two bytes each on disk): half of 80 % of the browser's quota, and never above ROW_STORE_CAP_BYTES;
+         * ROW_STORE_FALLBACK_BUDGET where the browser gives no estimate. The usage the browser reports is not used:
+         * WebKit's does not go down after a deletion.
+         */
+        export function rowStoreBudget(): Promise<number> {
+            if (rowStoreBudgetOverride !== null) {
+                return Promise.resolve(rowStoreBudgetOverride);
+            }
+            if (rowStoreBudgetPromise && Date.now() - rowStoreBudgetAskedAt < rowStoreBudgetLifetime) {
+                return rowStoreBudgetPromise;
+            }
+            rowStoreBudgetAskedAt = Date.now();
+            var browser: any = typeof navigator !== 'undefined' ? navigator : null;
+            var storage = browser && browser.storage;
+            var asking: Promise<any>;
+            try {
+                asking = storage && typeof storage.estimate === 'function' ? Promise.resolve(storage.estimate())
+                    : Promise.resolve(null);
+            } catch (error) {
+                asking = Promise.resolve(null);
+            }
+            rowStoreBudgetPromise = settleWithin(asking, STORAGE_CALL_TIMEOUT, null).then(function(estimate: any) {
+                var quota = estimate && Number(estimate.quota);
+                return quota > 0 && isFinite(quota) ? Math.min(Math.floor(quota * 0.8 / 2), ROW_STORE_CAP_BYTES)
+                    : ROW_STORE_FALLBACK_BUDGET;
+            });
+            return rowStoreBudgetPromise;
+        }
+
+        export interface MakeRoomOptions extends RowStoreMaintenanceOptions {
+            /** Opens the stores it trims (workerFactory, storage timeout); default the browser's worker. */
+            rowStoreOptions?: RowStoreOptions;
+            /** Stores not to touch, besides those this page or another one has open. */
+            exclude?: string[];
+            floor?: number;
+            /** Delete whole results rather than trimming them: browser storage is full (planTrim). */
+            whole?: boolean;
+        }
+
+        var makingRoom: Promise<number> = Promise.resolve(0);
+
+        /**
+         * Frees about `need` registry bytes of saved results (planTrim): stores another page has open, and those this
+         * page has open, are left alone. One run at a time in a page. Resolves the registry bytes freed.
+         */
+        export function makeRoom(need: number, options?: MakeRoomOptions): Promise<number> {
+            var run = makingRoom.then(function() { return makeRoomNow(need, options || {}); });
+            makingRoom = run.then(null, function() { return 0; });
+            return makingRoom;
+        }
+
+        function makeRoomNow(need: number, options: MakeRoomOptions): Promise<number> {
+            var environment = rowStoreMaintenanceEnvironment(options);
+            var storage = environment.storage;
+            if (!storage || !(need > 0)) {
+                return Promise.resolve(0);
+            }
+            return heldLockNamesWithin(environment.locks, environment.timeout).then(function(held: string[]) {
+                if (environment.locks && held === null) {
+                    // Which stores other pages have open is unknown: trim nothing.
+                    return 0;
+                }
+                var heldNames: { [name: string]: boolean } = {};
+                (held || []).forEach(function(name) { heldNames[name] = true; });
+                var now = environment.now();
+                var registry = readRowStoreRegistry(storage);
+                var referenced: { [id: string]: boolean } = null;
+                try {
+                    referenced = environment.referenced();
+                } catch (error) {
+                    // Unknown: every kept store counts as referred to.
+                }
+                var excluded: { [id: string]: boolean } = {};
+                (options.exclude || []).forEach(function(id) { excluded[id] = true; });
+                var candidates: TrimCandidate[] = [];
+                Object.keys(registry).forEach(function(id) {
+                    var entry = registry[id];
+                    var leased = entry.lease && entry.lease.owner !== rowStoreDocumentOwner && entry.lease.until > now;
+                    if (excluded[id] || openHereRowStoreIds[id] || heldNames[ROW_STORE_LOCK_PREFIX + id] || leased) {
+                        return;
+                    }
+                    var kept = entry.retained && !entry.dispose;
+                    if (!kept && !entry.dispose && !environment.locks) {
+                        // Without Web Locks a live page's own store cannot be told apart from one left behind.
+                        return;
+                    }
+                    var rows = kept && Number.isSafeInteger(entry.retained.rows) ? entry.retained.rows : 0;
+                    var used = isFinite(entry.used) ? entry.used : entry.created;
+                    candidates.push({
+                        id: id,
+                        rows: rows,
+                        bytes: Math.max(0, Number(entry.bytes) || 0),
+                        recency: Math.max(used || 0, kept && isFinite(entry.retained.shownAt) ? entry.retained.shownAt : 0),
+                        // Not kept for a tab (a page that is gone left it), flagged, or no tab refers to it any more.
+                        orphan: !kept || !!referenced && referenced[id] !== true
+                    });
+                });
+                var plan = planTrim(candidates, need, options.floor, options.whole);
+                var freed = 0;
+                var step = function(index: number): Promise<number> {
+                    if (index >= plan.steps.length) {
+                        return Promise.resolve(freed);
+                    }
+                    var trim = plan.steps[index];
+                    var entry = registry[trim.id];
+                    var done = trim.keep === 0
+                        ? deleteDatabaseWithin(environment.indexedDB, ROW_STORE_DATABASE_PREFIX + trim.id,
+                            environment.timeout).then(function(deleted: boolean) {
+                            if (deleted) {
+                                removeRowStoreEntry(storage, trim.id);
+                                freed += trim.freed;
+                            } else {
+                                flagRowStoreEntry(storage, trim.id, environment.now());
+                            }
+                        })
+                        : openRowStore({ id: trim.id, count: trim.rows, bytes: entry.bytes, created: entry.created },
+                            options.rowStoreOptions).then(function(store: RowStore) {
+                            return store.truncate(trim.keep).then(function() {
+                                return store.release();
+                            }, function(error: any) {
+                                return store.release().then(function() { throw error; });
+                            }).then(function() {
+                                updateRetainedRowStore(trim.id, { rows: trim.keep });
+                                freed += trim.freed;
+                            });
+                        });
+                    return done.then(null, function() {
+                        // Open in another window now, or gone: the next step frees what it can.
+                    }).then(function() { return step(index + 1); });
+                };
+                return step(0);
+            });
+        }
+
+        var budgetCheckRunning = false;
+        var budgetCheckAgain = false;
+
+        /** A store grew: saved results over the budget make room, least recently shown first (makeRoom). */
+        function checkRowStoreBudget(config: RowStoreOptions): void {
+            if (budgetCheckRunning) {
+                budgetCheckAgain = true;
+                return;
+            }
+            var storage = rowStoreRegistryStorage();
+            if (!storage) {
+                return;
+            }
+            budgetCheckRunning = true;
+            budgetCheckAgain = false;
+            rowStoreBudget().then(function(budget: number) {
+                var registry = readRowStoreRegistry(storage);
+                var total = 0;
+                Object.keys(registry).forEach(function(id) {
+                    total += Math.max(0, Number(registry[id].bytes) || 0);
+                });
+                return total > budget ? makeRoom(total - budget, { rowStoreOptions: config }) : 0;
+            }).then(null, function() {
+                return 0;
+            }).then(function() {
+                budgetCheckRunning = false;
+                if (budgetCheckAgain) {
+                    checkRowStoreBudget(config);
+                }
+            });
+        }
+
+        /** Updates what the registry records about a kept store (when its tab showed it, its rows); false if absent. */
+        export function updateRetainedRowStore(id: string, change: { shownAt?: number; rows?: number }): boolean {
+            var registry = rowStoreRegistryStorage();
+            var entry = registry && id ? readRowStoreEntry(registry, id) : null;
+            if (!entry || !entry.retained || entry.dispose) {
+                return false;
+            }
+            if (isFinite(change.shownAt)) {
+                entry.retained.shownAt = change.shownAt;
+            }
+            if (isFinite(change.rows)) {
+                entry.retained.rows = change.rows;
+            }
+            return writeRowStoreEntry(registry, id, entry);
+        }
+
+        /** Whether this page has the store open now (shown, or being written). */
+        export function isRowStoreOpenHere(id: string): boolean {
+            return !!id && openHereRowStoreIds[id] === true;
+        }
+
+        /**
+         * Gives a kept store up: cleanup deletes it once no page has it open. With `owner`, only a store that page
+         * saved or has open now (no other page can have it open then): another page, a window whose tabs were copied
+         * from this one's, may still show a store it neither saved nor has open.
+         */
+        export function discardRowStore(id: string, owner?: string): boolean {
+            if (owner && !openHereRowStoreIds[id]) {
+                var registry = rowStoreRegistryStorage();
+                var entry = registry && id ? readRowStoreEntry(registry, id) : null;
+                if (!entry || !entry.retained || entry.retained.owner !== owner) {
+                    return false;
+                }
+            }
+            var discarded = !!id && id.indexOf('rows-') === 0 && flagRowStoreForCleanup(id);
+            if (discarded) {
+                scheduleRowStoreMaintenance();
+            }
+            return discarded;
         }
 
         function memoryRowLimit(config: RowStoreOptions): number {
@@ -2331,6 +2906,8 @@ namespace workbench {
         class RowStoreTextIndex {
             private batches: RowTextBatch[] = [];
             private rowCount = 0;
+            /** A reopened store's first rows, written by an earlier page: their text lengths are not known here. */
+            private base = 0;
 
             constructor(private releaseBytes: (bytes: number) => void) {
             }
@@ -2339,6 +2916,17 @@ namespace workbench {
                 // Include the array, index entry and one writer's pinned reference, even before it can acquire
                 // temporary memory. catchUp and drain allow only one active writer per index, including retries.
                 return count ? count * 16 + 160 : 0;
+            }
+
+            /**
+             * A store an earlier page saved, opened again with `count` rows (openRowStore): rows from here on are
+             * indexed as usual. Windows within the first rows have no length estimate, which only a shared memory
+             * budget needs, so openRowStore refuses one.
+             */
+            restore(count: number): void {
+                this.truncate(0);
+                this.rowCount = count;
+                this.base = count;
             }
 
             /** The caller has already reserved these bytes together with the source rows, in one allocation. */
@@ -2410,6 +2998,9 @@ namespace workbench {
                 if (first < end && (first < 0 || end > this.rowCount)) {
                     throw storageError('The stored row window has no admitted text lengths.');
                 }
+                if (first < end && first < this.base) {
+                    throw storageError('The stored row window has no recorded text length.');
+                }
                 var characters = 2 + Math.max(0, end - first - 1);
                 for (var index = this.firstBatch(first);
                         index < this.batches.length && characters <= maximum; index++) {
@@ -2441,6 +3032,7 @@ namespace workbench {
                     last.count = count - last.start;
                 }
                 this.rowCount = count;
+                this.base = Math.min(this.base, count);
             }
 
             /** Input batches may be tiny: locate a window without walking every earlier append. */
@@ -2485,7 +3077,14 @@ namespace workbench {
          * at least every storageTimeout. A database that fails is replaced by a fresh one once; where browser storage
          * cannot be used the rows stay in memory, within its limits. Operations run in the order they are called.
          */
-        function createSpillingRowStore(config: RowStoreOptions): RowStore {
+        /** A saved worker store that a spilling store takes over as already moved (openRowStore). */
+        interface AdoptedRowStore {
+            store: RowStore;
+            count: number;
+            textIndex: RowStoreTextIndex;
+        }
+
+        function createSpillingRowStore(config: RowStoreOptions, adopted?: AdoptedRowStore): RowStore {
             var rowLimit = memoryRowLimit(config);
             var byteLimit = config.memoryByteLimit > 0 ? config.memoryByteLimit : MEMORY_BYTE_LIMIT;
             var spillRows = Math.min(countOption(config.spillRowLimit, SPILL_ROW_LIMIT), rowLimit);
@@ -2501,9 +3100,9 @@ namespace workbench {
              * memory: no move yet; moving: a move runs; stored: the rows live in the worker store, except those that
              * still wait to be written; failed: memory only.
              */
-            var state = 'memory';
+            var state = adopted ? 'stored' : 'memory';
             /** Stored: the rows the worker store holds. rows holds the rows after them, which wait to be written. */
-            var written = 0;
+            var written = adopted ? adopted.count : 0;
             /** Stored: the end (a row count) and estimated bytes of each batch in rows, oldest first. */
             var batches: Array<{ end: number; bytes: number }> = [];
             /** Stored: the write in flight. It never rejects; a failure is kept in writeFailure. */
@@ -2512,7 +3111,9 @@ namespace workbench {
             var writesHeld = false;
             /** Stored: a write that failed. Later appends are refused with it; the rows taken stay readable. */
             var writeFailure: any = null;
-            var stored: RowStore = null;
+            /** A full browser storage was met once: saved results were trimmed and the write tried again. */
+            var quotaRetried = false;
+            var stored: RowStore = adopted ? adopted.store : null;
             var failure: any = null;
             var retried = false;
             var abandonMove: () => void = null;
@@ -2527,7 +3128,7 @@ namespace workbench {
             var pendingWindows: Array<{ release: () => void }> = [];
             var memoryReservation = config.memoryBudget
                 ? config.memoryBudget.createReservation('retained') : null;
-            var rowTextIndex = new RowStoreTextIndex(function(releasedBytes: number) {
+            var rowTextIndex = adopted ? adopted.textIndex : new RowStoreTextIndex(function(releasedBytes: number) {
                 if (memoryReservation) { memoryReservation.shrink(releasedBytes); }
             });
             var unregisterPressureHandler = config.memoryBudget
@@ -2750,6 +3351,25 @@ namespace workbench {
                     if (error && typeof error === 'object' && !error.code) {
                         error.code = 'storage';
                     }
+                    if (error && error.quota && !quotaRetried) {
+                        // Browser storage is full: trim saved results to make room, then write again, once.
+                        quotaRetried = true;
+                        writesHeld = true;
+                        makeRoom(Math.max(chunkBytes * 2, 1024 * 1024), { rowStoreOptions: config,
+                            exclude: [target.id], whole: true }).then(function(freed: number) {
+                            writesHeld = false;
+                            if (disposed) {
+                                return;
+                            }
+                            if (freed > 0) {
+                                drain();
+                            } else {
+                                writeFailure = error;
+                            }
+                            notifyMove(false);
+                        });
+                        return;
+                    }
                     writeFailure = error;
                     notifyMove(false);
                 });
@@ -2799,7 +3419,24 @@ namespace workbench {
                         if (given || disposed) {
                             return;
                         }
-                        if (!retried && !(error && error.unavailable)) {
+                        if (error && error.quota && !quotaRetried) {
+                            // Browser storage is full: trim saved results to make room, then move again, once.
+                            quotaRetried = true;
+                            makeRoom(Math.max(bytes * 2, 1024 * 1024), { rowStoreOptions: config, whole: true })
+                                .then(function(freed: number) {
+                                    if (given || disposed || state !== 'moving') {
+                                        return;
+                                    }
+                                    if (freed > 0) {
+                                        state = 'memory';
+                                        startMove();
+                                    } else {
+                                        finishMove('failed', error);
+                                    }
+                                });
+                            return;
+                        }
+                        if (!retried && !(error && (error.unavailable || error.quota))) {
                             // A database that fails (a corrupt one, say): try a fresh one once.
                             retried = true;
                             state = 'memory';
@@ -3016,10 +3653,90 @@ namespace workbench {
                 }).then(null, fail);
             }
 
+            /** Moves every row to the worker store and waits until all are written, then asks the worker's count. */
+            function persistNow(): Promise<SavedRowStore> {
+                if (disposed) {
+                    return Promise.reject(disposedError());
+                }
+                if (state === 'memory') {
+                    startMove();
+                }
+                if (state === 'moving') {
+                    return waitForMove().then(persistNow);
+                }
+                if (state !== 'stored') {
+                    return Promise.reject(failure || storageError('Browser storage is unavailable here.'));
+                }
+                if (writeFailure) {
+                    return Promise.reject(writeFailure);
+                }
+                if (rows.length || writing) {
+                    drain();
+                    return waitForWrite([]).then(persistNow);
+                }
+                var target = <WorkerRowStore>stored;
+                return target.count().then(function(count: number) {
+                    if (disposed || stored !== target) {
+                        throw disposedError();
+                    }
+                    var saved = target.saved();
+                    saved.count = count;
+                    return saved;
+                });
+            }
+
+            /** Ends the store: keep leaves a kept worker store's rows for a later page, otherwise they are deleted. */
+            function close(keep: boolean): Promise<void> {
+                disposed = true;
+                rows = [];
+                bytes = 0;
+                batches = [];
+                unregisterPressureHandler();
+                pendingWindows.splice(0).forEach(window => window.release());
+                if (abandonMove) {
+                    abandonMove();
+                }
+                rowTextIndex.truncate(0);
+                // A stored write still holds its source slice until the worker closes. Unload may abandon
+                // its append promise, so final release follows disposal rather than depending on that promise.
+                notifyMove(true);
+                var disposal = !stored ? Promise.resolve()
+                    : keep && stored.release ? stored.release() : stored.dispose();
+                disposePromise = disposal.then(function() {
+                    if (memoryReservation) { memoryReservation.release(); }
+                }, function(error: any) {
+                    if (memoryReservation) { memoryReservation.release(); }
+                    throw error;
+                });
+                return disposePromise;
+            }
+
             return {
                 get id(): string {
                     return stored ? stored.id : memoryId;
                 },
+                persist: (): Promise<SavedRowStore> => serialized(persistNow),
+                retain: (keptFor: RetainedRowStore): boolean =>
+                    !disposed && state === 'stored' && !!stored.retain && stored.retain(keptFor),
+                release: (): Promise<void> => disposed ? disposePromise : close(true),
+                keepWritten: (): Promise<number> => serialized(() => {
+                    if (state !== 'stored') {
+                        return rows.length;
+                    }
+                    writesHeld = true;
+                    return (writing || Promise.resolve()).then(function() {
+                        writesHeld = false;
+                        var previousBytes = bytes;
+                        rows = [];
+                        bytes = 0;
+                        batches = [];
+                        rowTextIndex.truncate(written);
+                        releaseSourceBytes(previousBytes);
+                        writeFailure = null;
+                        quotaRetried = false;
+                        return written;
+                    });
+                }),
                 get inMemory(): boolean {
                     return state !== 'stored';
                 },
@@ -3109,32 +3826,7 @@ namespace workbench {
                     }
                     return count;
                 }),
-                dispose: (): Promise<void> => {
-                    if (disposed) {
-                        return disposePromise;
-                    }
-                    disposed = true;
-                    rows = [];
-                    bytes = 0;
-                    batches = [];
-                    unregisterPressureHandler();
-                    pendingWindows.splice(0).forEach(window => window.release());
-                    if (abandonMove) {
-                        abandonMove();
-                    }
-                    rowTextIndex.truncate(0);
-                    // A stored write still holds its source slice until the worker closes. Unload may abandon
-                    // its append promise, so final release follows disposal rather than depending on that promise.
-                    notifyMove(true);
-                    var disposal = stored ? stored.dispose() : Promise.resolve();
-                    disposePromise = disposal.then(function() {
-                        if (memoryReservation) { memoryReservation.release(); }
-                    }, function(error: any) {
-                        if (memoryReservation) { memoryReservation.release(); }
-                        throw error;
-                    });
-                    return disposePromise;
-                }
+                dispose: (): Promise<void> => disposed ? disposePromise : close(false)
             };
         }
 
@@ -3148,8 +3840,19 @@ namespace workbench {
          * the requests it still owes are rejected, and the store is flagged for cleanup (its database may exist). A
          * move to browser storage that takes too long uses it.
          */
+        /** A worker store, and what it would be saved as. */
+        interface WorkerRowStore extends RowStore {
+            saved(): SavedRowStore;
+        }
+
+        /** A saved store to open again, with the lock (or lease) openRowStore took for this page. */
+        interface ReopenedRowStore extends SavedRowStore {
+            releaseLock: () => void;
+        }
+
         function createWorkerRowStore(config: RowStoreOptions, rowTextIndex: RowStoreTextIndex,
-                                      onAbandon?: (abandon: () => void) => void): Promise<RowStore> {
+                                      onAbandon?: (abandon: () => void) => void,
+                                      reopened?: ReopenedRowStore): Promise<RowStore> {
             var worker: any;
             try {
                 worker = createRowStoreWorker(config);
@@ -3160,14 +3863,20 @@ namespace workbench {
             var timeout = Math.min(countOption(config.storageTimeout, STORAGE_TIMEOUT), STORAGE_CALL_TIMEOUT);
             var requestId = 0;
             var pending: { [key: string]: { resolve: (response: any) => void; reject: (error: any) => void } } = {};
-            var storeId = newRowStoreId();
+            var storeId = reopened ? reopened.id : newRowStoreId();
             var disposed = false;
             var disposePromise: Promise<void> = null;
             var releaseLock: () => void = function() {};
             var registry = rowStoreRegistryStorage();
-            var created = Date.now();
-            var bytes = 0;
+            var created = reopened && isFinite(reopened.created) ? reopened.created : Date.now();
+            var bytes = reopened ? Math.max(0, Number(reopened.bytes) || 0) : 0;
             var storedRowCount = 0;
+            /** Kept for a query tab: the registry says so, and this page's unload keeps the store. */
+            var retained: RetainedRowStore = null;
+            if (reopened && registry) {
+                var reopenedEntry = readRowStoreEntry(registry, storeId);
+                retained = reopenedEntry && reopenedEntry.retained || null;
+            }
             var transferReservation = config.memoryBudget
                 ? config.memoryBudget.createReservation('temporary') : null;
             var readReservation = config.memoryBudget
@@ -3176,6 +3885,14 @@ namespace workbench {
             var transferReservationReleased = false;
             var lastRegistryWrite = 0;
             var cancelRegistryWrite: () => void = null;
+            /**
+             * The window read last, while its rows cannot have changed: a result table reads its window again on every
+             * render, and each read would otherwise cross to the worker. A window that reached the end holds only
+             * while no rows were added; a truncate drops it. Not kept under a shared memory budget, which it would
+             * escape.
+             */
+            var lastWindow: { start: number; count: number; total: number; rows: any[][] } = null;
+            var windowGeneration = 0;
 
             function register(): void {
                 if (cancelRegistryWrite) {
@@ -3184,8 +3901,33 @@ namespace workbench {
                 }
                 if (registry && !disposed) {
                     lastRegistryWrite = Date.now();
-                    writeRowStoreEntry(registry, storeId, { created: created, used: lastRegistryWrite, bytes: bytes });
+                    var previousBytes = (readRowStoreEntry(registry, storeId) || <RowStoreRegistryEntry>{}).bytes || 0;
+                    writeRowStoreEntry(registry, storeId, registryEntry(lastRegistryWrite));
+                    if (bytes > previousBytes) {
+                        // Grown: over the budget, the other saved results make room.
+                        checkRowStoreBudget(config);
+                    }
                 }
+            }
+
+            /**
+             * The store's registry entry now. What other code records in it is kept: that it is kept for a tab (and
+             * when the tab last showed it), the lease, and a flag for cleanup (the repository was deleted, say).
+             */
+            function registryEntry(used: number): RowStoreRegistryEntry {
+                var entry: RowStoreRegistryEntry = { created: created, used: used, bytes: bytes };
+                var previous = registry ? readRowStoreEntry(registry, storeId) : null;
+                var keptFor = previous && previous.retained || retained;
+                if (keptFor) {
+                    entry.retained = keptFor;
+                }
+                if (previous && previous.lease) {
+                    entry.lease = previous.lease;
+                }
+                if (previous && previous.dispose) {
+                    entry.dispose = true;
+                }
+                return entry;
             }
 
             /** Records the store's size at most once a second, and once more after the last change. */
@@ -3206,6 +3948,7 @@ namespace workbench {
                     cancelRegistryWrite();
                     cancelRegistryWrite = null;
                 }
+                delete openHereRowStoreIds[storeId];
                 forgetCurrentDocumentRowStore(storeId);
                 if (flag) {
                     flagRowStoreForCleanup(storeId);
@@ -3245,6 +3988,15 @@ namespace workbench {
                     var error: any = new Error(response.error || 'Workbench query result storage failed.');
                     // IndexedDB could not be opened at all: no database was created.
                     error.unavailable = !!response.unavailable;
+                    if (response.gone) {
+                        error.gone = true;
+                        error.code = 'gone';
+                    }
+                    if (typeof response.errorName === 'string') {
+                        error.storageErrorName = response.errorName;
+                        // Browser storage is full: trimming saved results can make room (M4).
+                        error.quota = response.errorName === 'QuotaExceededError';
+                    }
                     operation.reject(error);
                 } else {
                     operation.resolve(response);
@@ -3267,6 +4019,7 @@ namespace workbench {
              * that is being unloaded (nothing is left to handle the rejections, which Firefox reports as errors).
              */
             function closeWorker(abandonPending?: boolean) {
+                delete openHereRowStoreIds[storeId];
                 if (typeof worker.removeEventListener === 'function') {
                     worker.removeEventListener('message', receive);
                     worker.removeEventListener('error', onError);
@@ -3373,14 +4126,69 @@ namespace workbench {
                 });
             }
 
-            currentDocumentRowStoreIds.push(storeId);
-            listenForRowStorePagehide();
-            register();
-            releaseLock = holdRowStoreLock(storeId);
-            startRowStoreHeartbeat();
-            return send('create').then(() => {
-                var rowStore: RowStore = {
+            openHereRowStoreIds[storeId] = true;
+            if (reopened) {
+                // openRowStore holds the store's lock for this page already; a saved store outlives this page.
+                releaseLock = reopened.releaseLock;
+            } else {
+                currentDocumentRowStoreIds.push(storeId);
+                listenForRowStorePagehide();
+                register();
+                releaseLock = holdRowStoreLock(storeId);
+                startRowStoreHeartbeat();
+            }
+            return send(reopened ? 'open' : 'create').then((opened: any) => {
+                if (reopened) {
+                    storedRowCount = opened.count;
+                    rowTextIndex.restore(opened.count);
+                }
+                /** Closes the worker and lets the store go, keeping its database for a later page. */
+                var keep = function(): Promise<void> {
+                    register();
+                    disposed = true;
+                    if (cancelRegistryWrite) {
+                        cancelRegistryWrite();
+                        cancelRegistryWrite = null;
+                    }
+                    forgetCurrentDocumentRowStore(storeId);
+                    releaseLock();
+                    closeWorker(documentUnloading);
+                    disposePromise = Promise.resolve();
+                    return disposePromise;
+                };
+                var rowStore: WorkerRowStore = {
                     id: storeId,
+                    saved: (): SavedRowStore => ({ id: storeId, count: storedRowCount, bytes: bytes, created: created }),
+                    retain: (keptFor: RetainedRowStore): boolean => {
+                        if (disposed || !registry || !keptFor) {
+                            return false;
+                        }
+                        var previous = readRowStoreEntry(registry, storeId);
+                        if (previous && previous.dispose) {
+                            return false;
+                        }
+                        var used = Date.now();
+                        var entry: RowStoreRegistryEntry = { created: created, used: used, bytes: bytes,
+                            retained: keptFor };
+                        if (previous && previous.lease) {
+                            entry.lease = previous.lease;
+                        }
+                        if (!writeRowStoreEntry(registry, storeId, entry)) {
+                            return false;
+                        }
+                        retained = keptFor;
+                        lastRegistryWrite = used;
+                        // This page's unload no longer flags it for cleanup.
+                        forgetCurrentDocumentRowStore(storeId);
+                        return true;
+                    },
+                    release: (): Promise<void> => {
+                        if (disposed) {
+                            return disposePromise || Promise.resolve();
+                        }
+                        // A store nobody keeps is deleted: no page would open it again.
+                        return retained ? keep() : rowStore.dispose();
+                    },
                     append: (rows: any[][]): Promise<number> => {
                         if (!Array.isArray(rows)) {
                             return Promise.reject(new Error('Query rows must be provided as a batch.'));
@@ -3433,8 +4241,24 @@ namespace workbench {
                             throw error;
                         });
                     },
-                    read: (start: number, count: number): Promise<any[][]> =>
-                        readWindow(start, count, false).then(window => window.rows),
+                    read: (start: number, count: number): Promise<any[][]> => {
+                        var first = Math.floor(start);
+                        var rowCount = Math.floor(count);
+                        var known = lastWindow;
+                        if (known && !disposed && known.start === first && known.count === rowCount
+                                && (known.rows.length === rowCount || known.total === storedRowCount)) {
+                            return Promise.resolve(known.rows.slice());
+                        }
+                        var generation = windowGeneration;
+                        var total = storedRowCount;
+                        return readWindow(start, count, false).then(window => {
+                            if (!config.memoryBudget && generation === windowGeneration && !disposed
+                                    && rowCount <= ROW_STORE_WINDOW_CACHE_ROWS) {
+                                lastWindow = { start: first, count: rowCount, total: total, rows: window.rows.slice() };
+                            }
+                            return window.rows;
+                        });
+                    },
                     readOwned: (start: number, count: number): Promise<RowStoreWindow> =>
                         readWindow(start, count, true),
                     count: (): Promise<number> => send('count').then(result => result.count),
@@ -3442,6 +4266,8 @@ namespace workbench {
                         if (!Number.isSafeInteger(count) || count < 0) {
                             return Promise.reject(new Error('A non-negative safe truncate count is required.'));
                         }
+                        lastWindow = null;
+                        windowGeneration++;
                         return send('count').then(current => {
                             if (count > current.count) {
                                 throw new Error('The truncate count cannot exceed the stored row count.');
@@ -3457,6 +4283,11 @@ namespace workbench {
                     dispose: (): Promise<void> => {
                         if (disposed) {
                             return disposePromise || Promise.resolve();
+                        }
+                        if (retained) {
+                            // A result kept for a query tab outlives its page and its renderer: the next page opens it
+                            // again. It goes only when it is given up (discardRowStore) or trimmed for room.
+                            return keep();
                         }
                         disposed = true;
                         if (documentUnloading && flagRowStoreForCleanup(storeId)) {
@@ -3482,8 +4313,13 @@ namespace workbench {
             }).then(null, (error: any) => {
                 if (!disposed) {
                     disposed = true;
-                    // The database may exist unless IndexedDB could not be opened at all.
-                    forget(!(error && error.unavailable));
+                    if (!reopened) {
+                        // The database may exist unless IndexedDB could not be opened at all.
+                        forget(!(error && error.unavailable));
+                    } else if (error && error.gone) {
+                        // Deleted meanwhile (cleanup, another page): nothing is left to keep track of.
+                        forget(false);
+                    }
                     releaseLock();
                 }
                 closeWorker();
@@ -4509,6 +5345,27 @@ namespace workbench {
                 : { type: type, bubbles: true, detail: detail });
         }
 
+        /** A result whose query ran longer ago than this says when (ExecPlan .agent/execplan-query-tabs-g2.md, M5). */
+        export var RESULT_AGE_NOTE_MS = 15 * 60 * 1000;
+
+        /** 'ran 17 min ago', 'ran 2 h ago', 'ran 3 days ago' once the query ran more than RESULT_AGE_NOTE_MS ago. */
+        export function ranAgo(at: number, now: number): string {
+            var age = now - at;
+            if (!(at > 0) || !(age > RESULT_AGE_NOTE_MS)) {
+                return '';
+            }
+            var minutes = Math.floor(age / 60000);
+            if (minutes < 60) {
+                return 'ran ' + minutes + ' min ago';
+            }
+            var hours = Math.floor(minutes / 60);
+            if (hours < 24) {
+                return 'ran ' + hours + ' h ago';
+            }
+            var days = Math.floor(hours / 24);
+            return 'ran ' + days + (days === 1 ? ' day' : ' days') + ' ago';
+        }
+
         function formatCount(value: number): string {
             var format = (<any>workbench).format;
             return format && typeof format.count === 'function' ? format.count(value) : String(value);
@@ -4872,6 +5729,42 @@ namespace workbench {
         }
 
         /** Renders records as they arrive and keeps unlimited-result DOM bounded. */
+        /** A batch's rows and what their terms are read with: blank-node scope and namespaces. */
+        interface ResultBatchContext {
+            start: number;
+            end: number;
+            scope: string;
+            /** Null in a saved snapshot: the same namespaces as the batch before. */
+            namespaces: { prefix: string; name: string }[];
+        }
+
+        /**
+         * A result as a query tab keeps it in this browser (query tabs, ExecPlan .agent/execplan-query-tabs-g2.md
+         * Part 2): the result's records, the saved row store that holds its rows, and the request that continues it.
+         */
+        export interface SavedResultSnapshot {
+            /** The saved row store (openRowStore); null for an answer or a result without rows. */
+            storeId: string | null;
+            /** The rows the store held when the result was saved. */
+            rows: number;
+            /** When the query ran: its first batch ended. */
+            ranAt?: number;
+            view: string;
+            vars: string[];
+            namespaces: { prefix: string; name: string }[];
+            links: string[];
+            metadata: { [key: string]: any };
+            terminalMetadata: { [key: string]: any };
+            booleanValue: boolean | null;
+            batchContexts: ResultBatchContext[];
+            /** The request the result came from, as form data, its endpoint, and its batch size and exact total. */
+            request: string;
+            url: string;
+            batchSize: number;
+            knownTotal: number | null;
+            savedAt: number;
+        }
+
         export class QueryResultRenderer {
             readonly state = new QueryResultState();
             readonly root: any;
@@ -4955,8 +5848,14 @@ namespace workbench {
             private resultHeadingId: string;
             /** Stops following the full-screen state of the results area (it changes when the result moves). */
             private presentationDisposer: () => void = () => {};
-            private batchContexts: { start: number; end: number; scope: string;
-                namespaces: { prefix: string; name: string }[] }[] = [];
+            private batchContexts: ResultBatchContext[] = [];
+            /** Said beside the rows while they are fewer than the result: trimmed to make room, or storage full. */
+            private rowsNote = '';
+            /** When the query ran (its first batch ended), for the age the status gives an older result. */
+            private ranAt = 0;
+            /** The status text without the age, and the timer that ages it every minute while shown. */
+            private ageBase = '';
+            private cancelAgeTick: () => void = null;
 
             constructor(private target: any, options?: QueryResultRendererOptions) {
                 this.options = options || {};
@@ -5329,6 +6228,7 @@ namespace workbench {
                 this.state.error = null;
                 this.state.complete = false;
                 this.state.progress = {};
+                this.rowsNote = '';
                 this.batchContexts.push({ start: this.batchStart, end: this.batchStart,
                     scope: this.instanceSuffix + ':' + this.batchGeneration, namespaces: [] });
             }
@@ -5454,6 +6354,9 @@ namespace workbench {
                         }
                         this.state.terminalMetadata = metadata;
                         this.state.complete = true;
+                        if (this.batchOffset === 0) {
+                            this.ranAt = this.now();
+                        }
                     }
                 } catch (error) {
                     return Promise.reject(error);
@@ -5490,6 +6393,10 @@ namespace workbench {
                     return;
                 }
                 this.suspended = true;
+                if (this.cancelAgeTick) {
+                    this.cancelAgeTick();
+                    this.cancelAgeTick = null;
+                }
                 this.windowListeners.forEach((entry) => entry[0].removeEventListener(entry[1], entry[2], entry[3]));
                 this.resultTable.suspend();
                 // Full screen locks the document's scrolling: a hidden result gives the viewport back.
@@ -5508,6 +6415,8 @@ namespace workbench {
                 if (this.renderDeferred) {
                     this.renderDeferred = false;
                     this.renderAndReport();
+                } else if (this.ageBase) {
+                    this.showAge();
                 }
             }
 
@@ -5687,7 +6596,7 @@ namespace workbench {
                 var error = this.state.error;
                 var message = this.errorMessageForDisplay();
                 var classified = this.appendFailure || !error
-                    || ['timeout', 'cancelled', 'circuit-breaker', 'incomplete', 'empty-query'].indexOf(error.code) >= 0
+                    || ['timeout', 'cancelled', 'circuit-breaker', 'incomplete', 'empty-query', 'saved-result'].indexOf(error.code) >= 0
                     || message !== error.message;
                 var location = classified ? null : errorLocation(message);
                 this.errorResult.textContent = '';
@@ -6050,6 +6959,170 @@ namespace workbench {
                 this.timerTick = null;
             }
 
+            /**
+             * Browser storage is full, even after trimming saved results: the batch ends with the rows it could keep,
+             * and Load more fetches the next ones (when there is room again). Resolves the rows kept.
+             */
+            keepWhatFits(): Promise<number> {
+                var store = this.rowStore;
+                if (this.disposed || !store || typeof store.keepWritten !== 'function') {
+                    return Promise.reject(new Error('The rows cannot be kept.'));
+                }
+                // Rows of this batch still on their way are not taken any more.
+                this.batchGeneration++;
+                return store.keepWritten().then((count: number) => {
+                    if (this.disposed) {
+                        return count;
+                    }
+                    var state = this.state;
+                    state.rowCount = count;
+                    this.batchContexts = this.batchContexts.filter(context => context.start < count || context.start === 0)
+                        .map(context => Object.assign(context, { end: Math.min(context.end, count) }));
+                    state.terminalMetadata = Object.assign({}, this.committedMetadata,
+                        { 'result-has-more': true, 'result-next-offset': count });
+                    state.error = null;
+                    state.complete = true;
+                    state.progress = {};
+                    this.resultTable.truncate(count);
+                    this.rowsNote = 'Browser storage is full: ' + formatCount(count) + ' rows are kept';
+                    return this.render().then(() => count);
+                });
+            }
+
+            /**
+             * The complete result, ready to keep for a query tab: its rows persisted to browser storage (an answer or
+             * a result without rows needs no store). Null while the result is not complete, failed, or cannot be kept.
+             */
+            persistResult(retried?: boolean): Promise<{ snapshot: SavedResultSnapshot; store: RowStore }> {
+                var state = this.state;
+                if (this.disposed || this.busy || !state.complete || state.error || this.appendFailure
+                        || !(state.view === 'tuple' || state.view === 'graph' || state.view === 'boolean')) {
+                    return Promise.resolve(null);
+                }
+                var previous: { prefix: string; name: string }[] = null;
+                var contexts = this.batchContexts.map(context => {
+                    var same = previous && JSON.stringify(previous) === JSON.stringify(context.namespaces);
+                    previous = context.namespaces;
+                    return { start: context.start, end: context.end, scope: context.scope,
+                        namespaces: same ? null : context.namespaces };
+                });
+                var rows = state.rowCount;
+                var snapshot: SavedResultSnapshot = {
+                    storeId: null,
+                    rows: rows,
+                    view: state.view,
+                    vars: state.variables.slice(),
+                    namespaces: state.namespaces,
+                    links: state.links,
+                    metadata: state.metadata,
+                    terminalMetadata: state.terminalMetadata,
+                    booleanValue: state.booleanValue,
+                    batchContexts: contexts,
+                    request: '',
+                    url: '',
+                    batchSize: this.requestedLimit,
+                    knownTotal: null,
+                    ranAt: this.ranAt || Date.now(),
+                    savedAt: Date.now()
+                };
+                if (rows === 0) {
+                    return Promise.resolve({ snapshot: snapshot, store: null });
+                }
+                var store = this.rowStore;
+                if (!store || typeof store.persist !== 'function') {
+                    return Promise.resolve(null);
+                }
+                return store.persist().then((saved: SavedRowStore) => {
+                    if (this.disposed || this.rowStore !== store || saved.count !== rows || this.state.rowCount !== rows
+                            || this.busy) {
+                        return null;
+                    }
+                    snapshot.storeId = saved.id;
+                    return { snapshot: snapshot, store: store };
+                }, (error: any) => {
+                    if (!error || !error.quota || retried || this.disposed) {
+                        throw error;
+                    }
+                    // Browser storage is full even after trimming: keep the rows that fit, and Load more the rest.
+                    return this.keepWhatFits().then(() => this.persistResult(true));
+                });
+            }
+
+            /**
+             * Shows a result an earlier page saved for a query tab: its records from the snapshot, its rows from the
+             * saved store once it opens. A store with fewer rows than were saved was trimmed to make room: Load more
+             * then continues after the rows it kept. A store with more (a Load more the page left before saving) is
+             * cut back. A store that is gone, or open in another window, is said so. Resolves the rows shown.
+             */
+            restore(snapshot: SavedResultSnapshot, opening: Promise<RowStore>): Promise<number> {
+                var state = this.state;
+                this.started = true;
+                this.ranAt = snapshot.ranAt > 0 ? snapshot.ranAt : snapshot.savedAt;
+                state.view = <any>snapshot.view;
+                state.variables = (snapshot.vars || []).slice();
+                state.namespaces = snapshot.namespaces || [];
+                state.links = snapshot.links || [];
+                state.metadata = snapshot.metadata || {};
+                state.booleanValue = typeof snapshot.booleanValue === 'boolean' ? snapshot.booleanValue : null;
+                state.terminalMetadata = Object.assign({}, snapshot.terminalMetadata || {});
+                state.progress = {};
+                state.error = null;
+                state.complete = true;
+                state.rowCount = 0;
+                this.committedMetadata = state.terminalMetadata;
+                this.committedComplete = true;
+                var contexts = (snapshot.batchContexts || []).map(context => ({
+                    start: context.start, end: context.end, scope: context.scope, namespaces: context.namespaces }));
+                contexts.forEach((context, index) => {
+                    if (!context.namespaces) {
+                        context.namespaces = index > 0 ? contexts[index - 1].namespaces : state.namespaces;
+                    }
+                });
+                var shown = (count: number) => {
+                    state.rowCount = count;
+                    this.batchContexts = contexts.filter(context => context.start < count || count === 0 && !context.end)
+                        .map(context => Object.assign({}, context, { end: Math.min(context.end, count) }));
+                    if (count < snapshot.rows) {
+                        // Trimmed to make room: Load more continues after the rows kept.
+                        state.terminalMetadata = Object.assign({}, state.terminalMetadata,
+                            { 'result-has-more': true, 'result-next-offset': count });
+                        this.committedMetadata = state.terminalMetadata;
+                        var total = state.terminalMetadata['total-result-count'];
+                        this.rowsNote = 'Saved the first ' + formatCount(count) + ' of '
+                            + formatCount(Number.isSafeInteger(total) ? total : snapshot.rows) + ' rows';
+                    }
+                    return this.render().then(() => count);
+                };
+                if (!opening) {
+                    return shown(0);
+                }
+                this.ownsRowStore = true;
+                this.status.textContent = 'Opening the saved result…';
+                this.rowStorePromise = opening.then(store => {
+                    if (this.disposed) {
+                        store.dispose().then(null, () => {});
+                        throw new Error('The query result was closed.');
+                    }
+                    this.rowStore = store;
+                    return store;
+                });
+                return this.rowStorePromise.then(store => store.count().then(count =>
+                    count > snapshot.rows ? store.truncate(snapshot.rows) : count
+                )).then((count: number) => this.disposed ? count : shown(count), (error: any) => {
+                    this.rowStore = null;
+                    this.rowStorePromise = null;
+                    this.ownsRowStore = false;
+                    if (!this.disposed) {
+                        this.batchContexts = [];
+                        this.fail(error && error.code === 'busy'
+                            ? 'This saved result is open in another window. Close it there, or execute the query again.'
+                            : 'The saved result is no longer stored in this browser. Execute the query again to see it.',
+                            'saved-result');
+                    }
+                    return 0;
+                });
+            }
+
             dispose() {
                 if (this.disposed) {
                     return;
@@ -6058,6 +7131,10 @@ namespace workbench {
                 this.clearTimerTick();
                 this.clearCancelReveal();
                 this.disposed = true;
+                if (this.cancelAgeTick) {
+                    this.cancelAgeTick();
+                    this.cancelAgeTick = null;
+                }
                 this.resultTable.dispose();
                 this.leaveTarget();
                 this.disposers.forEach(dispose => dispose());
@@ -6489,7 +7566,8 @@ namespace workbench {
                 var partiallyLoaded = isRows && state.complete
                     && (Number.isSafeInteger(total) ? state.rowCount < total
                         : state.terminalMetadata['result-has-more'] === true);
-                this.countLabel.hidden = !!state.error || !partiallyLoaded || !this.featureEnabled('result-totals');
+                this.countLabel.hidden = !!state.error || !this.rowsNote && (!partiallyLoaded
+                    || !this.featureEnabled('result-totals'));
                 this.emptyResult.hidden = !isRows || !state.complete || !!state.error || state.rowCount > 0;
                 if (state.error) {
                     this.renderError();
@@ -6520,10 +7598,12 @@ namespace workbench {
                 } else if (!state.complete) {
                     this.status.textContent = 'Receiving… ' + rowsText(state.rowCount);
                 }
+                this.ageBase = this.status.textContent;
+                this.showAge();
                 if (state.error || state.complete) {
                     this.announce(this.status.textContent);
                 }
-                this.countLabel.textContent = !partiallyLoaded ? ''
+                this.countLabel.textContent = this.rowsNote ? this.rowsNote : !partiallyLoaded ? ''
                     : Number.isSafeInteger(total) ? formatCount(state.rowCount) + ' of ' + formatCount(total) + ' loaded'
                         : formatCount(state.rowCount) + ' loaded';
                 this.publishSummary(state, isRows);
@@ -6538,6 +7618,32 @@ namespace workbench {
                     settled();
                     throw error;
                 });
+            }
+
+            /**
+             * A complete result whose query ran more than RESULT_AGE_NOTE_MS ago says so in its status ("· ran 2 h
+             * ago", the exact time in the tooltip), checked again every minute while it is shown.
+             */
+            private showAge(): void {
+                if (this.cancelAgeTick) {
+                    this.cancelAgeTick();
+                    this.cancelAgeTick = null;
+                }
+                var state = this.state;
+                var aging = !this.disposed && !state.error && state.complete && this.ranAt > 0;
+                var note = aging ? ranAgo(this.ranAt, this.now()) : '';
+                this.status.textContent = this.ageBase + (note ? ' · ' + note : '');
+                if (note) {
+                    this.status.setAttribute('title', 'Ran ' + new Date(this.ranAt).toLocaleString());
+                } else if (this.status.getAttribute('title')) {
+                    this.status.removeAttribute('title');
+                }
+                if (aging && !this.suspended) {
+                    this.cancelAgeTick = startTimer(() => {
+                        this.cancelAgeTick = null;
+                        this.showAge();
+                    }, 60000);
+                }
             }
 
             /** Nothing to show yet: the first request has not brought a row, an answer, an error or its end. */
@@ -8334,6 +9440,17 @@ namespace workbench {
             adopt?(form: any, target: any): void;
             dispose(): void;
             hasActiveRequest(): boolean;
+            /** What the page that shows the result calls it by: the query tab whose result this is (query tabs). */
+            tag?: string;
+            /**
+             * Query tabs: the complete result, persisted and kept in this browser for the tab `keptFor` names (see
+             * RowStore.retain); null when it cannot be kept. The caller records the snapshot in the same turn.
+             */
+            saveResult?(keptFor: { scope: string; tabId: string }): Promise<SavedResultSnapshot>;
+            /** Query tabs: show a result an earlier page saved, from its snapshot and its saved row store. */
+            restore?(saved: SavedResultSnapshot): void;
+            /** The result shown is the one saved in this browser (saveResult, restore): a later page opens it again. */
+            isSaved?(): boolean;
         }
 
         function formControls(form: any): any[] {
@@ -8629,6 +9746,8 @@ namespace workbench {
             var frozenCancelUrl = '';
             var batchSize = 1000000;
             var cancelRevealTimer: any = null;
+            /** The result shown is the one saved in this browser for its query tab (saveResult, restore). */
+            var saved = false;
             /** When the running request started, for the delay before its Cancel shows. */
             var requestStartedAt = 0;
             // Only the first result shown here is scrolled into view: later runs, whatever they show (an empty result
@@ -8834,6 +9953,10 @@ namespace workbench {
                     }
                     finishRequest(requestGeneration);
                     revealOnce();
+                    // Every batch that ends, Load more's too, even out of sight: the page may keep the result.
+                    if (typeof config.onBatchEnd === 'function') {
+                        config.onBatchEnd(controller);
+                    }
                 }, (error: any) => {
                     if (generation !== requestGeneration || disposed) {
                         return;
@@ -8844,6 +9967,22 @@ namespace workbench {
                             abortController.abort();
                         }
                         cancelServerRequest(id, false, frozenCancelUrl);
+                    }
+                    if (error && error.quota) {
+                        // Browser storage is full even after trimming: the result keeps the rows it could store.
+                        recovering = true;
+                        return currentRenderer.keepWhatFits().then(() => {
+                            if (!disposed && generation === requestGeneration) {
+                                recovering = false;
+                                finishRequest(requestGeneration);
+                                if (typeof config.onBatchEnd === 'function') {
+                                    config.onBatchEnd(controller);
+                                }
+                            }
+                        }, () => {
+                            recovering = false;
+                            return recover(requestGeneration, currentRenderer, error.message, error.code, error.status);
+                        });
                     }
                     return recover(requestGeneration, currentRenderer,
                         error && error.message || 'Unable to load query results.',
@@ -8856,6 +9995,7 @@ namespace workbench {
                 if (disposed) {
                     return false;
                 }
+                saved = false;
                 cancel(false);
                 recovering = false;
                 knownTotal = null;
@@ -8883,25 +10023,7 @@ namespace workbench {
                     frozenBody.set('infer', inferControl.checked ? 'true' : 'false');
                 }
                 batchSize = frozenBody.has('batch-size') ? Number(frozenBody.get('batch-size')) : 1000000;
-                var rendererConstructor = (<any>workbench.queryStream).QueryResultRenderer;
-                renderer = new rendererConstructor(target, {
-                    requestedOffset: 0,
-                    requestedLimit: batchSize,
-                    batched: true,
-                    maxDomRows: config.maxDomRows,
-                    executionForm: form,
-                    executionSnapshot: { url: frozenUrl, body: frozenBody },
-                    rowStoreOptions: config.rowStoreOptions,
-                    workbench: config.workbench,
-                    features: config.features || config.workbench && config.workbench.queryFeatures,
-                    downloadFormatsByView: config.downloadFormatsByView,
-                    downloadLimits: config.downloadLimits,
-                    graphContext: config.graphContext,
-                    reservedHeight: reservedHeight,
-                    onLoadMore: () => loadMore(),
-                    onCancel: () => cancel(true),
-                    onRetry: () => { submit(); }
-                });
+                renderer = createRenderer(reservedHeight);
                 target.hidden = false;
                 showResultTab(target);
                 revealPending = !resultShown;
@@ -8920,6 +10042,28 @@ namespace workbench {
                 return startBatch(0);
             }
 
+            function createRenderer(reservedHeight: number): QueryResultRenderer {
+                var rendererConstructor = (<any>workbench.queryStream).QueryResultRenderer;
+                return new rendererConstructor(target, {
+                    requestedOffset: 0,
+                    requestedLimit: batchSize,
+                    batched: true,
+                    maxDomRows: config.maxDomRows,
+                    executionForm: form,
+                    executionSnapshot: { url: frozenUrl, body: frozenBody },
+                    rowStoreOptions: config.rowStoreOptions,
+                    workbench: config.workbench,
+                    features: config.features || config.workbench && config.workbench.queryFeatures,
+                    downloadFormatsByView: config.downloadFormatsByView,
+                    downloadLimits: config.downloadLimits,
+                    graphContext: config.graphContext,
+                    reservedHeight: reservedHeight,
+                    onLoadMore: () => loadMore(),
+                    onCancel: () => cancel(true),
+                    onRetry: () => { submit(); }
+                });
+            }
+
             function loadMore(): boolean {
                 if (!renderer || !renderer.canLoadMore()) {
                     return false;
@@ -8927,8 +10071,72 @@ namespace workbench {
                 return startBatch(renderer.nextOffset());
             }
 
-            return {
+            function saveResult(keptFor: { scope: string; tabId: string }): Promise<SavedResultSnapshot> {
+                if (disposed || !renderer || activeId || recovering || !frozenBody || !keptFor) {
+                    return Promise.resolve(null);
+                }
+                saved = false;
+                var current = renderer;
+                var saving = generation;
+                return current.persistResult().then(function(persisted) {
+                    if (!persisted || disposed || renderer !== current || generation !== saving || activeId) {
+                        return null;
+                    }
+                    var snapshot = persisted.snapshot;
+                    snapshot.request = frozenBody.toString();
+                    snapshot.url = frozenUrl;
+                    snapshot.batchSize = batchSize;
+                    snapshot.knownTotal = knownTotal;
+                    if (persisted.store && !(persisted.store.retain && persisted.store.retain({
+                        scope: keptFor.scope,
+                        tabId: keptFor.tabId,
+                        owner: rowStoreDocumentOwner,
+                        shownAt: Date.now(),
+                        rows: snapshot.rows
+                    }))) {
+                        // Not recorded in the registry: cleanup could delete it under the tab.
+                        return null;
+                    }
+                    saved = true;
+                    return snapshot;
+                });
+            }
+
+            function restore(snapshot: SavedResultSnapshot): void {
+                if (disposed || !snapshot) {
+                    return;
+                }
+                var saved = snapshot;
+                markSaved();
+                cancel(false);
+                recovering = false;
+                if (renderer) {
+                    renderer.dispose();
+                }
+                frozenBody = new URLSearchParams(saved.request || '');
+                frozenUrl = saved.url || executionUrl(form);
+                frozenCancelUrl = absoluteUrl(frozenUrl, form.ownerDocument || (typeof document !== 'undefined'
+                    ? document : null));
+                batchSize = Number.isSafeInteger(saved.batchSize) && saved.batchSize > 0 ? saved.batchSize : 1000000;
+                knownTotal = Number.isSafeInteger(saved.knownTotal) ? saved.knownTotal : null;
+                renderer = createRenderer(0);
+                target.hidden = false;
+                showResultTab(target);
+                // Shown as the page left it: nothing scrolls into view.
+                revealPending = false;
+                resultShown = true;
+                var opening = saved.storeId ? openRowStore({ id: saved.storeId, count: saved.rows, bytes: 0,
+                    created: 0 }, config.rowStoreOptions) : null;
+                renderer.restore(saved, opening);
+            }
+
+            function markSaved(): void {
+                saved = true;
+            }
+
+            var controller: BoundExecutionController = {
                 submit: submit,
+                isSaved: () => saved && !!renderer && !disposed,
                 loadMore: loadMore,
                 cancel: () => cancel(true),
                 cancelOnLeave: () => cancel(true, true),
@@ -8976,8 +10184,11 @@ namespace workbench {
                         renderer.dispose();
                     }
                 },
-                hasActiveRequest: () => !!activeId
+                hasActiveRequest: () => !!activeId,
+                saveResult: saveResult,
+                restore: restore
             };
+            return controller;
         }
 
         /**
@@ -9101,6 +10312,9 @@ namespace workbench {
 
         export namespace queryPage {
             var mountedForm: any = null;
+            var mountedTarget: any = null;
+            /** How the mounted page binds a controller, kept so query tabs can bind a fresh one (query-tabs). */
+            var mountedBind: () => BoundExecutionController = null;
             var mountedController: BoundExecutionController = null;
             var mountedSubmitHandler: (event: any) => void = null;
             var mountedDispose: (reason?: string) => void = null;
@@ -9123,6 +10337,14 @@ namespace workbench {
             var mountedSuspended = false;
             /** Repositories whose query finished while no Query page showed it, until it is shown (M13.5). */
             var ready: { [scope: string]: boolean } = {};
+            /** Query tabs: told when a batch of any result of the page ends, shown or kept out of sight. */
+            var resultEndListener: (controller: BoundExecutionController) => void = null;
+
+            function batchEnded(controller: BoundExecutionController): void {
+                if (resultEndListener) {
+                    resultEndListener(controller);
+                }
+            }
 
             function repositoryScope(repositoryId: string, serverIdentity?: string, basePath?: string): string {
                 return JSON.stringify([String(basePath || '').replace(/\/+$/, ''), serverIdentity || null, repositoryId]);
@@ -9139,6 +10361,13 @@ namespace workbench {
 
             /** A request started or ended: a query that ended out of sight has results ready (M13.5). */
             function activityChanged(): void {
+                // The Query page's tab row re-renders its running / finished marks (query-tabs): told through the
+                // mounted page's document, which is the page's own in the browser and in the tests alike.
+                var pageDocument: any = mountedTarget && mountedTarget.ownerDocument
+                    || (typeof document !== 'undefined' ? document : null);
+                if (pageDocument) {
+                    dispatchResultEvent(pageDocument.body || pageDocument, 'workbench:query-activity', null);
+                }
                 backgroundResults().forEach(entry => {
                     var holder: any = entry.controller;
                     var active = entry.controller.hasActiveRequest();
@@ -9265,6 +10494,7 @@ namespace workbench {
                 }
 
                 mountedForm = form;
+                mountedTarget = target;
                 var repositoryId = shellContext && shellContext.repositoryId || '';
                 var scope = repositoryScope(repositoryId, shellContext && shellContext.serverIdentity,
                     shellContext && shellContext.basePath);
@@ -9278,23 +10508,25 @@ namespace workbench {
                     waiting.dispose();
                     waiting = null;
                 }
+                mountedBind = () => bindMainQueryForm(form, target, {
+                    onActivity: activityChanged,
+                    onBatchEnd: batchEnded,
+                    workbench: shellContext && shellContext.workbench,
+                    features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
+                    rowStoreOptions: shellContext && shellContext.rowStoreOptions,
+                    downloadFormatsByView: shellContext && shellContext.downloadFormatsByView,
+                    downloadLimits: shellContext && shellContext.downloadLimits,
+                    maxDomRows: shellContext && shellContext.maxDomRows,
+                    graphContext: graphContextOf(shellContext),
+                    serverIdentity: shellContext && shellContext.serverIdentity
+                });
                 if (waiting) {
                     restoreExecutedRequest(form, waiting.executedRequest());
                     waiting.adopt(form, target);
                     seen(scope, waiting);
                     mountedController = waiting;
                 } else {
-                    mountedController = bindMainQueryForm(form, target, {
-                        onActivity: activityChanged,
-                        workbench: shellContext && shellContext.workbench,
-                        features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
-                        rowStoreOptions: shellContext && shellContext.rowStoreOptions,
-                        downloadFormatsByView: shellContext && shellContext.downloadFormatsByView,
-                        downloadLimits: shellContext && shellContext.downloadLimits,
-                        maxDomRows: shellContext && shellContext.maxDomRows,
-                        graphContext: graphContextOf(shellContext),
-                        serverIdentity: shellContext && shellContext.serverIdentity
-                    });
+                    mountedController = mountedBind();
                 }
                 mountedSubmitHandler = (event: any) => {
                     if (event && typeof event.preventDefault === 'function') {
@@ -9331,17 +10563,134 @@ namespace workbench {
                     var leaving = mountedController;
                     mountedController = null;
                     mountedSuspended = false;
-                    if (reason === 'navigate' && repositoryId && leaving.hasResult()) {
+                    var savedHere = !!leaving.isSaved && leaving.isSaved() && !leaving.hasActiveRequest();
+                    if (reason === 'navigate' && repositoryId && leaving.hasResult() && !savedHere) {
                         shelve(repositoryId, scope, leaving);
                     } else {
+                        // A result saved in this browser is opened again by the next Query page; nothing stays open.
                         leaving.dispose();
                     }
                     mountedForm = null;
+                    mountedTarget = null;
+                    mountedBind = null;
                     mountedController = null;
                     mountedSubmitHandler = null;
                     mountedDispose = null;
                 };
                 return mountedDispose;
+            }
+
+            /**
+             * Query tabs (.agent/execplan-query-tabs-g2.md): take the shown result out of the page, alive with its
+             * request, and leave the page with a fresh empty controller, so another tab's result can be shown.
+             * Null when no Query page is mounted.
+             */
+            export function detachController(): BoundExecutionController {
+                if (!mountedForm || !mountedController || !mountedBind) {
+                    return null;
+                }
+                var leaving = mountedController;
+                if (typeof leaving.shelve === 'function') {
+                    leaving.shelve();
+                }
+                if (mountedTarget) {
+                    mountedTarget.hidden = true;
+                }
+                mountedController = mountedBind();
+                activityChanged();
+                return leaving;
+            }
+
+            /**
+             * Show a result kept by query tabs in the mounted page's form and results area, replacing (and
+             * disposing) whatever the page shows; null shows nothing. A controller handed in while no Query page is
+             * mounted is disposed.
+             */
+            export function attachController(controller: BoundExecutionController): void {
+                if (!mountedForm || !mountedBind) {
+                    if (controller) {
+                        controller.dispose();
+                    }
+                    return;
+                }
+                if (mountedController && mountedController !== controller) {
+                    mountedController.dispose();
+                }
+                if (controller && typeof controller.adopt === 'function') {
+                    controller.adopt(mountedForm, mountedTarget);
+                    mountedController = controller;
+                    seen(mountedScope, controller);
+                } else {
+                    if (controller) {
+                        controller.dispose();
+                    }
+                    if (mountedTarget) {
+                        mountedTarget.hidden = true;
+                    }
+                    mountedController = mountedBind();
+                }
+                activityChanged();
+            }
+
+            /**
+             * Query tabs: show a result an earlier page saved (its snapshot) in the mounted page, for the tab `tag`
+             * names, replacing whatever the page shows. False when no Query page is mounted.
+             */
+            export function restoreResult(saved: SavedResultSnapshot, tag: string): boolean {
+                if (!mountedForm || !mountedBind || !saved) {
+                    return false;
+                }
+                var leaving = mountedController;
+                var controller = mountedBind();
+                controller.tag = tag;
+                if (leaving && leaving !== controller) {
+                    leaving.dispose();
+                }
+                mountedController = controller;
+                controller.restore(saved);
+                seen(mountedScope, controller);
+                activityChanged();
+                return true;
+            }
+
+            /** Query tabs: the shown result now belongs to the tab `tag` names (a query started for it). */
+            export function tagMountedResult(tag: string): void {
+                if (mountedController) {
+                    mountedController.tag = tag;
+                }
+            }
+
+            /** The tab the shown result belongs to, and whether there is one (a result kept for the repository). */
+            export function mountedResult(): { tag: string; hasResult: boolean; running: boolean } {
+                return mountedController ? {
+                    tag: mountedController.tag || '',
+                    hasResult: !!mountedController.hasResult && mountedController.hasResult(),
+                    running: mountedController.hasActiveRequest()
+                } : null;
+            }
+
+            /**
+             * Drop the result waiting for a repository's next Query page (its tabs were replaced, or the repository
+             * was deleted): that page starts without it.
+             */
+            export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string): void {
+                var waiting = takeShelved(repositoryScope(repositoryId, serverIdentity, basePath));
+                if (waiting) {
+                    waiting.dispose();
+                    activityChanged();
+                }
+            }
+
+            /** Query tabs: keep each result whose batch ends (null stops). */
+            export function onResultEnd(listener: (controller: BoundExecutionController) => void): void {
+                resultEndListener = listener;
+            }
+
+            /** Query tabs: offer the shown result for keeping now (a result that ended while no Query page showed it). */
+            export function offerMountedResult(): void {
+                if (mountedController && !mountedController.hasActiveRequest()) {
+                    batchEnded(mountedController);
+                }
             }
 
             function disposeMountedPage() {
@@ -9437,6 +10786,42 @@ namespace workbench {
 
         export function hasActiveRequest(): boolean {
             return queryStream.queryPage.hasActiveRequest();
+        }
+
+        /** Query tabs: take the shown result out of the page, alive, and leave an empty controller in its place. */
+        export function detachController(): queryStream.BoundExecutionController {
+            return queryStream.queryPage.detachController();
+        }
+
+        /** Query tabs: show a result an earlier page saved, for the tab `tag` names. */
+        export function restoreResult(saved: queryStream.SavedResultSnapshot, tag: string): boolean {
+            return queryStream.queryPage.restoreResult(saved, tag);
+        }
+
+        export function tagMountedResult(tag: string): void {
+            queryStream.queryPage.tagMountedResult(tag);
+        }
+
+        export function mountedResult(): { tag: string; hasResult: boolean; running: boolean } {
+            return queryStream.queryPage.mountedResult();
+        }
+
+        export function onResultEnd(listener: (controller: queryStream.BoundExecutionController) => void): void {
+            queryStream.queryPage.onResultEnd(listener);
+        }
+
+        export function offerMountedResult(): void {
+            queryStream.queryPage.offerMountedResult();
+        }
+
+        /** Drop the result waiting for a repository's next Query page. */
+        export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string): void {
+            queryStream.queryPage.forgetShelved(repositoryId, serverIdentity, basePath);
+        }
+
+        /** Query tabs: show a kept result in the page (null shows nothing). */
+        export function attachController(controller: queryStream.BoundExecutionController): void {
+            queryStream.queryPage.attachController(controller);
         }
     }
 }

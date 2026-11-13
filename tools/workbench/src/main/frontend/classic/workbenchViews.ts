@@ -547,6 +547,11 @@ namespace workbench {
             add: 'Add RDF', remove: 'Remove', clear: 'Clear', update: 'SPARQL Update', server: 'Connection'
         };
 
+        /** The short name of a page ("Query", "Saved queries"), or '' for a page without one. */
+        export function pageName(viewId: string): string {
+            return shortTitles[viewId] || '';
+        }
+
         /** "Page · repository — RDF4J Workbench", matching the title the server writes into the shell. */
         export function documentTitle(viewId: string, repositoryId: string): string {
             const page = shortTitles[viewId];
@@ -910,11 +915,16 @@ namespace workbench {
          * The repository whose Graph page "Add to graph" feeds (workbench.graphAdditions), or undefined when this
          * page has no repository or the Graph page is hidden by the Workbench policy.
          */
-        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string; serverIdentity: string } {
+        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string; serverIdentity: string; serverUser: string } {
             if (!context || !context.repositoryId || !context.serverIdentity || !(workbench as any).graphAdditions || !pageEnabled(context, 'graph')) {
                 return undefined;
             }
-            return { basePath: context.basePath || '', repositoryId: context.repositoryId, serverIdentity: context.serverIdentity };
+            return {
+                basePath: context.basePath || '',
+                repositoryId: context.repositoryId,
+                serverIdentity: context.serverIdentity,
+                serverUser: serverUser(context)
+            };
         }
 
         /**
@@ -4855,7 +4865,9 @@ namespace workbench {
                     data-editor-namespaces-enabled=${queryFeatureEnabled(context, 'editor-namespaces') ? 'true' : 'false'}
                     ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
                     @click=${() => invoke('workbench.query.insertPrefixes')}>Insert prefixes</button></div>`);
-            return h`<div id="query-page" class="query-page"
+            // Query tabs (G2): the tab row is the island's top part and the editor sits flush under it.
+            const tabsEnabled = queryFeatureEnabled(context, 'query-tabs');
+            return h`<div id="query-page" class=${tabsEnabled ? 'query-page query-page--tabs' : 'query-page'}
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"
                     data-workbench-query-execution="true" data-workbench-results-target="query-results">
@@ -4865,6 +4877,7 @@ namespace workbench {
                     <input type="hidden" name="include-query-text" id="include-query-text" value="false" />
                     <input type="hidden" name="query-request-id" id="query-request-id" value="" />
                     <div class="query-form">
+                        ${tabsEnabled ? h`<div id="query-tabs" class="query-tabs"></div>` : ''}
                         <div id="query-language-row" class="query-form__row"
                             ?hidden=${hideQueryLanguageRow || !languageEnabled}>
                             <label class="query-form__label" for="queryLn">Query language</label>
@@ -5029,11 +5042,32 @@ namespace workbench {
             'saved-queries': true, export: true, update: true, add: true, remove: true, clear: true, config: true
         };
 
+        /** A page of one repository: switching repositories restores the page left there (workbench.workspace). */
+        export function isRepositoryScoped(viewId: string): boolean {
+            return repositoryScopedViews[viewId] === true;
+        }
+
         /** Where choosing a repository in the switcher leads: the same view when it is repository-scoped. */
         export function repositorySwitchTarget(basePath: string, activeView: string, repositoryId: string,
                                                fallback?: string): string {
             const view = repositoryScopedViews[activeView] ? activeView : fallback || 'summary';
             return (basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(repositoryId) + '/' + view;
+        }
+
+        /** What this browser keeps for repositories this user no longer sees on the server goes (workbench.workspace). */
+        function forgetMissingRepositories(document: any, repositories: any[]): void {
+            const shared: any = (workbench as any).workspace;
+            const app = document && document.getElementById ? document.getElementById('workbench-app') : null;
+            const identity = app ? app.getAttribute('data-workbench-server-identity') : '';
+            if (!shared || typeof shared.forgetMissingRepositories !== 'function' || !identity) {
+                return;
+            }
+            try {
+                shared.forgetMissingRepositories(shared.serverDigest(identity),
+                    app.getAttribute('data-workbench-server-user') || '', repositories.map((repository: any) => repository.id));
+            } catch (error) {
+                // What the browser keeps for them stays.
+            }
         }
 
         function repositoryOptions(panel: any): any[] {
@@ -5065,6 +5099,8 @@ namespace workbench {
                 link.setAttribute('href', repositorySwitchTarget(basePath, activeView, repository.id,
                     panel.getAttribute('data-workbench-switch-fallback') || 'summary'));
                 link.setAttribute('data-repository-id', repository.id);
+                // The router opens the repository as it was left in this browser (workbench.workspace).
+                link.setAttribute('data-workbench-repository-switch', 'true');
                 link.setAttribute('data-repository-search', (repository.id + ' ' + repository.title).toLowerCase());
                 if (repository.id === currentId) {
                     link.setAttribute('aria-current', 'true');
@@ -5140,6 +5176,7 @@ namespace workbench {
             }).then((repositories: any[]) => {
                 panel.__rdf4jRepositoriesLoading = null;
                 panel.__rdf4jRepositoriesLoaded = true;
+                forgetMissingRepositories(panel.ownerDocument, repositories);
                 const shown = panel.__rdf4jRepositories;
                 panel.__rdf4jRepositories = repositories;
                 // An unchanged list is left alone, so keyboard focus in it stays where it is.

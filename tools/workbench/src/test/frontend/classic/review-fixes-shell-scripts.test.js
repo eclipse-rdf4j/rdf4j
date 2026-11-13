@@ -82,8 +82,8 @@ test('A21: the shared runtime scripts are requested together (their order kept b
     const mount = { getAttribute: (name) => (name === 'data-workbench-base-path' ? '/wb' : ''), setAttribute() {} };
     const boot = workbench.app.bootstrap(mount);
     await new Promise(setImmediate);
-    assert.deepEqual(appended.map((script) => script.src), ['workbenchViews.js', 'workbenchRoutes.js',
-        'workbenchRouter.js', 'queryStream.js', 'graphAdditions.js', 'workbench-theme.js'].map((name) => '/wb/scripts/' + name),
+    assert.deepEqual(appended.map((script) => script.src), ['workbenchWorkspace.js', 'workbenchViews.js',
+        'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js', 'graphAdditions.js', 'workbench-theme.js'].map((name) => '/wb/scripts/' + name),
         'every shared script is requested before the first one has loaded');
     assert.ok(appended.every((script) => script.async === false), 'they still run in this order');
     appended.forEach((script) => { script.setAttribute('data-workbench-loaded', 'true'); script.onload(); });

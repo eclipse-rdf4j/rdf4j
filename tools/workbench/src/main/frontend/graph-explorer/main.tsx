@@ -20,7 +20,7 @@ import "./graph-explorer.css";
  * classic/workbenchRoutes.ts). Only the members the island uses are typed here.
  */
 export type GraphRouteContext = {
-  context: { basePath: string; repositoryId: string | null; serverIdentity?: string | null };
+  context: { basePath: string; repositoryId: string | null; serverIdentity?: string | null; serverUser?: string | null };
   model?: { rows?: unknown[]; vars?: string[] } & Record<string, unknown>;
   url?: URL | string;
 };
@@ -112,6 +112,9 @@ export function mount(outlet: HTMLElement, ctx?: GraphRouteContext): GraphExplor
   // A fresh route model is authoritative. An old shell attribute must not replace missing route identity.
   const serverIdentity = ctx ? ctx.context.serverIdentity
     : document.getElementById("workbench-app")?.getAttribute("data-workbench-server-identity");
+  // The signed-in server user ('' when anonymous): each user keeps their own graph of the repository.
+  const serverUser = (ctx ? ctx.context.serverUser
+    : document.getElementById("workbench-app")?.getAttribute("data-workbench-server-user")) || "";
   const host = outlet.querySelector<HTMLElement>("[data-graph-explorer-mount]") ?? outlet;
   const surface = host.closest<HTMLElement>("#workbench-page-surface, .workbench-page-surface");
   surface?.classList.add(FULL_BLEED_CLASS);
@@ -141,7 +144,7 @@ export function mount(outlet: HTMLElement, ctx?: GraphRouteContext): GraphExplor
   };
   const limits = { maxResultRows: limit("maxResultRows"), maxQueryLength: limit("maxQueryLength") };
   const renderExplorer = (identity: string) => root.render(
-    <GraphExplorerApp key={identity} basePath={basePath} repositoryId={repositoryId!} serverIdentity={identity} limits={limits} />,
+    <GraphExplorerApp key={identity} basePath={basePath} repositoryId={repositoryId!} serverIdentity={identity} serverUser={serverUser} limits={limits} />,
   );
   const renderRoute = () => {
     if (repositoryId && serverIdentity) {

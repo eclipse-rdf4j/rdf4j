@@ -603,9 +603,9 @@ test('deleting a saved query leaves no delete parameter in the address', async (
 });
 
 // C31: leaving the Query page by a full page load starts no IndexedDB work that the unload aborts (Firefox warns about
-// every such transaction); the page flags its stored result instead, and cleanup in the next page deletes it.
+// every such transaction). Its query tab keeps the stored result (query tabs, Part 2): the next Query page shows it.
 for (const holdWorker of [false, true]) {
-test(`a full page load after the Query page aborts no IndexedDB work and reclaims the rows with a ${holdWorker ? 'held' : 'normal'} worker`, async ({ page }) => {
+test(`a full page load after the Query page aborts no IndexedDB work and keeps the tab's rows with a ${holdWorker ? 'held' : 'normal'} worker`, async ({ page }) => {
 	const warnings = [];
 	let releaseWorker;
 	let workerRequestHeld = false;
@@ -657,10 +657,11 @@ test(`a full page load after the Query page aborts no IndexedDB work and reclaim
 	await waitForRoute(page, 'summary');
 	await page.goBack({ waitUntil: 'load' });
 	await waitForRoute(page, 'query');
-	await expect.poll(async () => {
-		const stored = await storedResults(page);
-		return storeIds.filter((id) => stored.databases.includes(id) || id in stored.registry).length;
-	}, { message: 'the rows of the page that was left are reclaimed' }).toBe(0);
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^12,000 rows · complete/,
+		{ timeout: 15000 });
+	const stored = await storedResults(page);
+	expect(storeIds.filter((id) => stored.databases.includes(id) && id in stored.registry),
+		'the query tab keeps its stored rows').toEqual(storeIds);
 	expect(warnings, 'no IndexedDB transaction aborted by a page load').toEqual([]);
 });
 }
@@ -734,10 +735,11 @@ test('a full page load after the Query page waits for a delayed row-store worker
 		await waitForRoute(page, 'summary');
 		await page.goBack({ waitUntil: 'load' });
 		await waitForRoute(page, 'query');
-		await expect.poll(async () => {
-			const stored = await storedResults(page);
-			return storedId in stored.registry || stored.databases.includes(storedId);
-		}, { message: 'the rows of the page that was left are reclaimed' }).toBe(false);
+		await expect(page.locator('#query-results .query-result-status')).toHaveText(/^12,000 rows · complete/,
+			{ timeout: 15000 });
+		const kept = await storedResults(page);
+		expect(storedId in kept.registry && kept.databases.includes(storedId),
+			'the query tab keeps its stored rows').toBe(true);
 		expect(workerResponses.length).toBeGreaterThan(0);
 		expect(workerResponses.every((status) => status === 200), 'all row-store worker responses succeed').toBe(true);
 		expect(workerFailures).toEqual([]);

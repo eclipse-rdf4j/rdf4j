@@ -257,6 +257,7 @@ function loadRouter(options) {
         session, fetched, loadModelCalls, focused, heading,
         status: elements['workbench-route-status'],
         answer(url, loaded) { pending(base + url).resolve(loaded); return settle(); },
+        answerUrl(url, loaded) { pending(url).resolve(loaded); return settle(); },
         fail(url, error) { pending(base + url).reject(error); return settle(); },
         start() { workbench.router.start(session); }
     };
@@ -2420,4 +2421,110 @@ test('Back to an Explore page that had no resource shows it as it was', async ()
     await settle();
 
     assert.equal(harness.loadModelCalls.at(-1).url, base + 'explore');
+});
+
+
+// ---------------------------------------------------------------- repository workspaces (query tabs Part 2, M6)
+
+/** The router with workspaces: a server identity per page, the workspace store, a toast and a choice dialog. */
+function loadRouterWithWorkspaces() {
+    const harness = loadRouter();
+    const localStorage = fakeStorage();
+    harness.window.localStorage = localStorage;
+    const absolutePath = path.join(scripts, 'workbenchWorkspace.js');
+    vm.runInContext(fs.readFileSync(absolutePath, 'utf8'), harness.context, { filename: absolutePath });
+    const { workbench } = harness;
+    workbench.app.viewContext = (appMount, loaded, url) => ({ repositoryId: new URL(url).pathname.split('/')[3],
+        serverIdentity: 'sha256:abc:session-1', serverUser: '', basePath: '/workbench', url });
+    workbench.views.isRepositoryScoped = () => true;
+    workbench.views.pageName = (viewId) => ({ explore: 'Explore', types: 'Types', summary: 'Summary' })[viewId] || '';
+    workbench.views.repositorySwitchTarget = (basePath, view, repository) => basePath + '/repositories/' + repository + '/' + view;
+    const toasts = [];
+    workbench.toast = { show(options) { toasts.push(options); return () => {}; } };
+    const choices = [];
+    let answer = null;
+    workbench.confirmDialog = { choose(options) { choices.push(options); return Promise.resolve(answer); } };
+    return Object.assign(harness, { localStorage, toasts, choices, choose(value) { answer = value; } });
+}
+
+const repo = (id, rest) => 'https://example.test/workbench/repositories/' + id + '/' + rest;
+const switchLink = (id, view) => link(repo(id, view), { 'data-workbench-repository-switch': 'true' });
+
+test('switching to a repository opens the page it was left on, says so, and offers Undo', async () => {
+    const harness = loadRouterWithWorkspaces();
+    harness.start();
+    harness.router.navigate(repo('repo-1', 'explore?resource=%3Curn%3Ax%3E'), { history: 'push' });
+    await harness.answerUrl(repo('repo-1', 'explore?resource=%3Curn%3Ax%3E'), harness.model('explore'));
+    harness.window.scrollY = 420;
+
+    harness.document.dispatch('click', click(switchLink('repo-2', 'explore')));
+    await harness.answerUrl(repo('repo-2', 'explore'), harness.model('explore'));
+    assert.equal(harness.toasts.length, 0, 'a repository not left before opens as usual, without a notice');
+    const kept = JSON.parse(harness.localStorage.getItem('rdf4j.workbench.workspace.v1:'
+        + JSON.stringify(['sha256:abc', '', 'repo-1'])));
+    assert.equal(kept.lastView, 'explore');
+    assert.equal(kept.pages.explore.url, '/workbench/repositories/repo-1/explore?resource=%3Curn%3Ax%3E');
+    assert.equal(kept.pages.explore.scrollY, 420);
+
+    harness.router.navigate(repo('repo-2', 'types'), { history: 'push' });
+    await harness.answerUrl(repo('repo-2', 'types'), harness.model('types'));
+    harness.document.dispatch('click', click(switchLink('repo-1', 'types')));
+    await settle();
+    assert.equal(harness.loadModelCalls[harness.loadModelCalls.length - 1].url,
+        repo('repo-1', 'explore?resource=%3Curn%3Ax%3E'), 'the switch opens the page repo-1 was left on');
+    await harness.answerUrl(repo('repo-1', 'explore?resource=%3Curn%3Ax%3E'), harness.model('explore'));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(harness.toasts.length, 1);
+    assert.equal(harness.toasts[0].message, 'Restored repo-1 as you left it: Explore page.');
+    assert.equal(harness.toasts[0].actionLabel, 'Undo');
+    assert.ok(harness.window.scrolledTo.includes(420), 'scrolled back to where it was left');
+
+    harness.choose('empty');
+    harness.toasts[0].onAction();
+    await settle();
+    assert.equal(harness.choices.length, 1);
+    assert.deepEqual(Array.from(harness.choices[0].choices, (choice) => choice.value), ['empty'],
+        'without queries in repo-2 the only choice is an empty tab');
+    await settle();
+    assert.equal(harness.loadModelCalls[harness.loadModelCalls.length - 1].url, repo('repo-1', 'types'),
+        'Undo lands on the kind of page the switch came from');
+    await harness.answerUrl(repo('repo-1', 'types'), harness.model('types'));
+    const tabs = JSON.parse(harness.localStorage.getItem('rdf4j.workbench.query.tabs.v2:'
+        + JSON.stringify(['sha256:abc', '', 'repo-1'])));
+    assert.equal(tabs.tabs.length, 1);
+    assert.equal(tabs.tabs[0].query, '');
+    assert.equal(harness.toasts.length, 1, 'the page Undo opens is not announced as restored');
+});
+
+test('Undo can copy the queries of the repository the switch came from, without their results', async () => {
+    const harness = loadRouterWithWorkspaces();
+    const tabsKey = (id) => 'rdf4j.workbench.query.tabs.v2:' + JSON.stringify(['sha256:abc', '', id]);
+    harness.localStorage.setItem(tabsKey('repo-1'), JSON.stringify({ version: 1, activeId: 'b', tabs: [
+        { id: 'a', title: null, saved: false, query: 'SELECT 1 {}', queryLn: 'SPARQL', dirty: false,
+            lastRun: { status: 'done', rowCount: 1, total: 1, elapsedMs: null, at: 1,
+                saved: { storeId: 'rows-1', rows: 1, savedAt: 1, request: '', url: '', view: 'tuple' } } },
+        { id: 'b', title: 'Types', saved: true, query: 'SELECT ?t {}', queryLn: 'SPARQL', dirty: true, lastRun: null },
+        { id: 'c', title: null, saved: false, query: '  ', queryLn: 'SPARQL', dirty: false, lastRun: null }] }));
+    harness.localStorage.setItem('rdf4j.workbench.workspace.v1:' + JSON.stringify(['sha256:abc', '', 'repo-2']),
+        JSON.stringify({ lastView: 'summary', pages: { summary: { url: '/workbench/repositories/repo-2/summary',
+            scrollY: 0, form: [], at: 1 } }, at: 1 }));
+    harness.start();
+    harness.document.dispatch('click', click(switchLink('repo-2', 'summary')));
+    await harness.answerUrl(repo('repo-2', 'summary'), harness.model('summary'));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(harness.toasts.length, 1);
+
+    harness.choose('copy');
+    harness.toasts[0].onAction();
+    await settle();
+    assert.deepEqual(Array.from(harness.choices[0].choices, (choice) => choice.value), ['copy', 'empty']);
+    assert.equal(harness.choices[0].choices[0].label, 'Copy the 2 queries from repo-1');
+    await settle();
+    await harness.answerUrl(repo('repo-2', 'summary'), harness.model('summary'));
+    const copied = JSON.parse(harness.localStorage.getItem(tabsKey('repo-2')));
+    assert.deepEqual(Array.from(copied.tabs, (tab) => tab.query), ['SELECT 1 {}', 'SELECT ?t {}']);
+    assert.ok(copied.tabs.every((tab) => tab.lastRun === null && tab.dirty === false), 'their text only');
+    assert.equal(copied.activeId, 'b');
+    assert.equal(JSON.parse(harness.localStorage.getItem(tabsKey('repo-1'))).tabs.length, 3,
+        'the queries stay in repo-1 too');
 });

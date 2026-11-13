@@ -265,3 +265,46 @@ test("the graphs stored under an earlier scope of the same Workbench, server and
     delete globalThis.localStorage;
   }
 });
+
+test("a user's graph replaces the session-scoped graphs of the same repository, and other users' graphs are kept", async () => {
+  globalThis.localStorage = memoryStorage();
+  try {
+    const server = `sha256:${"a".repeat(64)}`;
+    const session = (id, repository = "repo") => JSON.stringify(["repository-v2", "/rdf4j-workbench", `${server}:${id}`, repository]);
+    const user = (name, repository = "repo") => JSON.stringify(["repository-v3", "/rdf4j-workbench", server, name, repository]);
+    const raw = prepareWorkspaceSave(workspace([friends[0]])).raw;
+    const keys = [user("ada"), user("bob"), user(""), session("one"), session("two"), session("one", "other"), user("ada", "other")];
+    for (const key of keys) await saveWorkspaceText(raw, key);
+
+    await removeEarlierScopes(user("ada"));
+
+    assert.equal(await loadWorkspaceText(session("one")), null, "a session-scoped graph can no longer be opened");
+    assert.equal(await loadWorkspaceText(session("two")), null);
+    for (const kept of [user("ada"), user("bob"), user(""), session("one", "other"), user("ada", "other")]) {
+      assert.equal(await loadWorkspaceText(kept), raw, `${kept} is kept`);
+    }
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
+
+test("the graph this browser session kept before graphs were kept per user opens under the user's scope", async () => {
+  globalThis.localStorage = memoryStorage();
+  try {
+    const server = `sha256:${"a".repeat(64)}`;
+    const legacy = JSON.stringify(["repository-v2", "/rdf4j-workbench", `${server}:session`, "repo"]);
+    const scope = JSON.stringify(["repository-v3", "/rdf4j-workbench", server, "", "repo"]);
+    const raw = prepareWorkspaceSave(workspace([friends[0]])).raw;
+    await saveWorkspaceText(raw, legacy);
+
+    const opened = await openStoredWorkspace(scope, legacy);
+    assert.equal(opened.saved.graph.nodes.length, 2);
+    assert.equal(await loadWorkspaceText(scope), raw, "it is stored under the user's scope");
+
+    const other = prepareWorkspaceSave(workspace(friends)).raw;
+    await saveWorkspaceText(other, scope);
+    assert.equal((await openStoredWorkspace(scope, legacy)).saved.graph.nodes.length, 3, "the user's own graph wins");
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
