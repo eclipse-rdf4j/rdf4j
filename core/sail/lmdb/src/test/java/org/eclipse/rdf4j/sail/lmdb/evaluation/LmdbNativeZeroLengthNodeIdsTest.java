@@ -376,16 +376,16 @@ public class LmdbNativeZeroLengthNodeIdsTest {
 		List<BindingSet> baseline = rows(PRESENT_COUNT, false, false, true);
 		long domainsBefore = ZeroLengthPathPlan.NODE_DOMAIN_OPENS.get();
 		long scansBefore = ZeroLengthPathPlan.CANONICAL_SCAN_OPENS.get();
-		assertThat(rows(PRESENT_COUNT, true, true, true, "packedFtreeAggregate"))
+		assertThat(rows(PRESENT_COUNT, true, true, true, LmdbNativePackedFtree.AGGREGATE_SERIAL))
 				.containsExactlyInAnyOrderElementsOf(baseline);
 		assertThat(countValue(baseline)).isEqualTo(11L);
 		assertThat(ZeroLengthPathPlan.NODE_DOMAIN_OPENS.get()).isEqualTo(domainsBefore);
 		assertThat(ZeroLengthPathPlan.CANONICAL_SCAN_OPENS.get()).isGreaterThan(scansBefore);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(PRESENT_COUNT);
-			prepared.setForcedLmdbExecutionStrategy("packedFtreeAggregate");
+			prepared.setForcedLmdbExecutionStrategy(LmdbNativePackedFtree.AGGREGATE_SERIAL);
 			assertThat(hasActualStrategy(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(),
-					"packedFtreeAggregate")).as("actual packed aggregate execution").isTrue();
+					LmdbNativePackedFtree.AGGREGATE_SERIAL)).as("actual packed aggregate execution").isTrue();
 		}
 	}
 

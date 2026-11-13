@@ -209,6 +209,25 @@ record LmdbNativeWork(double low, double high) {
 			MultiJoinPlan.OrderedPlan ordered = multiJoin.derivedPlan(boundMask);
 			return rowsOnlyChain(ordered.order, ordered.order.length, row, boundMask);
 		}
+		if (plan instanceof MultiValuePatternPlan multi && multi.alternatives.length > 0) {
+			// each alternative is one pattern with its constant in place: their rows add up under the bound mask
+			// (the plan's own estimate reports its unbound static size whatever is bound: medical q4 and q7 quoted
+			// two billion rows for every strategy, 2026-11-03); a bound constrained slot selects one of them
+			double sum = 0D;
+			for (PatternPlan alternative : multi.alternatives) {
+				double rows = rowsOut(alternative, row, boundMask);
+				if (Double.isNaN(rows)) {
+					sum = Double.NaN;
+					break;
+				}
+				sum += rows;
+			}
+			if (!Double.isNaN(sum)) {
+				return multi.constrainedSlot >= 0 && (boundMask & (1L << multi.constrainedSlot)) != 0L
+						? sum / multi.alternatives.length
+						: sum;
+			}
+		}
 		// The dedicated channel first: it uses NaN for unknown, so it can distinguish "no idea" from "very many".
 		double declared = plan.estimateRows(row, boundMask);
 		if (Double.isFinite(declared) && declared >= 0D) {
@@ -534,6 +553,12 @@ record LmdbNativeWork(double low, double high) {
 		if (quote.equals(ZERO)) {
 			return ZERO;
 		}
+		// The planning quote sees the index set: a probe that no index covers is priced as the sweep it will run,
+		// and the adjacency path is priced when it can serve the shape.
+		LmdbNativeAccessFacts facts = row == null ? null : LmdbNativeAccessFacts.forPattern(pattern, row.source);
+		if (facts != null) {
+			return exact(facts.quote(pattern.physicalMask(boundMask)).expected());
+		}
 		double rows = planningRows(pattern, row, boundMask);
 		if (Double.isNaN(rows)) {
 			// The seek is paid whatever the scan turns out to be, so the floor is still measured.
@@ -600,5 +625,142 @@ record LmdbNativeWork(double low, double high) {
 			mask |= child.producedMask();
 		}
 		return work;
+	}
+
+	/**
+	 * Initial scheduling cost used to select a parallel group, in native work-row units. The default biases admission
+	 * toward parallel execution; it is not a measured startup latency. Recalibrate by running
+	 * {@code ParallelismBenchmark.serialHashBatch} and {@code parallelOverlap} at several input sizes and fitting the
+	 * parallel intercept at the serial/parallel crossover.
+	 */
+	static final double PARALLEL_STARTUP_COST = 12_500D;
+
+	static final String PARALLEL_STARTUP_COST_PROPERTY = "rdf4j.lmdb.parallel.startupWork";
+
+	static double batchCost(double leftRows, double buildRows) {
+		if (!(leftRows >= 0D) || !(buildRows >= 0D)) {
+			return Double.POSITIVE_INFINITY;
+		}
+		double cost = leftRows + buildRows;
+		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
+	}
+
+	static double parallelCost(double totalWork, int workers) {
+		return parallelCost(totalWork, workers, parallelStartupCost());
+	}
+
+	static double parallelCost(double totalWork, int workers, double startupCost) {
+		if (!(totalWork >= 0D) || workers <= 0) {
+			return Double.POSITIVE_INFINITY;
+		}
+		double cost = totalWork / workers + startupCost;
+		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
+	}
+
+	/**
+	 * Scheduling intercept used by parallel proposals, configurable for machine calibration and deterministic tests.
+	 */
+	static double parallelStartupCost() {
+		String configured = System.getProperty(PARALLEL_STARTUP_COST_PROPERTY);
+		if (configured == null) {
+			return PARALLEL_STARTUP_COST;
+		}
+		try {
+			double parsed = Double.parseDouble(configured);
+			return Double.isFinite(parsed) && parsed >= 0D ? parsed : PARALLEL_STARTUP_COST;
+		} catch (NumberFormatException ignored) {
+			return PARALLEL_STARTUP_COST;
+		}
+	}
+
+	/** Serial factorization scans each physical leg once across its prefix keys instead of enumerating the product. */
+	static double factorizedCost(MultiJoinPlan.OrderedPlan derived, int prefixLength, RowState row) {
+		return factorizedCost(derived.order, prefixLength, row.boundMask(), row.source, row, Double.NaN);
+	}
+
+	/**
+	 * Keys-only-root variant: depth 0 enumerates the root's distinct keys instead of one row per edge, so its row count
+	 * is capped by {@code depth0RowsOverride} (NaN = no cap). Everything downstream prices identically.
+	 */
+	static double factorizedCost(MultiJoinPlan.OrderedPlan derived, int prefixLength, RowState row,
+			double depth0RowsOverride) {
+		return factorizedCost(derived.order, prefixLength, row.boundMask(), row.source, row, depth0RowsOverride);
+	}
+
+	/**
+	 * Cost core, usable without a {@link RowState} when every child is a {@link PatternPlan}. A null {@code row} makes
+	 * any non-pattern child unpriceable rather than guessing at its cardinality.
+	 */
+	static double factorizedCost(SlotPlan[] order, int prefixLength, long boundMask,
+			NativeLmdbQuerySource source) {
+		return factorizedCost(order, prefixLength, boundMask, source, null, Double.NaN);
+	}
+
+	private static double factorizedCost(SlotPlan[] order, int prefixLength, long boundMask,
+			NativeLmdbQuerySource source, RowState row, double depth0RowsOverride) {
+		if (prefixLength < 0 || prefixLength > order.length) {
+			return Double.POSITIVE_INFINITY;
+		}
+		// The prefix is a nested-loop chain, so it carries the same recurrence as
+		// LmdbNativeOrderPlanner.cumulativePatternWork. It is repeated here rather than delegated because that method
+		// discards the row count the branches need as their probe multiplier, and refuses any non-pattern child
+		// outright where this cost can still price one through the row state.
+		double prefixRows = 1D;
+		double work = 0D;
+		long entryMask = boundMask;
+		for (int i = 0; i < prefixLength; i++) {
+			double rowsPerProbe = childEstimate(order[i], entryMask, source, row);
+			if (!(rowsPerProbe >= 0D) || !Double.isFinite(rowsPerProbe)) {
+				return Double.POSITIVE_INFINITY;
+			}
+			if (i == 0 && depth0RowsOverride >= 0D && Double.isFinite(depth0RowsOverride)) {
+				rowsPerProbe = Math.min(rowsPerProbe, depth0RowsOverride);
+			}
+			work += prefixRows * probeWork(order[i], entryMask, source, row, rowsPerProbe);
+			prefixRows *= rowsPerProbe;
+			if (!Double.isFinite(work) || !Double.isFinite(prefixRows)) {
+				return Double.POSITIVE_INFINITY;
+			}
+			entryMask |= order[i].producedMask();
+		}
+		// Every tail branch probes the same prefix binding, so the branches are summed with one another and the whole
+		// sum is paid once per prefix row. Summing rather than multiplying is precisely what factorization buys: the
+		// equivalent nested-loop plan would enumerate the product of the branches instead.
+		double branchWork = 0D;
+		for (int i = prefixLength; i < order.length; i++) {
+			double rowsPerProbe = childEstimate(order[i], entryMask, source, row);
+			if (!(rowsPerProbe >= 0D) || !Double.isFinite(rowsPerProbe)) {
+				return Double.POSITIVE_INFINITY;
+			}
+			branchWork += probeWork(order[i], entryMask, source, row, rowsPerProbe);
+			if (!Double.isFinite(branchWork)) {
+				return Double.POSITIVE_INFINITY;
+			}
+		}
+		double cost = work + prefixRows * branchWork;
+		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
+	}
+
+	/**
+	 * Work of one probe of {@code child} under {@code entryMask}: the access facts' expected price for a statement
+	 * pattern (it sees the index set and the adjacency path), otherwise one seek plus the rows the probe yields. This
+	 * keeps the factorized quote in the same units as the planning quotes of the strategies it competes with.
+	 */
+	private static double probeWork(SlotPlan child, long entryMask, NativeLmdbQuerySource source, RowState row,
+			double rowsPerProbe) {
+		if (child instanceof PatternPlan pattern) {
+			LmdbNativeAccessFacts facts = LmdbNativeAccessFacts.forPattern(pattern, source);
+			if (facts != null) {
+				return facts.quote(pattern.physicalMask(entryMask)).expected();
+			}
+		}
+		return LmdbNativeWork.SEEK + rowsPerProbe;
+	}
+
+	private static double childEstimate(SlotPlan child, long entryMask, NativeLmdbQuerySource source, RowState row) {
+		if (child instanceof PatternPlan) {
+			return ((PatternPlan) child).estimateForBoundMask(entryMask, source);
+		}
+		return row != null ? child.estimate(row) : Double.POSITIVE_INFINITY;
 	}
 }

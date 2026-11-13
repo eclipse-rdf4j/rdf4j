@@ -28,18 +28,22 @@ import org.w3c.dom.NodeList;
 
 /**
  * The Workbench front end (the classic TypeScript pages and the React graph explorer) is an npm project that Maven
- * builds on its own through the frontend-maven-plugin, so a plain {@code mvn package} produces a complete WAR without a
- * locally installed Node. The compiled output lives under {@code target/frontend} and is added to the WAR as a web
- * resource.
+ * builds through the exec-maven-plugin with the node and npm on the PATH, so a plain {@code mvn package} produces a
+ * complete WAR without downloading a Node runtime. The compiled output lives under {@code target/frontend} and is added
+ * to the WAR as a web resource.
  */
 class WorkbenchFrontendBuildTest {
 
-	private static final String FRONTEND_PLUGIN = "frontend-maven-plugin";
+	private static final String FRONTEND_PLUGIN = "exec-maven-plugin";
 
 	@Test
-	void mavenRunsTheNpmBuildThroughTheFrontendPlugin() throws Exception {
+	void mavenRunsTheNpmBuildWithTheInstalledNode() throws Exception {
 		Element plugin = frontendPlugin();
-		assertThat(plugin).as("frontend-maven-plugin declared in tools/workbench/pom.xml").isNotNull();
+		assertThat(plugin).as("exec-maven-plugin declared in tools/workbench/pom.xml").isNotNull();
+		assertThat(plugin.getElementsByTagName("executable").item(0).getTextContent().trim()).isEqualTo("npm");
+		assertThat(plugin.getElementsByTagName("npm_config_engine_strict").item(0).getTextContent().trim())
+				.as("an installed node that package.json engines rejects fails the build")
+				.isEqualTo("true");
 
 		List<String> goals = new ArrayList<>();
 		List<String> npmArguments = new ArrayList<>();
@@ -47,13 +51,13 @@ class WorkbenchFrontendBuildTest {
 		for (int index = 0; index < executions.getLength(); index++) {
 			Element execution = (Element) executions.item(index);
 			goals.add(execution.getElementsByTagName("goal").item(0).getTextContent().trim());
-			NodeList arguments = execution.getElementsByTagName("arguments");
+			NodeList arguments = execution.getElementsByTagName("commandlineArgs");
 			if (arguments.getLength() > 0) {
 				npmArguments.add(arguments.item(0).getTextContent().trim());
 			}
 		}
 
-		assertThat(goals).contains("install-node-and-npm", "npm");
+		assertThat(goals).containsOnly("exec");
 		assertThat(npmArguments).anyMatch(arguments -> arguments.startsWith("ci"));
 		assertThat(npmArguments).anyMatch(arguments -> arguments.equals("run build"));
 	}
@@ -109,7 +113,7 @@ class WorkbenchFrontendBuildTest {
 		for (int index = 0; index < executions.getLength(); index++) {
 			Element execution = (Element) executions.item(index);
 			if (executionId.equals(childText(execution, "id"))) {
-				return execution.getElementsByTagName("arguments").item(0).getTextContent().trim();
+				return execution.getElementsByTagName("commandlineArgs").item(0).getTextContent().trim();
 			}
 		}
 		throw new AssertionError("no execution " + executionId);

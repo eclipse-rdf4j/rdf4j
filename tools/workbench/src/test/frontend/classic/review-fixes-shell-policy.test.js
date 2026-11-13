@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
+const { createExploreModel } = require('./explore-section-fixtures.js');
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
@@ -20,7 +21,8 @@ function loadViews() {
 }
 
 function runtime() {
-    return { nothing: '', html(strings, ...values) { return { strings: Array.from(strings), values }; }, render() {} };
+    return { nothing: '', html(strings, ...values) { return { strings: Array.from(strings), values }; },
+        render(template, target) { target.template = template; } };
 }
 
 function flat(template) {
@@ -43,7 +45,14 @@ function context(hidden, extra = {}) {
 }
 
 function page(wb, model, ctx) {
-    return flat(wb.views.pageTemplate(Object.assign({ vars: [], rows: [], rowCount: 0, metadata: {} }, model), ctx, runtime()));
+    const pageModel = Object.assign({ vars: [], rows: [], rowCount: 0, metadata: {} }, model);
+    if (pageModel.viewId !== 'explore') {
+        return flat(wb.views.pageTemplate(pageModel, ctx, runtime()));
+    }
+    const host = {};
+    wb.views.renderExploreSections({ querySelector: selector => selector === '#explore-section-output' ? host : null },
+        pageModel, ctx, runtime());
+    return flat(host.template);
 }
 
 const literal = (value) => ({ kind: 'literal', value });
@@ -108,8 +117,7 @@ test('A25: Graphs offers Clear graph… only when the Clear page is available', 
 
 test('A25: Explore offers "Query this resource" only when the Query page is available', () => {
     const wb = loadViews();
-    const explore = { viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'], rows: [],
-        metadata: { 'explore-resource': '<urn:s>' } };
+    const explore = createExploreModel({ metadata: { resource: '<urn:s>', 'explore-resource': '<urn:s>' } });
     assert.doesNotMatch(page(wb, explore, context(['query'])), /Query this resource/);
     assert.match(page(wb, explore, context([])), /Query this resource/);
 });

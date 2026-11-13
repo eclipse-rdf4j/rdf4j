@@ -1777,6 +1777,17 @@ class LmdbSnapshotValueLifetimeTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void pairedSnapshotAdmissionReleasesBothReaderSlotsWhileWriterOwnsAssociationGate(@TempDir File dataDir)
 			throws Exception {
+		runPairedSnapshotAdmissionWhileWriterOwnsAssociationGate(dataDir, false);
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void pairedSnapshotAdmissionWithAmbientCleanupReader(@TempDir File dataDir) throws Exception {
+		runPairedSnapshotAdmissionWhileWriterOwnsAssociationGate(dataDir, true);
+	}
+
+	private void runPairedSnapshotAdmissionWhileWriterOwnsAssociationGate(File dataDir, boolean holdCleanupReader)
+			throws Exception {
 		AdmissionObservationStore store = new AdmissionObservationStore(dataDir);
 		List<SailDataset> heldSnapshots = new ArrayList<>();
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -1803,6 +1814,15 @@ class LmdbSnapshotValueLifetimeTest {
 			LmdbGcTestMaintenance.awaitPostReady(store);
 			assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
 					"requested statement and term layouts must finish before paired reader slots are measured");
+			if (holdCleanupReader) {
+				store.holdNextCleanupReader();
+				assertEquals(TxnManager.POOL_SIZE - 2,
+						store.valueStore.getTxnManager().availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+						"the real cleanup worker must hold one ordinary ValueStore slot during fixture preparation");
+			}
+			// Exact paired-reader accounting needs exclusive ownership of ordinary slots; post-ready and index
+			// completion do not wait for the independent asynchronous cleanup worker.
+			store.getBackingStore().stopAsyncValueCleanupForShutdown();
 
 			TxnManager tripleManager = store.tripleStore.getTxnManager();
 			TxnManager valueManager = store.valueStore.getTxnManager();
@@ -1898,6 +1918,7 @@ class LmdbSnapshotValueLifetimeTest {
 			throw failure;
 		} finally {
 			store.releaseNativeCommit.countDown();
+			store.releaseCleanupReader.countDown();
 			Exception cleanupFailure = null;
 			if (writerCommit != null) {
 				try {
@@ -2771,6 +2792,9 @@ class LmdbSnapshotValueLifetimeTest {
 		private final CountDownLatch postReadyValueAdmissionReached = new CountDownLatch(1);
 		private final CountDownLatch releasePostReadyValueAdmission = new CountDownLatch(1);
 		private final AtomicReference<AdmissionObservation> postReadyValueAdmission = new AtomicReference<>();
+		private final AtomicBoolean holdNextCleanupReader = new AtomicBoolean();
+		private final CountDownLatch cleanupReaderHeld = new CountDownLatch(1);
+		private final CountDownLatch releaseCleanupReader = new CountDownLatch(1);
 		private final Map<Txn, AdmissionObservation> admissions = Collections
 				.synchronizedMap(new IdentityHashMap<>());
 		private final boolean deferPostReadyStart;
@@ -2804,6 +2828,13 @@ class LmdbSnapshotValueLifetimeTest {
 			}
 		}
 
+		void holdNextCleanupReader() throws InterruptedException {
+			holdNextCleanupReader.set(true);
+			getBackingStore().asyncValueCleanupCoordinator().signal();
+			assertTrue(cleanupReaderHeld.await(10, TimeUnit.SECONDS),
+					"the real cleanup worker must acquire its reader before fixture preparation");
+		}
+
 		@Override
 		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
@@ -2827,6 +2858,12 @@ class LmdbSnapshotValueLifetimeTest {
 						throw new IllegalStateException("Post-ready maintenance start was captured more than once");
 					}
 				}
+
+				@Override
+				void stopAsyncValueCleanupForShutdown() {
+					releaseCleanupReader.countDown();
+					super.stopAsyncValueCleanupForShutdown();
+				}
 			};
 			valueStore.getTxnManager().setAdmissionObserverForTest(txn -> recordAdmission("ValueStore", txn));
 			tripleStore.getTxnManager().setAdmissionObserverForTest(txn -> recordAdmission("TripleStore", txn));
@@ -2837,6 +2874,18 @@ class LmdbSnapshotValueLifetimeTest {
 			AdmissionObservation observation = new AdmissionObservation(txn, manager, Thread.currentThread(),
 					Thread.currentThread().getStackTrace());
 			admissions.put(txn, observation);
+			if (manager.equals("ValueStore") && Thread.currentThread().getName().equals("LmdbValueCleanup")
+					&& holdNextCleanupReader.compareAndSet(true, false)) {
+				cleanupReaderHeld.countDown();
+				try {
+					if (!releaseCleanupReader.await(20, TimeUnit.SECONDS)) {
+						throw new AssertionError("The test must release the held cleanup reader");
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("The held cleanup reader was interrupted", interrupted);
+				}
+			}
 			if (deferPostReadyStart && manager.equals("ValueStore")
 					&& hasStackFrame(observation.stack(), ValueStore.class.getName(),
 							"estimatePersistedUnusedBatchWriteBytes")

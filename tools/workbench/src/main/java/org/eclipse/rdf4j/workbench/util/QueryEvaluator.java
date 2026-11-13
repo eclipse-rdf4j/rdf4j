@@ -292,6 +292,7 @@ public final class QueryEvaluator {
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final QueryResponseHeartbeat responseHeartbeat, int defaultDownloadLimit)
 			throws BadRequestException, RDF4JException {
+		builder.repositoryOrigins(con);
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
 		long queryStartedNanos = System.nanoTime();
 		Query query = prepareQuery(con, queryText, req);
@@ -301,7 +302,6 @@ public final class QueryEvaluator {
 			return;
 		}
 		if (WorkbenchPageProtocol.requestsPageData(req)) {
-			builder.repositoryOrigins(con);
 			evaluateBrowserBatch(builder, req, con, query, responseQueryText, responseHeartbeat, queryStartedNanos);
 			return;
 		}

@@ -183,7 +183,8 @@ public class SnapshotSailStore implements SailStore {
 	/**
 	 * Acquires one auto-commit read dataset without adding observations to an owned root, at any default isolation
 	 * level. Backing datasets retain their own semantics. A decorated or replaced getter result keeps its ordinary fork
-	 * and dataset overrides, including any observation tracking; it is never unwrapped or bypassed.
+	 * and dataset overrides through its read-acquisition contract, including any observation tracking; it is never
+	 * unwrapped or bypassed.
 	 */
 	SailDataset datasetForRead(boolean inferred, IsolationLevel level) {
 		SailSource source = inferred ? getInferredSailSource() : getExplicitSailSource();
@@ -193,7 +194,7 @@ public class SnapshotSailStore implements SailStore {
 	SailDataset datasetForRead(SailSource source, boolean inferred, IsolationLevel level) {
 		SailSourceBranch root = inferred ? inferredAutoFlush : explicitAutoFlush;
 		return source == root ? root.datasetWithoutObservations(level)
-				: SourceClosingSailDataset.open(source.fork(), level);
+				: source.datasetForRead(level);
 	}
 
 }

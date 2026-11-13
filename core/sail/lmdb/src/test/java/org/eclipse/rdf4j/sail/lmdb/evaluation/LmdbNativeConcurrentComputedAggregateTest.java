@@ -122,7 +122,6 @@ class LmdbNativeConcurrentComputedAggregateTest {
 		set(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
 
 		LmdbNativeJaninoCodegen.resetForTests();
-		KernelExecutionTestAccess.resetCostCalibration();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)

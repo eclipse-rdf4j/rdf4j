@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -238,7 +237,9 @@ final class LmdbNativeParallelPipelines {
 		}
 		PatternPlan root = (PatternPlan) derived.order[0];
 		double totalWork = plan.estimate(consumerRow);
-		if (!(totalWork >= minimumWorkEstimate())) {
+		if (!(totalWork >= minimumWorkEstimate()) && !LmdbNativeForceableStrategies.forces(
+				LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES)) {
 			return reject(step, "below-threshold");
 		}
 		if (!parallelWorkerForkable(plan.filters)) {
@@ -258,8 +259,8 @@ final class LmdbNativeParallelPipelines {
 		}
 		int workers = reservation.grantedWorkers();
 		int sourceCount = workers + (morselMode ? 1 : 0);
-		double startupCost = LmdbNativeStrategyProposal.parallelStartupCost();
-		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, workers, startupCost);
+		double startupCost = LmdbNativeWork.parallelStartupCost();
+		double estCost = LmdbNativeWork.parallelCost(totalWork, workers, startupCost);
 		ParallelCandidate candidate = new ParallelCandidate(step, consumerRow, plan, root, partitions, reservation,
 				workers, sourceCount);
 		// Worker threads, snapshot sources and read transactions are all created before the first row can be
@@ -268,9 +269,29 @@ final class LmdbNativeParallelPipelines {
 		// estRows is a ROWS quantity (gap-analysis C1): prorating a LIMIT slice against work units made the
 		// fraction sliceRows/totalWork vanishingly small and systematically underpriced parallel pipelines under
 		// LIMIT — the exact inversion the startup split above exists to prevent.
+		long boundMask = consumerRow.boundMask();
+		double outputRows = LmdbNativeWork.rowsOut(plan, consumerRow, boundMask);
+		// The opener admits this exact quoted group, or declines if capacity changed. Pricing the configured
+		// maximum instead would claim a speed-up from workers this candidate never owns under contention.
+		LmdbNativeCostVector streaming = LmdbNativePlanExecutionProfile
+				.profile(plan, consumerRow, boundMask, LmdbNativePlanExecutionProfile.Mode.BATCH)
+				.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(
+						LmdbNativeStaticPrior.ParallelShape.rows(plan, consumerRow, boundMask), workers))
+				// Consumer allocations are serial, and sampled output is neither their floor nor their ceiling.
+				.plus(LmdbNativeCostVectors.boundedRows(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION,
+						outputRows, LmdbNativeCostVectors.rowBounds(plan, consumerRow, boundMask)));
+		if (step.distinct && step.orderSlots.length == 0) {
+			// This ordinary producer leaves root ID-key deduplication to the serial consumer after worker replay.
+			streaming = streaming.plus(LmdbNativeCostVectors.boundedRows(
+					LmdbNativeCostVector.Feature.DISTINCT_UPDATE, outputRows,
+					LmdbNativeCostVectors.rowBounds(plan, consumerRow, boundMask)));
+		}
+		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D)
+				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
-				LmdbNativeWork.exact(startupCost), LmdbNativeWork.rowsOut(plan, consumerRow, consumerRow.boundMask()),
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close);
+				LmdbNativeWork.exact(startupCost), outputRows,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close)
+						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
 	}
 
 	private static RowCursor open(ParallelCandidate candidate) throws IOException {
@@ -728,6 +749,8 @@ final class LmdbNativeParallelPipelines {
 		boolean producerScanComplete;
 		boolean producerClosed;
 		boolean metricsCommitted;
+		/** A worker was submitted, or a caller took over a worker's accounting through runTask or taskFinished. */
+		volatile boolean started;
 		boolean closed;
 		boolean exhausted;
 
@@ -781,6 +804,7 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void start() {
+			started = true;
 			int submitted = 0;
 			try {
 				for (int i = 0; i < workerPlans.length; i++) {
@@ -799,19 +823,7 @@ final class LmdbNativeParallelPipelines {
 			} catch (RuntimeException | Error problem) {
 				recordStartupFailure(problem);
 				cancelled.set(true);
-				for (int i = submitted; i < workerPlans.length; i++) {
-					Throwable filterFailure = closePlanFilters(workerPlans[i], null);
-					if (filterFailure != null) {
-						recordCleanupFailure(filterFailure);
-					}
-					try {
-						sources[i].close();
-					} catch (Throwable closeFailure) {
-						recordCleanupFailure(closeFailure);
-					} finally {
-						taskFinished();
-					}
-				}
+				releaseUnsubmittedWorkers(submitted);
 				closeProducer();
 				awaitTasks();
 				Throwable retained = retainRecordedCleanupFailures(problem);
@@ -825,7 +837,25 @@ final class LmdbNativeParallelPipelines {
 			}
 		}
 
+		/** A worker that was never submitted cannot run its own cleanup or count its task down, so this does both. */
+		private void releaseUnsubmittedWorkers(int firstUnsubmitted) {
+			for (int i = firstUnsubmitted; i < workerPlans.length; i++) {
+				Throwable filterFailure = closePlanFilters(workerPlans[i], null);
+				if (filterFailure != null) {
+					recordCleanupFailure(filterFailure);
+				}
+				try {
+					sources[i].close();
+				} catch (Throwable closeFailure) {
+					recordCleanupFailure(closeFailure);
+				} finally {
+					taskFinished();
+				}
+			}
+		}
+
 		void runTask(IoTask task, MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource) {
+			started = true;
 			runTask(task, ownedPlan, ownedSource, NativeExecutionContext.captureWorkerContext());
 		}
 
@@ -971,6 +1001,7 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void taskFinished() {
+			started = true;
 			tasks.countDown();
 		}
 
@@ -1353,9 +1384,15 @@ final class LmdbNativeParallelPipelines {
 			}
 			closed = true;
 			cancelled.set(true);
+			// Only a cursor no worker ever ran has tasks nobody will count down. A caller that drives runTask or
+			// taskFinished itself owns that worker's cleanup, so releasing it here would close its source twice.
+			boolean noWorkerRan = !started;
+			if (noWorkerRan) {
+				releaseUnsubmittedWorkers(0);
+			}
 			closeProducer();
 			awaitTasks();
-			if (!exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
+			if (!noWorkerRan && !exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
 				CANCELLED_RUNS.incrementAndGet();
 			}
 			reservation.close();

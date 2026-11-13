@@ -56,7 +56,6 @@ class LmdbAdaptiveFilterPlacementThemeIT {
 		// relocation telemetry specifications and normally outrank this tier when they can lower the whole root.
 		System.setProperty(JANINO_ENABLED_PROPERTY, Boolean.FALSE.toString());
 		System.setProperty(KERNEL_INTERPRETER_ENABLED_PROPERTY, Boolean.FALSE.toString());
-		KernelExecutionTestAccess.resetCostCalibration();
 		LmdbStore store = new LmdbStore(dataDir.toFile(), ConfigUtil.createConfig().setSketchEstimatorEnabled(false));
 		SailRepository repository = new SailRepository(store);
 		try {
@@ -90,7 +89,6 @@ class LmdbAdaptiveFilterPlacementThemeIT {
 			// This specification observes the adaptive-filter candidate after the store-level planner observation. The
 			// preceding correctness sweep must not turn into unrelated cross-strategy timing evidence that outranks the
 			// candidate before it opens.
-			KernelExecutionTestAccess.resetCostCalibration();
 			TupleExpr telemetry;
 			Explanation telemetryExplanation;
 			try (var connection = repository.getConnection()) {
@@ -116,7 +114,6 @@ class LmdbAdaptiveFilterPlacementThemeIT {
 					adaptiveNode.getStringMetricActual("adaptiveFilterPlacementCandidateArrivals"));
 		} finally {
 			repository.shutDown();
-			KernelExecutionTestAccess.resetCostCalibration();
 			restoreProperty(ADAPTIVE_ENABLED_PROPERTY, previousAdaptive);
 			restoreProperty(NATIVE_ENABLED_PROPERTY, previousNative);
 			restoreProperty(JANINO_ENABLED_PROPERTY, previousJanino);

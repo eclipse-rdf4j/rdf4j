@@ -25,8 +25,11 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
@@ -50,7 +53,6 @@ public class LmdbPrefixRunQueryTest {
 
 	@BeforeEach
 	public void isolatePrefixRunTier() {
-		KernelExecutionTestAccess.resetCostCalibration();
 		disable("rdf4j.lmdb.janinoCodegen.enabled");
 		disable("rdf4j.lmdb.kernelInterpreter.enabled");
 		disable("rdf4j.lmdb.packedFtree.enabled");
@@ -122,9 +124,9 @@ public class LmdbPrefixRunQueryTest {
 		long before = LmdbPrefixRunPlan.OPENED.get();
 		Map<String, Long> counts = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(
+			for (BindingSet bs : QueryResults.asList(prefixRunQuery(conn,
 					"SELECT ?o (COUNT(?s) AS ?c) WHERE { ?s ?p ?o . FILTER(isIRI(?o)) } GROUP BY ?o")
-					.evaluate())) {
+							.evaluate())) {
 				counts.put(bs.getValue("o").stringValue(), ((Literal) bs.getValue("c")).longValue());
 			}
 		}
@@ -152,9 +154,9 @@ public class LmdbPrefixRunQueryTest {
 		long before = LmdbPrefixRunPlan.OPENED.get();
 		Map<String, Long> counts = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(
+			for (BindingSet bs : QueryResults.asList(prefixRunQuery(conn,
 					"SELECT ?type (COUNT(DISTINCT ?i) AS ?c) WHERE { ?i a ?type } GROUP BY ?type")
-					.evaluate())) {
+							.evaluate())) {
 				counts.put(bs.getValue("type").stringValue(), ((Literal) bs.getValue("c")).longValue());
 			}
 		}
@@ -169,9 +171,9 @@ public class LmdbPrefixRunQueryTest {
 		long before = LmdbPrefixRunPlan.OPENED.get();
 		Map<String, String> counts = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(
+			for (BindingSet bs : QueryResults.asList(prefixRunQuery(conn,
 					"SELECT ?p (COUNT(?s) AS ?a) (COUNT(?o) AS ?b) WHERE { ?s ?p ?o } GROUP BY ?p")
-					.evaluate())) {
+							.evaluate())) {
 				counts.put(bs.getValue("p").stringValue(),
 						((Literal) bs.getValue("a")).longValue() + "/" + ((Literal) bs.getValue("b")).longValue());
 			}
@@ -188,9 +190,9 @@ public class LmdbPrefixRunQueryTest {
 		long before = LmdbPrefixRunPlan.OPENED.get();
 		Map<String, Long> counts = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(
+			for (BindingSet bs : QueryResults.asList(prefixRunQuery(conn,
 					"SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p HAVING(COUNT(?s) >= 2)")
-					.evaluate())) {
+							.evaluate())) {
 				counts.put(bs.getValue("p").stringValue(), ((Literal) bs.getValue("c")).longValue());
 			}
 		}
@@ -243,7 +245,7 @@ public class LmdbPrefixRunQueryTest {
 
 		long before = LmdbPrefixRunPlan.OPENED.get();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			var query = conn.prepareTupleQuery("SELECT DISTINCT ?p WHERE { ?s ?p ?o }");
+			var query = prefixRunQuery(conn, "SELECT DISTINCT ?p WHERE { ?s ?p ?o }");
 			query.setIncludeInferred(true);
 			assertThat(QueryResults.asList(query.evaluate())
 					.stream()
@@ -350,7 +352,7 @@ public class LmdbPrefixRunQueryTest {
 		long before = LmdbPrefixRunPlan.OPENED.get();
 		Map<String, Long> counts = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			var query = conn.prepareTupleQuery("SELECT ?p (COUNT(*) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p");
+			var query = prefixRunQuery(conn, "SELECT ?p (COUNT(*) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p");
 			query.setIncludeInferred(true);
 			for (BindingSet bs : QueryResults.asList(query.evaluate())) {
 				counts.put(bs.getValue("p").stringValue(), ((Literal) bs.getValue("c")).longValue());
@@ -376,6 +378,7 @@ public class LmdbPrefixRunQueryTest {
 
 	@Test
 	public void distinctObjectPredicateFallsBackWithoutObjectPredicateIndex() {
+		forcedStrategy = null;
 		openRepository("spoc,posc,ospc");
 
 		long before = LmdbPrefixRunPlan.OPENED.get();
@@ -422,6 +425,7 @@ public class LmdbPrefixRunQueryTest {
 
 	@Test
 	public void distinctSubjectObjectWithBoundPredicateFallsBackWhenPredicateIsInterleaved() {
+		forcedStrategy = null;
 		openRepository("spoc,posc,ospc");
 
 		long before = LmdbPrefixRunPlan.OPENED.get();
@@ -451,7 +455,7 @@ public class LmdbPrefixRunQueryTest {
 		long before = LmdbPrefixRunPlan.OPENED.get();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			List<BindingSet> result = QueryResults
-					.asList(conn.prepareTupleQuery("SELECT (COUNT(DISTINCT ?p) AS ?c) WHERE { ?s ?p ?o }")
+					.asList(prefixRunQuery(conn, "SELECT (COUNT(DISTINCT ?p) AS ?c) WHERE { ?s ?p ?o }")
 							.evaluate());
 			assertThat(((Literal) result.get(0).getValue("c")).longValue()).isEqualTo(3L);
 		}
@@ -461,6 +465,7 @@ public class LmdbPrefixRunQueryTest {
 
 	@Test
 	public void missingPrefixIndexFallsBackToExistingEvaluation() {
+		forcedStrategy = null;
 		openRepository("spoc");
 
 		long before = LmdbPrefixRunPlan.OPENED.get();
@@ -472,6 +477,7 @@ public class LmdbPrefixRunQueryTest {
 
 	@Test
 	public void disabledPrefixRunPropertyFallsBackToExistingEvaluation() {
+		forcedStrategy = null;
 		System.setProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY, "false");
 		openRepository("spoc,posc,ospc");
 
@@ -510,7 +516,7 @@ public class LmdbPrefixRunQueryTest {
 
 	private List<String> values(String query, String bindingName, boolean includeInferred) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			var tupleQuery = conn.prepareTupleQuery(query);
+			var tupleQuery = prefixRunQuery(conn, query);
 			tupleQuery.setIncludeInferred(includeInferred);
 			return QueryResults.asList(tupleQuery.evaluate())
 					.stream()
@@ -526,7 +532,7 @@ public class LmdbPrefixRunQueryTest {
 
 	private List<String> pairs(String query, String firstBinding, String secondBinding) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+			return QueryResults.asList(prefixRunQuery(conn, query).evaluate())
 					.stream()
 					.map(bs -> bs.getValue(firstBinding).stringValue() + "/"
 							+ bs.getValue(secondBinding).stringValue())
@@ -545,7 +551,7 @@ public class LmdbPrefixRunQueryTest {
 			List<String> expected) {
 		long before = LmdbPrefixRunPlan.OPENED.get();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			var tupleQuery = conn.prepareTupleQuery(query);
+			var tupleQuery = prefixRunQuery(conn, query);
 			tupleQuery.setIncludeInferred(true);
 			List<String> actual = QueryResults.asList(tupleQuery.evaluate())
 					.stream()
@@ -560,7 +566,7 @@ public class LmdbPrefixRunQueryTest {
 
 	private List<String> subjectObjectPairs(String query) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+			return QueryResults.asList(prefixRunQuery(conn, query).evaluate())
 					.stream()
 					.map(bs -> bs.getValue("s").stringValue() + "/" + bs.getValue("o").stringValue())
 					.sorted()
@@ -571,7 +577,7 @@ public class LmdbPrefixRunQueryTest {
 	private Map<String, Long> countByPredicate(String query) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			Map<String, Long> counts = new HashMap<>();
-			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(query).evaluate())) {
+			for (BindingSet bs : QueryResults.asList(prefixRunQuery(conn, query).evaluate())) {
 				counts.put(bs.getValue("p").stringValue(), ((Literal) bs.getValue("c")).longValue());
 			}
 			return counts;
@@ -581,7 +587,7 @@ public class LmdbPrefixRunQueryTest {
 	private Map<String, Long> countByObject(String query) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			Map<String, Long> counts = new HashMap<>();
-			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(query).evaluate())) {
+			for (BindingSet bs : QueryResults.asList(prefixRunQuery(conn, query).evaluate())) {
 				counts.put(bs.getValue("o").stringValue(), ((Literal) bs.getValue("c")).longValue());
 			}
 			return counts;
@@ -591,4 +597,18 @@ public class LmdbPrefixRunQueryTest {
 	private long statementCount() {
 		return 6L;
 	}
+
+	/**
+	 * This suite tests the prefix-run operator; the measured selector may prefer a rival for these tiny stores, so the
+	 * operator under test is forced wherever a prefix run applies.
+	 */
+	private TupleQuery prefixRunQuery(RepositoryConnection conn, String sparql) {
+		SailTupleQuery query = (SailTupleQuery) conn.prepareTupleQuery(sparql);
+		query.setForcedLmdbExecutionStrategy(forcedStrategy);
+		return query;
+	}
+
+	/** Null in the fallback tests, whose shapes must leave the prefix-run operator unopened. */
+	private String forcedStrategy = "prefixRunGroups,prefixRun";
+
 }

@@ -113,11 +113,11 @@ public class TupleResultBuilder {
 		return this;
 	}
 
-	/** Configures proof and transport only for this browser page response and connection. */
+	/** Negotiates remote blank-node origins for this connection and records page proof when this is a page writer. */
 	public void repositoryOrigins(RepositoryConnection connection) {
+		HTTPRepository.setBNodeOriginEnabled(connection, true);
 		if (out instanceof WorkbenchPageResultWriter pageWriter) {
 			pageWriter.repositoryOrigins(connection.getValueFactory());
-			HTTPRepository.setBNodeOriginEnabled(connection, true);
 		}
 	}
 
