@@ -1213,6 +1213,8 @@ final class LmdbNativeParallelPipelines {
 			try {
 				while (!output.offer(page, 50, TimeUnit.MILLISECONDS)) {
 					LmdbNativeExchange.throwIfAborted(failure, cancelled);
+					// Result close can cancel the shared token while native workers defer delegate cleanup.
+					consumerRow.cancellation.check();
 				}
 			} catch (InterruptedException e) {
 				throw LmdbNativeExchange.interrupted(e);
