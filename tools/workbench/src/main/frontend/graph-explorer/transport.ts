@@ -151,3 +151,28 @@ export async function queryRepository(endpoint: string, query: string, signal?: 
     throw new Error("The Workbench returned a response that was not SPARQL Results JSON.");
   }
 }
+
+/** A separate bounded statement count; unknown must keep repository search manual. */
+export async function fetchRepositorySize(endpoint: string, serverIdentity: string, signal?: AbortSignal): Promise<number | null> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
+  const deadline = setTimeout(cancel, 5_000);
+  try {
+    const response = await fetch(`${endpoint}${endpoint.includes("?") ? "&" : "?"}search-size=true`, {
+      headers: { accept: "application/json" }, credentials: "same-origin", cache: "no-store", signal: controller.signal,
+    });
+    if (!response.ok || response.headers.get("X-Workbench-Server-Identity") !== serverIdentity) return null;
+    const body: unknown = await response.json();
+    if (!body || typeof body !== "object" || !("size" in body)) return null;
+    const size = body.size;
+    return typeof size === "number" && Number.isSafeInteger(size) && size >= 0 ? size : null;
+  } catch {
+    // Optional capability: a failed or cancelled probe cannot prevent searching the loaded graph.
+    return null;
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener("abort", cancel);
+  }
+}

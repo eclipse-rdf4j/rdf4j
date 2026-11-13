@@ -5,6 +5,8 @@ interface YASQE_Instance extends CodeMirror.EditorFromTextArea {
 	getValue(): string;
 
 	setValue(query: string): void;
+
+	getQueryType?(): string;
 }
 
 interface YASQE_Config extends CodeMirror.EditorConfiguration {

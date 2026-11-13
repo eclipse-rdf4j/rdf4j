@@ -4856,6 +4856,7 @@ namespace workbench {
                     ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
                     @click=${() => invoke('workbench.query.insertPrefixes')}>Insert prefixes</button></div>`);
             return h`<div id="query-page" class="query-page"
+                    data-query-server-url=${text(info.server)} data-query-repository-id=${context.repositoryId}
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"
                     data-workbench-query-execution="true" data-workbench-results-target="query-results">
