@@ -130,6 +130,11 @@ public final class ChunkInput {
 		if (tupleCache != null && cacheIndex < cached - 1) {
 			return tupleCache[++cacheIndex];
 		}
+		return decodeNext();
+	}
+
+	// Keep buffer decoding separate so the cached-tuple path in next() can inline into callers.
+	private long[] decodeNext() {
 		long value;
 		long[] result = tupleCache != null ? tupleCache[cacheIndex + 1] : tuple;
 		if (readKey) {
@@ -146,69 +151,9 @@ public final class ChunkInput {
 			readKey = false;
 		} else {
 			if (valueTuplesIndex == -1) {
-				if (!valueBuffer.hasRemaining()) {
+				if (!initValues()) {
 					return null;
 				}
-				if (this.signs == null) {
-					this.signs = new int[MAX_ELEMENTS];
-					this.hasSigns = new boolean[MAX_ELEMENTS];
-					this.modes = new int[MAX_ELEMENTS];
-					this.bufferPositions = new int[MAX_ELEMENTS];
-					this.signPositions = new int[MAX_ELEMENTS];
-					this.bitOffsets = new int[MAX_ELEMENTS];
-					this.bitWidths = new int[MAX_ELEMENTS];
-				}
-
-				int startPos = valueBuffer.position();
-				int footerEnd = startPos + valueBuffer.remaining() - 1;
-				int footerLength = valueBuffer.get(footerEnd) & 0xFF;
-				int footerStart = footerEnd - footerLength;
-				valueBuffer.position(footerStart);
-
-				int[] sectionLengths = new int[valueElements];
-				for (int i = 0; i < valueElements; i++) {
-					int sectionLength = (int) Varint.readUnsigned(valueBuffer);
-					sectionLengths[i] = sectionLength;
-					int flagByte = valueBuffer.get() & 0xFF;
-					boolean packed = (flagByte & FLAG_PACKED) != 0;
-					boolean signsPresent = (flagByte & FLAG_HAS_SIGNS) != 0;
-					hasSigns[i] = signsPresent;
-
-					if (sectionLength == 0) {
-						// A zero-length section is constant; all-positive varint sections also use flag 0x00.
-						modes[i] = MODE_CONSTANT;
-						bitWidths[i] = 0;
-					} else if (packed) {
-						modes[i] = MODE_PACKED;
-						bitWidths[i] = flagByte & BIT_WIDTH_MASK;
-					} else {
-						modes[i] = MODE_VARINT;
-						bitWidths[i] = 0;
-					}
-				}
-
-				valueTuplesCount = (int) Varint.readUnsigned(valueBuffer);
-				int signBytes = (valueTuplesCount + 7) >>> 3;
-				int sectionPosition = 0;
-				for (int i = 0; i < valueElements; i++) {
-					int base = startPos + sectionPosition;
-					if (modes[i] == MODE_CONSTANT) {
-						// No signs, no data for this element
-						signPositions[i] = base;
-						bufferPositions[i] = base;
-					} else if (hasSigns[i]) {
-						int dataLength = sectionLengths[i] - signBytes;
-						signPositions[i] = base + dataLength;
-						bufferPositions[i] = base;
-					} else {
-						signPositions[i] = -1;
-						bufferPositions[i] = base;
-					}
-					bitOffsets[i] = 0;
-					sectionPosition += sectionLengths[i];
-				}
-				valueBuffer.position(startPos);
-				valueTuplesIndex = 0;
 			}
 			if (valueTuplesIndex >= valueTuplesCount) {
 				return null;
@@ -255,6 +200,73 @@ public final class ChunkInput {
 			cached++;
 		}
 		return result;
+	}
+
+	private boolean initValues() {
+		if (!valueBuffer.hasRemaining()) {
+			return false;
+		}
+		if (this.signs == null) {
+			this.signs = new int[MAX_ELEMENTS];
+			this.hasSigns = new boolean[MAX_ELEMENTS];
+			this.modes = new int[MAX_ELEMENTS];
+			this.bufferPositions = new int[MAX_ELEMENTS];
+			this.signPositions = new int[MAX_ELEMENTS];
+			this.bitOffsets = new int[MAX_ELEMENTS];
+			this.bitWidths = new int[MAX_ELEMENTS];
+		}
+
+		int startPos = valueBuffer.position();
+		int footerEnd = startPos + valueBuffer.remaining() - 1;
+		int footerLength = valueBuffer.get(footerEnd) & 0xFF;
+		int footerStart = footerEnd - footerLength;
+		valueBuffer.position(footerStart);
+
+		int[] sectionLengths = new int[valueElements];
+		for (int i = 0; i < valueElements; i++) {
+			int sectionLength = (int) Varint.readUnsigned(valueBuffer);
+			sectionLengths[i] = sectionLength;
+			int flagByte = valueBuffer.get() & 0xFF;
+			boolean packed = (flagByte & FLAG_PACKED) != 0;
+			boolean signsPresent = (flagByte & FLAG_HAS_SIGNS) != 0;
+			hasSigns[i] = signsPresent;
+
+			if (sectionLength == 0) {
+				// A zero-length section is constant; all-positive varint sections also use flag 0x00.
+				modes[i] = MODE_CONSTANT;
+				bitWidths[i] = 0;
+			} else if (packed) {
+				modes[i] = MODE_PACKED;
+				bitWidths[i] = flagByte & BIT_WIDTH_MASK;
+			} else {
+				modes[i] = MODE_VARINT;
+				bitWidths[i] = 0;
+			}
+		}
+
+		valueTuplesCount = (int) Varint.readUnsigned(valueBuffer);
+		int signBytes = (valueTuplesCount + 7) >>> 3;
+		int sectionPosition = 0;
+		for (int i = 0; i < valueElements; i++) {
+			int base = startPos + sectionPosition;
+			if (modes[i] == MODE_CONSTANT) {
+				// No signs, no data for this element
+				signPositions[i] = base;
+				bufferPositions[i] = base;
+			} else if (hasSigns[i]) {
+				int dataLength = sectionLengths[i] - signBytes;
+				signPositions[i] = base + dataLength;
+				bufferPositions[i] = base;
+			} else {
+				signPositions[i] = -1;
+				bufferPositions[i] = base;
+			}
+			bitOffsets[i] = 0;
+			sectionPosition += sectionLengths[i];
+		}
+		valueBuffer.position(startPos);
+		valueTuplesIndex = 0;
+		return true;
 	}
 
 	/**
