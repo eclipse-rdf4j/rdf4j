@@ -42,12 +42,18 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository,
   const shown = open && Boolean(term.trim());
   const current = Math.min(active, options.length - 1);
   const upToDate = term === deferredTerm;
+  const listboxShown = shown && options.length > 0 && upToDate;
   const exactResource = exactSearchResource(term.trim());
   const manual = requiresManualRepositorySearch(repositorySize);
+  const dismissPopup = () => {
+    // Focusing may reopen the popup through onFocus, so close it after restoring focus.
+    inputRef.current?.focus();
+    setOpen(false);
+  };
   const searchRepository = () => {
     if (busy || !term.trim()) return;
     onSearchRepository(term.trim());
-    setOpen(false);
+    dismissPopup();
   };
   const chooseNode = (index: number) => {
     if (!upToDate || !options[index]) return;
@@ -68,21 +74,26 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository,
       if (options.length) chooseNode(shown ? current : 0);
       else if (exactResource || !manual) searchRepository();
       else setOpen(true);
-    } else if (event.key === "Escape") {
-      if (shown) {
-        event.stopPropagation();
-        setOpen(false);
-      } else if (term) {
-        event.stopPropagation();
-        setTerm("");
-      }
     }
   };
 
   return (
-    <div className="graph-find" role="search" onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
-    }}>
+    <div className="graph-find" role="search"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || (!shown && !term)) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (shown) {
+          dismissPopup();
+        } else {
+          setTerm("");
+        }
+      }}>
       <Icon name="search" />
       <input
         ref={inputRef}
@@ -92,9 +103,9 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository,
         aria-keyshortcuts="/"
         title="Find a node (/)"
         aria-autocomplete="list"
-        aria-expanded={shown}
-        aria-controls={shown && options.length > 0 && upToDate ? listId : undefined}
-        aria-activedescendant={shown && options.length > 0 && upToDate ? `${listId}-${current}` : undefined}
+        aria-expanded={listboxShown}
+        aria-controls={listboxShown ? listId : undefined}
+        aria-activedescendant={listboxShown ? `${listId}-${current}` : undefined}
         placeholder="Find in the loaded graph…"
         value={term}
         onChange={(event) => {
@@ -107,7 +118,7 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository,
       />
       {shown ? (
         <div className="graph-find-results">
-          {options.length > 0 && upToDate ? (
+          {listboxShown ? (
             <ul id={listId} role="listbox" aria-label="Loaded graph matches">
               {options.map((match, index) => (
                 <li key={match.node.id} id={`${listId}-${index}`} role="option"

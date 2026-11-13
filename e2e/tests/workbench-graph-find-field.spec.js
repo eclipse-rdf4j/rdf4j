@@ -78,3 +78,94 @@ test('busy searches cannot be repeated and editing does not trigger new searches
     await page.getByRole('combobox').press('Enter');
     await expect(page.locator('output')).toHaveText('[]');
 });
+
+for (const term of ['Bob', 'Alice', 'https://example.org/bob']) {
+    test(`repository action returns focus to Find after searching for ${term}`, async ({ page }) => {
+        const input = page.getByRole('combobox');
+        const action = page.getByRole('button', { name: /^(Search entire repository|Load this resource)$/ });
+        await input.fill(term);
+        if (term === 'Alice') {
+            await expect(page.getByRole('option', { name: /Alice/ })).toBeVisible();
+        } else {
+            await expect(page.getByText('No matches in the loaded graph')).toBeVisible();
+        }
+        await input.press('Tab');
+        await expect(action).toBeFocused();
+        await page.keyboard.press('Enter');
+
+        await expect(page.locator('output')).toHaveText(JSON.stringify([`search:${term}`]));
+        await expect(input).toBeFocused();
+        await expect(action).not.toBeVisible();
+        await expect(input).toHaveAttribute('aria-expanded', 'false');
+        await page.keyboard.press('End');
+        await page.keyboard.type('x');
+        await expect(input).toHaveValue(`${term}x`);
+        await expect(action).toBeVisible();
+        await expect(page.locator('output')).toHaveText(JSON.stringify([`search:${term}`]));
+    });
+}
+
+for (const fromAction of [false, true]) {
+    const origin = fromAction ? 'repository action' : 'input';
+    test(`Escape from the ${origin} dismisses Find without reaching the graph`, async ({ page }) => {
+        await page.evaluate(() => {
+            document.body.dataset.escapeCount = '0';
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    document.body.dataset.escapeCount = String(Number(document.body.dataset.escapeCount) + 1);
+                }
+            });
+        });
+        const input = page.getByRole('combobox');
+        const action = page.getByRole('button', { name: 'Search entire repository', exact: true });
+        await input.fill('Bob');
+        await expect(action).toBeVisible();
+        if (fromAction) {
+            await input.press('Tab');
+            await expect(action).toBeFocused();
+        }
+        await page.keyboard.press('Escape');
+
+        await expect(page.locator('body')).toHaveAttribute('data-escape-count', '0');
+        await expect(input).toBeFocused();
+        await expect(input).toHaveValue('Bob');
+        await expect(action).not.toBeVisible();
+        await expect(page.locator('output')).toHaveText('[]');
+
+        await page.keyboard.press('Escape');
+        await expect(input).toHaveValue('');
+        await expect(page.locator('body')).toHaveAttribute('data-escape-count', '0');
+        await page.keyboard.press('Escape');
+        await expect(page.locator('body')).toHaveAttribute('data-escape-count', '1');
+    });
+}
+
+test('combobox expansion follows the loaded matches independently of the repository action', async ({ page }) => {
+    const input = page.getByRole('combobox');
+    const listbox = page.getByRole('listbox', { name: 'Loaded graph matches' });
+    const action = page.getByRole('button', { name: 'Search entire repository', exact: true });
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+    await input.fill('Alice');
+    await expect(listbox).toBeVisible();
+    await expect(input).toHaveAttribute('aria-expanded', 'true');
+    await expect(input).toHaveAttribute('aria-controls', await listbox.getAttribute('id'));
+    await expect(input).toHaveAttribute('aria-activedescendant', await page.getByRole('option').getAttribute('id'));
+    await expect(action).toBeVisible();
+
+    await input.fill('Bob');
+    await expect(page.getByText('No matches in the loaded graph')).toBeVisible();
+    await expect(listbox).not.toBeVisible();
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+    await expect(input).not.toHaveAttribute('aria-controls');
+    await expect(input).not.toHaveAttribute('aria-activedescendant');
+    await expect(action).toBeVisible();
+
+    await input.fill('Alice');
+    await expect(listbox).toBeVisible();
+    await input.press('Escape');
+    await expect(listbox).not.toBeVisible();
+    await expect(action).not.toBeVisible();
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+    await expect(input).not.toHaveAttribute('aria-controls');
+    await expect(input).not.toHaveAttribute('aria-activedescendant');
+});
