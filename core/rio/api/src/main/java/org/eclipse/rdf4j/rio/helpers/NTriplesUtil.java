@@ -812,13 +812,6 @@ public class NTriplesUtil {
 				} else {
 					appendable.append(c);
 				}
-			} else if (cInt >= 0x10000 && cInt <= 0x10FFFF) {
-				if (escapeUnicode) {
-					appendable.append("\\U");
-					appendable.append(toHexString(cInt, 8));
-				} else {
-					appendable.append(c);
-				}
 			} else {
 				appendable.append(c);
 			}
