@@ -83,6 +83,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractSailConnection.class);
 
+	/**
+	 * Failure of an operation or result pull whose workload was cancelled by Sail shutdown, including a result that
+	 * shutdown closed before its consumer finished it. Package-private: {@link SailBaseIteration} throws it too.
+	 */
+	static final String RESULT_CLOSED_BY_SHUTDOWN = "Sail is shutting down";
+	/**
+	 * Failure of an operation cancelled by its connection's close, and of a still-open result that a debug-mode
+	 * connection close force-closed.
+	 */
+	private static final String RESULT_CLOSED_BY_CONNECTION_CLOSE = "Connection closed";
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -1667,9 +1678,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 			activeIterationsDebug.clear();
 
 			if (!activeIterationsCopy.isEmpty()) {
+				String closeReason = sailLifetime.isCancelled() ? RESULT_CLOSED_BY_SHUTDOWN
+						: RESULT_CLOSED_BY_CONNECTION_CLOSE;
 				for (var entry : activeIterationsCopy.entrySet()) {
 					try {
 						logger.warn("Unclosed iteration", entry.getValue());
+						entry.getKey().markClosedByConnection(closeReason);
 						entry.getKey().close();
 					} catch (Exception e) {
 						if (e instanceof InterruptedException) {
@@ -1691,14 +1705,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	/**
-	 * Closes parked results before native teardown instead of waiting for them to become unreachable. Every result is
-	 * attempted; the first failure is rethrown with later ones suppressed.
+	 * Closes parked results before native teardown instead of waiting for them to become unreachable. Each result is
+	 * marked first, so its consumer's next pull fails instead of seeing a truncated result as exhausted. Every result
+	 * is attempted; the first failure is rethrown with later ones suppressed.
 	 */
 	private void closeResultsForShutdown() {
 		RuntimeException failure = null;
-		for (CleanerIteration.CleanupRegistration registration : activeIterationCleanups.values()) {
+		for (Map.Entry<SailBaseIteration<?, ?>, CleanerIteration.CleanupRegistration> entry : activeIterationCleanups
+				.entrySet()) {
 			try {
-				registration.closeForShutdown();
+				entry.getKey().markClosedByConnection(RESULT_CLOSED_BY_SHUTDOWN);
+				entry.getValue().closeForShutdown();
 			} catch (RuntimeException closeFailure) {
 				if (failure == null) {
 					failure = closeFailure;
