@@ -51,6 +51,15 @@ test("the longest matching repository namespace wins, and repository namespaces 
   assert.equal(compactTerm("http://www.w3.org/2000/01/rdf-schema#label"), "rdfs:label");
 });
 
+test("a repository-declared built-in prefix is not reused for its built-in namespace", () => {
+  setNamespaces([
+    { prefix: "ex", name: "urn:custom#" },
+    { prefix: "rdf", name: "urn:custom#" },
+  ]);
+  assert.equal(compactTerm("urn:custom#type"), "ex:type");
+  assert.equal(compactTerm("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), "type");
+});
+
 test("an empty prefix renders as :local; entries without a namespace IRI are ignored", () => {
   setNamespaces([
     { prefix: "", name: "http://example.org/" },

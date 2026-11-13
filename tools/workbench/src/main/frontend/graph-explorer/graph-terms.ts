@@ -45,6 +45,7 @@ const compactTerms = new Map<string, string>();
 
 /** The repository's namespaces, longest namespace IRI first; they are tried before KNOWN_PREFIXES. Display only. */
 let repositoryNamespaces: ReadonlyArray<readonly [string, string]> = [];
+let availableKnownPrefixes: ReadonlyArray<readonly [string, string]> = KNOWN_PREFIXES;
 /** Bumped whenever the namespaces change, so a view can tell its compact terms are stale. */
 let namespacesVersion = 0;
 
@@ -54,10 +55,13 @@ let namespacesVersion = 0;
  */
 export function setNamespaces(list: ReadonlyArray<{ prefix?: string; name?: string }>) {
   const byName = new Map<string, string>();
+  const declaredPrefixes = new Set<string>();
   for (const entry of list) {
     if (typeof entry?.name !== "string" || !entry.name || typeof entry.prefix !== "string") continue;
+    declaredPrefixes.add(entry.prefix);
     if (!byName.has(entry.name)) byName.set(entry.name, entry.prefix);
   }
+  availableKnownPrefixes = KNOWN_PREFIXES.filter(([, prefix]) => !declaredPrefixes.has(prefix.slice(0, -1)));
   repositoryNamespaces = [...byName]
     .sort((a, b) => b[0].length - a[0].length)
     .map(([name, prefix]) => [name, `${prefix}:`] as const);
@@ -82,7 +86,7 @@ export function compactTerm(value: string, limit = 26) {
 function computeCompactTerm(value: string, limit: number) {
   const known =
     repositoryNamespaces.find(([namespace]) => value.length > namespace.length && value.startsWith(namespace)) ??
-    KNOWN_PREFIXES.find(([namespace]) => value.startsWith(namespace));
+    availableKnownPrefixes.find(([namespace]) => value.startsWith(namespace));
   if (known) {
     const compact = `${known[1]}${value.slice(known[0].length)}`;
     return compact.length > limit ? `${compact.slice(0, limit - 1)}…` : compact;
