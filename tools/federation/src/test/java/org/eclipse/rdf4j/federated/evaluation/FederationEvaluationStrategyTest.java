@@ -12,6 +12,10 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,6 +35,7 @@ import org.eclipse.rdf4j.federated.SPARQLBaseTest;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
+import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache.StatementSourceAssurance;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -39,6 +44,7 @@ import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.structures.SubQuery;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
@@ -49,18 +55,68 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class FederationEvaluationStrategyTest extends SPARQLBaseTest {
+
+	@Test
+	public void closingFilteredGraphBindingsClosesDelegateOnce() {
+		FedXRepository repository = FedXFactory.newFederation().withMembers(new ArrayList<Endpoint>()).create();
+		repository.init();
+		try {
+			@SuppressWarnings("unchecked")
+			CloseableIteration<BindingSet> delegate = mock(CloseableIteration.class);
+			var result = EmptyBindingSet.getInstance();
+			when(delegate.hasNext()).thenReturn(true);
+			when(delegate.next()).thenReturn(result);
+			FederationContext context = repository.getFederationContext();
+			FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context) {
+				@Override
+				public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings) {
+					return delegate;
+				}
+			};
+			QueryInfo info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+			try {
+				var statement = new StatementSourcePattern(
+						new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")), info);
+				var scope = RemoteBNode.newResponseScope(info.getBlankNodeAllocationScope(),
+						SimpleValueFactory.getInstance(), mock(RemoteGraphSnapshot.class), false);
+				var input = new MapBindingSet();
+				input.addBinding("outside", scope.map(Values.bnode()));
+				assertThat(statement.getBindingNames()).doesNotContain("outside");
+				assertThat(NativeGraphQuery.requiresScalarBindings(statement, List.of(input))).isTrue();
+				AtomicInteger conditionCalls = new AtomicInteger();
+				try (var results = strategy.evaluateLeftBoundJoinStatementPattern(statement, List.of(input), row -> {
+					conditionCalls.incrementAndGet();
+					return true;
+				})) {
+					assertThat(results.next()).isSameAs(result);
+					assertThat(conditionCalls.get()).isEqualTo(1);
+					verify(delegate, never()).close();
+					results.close();
+					verify(delegate).close();
+				}
+				verify(delegate).close();
+			} finally {
+				info.close();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@Test
 	public void testOptimizeSingleSourceQuery() throws Exception {

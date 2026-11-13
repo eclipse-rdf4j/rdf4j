@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.federated.evaluation.join;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
@@ -31,9 +32,16 @@ public class ParallelBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final StatementTupleExpr rightArg;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
+	private final Predicate<BindingSet> condition;
 
 	public ParallelBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
 			StatementTupleExpr expr, List<BindingSet> bindings) {
+		this(joinControl, strategy, expr, bindings, null);
+	}
+
+	public ParallelBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
+			StatementTupleExpr expr, List<BindingSet> bindings, Predicate<BindingSet> condition) {
+		this.condition = condition;
 		this.strategy = strategy;
 		this.rightArg = expr;
 		this.bindings = bindings;
@@ -47,7 +55,8 @@ public class ParallelBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 	@Override
 	protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
-		return strategy.evaluateLeftBoundJoinStatementPattern(rightArg, bindings);
+		return condition == null ? strategy.evaluateLeftBoundJoinStatementPattern(rightArg, bindings)
+				: strategy.evaluateLeftBoundJoinStatementPattern(rightArg, bindings, condition);
 	}
 
 }

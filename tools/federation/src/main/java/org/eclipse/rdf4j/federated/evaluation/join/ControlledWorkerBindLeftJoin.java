@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.federated.evaluation.join;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
@@ -31,10 +32,19 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 
+	private final Predicate<BindingSet> condition;
+
 	public ControlledWorkerBindLeftJoin(ControlledWorkerScheduler<BindingSet> scheduler,
 			FederationEvaluationStrategy strategy, CloseableIteration<BindingSet> leftIter, TupleExpr rightArg,
 			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
+		this(scheduler, strategy, leftIter, rightArg, bindings, queryInfo, null);
+	}
+
+	public ControlledWorkerBindLeftJoin(ControlledWorkerScheduler<BindingSet> scheduler,
+			FederationEvaluationStrategy strategy, CloseableIteration<BindingSet> leftIter, TupleExpr rightArg,
+			BindingSet bindings, QueryInfo queryInfo, Predicate<BindingSet> condition) {
 		super(scheduler, strategy, leftIter, rightArg, bindings, queryInfo);
+		this.condition = condition;
 	}
 
 	@Override
@@ -42,7 +52,7 @@ public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 		final TaskCreator taskCreator;
 		if (expr instanceof StatementTupleExpr) {
 			StatementTupleExpr stmt = (StatementTupleExpr) expr;
-			taskCreator = new LeftBoundJoinTaskCreator(strategy, stmt);
+			taskCreator = new LeftBoundJoinTaskCreator(strategy, stmt, condition);
 		} else if (expr instanceof EmptyStatementPattern) {
 			EmptyStatementPattern stmt = (EmptyStatementPattern) expr;
 			taskCreator = new EmptyLeftBoundJoinTaskCreator(strategy, stmt);
@@ -56,17 +66,24 @@ public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 	static protected class LeftBoundJoinTaskCreator implements TaskCreator {
 		protected final FederationEvaluationStrategy _strategy;
 		protected final StatementTupleExpr _expr;
+		private final Predicate<BindingSet> condition;
 
 		public LeftBoundJoinTaskCreator(
 				FederationEvaluationStrategy strategy, StatementTupleExpr expr) {
+			this(strategy, expr, null);
+		}
+
+		public LeftBoundJoinTaskCreator(FederationEvaluationStrategy strategy, StatementTupleExpr expr,
+				Predicate<BindingSet> condition) {
 			super();
+			this.condition = condition;
 			_strategy = strategy;
 			_expr = expr;
 		}
 
 		@Override
 		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings) {
-			return new ParallelBindLeftJoinTask(control, _strategy, _expr, bindings);
+			return new ParallelBindLeftJoinTask(control, _strategy, _expr, bindings, condition);
 		}
 	}
 
