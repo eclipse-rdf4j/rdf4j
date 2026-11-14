@@ -23,6 +23,59 @@ export function graphEndpoint(basePath: string, repositoryId: string): string {
   return `${(basePath || "").replace(/\/+$/, "")}/repositories/${encodeURIComponent(repositoryId)}/graph`;
 }
 
+/** The Workbench page model of the repository's namespaces (WorkbenchNamespaceMetadataServlet). */
+export function namespacesEndpoint(basePath: string, repositoryId: string): string {
+  return `${(basePath || "").replace(/\/+$/, "")}/repositories/${encodeURIComponent(repositoryId)}/_internal/namespaces`;
+}
+
+const termText = (term: unknown): string | undefined =>
+  typeof term === "string" ? term
+    : term && typeof term === "object" && typeof (term as { value?: unknown }).value === "string"
+      ? (term as { value: string }).value : undefined;
+
+/** The prefix/namespace pairs of the Workbench NDJSON page model (vars prefix and namespace, positional rows). */
+export function parseNamespaceRows(body: string): { prefix: string; name: string }[] {
+  const result: { prefix: string; name: string }[] = [];
+  let vars: string[] = [];
+  for (const line of body.split("\n")) {
+    if (!line.trim()) continue;
+    let record: { type?: unknown; values?: unknown };
+    try {
+      record = JSON.parse(line);
+    } catch {
+      return [];
+    }
+    if (record.type === "vars" && Array.isArray(record.values)) vars = record.values.map(String);
+    else if (record.type === "rows" && Array.isArray(record.values)) {
+      const prefixIndex = vars.indexOf("prefix");
+      const nameIndex = vars.indexOf("namespace") >= 0 ? vars.indexOf("namespace") : vars.indexOf("name");
+      if (prefixIndex < 0 || nameIndex < 0) continue;
+      for (const row of record.values) {
+        if (!Array.isArray(row)) continue;
+        const prefix = termText(row[prefixIndex]);
+        const name = termText(row[nameIndex]);
+        if (prefix !== undefined && name) result.push({ prefix: prefix.replace(/:$/, ""), name });
+      }
+    }
+  }
+  return result;
+}
+
+/** Fetch the repository's namespaces; a failure is an empty list (the built-in prefixes remain). */
+export async function fetchNamespaces(basePath: string, repositoryId: string, signal?: AbortSignal) {
+  try {
+    const response = await fetch(namespacesEndpoint(basePath, repositoryId), {
+      headers: { accept: "application/vnd.rdf4j.workbench+ndjson" },
+      credentials: "same-origin",
+      signal,
+    });
+    if (!response.ok) return [];
+    return parseNamespaceRows(await response.text());
+  } catch {
+    return [];
+  }
+}
+
 /** The Workbench Query page with the editor prefilled (WorkbenchViewRegistry.requestsQueryPagePrefill). */
 export function queryPageUrl(basePath: string, repositoryId: string, query: string): string {
   return `${(basePath || "").replace(/\/+$/, "")}/repositories/${encodeURIComponent(repositoryId)}/query?query=${encodeURIComponent(query)}`;

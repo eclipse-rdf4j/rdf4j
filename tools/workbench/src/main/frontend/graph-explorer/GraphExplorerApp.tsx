@@ -20,7 +20,7 @@ import { canvasGraph, RDF_TYPE } from "./graph-canvas-scope.ts";
 import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, LoadBatch, NamedGroup, GraphHistorySnapshot, LayoutIntent } from "./explorer-types.ts";
 import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, TAP_MOVE_TOLERANCE, DOUBLE_TAP_ZOOM_SENSITIVITY, HISTORY_LIMIT, INTERACTIVE_TRANSFORM_COMMIT_DELAY, DEFAULT_QUERY, SHOW_VALUES_STORAGE_KEY, SHOW_LABELS_STORAGE_KEY, readDisplayPreferences, DETAILS_ITEM_LIMIT, LEGEND_TYPE_LIMIT, LABEL_WAIT_MS, FACET_LIST_LIMIT, MORE_BADGE_NODE_LIMIT, EDGE_HIT_PIXELS, QUEUED_QUERY_ROW_LIMIT, SHADOW_NODE_LIMIT, LARGE_GRAPH_NODES } from "./explorer-config.ts";
 import { ARROW_MARKER, UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
-import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
+import { compactTerm, setNamespaces, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
 import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, mergeResourceNodes, cloneGraph, preserveSharedNodePositions, removeGraphNodes, groupsInGraph, shortestPathInGraph, commonNeighborIds, newEdgesOf } from "./graph-operations.ts";
 import { addToSelection, contextMenuScope, selectionKeys, selectionModifier, selectionToEdit, toggleInSelection } from "./graph-selection.ts";
 import { escapeStep } from "./graph-dismissal.ts";
@@ -72,7 +72,7 @@ import { labelGuidance, type LabelEvidence } from "./label-policy.ts";
 import { useLabelPolicy, useDismissedLabelGuidance } from "./use-label-policy.ts";
 import { Icon } from "./icons.tsx";
 import { entitySearchQuery, expandQuery, expansionSkipsAllLoaded, neighborsQuery, seedQuery, type GraphScope } from "./rdf-vocabulary.ts";
-import { explorePageUrl, graphEndpoint, queryPageUrl, queryRepository as executeRepositoryQuery } from "./transport.ts";
+import { explorePageUrl, fetchNamespaces, graphEndpoint, queryPageUrl, queryRepository as executeRepositoryQuery } from "./transport.ts";
 import {
   useCallback,
   useEffect,
@@ -149,6 +149,21 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity);
   // The explorer's own queries go first: the Filters panel's background loading waits while any of them runs.
   const [foreground] = useState(foregroundTracker);
+  // The repository's namespaces shorten IRIs everywhere; until they arrive (or if they cannot be fetched) the built-in
+  // prefixes apply. The counter re-renders what already shows a compact term.
+  const [, setNamespacesLoaded] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchNamespaces(basePath, repositoryId, controller.signal).then((namespaces) => {
+      if (controller.signal.aborted || !namespaces.length) return;
+      setNamespaces(namespaces);
+      setNamespacesLoaded((count) => count + 1);
+    });
+    return () => {
+      controller.abort();
+      setNamespaces([]);
+    };
+  }, [basePath, repositoryId]);
   const queryRepository = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
     foreground.track(executeRepositoryQuery(endpoint, query, signal, serverIdentity)), [foreground, serverIdentity]);
   const backgroundQuery = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>

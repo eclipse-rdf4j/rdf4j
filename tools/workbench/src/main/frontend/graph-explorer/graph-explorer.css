@@ -1018,6 +1018,32 @@ html[data-theme="dark"] .graph-explorer {
   pointer-events: none;
 }
 
+/* The large canvas draws no titles: this follows the pointer over a node (large-graph-canvas.tsx), never takes it. */
+.graph-explorer #graph-explorer-app .large-graph-tooltip {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 2px;
+  max-width: min(420px, calc(100% - 24px));
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: var(--overlay-shadow);
+  color: var(--ink);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.graph-explorer #graph-explorer-app .large-graph-tooltip[hidden] {
+  display: none;
+}
+
+.graph-explorer #graph-explorer-app .large-graph-tooltip code {
+  color: var(--muted);
+}
+
 /* Status bar: one line under the canvas with the status message, graph size, layout state and the legend. */
 .graph-explorer #graph-explorer-app .graph-footer {
   display: flex;

@@ -183,6 +183,8 @@ export class CanvasGraph {
   private hold: ReturnType<typeof setTimeout> | undefined;
   private wheelTimer: ReturnType<typeof setTimeout> | undefined;
   private hover = -1;
+  /** The tooltip sink: the hovered node with the pointer position, or null to hide it. Set by LargeGraphCanvas. */
+  onHover?: (node: GraphNode | null, at: Point) => void;
   /** The node labels of the last frame, in canvas pixels: a press on a label is a press on its node. */
   private labels: {node: number; left: number; right: number; top: number; bottom: number}[] = [];
   private props: () => LargeGraphProps;
@@ -727,6 +729,7 @@ export class CanvasGraph {
   downAt(e: Contact) {
     if (e.button !== undefined && e.button !== 0) return;
     this.freeze();
+    this.onHover?.(null, e);
     this.contacts.set(e.pointerId, e);
     clearTimeout(this.hold);
     if (this.contacts.size >= 2) {
@@ -821,6 +824,7 @@ export class CanvasGraph {
         this.overlay.style.cursor = hit >= 0 ? "grab" : "default";
         this.request();
       }
+      this.onHover?.(hit >= 0 ? this.scene.node(hit) : null, e);
       return;
     }
     this.contacts.set(e.pointerId, e);

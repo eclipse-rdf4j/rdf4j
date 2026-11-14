@@ -13,7 +13,7 @@
 import { useDeferredValue, useId, useMemo, useState, type KeyboardEvent, type RefObject } from "react";
 import { exactSearchResource, requiresManualRepositorySearch } from "./repository-search.ts";
 import { findNodes } from "./graph-find.ts";
-import { compactTerm } from "./graph-terms.ts";
+import { compactTerm, termTooltip } from "./graph-terms.ts";
 import type { GraphNode } from "./graph-types.ts";
 import { Icon } from "./icons.tsx";
 
@@ -125,8 +125,10 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository,
                   aria-selected={index === current} className={index === current ? "is-active" : ""}
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseEnter={() => setActive(index)} onClick={() => chooseNode(index)}>
-                  <span className="graph-find-label">{match.node.label}</span>
-                  <small>{match.in === "iri" ? compactTerm(match.node.id, 48) : (match.node.types?.[0]?.label ?? "")}</small>
+                  <span className="graph-find-label" title={termTooltip(match.node.id)}>{match.node.label}</span>
+                  <small title={termTooltip(match.node.id)}>
+                    {match.in === "iri" ? compactTerm(match.node.id, 48) : (match.node.types?.[0]?.label ?? "")}
+                  </small>
                 </li>
               ))}
             </ul>

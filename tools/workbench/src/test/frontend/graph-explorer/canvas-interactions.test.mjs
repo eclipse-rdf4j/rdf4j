@@ -328,3 +328,17 @@ for (const cancelled of [true, false]) {
     }
   });
 }
+test("hovering a node reports it to the tooltip sink with the pointer position, and leaving or pressing hides it", () => {
+  const { view } = makeView();
+  const seen = [];
+  view.onHover = (node, at) => seen.push([node?.id ?? null, at?.x, at?.y]);
+  const mouse = (x, y) => ({ pointerId: 1, pointerType: "mouse", x, y, timeStamp: performance.now() });
+  view.moveAt(mouse(100, 100));
+  view.moveAt(mouse(102, 101));
+  view.moveAt(mouse(600, 600));
+  assert.deepEqual(seen, [["urn:a", 100, 100], ["urn:a", 102, 101], [null, 600, 600]]);
+  view.moveAt(mouse(100, 100));
+  view.downAt(mouse(100, 100));
+  assert.deepEqual(seen.at(-1), [null, 100, 100]);
+  view.dispose();
+});

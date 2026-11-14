@@ -77,8 +77,8 @@ public final class WorkbenchPolicy {
 	/** Namespaces that pages treat as if every repository had stored them: {@code prefix:namespace} entries. */
 	public static final String NAMESPACES_KEY = "namespaces";
 	/**
-	 * Replaces the bundled (empty) list the query editor falls back on for prefixes that are not defined; empty turns
-	 * the fallback off.
+	 * Replaces the bundled list the query editor falls back on for prefixes that are not defined; empty turns the
+	 * fallback off.
 	 */
 	public static final String FALLBACK_NAMESPACES_KEY = "namespaces.fallback";
 	private static final List<String> DEFAULT_GROUP_IDS = List.of("explore", "modify", "repositories", "system",
@@ -402,7 +402,7 @@ public final class WorkbenchPolicy {
 
 	/**
 	 * Returns the namespaces the query editor falls back on for prefixes that neither the repository nor
-	 * {@code namespaces} defines: the bundled (empty) list, or {@code namespaces.fallback} when that is set.
+	 * {@code namespaces} defines: the bundled list, or {@code namespaces.fallback} when that is set.
 	 */
 	public Map<String, String> getFallbackNamespaces() {
 		return fallbackNamespaces;

@@ -79,12 +79,14 @@ class WorkbenchFallbackNamespacesServletTest {
 	}
 
 	@Test
-	void theBundledEmptyListIsServedByDefault() throws Exception {
+	void theBundledListIsServedByDefault() throws Exception {
 		MockHttpServletResponse response = get(new Properties(), "GET");
 
 		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
 		assertThat(response.getContentType()).startsWith("application/json");
-		assertThat(json(response)).isEmpty();
+		assertThat(json(response)).containsEntry("skos", "http://www.w3.org/2004/02/skos/core#")
+				.containsEntry("foaf", "http://xmlns.com/foaf/0.1/")
+				.doesNotContainKeys("rdf", "rdfs", "xsd", "owl");
 	}
 
 	@Test

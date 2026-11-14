@@ -13,7 +13,15 @@
 /** SPARQL result rows to graph terms: labels, kinds and the triples of a ?source ?predicate ?target result. */
 import type { Binding, SparqlValue } from "./explorer-types.ts";
 import type { GraphNode } from "./graph-types.ts";
-import { isSafeSparqlIri as isSafeRdfIri, isSparqlTerm, sparqlNodeId, type SparqlTerm } from "./rdf-terms.ts";
+import {
+  INTERNAL_BNODE_NODE_PREFIX,
+  INTERNAL_SCOPED_BNODE_NODE_PREFIX,
+  isSafeSparqlIri as isSafeRdfIri,
+  isSparqlTerm,
+  parseFixedBlankNodeReference,
+  sparqlNodeId,
+  type SparqlTerm,
+} from "./rdf-terms.ts";
 import { humanizeIri } from "./rdf-vocabulary.ts";
 
 export const termAliases = {
@@ -35,6 +43,36 @@ const KNOWN_PREFIXES: ReadonlyArray<readonly [string, string]> = [
 /** compactTerm runs for every term of every result row (600,000 times for a 300,000-statement graph). */
 const compactTerms = new Map<string, string>();
 
+/** The repository's namespaces, longest namespace IRI first; they are tried before KNOWN_PREFIXES. Display only. */
+let repositoryNamespaces: ReadonlyArray<readonly [string, string]> = [];
+let availableKnownPrefixes: ReadonlyArray<readonly [string, string]> = KNOWN_PREFIXES;
+/** Bumped whenever the namespaces change, so a view can tell its compact terms are stale. */
+let namespacesVersion = 0;
+
+/**
+ * Use these prefix/namespace pairs to shorten IRIs (the longest matching namespace wins; an empty prefix renders as
+ * ":local"). Entries without a namespace IRI are ignored. Only displayed strings depend on this, never a query.
+ */
+export function setNamespaces(list: ReadonlyArray<{ prefix?: string; name?: string }>) {
+  const byName = new Map<string, string>();
+  const declaredPrefixes = new Set<string>();
+  for (const entry of list) {
+    if (typeof entry?.name !== "string" || !entry.name || typeof entry.prefix !== "string") continue;
+    declaredPrefixes.add(entry.prefix);
+    if (!byName.has(entry.name)) byName.set(entry.name, entry.prefix);
+  }
+  availableKnownPrefixes = KNOWN_PREFIXES.filter(([, prefix]) => !declaredPrefixes.has(prefix.slice(0, -1)));
+  repositoryNamespaces = [...byName]
+    .sort((a, b) => b[0].length - a[0].length)
+    .map(([name, prefix]) => [name, `${prefix}:`] as const);
+  compactTerms.clear();
+  namespacesVersion++;
+}
+
+export function currentNamespacesVersion() {
+  return namespacesVersion;
+}
+
 export function compactTerm(value: string, limit = 26) {
   const key = limit === 26 ? value : `${limit}\u0000${value}`;
   const known = compactTerms.get(key);
@@ -46,7 +84,9 @@ export function compactTerm(value: string, limit = 26) {
 }
 
 function computeCompactTerm(value: string, limit: number) {
-  const known = KNOWN_PREFIXES.find(([namespace]) => value.startsWith(namespace));
+  const known =
+    repositoryNamespaces.find(([namespace]) => value.length > namespace.length && value.startsWith(namespace)) ??
+    availableKnownPrefixes.find(([namespace]) => value.startsWith(namespace));
   if (known) {
     const compact = `${known[1]}${value.slice(known[0].length)}`;
     return compact.length > limit ? `${compact.slice(0, limit - 1)}…` : compact;
@@ -209,4 +249,32 @@ export function termCode(node: Pick<GraphNode, "id" | "kind" | "datatype" | "lan
   if (node.kind === "blank") return "blank node";
   if (node.language) return `@${node.language}${node.direction ? `--${node.direction}` : ""}`;
   return compactTerm(node.datatype || "http://www.w3.org/2001/XMLSchema#string", 42);
+}
+
+/** The tooltip of a resource: its full IRI, a blank node as _:id; anything else (a triple term) as it is. */
+export function termTooltip(id: string) {
+  if (id.startsWith(INTERNAL_BNODE_NODE_PREFIX)) return `_:${id.slice(INTERNAL_BNODE_NODE_PREFIX.length)}`;
+  if (id.startsWith(INTERNAL_SCOPED_BNODE_NODE_PREFIX)) {
+    try {
+      const parsed: unknown = JSON.parse(id.slice(INTERNAL_SCOPED_BNODE_NODE_PREFIX.length));
+      if (Array.isArray(parsed) && typeof parsed[1] === "string") return `_:${parsed[1]}`;
+    } catch {
+      // fall through to the raw id
+    }
+    return id;
+  }
+  const fixed = parseFixedBlankNodeReference(id);
+  if (fixed) return `_:${fixed.value}`;
+  return id;
+}
+
+/** The SVG title of a node: its label and types, then the full IRI (or _:id); a literal has no second line. */
+export function nodeTooltip(node: Pick<GraphNode, "id" | "label" | "kind">, typeLabels: string) {
+  const summary = `${node.label} · ${typeLabels}`;
+  return node.kind === "literal" ? summary : `${summary}\n${termTooltip(node.id)}`;
+}
+
+/** The SVG title of an edge: its ends and label, the compact predicate, then the full predicate IRI. */
+export function edgeTooltip(sourceLabel: string, edge: { predicate: string; label: string }, targetLabel: string) {
+  return `${sourceLabel} — ${edge.label} → ${targetLabel} (${compactTerm(edge.predicate, 32)})\n${edge.predicate}`;
 }
