@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -544,9 +545,126 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void directReadClosesDatasetsWithoutClosingOrForkingBackingSource() {
+		SailDataset namespaces = mock(SailDataset.class);
+		SailDataset statements = mock(SailDataset.class);
+		when(namespaces.getNamespace("prefix")).thenReturn("urn:direct:");
+		when(statements.getStatementCount(null, null, null)).thenReturn(3L);
+		List<SailDataset> datasets = List.of(namespaces, statements);
+		AtomicInteger acquisitions = new AtomicInteger();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		SailSource direct = directReadSource(level -> {
+			assertEquals(IsolationLevels.READ_COMMITTED, level);
+			return datasets.get(acquisitions.getAndIncrement());
+		}, sourceCloses);
+		Sail sail = createSailWithSelectedSource(direct);
+		try (SailConnection reader = sail.getConnection()) {
+			assertEquals("urn:direct:", reader.getNamespace("prefix"));
+			assertEquals(3, reader.size());
+			assertEquals(2, acquisitions.get());
+			verify(namespaces).close();
+			verify(statements).close();
+			assertFalse(reader.isActive());
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get(), "A read owns its dataset, not the shared backing source");
+	}
+
+	@Test
+	public void directReadAcquisitionFailureKeepsBackingSourceOpen() {
+		SailException failure = new SailException("direct dataset acquisition failed");
+		AtomicInteger sourceCloses = new AtomicInteger();
+		SailSource direct = directReadSource(level -> {
+			throw failure;
+		}, sourceCloses);
+		Sail sail = createSailWithSelectedSource(direct);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class, () -> reader.getNamespace("prefix")));
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get());
+	}
+
+	@Test
+	public void directReadFailureClosesDatasetAndPreservesPrimaryException() {
+		SailException failure = new SailException("direct statement iteration failed");
+		SailException cleanup = new SailException("direct dataset cleanup failed");
+		SailDataset dataset = mock(SailDataset.class);
+		when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenThrow(failure);
+		doThrow(cleanup).when(dataset).close();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		Sail sail = createSailWithSelectedSource(directReadSource(level -> dataset, sourceCloses));
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class,
+					() -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false)));
+			assertEquals(List.of(cleanup), List.of(failure.getSuppressed()));
+			verify(dataset).close();
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get());
+	}
+
+	@Test
+	public void inferredDirectReadClosesFirstDatasetWhenSecondAcquisitionFails() {
+		SailException failure = new SailException("explicit dataset acquisition failed");
+		SailException cleanup = new SailException("inferred dataset cleanup failed");
+		SailDataset inferredDataset = mock(SailDataset.class);
+		doThrow(cleanup).when(inferredDataset).close();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		SailSource inferred = directReadSource(level -> inferredDataset, sourceCloses);
+		SailSource explicit = directReadSource(level -> {
+			throw failure;
+		}, sourceCloses);
+		Sail sail = createSailWithSelectedSources(explicit, inferred);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class,
+					() -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, true)));
+			assertEquals(List.of(cleanup), List.of(failure.getSuppressed()));
+			verify(inferredDataset).close();
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get());
+	}
+
+	@Test
+	public void decoratedDirectReadKeepsOverriddenForkAndDataset() {
+		AtomicInteger sourceCloses = new AtomicInteger();
+		SailSource direct = directReadSource(level -> {
+			throw new AssertionError("The decorated source must not be bypassed");
+		}, sourceCloses);
+		SailSource fork = mock(SailSource.class);
+		SailDataset dataset = mock(SailDataset.class);
+		when(fork.dataset(IsolationLevels.READ_COMMITTED)).thenReturn(dataset);
+		when(dataset.getNamespace("prefix")).thenReturn("urn:decorated:");
+		AtomicInteger forks = new AtomicInteger();
+		SailSource decorated = new DelegatingSailSource(direct, false) {
+			@Override
+			public SailSource fork() {
+				forks.incrementAndGet();
+				return fork;
+			}
+		};
+		Sail sail = createSailWithSelectedSource(decorated);
+		try (SailConnection reader = sail.getConnection()) {
+			assertEquals("urn:decorated:", reader.getNamespace("prefix"));
+			assertEquals(1, forks.get());
+			verify(fork).dataset(IsolationLevels.READ_COMMITTED);
+			verify(dataset).close();
+			verify(fork).close();
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get());
+	}
+
+	@Test
 	public void implicitReadClosesOwnedForkWhenDatasetAcquisitionFails() {
 		SailException failure = new SailException("dataset acquisition failed");
-		SailSource selected = mock(SailSource.class);
+		SailSource selected = mockBranchingSource();
 		SailSource fork = mock(SailSource.class);
 		when(selected.fork()).thenReturn(fork);
 		when(fork.dataset(any())).thenThrow(failure);
@@ -563,7 +681,7 @@ public class SnapshotSailStoreTest {
 	@Test
 	public void implicitReadClosesDatasetAndForkWhenStatementIteratorCreationFails() {
 		SailException failure = new SailException("statement iterator creation failed");
-		SailSource selected = mock(SailSource.class);
+		SailSource selected = mockBranchingSource();
 		SailSource fork = mock(SailSource.class);
 		SailDataset dataset = mock(SailDataset.class);
 		when(selected.fork()).thenReturn(fork);
@@ -612,10 +730,10 @@ public class SnapshotSailStoreTest {
 	public void inferredReadClosesFirstDatasetAndBothForksWhenSecondAcquisitionFails() {
 		SailException failure = new SailException("explicit acquisition failed");
 		SailException cleanup = new SailException("inferred cleanup failed");
-		SailSource inferred = mock(SailSource.class);
+		SailSource inferred = mockBranchingSource();
 		SailSource inferredFork = mock(SailSource.class);
 		SailDataset inferredDataset = mock(SailDataset.class);
-		SailSource explicit = mock(SailSource.class);
+		SailSource explicit = mockBranchingSource();
 		SailSource explicitFork = mock(SailSource.class);
 		when(inferred.fork()).thenReturn(inferredFork);
 		when(inferredFork.dataset(any())).thenReturn(inferredDataset);
@@ -644,7 +762,7 @@ public class SnapshotSailStoreTest {
 				SailException failure = new SailException(operation + " failed");
 				SailException datasetCleanup = new SailException("dataset cleanup");
 				SailException sourceCleanup = new SailException("source cleanup");
-				SailSource selected = mock(SailSource.class);
+				SailSource selected = mockBranchingSource();
 				SailSource fork = mock(SailSource.class);
 				SailDataset dataset = mock(SailDataset.class);
 				when(selected.fork()).thenReturn(fork);
@@ -719,7 +837,7 @@ public class SnapshotSailStoreTest {
 
 	@Test
 	public void iterationOwnershipTransferFailureClosesDatasetAndSource() {
-		SailSource selected = mock(SailSource.class);
+		SailSource selected = mockBranchingSource();
 		SailSource fork = mock(SailSource.class);
 		SailDataset dataset = mock(SailDataset.class);
 		when(selected.fork()).thenReturn(fork);
@@ -799,6 +917,41 @@ public class SnapshotSailStoreTest {
 
 	private Sail createSailWithSelectedSource(SailSource selectedSource) {
 		return createSailWithSelectedSources(selectedSource, selectedSource);
+	}
+
+	private SailSource mockBranchingSource() {
+		SailSource source = mock(SailSource.class);
+		doCallRealMethod().when(source).datasetForRead(any());
+		return source;
+	}
+
+	private SailSource directReadSource(Function<IsolationLevel, SailDataset> datasets, AtomicInteger sourceCloses) {
+		return new BackingSailSource() {
+			@Override
+			public SailSource fork() {
+				throw new UnsupportedOperationException("This source does not support writable branches");
+			}
+
+			@Override
+			public SailDataset datasetForRead(IsolationLevel level) {
+				return dataset(level);
+			}
+
+			@Override
+			public SailDataset dataset(IsolationLevel level) {
+				return datasets.apply(level);
+			}
+
+			@Override
+			public SailSink sink(IsolationLevel level) {
+				return new TestSailSink();
+			}
+
+			@Override
+			public void close() {
+				sourceCloses.incrementAndGet();
+			}
+		};
 	}
 
 	private Sail createSailWithSelectedSources(SailSource explicit, SailSource inferred) {
