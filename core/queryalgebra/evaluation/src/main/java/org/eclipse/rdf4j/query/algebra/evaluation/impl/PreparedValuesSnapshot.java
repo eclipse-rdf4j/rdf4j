@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QueryModelPreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
@@ -392,12 +393,7 @@ final class PreparedValuesSnapshot {
 		private PreparedRows(Iterable<BindingSet> source) {
 			List<BindingSet> captured = new ArrayList<>();
 			for (BindingSet row : source) {
-				List<String> names = new ArrayList<>(row.getBindingNames());
-				List<Value> values = new ArrayList<>(names.size());
-				for (String name : names) {
-					values.add(row.getValue(name));
-				}
-				captured.add(new SnapshotRow(names, values));
+				captured.add(BindingSetSnapshots.copyOf(row));
 			}
 			rows = Collections.unmodifiableList(captured);
 		}
@@ -413,18 +409,4 @@ final class PreparedValuesSnapshot {
 		}
 	}
 
-	private static final class SnapshotRow extends ListBindingSet {
-		private static final long serialVersionUID = 1L;
-		private final Set<String> names;
-
-		private SnapshotRow(List<String> names, List<Value> values) {
-			super(Collections.unmodifiableList(names), Collections.unmodifiableList(values));
-			this.names = Collections.unmodifiableSet(new LinkedHashSet<>(names));
-		}
-
-		@Override
-		public Set<String> getBindingNames() {
-			return names;
-		}
-	}
 }

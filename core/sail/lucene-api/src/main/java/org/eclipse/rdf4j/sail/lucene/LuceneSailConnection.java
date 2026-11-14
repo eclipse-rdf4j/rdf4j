@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizer
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
@@ -428,9 +429,9 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			tupleExpr = new QueryRoot(tupleExpr);
 		}
 
-		// Inline any externally set bindings, lucene statement patterns can also
-		// use externally bound variables
-		new BindingAssignerOptimizer().optimize(tupleExpr, dataset, bindings);
+		// Search lowering may consume API reads under projections. Specialize only proven logical reads,
+		// retaining their provenance and projected values; final empty-input capture still belongs to the evaluator.
+		new BindingAssignerOptimizer().optimizeQueryParameters(tupleExpr, bindings);
 
 		List<SearchQueryEvaluator> queries = new ArrayList<>();
 
@@ -450,30 +451,23 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 					tripleSource, dataset, sail.getFederatedServiceResolver(),
 					sail.getTupleFunctionRegistry());
 
-			// do standard optimizations
-			new BindingAssignerOptimizer().optimize(tupleExpr, dataset, bindings);
-			// magic-property syntax of the set-returning extension functions (the standard pipeline is bypassed here)
-			StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER.optimize(tupleExpr, dataset,
-					bindings);
-			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
-			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
-			new ConjunctiveConstraintSplitterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
-			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new UnionScopeChangeOptimizer().optimize(tupleExpr, dataset, bindings);
-			new QueryModelNormalizerOptimizer().optimize(tupleExpr, dataset, bindings);
-			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics(), tripleSource).optimize(tupleExpr, dataset,
-					bindings);
-			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
-			// bindings);
-			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);
-			new FilterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new OrderLimitOptimizer().optimize(tupleExpr, dataset, bindings);
+			// Preserve the established optimizer order, while giving every stage the real empty execution input.
+			var statistics = new TupleFunctionEvaluationStatistics();
+			strategy.setOptimizerPipeline(() -> List.of(
+					StandardQueryOptimizerPipeline.BINDING_ASSIGNER,
+					StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
+					new ConstantOptimizer(strategy), new CompareOptimizer(),
+					new ConjunctiveConstraintSplitterOptimizer(),
+					new DisjunctiveConstraintOptimizer(), new SameTermFilterOptimizer(),
+					new UnionScopeChangeOptimizer(),
+					new QueryModelNormalizerOptimizer(), new QueryJoinOptimizer(statistics, tripleSource),
+					new IterativeEvaluationOptimizer(), new FilterOptimizer(), new OrderLimitOptimizer()));
+			tupleExpr = strategy.optimizeForEmptyInput(tupleExpr, statistics, bindings);
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 
 			try {
-				return strategy.evaluate(tupleExpr, bindings);
+				return strategy.precompile(tupleExpr).evaluate(EmptyBindingSet.getInstance());
 			} catch (QueryEvaluationException e) {
 				throw new SailException(e);
 			}

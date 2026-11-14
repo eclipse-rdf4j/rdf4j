@@ -12,22 +12,1881 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
+import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.junit.jupiter.api.Test;
 
 class PreparedQueryOptimizerBindingsTest {
+	@Test
+	void constructedProjectionHasDistinctRuntimeAndPreparedResults() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		MapBindingSet input = parameters();
+		try (var result = strategy.precompile(constructedProjection()).evaluate(input)) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(input.getValue("x"), SimpleValueFactory.getInstance().createLiteral(2));
+		}
+		TupleExpr runtime = strategy.optimize(constructedProjection(), new EvaluationStatistics(), input);
+		try (var result = strategy.precompile(runtime).evaluate(input)) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(input.getValue("x"), SimpleValueFactory.getInstance().createLiteral(2));
+		}
+		TupleExpr prepared = strategy.optimizeForEmptyInput(constructedProjection(), new EvaluationStatistics(), input);
+		try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> rows = QueryResults.asList(result);
+			assertThat(rows).extracting(row -> row.getValue("result"))
+					.containsExactly(null, SimpleValueFactory.getInstance().createLiteral(2));
+			assertThat(rows.get(0).hasBinding("result")).isFalse();
+		}
+	}
+
+	private static TupleExpr constructedProjection() {
+		var local = new Extension(new SingletonSet(), new ExtensionElem(
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(2)), "x"));
+		var union = new Union(new SingletonSet(), local);
+		var projection = new Projection(union, new ProjectionElemList(new ProjectionElem("x", "projected")));
+		return new QueryRoot(new Extension(projection, new ExtensionElem(Var.of("projected"), "result")));
+	}
+
+	@Test
+	void preparedProjectionOfAnApiExpressionReadDoesNotDependOnOptionalOptimizers() {
+		var vf = SimpleValueFactory.getInstance();
+		var input = new MapBindingSet();
+		input.addBinding("x", vf.createLiteral("1", XSD.INTEGER));
+		for (boolean projectTarget : List.of(false, true)) {
+			String query = "SELECT ?x ?y " + (projectTarget ? "?z " : "")
+					+ "WHERE { VALUES ?y { 3 } BIND(?x + 1 AS ?z) }";
+			for (boolean optionalOptimizers : List.of(true, false)) {
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+						.getTupleExpr();
+				var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+				if (!optionalOptimizers) {
+					strategy.setOptimizerPipeline(List::of);
+				}
+				TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+				try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+					List<BindingSet> result = QueryResults.asList(rows);
+					assertThat(result).as("mode=prepared, projectTarget=%s, optionalOptimizers=%s", projectTarget,
+							optionalOptimizers).hasSize(1);
+					assertThat(result.get(0).getValue("x"))
+							.as("mode=prepared, projectTarget=%s, optionalOptimizers=%s, plan=%s", projectTarget,
+									optionalOptimizers, prepared)
+							.isEqualTo(vf.createLiteral("1", XSD.INTEGER));
+					assertThat(result.get(0).getValue("y"))
+							.as("mode=prepared, projectTarget=%s, optionalOptimizers=%s, column=y", projectTarget,
+									optionalOptimizers)
+							.isEqualTo(vf.createLiteral("3", XSD.INTEGER));
+					if (projectTarget) {
+						assertThat(result.get(0).getValue("z"))
+								.as("mode=prepared, projectTarget=%s, optionalOptimizers=%s, column=z", projectTarget,
+										optionalOptimizers)
+								.isEqualTo(vf.createLiteral("2", XSD.INTEGER));
+					} else {
+						assertThat(result.get(0).hasBinding("z"))
+								.as("mode=prepared, projectTarget=%s, optionalOptimizers=%s, column=z", projectTarget,
+										optionalOptimizers)
+								.isFalse();
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	void preparedProjectionDoesNotRecoverAReadOfASubqueryLocalBinding() {
+		String query = "SELECT ?x WHERE { { SELECT ?y WHERE { BIND(2 AS ?x) BIND(?x + 1 AS ?y) } } }";
+		for (boolean optionalOptimizers : List.of(true, false)) {
+			var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			if (!optionalOptimizers) {
+				strategy.setOptimizerPipeline(List::of);
+			}
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+			try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+				List<BindingSet> result = QueryResults.asList(rows);
+				assertThat(result).as("mode=prepared, local subquery read, optionalOptimizers=%s", optionalOptimizers)
+						.hasSize(1);
+				assertThat(result.get(0).hasBinding("x"))
+						.as("mode=prepared, local subquery read, optionalOptimizers=%s, plan=%s", optionalOptimizers,
+								prepared)
+						.isFalse();
+			}
+		}
+	}
+
+	@Test
+	void preparedProjectionDoesNotExportAnUnprojectedSubqueryApiRead() {
+		// The inner SELECT owns its unprojected names, even when the expression reads an API parameter.
+		String query = "SELECT ?x WHERE { { SELECT ?y WHERE { BIND(?x + 1 AS ?y) } } }";
+		for (boolean optionalOptimizers : List.of(true, false)) {
+			var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			if (!optionalOptimizers) {
+				strategy.setOptimizerPipeline(List::of);
+			}
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+			try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+				List<BindingSet> result = QueryResults.asList(rows);
+				assertThat(result).as("mode=prepared, private API read, optionalOptimizers=%s", optionalOptimizers)
+						.hasSize(1);
+				assertThat(result.get(0).hasBinding("x"))
+						.as("mode=prepared, private API read, optionalOptimizers=%s, plan=%s", optionalOptimizers,
+								prepared)
+						.isFalse();
+			}
+		}
+	}
+
+	@Test
+	void preparedProjectionRecoversExpressionInputBeforeSourceAlias() {
+		for (boolean optionalOptimizers : List.of(true, false)) {
+			var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			if (!optionalOptimizers) {
+				strategy.setOptimizerPipeline(List::of);
+			}
+			var arg = new Extension(new SingletonSet(), new ExtensionElem(new Str(Var.of("x")), "other"));
+			var projection = new Projection(arg, new ProjectionElemList(new ProjectionElem("x", "renamed")));
+			TupleExpr prepared = strategy.optimizeForEmptyInput(new QueryRoot(projection), new EvaluationStatistics(),
+					parameters());
+			try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).as("mode=prepared, source alias, optionalOptimizers=%s",
+						optionalOptimizers)
+						.extracting(row -> row.getValue("renamed"))
+						.containsExactly(parameters().getValue("x"));
+			}
+		}
+	}
+
+	@Test
+	void aggregatePlaceholderDoesNotRecoverAnUnevaluatedApiRead() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var argument = new Extension(new SingletonSet(), new ExtensionElem(new Sum(Var.of("x")), "sum"));
+		var projection = new Projection(argument, new ProjectionElemList(new ProjectionElem("x")));
+		TupleExpr prepared = strategy.optimizeForEmptyInput(new QueryRoot(projection), new EvaluationStatistics(),
+				parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> result = QueryResults.asList(rows);
+			assertThat(result).as("mode=prepared, skipped aggregate placeholder").hasSize(1);
+			assertThat(result.get(0).hasBinding("x"))
+					.as("mode=prepared, skipped aggregate placeholder, plan=%s", prepared)
+					.isFalse();
+		}
+	}
+
+	@Test
+	void lateralProjectionUsesRecoveredLeftAliasAsActualInput() {
+		var vf = SimpleValueFactory.getInstance();
+		var left = new Projection(new Extension(new SingletonSet(), new ExtensionElem(new Str(Var.of("x")), "probe")),
+				new ProjectionElemList(new ProjectionElem("x", "y")));
+		var right = new Projection(
+				new Extension(new SingletonSet(), new ExtensionElem(new Str(Var.of("y")), "computed")),
+				new ProjectionElemList(new ProjectionElem("y", "result"), new ProjectionElem("computed")));
+		var input = parameters();
+		input.addBinding("y", vf.createLiteral(2));
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(new QueryRoot(new Lateral(left, right, Set.of("y"))),
+				new EvaluationStatistics(), input);
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> result = QueryResults.asList(rows);
+			assertThat(result).as("mode=prepared, lateral recovered alias").hasSize(1);
+			assertThat(result.get(0).getValue("y")).as("mode=prepared, lateral left alias")
+					.isEqualTo(vf.createLiteral(1));
+			assertThat(result.get(0).getValue("result")).as("mode=prepared, lateral projected input")
+					.isEqualTo(vf.createLiteral(1));
+			assertThat(result.get(0).getValue("computed")).as("mode=prepared, lateral API expression")
+					.isEqualTo(vf.createLiteral("2"));
+		}
+	}
+
+	@Test
+	void projectionNameAloneDoesNotCaptureAParameter() {
+		var projection = new Projection(new SingletonSet(),
+				new ProjectionElemList(new ProjectionElem("x", "projected")));
+		assertProjectionNameRemainsUnboundAfterCapture(new QueryRoot(projection), "projected");
+	}
+
+	@Test
+	void multiProjectionNameAloneDoesNotCaptureAParameter() {
+		var projection = new MultiProjection(new SingletonSet(),
+				List.of(new ProjectionElemList(new ProjectionElem("x", "projected"))));
+		assertProjectionNameRemainsUnboundAfterCapture(new QueryRoot(projection), "projected");
+	}
+
+	@Test
+	void groupKeyAloneDoesNotCaptureAParameter() {
+		assertProjectionNameRemainsUnboundAfterCapture(new QueryRoot(new Group(new SingletonSet(), List.of("x"))), "x");
+	}
+
+	@Test
+	void localUnionAssignmentsRemainLocalForMultiProjectionAndGroup() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var projections = List.of(new ProjectionElemList(new ProjectionElem("x", "projected")));
+		var multiProjection = new QueryRoot(new MultiProjection(mixedUnion(2), projections));
+		var group = new QueryRoot(new Group(mixedUnion(2), List.of("x")));
+		for (var pair : List.of(Map.entry(multiProjection, "projected"), Map.entry(group, "x"))) {
+			TupleExpr prepared = strategy.optimizeForEmptyInput(pair.getKey(), new EvaluationStatistics(),
+					parameters());
+			try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).as("mode=prepared, owner=%s", pair.getKey().getArg().getClass())
+						.extracting(row -> row.getValue(pair.getValue()))
+						.containsExactlyInAnyOrder(null, SimpleValueFactory.getInstance().createLiteral(2));
+			}
+		}
+	}
+
+	private static void assertProjectionNameRemainsUnboundAfterCapture(TupleExpr expression, String output) {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		MapBindingSet input = parameters();
+		try (var rows = strategy.precompile(expression.clone()).evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue(output))
+					.containsExactly(input.getValue("x"));
+		}
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			// The independent Query.setBinding baseline records unbound names for SELECT ?x WHERE {} and GROUP BY x.
+			List<BindingSet> results = QueryResults.asList(rows);
+			assertThat(results).hasSize(1);
+			assertThat(results.get(0).hasBinding(output)).isFalse();
+		}
+	}
+
+	@Test
+	void parsedGroupConcatSeparatorsUseTheGroupInputAcrossPlaceholderOwners() {
+		for (String separator : List.of("?separator", "STR(?separator)",
+				"IF(false, ?separator, \"|\")", "COALESCE(\"|\", ?separator)")) {
+			for (boolean standardPipeline : List.of(false, true)) {
+				String query = "SELECT (GROUP_CONCAT(?item; SEPARATOR=" + separator
+						+ ") AS ?result) WHERE { VALUES ?item { \"a\" \"b\" } }";
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+						.getTupleExpr();
+				var input = new MapBindingSet();
+				input.addBinding("separator", SimpleValueFactory.getInstance().createLiteral("|"));
+				var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+				if (!standardPipeline) {
+					strategy.setOptimizerPipeline(List::of);
+				}
+				var prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+				try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+					assertThat(QueryResults.asList(result)).as("separator=%s, standard=%s", separator, standardPipeline)
+							.extracting(row -> row.getValue("result").stringValue())
+							.singleElement()
+							.isIn("a|b", "b|a");
+				}
+			}
+		}
+	}
+
+	@Test
+	void unreachableAggregatePlaceholderDoesNotRequireAnUnknownScope() {
+		var placeholder = new ExtensionElem(new Count(new Exists(new OpaqueScope(new SingletonSet()))), "result");
+		var expression = new QueryRoot(new Extension(new SingletonSet(), placeholder));
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).singleElement()
+					.satisfies(row -> assertThat(row.isEmpty()).isTrue());
+		}
+	}
+
+	@Test
+	void executedAggregateSubqueryStillRejectsUnknownScopesAtomically() {
+		var group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("result", new Count(new Exists(new OpaqueScope(new SingletonSet())))));
+		var expression = new QueryRoot(group);
+		var original = expression.clone();
+		assertThatThrownBy(() -> new BindingAssignerOptimizer().optimizeForPreparedQuery(expression, parameters()))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("OpaqueScope");
+		assertThat(expression).isEqualTo(original);
+	}
+
+	@Test
+	void groupConcatSeparatorCapturesItsParentInput() {
+		assertGroupConcatSeparatorCaptured(Var.of("separator"));
+	}
+
+	@Test
+	void nestedGroupConcatSeparatorCapturesItsParentInput() {
+		assertGroupConcatSeparatorCaptured(new Str(Var.of("separator")));
+	}
+
+	@Test
+	void groupConcatClonesAndOwnsItsSeparatorExpression() {
+		var concat = new GroupConcat(Var.of("item"));
+		var separator = new Str(Var.of("separator"));
+		concat.setSeparator(separator);
+		GroupConcat clone = concat.clone();
+		assertThat(separator.getParentNode()).isSameAs(concat);
+		assertThat(clone.getSeparator()).isNotSameAs(separator);
+		assertThat(clone.getSeparator().getParentNode()).isSameAs(clone);
+		assertThat(clone).isEqualTo(concat);
+		((Str) clone.getSeparator()).setArg(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("|")));
+		assertThat(concat.getSeparator()).isSameAs(separator);
+		assertThat(((Str) concat.getSeparator()).getArg()).isInstanceOf(Var.class);
+		assertThat(clone).isNotEqualTo(concat);
+	}
+
+	@Test
+	void existsProjectionDoesNotExportASubstitutedTerm() {
+		assertExistsRetainsBoundColumn("projection");
+	}
+
+	@Test
+	void existsMultiProjectionDoesNotExportASubstitutedTerm() {
+		assertExistsRetainsBoundColumn("multiProjection");
+	}
+
+	@Test
+	void existsGroupDoesNotExportASubstitutedTerm() {
+		assertExistsRetainsBoundColumn("group");
+	}
+
+	@Test
+	void existsProjectionRespectsLocalUnionAssignment() {
+		var vf = SimpleValueFactory.getInstance();
+		IRI alice = vf.createIRI("urn:alice");
+		IRI predicate = vf.createIRI("urn:p");
+		Statement statement = vf.createStatement(alice, predicate, vf.createLiteral("value"));
+		var source = new EmptyTripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI requestedPredicate,
+					Value object, Resource... contexts) {
+				boolean matches = (subject == null || subject.equals(statement.getSubject()))
+						&& (requestedPredicate == null || requestedPredicate.equals(statement.getPredicate()))
+						&& (object == null || object.equals(statement.getObject()));
+				return new CloseableIteratorIteration<>(
+						(matches ? List.of(statement) : List.<Statement>of()).iterator());
+			}
+		};
+		for (boolean matches : List.of(true, false)) {
+			var pattern = new StatementPattern(Var.of("x"), Var.of("predicate", predicate, true, true), Var.of("o"));
+			var local = new Extension(new SingletonSet(),
+					new ExtensionElem(new ValueConstant(vf.createIRI("urn:local")), "x"));
+			var union = new Union(pattern, local);
+			var projection = new Projection(union, new ProjectionElemList(new ProjectionElem("x", "projected")));
+			var condition = new Compare(Var.of("projected"), new ValueConstant(alice), Compare.CompareOp.EQ);
+			var exists = new Exists(new Filter(projection, condition));
+			var expression = new QueryRoot(new Extension(new SingletonSet(), new ExtensionElem(exists, "result")));
+			var input = new MapBindingSet();
+			input.addBinding("x", matches ? alice : vf.createIRI("urn:bob"));
+			var strategy = new DefaultEvaluationStrategy(source, null);
+			strategy.setOptimizerPipeline(List::of);
+			try (var rows = strategy.precompile(expression.clone()).evaluate(input)) {
+				assertThat(QueryResults.asList(rows)).as("mode=runtime, owner=union, matches=%s", matches)
+						.extracting(row -> row.getValue("result").stringValue())
+						.containsExactly(Boolean.toString(matches));
+			}
+			TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+			try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+				// Inside EXISTS the API occurrence is a substituted term; the other arm owns x locally.
+				// Neither contributes the API value as a projected variable to this prepared plan.
+				assertThat(QueryResults.asList(rows)).as("mode=prepared, owner=union, matches=%s", matches)
+						.extracting(row -> row.getValue("result").stringValue())
+						.containsExactly("false");
+			}
+		}
+	}
+
+	private static void assertExistsRetainsBoundColumn(String owner) {
+		var vf = SimpleValueFactory.getInstance();
+		IRI alice = vf.createIRI("urn:alice");
+		IRI predicate = vf.createIRI("urn:p");
+		Statement statement = vf.createStatement(alice, predicate, vf.createLiteral("value"));
+		var source = new EmptyTripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI requestedPredicate,
+					Value object, Resource... contexts) {
+				boolean matches = (subject == null || subject.equals(statement.getSubject()))
+						&& (requestedPredicate == null || requestedPredicate.equals(statement.getPredicate()))
+						&& (object == null || object.equals(statement.getObject()))
+						&& (contexts.length == 0 || Arrays.asList(contexts).contains(statement.getContext()));
+				return new CloseableIteratorIteration<>(
+						(matches ? List.of(statement) : List.<Statement>of()).iterator());
+			}
+		};
+		for (boolean matches : List.of(true, false)) {
+			var pattern = new StatementPattern(Var.of("x"), Var.of("predicate", predicate, true, true), Var.of("o"));
+			TupleExpr scoped;
+			String name;
+			if (owner.equals("group")) {
+				var group = new Group(pattern, List.of("x"));
+				scoped = new Projection(group, new ProjectionElemList(new ProjectionElem("x", "projected")));
+				name = "projected";
+			} else {
+				var elements = new ProjectionElemList(new ProjectionElem("x", "projected"));
+				scoped = owner.equals("projection") ? new Projection(pattern, elements)
+						: new MultiProjection(pattern, List.of(elements));
+				name = "projected";
+			}
+			var exists = new Exists(new Filter(scoped, new Bound(Var.of(name))));
+			var expression = new QueryRoot(new Extension(new SingletonSet(), new ExtensionElem(exists, "result")));
+			var input = new MapBindingSet();
+			input.addBinding("x", matches ? alice : vf.createIRI("urn:bob"));
+			var strategy = new DefaultEvaluationStrategy(source, null);
+			strategy.setOptimizerPipeline(List::of);
+			try (var rows = strategy.precompile(expression.clone()).evaluate(input)) {
+				assertThat(QueryResults.asList(rows)).as("mode=runtime, owner=%s, matches=%s", owner, matches)
+						.extracting(row -> row.getValue("result").stringValue())
+						.containsExactly(Boolean.toString(matches));
+			}
+			TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+			try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+				// EXISTS captures an API occurrence as a query term (GH-514), not a variable output column.
+				assertThat(QueryResults.asList(rows)).as("mode=prepared, owner=%s, matches=%s", owner, matches)
+						.extracting(row -> row.getValue("result").stringValue())
+						.containsExactly("false");
+			}
+		}
+	}
+
+	@Test
+	void explicitConstantOptimizerInputIsSnapshotted() {
+		var vf = SimpleValueFactory.getInstance();
+		MapBindingSet proofInput = parameters();
+		var optimizer = new ConstantOptimizer(new DefaultEvaluationStrategy(new EmptyTripleSource(), null), proofInput);
+		proofInput.setBinding("x", vf.createLiteral(2));
+		var filter = new Filter(new SingletonSet(),
+				new Compare(Var.of("x"), new ValueConstant(vf.createLiteral(1)), Compare.CompareOp.EQ));
+		filter.setConditionBindingScope(Filter.ConditionBindingScope.ALL);
+		optimizer.optimize(filter, null, parameters());
+		assertThat(filter.getCondition()).isInstanceOf(ValueConstant.class);
+		assertThat(((ValueConstant) filter.getCondition()).getValue().stringValue()).isEqualTo("true");
+	}
+
+	private static void assertGroupConcatSeparatorCaptured(ValueExpr separator) {
+		var vf = SimpleValueFactory.getInstance();
+		var first = new MapBindingSet();
+		first.addBinding("item", vf.createLiteral("a"));
+		var second = new MapBindingSet();
+		second.addBinding("item", vf.createLiteral("b"));
+		var values = new BindingSetAssignment();
+		values.setBindingSets(List.of(first, second));
+		var concat = new GroupConcat(Var.of("item"));
+		concat.setSeparator(separator);
+		var localAssignment = new Extension(values,
+				new ExtensionElem(new ValueConstant(vf.createLiteral("child")), "separator"));
+		var group = new Group(localAssignment);
+		group.addGroupElement(new GroupElem("result", concat));
+		var expression = new QueryRoot(group);
+		var input = new MapBindingSet();
+		input.addBinding("separator", vf.createLiteral("|"));
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		try (var rows = strategy.precompile(expression.clone()).evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result").stringValue())
+					.singleElement()
+					.isIn("a|b", "b|a");
+		}
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result").stringValue())
+					.singleElement()
+					.isIn("a|b", "b|a");
+		}
+	}
+
+	@Test
+	void serviceRetainsPreparedParametersReadOnlyBySerializedFilter() {
+		var vf = SimpleValueFactory.getInstance();
+		var remote = mock(FederatedService.class);
+		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
+		when(remote.select(any(), anySet(), any(), nullable(String.class))).thenAnswer(invocation -> {
+			BindingSet bindings = invocation.getArgument(2);
+			sent.set(bindings);
+			request.set(invocation.getArgument(0));
+			if (!savedServiceFilterMatches(request.get(), bindings)) {
+				return new EmptyIteration<>();
+			}
+			var row = new MapBindingSet();
+			row.addBinding("o", vf.createLiteral("matched"));
+			return new SingletonIteration<BindingSet>(row);
+		});
+		String query = "SELECT ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, ignored -> remote);
+		strategy.setOptimizerPipeline(List::of);
+		MapBindingSet input = parameters();
+		try (var rows = strategy.precompile(expression.clone()).evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
+					.containsExactly(vf.createLiteral("matched"));
+		}
+		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral(1));
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+		input.setBinding("x", vf.createLiteral(2));
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
+					.containsExactly(vf.createLiteral("matched"));
+		}
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
+	}
+
+	@Test
+	void vectoredServiceRetainsPreparedParametersInEveryRequestRow() {
+		var vf = SimpleValueFactory.getInstance();
+		var remote = mock(FederatedService.class);
+		var sent = new ArrayList<BindingSet>();
+		var original = new ArrayList<BindingSet>();
+		var requests = new ArrayList<Service>();
+		when(remote.preservesBNodeResultProvenance()).thenReturn(true);
+		when(remote.evaluate(any(), any(), nullable(String.class))).thenAnswer(invocation -> {
+			Service request = invocation.getArgument(0);
+			requests.add(request);
+			CloseableIteration<BindingSet> inputs = invocation.getArgument(1);
+			var output = new ArrayList<BindingSet>();
+			try (inputs) {
+				while (inputs.hasNext()) {
+					BindingSet bindings = inputs.next();
+					sent.add(new QueryBindingSet(bindings));
+					original.add(new QueryBindingSet(RemoteBNode.originalBindings(bindings)));
+					if (savedServiceFilterMatches(request, bindings)) {
+						var row = new QueryBindingSet(RemoteBNode.originalBindings(bindings));
+						row.setBinding("o", vf.createLiteral("matched"));
+						output.add(row);
+					}
+				}
+			}
+			return new CloseableIteratorIteration<>(output.iterator());
+		});
+		String query = "SELECT ?x ?s ?o WHERE { VALUES ?s { <urn:a> <urn:b> } "
+				+ "SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, ignored -> remote);
+		strategy.setOptimizerPipeline(List::of);
+		MapBindingSet input = parameters();
+		try (var rows = strategy.precompile(expression.clone()).evaluate(input)) {
+			List<BindingSet> result = QueryResults.asList(rows);
+			assertThat(result).extracting(row -> row.getValue("s"))
+					.containsExactlyInAnyOrder(vf.createIRI("urn:a"), vf.createIRI("urn:b"));
+			assertThat(result).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(vf.createLiteral(1)));
+		}
+		assertThat(sent).hasSize(2).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(vf.createLiteral(1)));
+		sent.clear();
+		original.clear();
+		requests.clear();
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> result = QueryResults.asList(rows);
+			assertThat(result).extracting(row -> row.getValue("s"))
+					.containsExactlyInAnyOrder(vf.createIRI("urn:a"), vf.createIRI("urn:b"));
+			// The outer SELECT recovers the API expression read, independently of SERVICE's transport mapping.
+			assertThat(result).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(vf.createLiteral(1)));
+		}
+		assertThat(sent).hasSize(2).allSatisfy(row -> assertThat(row.hasBinding("x")).isFalse());
+		assertThat(sent).extracting(row -> row.getValue("s"))
+				.containsExactlyInAnyOrder(vf.createIRI("urn:a"), vf.createIRI("urn:b"));
+		assertThat(requests).isNotEmpty()
+				.allSatisfy(request -> assertCapturedServiceFilter(request, EmptyBindingSet.getInstance(),
+						vf.createLiteral(1)));
+		assertThat(original).hasSize(2).allSatisfy(row -> assertThat(row.hasBinding("x")).isFalse());
+	}
+
+	@Test
+	void unusedServiceParameterDoesNotBecomeAProjectedBinding() {
+		var vf = SimpleValueFactory.getInstance();
+		var sent = new AtomicReference<BindingSet>();
+		List<BindingSet> rows = preparedServiceRows(
+				"SELECT ?x ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o } }", sent,
+				vf.createLiteral("matched"), null);
+		assertThat(rows).hasSize(1);
+		assertThat(rows.get(0).getValue("o")).isEqualTo(vf.createLiteral("matched"));
+		assertThat(rows.get(0).hasBinding("x")).isFalse();
+		assertThat(sent.get().hasBinding("x")).isFalse();
+	}
+
+	@Test
+	void serviceFilterParameterIsAnOutgoingConstraintNotAnOutputBinding() {
+		var vf = SimpleValueFactory.getInstance();
+		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
+		List<BindingSet> rows = preparedServiceRows(
+				"SELECT ?x ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }", sent, request,
+				vf.createLiteral("matched"), null);
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
+		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
+		assertThat(rows).hasSize(1);
+		assertThat(rows.get(0).getValue("o")).isEqualTo(vf.createLiteral("matched"));
+		assertThat(rows.get(0).getValue("x")).isEqualTo(vf.createLiteral(1));
+	}
+
+	@Test
+	void serviceLocalBindDoesNotReceiveTheShadowedParameter() {
+		var vf = SimpleValueFactory.getInstance();
+		var sent = new AtomicReference<BindingSet>();
+		List<BindingSet> rows = preparedServiceRows(
+				"SELECT ?x WHERE { SERVICE <urn:endpoint> { BIND(2 AS ?x) ?s <urn:p> ?o } }", sent,
+				null, vf.createLiteral("2", XSD.INTEGER));
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertThat(rows).extracting(row -> row.getValue("x")).containsExactly(vf.createLiteral("2", XSD.INTEGER));
+	}
+
+	@Test
+	void serviceApiConstraintDoesNotReplaceAValuesResult() {
+		var vf = SimpleValueFactory.getInstance();
+		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
+		List<BindingSet> rows = preparedServiceRows(
+				"SELECT ?x ?o WHERE { VALUES ?x { 2 } SERVICE <urn:endpoint> { "
+						+ "?s <urn:p> ?o FILTER(?x = 1) } }",
+				sent, request, vf.createLiteral("matched"), null);
+		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral("2", XSD.INTEGER));
+		assertThat(RemoteBNode.originalBindings(sent.get()).getValue("x"))
+				.isEqualTo(vf.createLiteral("2", XSD.INTEGER));
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
+		assertThat(rows).extracting(row -> row.getValue("x")).containsExactly(vf.createLiteral("2", XSD.INTEGER));
+	}
+
+	@Test
+	void preparedServiceAllowsDifferentLocalValuesForAnApiExpressionRead() {
+		var vf = SimpleValueFactory.getInstance();
+		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
+		List<BindingSet> rows = preparedServiceRows(
+				"SELECT ?o WHERE { SERVICE <urn:endpoint> { VALUES ?x { 2 } "
+						+ "?s <urn:p> ?o FILTER(?x = 1) } }",
+				sent, request, vf.createLiteral("matched"), null);
+		assertThat(rows).extracting(row -> row.getValue("o")).containsExactly(vf.createLiteral("matched"));
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
+		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
+	}
+
+	@Test
+	void preparedServiceRetainsTrustedRemoteBlankNodeUntilEndpointTranslation() {
+		var vf = SimpleValueFactory.getInstance();
+		Object endpoint = new Object();
+		Value canonical = vf.createBNode("canonical");
+		Value alias = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, endpoint, true).map(canonical);
+		var input = new MapBindingSet();
+		input.addBinding("x", alias);
+		String query = "SELECT ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(sameTerm(?x, ?s)) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+		var service = new AtomicReference<Service>();
+		prepared.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+				super.meet(node);
+			}
+		});
+		assertThat(service.get().getPreparedInputBindings().get("x")).isSameAs(alias);
+		assertThat(RemoteBNode.toRemoteValue(service.get().getPreparedInputBindings().get("x"), endpoint, true, true))
+				.isEqualTo(canonical);
+	}
+
+	@Test
+	void serviceReceivesALocalBindInsteadOfTheShadowedApiValue() {
+		var vf = SimpleValueFactory.getInstance();
+		var remote = mock(FederatedService.class);
+		var sent = new AtomicReference<BindingSet>();
+		when(remote.select(any(), anySet(), any(), nullable(String.class))).thenAnswer(invocation -> {
+			BindingSet bindings = invocation.getArgument(2);
+			sent.set(bindings);
+			return new EmptyIteration<>(); // FILTER(?x = 1) is false for the local integer value 2.
+		});
+		String query = "SELECT ?x ?o WHERE { BIND(2 AS ?x) "
+				+ "SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, ignored -> remote);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+		assertThat(sent.get().getValue("x")).isEqualTo(vf.createLiteral("2", XSD.INTEGER));
+	}
+
+	@Test
+	void previouslyOptimizedServiceFilterCanBePreparedWithTheSameParameter() {
+		var vf = SimpleValueFactory.getInstance();
+		var remote = mock(FederatedService.class);
+		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
+		when(remote.select(any(), anySet(), any(), nullable(String.class))).thenAnswer(invocation -> {
+			BindingSet bindings = invocation.getArgument(2);
+			sent.set(bindings);
+			request.set(invocation.getArgument(0));
+			if (!savedServiceFilterMatches(request.get(), bindings)) {
+				return new EmptyIteration<>();
+			}
+			var row = new MapBindingSet();
+			row.addBinding("o", vf.createLiteral("matched"));
+			return new SingletonIteration<BindingSet>(row);
+		});
+		MapBindingSet input = parameters();
+		TupleExpr expression = serviceFilterWithRuntimeAssignedInput(input);
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, ignored -> remote);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+		input.setBinding("x", vf.createLiteral(2));
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
+					.containsExactly(vf.createLiteral("matched"));
+		}
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
+	}
+
+	@Test
+	void previouslyOptimizedServiceFilterRejectsADifferentParameterAtomically() {
+		TupleExpr expression = serviceFilterWithRuntimeAssignedInput(parameters());
+		TupleExpr original = expression.clone();
+		var changed = new MapBindingSet();
+		changed.addBinding("x", SimpleValueFactory.getInstance().createLiteral(2));
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		AtomicBoolean called = new AtomicBoolean();
+		strategy.setOptimizerPipeline(() -> List.of((root, dataset, bindings) -> called.set(true)));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), changed))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(original);
+		assertThat(called).isFalse();
+	}
+
+	@Test
+	void preparedServiceRejectsReoptimizationWithEmptyParameters() {
+		String query = "SELECT ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		var called = new AtomicBoolean();
+		strategy.setOptimizerPipeline(() -> List.of((root, dataset, bindings) -> called.set(true)));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(prepared, new EvaluationStatistics(),
+				EmptyBindingSet.getInstance())).isInstanceOf(QueryEvaluationException.class);
+		assertThat(called).isFalse();
+	}
+
+	@Test
+	void runtimeAssignedServiceReadRequiresItsParameterDuringPreparation() {
+		var unrelated = new MapBindingSet();
+		unrelated.addBinding("other", SimpleValueFactory.getInstance().createLiteral(9));
+		for (BindingSet nextInput : List.of(EmptyBindingSet.getInstance(), unrelated)) {
+			TupleExpr expression = serviceFilterWithRuntimeAssignedInput(parameters());
+			TupleExpr original = expression.clone();
+			var called = new AtomicBoolean();
+			var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			strategy.setOptimizerPipeline(() -> List.of((root, dataset, bindings) -> called.set(true)));
+			assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), nextInput))
+					.as("mode=prepared, nextInput=%s", nextInput)
+					.isInstanceOf(QueryEvaluationException.class);
+			assertThat(expression).as("mode=prepared, atomic failure, nextInput=%s", nextInput).isEqualTo(original);
+			assertThat(called).as("mode=prepared, ordinary optimizer, nextInput=%s", nextInput).isFalse();
+		}
+	}
+
+	@Test
+	void foldedRuntimeServiceRejectsPreparationWithoutItsSpecializedParameter() {
+		TupleExpr expression = fullyOptimizedServiceFilter(parameters());
+		TupleExpr original = expression.clone();
+		var called = new AtomicBoolean();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(() -> List.of((root, dataset, bindings) -> called.set(true)));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(),
+				EmptyBindingSet.getInstance())).isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(original);
+		assertThat(called).isFalse();
+	}
+
+	@Test
+	void privateGraphInputDoesNotBypassServiceRecaptureValidation() {
+		TupleExpr expression = fullyOptimizedServiceFilter(parameters());
+		var projection = new AtomicReference<Projection>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Projection node) {
+				projection.compareAndSet(null, node);
+				super.meet(node);
+			}
+		});
+		projection.get().setInheritedGraphParameter("privateGraph");
+		TupleExpr original = expression.clone();
+		var privateInput = new MapBindingSet();
+		privateInput.addBinding("privateGraph", SimpleValueFactory.getInstance().createLiteral(9));
+		var called = new AtomicBoolean();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(() -> List.of((root, dataset, bindings) -> called.set(true)));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), privateInput))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(original);
+		assertThat(called).isFalse();
+	}
+
+	@Test
+	void foldedRuntimeServiceRecapturesTheSameSpecializedParameter() {
+		TupleExpr expression = fullyOptimizedServiceFilter(parameters());
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		var service = new AtomicReference<Service>();
+		prepared.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+				super.meet(node);
+			}
+		});
+		assertThat(service.get().getPreparedInputBindings()).containsEntry("x", parameters().getValue("x"));
+	}
+
+	@Test
+	void renamedRuntimeServiceOriginRetainsItsOriginalParameter() {
+		TupleExpr expression = serviceWithRenamedRuntimeOrigin();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		var service = new AtomicReference<Service>();
+		prepared.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+				super.meet(node);
+			}
+		});
+		assertThat(service.get().getPreparedInputBindings()).containsEntry("x", parameters().getValue("x"))
+				.doesNotContainKey("y");
+	}
+
+	@Test
+	void renamedRuntimeServiceOriginRejectsConflictingNewParameter() {
+		TupleExpr expression = serviceWithRenamedRuntimeOrigin();
+		TupleExpr original = expression.clone();
+		var input = parameters();
+		input.addBinding("y", SimpleValueFactory.getInstance().createLiteral(2));
+		var called = new AtomicBoolean();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(() -> List.of((root, dataset, bindings) -> called.set(true)));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(original);
+		assertThat(called).isFalse();
+	}
+
+	private static TupleExpr serviceWithRenamedRuntimeOrigin() {
+		String query = "SELECT ?s WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?y FILTER(sameTerm(?x, ?y)) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Filter filter) {
+				filter.setConditionBindingScope(Filter.ConditionBindingScope.ALL);
+				super.meet(filter);
+			}
+		});
+		new BindingAssignerOptimizer().optimize(expression, null, parameters());
+		new SameTermFilterOptimizer().optimize(expression, null, parameters());
+		var renamed = new AtomicReference<Var>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Var variable) {
+				if ("y".equals(variable.getName()) && variable.hasValue()) {
+					renamed.set(variable);
+				}
+			}
+		});
+		assertThat(renamed.get()).as("runtime SameTerm optimizer specialized y").isNotNull();
+		assertThat(renamed.get().hasApiInputOrigin()).as("runtime renamed y retains API origin").isTrue();
+		return expression;
+	}
+
+	private static TupleExpr fullyOptimizedServiceFilter(BindingSet input) {
+		TupleExpr expression = serviceFilterWithRuntimeAssignedInput(input);
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		TupleExpr optimized = strategy.optimize(expression, new EvaluationStatistics(), input);
+		var containsX = new AtomicBoolean();
+		optimized.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Var variable) {
+				if ("x".equals(variable.getName())) {
+					containsX.set(true);
+				}
+			}
+		});
+		assertThat(containsX).as("runtime optimizer erased the API-origin FILTER Var").isFalse();
+		return optimized;
+	}
+
+	@Test
+	void runtimeAssignedServiceEndpointDoesNotRequireARepeatedParameter() {
+		var vf = SimpleValueFactory.getInstance();
+		String query = "SELECT ?o WHERE { SERVICE ?endpoint { ?s <urn:p> ?o } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var input = new MapBindingSet();
+		input.addBinding("endpoint", vf.createIRI("urn:endpoint"));
+		new BindingAssignerOptimizer().optimize(expression, null, input);
+		var endpoint = new AtomicReference<Var>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service service) {
+				endpoint.set(service.getServiceRef());
+				super.meet(service);
+			}
+		});
+		assertThat(endpoint.get().getValue()).isEqualTo(vf.createIRI("urn:endpoint"));
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		assertThat(endpoint.get().getValue()).isEqualTo(vf.createIRI("urn:endpoint"));
+	}
+
+	@Test
+	void savedServiceTextMismatchRejectsCaptureBeforeOptimizers() {
+		String query = "SELECT ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var service = new AtomicReference<Service>();
+		var reference = new AtomicReference<Var>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Var variable) {
+				if (variable.getName().equals("x")) {
+					reference.set(variable);
+				}
+			}
+		});
+		service.get().setExpressionString("?s <urn:p> ?o");
+		var called = new AtomicBoolean();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(() -> List.of((root, dataset, bindings) -> called.set(true)));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters()))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("SERVICE");
+		assertThat(reference.get().hasValue()).isFalse();
+		assertThat(service.get().getPreparedInputBindings()).isEmpty();
+		assertThat(called).isFalse();
+	}
+
+	@Test
+	void savedServiceDeclarationDoesNotProveAnApiRead() {
+		String query = "SELECT ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var service = new AtomicReference<Service>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+				super.meet(node);
+			}
+		});
+		service.get().setExpressionString("VALUES ?x { 2 } ?s <urn:p> ?o");
+		var called = new AtomicBoolean();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(() -> List.of((root, dataset, bindings) -> called.set(true)));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters()))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("SERVICE");
+		assertThat(service.get().getPreparedInputBindings()).isEmpty();
+		assertThat(called).isFalse();
+	}
+
+	private static TupleExpr serviceFilterWithRuntimeAssignedInput(BindingSet input) {
+		String query = "SELECT ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Filter filter) {
+				filter.setConditionBindingScope(Filter.ConditionBindingScope.ALL);
+				super.meet(filter);
+			}
+		});
+		new BindingAssignerOptimizer().optimize(expression, null, input);
+		AtomicReference<Var> assigned = new AtomicReference<>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Var variable) {
+				if (variable.getName().equals("x")) {
+					assigned.set(variable);
+				}
+			}
+		});
+		assertThat(assigned.get()).isNotNull();
+		assertThat(assigned.get().hasApiInputOrigin()).isTrue();
+		assertThat(assigned.get().getValue()).isEqualTo(input.getValue("x"));
+		return expression;
+	}
+
+	@Test
+	void serviceAskDoesNotPromoteAnApiConstraintIntoTheResult() {
+		var vf = SimpleValueFactory.getInstance();
+		var remote = mock(FederatedService.class);
+		var sent = new AtomicReference<BindingSet>();
+		var request = new AtomicReference<Service>();
+		when(remote.ask(any(), any(), nullable(String.class))).thenAnswer(invocation -> {
+			sent.set(invocation.getArgument(1));
+			request.set(invocation.getArgument(0));
+			return savedServiceFilterMatches(request.get(), sent.get());
+		});
+		String query = "SELECT ?x WHERE { SERVICE <urn:endpoint> { FILTER(?x = 1) } }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, ignored -> remote);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> result = QueryResults.asList(rows);
+			assertThat(result).hasSize(1);
+			assertThat(result.get(0).getValue("x")).isEqualTo(vf.createLiteral(1));
+		}
+		assertThat(sent.get().hasBinding("x")).isFalse();
+		assertCapturedServiceFilter(request.get(), sent.get(), vf.createLiteral(1));
+		assertThat(RemoteBNode.originalBindings(sent.get()).hasBinding("x")).isFalse();
+	}
+
+	private static List<BindingSet> preparedServiceRows(String query, AtomicReference<BindingSet> sent,
+			Value output, Value localX) {
+		return preparedServiceRows(query, sent, new AtomicReference<>(), output, localX);
+	}
+
+	private static List<BindingSet> preparedServiceRows(String query, AtomicReference<BindingSet> sent,
+			AtomicReference<Service> request, Value output, Value localX) {
+		var remote = mock(FederatedService.class);
+		when(remote.select(any(), anySet(), any(), nullable(String.class))).thenAnswer(invocation -> {
+			BindingSet outgoing = invocation.getArgument(2);
+			sent.set(outgoing);
+			request.set(invocation.getArgument(0));
+			var row = new MapBindingSet();
+			RemoteBNode.originalBindings(outgoing).forEach(row::addBinding);
+			if (output != null) {
+				row.addBinding("o", output);
+			}
+			if (localX != null) {
+				row.setBinding("x", localX);
+			}
+			return new SingletonIteration<BindingSet>(row);
+		});
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, ignored -> remote);
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			return QueryResults.asList(rows);
+		}
+	}
+
+	private static ValueExpr savedServiceFilter(Service request) {
+		TupleExpr parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, request.getAskQueryString(), null)
+				.getTupleExpr();
+		var conditions = new ArrayList<ValueExpr>();
+		parsed.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Filter filter) {
+				conditions.add(filter.getCondition());
+				super.meet(filter);
+			}
+		});
+		assertThat(conditions).as("saved SERVICE FILTER in %s", request.getAskQueryString()).hasSize(1);
+		return conditions.get(0);
+	}
+
+	private static boolean savedServiceFilterMatches(Service request, BindingSet runtimeInput) {
+		return new DefaultEvaluationStrategy(new EmptyTripleSource(), null).isTrue(savedServiceFilter(request),
+				runtimeInput);
+	}
+
+	private static void assertCapturedServiceFilter(Service request, BindingSet runtimeInput, Value parameter) {
+		assertThat(request.getPreparedInputBindings()).as("capture is consumed only on the invocation-owned request")
+				.isEmpty();
+		assertThat(SPARQLQueries.getPossibleBindingReadNames(request.getAskQueryString(), Set.of("x")))
+				.as("the API read is captured in saved syntax, independently of the runtime x value")
+				.isEmpty();
+		var condition = savedServiceFilter(request);
+		assertThat(condition).isInstanceOf(Compare.class);
+		assertThat(((Compare) condition).getLeftArg()).isInstanceOf(ValueConstant.class);
+		assertThat(((ValueConstant) ((Compare) condition).getLeftArg()).getValue()).isEqualTo(parameter);
+		assertThat(savedServiceFilterMatches(request, runtimeInput)).isTrue();
+		var conflictingInput = new MapBindingSet();
+		conflictingInput.addBinding("x", SimpleValueFactory.getInstance().createLiteral(2));
+		assertThat(savedServiceFilterMatches(request, conflictingInput))
+				.as("a conflicting runtime value cannot replace the captured API expression read")
+				.isTrue();
+	}
+
+	@Test
+	void preparedWindowFiltersOnTheSuppliedLabel() {
+		var vf = SimpleValueFactory.getInstance();
+		IRI label = vf.createIRI("http://www.w3.org/2000/01/rdf-schema#label");
+		List<Statement> statements = List.of(vf.createStatement(vf.createIRI("urn:alice"), label,
+				vf.createLiteral("Alice")),
+				vf.createStatement(vf.createIRI("urn:bob"), label,
+						vf.createLiteral("Bob")));
+		var source = new EmptyTripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
+					Value object, Resource... contexts) {
+				return new CloseableIteratorIteration<>(statements.stream()
+						.filter(st -> subject == null || subject.equals(st.getSubject()))
+						.filter(st -> predicate == null || predicate.equals(st.getPredicate()))
+						.filter(st -> object == null || object.equals(st.getObject()))
+						.filter(st -> contexts.length == 0 || Arrays.asList(contexts).contains(st.getContext()))
+						.iterator());
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subject,
+					IRI predicate, Value object, Resource... contexts) {
+				return getStatements(subject, predicate, object, contexts);
+			}
+		};
+		String query = "PREFIX winf:<http://rdf4j.org/function/window#> "
+				+ "SELECT ?subject (winf:rowNumber() AS ?rank) WHERE { "
+				+ "?subject <http://www.w3.org/2000/01/rdf-schema#label> ?label }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var bindings = new MapBindingSet();
+		bindings.addBinding("label", vf.createLiteral("Alice"));
+		var strategy = new DefaultEvaluationStrategy(source, null);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), bindings);
+		try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> rows = QueryResults.asList(result);
+			assertThat(rows).extracting(row -> row.getValue("subject")).containsExactly(vf.createIRI("urn:alice"));
+			assertThat(rows).extracting(row -> row.getValue("rank").stringValue()).containsExactly("1");
+		}
+	}
+
+	@Test
+	void valuesPreserveApiExpressionReadsWhileBindTargetsShadowThem() {
+		for (boolean values : List.of(false, true)) {
+			for (int local : List.of(1, 2)) {
+				TupleExpr source;
+				if (values) {
+					var assignment = new BindingSetAssignment();
+					var row = new MapBindingSet();
+					row.addBinding("x", SimpleValueFactory.getInstance().createLiteral(local));
+					assignment.setBindingSets(List.of(row));
+					source = assignment;
+				} else {
+					source = assignedSingleton(local);
+				}
+				var element = new ExtensionElem(Var.of("x"), "result");
+				var expression = new QueryRoot(new Extension(source, element));
+				new BindingAssignerOptimizer().optimizeForPreparedQuery(expression, parameters());
+				var reference = (Var) element.getExpr();
+				if (values) {
+					assertThat(reference.getValue()).as("mode=prepared, values=%s, local=%s", values, local)
+							.isEqualTo(parameters().getValue("x"));
+				} else {
+					assertThat(reference.hasValue()).as("mode=prepared, values=%s, local=%s", values, local).isFalse();
+				}
+				var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+				try (var result = strategy.precompile(expression).evaluate(EmptyBindingSet.getInstance())) {
+					assertThat(QueryResults.asList(result)).as("mode=prepared, values=%s, local=%s", values, local)
+							.extracting(row -> row.getValue("result"))
+							.containsExactly(values ? parameters().getValue("x")
+									: SimpleValueFactory.getInstance().createLiteral(local));
+				}
+			}
+		}
+	}
+
+	@Test
+	void sameValueLocalUnionAssignmentDoesNotSupplyOtherBranch() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new Extension(mixedUnion(1), new ExtensionElem(Var.of("x"), "result")));
+
+		var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(null, parameters().getValue("x"));
+		}
+	}
+
+	@Test
+	void differentLocalUnionAssignmentDoesNotSupplyOtherBranch() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new Extension(mixedUnion(2), new ExtensionElem(Var.of("x"), "result")));
+		var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(null, SimpleValueFactory.getInstance().createLiteral(2));
+		}
+	}
+
+	@Test
+	void nestedLocalUnionAssignmentsDoNotSupplyOtherBranches() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var nested = new Union(mixedUnion(2), assignedSingleton(3));
+		var expression = new QueryRoot(new Extension(nested, new ExtensionElem(Var.of("x"), "result")));
+
+		var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(null, SimpleValueFactory.getInstance().createLiteral(2),
+							SimpleValueFactory.getInstance().createLiteral(3));
+		}
+	}
+
+	@Test
+	void unionLocalNameRemainsUnboundThroughProjectionAndAlias() {
+		for (boolean alias : List.of(false, true)) {
+			var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			strategy.setOptimizerPipeline(List::of);
+			String projected = alias ? "projected" : "x";
+			var projection = new Projection(mixedUnion(2),
+					new ProjectionElemList(new ProjectionElem("x", alias ? projected : null)));
+			var expression = new QueryRoot(new Extension(projection,
+					new ExtensionElem(Var.of(projected), "result")));
+
+			var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+			try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(result)).as("mode=prepared, union alias=%s", alias)
+						.extracting(row -> row.getValue("result"))
+						.containsExactly(null, SimpleValueFactory.getInstance().createLiteral(2));
+			}
+		}
+	}
+
+	@Test
+	void definiteLaterOverwriteEndsConditionalUnionProvenance() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new Extension(mixedUnion(2),
+				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral(3)), "x"),
+				new ExtensionElem(Var.of("x"), "result")));
+
+		var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(SimpleValueFactory.getInstance().createLiteral(3),
+							SimpleValueFactory.getInstance().createLiteral(3));
+		}
+	}
+
+	@Test
+	void unreferencedMixedUnionParameterDoesNotBlockPreparation() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new Extension(mixedUnion(2),
+				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral(3)), "result")));
+
+		var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(SimpleValueFactory.getInstance().createLiteral(3),
+							SimpleValueFactory.getInstance().createLiteral(3));
+		}
+	}
+
+	@Test
+	void unrelatedSubqueryShadowDoesNotInheritMixedUnionProvenance() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var local = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral(3)), "x"),
+				new ExtensionElem(Var.of("x"), "result"));
+		var subquery = new Projection(local, new ProjectionElemList(new ProjectionElem("result")));
+		var expression = new QueryRoot(new Join(mixedUnion(2), subquery));
+
+		var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(SimpleValueFactory.getInstance().createLiteral(3),
+							SimpleValueFactory.getInstance().createLiteral(3));
+		}
+	}
+
+	@Test
+	void subqueryThatHidesLocalNameLeavesOuterApiParameterAvailable() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var projection = new Projection(mixedUnion(2), new ProjectionElemList(new ProjectionElem("other")), true);
+		var expression = new QueryRoot(new Extension(projection, new ExtensionElem(Var.of("x"), "result")));
+
+		var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(parameters().getValue("x"), parameters().getValue("x"));
+		}
+	}
+
+	private static Union mixedUnion(int assigned) {
+		return new Union(new SingletonSet(), assignedSingleton(assigned));
+	}
+
+	private static Extension assignedSingleton(int value) {
+		return new Extension(new SingletonSet(), new ExtensionElem(
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(value)), "x"));
+	}
+
+	@Test
+	void windowArgumentsFollowGroupedComputationOrder() {
+		Window window = twoRowWindow();
+		window.addElement(new WindowElem("first", windowFunction("rowNumber")));
+		WindowFunctionCall sum = windowFunction("sum");
+		sum.addArg(Var.of("x"));
+		sum.addOrderBy(new OrderElem(Var.of("row")));
+		window.addElement(new WindowElem("result", sum));
+		// This shares the first call's specification, so it runs before the intervening ordered sum.
+		window.addElement(new WindowElem("x", windowFunction("rowNumber")));
+		assertWindowResults(window, "1", "3");
+	}
+
+	@Test
+	void sharedWindowKeysReadInputBeforeTheirComputations() {
+		Window window = twoRowWindow();
+		WindowFunctionCall rowNumber = windowFunction("rowNumber");
+		rowNumber.addOrderBy(new OrderElem(Var.of("x")));
+		window.addElement(new WindowElem("x", rowNumber));
+		WindowFunctionCall sum = windowFunction("sum");
+		sum.addArg(Var.of("row"));
+		sum.addOrderBy(new OrderElem(Var.of("x")));
+		window.addElement(new WindowElem("result", sum));
+		// Both calls order on the constant input parameter; the overwritten x must not split their shared window.
+		assertWindowResults(window, "3", "3");
+	}
+
+	private static Window twoRowWindow() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		MapBindingSet first = new MapBindingSet();
+		first.addBinding("row", SimpleValueFactory.getInstance().createLiteral(1));
+		MapBindingSet second = new MapBindingSet();
+		second.addBinding("row", SimpleValueFactory.getInstance().createLiteral(2));
+		values.setBindingSets(List.of(first, second));
+		return new Window(values);
+	}
+
+	private static WindowFunctionCall windowFunction(String name) {
+		return new WindowFunctionCall("http://rdf4j.org/function/window#" + name);
+	}
+
+	private static void assertWindowResults(Window window, String... expected) {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		Projection projection = new Projection(window,
+				new ProjectionElemList(new ProjectionElem("row"), new ProjectionElem("x"),
+						new ProjectionElem("first"), new ProjectionElem("result")));
+		var optimized = strategy.optimizeForEmptyInput(new QueryRoot(projection), new EvaluationStatistics(),
+				parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result").stringValue())
+					.containsExactly(expected);
+		}
+	}
+
+	@Test
+	void runtimeBindingsReachAnOperatorLoweredByCustomPipeline() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		MapBindingSet input = parameters();
+		AtomicReference<BindingSet> optimizerInput = new AtomicReference<>();
+		strategy.setOptimizerPipeline(() -> List.of((expression, dataset, bindings) -> {
+			optimizerInput.set(bindings);
+			var root = (QueryRoot) expression;
+			var opaque = (OpaqueScope) root.getArg();
+			opaque.replaceWith(opaque.getArg());
+		}));
+		var expression = new QueryRoot(new OpaqueScope(
+				new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result"))));
+
+		var optimized = strategy.optimize(expression, new EvaluationStatistics(), input);
+		assertThat(optimizerInput.get()).isSameAs(input);
+		try (var result = strategy.precompile(optimized).evaluate(input)) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(input.getValue("x"));
+		}
+	}
+
+	@Test
+	void registeredPreparationLoweringRunsBeforeAtomicCapture() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		AtomicReference<BindingSet> observed = new AtomicReference<>();
+		strategy.setOptimizerPipeline(new QueryOptimizerPipeline() {
+			@Override
+			public Iterable<PreparationStep> getPreparationSteps() {
+				return List.of((expression, dataset) -> {
+					var opaque = (OpaqueScope) ((QueryRoot) expression).getArg();
+					opaque.replaceWith(opaque.getArg());
+				});
+			}
+
+			@Override
+			public Iterable<QueryOptimizer> getOptimizers() {
+				return List.of((expression, dataset, bindings) -> observed.set(bindings));
+			}
+		});
+		var expression = new QueryRoot(new OpaqueScope(
+				new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result"))));
+
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		assertThat(observed.get()).isSameAs(EmptyBindingSet.getInstance());
+		try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(parameters().getValue("x"));
+		}
+	}
+
+	@Test
+	void registeredPreparationLoweringAlsoRunsForCanonicalEmptyInput() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		AtomicBoolean lowered = new AtomicBoolean();
+		strategy.setOptimizerPipeline(new QueryOptimizerPipeline() {
+			@Override
+			public Iterable<PreparationStep> getPreparationSteps() {
+				return List.of((expression, dataset) -> {
+					lowered.set(true);
+					var opaque = (OpaqueScope) ((QueryRoot) expression).getArg();
+					opaque.replaceWith(opaque.getArg());
+				});
+			}
+
+			@Override
+			public Iterable<QueryOptimizer> getOptimizers() {
+				return List.of();
+			}
+		});
+		TupleExpr expression = new QueryRoot(new OpaqueScope(new SingletonSet()));
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(),
+				EmptyBindingSet.getInstance());
+		assertThat(lowered).isTrue();
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).hasSize(1);
+		}
+	}
+
+	@Test
+	void failedCaptureDoesNotRunOrdinaryOptimizers() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		var called = new AtomicBoolean();
+		strategy.setOptimizerPipeline(() -> List.of((expression, dataset, bindings) -> called.set(true)));
+		Var reference = Var.of("x");
+		var expression = new QueryRoot(new Join(
+				new Extension(new SingletonSet(), new ExtensionElem(reference, "result")),
+				new OpaqueScope(new SingletonSet())));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters()))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(reference.hasValue()).isFalse();
+		assertThat(called).isFalse();
+	}
+
+	@Test
+	void inheritedLegacyStrategyFailsClosedExceptCanonicalEmptyInput() {
+		var strategy = new LegacyStrategy();
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(),
+				parameters())).isInstanceOf(QueryEvaluationException.class);
+		assertThat(strategy.observed).isNull();
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(),
+				new EmptyBindingSet())).isInstanceOf(QueryEvaluationException.class);
+		assertThat(strategy.observed).isNull();
+		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		assertThat(strategy.observed).isSameAs(EmptyBindingSet.getInstance());
+	}
+
+	@Test
+	void explicitStrategyOptInUsesTheSharedContextHook() {
+		var strategy = new AdoptedStrategy();
+		MapBindingSet parameters = parameters();
+		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), parameters);
+		assertThat(strategy.context.parameters()).isSameAs(parameters);
+		assertThat(strategy.context.evaluationInput()).isSameAs(EmptyBindingSet.getInstance());
+		assertThat(strategy.context.mode()).isEqualTo(BindingOptimizationContext.Mode.EMPTY_INPUT);
+		assertThat(strategy.oldOverrideCalled).isFalse();
+	}
+
+	@Test
+	void runtimeRetainsEmptyBindingSetMetadataAndIdentity() {
+		var supplied = GraphFrameBindings.supply(new QueryBindingSet(), "graph",
+				SimpleValueFactory.getInstance().createIRI("urn:graph"));
+		var input = new HiddenMetadataBindings(GraphFrameBindings.from(supplied));
+		assertThat(input.isEmpty()).isTrue();
+		AtomicReference<BindingSet> seen = new AtomicReference<>();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(() -> List.of((expression, dataset, bindings) -> seen.set(bindings)));
+		strategy.optimize(new SingletonSet(), new EvaluationStatistics(), input);
+		assertThat(seen.get()).isSameAs(input);
+		assertThat(GraphFrameBindings.from(seen.get())).isSameAs(GraphFrameBindings.from(supplied));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), input))
+				.isInstanceOf(QueryEvaluationException.class);
+	}
+
+	@Test
+	void inheritedOptimizerStillDispatchesItsLegacyOverride() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		var optimizer = new LegacyConstantOptimizer(strategy);
+		strategy.setOptimizerPipeline(() -> List.of(optimizer));
+		MapBindingSet input = parameters();
+		strategy.optimize(new SingletonSet(), new EvaluationStatistics(), input);
+		assertThat(optimizer.observed).isSameAs(input);
+		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), input);
+		assertThat(optimizer.observed).isSameAs(EmptyBindingSet.getInstance());
+	}
+
+	@Test
+	void customPipelineKeepsOptimizerOrderAndActualInput() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		var calls = new ArrayList<String>();
+		var seen = new ArrayList<BindingSet>();
+		AtomicBoolean selectorCalled = new AtomicBoolean();
+		QueryOptimizer first = (expression, dataset, bindings) -> {
+			calls.add("first");
+			seen.add(bindings);
+		};
+		QueryOptimizer second = (expression, dataset, bindings) -> {
+			calls.add("second");
+			seen.add(bindings);
+		};
+		strategy.setOptimizerPipeline(new QueryOptimizerPipeline() {
+			@Override
+			public Iterable<QueryOptimizer> getOptimizers() {
+				return List.of(first, second);
+			}
+
+			@Override
+			public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet input) {
+				selectorCalled.set(true);
+				return new EmptyBindingSet();
+			}
+		});
+		MapBindingSet input = parameters();
+		strategy.optimize(new SingletonSet(), new EvaluationStatistics(), input);
+		assertThat(calls).containsExactly("first", "second");
+		assertThat(seen).allSatisfy(bindings -> assertThat(bindings).isSameAs(input));
+		assertThat(selectorCalled).isFalse();
+		calls.clear();
+		seen.clear();
+		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), input);
+		assertThat(calls).containsExactly("first", "second");
+		assertThat(seen).allSatisfy(bindings -> assertThat(bindings).isSameAs(EmptyBindingSet.getInstance()));
+		assertThat(selectorCalled).isFalse();
+	}
+
+	private static final class LegacyStrategy extends DefaultEvaluationStrategy {
+		private BindingSet observed;
+
+		private LegacyStrategy() {
+			super(new EmptyTripleSource(), null);
+		}
+
+		@Override
+		public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+			observed = bindings;
+			return super.optimize(expression, statistics, bindings);
+		}
+	}
+
+	private static final class AdoptedStrategy extends DefaultEvaluationStrategy {
+		private BindingOptimizationContext context;
+		private boolean oldOverrideCalled;
+
+		private AdoptedStrategy() {
+			super(new EmptyTripleSource(), null);
+		}
+
+		@Override
+		protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
+			return AdoptedStrategy.class;
+		}
+
+		@Override
+		public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+			oldOverrideCalled = true;
+			return super.optimize(expression, statistics, bindings);
+		}
+
+		@Override
+		protected TupleExpr optimizeWithBindingContext(TupleExpr expression, EvaluationStatistics statistics,
+				BindingOptimizationContext bindingContext) {
+			context = bindingContext;
+			return super.optimizeWithBindingContext(expression, statistics, bindingContext);
+		}
+	}
+
+	private static final class HiddenMetadataBindings extends EmptyBindingSet implements GraphFrameBindings.Carrier {
+		private static final long serialVersionUID = 1L;
+		private final GraphFrameBindings frames;
+
+		private HiddenMetadataBindings(GraphFrameBindings frames) {
+			this.frames = frames;
+		}
+
+		@Override
+		public GraphFrameBindings getGraphFrameBindings() {
+			return frames;
+		}
+	}
+
+	private static final class LegacyConstantOptimizer extends ConstantOptimizer {
+		private BindingSet observed;
+
+		private LegacyConstantOptimizer(DefaultEvaluationStrategy strategy) {
+			super(strategy);
+		}
+
+		@Override
+		public void optimize(TupleExpr expression, Dataset dataset, BindingSet bindings) {
+			observed = bindings;
+		}
+	}
+
+	@Test
+	void unknownScopeWithoutParametersRemainsAvailableToCustomPipelines() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new OpaqueScope(new SingletonSet()));
+		assertThat(strategy.optimize(expression, new EvaluationStatistics(), EmptyBindingSet.getInstance()))
+				.isNotNull();
+	}
+
+	@Test
+	void parameterPreparationDoesNotDependOnOptionalOptimizers() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result")));
+		var optimized = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var result = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(result.next().getValue("result")).isEqualTo(parameters().getValue("x"));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	void unknownScopeCannotSilentlyDiscardParameters() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		var expression = new QueryRoot(new OpaqueScope(
+				new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result"))));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters()))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("OpaqueScope")
+				.hasMessageContaining("binding");
+	}
+
+	@Test
+	void unknownOperatorWithoutVisibleVariablesCannotSilentlyDiscardParameters() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new OpaqueScope(new SingletonSet()));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters()))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("OpaqueScope");
+	}
+
+	@Test
+	void failedPreparationDoesNotPartiallyAssignParameters() {
+		Var reference = Var.of("x");
+		var expression = new QueryRoot(new Join(
+				new Extension(new SingletonSet(), new ExtensionElem(reference, "result")),
+				new OpaqueScope(new SingletonSet())));
+		TupleExpr original = expression.clone();
+		assertThatThrownBy(() -> new BindingAssignerOptimizer().optimizeForPreparedQuery(expression, parameters()))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(original);
+		assertThat(reference.hasValue()).isFalse();
+	}
+
+	@Test
+	void logicalSpecializationRetainsProjectedReadsConsumedByLowering() {
+		var read = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result"));
+		var projection = new Projection(read, new ProjectionElemList(new ProjectionElem("x")));
+		var expression = new QueryRoot(projection);
+		new BindingAssignerOptimizer().optimizeQueryParameters(expression, parameters());
+		read.replaceWith(read.getArg());
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setOptimizerPipeline(List::of);
+		var prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("x"))
+					.containsExactly(parameters().getValue("x"));
+		}
+	}
+
+	@Test
+	void logicalSpecializationRecordsServiceProvenanceWithoutCompletingCapture() {
+		var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }", null)
+				.getTupleExpr();
+		var service = new AtomicReference<Service>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+			}
+		});
+		var assigner = new BindingAssignerOptimizer();
+		assigner.optimizeQueryParameters(expression, parameters());
+		assertThat(service.get().getPreparedInputBindings()).isEmpty();
+		assertThat(service.get().getRuntimeBindingHistory().values()).containsEntry("x", parameters().getValue("x"));
+		var snapshot = expression.clone();
+		var changed = new MapBindingSet();
+		changed.addBinding("x", SimpleValueFactory.getInstance().createLiteral(2));
+		assertThatThrownBy(() -> assigner.optimizeForPreparedQuery(expression, changed))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(snapshot);
+		assigner.optimizeForPreparedQuery(expression, parameters());
+		assertThat(service.get().getPreparedInputBindings()).containsEntry("x", parameters().getValue("x"));
+	}
+
+	@Test
+	void logicalSpecializationAllowsLocallyShadowedServiceParameterOnFinalCapture() {
+		var vf = SimpleValueFactory.getInstance();
+		var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s ?y WHERE { SERVICE <urn:endpoint> { BIND(2 AS ?y) "
+						+ "?s <urn:p> ?o FILTER(?x = 1) FILTER(?y = 2) } }",
+				null)
+				.getTupleExpr();
+		var service = new AtomicReference<Service>();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+			}
+		});
+		var input = parameters();
+		input.addBinding("y", vf.createLiteral(99));
+		var assigner = new BindingAssignerOptimizer();
+		assigner.optimizeQueryParameters(expression, input);
+		assertThat(service.get().getPreparedInputBindings()).isEmpty();
+		assertThat(service.get().getRuntimeBindingHistory().values())
+				.containsExactlyEntriesOf(Map.of("x", vf.createLiteral(1)));
+
+		assigner.optimizeForPreparedQuery(expression, input);
+
+		assertThat(service.get().getPreparedInputBindings())
+				.containsExactlyEntriesOf(Map.of("x", vf.createLiteral(1)));
+	}
+
+	@Test
+	void logicalSpecializationRejectsAGenuinelyNewServiceReadAtomically() {
+		var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o "
+						+ "FILTER(?x = 1) FILTER(?y = 2) } }",
+				null)
+				.getTupleExpr();
+		var assigner = new BindingAssignerOptimizer();
+		assigner.optimizeQueryParameters(expression, parameters());
+		var snapshot = expression.clone();
+		var input = parameters();
+		input.addBinding("y", SimpleValueFactory.getInstance().createLiteral(2));
+
+		assertThatThrownBy(() -> assigner.optimizeForPreparedQuery(expression, input))
+				.isInstanceOf(QueryEvaluationException.class);
+		assertThat(expression).isEqualTo(snapshot);
+	}
+
+	@Test
+	void optionalPreparedCaptureAssignsKnownScopes() {
+		var assignment = new ExtensionElem(Var.of("x"), "result");
+		var expression = new QueryRoot(new Extension(new SingletonSet(), assignment));
+
+		assertThat(new BindingAssignerOptimizer().tryOptimizeForPreparedQuery(expression, parameters())).isTrue();
+		assertThat(((Var) assignment.getExpr()).getValue()).isEqualTo(parameters().getValue("x"));
+	}
+
+	@Test
+	void optionalPreparedCaptureLeavesUnknownScopesUnchanged() {
+		Var reference = Var.of("x");
+		var expression = new QueryRoot(new Join(
+				new Extension(new SingletonSet(), new ExtensionElem(reference, "result")),
+				new OpaqueScope(new SingletonSet())));
+		TupleExpr original = expression.clone();
+
+		assertThat(new BindingAssignerOptimizer().tryOptimizeForPreparedQuery(expression, parameters())).isFalse();
+		assertThat(expression).isEqualTo(original);
+		assertThat(reference.hasValue()).isFalse();
+	}
+
+	private static final class OpaqueScope extends UnaryTupleOperator {
+		private OpaqueScope(TupleExpr arg) {
+			super(arg);
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+	}
+
 	@Test
 	void standardStagesKeepTheirIdentityAndDistinguishParametersFromRuntimeInput() {
 		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
@@ -40,13 +1899,14 @@ class PreparedQueryOptimizerBindingsTest {
 			BindingSet input = pipeline.getOptimizerInputBindings(optimizer, parameters);
 			if (optimizer instanceof BindingAssignerOptimizer) {
 				assignmentSeen = true;
-				assertThat(optimizer).isSameAs(StandardQueryOptimizerPipeline.BINDING_ASSIGNER);
-				assertThat(input).isSameAs(parameters);
+				assertThat(optimizer).as("stage=%s", optimizer.getClass())
+						.isSameAs(StandardQueryOptimizerPipeline.BINDING_ASSIGNER);
+				assertThat(input).as("stage=%s", optimizer.getClass()).isSameAs(parameters);
 			} else if (optimizer instanceof ConstantOptimizer) {
 				constantsSeen = true;
-				assertThat(input).isSameAs(parameters);
+				assertThat(input).as("stage=%s", optimizer.getClass()).isSameAs(parameters);
 			} else {
-				assertThat(input).isSameAs(EmptyBindingSet.getInstance());
+				assertThat(input).as("stage=%s", optimizer.getClass()).isSameAs(parameters);
 			}
 		}
 		assertThat(assignmentSeen).isTrue();

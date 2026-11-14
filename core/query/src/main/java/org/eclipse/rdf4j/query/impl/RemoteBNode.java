@@ -25,6 +25,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiFunction;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -192,6 +193,7 @@ public final class RemoteBNode extends SimpleBNode {
 		private final Object identityScope;
 		private final boolean canonicalIDs;
 		private final Map<String, BNode> nodes = new HashMap<>();
+		private final Map<String, BNode> canonicalOriginals = new HashMap<>();
 		private final Map<Object, Map<String, ImportedNode>> imported = new IdentityHashMap<>();
 		private final Registry registry = new Registry();
 
@@ -205,11 +207,32 @@ public final class RemoteBNode extends SimpleBNode {
 
 		public void seedOriginalBindings(BindingSet bindings) {
 			allocation.reserve(bindings);
+			if (canonicalIDs) {
+				for (Binding binding : bindings) {
+					seedIdentity(binding.getValue());
+				}
+			}
+		}
+
+		private void seedIdentity(Value value) {
+			if (value instanceof RemoteBNode remote) {
+				Provenance provenance = requireProvenance(remote);
+				if (provenance.canonicalResultID() && provenance.identityScope() == identityScope) {
+					canonicalOriginals.putIfAbsent(provenance.remoteID(), remote);
+				}
+			} else if (value instanceof TripleTerm triple) {
+				seedIdentity(triple.getSubject());
+				seedIdentity(triple.getObject());
+			}
 		}
 
 		public Value map(Value value) {
 			if (value instanceof RemoteBNode remote) {
 				Provenance provenance = requireProvenance(remote);
+				if (canonicalIDs && provenance.canonicalResultID() && provenance.identityScope() == identityScope
+						&& canonicalOriginals.containsKey(provenance.remoteID())) {
+					return canonicalOriginals.get(provenance.remoteID());
+				}
 				if (remote.localOwner == allocation.remoteIdentityOwner()) {
 					return value;
 				}
@@ -234,6 +257,9 @@ public final class RemoteBNode extends SimpleBNode {
 				return mapped;
 			}
 			if (value instanceof BNode node) {
+				if (canonicalIDs && canonicalOriginals.containsKey(node.getID())) {
+					return canonicalOriginals.get(node.getID());
+				}
 				return nodes.computeIfAbsent(node.getID(), id -> {
 					String alias = canonicalIDs ? allocation.getOrCreateRemoteAlias(identityScope, id, localFactory)
 							: allocation.createBNode(localFactory).getID();
@@ -254,11 +280,49 @@ public final class RemoteBNode extends SimpleBNode {
 		}
 
 		public BindingSet map(BindingSet row, BindingSet originalBindings) {
+			return mapValues(row, (name, value) -> map(value,
+					originalBindings == null ? null : originalBindings.getValue(name)));
+		}
+
+		/**
+		 * Recovers seeded canonical parameter identities in a row whose provider already preserves provenance.
+		 * Unrelated caller values and endpoint-owned wrappers retain their objects and authority. Plain labels never
+		 * identify a parameter in this mode, because they may belong to the caller's local blank-node namespace.
+		 */
+		public BindingSet recoverOriginalBindings(BindingSet row) {
+			if (canonicalOriginals.isEmpty()) {
+				return row;
+			}
+			return mapValues(row, (name, value) -> recoverOriginalValue(value));
+		}
+
+		private Value recoverOriginalValue(Value value) {
+			if (value instanceof RemoteBNode remote) {
+				Provenance provenance = remote.getProvenance();
+				if (provenance != null && provenance.canonicalResultID()
+						&& provenance.identityScope() == identityScope) {
+					BNode original = canonicalOriginals.get(provenance.remoteID());
+					if (original != null) {
+						return original;
+					}
+				}
+			} else if (value instanceof TripleTerm triple) {
+				Value subject = recoverOriginalValue(triple.getSubject());
+				Value object = recoverOriginalValue(triple.getObject());
+				if (subject != triple.getSubject() || object != triple.getObject()) {
+					return SimpleValueFactory.getInstance()
+							.createTripleTerm((Resource) subject,
+									triple.getPredicate(), object);
+				}
+			}
+			return value;
+		}
+
+		private static BindingSet mapValues(BindingSet row, BiFunction<String, Value, Value> mapper) {
 			MapBindingSet mapped = null;
 			for (String name : row.getBindingNames()) {
-				Value original = originalBindings == null ? null : originalBindings.getValue(name);
 				Value value = row.getValue(name);
-				Value replacement = map(value, original);
+				Value replacement = mapper.apply(name, value);
 				if (replacement != value) {
 					if (mapped == null) {
 						mapped = new MapBindingSet(row.size());
@@ -269,7 +333,7 @@ public final class RemoteBNode extends SimpleBNode {
 					mapped.setBinding(name, replacement);
 				}
 			}
-			return mapped == null ? row : mapped;
+			return mapped == null ? row : BindingSetSnapshots.preserveMetadata(row, mapped);
 		}
 
 		public Value map(Value value, Value original) {
@@ -345,10 +409,9 @@ public final class RemoteBNode extends SimpleBNode {
 	public static BindingSet toRemoteBindings(BindingSet bindings, BindingSet additionalBindings,
 			Set<String> relevantNames, Object receivingScope, boolean referenceSupport, boolean canonicalIDs) {
 		BindingSet original = originalBindings(bindings);
-		MapBindingSet source = new MapBindingSet(original.size());
-		MapBindingSet outgoing = new MapBindingSet(original.size() + additionalBindings.size());
-		for (Binding binding : original) {
-			source.addBinding(binding);
+		BindingSet source = BindingSetSnapshots.copyOf(original);
+		MapBindingSet outgoing = new MapBindingSet(source.size() + additionalBindings.size());
+		for (Binding binding : source) {
 			outgoing.addBinding(binding);
 		}
 		for (Binding binding : additionalBindings) {
@@ -360,7 +423,7 @@ public final class RemoteBNode extends SimpleBNode {
 					receivingScope, referenceSupport, canonicalIDs) : binding.getValue();
 			transported.addBinding(binding.getName(), value);
 		}
-		return new TransportBindings(new Snapshot(source), transported);
+		return new TransportBindings(source, transported);
 	}
 
 	private static class Snapshot extends AbstractBindingSet {

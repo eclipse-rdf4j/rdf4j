@@ -12,128 +12,52 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.algebra.Exists;
-import org.eclipse.rdf4j.query.algebra.Graph;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.Mode;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.UnsupportedPreparedBindings;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
-/**
- * Assigns values to variables based on a supplied set of bindings.
- *
- * @author Arjohn Kampman
- */
+/** Assigns proven values without confusing runtime input with logical query parameters. */
 public class BindingAssignerOptimizer implements QueryOptimizer {
-
 	@Override
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(tupleExpr, bindings);
-		if (!analysis.rootContext().externalValues().isEmpty()) {
-			VarVisitor visitor = new VarVisitor(analysis);
-			tupleExpr.visit(visitor);
-			visitor.apply();
+	public void optimize(TupleExpr expression, Dataset dataset, BindingSet bindings) {
+		plan(expression, bindings, Mode.RUNTIME_INPUT).apply();
+	}
+
+	/**
+	 * Specializes proven logical parameter reads before parameter-sensitive lowering. Unknown contracts remain
+	 * untouched; this pass never authorizes discarding the caller's input. Complete preparation must follow lowering.
+	 */
+	@InternalUseOnly
+	public void optimizeQueryParameters(TupleExpr expression, BindingSet parameters) {
+		plan(expression, parameters, Mode.QUERY_PARAMETERS).apply();
+	}
+
+	/** Captures every supported API read before execution with an empty input; failure leaves the tree unchanged. */
+	@InternalUseOnly
+	public void optimizeForPreparedQuery(TupleExpr expression, BindingSet parameters) {
+		plan(expression, parameters, Mode.EMPTY_INPUT).apply();
+	}
+
+	/** Returns false only when complete capture requires an unsupported runtime binding contract. */
+	@InternalUseOnly
+	public boolean tryOptimizeForPreparedQuery(TupleExpr expression, BindingSet parameters) {
+		try {
+			optimizeForPreparedQuery(expression, parameters);
+			return true;
+		} catch (UnsupportedPreparedBindings unsupported) {
+			return false;
 		}
 	}
 
-	private static class VarVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
-
-		private final QueryAlgebraBindingAnalysis analysis;
-		private final List<Replacement> replacements = new ArrayList<>();
-		private int unknownOperatorDepth;
-
-		private VarVisitor(QueryAlgebraBindingAnalysis analysis) {
-			super(true);
-			this.analysis = analysis;
-		}
-
-		@Override
-		public void meet(Graph graph) {
-			// Graph is a known tuple operator whose variables use the current query scope. The shared input-frame
-			// analysis proves each API substitution, while genuinely unknown tuple operators remain opaque.
-			super.meetOther(graph);
-		}
-
-		@Override
-		public void meetOther(QueryModelNode node) {
-			if (node.getClass() == TupleFunctionCall.class) {
-				// Standard tuple-function result Vars constrain incoming bindings; capturing an API value keeps
-				// that constraint when a prepared plan subsequently executes with an empty input mapping.
-				super.meetOther(node);
-				return;
-			}
-			// Unknown operators own their binding contract; keep their variables opaque.
-			if (node instanceof TupleExpr) {
-				unknownOperatorDepth++;
-				try {
-					super.meetOther(node);
-				} finally {
-					unknownOperatorDepth--;
-				}
-			} else {
-				super.meetOther(node);
-			}
-		}
-
-		@Override
-		public void meet(Var var) {
-			if (var.hasValue() || var.getName() == null
-					|| !analysis.rootContext().externalValues().containsKey(var.getName())) {
-				return;
-			}
-			if (unknownOperatorDepth > 0) {
-				return;
-			}
-			QueryAlgebraBindingAnalysis.ReadOnlyContext context = analysis.contextAt(var);
-			Value value = context.externalValues().get(var.getName());
-			if (value != null && context.bindingDomainKnown() && context.guaranteedNames().contains(var.getName())
-					&& value.equals(context.fixedValues().get(var.getName()))) {
-				replacements.add(new Replacement(var, value));
-			}
-		}
-
-		@Override
-		public void meet(Projection projection) {
-			if (projection.getProjectionContext() != null) {
-				projection.getProjectionContext().visit(this);
-			}
-			super.meet(projection);
-		}
-
-		private void apply() {
-			// Prove every occurrence against the unchanged tree, so context/output caches survive the traversal.
-			// Each admitted read already has this guaranteed API value, independent of earlier replacements.
-			for (Replacement replacement : replacements) {
-				Var var = replacement.variable();
-				boolean substitutedTerm = var.isConstant();
-				for (QueryModelNode ancestor = var.getParentNode(); ancestor != null; ancestor = ancestor
-						.getParentNode()) {
-					if (ancestor instanceof Exists) {
-						// The shared scope analysis already proved this external API binding reaches this read.
-						// Inside EXISTS it substitutes a query term, even when the optimizer removes runtime input.
-						substitutedTerm = true;
-						break;
-					}
-				}
-				Var assigned = Var.of(var.getName(), replacement.value(), var.isAnonymous(), substitutedTerm,
-						var.isBNode()).withApiInputOrigin();
-				assigned.setGraphContextDepth(var.getGraphContextDepth());
-				assigned.setVariableScopeChange(var.isVariableScopeChange());
-				var.replaceWith(assigned);
-			}
-		}
-
-		private record Replacement(Var variable, Value value) {
-		}
+	private static PreparedQueryBindingPlan plan(TupleExpr expression, BindingSet inputs, Mode mode) {
+		return PreparedQueryBindingPlan.create(expression, inputs, mode,
+				(service, parameters) -> SPARQLQueries.getPreparedBindingReadNames(service.getAskQueryString(),
+						service.getBaseURI(), parameters));
 	}
 }

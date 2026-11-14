@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 
 /** Immutable lexical binding metadata captured before optimizers discard pattern uses or aliases. */
@@ -362,6 +363,10 @@ final class NativeValuePositionAnalysis {
 		@Override
 		public void meet(ExtensionElem node) {
 			Symbol output = scope.symbol(node.getName());
+			if (!TupleExprs.isEvaluatedExtensionElement(node)) {
+				scopes.put(node, scope);
+				return;
+			}
 			if (node.getExpr() instanceof Var var && variable(var)) {
 				output.join(scope.symbol(var.getName()));
 			}

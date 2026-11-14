@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -121,7 +122,13 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	@Override
-	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics statistics, BindingSet bindings) {
+	protected Class<LmdbNativeEvaluationStrategy> preparedBindingStrategyClass() {
+		return LmdbNativeEvaluationStrategy.class;
+	}
+
+	@Override
+	protected TupleExpr optimizeWithBindingContext(TupleExpr expr, EvaluationStatistics statistics,
+			BindingOptimizationContext context) {
 		return withPreparedTupleExpr(expr, prepared -> {
 			NativeValuePositionAnalysis enclosing = valuePositionSnapshot();
 			NativeValuePositionAnalysis positions = NativeValuePositionAnalysis.analyze(prepared);
@@ -130,7 +137,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			}
 			setValuePositions(positions);
 			NativeValuePositionAnalysis frozen = positions;
-			return withValuePositions(frozen, () -> super.optimize(prepared, statistics, bindings));
+			return withValuePositions(frozen, () -> super.optimizeWithBindingContext(prepared, statistics, context));
 		});
 	}
 

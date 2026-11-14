@@ -21,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -32,11 +33,19 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingSet;
@@ -103,36 +112,120 @@ public class SPARQLQueries {
 	 */
 	public static void initializeServiceReferences(Service service) {
 		Objects.requireNonNull(service);
-		if (service.isBNodeReferenceMetadataInitialized()) {
+		if (service.isBNodeReferenceMetadataInitialized() && service.hasSavedPossibleReadNames()) {
 			return;
 		}
 		synchronized (service) {
-			if (service.isBNodeReferenceMetadataInitialized()) {
+			if (service.isBNodeReferenceMetadataInitialized() && service.hasSavedPossibleReadNames()) {
 				return;
 			}
 			try {
 				ASTQueryContainer syntax = SyntaxTreeBuilder.parseQuery(service.getAskQueryString());
-				Set<String> ids = BNodeReferenceProcessor.process(syntax, QueryParseOptions.DEFAULT);
-				Set<String> names = new LinkedHashSet<>();
-				service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
-					@Override
-					public void meet(Service nested) {
-						// The nested request owns its constants and is initialized independently.
-					}
-
-					@Override
-					public void meet(Var variable) {
-						if (variable.isAnonymous() && variable.hasValue()
-								&& containsReference(variable.getValue(), ids)) {
-							names.add(variable.getName());
+				if (!service.hasSavedPossibleReadNames()) {
+					service.setSavedBindingNames(lexicalBindingNames(syntax), possibleBindingReadNames(syntax));
+				}
+				if (!service.isBNodeReferenceMetadataInitialized()) {
+					Set<String> ids = BNodeReferenceProcessor.process(syntax, QueryParseOptions.DEFAULT);
+					Set<String> names = new LinkedHashSet<>();
+					service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+						@Override
+						public void meet(Service nested) {
+							// The nested request owns its constants and is initialized independently.
 						}
-					}
-				});
-				service.setBNodeReferenceMetadata(ids, names,
-						BNodeReferenceProcessor.containsReferenceSyntax(syntax));
+
+						@Override
+						public void meet(Var variable) {
+							if (variable.isAnonymous() && variable.hasValue()
+									&& containsReference(variable.getValue(), ids)) {
+								names.add(variable.getName());
+							}
+						}
+					});
+					service.setBNodeReferenceMetadata(ids, names,
+							BNodeReferenceProcessor.containsReferenceSyntax(syntax));
+				}
 			} catch (ParseException | TokenMgrError failure) {
 				throw new MalformedQueryException("Invalid SERVICE request syntax: " + failure.getMessage(), failure);
 			}
+		}
+	}
+
+	/**
+	 * Resolves saved-source parameter reads through the same scoped model plan as executable algebra. Exact values are
+	 * necessary for value-sensitive scope proofs; lexical names alone cannot distinguish a read from a shadow.
+	 */
+	@InternalUseOnly
+	public static Set<String> getPreparedBindingReadNames(String source, String baseURI, BindingSet parameters) {
+		if (parameters.isEmpty()) {
+			return Set.of();
+		}
+		TupleExpr parsed = new SPARQLParser().parseQuery(source, baseURI).getTupleExpr();
+		PreparedQueryBindingPlan plan = PreparedQueryBindingPlan.create(parsed, parameters,
+				PreparedQueryBindingPlan.Mode.EMPTY_INPUT,
+				(service, values) -> getPreparedBindingReadNames(service.getAskQueryString(), service.getBaseURI(),
+						values));
+		Set<String> names = new LinkedHashSet<>();
+		plan.replacements().forEach(replacement -> names.add(replacement.variable().getName()));
+		plan.serviceInputs().values().forEach(inputs -> names.addAll(inputs.keySet()));
+		return Set.copyOf(names);
+	}
+
+	/** An invocation-owned executable request and identity seeds, never additional result bindings. */
+	@InternalUseOnly
+	public record ServiceRequest(Service service, BindingSet parameterIdentities,
+			Function<BindingSet, BindingSet> inputPreparation) {
+		public BindingSet prepareRuntimeInput(BindingSet input) {
+			return inputPreparation.apply(input);
+		}
+	}
+
+	/**
+	 * Consumes the logical parameter channel on an isolated request. Legacy providers continue receiving executable
+	 * Service syntax plus actual runtime mappings through the existing SPI; the reusable logical Service is unchanged.
+	 */
+	@InternalUseOnly
+	public static ServiceRequest prepareServiceRequest(Service service, List<BindingSet> runtimeRows,
+			Object receivingScope, boolean referencesSupported, boolean canonicalIDs) {
+		if (service.getPreparedInputBindings().isEmpty()) {
+			return new ServiceRequest(service, EmptyBindingSet.getInstance(),
+					input -> FederatedServiceIdentity.prepareBindings(service, input, receivingScope,
+							referencesSupported, canonicalIDs));
+		}
+		MapBindingSet parameters = new MapBindingSet(service.getPreparedInputBindings().size());
+		MapBindingSet originals = new MapBindingSet(service.getPreparedInputBindings().size());
+		service.getPreparedInputBindings().forEach((name, value) -> {
+			originals.addBinding(name, value);
+			parameters.addBinding(name, RemoteBNode.toRemoteValue(value, receivingScope, referencesSupported,
+					canonicalIDs));
+		});
+		PreparedServiceQuerySpecializer.Result specialized = PreparedServiceQuerySpecializer.specialize(
+				service.getAskQueryString(), service.getBaseURI(), parameters);
+		String request = specialized.source();
+		try {
+			ASTQueryContainer syntax = SyntaxTreeBuilder.parseQuery(request);
+			ASTWhereClause where = syntax.getQuery().getWhereClause();
+			String bodySource = request.substring(where.getGroupStartOffset() + 1, where.getGroupEndOffset());
+			TupleExpr body = new SPARQLParser().parseQuery(request, service.getBaseURI()).getTupleExpr();
+			if (body instanceof QueryRoot root) {
+				body = root.getArg();
+			}
+			if (!(body instanceof Slice ask) || ask.getOffset() != 0 || ask.getLimit() != 1) {
+				throw new QueryEvaluationException("Unsupported prepared binding transport: invalid ASK body");
+			}
+			Service invocation = Service.fromBody(service.getServiceRef().clone(), ask.getArg().clone(), bodySource,
+					service.getPrefixDeclarations(), service.getBaseURI(), service.isSilent());
+			initializeServiceReferences(invocation);
+			ServiceRequest prepared = new ServiceRequest(invocation, originals, input -> {
+				BindingSet transported = FederatedServiceIdentity.prepareBindings(invocation, input, receivingScope,
+						referencesSupported, canonicalIDs);
+				return transported;
+			});
+			for (BindingSet row : runtimeRows) {
+				prepared.prepareRuntimeInput(row);
+			}
+			return prepared;
+		} catch (ParseException | TokenMgrError failure) {
+			throw new QueryEvaluationException("Unsupported prepared binding transport: invalid request", failure);
 		}
 	}
 
@@ -272,8 +365,61 @@ public class SPARQLQueries {
 		}
 	}
 
+	/**
+	 * Returns names that may be read in query syntax, excluding occurrences that only declare a VALUES column or an
+	 * assignment target. This is a conservative lexical check, not a proof that a particular scope reads a binding.
+	 */
+	@InternalUseOnly
+	public static Set<String> getPossibleBindingReadNames(String query, Set<String> candidateNames) {
+		Objects.requireNonNull(query);
+		Objects.requireNonNull(candidateNames);
+		try {
+			Set<String> names = new LinkedHashSet<>();
+			collectPossibleBindingReads(SyntaxTreeBuilder.parseQuery(query), candidateNames, names);
+			return Collections.unmodifiableSet(names);
+		} catch (ParseException | TokenMgrError failure) {
+			throw new MalformedQueryException(failure.getMessage(), failure);
+		}
+	}
+
+	static Set<String> lexicalBindingNames(Node syntax) {
+		Set<String> names = new LinkedHashSet<>();
+		collectBoundNames(syntax, (Set<String>) null, names);
+		return names;
+	}
+
+	static Set<String> possibleBindingReadNames(Node syntax) {
+		Set<String> names = new LinkedHashSet<>();
+		collectPossibleBindingReads(syntax, null, names);
+		return names;
+	}
+
+	private static void collectPossibleBindingReads(Node node, Set<String> candidates, Set<String> names) {
+		if (node instanceof ASTInlineData || node instanceof ASTBindingsClause) {
+			return;
+		}
+		int count = node.jjtGetNumChildren();
+		if (count == 1 && node.jjtGetChild(0) instanceof ASTVar
+				&& (node instanceof ASTProjectionElem projection && !projection.hasAlias()
+						|| node instanceof ASTGroupCondition)) {
+			return;
+		}
+		if (node instanceof ASTVar variable && !variable.isAnonymous()
+				&& (candidates == null || candidates.contains(variable.getName()))) {
+			names.add(variable.getName());
+		}
+		for (int i = 0; i < count; i++) {
+			if ((node instanceof ASTBind || node instanceof ASTGroupCondition && count > 1) && i == count - 1
+					|| node instanceof ASTProjectionElem projection && projection.hasAlias() && i == 1) {
+				continue;
+			}
+			collectPossibleBindingReads(node.jjtGetChild(i), candidates, names);
+		}
+	}
+
 	private static void collectBoundNames(Node node, Set<String> candidateNames, Set<String> names) {
-		if (node instanceof ASTVar variable && candidateNames.contains(variable.getName())) {
+		if (node instanceof ASTVar variable && !variable.isAnonymous()
+				&& (candidateNames == null || candidateNames.contains(variable.getName()))) {
 			names.add(variable.getName());
 		}
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {

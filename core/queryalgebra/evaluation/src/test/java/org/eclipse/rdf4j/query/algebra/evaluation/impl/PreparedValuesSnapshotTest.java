@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -37,9 +39,12 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -48,6 +53,51 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class PreparedValuesSnapshotTest {
+
+	@Test
+	void immutableSnapshotsRetainExplicitGraphProvenanceWithoutRetainingLiveRows() {
+		var vf = SimpleValueFactory.getInstance();
+		var first = vf.createIRI("urn:first-graph");
+		var second = vf.createIRI("urn:second-graph");
+		for (MutableBindingSet representation : List.<MutableBindingSet>of(new QueryBindingSet(),
+				new ArrayBindingSet("private", "value"), new MapBindingSet())) {
+			MutableBindingSet source = GraphFrameBindings.supply(representation, "private", first);
+			source.setBinding("value", vf.createLiteral(1));
+			var frames = GraphFrameBindings.from(source);
+			BindingSet snapshot = BindingSetSnapshots.copyOf(source);
+			source.setBinding("value", vf.createLiteral(2));
+			GraphFrameBindings.supply(source, "private", second);
+
+			assertEquals(vf.createLiteral(1), snapshot.getValue("value"));
+			assertEquals(first, snapshot.getValue("private"));
+			assertSame(frames, GraphFrameBindings.from(snapshot));
+			assertTrue(GraphFrameBindings.isSupplied(snapshot, "private"));
+			assertFalse(snapshot instanceof MutableBindingSet);
+			assertSame(snapshot, BindingSetSnapshots.copyOf(snapshot));
+			assertThrows(UnsupportedOperationException.class, () -> snapshot.getBindingNames().clear());
+
+			var ordinary = new MapBindingSet();
+			snapshot.forEach(ordinary::addBinding);
+			assertSame(GraphFrameBindings.EMPTY, GraphFrameBindings.from(BindingSetSnapshots.copyOf(ordinary)));
+			assertSame(ordinary, BindingSetSnapshots.preserveMetadata(new MapBindingSet(), ordinary));
+		}
+	}
+
+	@Test
+	void preparedValuesRowsPreserveImmutableGraphFrameSnapshots() {
+		var vf = SimpleValueFactory.getInstance();
+		var graph = vf.createIRI("urn:graph");
+		MutableBindingSet source = GraphFrameBindings.supply(new QueryBindingSet(), "private", graph);
+		var frames = GraphFrameBindings.from(source);
+		var root = new QueryRoot(assignment(List.of(source)));
+		var prepared = strategy().precompile(root);
+		source.setBinding("private", vf.createIRI("urn:changed"));
+		var rows = evaluate(prepared);
+		assertEquals(1, rows.size());
+		assertEquals(graph, rows.get(0).getValue("private"));
+		assertSame(frames, GraphFrameBindings.from(rows.get(0)));
+		assertTrue(GraphFrameBindings.isSupplied(rows.get(0), "private"));
+	}
 
 	@Test
 	void publicSafetySnapshotRetainsPreparedAliasNamesAfterTheCaptureScopeCloses() {

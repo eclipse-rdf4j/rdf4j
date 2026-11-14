@@ -14,11 +14,13 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -30,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase;
 
@@ -69,7 +72,14 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	public ServiceJoinIterator(CloseableIteration<BindingSet> leftIter, Service service,
 			BindingSet bindings, EvaluationStrategy strategy, QueryEvaluationStep scalarRight,
 			BlankNodeAllocationScope allocation) {
-		super(leftIter, service, bindings);
+		// The executor and its scalar/provider result may both own a close path to this input. Share one idempotent
+		// owner so cancellation, normal completion and exceptional close reach the original iterator exactly once.
+		super(new ConvertingIteration<BindingSet, BindingSet>(leftIter) {
+			@Override
+			protected BindingSet convert(BindingSet row) {
+				return row;
+			}
+		}, service, bindings);
 		this.service = service;
 		this.strategy = strategy;
 		this.scalarRight = scalarRight;
@@ -118,6 +128,10 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 				throw new QueryEvaluationException("Receiving SERVICE does not support blank-node references");
 			}
 
+			SPARQLQueries.ServiceRequest request = SPARQLQueries.prepareServiceRequest(service, List.of(),
+					receivingScope, referenceSupport, canonicalIDs);
+			Service requestService = request.service();
+
 			// use vectored evaluation
 			if (runtimeTelemetryEnabled) {
 				incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
@@ -128,19 +142,29 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 			long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 			try {
 				CloseableIteration<BindingSet> result;
-				ExternalValuePreparation.initializeQueryModel(service);
+				ExternalValuePreparation.initializeQueryModel(requestService);
 				CloseableIteration<BindingSet> checkedInputs = new ConvertingIteration<>(leftIter) {
 					@Override
 					protected BindingSet convert(BindingSet input) {
-						return ServiceQueryEvaluationStep.prepareOutgoingBindings(service, input, receivingScope,
-								referenceSupport, canonicalIDs);
+						return request.prepareRuntimeInput(input);
 					}
 				};
 				CloseableIteration<BindingSet> externalBindings = ExternalValuePreparation
 						.initializeBindings(checkedInputs);
 				try (var active = allocation.activate();
 						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					result = fs.evaluate(service, externalBindings, service.getBaseURI());
+					result = fs.evaluate(requestService, externalBindings, requestService.getBaseURI());
+				}
+				if (!request.parameterIdentities().isEmpty()) {
+					RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
+							SimpleValueFactory.getInstance(), receivingScope, canonicalIDs);
+					response.seedOriginalBindings(request.parameterIdentities());
+					result = new ConvertingIteration<BindingSet, BindingSet>(result) {
+						@Override
+						protected BindingSet convert(BindingSet row) {
+							return response.recoverOriginalBindings(row);
+						}
+					};
 				}
 				addResultAfterReplaySafepoint(result, runtimeTelemetryEnabled);
 			} finally {

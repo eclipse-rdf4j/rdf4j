@@ -40,11 +40,13 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -108,6 +110,134 @@ class ServiceQueryEvaluationStepWireBindingsTest {
 		input.addBinding("x", FIRST);
 		assertIndependentSourceRows(valuesUnion(), input, row("x", FIRST, "o", VF.createLiteral("first")));
 		assertWireMatchesSource(valuesUnion(), input, Set.of(FIRST, SECOND));
+	}
+
+	@Test
+	void preparedFilterInputSurvivesBatchedWireTransportWithoutBecomingOutput() throws Exception {
+		assertPreparedFilterInputSurvivesWireTransport(false);
+	}
+
+	@Test
+	void normalPipelineRetainsPreparedFilterInputAcrossRewrites() throws Exception {
+		assertPreparedFilterInputSurvivesWireTransport(true);
+	}
+
+	@Test
+	void normalRuntimePipelineRetainsSavedFilterInputAfterFolding() throws Exception {
+		List<String> serialized = new ArrayList<>();
+		SPARQLProtocolSession client = mock(SPARQLProtocolSession.class);
+		when(client.sendTupleQuery(eq(QueryLanguage.SPARQL), anyString(), isNull(), isNull(), anyBoolean(), anyInt(),
+				ArgumentMatchers.<WeakReference<?>>isNull(), any(Binding[].class))).thenAnswer(invocation -> {
+					String text = invocation.getArgument(1);
+					serialized.add(text);
+					TupleExpr request = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null)
+							.getTupleExpr();
+					return new IteratingTupleQueryResult(new ArrayList<>(request.getBindingNames()), evaluate(text));
+				});
+		SPARQLRepository repository = new SPARQLRepository("http://example.invalid/sparql") {
+			@Override
+			protected SPARQLProtocolSession createSPARQLProtocolSession() {
+				return client;
+			}
+		};
+		RepositoryFederatedService endpoint = new RepositoryFederatedService(repository);
+		try {
+			String query = "SELECT ?s ?o WHERE { VALUES ?s { <urn:a> <urn:b> } "
+					+ "SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+				@Override
+				public void meet(Filter filter) {
+					filter.setConditionBindingScope(Filter.ConditionBindingScope.ALL);
+					super.meet(filter);
+				}
+			});
+			var input = new MapBindingSet();
+			input.addBinding("x", VF.createLiteral(1));
+			var strategy = new DefaultEvaluationStrategy(SOURCE, null, ignored -> endpoint);
+			List<BindingSet> raw;
+			try (var rows = strategy.precompile(expression.clone()).evaluate(input)) {
+				raw = collect(rows);
+			}
+			assertThat(raw).as("mode=runtime, unoptimized SERVICE")
+					.extracting(row -> row.getValue("s"))
+					.containsExactlyInAnyOrder(FIRST, SECOND);
+			List<String> rawRequests = List.copyOf(serialized);
+			serialized.clear();
+			TupleExpr optimized = strategy.optimize(expression, new EvaluationStatistics(), input);
+			var service = new AtomicReference<Service>();
+			optimized.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+				@Override
+				public void meet(Service node) {
+					service.set(node);
+					super.meet(node);
+				}
+			});
+			assertThat(service.get().getServiceVars()).as("runtime optimized SERVICE no longer advertises x")
+					.doesNotContain("x");
+			List<BindingSet> actual;
+			try (var rows = strategy.precompile(optimized).evaluate(input)) {
+				actual = collect(rows);
+			}
+			assertThat(actual).as("mode=runtime, optimized SERVICE, plan=%s, savedReads=%s, history=%s, "
+					+ "rawRequests=%s, optimizedRequests=%s", optimized, service.get().getSavedPossibleReadNames(),
+					service.get().getRuntimeBindingHistory(), rawRequests, serialized)
+					.extracting(row -> row.getValue("s"))
+					.containsExactlyInAnyOrder(FIRST, SECOND);
+			assertThat(actual).as("runtime optimized bag matches raw").containsExactlyInAnyOrderElementsOf(raw);
+			assertThat(serialized).hasSize(1);
+		} finally {
+			endpoint.shutdown();
+		}
+	}
+
+	private static void assertPreparedFilterInputSurvivesWireTransport(boolean normalPipeline) throws Exception {
+		List<String> serialized = new ArrayList<>();
+		SPARQLProtocolSession client = mock(SPARQLProtocolSession.class);
+		when(client.sendTupleQuery(eq(QueryLanguage.SPARQL), anyString(), isNull(), isNull(), anyBoolean(), anyInt(),
+				ArgumentMatchers.<WeakReference<?>>isNull(), any(Binding[].class))).thenAnswer(invocation -> {
+					String text = invocation.getArgument(1);
+					serialized.add(text);
+					List<BindingSet> rows = evaluate(text);
+					TupleExpr request = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null)
+							.getTupleExpr();
+					assertThat(request.getBindingNames()).as("mode=prepared, normalPipeline=%s, remote projection",
+							normalPipeline).doesNotContain("x");
+					return new IteratingTupleQueryResult(new ArrayList<>(request.getBindingNames()), rows);
+				});
+		SPARQLRepository repository = new SPARQLRepository("http://example.invalid/sparql") {
+			@Override
+			protected SPARQLProtocolSession createSPARQLProtocolSession() {
+				return client;
+			}
+		};
+		RepositoryFederatedService endpoint = new RepositoryFederatedService(repository);
+		try {
+			String query = "SELECT ?x ?s ?o WHERE { VALUES ?s { <urn:a> <urn:b> } "
+					+ "SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }";
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			var input = new MapBindingSet();
+			input.addBinding("x", VF.createLiteral(1));
+			var strategy = new DefaultEvaluationStrategy(SOURCE, null, ignored -> endpoint);
+			if (!normalPipeline) {
+				strategy.setOptimizerPipeline(List::of);
+			}
+			TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+			input.setBinding("x", VF.createLiteral(2));
+			List<BindingSet> rows;
+			try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+				rows = collect(result);
+			}
+			assertThat(rows).extracting(row -> row.getValue("s")).containsExactlyInAnyOrder(FIRST, SECOND);
+			assertThat(rows).extracting(row -> row.getValue("o"))
+					.containsExactlyInAnyOrder(VF.createLiteral("first"), VF.createLiteral("second"));
+			// The outer projection recovers the expression input in either pipeline; the remote projection does not.
+			assertThat(rows).as("mode=prepared, normalPipeline=%s", normalPipeline)
+					.allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(VF.createLiteral(1)));
+			assertThat(serialized).hasSize(1);
+		} finally {
+			endpoint.shutdown();
+		}
 	}
 
 	@Test

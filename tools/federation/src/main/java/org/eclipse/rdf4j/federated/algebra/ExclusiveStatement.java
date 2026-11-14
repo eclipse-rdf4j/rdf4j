@@ -17,14 +17,17 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.TripleSource;
+import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.BoundFilterUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
@@ -34,6 +37,11 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * @author Andreas Schwarte
  */
 public class ExclusiveStatement extends FedXStatementPattern implements ExclusiveTupleExpr {
+
+	@Override
+	public Class<? extends QueryModelNode> bindingContractClass() {
+		return ExclusiveStatement.class;
+	}
 
 	private static final long serialVersionUID = -6963394279179263763L;
 
@@ -50,6 +58,12 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 	@Override
 	public CloseableIteration<BindingSet> evaluate(
 			BindingSet bindings) throws QueryEvaluationException {
+
+		var compatibleBindings = BoundFilterUtil.merge(bindings, this);
+		if (compatibleBindings.isEmpty()) {
+			return new EmptyIteration<>();
+		}
+		bindings = compatibleBindings.get();
 
 		CloseableIteration<BindingSet> res = null;
 
@@ -75,10 +89,12 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 					preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,
 							getExecutionDataset());
 				} catch (IllegalQueryException e1) {
-					// TODO there might be an issue with filters being evaluated => investigate
 					/* all vars are bound, this must be handled as a check query, can occur in joins */
 					if (t.hasStatements(this, bindings, queryInfo, getExecutionDataset())) {
 						res = new SingleBindingSetIteration(bindings);
+						if (filterExpr != null) {
+							res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());
+						}
 						if (boundFilters != null) {
 							// make sure to insert any values from FILTER expressions that are directly
 							// bound in this expression

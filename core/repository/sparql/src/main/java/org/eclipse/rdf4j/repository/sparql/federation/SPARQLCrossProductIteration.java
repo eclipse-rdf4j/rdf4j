@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
 
 /**
@@ -74,7 +75,8 @@ public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet> 
 						res.addBinding(binding);
 					}
 				}
-				return res;
+				return BindingSetSnapshots.preserveMetadata(next,
+						BindingSetSnapshots.preserveMetadata(currentInputBinding, res));
 			}
 			currentInputBinding = null;
 		}

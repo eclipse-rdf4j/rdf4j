@@ -48,6 +48,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ExtendedEvaluationStrategy extends StrictEvaluationStrategy {
+	@Override
+	protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
+		return ExtendedEvaluationStrategy.class;
+	}
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 

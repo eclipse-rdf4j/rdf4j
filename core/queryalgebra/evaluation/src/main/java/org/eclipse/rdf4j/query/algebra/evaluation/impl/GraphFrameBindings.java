@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 
 /**
  * Immutable provenance of private active-graph inputs supplied by enclosing evaluation frames. Names alone cannot
@@ -36,8 +37,25 @@ public final class GraphFrameBindings implements Serializable {
 	public static final GraphFrameBindings EMPTY = new GraphFrameBindings(Map.of());
 	private final Map<String, Value> parameters;
 
-	public interface Carrier {
+	public interface Carrier extends BindingSetSnapshots.Metadata {
 		GraphFrameBindings getGraphFrameBindings();
+
+		@Override
+		default boolean hasSnapshotMetadata() {
+			GraphFrameBindings frames = getGraphFrameBindings();
+			return frames != null && !frames.parameters.isEmpty();
+		}
+
+		@Override
+		default BindingSet preserveSnapshotMetadata(BindingSet immutableValues) {
+			GraphFrameBindings frames = getGraphFrameBindings();
+			if (frames == null || frames.parameters.isEmpty()) {
+				return immutableValues;
+			}
+			GraphFrameBindings existing = from(immutableValues);
+			GraphFrameBindings combined = existing.merge(frames);
+			return combined == existing ? immutableValues : new SnapshotBindings(immutableValues, combined);
+		}
 	}
 
 	public interface MutableCarrier extends Carrier {
@@ -110,6 +128,54 @@ public final class GraphFrameBindings implements Serializable {
 			return bindings;
 		}
 		return new SuppliedBindings(bindings, frames);
+	}
+
+	/** The frame state is immutable; this wrapper never retains the mutable row that supplied it. */
+	private static final class SnapshotBindings extends AbstractBindingSet
+			implements Carrier, BindingSetSnapshots.Snapshot {
+		private static final long serialVersionUID = 1L;
+		private final BindingSet delegate;
+		private final GraphFrameBindings frames;
+
+		private SnapshotBindings(BindingSet delegate, GraphFrameBindings frames) {
+			this.delegate = delegate;
+			this.frames = frames;
+		}
+
+		@Override
+		public GraphFrameBindings getGraphFrameBindings() {
+			return frames;
+		}
+
+		@Override
+		public Iterator<Binding> iterator() {
+			return delegate.iterator();
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			return delegate.getBindingNames();
+		}
+
+		@Override
+		public Binding getBinding(String name) {
+			return delegate.getBinding(name);
+		}
+
+		@Override
+		public boolean hasBinding(String name) {
+			return delegate.hasBinding(name);
+		}
+
+		@Override
+		public Value getValue(String name) {
+			return delegate.getValue(name);
+		}
+
+		@Override
+		public int size() {
+			return delegate.size();
+		}
 	}
 
 	/** Keeps custom evaluation-context binding representations usable without requiring a public API change. */

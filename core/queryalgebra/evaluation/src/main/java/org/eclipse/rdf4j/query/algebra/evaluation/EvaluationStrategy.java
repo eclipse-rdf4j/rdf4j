@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
 
 /**
@@ -77,13 +78,35 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 *
 	 * @param expr                 the {@link TupleExpr} to optimize.
 	 * @param evaluationStatistics the {@link EvaluationStatistics} of the data source, to be used for query planning.
-	 * @param bindings             a-priori bindings supplied for the query, which can potentially be inlined.
+	 * @param bindings             the actual evaluation input; its values and metadata must remain valid when the
+	 *                             optimized expression is evaluated. Optimizers may substitute values only where doing
+	 *                             so preserves that runtime-input contract.
 	 * @return the optimized {@link TupleExpr}.
 	 * @see #setOptimizerPipeline(QueryOptimizerPipeline)
 	 * @since 3.0
 	 */
 	TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
 			BindingSet bindings);
+
+	/**
+	 * Optimize a query whose evaluation input will be empty, capturing the supplied logical parameters before any
+	 * ordinary optimizer runs. Implementations that cannot prove complete capture must reject the request. A strategy
+	 * that has not adopted this contract may still optimize the canonical empty input through its existing override.
+	 *
+	 * @param expr                 the query to optimize
+	 * @param evaluationStatistics statistics used for query planning
+	 * @param parameters           logical query parameters to capture
+	 * @return an optimized query suitable for evaluation with {@link EmptyBindingSet#getInstance()}
+	 * @throws QueryEvaluationException if this strategy cannot safely capture the parameters
+	 */
+	default TupleExpr optimizeForEmptyInput(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+			BindingSet parameters) {
+		if (parameters == EmptyBindingSet.getInstance()) {
+			return optimize(expr, evaluationStatistics, parameters);
+		}
+		throw new QueryEvaluationException("Evaluation strategy does not support prepared query bindings: "
+				+ getClass().getName());
+	}
 
 	/**
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as

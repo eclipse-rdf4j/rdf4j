@@ -48,7 +48,9 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 
 	public void addExpression(FilterExpr expr) {
 		// TODO use some priority ordering: selective filters should be evaluated first (shortcuts!)
-		expressions.add(expr);
+		FilterExpr owned = expr.clone();
+		owned.setParentNode(this);
+		expressions.add(owned);
 	}
 
 	public List<FilterExpr> getExpressions() {
@@ -60,7 +62,9 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 		ConjunctiveFilterExpr clone = (ConjunctiveFilterExpr) super.clone();
 		clone.expressions = new ArrayList<>(expressions.size());
 		for (FilterExpr expression : expressions) {
-			clone.expressions.add(expression.clone());
+			FilterExpr child = expression.clone();
+			child.setParentNode(clone);
+			clone.expressions.add(child);
 		}
 		return clone;
 	}
@@ -75,13 +79,21 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
 		for (FilterExpr expr : expressions) {
-			expr.getExpression().visit(visitor);
+			expr.visit(visitor);
 		}
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-		throw new UnsupportedOperationException();
+		for (int i = 0; i < expressions.size(); i++) {
+			if (expressions.get(i) == current) {
+				FilterExpr replacementFilter = (FilterExpr) replacement;
+				replacementFilter.setParentNode(this);
+				expressions.set(i, replacementFilter);
+				return;
+			}
+		}
+		throw new IllegalArgumentException("Node is not a child node: " + current);
 	}
 
 }

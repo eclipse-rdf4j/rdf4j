@@ -12,29 +12,41 @@
 package org.eclipse.rdf4j.federated;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.identity;
 import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.memberValue;
 
 import java.util.List;
+import java.util.concurrent.Executors;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -56,6 +68,7 @@ public class FedXSingleSourceGraphTest extends SPARQLBaseTest {
 	private static final TripleTerm TERM = VF.createTripleTerm(SUBJECT, EDGE, OBJECT);
 	private static final String TERM_QUERY = "SELECT ?g ?part ?tail ?source WHERE { GRAPH ?g { "
 			+ "?claim <" + RDF.REIFIES + "> <<(?part <" + EDGE + "> ?tail)>> ; <" + SOURCE + "> ?source } }";
+	private static final String MODE_QUERY = "SELECT ?s WHERE { ?s <urn:delegation:edge> ?o FILTER(?x = 1) }";
 
 	@BeforeEach
 	public void prepareSinglePopulatedMember() throws Exception {
@@ -134,6 +147,179 @@ public class FedXSingleSourceGraphTest extends SPARQLBaseTest {
 		dataset.addEndpoint(federationContext().getEndpointManager().getEndpointByName("http://endpoint1").getId());
 		assertThat(optimize(TERM_QUERY, dataset)).isInstanceOf(SingleSourceQuery.class);
 		assertTermRows(query(TERM_QUERY, dataset));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	public void runtimeBindingsDoNotUseSavedTextAsApiParameters(boolean singleMember) {
+		addModeStatement();
+		Dataset dataset = modeDataset(singleMember);
+		var input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(1));
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, MODE_QUERY, null);
+		var raw = new DefaultEvaluationStrategy(new TripleSource() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				Statement statement = VF.createStatement(SUBJECT, EDGE, OBJECT);
+				boolean matches = (subject == null || subject.equals(SUBJECT))
+						&& (predicate == null || predicate.equals(EDGE)) && (object == null || object.equals(OBJECT));
+				return new CloseableIteratorIteration<>(
+						(matches ? List.of(statement) : List.<Statement>of()).iterator());
+			}
+		}, null);
+		TupleExpr unfiltered = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s WHERE { ?s <urn:delegation:edge> ?o }", null).getTupleExpr();
+		try (var rows = raw.precompile(unfiltered).evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).as("mode=runtime raw source, singleMember=%s", singleMember)
+					.extracting(row -> row.getValue("s"))
+					.containsExactly(SUBJECT);
+		}
+		try (var rows = raw.precompile(parsed.getTupleExpr().clone()).evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).as("mode=runtime raw, singleMember=%s", singleMember).isEmpty();
+		}
+		var context = federationContext();
+		var strategy = context.createStrategy(dataset);
+		var info = new QueryInfo(MODE_QUERY, null, QueryType.SELECT, 0, false, context, strategy, dataset);
+		try {
+			TupleExpr plan = strategy.optimize(parsed.getTupleExpr(), new FederationEvaluationStatistics(info, dataset),
+					input);
+			try (var rows = strategy.evaluate(plan, input)) {
+				assertThat(QueryResults.asList(rows))
+						.as("mode=runtime optimized, singleMember=%s, plan=%s", singleMember,
+								plan)
+						.isEmpty();
+			}
+			assertThat(plan).as("mode=runtime, singleMember=%s", singleMember).isNotInstanceOf(SingleSourceQuery.class);
+		} finally {
+			info.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	public void preparedSingleSourceOwnsItsInputAcrossClonesAndReuses(boolean singleMember) throws Exception {
+		addModeStatement();
+		Dataset dataset = modeDataset(singleMember);
+		var context = federationContext();
+		var strategy = context.createStrategy(dataset);
+		var info = new QueryInfo(MODE_QUERY, null, QueryType.SELECT, 0, false, context, strategy, dataset);
+		var input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(1));
+		try {
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, MODE_QUERY, null)
+					.getTupleExpr();
+			TupleExpr prepared = strategy.optimizeForEmptyInput(expression,
+					new FederationEvaluationStatistics(info, dataset),
+					input);
+			assertThat(prepared).as("mode=prepared, singleMember=%s", singleMember)
+					.isInstanceOf(SingleSourceQuery.class);
+			TupleExpr clone = prepared.clone();
+			input.setBinding("x", VF.createLiteral(2));
+			assertModeResults(strategy, prepared, "prepared original, singleMember=" + singleMember, SUBJECT);
+			assertModeResults(strategy, clone, "prepared clone, singleMember=" + singleMember, SUBJECT);
+			TupleExpr next = strategy.optimizeForEmptyInput(
+					QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, MODE_QUERY, null).getTupleExpr(),
+					new FederationEvaluationStatistics(info, dataset), input);
+			assertModeResults(strategy, next, "prepared changed input, singleMember=" + singleMember);
+			assertModeResults(strategy, prepared, "prepared original after reuse, singleMember=" + singleMember,
+					SUBJECT);
+			assertModeResults(strategy, clone, "prepared clone after reuse, singleMember=" + singleMember, SUBJECT);
+			try (var executor = Executors.newFixedThreadPool(2)) {
+				var originalTask = executor.submit(() -> assertModeResults(strategy, prepared,
+						"prepared original concurrent, singleMember=" + singleMember, SUBJECT));
+				var cloneTask = executor.submit(() -> assertModeResults(strategy, clone,
+						"prepared clone concurrent, singleMember=" + singleMember, SUBJECT));
+				originalTask.get();
+				cloneTask.get();
+			}
+			assertThatThrownBy(() -> strategy.evaluate(prepared, new MapBindingSet()))
+					.as("mode=prepared, noncanonical runtime input, singleMember=%s", singleMember)
+					.isInstanceOf(QueryEvaluationException.class);
+			assertThatThrownBy(() -> strategy.optimizeForEmptyInput(prepared,
+					new FederationEvaluationStatistics(info, dataset), EmptyBindingSet.getInstance()))
+							.as("mode=prepared, empty recapture, singleMember=%s", singleMember)
+							.isInstanceOf(QueryEvaluationException.class);
+			assertThatThrownBy(() -> strategy.optimizeForEmptyInput(prepared,
+					new FederationEvaluationStatistics(info, dataset), input))
+							.as("mode=prepared, changed recapture, singleMember=%s", singleMember)
+							.isInstanceOf(QueryEvaluationException.class);
+		} finally {
+			info.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	public void canonicalEmptyRuntimeInputCanDelegate(boolean singleMember) {
+		addModeStatement();
+		Dataset dataset = modeDataset(singleMember);
+		String text = "SELECT ?s WHERE { ?s <urn:delegation:edge> ?o }";
+		var context = federationContext();
+		var strategy = context.createStrategy(dataset);
+		var info = new QueryInfo(text, null, QueryType.SELECT, 0, false, context, strategy, dataset);
+		try {
+			TupleExpr plan = strategy.optimize(
+					QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null).getTupleExpr(),
+					new FederationEvaluationStatistics(info, dataset), EmptyBindingSet.getInstance());
+			assertThat(plan).as("mode=runtime empty, singleMember=%s", singleMember)
+					.isInstanceOf(SingleSourceQuery.class);
+			assertModeResults(strategy, plan, "runtime canonical empty, singleMember=" + singleMember, SUBJECT);
+		} finally {
+			info.close();
+		}
+	}
+
+	@Test
+	public void preparedDistributedGroupRetainsItsCapturedResultColumn() {
+		IRI left = VF.createIRI("urn:delegation:left");
+		IRI right = VF.createIRI("urn:delegation:right");
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.add(SUBJECT, EDGE, OBJECT);
+			first.add(SUBJECT, left, VF.createLiteral("left"));
+			second.add(SUBJECT, right, VF.createLiteral("right"));
+		}
+		String text = "SELECT ?s ?value WHERE { ?s <urn:delegation:edge> ?value . "
+				+ "?s <urn:delegation:left> ?left . ?s <urn:delegation:right> ?right }";
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			var query = connection.prepareTupleQuery(text);
+			query.setBinding("value", OBJECT);
+			try (var rows = query.evaluate()) {
+				assertThat(QueryResults.asList(rows)).as("prepared distributed exclusive group")
+						.extracting(row -> tuple(row.getValue("s"), row.getValue("value")))
+						.containsExactly(tuple(SUBJECT, OBJECT));
+			}
+		}
+	}
+
+	private void addModeStatement() {
+		try (RepositoryConnection connection = getRepository(1).getConnection()) {
+			connection.add(SUBJECT, EDGE, OBJECT);
+		}
+	}
+
+	private Dataset modeDataset(boolean singleMember) {
+		if (!singleMember) {
+			return null;
+		}
+		FedXDataset dataset = new FedXDataset(null);
+		dataset.addEndpoint(federationContext().getEndpointManager().getEndpointByName("http://endpoint1").getId());
+		return dataset;
+	}
+
+	private static void assertModeResults(FederationEvaluationStrategy strategy, TupleExpr plan, String scenario,
+			Value... subjects) {
+		try (var rows = strategy.evaluate(plan, EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).as(scenario)
+					.extracting(row -> row.getValue("s"))
+					.containsExactlyInAnyOrder(subjects);
+		}
 	}
 
 	@Test

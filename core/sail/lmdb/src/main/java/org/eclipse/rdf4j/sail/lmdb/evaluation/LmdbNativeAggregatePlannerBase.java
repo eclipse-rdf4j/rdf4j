@@ -350,6 +350,25 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	abstract long placeableFilterMask(ValueExpr condition);
 
+	/** Returns only executable assignments, retaining the original list for the usual placeholder-free row path. */
+	static List<ExtensionElem> evaluatedExtensionElements(Extension extension) {
+		List<ExtensionElem> elements = extension.getElements();
+		for (int i = 0; i < elements.size(); i++) {
+			if (!TupleExprs.isEvaluatedExtensionElement(elements.get(i))) {
+				List<ExtensionElem> evaluated = new ArrayList<>(elements.size() - 1);
+				evaluated.addAll(elements.subList(0, i));
+				for (int j = i + 1; j < elements.size(); j++) {
+					ExtensionElem element = elements.get(j);
+					if (TupleExprs.isEvaluatedExtensionElement(element)) {
+						evaluated.add(element);
+					}
+				}
+				return evaluated;
+			}
+		}
+		return elements;
+	}
+
 	/**
 	 * Applies RDF4J's assignment-error contract to every copy in one Extension node. SPARQL Extend returns the input
 	 * mapping unchanged when its expression errors, so the target variable stays absent and a later compatible pattern
@@ -881,10 +900,12 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * Whether an aggregate argument variable reads its input slot. The shared ConstantOptimizer annotates an argument
 	 * with the constant it is proven to carry ({@code Var(name, value)}) while the group input still binds that name (a
 	 * single-valued VALUES, a constant BIND); that slot then holds exactly this term on every row, so the slot form
-	 * stays the authoritative, kernel-eligible encoding. Only a constant no input binding supplies is a true constant.
+	 * stays the authoritative, kernel-eligible encoding. API substitutions are different: their value overrides an
+	 * expression read even when VALUES produces a conflicting or unbound slot with the same name.
 	 */
 	static boolean readsInputSlot(Var var, Group group) {
-		return !var.hasValue() || group.getArg().getBindingNames().contains(var.getName());
+		return !var.hasValue()
+				|| !var.hasApiInputOrigin() && group.getArg().getBindingNames().contains(var.getName());
 	}
 
 	Set<String> aggregateRequiredNames(Group group) {
@@ -1053,10 +1074,11 @@ abstract class LmdbNativeAggregatePlannerBase {
 				}
 				continue;
 			}
-			if (!(arg instanceof Var)) {
+			if (!(arg instanceof Var variable) || kind != AggKind.COUNT && !readsInputSlot(variable, group)) {
 				// M-F3 aggregates over expressions: evaluate the argument once per input solution into a hidden
 				// computed slot (error ⇒ slot unbound, matching the generic evaluator's null-on-error skip);
-				// DISTINCT then applies to the computed slot exactly like a plain variable argument.
+				// DISTINCT then applies to the computed slot exactly like a plain variable argument. Captured
+				// constants use this path too, so native aggregation never reinterprets them as input-slot reads.
 				int hidden = slot("#aggExpr" + i);
 				pendingAggregateExpressions.add(new PendingAggregateExpression(hidden, arg));
 				if (kind == AggKind.GROUP_CONCAT) {

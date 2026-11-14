@@ -123,6 +123,25 @@ class FedXLocalBlankNodeIdentityTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
+	void capturedOutputSurvivesPreparedBlankNodeGraphExecution(boolean nativeStore) throws IOException {
+		try (var fixture = fixture(nativeStore); var connection = fixture.federation.getConnection()) {
+			var initial = rows(fixture.federation,
+					"SELECT ?s ?g WHERE { ?s <urn:p> ?p . GRAPH ?g { ?s <urn:graph-q> ?q } }");
+			var graph = initial.get(0).getValue("g");
+			var query = connection.prepareTupleQuery("SELECT ?q WHERE { GRAPH ?g { ?s <urn:graph-q> ?q } }");
+			query.setBinding("g", graph);
+			query.setBinding("q", SimpleValueFactory.getInstance().createLiteral("q"));
+			try (var result = query.evaluate()) {
+				var actual = QueryResults.asList(result);
+				assertEquals(1, actual.size(), "mode=prepared, nativeStore=" + nativeStore);
+				assertEquals(Set.of("q"), actual.get(0).getBindingNames(), "nativeStore=" + nativeStore);
+				assertEquals("q", actual.get(0).getValue("q").stringValue(), "nativeStore=" + nativeStore);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
 	void foreignBindingsDoNotDiscardUnrelatedOptionalUnionOrMinusResults(boolean nativeStore) throws IOException {
 		try (var fixture = fixture(nativeStore); var connection = fixture.federation.getConnection()) {
 			var original = rows(fixture.federation, "SELECT ?s WHERE { ?s <urn:p> ?p }").get(0).getValue("s");

@@ -13,12 +13,15 @@ package org.eclipse.rdf4j.query.algebra;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 
 class ServiceVariableMetadataTest {
@@ -83,6 +86,35 @@ class ServiceVariableMetadataTest {
 
 		assertEquals(Set.of("newSubject", "predicate", "object"), service.getServiceVars());
 		assertEquals(Set.of("cloneSubject", "predicate", "object"), clone.getServiceVars());
+	}
+
+	@Test
+	void extractedBodyFactoryPreservesNestedServiceWhileLegacyWrappersAndCachesRemainSupported() {
+		var values = SimpleValueFactory.getInstance();
+		String nestedBody = "SERVICE <urn:inner> {?subject ?predicate ?object}";
+		Service nested = new Service(Var.of("inner", values.createIRI("urn:inner")), pattern("subject"), nestedBody,
+				Map.of(), null, false);
+		Service invocation = Service.fromBody(Var.of("outer", values.createIRI("urn:outer")), nested, nestedBody,
+				Map.of(), null, false);
+		String ask = invocation.getAskQueryString();
+		String select = invocation.getSelectQueryString(Set.of("subject"));
+		assertEquals(nestedBody, invocation.getServiceExpressionString());
+		assertTrue(ask.contains(nestedBody));
+		assertTrue(select.contains(nestedBody));
+
+		Service legacy = new Service(Var.of("outer", values.createIRI("urn:outer")), nested.clone(),
+				"SERVICE <urn:outer> {" + nestedBody + "}", Map.of(), null, false);
+		assertEquals(nestedBody, legacy.getServiceExpressionString());
+		Service clone = invocation.clone();
+		assertEquals(ask, clone.getAskQueryString());
+		assertEquals(select, clone.getSelectQueryString(Set.of("subject")));
+		clone.setArg(pattern("replacement"));
+		clone.setExpressionString("SERVICE <urn:outer> {?replacement ?predicate ?object}");
+		assertEquals("?replacement ?predicate ?object", clone.getServiceExpressionString());
+		assertNotEquals(ask, clone.getAskQueryString());
+		assertNotEquals(select, clone.getSelectQueryString(Set.of("subject")));
+		assertEquals(ask, invocation.getAskQueryString());
+		assertEquals(nestedBody, invocation.getServiceExpressionString());
 	}
 
 	private static StatementPattern pattern(String subject) {

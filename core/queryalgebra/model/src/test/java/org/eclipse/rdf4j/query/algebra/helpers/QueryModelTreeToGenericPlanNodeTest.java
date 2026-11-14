@@ -39,9 +39,11 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.WithVarProvider;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -281,12 +283,28 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 	@Test
 	public void annotatesUnknownUnaryChildAsUnknownRatherThanUnbound() {
-		DescribeOperator describe = new DescribeOperator(pattern("x", "p", "o"));
+		UnaryTupleOperator opaque = new UnaryTupleOperator(pattern("x", "p", "o")) {
+			@Override
+			public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+				visitor.meetOther(this);
+			}
+		};
 
-		GenericPlanNode plan = explain(describe);
+		GenericPlanNode plan = explain(opaque);
 		GenericPlanNode childPattern = findFirstPlan(plan, node -> node.getType().startsWith("StatementPattern"));
 
 		assertBindingState(childPattern, "x", "unknown");
+	}
+
+	@Test
+	public void describePreservesKnownChildInputScope() {
+		DescribeOperator describe = new DescribeOperator(pattern("x", "p", "o"));
+		GenericPlanNode plan = explain(describe);
+		GenericPlanNode childPattern = findFirstPlan(plan, node -> node.getType().startsWith("StatementPattern"));
+		assertBindingState(childPattern, "x", "unbound");
+		GenericPlanNode parameterized = explain(describe, Set.of("x"));
+		assertBindingState(findFirstPlan(parameterized, node -> node.getType().startsWith("StatementPattern")),
+				"x", "bound");
 	}
 
 	@Test
