@@ -120,8 +120,8 @@ class ExtensionAggregateContractTest {
 			assertThat(registered.get()).isInstanceOf(factory.getClass());
 			assertThat(factory.getMinNumberOfArguments()).as(className).isEqualTo(2);
 			assertThat(factory.getMaxNumberOfArguments()).as(className).isEqualTo(2);
-			assertThat(factory.getCollector()).as(className).isInstanceOf(ExtensionCollector.class);
-			assertThat(factory.buildFunction((i, bs) -> null)).as(className).isNotNull();
+			assertThat(factory.getCollector(2)).as(className).isInstanceOf(ExtensionCollector.class);
+			assertThat(factory.buildFunction(2, (i, bs) -> null)).as(className).isNotNull();
 		}
 	}
 

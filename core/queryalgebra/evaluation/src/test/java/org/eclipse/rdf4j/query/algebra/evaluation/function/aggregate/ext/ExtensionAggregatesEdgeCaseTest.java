@@ -125,9 +125,9 @@ class ExtensionAggregatesEdgeCaseTest {
 	/** Runs a two-argument aggregate over {@code (x, y)} rows; {@code null} stands for an unbound value. */
 	@SuppressWarnings("unchecked")
 	private static Value nary(AbstractNAryAggregateFactory factory, boolean distinct, Value[]... rows) {
-		ExtensionCollector collector = factory.getCollector();
+		ExtensionCollector collector = factory.getCollector(2);
 		AggregateNAryFunction<ExtensionCollector, Value> function = factory
-				.buildFunction((i, bs) -> bs.getValue(i == 0 ? "x" : "y"));
+				.buildFunction(2, (i, bs) -> bs.getValue(i == 0 ? "x" : "y"));
 		Set<List<Value>> seen = new HashSet<>();
 		for (Value[] r : rows) {
 			function.processAggregate(row(r[0], r[1]), distinct ? seen::add : v -> true, collector);
@@ -309,7 +309,7 @@ class ExtensionAggregatesEdgeCaseTest {
 		// the sketch collectors must not retain the input: their only state is the datasketches sketch (plus
 		// primitives); no collection, map or array of values may be declared
 		assertSketchOnly(new ApproxCountDistinctAggregateFactory().getCollector(), HllSketch.class);
-		assertSketchOnly(new ApproxQuantileAggregateFactory().getCollector(), KllDoublesSketch.class);
+		assertSketchOnly(new ApproxQuantileAggregateFactory().getCollector(2), KllDoublesSketch.class);
 	}
 
 	private static void assertSketchOnly(ExtensionCollector collector, Class<?> sketchType) {
@@ -337,7 +337,7 @@ class ExtensionAggregatesEdgeCaseTest {
 			assertThat(second).as(factory.getIri()).isEqualTo(first);
 		}
 		for (AbstractNAryAggregateFactory factory : NARY) {
-			assertThat(factory.getCollector()).isNotSameAs(factory.getCollector());
+			assertThat(factory.getCollector(2)).isNotSameAs(factory.getCollector(2));
 			Value[][] rows = { pair(integer(1), decimal("0.5")), pair(integer(2), decimal("0.5")) };
 			assertThat(nary(factory, false, rows)).as(factory.getIri()).isEqualTo(nary(factory, false, rows));
 		}
