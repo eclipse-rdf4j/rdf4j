@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.federated.evaluation.iterator;
 
 import java.util.List;
 import java.util.ListIterator;
+import java.util.function.Predicate;
 
 import org.eclipse.collections.impl.set.mutable.primitive.IntHashSet;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CancellationPoints;
 
 /**
  * A {@link LookAheadIteration} for processing bind left join results (i.e., result of joining OPTIONAL clauses)
@@ -42,12 +44,19 @@ public class BindLeftJoinIteration extends LookAheadIteration<BindingSet> {
 
 	protected final CloseableIteration<BindingSet> iter;
 	protected final List<BindingSet> bindings;
+	private final Predicate<BindingSet> condition;
 
 	protected IntHashSet seenBindingIndexes = new IntHashSet();
 	protected final ListIterator<BindingSet> bindingsIterator;
 
 	public BindLeftJoinIteration(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
+		this(iter, bindings, row -> true);
+	}
+
+	public BindLeftJoinIteration(CloseableIteration<BindingSet> iter, List<BindingSet> bindings,
+			Predicate<BindingSet> condition) {
+		this.condition = condition;
 		this.iter = iter;
 		this.bindings = bindings;
 		this.bindingsIterator = bindings.listIterator();
@@ -56,11 +65,18 @@ public class BindLeftJoinIteration extends LookAheadIteration<BindingSet> {
 	@Override
 	protected BindingSet getNextElement() {
 
-		if (iter.hasNext()) {
+		while (true) {
+			CancellationPoints.check(isCancellationRequested());
+			if (!iter.hasNext()) {
+				break;
+			}
 			var bIn = iter.next();
 			int bIndex = ((Literal) bIn.getValue(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME)).intValue();
-			seenBindingIndexes.add(bIndex);
-			return convert(bIn, bIndex);
+			BindingSet result = convert(bIn, bIndex);
+			if (condition.test(result)) {
+				seenBindingIndexes.add(bIndex);
+				return result;
+			}
 		}
 
 		while (bindingsIterator.hasNext()) {
@@ -96,6 +112,7 @@ public class BindLeftJoinIteration extends LookAheadIteration<BindingSet> {
 
 	@Override
 	protected boolean forwardCancellation() {
-		return CooperativeCancellation.forward(iter);
+		CooperativeCancellation.forward(iter);
+		return true;
 	}
 }
