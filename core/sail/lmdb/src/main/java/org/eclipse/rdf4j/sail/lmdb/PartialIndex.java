@@ -240,6 +240,10 @@ final class PartialIndex {
 		private final long s, p, o, c, first, second;
 		private final boolean explicit;
 		private final IndexResolutionPlan resolution;
+		private final ChunkInput chunkInput = new ChunkInput();
+		private final long[] secondBuffer = new long[Chunks.MAX_CHUNK_SIZE * 2];
+		private int secondBufferIndex;
+		private int secondBufferCount;
 		private long lastSecond = -1;
 		private RecordIterator child;
 		private long[] childBuffer;
@@ -342,6 +346,21 @@ final class PartialIndex {
 		}
 
 		private long nextSecond() throws IOException {
+			if (secondBufferIndex == secondBufferCount) {
+				secondBufferIndex = 0;
+				secondBufferCount = preloadSeconds();
+				if (secondBufferCount == 0) {
+					return -1;
+				}
+			}
+			lastSecond = secondBuffer[secondBufferIndex++];
+			return lastSecond;
+		}
+
+		private int preloadSeconds() throws IOException {
+			if (second >= 0 && lastSecond >= 0) {
+				return 0;
+			}
 			long stamp;
 			try {
 				stamp = txn.lockManager().readLock();
@@ -350,9 +369,7 @@ final class PartialIndex {
 				throw new IOException(e);
 			}
 			try (MemoryStack stack = stackPush()) {
-				if (second >= 0 && lastSecond >= 0) {
-					return -1;
-				}
+				int count = 0;
 				int dbi = db(explicit);
 				long cursor = txn.getCursor(dbi);
 				try {
@@ -371,21 +388,23 @@ final class PartialIndex {
 						rc = E(mdb_cursor_get(cursor, key, data, MDB_LAST));
 					}
 					while (rc == MDB_SUCCESS) {
-						ChunkInput input = new ChunkInput(key.mv_data(), data.mv_data(), PAIR_LENGTH, SPLIT_POINT);
-						input.seek(min);
+						chunkInput.reset(key.mv_data(), data.mv_data(), PAIR_LENGTH, SPLIT_POINT);
+						chunkInput.seek(min);
 						long[] pair;
-						while ((pair = input.next()) != null) {
+						while ((pair = chunkInput.next()) != null) {
 							if (pair[0] != first || (second >= 0 && second != pair[1])) {
-								return -1;
+								return count;
 							}
 							if (pair[1] > lastSecond) {
-								lastSecond = pair[1];
-								return lastSecond;
+								secondBuffer[count++] = pair[1];
+								if (count == secondBuffer.length) {
+									return count;
+								}
 							}
 						}
 						rc = E(mdb_cursor_get(cursor, key, data, MDB_NEXT));
 					}
-					return -1;
+					return count;
 				} finally {
 					txn.returnCursor(dbi, cursor);
 				}

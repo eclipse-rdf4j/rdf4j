@@ -310,7 +310,6 @@ class TripleStore implements Closeable {
 		spoExistenceCursors.add(cursor);
 		return cursor;
 	});
-	private final CursorPool cursorPool = new CursorPool();
 	/**
 	 * Precomputed best index and range-search decision per pattern boundness mask (bit 0..3 = subj/pred/obj/context
 	 * bound). getPatternScore depends only on which fields are bound, so the per-probe scoring loop over all indexes
@@ -2430,11 +2429,6 @@ class TripleStore implements Closeable {
 			} catch (Throwable e) {
 				failure = appendCloseFailure(failure, e);
 			}
-			try {
-				cursorPool.close();
-			} catch (Throwable e) {
-				failure = appendCloseFailure(failure, e);
-			}
 			long environment = env;
 			try {
 				endTransaction(false);
@@ -2555,11 +2549,10 @@ class TripleStore implements Closeable {
 			for (TripleIndex index : indexes) {
 				if (index.getFieldSeq()[0] == 'c') {
 					// found a context-first index
-					return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, false);
+					return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, 0);
 				}
 			}
 			return null;
-
 		});
 	}
 
@@ -2574,8 +2567,9 @@ class TripleStore implements Closeable {
 				return IndexResolutionPlan.startingWith(partial, partialIndexes, selectedGeneration.indexes,
 						new long[] { subj, pred, obj, context }).iterator(txn, subj, pred, obj, context, explicit);
 			}
+			boolean rangeSearch = selectedGeneration.range[mask];
 			return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit,
-					selectedGeneration.best[mask], selectedGeneration.range[mask]);
+					selectedGeneration.best[mask], rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0);
 
 		});
 	}
@@ -2605,8 +2599,7 @@ class TripleStore implements Closeable {
 			if (index == null) {
 				throw new UnsupportedOperationException("StatementOrder is not supported: " + statementOrder);
 			}
-			boolean rangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-			return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, rangeSearch);
+			return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, index.getPatternScore(subj, pred, obj, context));
 
 		});
 	}
@@ -2827,8 +2820,9 @@ class TripleStore implements Closeable {
 			}
 
 			long count = 0;
+			boolean rangeSearch = selectedGeneration.range[mask];
 			try (RecordIterator records = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index,
-					selectedGeneration.range[mask])) {
+					rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0)) {
 				while (records.next() != null) {
 					count++;
 				}
@@ -3282,107 +3276,6 @@ class TripleStore implements Closeable {
 		spoExistenceCursor.remove();
 	}
 
-	/**
-	 * Per-thread pool of LMDB cursor handles keyed by dbi, so index-nested-loop probes reposition a retained cursor
-	 * (via {@code mdb_cursor_renew} when the snapshot changed, or plain re-seek within the same snapshot) instead of
-	 * paying an {@code mdb_cursor_open}/{@code mdb_cursor_close} JNI round-trip per probe. Only cursors of
-	 * manager-owned read-only transactions are pooled ({@link TxnManager.Txn#isReadOnly()}); write-transaction cursors
-	 * keep the open/close lifecycle. Freshness is detected exactly like {@link SpoExistenceCursor}: the owning Txn
-	 * wrapper identity, the raw handle and the per-Txn version must all match, otherwise the cursor is renewed onto the
-	 * current snapshot. Entries checked out by an iterator are owned by that iterator; only parked entries are tracked
-	 * for shutdown, mirroring the existing existence-cursor posture.
-	 */
-	static final class CursorPool implements Closeable {
-		private static final int MAX_POOLED_PER_DBI = 4;
-
-		private final ConcurrentLinkedQueue<PooledCursor> parked = new ConcurrentLinkedQueue<>();
-		private final ThreadLocal<HashMap<Integer, ArrayDeque<PooledCursor>>> perThread = ThreadLocal
-				.withInitial(HashMap::new);
-		private volatile boolean closed;
-
-		static final class PooledCursor {
-			long cursor;
-			Txn owner;
-			long txn;
-			long txnVersion;
-		}
-
-		/**
-		 * Returns a cursor bound to the given transaction snapshot or {@code null} when none is pooled for the dbi;
-		 * must be called under the transaction read lock.
-		 */
-		PooledCursor acquire(int dbi, Txn owner, long txn, long txnVersion) {
-			if (closed) {
-				return null;
-			}
-			ArrayDeque<PooledCursor> entries = perThread.get().get(dbi);
-			if (entries == null) {
-				return null;
-			}
-			PooledCursor entry = entries.pollLast();
-			if (entry == null) {
-				return null;
-			}
-			parked.remove(entry);
-			if (entry.cursor == 0) {
-				return null;
-			}
-			if (entry.owner != owner || entry.txn != txn || entry.txnVersion != txnVersion) {
-				// pooled handles routinely outlive their snapshot: rebind instead of reopening
-				int rc = mdb_cursor_renew(txn, entry.cursor);
-				if (rc != MDB_SUCCESS) {
-					mdb_cursor_close(entry.cursor);
-					entry.cursor = 0;
-					return null;
-				}
-				entry.owner = owner;
-				entry.txn = txn;
-				entry.txnVersion = txnVersion;
-			}
-			return entry;
-		}
-
-		/**
-		 * Parks the cursor for reuse by this thread, or closes it when the per-dbi capacity is reached or the store is
-		 * shutting down. Must be called under the transaction read lock.
-		 */
-		void release(PooledCursor entry, long cursor, int dbi, Txn owner, long txn, long txnVersion) {
-			if (entry == null) {
-				entry = new PooledCursor();
-			}
-			entry.cursor = cursor;
-			entry.owner = owner;
-			entry.txn = txn;
-			entry.txnVersion = txnVersion;
-			if (closed) {
-				mdb_cursor_close(cursor);
-				entry.cursor = 0;
-				return;
-			}
-			ArrayDeque<PooledCursor> entries = perThread.get()
-					.computeIfAbsent(dbi, k -> new ArrayDeque<>(MAX_POOLED_PER_DBI));
-			if (entries.size() >= MAX_POOLED_PER_DBI) {
-				mdb_cursor_close(cursor);
-				entry.cursor = 0;
-				return;
-			}
-			entries.addLast(entry);
-			parked.add(entry);
-		}
-
-		@Override
-		public void close() {
-			closed = true;
-			PooledCursor entry;
-			while ((entry = parked.poll()) != null) {
-				if (entry.cursor != 0) {
-					mdb_cursor_close(entry.cursor);
-					entry.cursor = 0;
-				}
-			}
-		}
-	}
-
 	private static final class SpoExistenceCursor implements Closeable {
 		long cursor;
 		Txn owner;
@@ -3526,12 +3419,7 @@ class TripleStore implements Closeable {
 
 	RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, int indexScore) throws IOException {
-		return new LmdbRecordIterator(index, indexScore, subj, pred, obj, context, explicit, txn, cursorPool);
-	}
-
-	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
-			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
-		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn, cursorPool);
+		return new LmdbRecordIterator(index, indexScore, subj, pred, obj, context, explicit, txn, null);
 	}
 
 	/**
@@ -3550,9 +3438,9 @@ class TripleStore implements Closeable {
 				throw new IllegalStateException("Key range was planned against index " + range.indexFieldSeq()
 						+ " but the pattern resolves to index " + index);
 			}
-			return new LmdbRecordIterator(index, selectedGeneration.range[mask], subj, pred, obj, context, explicit,
-					txn,
-					cursorPool, false, range);
+			boolean rangeSearch = selectedGeneration.range[mask];
+			return new LmdbRecordIterator(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, subj, pred, obj,
+				context, explicit, txn, range, null, false);
 
 		});
 	}
@@ -3575,10 +3463,8 @@ class TripleStore implements Closeable {
 			if (selected == null) {
 				throw new IllegalStateException("Key range names an unconfigured index: " + range.indexFieldSeq());
 			}
-			boolean rangeSearch = selected.getPatternScore(subj, pred, obj, context) > 0;
-			return new LmdbRecordIterator(selected, rangeSearch, subj, pred, obj, context, explicit, txn, cursorPool,
-					false, range);
-
+			return new LmdbRecordIterator(selected, selected.getPatternScore(subj, pred, obj, context), subj, pred, obj, context, explicit,
+					txn, range, null, false);
 		});
 	}
 
@@ -3590,9 +3476,10 @@ class TripleStore implements Closeable {
 			throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
 			int mask = boundMask(subj, pred, obj, context);
-			return new LmdbRecordIterator(selectedGeneration.best[mask], selectedGeneration.range[mask], subj, pred,
-					obj,
-					context, explicit, txn, cursorPool, true);
+			var index = selectedGeneration.best[mask];
+			boolean rangeSearch = selectedGeneration.range[mask];
+			return new LmdbRecordIterator(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, subj, pred,
+					obj, context, explicit, txn, null, null, true);
 
 		});
 	}
@@ -3602,9 +3489,10 @@ class TripleStore implements Closeable {
 			throws IOException {
 		withGeneration(iterator.transaction(), selectedGeneration -> {
 			int mask = boundMask(subj, pred, obj, context);
-			iterator.reset(selectedGeneration.best[mask], selectedGeneration.range[mask], subj, pred, obj, context,
+			var index = selectedGeneration.best[mask];
+			boolean rangeSearch = selectedGeneration.range[mask];
+			iterator.reset(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, subj, pred, obj, context,
 					explicit);
-
 			return null;
 
 		});
@@ -7134,7 +7022,7 @@ class TripleStore implements Closeable {
 		List<long[]> quads = new ArrayList<>(limit);
 		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
 		try (LmdbRecordIterator iterator = new LmdbRecordIterator(index,
-				index.getPatternScore(subj, pred, obj, context) > 0, subj, pred, obj, context, explicit,
+				index.getPatternScore(subj, pred, obj, context), subj, pred, obj, context, explicit,
 				txnManager.createTxn(writeTxn))) {
 			if (after != null) {
 				iterator.resumeAfter(after);

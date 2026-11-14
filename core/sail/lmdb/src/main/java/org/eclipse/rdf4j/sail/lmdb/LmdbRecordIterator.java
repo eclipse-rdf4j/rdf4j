@@ -84,8 +84,6 @@ class LmdbRecordIterator implements RecordIterator {
 	private final StampedLongAdderLockManager txnLockManager;
 	private final long txnLease;
 	private final ValueStore.ReadSnapshot readSnapshot;
-	private final TripleStore.CursorPool cursorPool;
-	private TripleStore.CursorPool.PooledCursor pooledCursor;
 	private final boolean retainOnClose;
 	private volatile boolean closed;
 	private boolean disposed;
@@ -103,72 +101,20 @@ class LmdbRecordIterator implements RecordIterator {
 
 	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, null, false, null, null);
+		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, null, null, false);
 	}
 
 	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef, ValueStore.ReadSnapshot readSnapshot) throws IOException {
-		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, null, false, null, readSnapshot);
+		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, null, readSnapshot, false);
 	}
 
 	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool) throws IOException {
-		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, cursorPool, false, null, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose)
-			throws IOException {
-		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, null, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
-			LmdbKeyRange range) throws IOException {
-		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, range, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef) throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false, null, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool) throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, false, null, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose)
-			throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, null, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, ValueStore.ReadSnapshot readSnapshot) throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false, null, readSnapshot);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
-			LmdbKeyRange range) throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, range, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
-			LmdbKeyRange range, ValueStore.ReadSnapshot readSnapshot) throws IOException {
-		this(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, subj, pred, obj,
-				context, explicit, txnRef, cursorPool, retainOnClose, range, readSnapshot);
-	}
-
-	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
-			LmdbKeyRange range, ValueStore.ReadSnapshot readSnapshot) throws IOException {
+			long context, boolean explicit, Txn txnRef, LmdbKeyRange range,
+			ValueStore.ReadSnapshot readSnapshot, boolean retainOnClose) throws IOException {
 		this.txnRef = txnRef;
 		this.txnLockManager = txnRef.lockManager();
 		this.readSnapshot = readSnapshot;
-		this.cursorPool = cursorPool != null && txnRef.isReadOnly() ? cursorPool : null;
 		this.retainOnClose = retainOnClose;
 		long stamp = readLock();
 		try {
@@ -254,23 +200,13 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private void acquireCursor() throws IOException {
-		if (cursorPool != null) {
-			pooledCursor = cursorPool.acquire(state.dbi, txnRef, state.txn, state.txnRefVersion);
-		}
-		state.cursor = pooledCursor == null ? txnRef.getCursor(state.dbi) : pooledCursor.cursor;
+		state.cursor = txnRef.getCursor(state.dbi);
 	}
 
 	private void releaseCursor() {
 		if (state.cursor != 0) {
-			if (txnRef.lease() != txnLease) {
-				mdb_cursor_close(state.cursor);
-			} else if (cursorPool != null) {
-				cursorPool.release(pooledCursor, state.cursor, state.dbi, txnRef, state.txn, state.txnRefVersion);
-			} else {
-				txnRef.returnCursor(state.dbi, state.cursor);
-			}
+			txnRef.returnCursor(state.dbi, state.cursor);
 			state.cursor = 0;
-			pooledCursor = null;
 		}
 	}
 
@@ -523,12 +459,6 @@ class LmdbRecordIterator implements RecordIterator {
 		} finally {
 			txnLockManager.unlockRead(stamp);
 		}
-	}
-
-	void reset(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj, long context,
-			boolean explicit) throws IOException {
-		reset(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0,
-				subj, pred, obj, context, explicit);
 	}
 
 	void reset(TripleIndex index, int indexScore, long subj, long pred, long obj, long context,

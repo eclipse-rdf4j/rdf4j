@@ -91,13 +91,13 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 	void retainedResetStartsANewCancellationPollBudget() throws Exception {
 		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			LmdbRecordIterator iterator = new LmdbRecordIterator(index, true, 1L, -1L, 1L, 1L, true, txn, null,
-					true);
+			LmdbRecordIterator iterator = new LmdbRecordIterator(index, index.getPatternScore(1L, -1L, 1L, 1L),
+				1L, -1L, 1L, 1L, true, txn, null, null, true);
 			try {
 				assertThat(iterator.fill(new long[1_500 * 4], 1_500)).isEqualTo(1_500);
 				assertThat(iterator.getSourceRowsScannedActual()).isEqualTo(1_500);
 				iterator.close();
-				iterator.reset(index, true, 1L, -1L, 2L, -1L, true);
+				iterator.reset(index, index.getPatternScore(1L, -1L, 2L, -1L), 1L, -1L, 2L, -1L, true);
 				index.resetFilteredKeyVisits();
 				AtomicReference<Object> cancellationToken = new AtomicReference<>();
 
@@ -213,7 +213,7 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 	private LmdbRecordIterator openMismatchIterator(Txn txn) throws IOException {
 		// Each predicate has one object-1 key. The bound object-2 mismatch is beyond spoc's s-only range prefix, so
 		// skip-scan cannot leap across predicate groups and every physical key reaches the real matcher.
-		return new LmdbRecordIterator(index, true, 1L, -1L, 2L, -1L, true, txn);
+		return new LmdbRecordIterator(index, index.getPatternScore(1L, -1L, 2L, -1L), 1L, -1L, 2L, -1L, true, txn);
 	}
 
 	private int freshReaderRowCount() throws Exception {
