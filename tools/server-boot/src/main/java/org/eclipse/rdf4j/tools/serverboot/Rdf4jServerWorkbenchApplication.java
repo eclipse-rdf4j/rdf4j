@@ -236,7 +236,9 @@ public class Rdf4jServerWorkbenchApplication {
 	FilterRegistrationBean<RequestIntegrityFilter> requestIntegrityFilter() {
 		FilterRegistrationBean<RequestIntegrityFilter> registration = new FilterRegistrationBean<>(
 				new RequestIntegrityFilter());
-		registration.addUrlPatterns("/rdf4j-server/repositories", "/rdf4j-server/repositories/*");
+		// The server servlet is also mapped at the root (see serverServletUrlMappings), so cover both paths.
+		registration.addUrlPatterns("/repositories", "/repositories/*", "/rdf4j-server/repositories",
+				"/rdf4j-server/repositories/*");
 		registration.setName("RequestIntegrityFilter");
 		registration.setOrder(REQUEST_INTEGRITY_FILTER_ORDER);
 		registration.setAsyncSupported(true);
