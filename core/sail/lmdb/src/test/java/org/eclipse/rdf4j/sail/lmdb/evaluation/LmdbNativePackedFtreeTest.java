@@ -15,11 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -27,15 +30,20 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.Set;
 
 import org.codehaus.janino.SimpleCompiler;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
@@ -198,6 +206,539 @@ class LmdbNativePackedFtreeTest {
 			assertEquals(15L, cursor.multiplicity(), "empty projection still carries the complete bag");
 			assertFalse(cursor.next());
 		}
+	}
+
+	@Test
+	void factorizedCartesianReplayReusesEachOriginalMemberValue() throws Exception {
+		TestGraph graph = new TestGraph();
+		long subject = 1L;
+		for (int member = 0; member < 100; member++) {
+			graph.add(P1, subject, 1_000L + member, 0L);
+			graph.add(P2, subject, 2_000L + member, 0L);
+		}
+		NativeLmdbQuerySource source = graph.source();
+		Object resultValueScope = new Object();
+		Map<Lookup, Integer> lazyValueCalls = new HashMap<>();
+		int[] createdLazyShells = { 0 };
+		when(source.resultValueScope()).thenReturn(resultValueScope);
+		when(source.lazyValue(anyLong(), anyInt())).thenAnswer(invocation -> {
+			long id = invocation.getArgument(0);
+			int positionMask = invocation.getArgument(1);
+			lazyValueCalls.merge(new Lookup(id, positionMask), 1, Integer::sum);
+			createdLazyShells[0]++;
+			// Return a fresh but semantically stable term on each source call, so identity assertions prove reuse.
+			return SimpleValueFactory.getInstance().createBNode("factor-member-" + id);
+		});
+
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "a", 1, "b", 2), null);
+		layout.patternPosition("s", ValuePosition.SUBJECT);
+		layout.patternPosition("a", ValuePosition.OBJECT);
+		layout.patternPosition("b", ValuePosition.OBJECT);
+		layout.freeze(List.of("s", "a", "b"));
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(0, P2, 2));
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativePackedFtree.ROWS_SERIAL);
+		NativeRowsStep step = new NativeRowsStep(source, join, layout, new int[] { 0, 1, 2 },
+				new String[] { "s", "a", "b" }, false, new int[0], new boolean[0], 0L, -1L, false, strategy,
+				null, null, Set.of(), null, null);
+		List<NativeProjectedBindingSet> retainedRows = new ArrayList<>();
+		List<Value> retainedValues = new ArrayList<>();
+		Set<String> products = new HashSet<>();
+		try (NativeRowsIteration rows = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance())) {
+			assertTrue(rows.hasNext());
+			assertTrue(rows.cursor instanceof LmdbNativePackedFtree.PackedRowCursor,
+					"the outward rows must be emitted by the packed f-tree cursor");
+			do {
+				NativeProjectedBindingSet result = (NativeProjectedBindingSet) rows.next();
+				result.captureForOutput(null);
+				retainedRows.add(result);
+				Value subjectValue = result.getValue("s");
+				Value leftValue = result.getValue("a");
+				Value rightValue = result.getValue("b");
+				retainedValues.add(subjectValue);
+				retainedValues.add(leftValue);
+				retainedValues.add(rightValue);
+				products.add(leftValue.stringValue() + ":" + rightValue.stringValue());
+			} while (rows.hasNext());
+		}
+
+		assertEquals(10_000, retainedRows.size(), "one root times 100 by 100 factor members");
+		assertEquals(10_000, products.size(), "the terminal factor product must preserve every pair");
+		assertEquals(30_000, retainedValues.size());
+		assertEquals(201, lazyValueCalls.size(), "one subject plus 100 members in each factor");
+		assertEquals(201, createdLazyShells[0], "source calls should create one lazy value shell each");
+		assertEquals(1, lazyValueCalls.get(new Lookup(subject, ValuePosition.SUBJECT)));
+		for (int member = 0; member < 100; member++) {
+			assertEquals(1, lazyValueCalls.get(new Lookup(1_000L + member, ValuePosition.OBJECT)),
+					"left factor member " + member + " should resolve once");
+			assertEquals(1, lazyValueCalls.get(new Lookup(2_000L + member, ValuePosition.OBJECT)),
+					"right factor member " + member + " should resolve once");
+		}
+		Map<String, Value> firstValueByName = new HashMap<>();
+		for (NativeProjectedBindingSet result : retainedRows) {
+			for (String name : List.of("s", "a", "b")) {
+				Value value = result.getValue(name);
+				String key = name + ":" + value.stringValue();
+				Value previous = firstValueByName.putIfAbsent(key, value);
+				if (previous != null) {
+					assertSame(previous, value, "replayed " + name + " member should retain its value identity");
+				}
+			}
+		}
+	}
+
+	@Test
+	void packedCursorChangedMasksAccumulateSiblingAndParentChangesAcrossChunkRebuild() throws Exception {
+		int rootCount = LmdbNativePackedFtree.ROOT_BATCH_SIZE + 1;
+		long firstRoot = 30_000L;
+		TestGraph graph = new TestGraph();
+		graph.borrow = true;
+		for (int index = 0; index < rootCount; index++) {
+			long root = firstRoot + index;
+			long a = 300_000L + index * 4L;
+			long b = 400_000L + index * 4L;
+			if (index == rootCount - 1) {
+				a = 300_000L;
+				b = 400_000L;
+			}
+			graph.add(P1, root, a, 0L);
+			graph.add(P1, root, a + 1L, 0L);
+			graph.add(P2, root, b, 0L);
+			graph.add(P2, root, b + 1L, 0L);
+		}
+		RowState row = row(graph.source(), "root", "a", "b");
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(0, P2, 2));
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { 0, 1, 2 });
+		assertNotNull(plan);
+		assertEquals(0, plan.root.slot);
+
+		try (LmdbNativePackedFtree.PackedRowCursor cursor = LmdbNativePackedFtree.PackedRowCursor.open(plan, row)) {
+			assertNotNull(cursor);
+			NativeResultCoordinates coordinates = cursor;
+			assertEquals(-1L, coordinates.takeChangedSlots());
+			assertTrue(cursor.next());
+			long activation = coordinates.coordinateActivation();
+			assertTrue(activation > 0L);
+			assertEquals(-1L, coordinates.takeChangedSlots(), "first chunk publishes an unknown initial mask");
+
+			int lastNodeSlot = plan.nodes[plan.nodes.length - 1].slot;
+			int siblingSlot = plan.nodes[plan.nodes.length - 2].slot;
+			assertTrue(cursor.next());
+			assertEquals(1L << lastNodeSlot, coordinates.takeChangedSlots(), "the innermost sibling advances alone");
+			assertTrue(cursor.next());
+			assertTrue(cursor.next());
+			assertEquals((1L << siblingSlot) | (1L << lastNodeSlot), coordinates.takeChangedSlots(),
+					"skipped sibling advances and a reset must remain represented in the accumulated mask");
+			assertTrue(cursor.next());
+			assertEquals((1L << plan.root.slot) | (1L << siblingSlot) | (1L << lastNodeSlot),
+					coordinates.takeChangedSlots(), "changing the parent closes over every child coordinate");
+
+			long rows = 5L;
+			int chunkRebuilds = 0;
+			while (cursor.next()) {
+				rows++;
+				long nextActivation = coordinates.coordinateActivation();
+				if (nextActivation != activation) {
+					chunkRebuilds++;
+					assertEquals(-1L, coordinates.takeChangedSlots(),
+							"a rebuilt packed chunk invalidates every prior coordinate");
+					activation = nextActivation;
+				} else {
+					assertTrue(coordinates.takeChangedSlots() != 0L,
+							"each same-chunk product advance changes at least one source slot");
+				}
+			}
+			assertEquals((long) rootCount * 4L, rows);
+			assertEquals(1, chunkRebuilds, "one extra root must require exactly one packed chunk rebuild");
+		}
+	}
+
+	@Test
+	void cancellationAfterWarmingFactorPagesReleasesMaterializerReservations() throws Exception {
+		TestGraph graph = new TestGraph();
+		graph.add(P1, 1L, 101L, 0L);
+		graph.add(P1, 1L, 102L, 0L);
+		graph.add(P1, 2L, 201L, 0L);
+		graph.add(P1, 2L, 202L, 0L);
+		graph.add(P2, 1L, 301L, 0L);
+		graph.add(P2, 1L, 302L, 0L);
+		graph.add(P2, 2L, 401L, 0L);
+		graph.add(P2, 2L, 402L, 0L);
+		NativeLmdbQuerySource source = graph.source();
+		when(source.resultValueScope()).thenReturn(new Object());
+		when(source.lazyValue(anyLong(), anyInt())).thenAnswer(invocation -> SimpleValueFactory.getInstance()
+				.createBNode("cancelled-factor-" + invocation.getArgument(0)));
+
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "a", 1, "b", 2), null);
+		layout.patternPosition("root", ValuePosition.SUBJECT);
+		layout.patternPosition("a", ValuePosition.OBJECT);
+		layout.patternPosition("b", ValuePosition.OBJECT);
+		layout.freeze(List.of("root", "a", "b"));
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(0, P2, 2));
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativePackedFtree.ROWS_SERIAL);
+		NativeRowsStep step = new NativeRowsStep(source, join, layout, new int[] { 0, 1, 2 },
+				new String[] { "root", "a", "b" }, false, new int[0], new boolean[0], 0L, -1L, false,
+				strategy, null, null, Set.of(), null, null);
+
+		try (NativeRowsIteration rows = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance())) {
+			assertTrue(rows.hasNext());
+			NativeProjectedBindingSet first = (NativeProjectedBindingSet) rows.next();
+			first.captureForOutput(null);
+			NativeResultMaterializer materializer = rows.resultMaterializer;
+			assertNotNull(materializer);
+			long warmedBytes = materializer.retainedBytes();
+			assertTrue(warmedBytes > 672L, "the packed replay coordinate must admit a warm factor page");
+
+			assertTrue(rows.requestCancellation());
+			assertFalse(rows.hasNext(), "an owned cancellation must finish the outward iteration");
+			assertEquals(0L, materializer.retainedBytes(), "cancellation must release the warm page and base arrays");
+		}
+	}
+
+	@Test
+	void failedCaptureAfterWarmingFactorPagesReleasesReservationsOnClose() throws Exception {
+		TestGraph graph = new TestGraph();
+		graph.add(P1, 1L, 101L, 0L);
+		graph.add(P1, 1L, 102L, 0L);
+		graph.add(P1, 2L, 201L, 0L);
+		graph.add(P1, 2L, 202L, 0L);
+		graph.add(P2, 1L, 301L, 0L);
+		graph.add(P2, 1L, 302L, 0L);
+		graph.add(P2, 2L, 401L, 0L);
+		graph.add(P2, 2L, 402L, 0L);
+		NativeLmdbQuerySource source = graph.source();
+		when(source.resultValueScope()).thenReturn(new Object());
+		long[] failingId = { -1L };
+		int[] failureCalls = { 0 };
+		when(source.lazyValue(anyLong(), anyInt())).thenAnswer(invocation -> {
+			long id = invocation.getArgument(0);
+			if (id == failingId[0]) {
+				failureCalls[0]++;
+				throw new IllegalStateException("injected lazy value failure");
+			}
+			return SimpleValueFactory.getInstance().createBNode("failed-factor-" + id);
+		});
+
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "a", 1, "b", 2), null);
+		layout.patternPosition("root", ValuePosition.SUBJECT);
+		layout.patternPosition("a", ValuePosition.OBJECT);
+		layout.patternPosition("b", ValuePosition.OBJECT);
+		layout.freeze(List.of("root", "a", "b"));
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(0, P2, 2));
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativePackedFtree.ROWS_SERIAL);
+		NativeRowsStep step = new NativeRowsStep(source, join, layout, new int[] { 0, 1, 2 },
+				new String[] { "root", "a", "b" }, false, new int[0], new boolean[0], 0L, -1L, false,
+				strategy, null, null, Set.of(), null, null);
+
+		NativeRowsIteration rows = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+		NativeResultMaterializer materializer;
+		try {
+			assertTrue(rows.hasNext());
+			NativeProjectedBindingSet first = (NativeProjectedBindingSet) rows.next();
+			first.captureForOutput(null);
+			materializer = rows.resultMaterializer;
+			assertNotNull(materializer);
+			long warmedBytes = materializer.retainedBytes();
+			assertTrue(warmedBytes > 672L, "the packed replay coordinate must admit a warm factor page");
+
+			assertTrue(rows.hasNext());
+			NativeProjectedBindingSet second = (NativeProjectedBindingSet) rows.next();
+			int changedSlot = -1;
+			for (int slot = 0; slot < first.ids.length; slot++) {
+				if (first.ids[slot] != second.ids[slot]) {
+					changedSlot = slot;
+					break;
+				}
+			}
+			assertTrue(changedSlot >= 0, "the next product row must expose a not-yet-captured member");
+			failingId[0] = second.ids[changedSlot];
+			assertThrows(IllegalStateException.class, () -> second.captureForOutput(null));
+			assertEquals(1, failureCalls[0], "the failure must come from the uncached source member");
+			assertTrue(materializer.retainedBytes() < warmedBytes,
+					"failed capture must abandon and release its warm factor-page reservations");
+		} finally {
+			rows.close();
+		}
+		assertEquals(0L, materializer.retainedBytes(), "iteration close must release the remaining base reservation");
+	}
+
+	@Test
+	void packedSiblingReplaySeparatesParentsAndRetiresPagesAtChunkRebuild() throws Exception {
+		int rootCount = LmdbNativePackedFtree.ROOT_BATCH_SIZE + 1;
+		long firstRoot = 10_000L;
+		long lastRoot = firstRoot + rootCount - 1L;
+		long firstA = 100_000L;
+		long firstB = 200_000L;
+		TestGraph graph = new TestGraph();
+		graph.borrow = true;
+		for (int i = 0; i < rootCount; i++) {
+			long root = firstRoot + i;
+			long a = 100_000L + i * 4L;
+			long b = 200_000L + i * 4L;
+			if (i == rootCount - 1) {
+				a = firstA;
+				b = firstB;
+			}
+			graph.add(P1, root, a, 0L);
+			graph.add(P1, root, a + 1L, 0L);
+			graph.add(P2, root, b, 0L);
+			graph.add(P2, root, b + 1L, 0L);
+		}
+		NativeLmdbQuerySource source = graph.source();
+		Object resultValueScope = new Object();
+		Map<Lookup, Integer> lazyValueCalls = new HashMap<>();
+		when(source.resultValueScope()).thenReturn(resultValueScope);
+		when(source.lazyValue(anyLong(), anyInt())).thenAnswer(invocation -> {
+			long id = invocation.getArgument(0);
+			int positionMask = invocation.getArgument(1);
+			lazyValueCalls.merge(new Lookup(id, positionMask), 1, Integer::sum);
+			return SimpleValueFactory.getInstance().createBNode("chunk-member-" + id);
+		});
+
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "a", 1, "b", 2), null);
+		layout.patternPosition("root", ValuePosition.SUBJECT);
+		layout.patternPosition("a", ValuePosition.OBJECT);
+		layout.patternPosition("b", ValuePosition.OBJECT);
+		layout.freeze(List.of("root", "a", "b"));
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(0, P2, 2));
+		RowState planningRow = row(source, "root", "a", "b");
+		LmdbNativePackedFtree.Plan packedPlan = LmdbNativePackedFtree.Planner.plan(join, planningRow,
+				new int[] { 0, 1, 2 });
+		assertNotNull(packedPlan);
+		assertEquals(0, packedPlan.root.slot, "the root's cardinality is lower than both child domains");
+		int replayedChildSlot = packedPlan.nodes[packedPlan.nodes.length - 1].slot;
+		assertTrue(replayedChildSlot == 1 || replayedChildSlot == 2);
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativePackedFtree.ROWS_SERIAL);
+		NativeRowsStep step = new NativeRowsStep(source, join, layout, new int[] { 0, 1, 2 },
+				new String[] { "root", "a", "b" }, false, new int[0], new boolean[0], 0L, -1L, false, strategy,
+				null, null, Set.of(), null, null);
+		NativeProjectedBindingSet.MATERIALIZED_VALUES.set(0);
+		List<NativeProjectedBindingSet> retainedRows = new ArrayList<>(rootCount * 4);
+		List<Value> retainedValues = new ArrayList<>(rootCount * 8);
+		Set<String> products = new HashSet<>();
+		Value firstRootMember = null;
+		Value lastRootMember = null;
+		long firstChunkBytes = -1L;
+		long rebuiltChunkBytes = -1L;
+		long firstRootParent = Long.MIN_VALUE;
+		long secondRootParent = Long.MIN_VALUE;
+		try (NativeRowsIteration rows = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance())) {
+			assertTrue(rows.hasNext());
+			assertTrue(rows.cursor instanceof LmdbNativePackedFtree.PackedRowCursor,
+					"the producer must be the actual packed f-tree cursor");
+			long[] coordinate = new long[NativeResultCoordinates.WIDTH];
+			assertTrue(((NativeResultCoordinates) rows.cursor).resultCoordinate(replayedChildSlot, coordinate),
+					"the later sibling must expose its original member coordinate");
+			for (;;) {
+				NativeProjectedBindingSet result = (NativeProjectedBindingSet) rows.next();
+				result.captureForOutput(null);
+				retainedRows.add(result);
+				Value rootValue = result.getValue("root");
+				Value aValue = result.getValue("a");
+				Value bValue = result.getValue("b");
+				retainedValues.add(rootValue);
+				retainedValues.add(aValue);
+				retainedValues.add(bValue);
+				products.add(result.ids[0] + ":" + result.ids[1] + ":" + result.ids[2]);
+				if (result.ids[0] == firstRoot && result.ids[1] == firstA) {
+					firstRootMember = aValue;
+				}
+				if (result.ids[0] == lastRoot && result.ids[1] == firstA) {
+					lastRootMember = aValue;
+				}
+				if (result.ids[0] == firstRoot && firstRootParent == Long.MIN_VALUE) {
+					assertTrue(((NativeResultCoordinates) rows.cursor).resultCoordinate(replayedChildSlot, coordinate));
+					firstRootParent = coordinate[NativeResultCoordinates.PARENT];
+				}
+				if (result.ids[0] == firstRoot + 1L && secondRootParent == Long.MIN_VALUE) {
+					assertTrue(((NativeResultCoordinates) rows.cursor).resultCoordinate(replayedChildSlot, coordinate));
+					secondRootParent = coordinate[NativeResultCoordinates.PARENT];
+				}
+				if (retainedRows.size() == LmdbNativePackedFtree.ROOT_BATCH_SIZE * 4) {
+					firstChunkBytes = rows.resultMaterializer.retainedBytes();
+				}
+				if (retainedRows.size() == LmdbNativePackedFtree.ROOT_BATCH_SIZE * 4 + 1) {
+					rebuiltChunkBytes = rows.resultMaterializer.retainedBytes();
+				}
+				if (!rows.hasNext()) {
+					break;
+				}
+			}
+		}
+
+		assertEquals(rootCount * 4, retainedRows.size(), "each parent emits its two-by-two sibling product");
+		assertEquals(rootCount * 4, products.size(), "every parent/member combination remains distinct");
+		assertNotNull(firstRootMember);
+		assertNotNull(lastRootMember);
+		assertNotSame(firstRootMember, lastRootMember,
+				"same member IDs under lane zero must be resolved again after the packed chunk is rebuilt");
+		assertTrue(firstRootParent != secondRootParent,
+				"borrowed member coordinates must distinguish their original parent lanes");
+		assertTrue(firstChunkBytes > rebuiltChunkBytes,
+				"the next chunk must retire factor pages charged to all prior parent lanes");
+		assertEquals(1, lazyValueCalls.get(new Lookup(firstRoot, ValuePosition.SUBJECT)));
+		assertEquals(2, lazyValueCalls.get(new Lookup(firstA, ValuePosition.OBJECT)),
+				"a reused ID under the next chunk's lane zero must miss the retired factor page");
+		assertEquals(2, lazyValueCalls.get(new Lookup(firstB, ValuePosition.OBJECT)),
+				"the second sibling's reused ID must also miss the retired factor page");
+		assertEquals(rootCount * 5, lazyValueCalls.values().stream().mapToInt(Integer::intValue).sum());
+		assertEquals(lazyValueCalls.values().stream().mapToInt(Integer::intValue).sum(),
+				NativeProjectedBindingSet.MATERIALIZED_VALUES.get());
+		assertEquals(rootCount * 12, retainedValues.size());
+	}
+
+	@Test
+	void factorizedUnionRowsReplayMembersThroughNativeRowsIteration() throws Exception {
+		TestGraph graph = new TestGraph();
+		graph.borrow = true;
+		graph.add(P1, 1L, 101L, 0L);
+		graph.add(P1, 1L, 102L, 0L);
+		graph.add(P2, 2L, 201L, 0L);
+		graph.add(P2, 2L, 202L, 0L);
+		graph.add(P3, 3L, 301L, 0L);
+		graph.add(P3, 3L, 302L, 0L);
+		graph.add(P4, 4L, 401L, 0L);
+		graph.add(P4, 4L, 402L, 0L);
+		NativeLmdbQuerySource source = graph.source();
+		Object resultValueScope = new Object();
+		Map<Lookup, Integer> lazyValueCalls = new HashMap<>();
+		when(source.resultValueScope()).thenReturn(resultValueScope);
+		when(source.lazyValue(anyLong(), anyInt())).thenAnswer(invocation -> {
+			long id = invocation.getArgument(0);
+			int positionMask = invocation.getArgument(1);
+			lazyValueCalls.merge(new Lookup(id, positionMask), 1, Integer::sum);
+			return SimpleValueFactory.getInstance().createBNode("union-factor-member-" + id);
+		});
+
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("leftSubject", 0, "leftObject", 1,
+				"rightSubject", 2, "rightObject", 3), null);
+		layout.patternPosition("leftSubject", ValuePosition.SUBJECT);
+		layout.patternPosition("leftObject", ValuePosition.OBJECT);
+		layout.patternPosition("rightSubject", ValuePosition.SUBJECT);
+		layout.patternPosition("rightObject", ValuePosition.OBJECT);
+		layout.freeze(List.of("leftSubject", "leftObject", "rightSubject", "rightObject"));
+		SlotPlan left = join(pattern(0, P1, 1), pattern(2, P2, 3));
+		SlotPlan right = join(pattern(0, P3, 1), pattern(2, P4, 3));
+		SlotPlan union = new UnionPlan(left, right);
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativePackedFtree.ROWS_SERIAL);
+		NativeRowsStep step = new NativeRowsStep(source, union, layout, new int[] { 0, 1, 2, 3 },
+				new String[] { "leftSubject", "leftObject", "rightSubject", "rightObject" }, false,
+				new int[0], new boolean[0], 0L, -1L, false, strategy, null, null, Set.of(), null, null);
+		List<NativeProjectedBindingSet> retainedRows = new ArrayList<>();
+		List<Value> retainedValues = new ArrayList<>();
+		Map<Lookup, Value> firstValueByLookup = new HashMap<>();
+		try (NativeRowsIteration rows = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance())) {
+			assertTrue(rows.hasNext());
+			assertFalse(rows.cursor instanceof LmdbNativePackedFtree.PackedRowCursor,
+					"the composed UNION must be served by the factor-algebra projection producer");
+			assertTrue(rows.cursor instanceof NativeResultCoordinates,
+					"the outward factor-algebra producer must publish replay coordinates");
+			do {
+				NativeProjectedBindingSet result = (NativeProjectedBindingSet) rows.next();
+				result.captureForOutput(null);
+				retainedRows.add(result);
+				for (int slot = 0; slot < 4; slot++) {
+					Value value = result.getValue(new String[] { "leftSubject", "leftObject", "rightSubject",
+							"rightObject" }[slot]);
+					retainedValues.add(value);
+					Lookup lookup = new Lookup(result.ids[slot], slot == 0 || slot == 2
+							? ValuePosition.SUBJECT
+							: ValuePosition.OBJECT);
+					Value previous = firstValueByLookup.putIfAbsent(lookup, value);
+					if (previous != null) {
+						assertSame(previous, value, "UNION factor replay must keep each member's value identity");
+					}
+				}
+			} while (rows.hasNext());
+		}
+
+		assertEquals(8, retainedRows.size(), "both UNION branches emit their two-by-two product");
+		assertEquals(32, retainedValues.size());
+		assertEquals(12, firstValueByLookup.size());
+		assertEquals(12, lazyValueCalls.size());
+		assertTrue(lazyValueCalls.values().stream().allMatch(calls -> calls == 1),
+				"each original ID and exact position mask is materialized once across branch replay");
+	}
+
+	@Test
+	void delayedPackedRowsFallBackAfterAdvanceAndIterationClose() throws Exception {
+		TestGraph graph = new TestGraph();
+		graph.add(P1, 1L, 1_001L, 0L);
+		graph.add(P1, 1L, 1_002L, 0L);
+		graph.add(P2, 1L, 2_001L, 0L);
+		graph.add(P2, 1L, 2_002L, 0L);
+		NativeLmdbQuerySource source = graph.source();
+		when(source.resultValueScope()).thenReturn(new Object());
+		Map<Lookup, Integer> lazyValueCalls = new HashMap<>();
+		when(source.lazyValue(anyLong(), anyInt())).thenAnswer(invocation -> {
+			long id = invocation.getArgument(0);
+			int positionMask = invocation.getArgument(1);
+			lazyValueCalls.merge(new Lookup(id, positionMask), 1, Integer::sum);
+			return SimpleValueFactory.getInstance().createBNode("delayed-member-" + id);
+		});
+
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "a", 1, "b", 2), null);
+		layout.patternPosition("s", ValuePosition.SUBJECT);
+		layout.patternPosition("a", ValuePosition.OBJECT);
+		layout.patternPosition("b", ValuePosition.OBJECT);
+		layout.freeze(List.of("s", "a", "b"));
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(0, P2, 2));
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativePackedFtree.ROWS_SERIAL);
+		NativeRowsStep step = new NativeRowsStep(source, join, layout, new int[] { 0, 1, 2 },
+				new String[] { "s", "a", "b" }, false, new int[0], new boolean[0], 0L, -1L, false, strategy,
+				null, null, Set.of(), null, null);
+		List<NativeProjectedBindingSet> retainedRows = new ArrayList<>();
+		try (NativeRowsIteration rows = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance())) {
+			NativeProjectedBindingSet first = (NativeProjectedBindingSet) rows.next();
+			first.captureForOutput(null);
+			retainedRows.add(first);
+			NativeProjectedBindingSet second = (NativeProjectedBindingSet) rows.next();
+			second.captureForOutput(null);
+			retainedRows.add(second);
+			NativeProjectedBindingSet delayed = (NativeProjectedBindingSet) rows.next();
+			retainedRows.add(delayed);
+			NativeProjectedBindingSet afterClose = (NativeProjectedBindingSet) rows.next();
+			retainedRows.add(afterClose);
+			assertTrue(rows.cursor instanceof LmdbNativePackedFtree.PackedRowCursor,
+					"the delayed rows must come from the packed f-tree producer");
+
+			int replayedSlot = -1;
+			for (int slot = 1; slot < 3; slot++) {
+				if (first.ids[slot] == delayed.ids[slot] && second.ids[slot] != delayed.ids[slot]) {
+					replayedSlot = slot;
+					break;
+				}
+			}
+			assertTrue(replayedSlot >= 0, "the third product row should replay one original inner-factor member");
+			String replayedName = replayedSlot == 1 ? "a" : "b";
+			long replayedId = delayed.ids[replayedSlot];
+			Value earlierValue = first.getValue(replayedName);
+			Lookup replayedLookup = new Lookup(replayedId, ValuePosition.OBJECT);
+			assertEquals(1, lazyValueCalls.get(replayedLookup));
+
+			// Advancing to the fourth result invalidates the third row's producer coordinate before capture.
+			delayed.captureForOutput(null);
+			assertEquals(2, lazyValueCalls.get(replayedLookup),
+					"a stale factor coordinate must resolve the delayed row from its copied ID");
+			assertNotSame(earlierValue, delayed.getValue(replayedName));
+			assertEquals(earlierValue.stringValue(), delayed.getValue(replayedName).stringValue());
+
+			int callsBeforeCloseCapture = lazyValueCalls.values().stream().mapToInt(Integer::intValue).sum();
+			rows.close();
+			afterClose.captureForOutput(null);
+			assertEquals(callsBeforeCloseCapture + 3,
+					lazyValueCalls.values().stream().mapToInt(Integer::intValue).sum(),
+					"a retained result captured after iteration close must resolve each projected ID independently");
+			assertEquals("delayed-member-" + afterClose.ids[0], afterClose.getValue("s").stringValue());
+			assertEquals("delayed-member-" + afterClose.ids[1], afterClose.getValue("a").stringValue());
+			assertEquals("delayed-member-" + afterClose.ids[2], afterClose.getValue("b").stringValue());
+		}
+		assertEquals(4, retainedRows.size());
 	}
 
 	@Test
@@ -882,6 +1423,9 @@ class LmdbNativePackedFtreeTest {
 	}
 
 	private record AdjacencyKey(long predicate, boolean bySubject) {
+	}
+
+	private record Lookup(long id, int positionMask) {
 	}
 
 	private static final class TestGraph {

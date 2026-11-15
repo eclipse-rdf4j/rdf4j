@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -80,6 +81,8 @@ class LmdbNativeScanBackedHashBuildParityTest {
 	private static final IRI OBJECT_BUILD = iri("object-build");
 	private static final IRI OBJECT_PROBE = iri("object-probe");
 	private static final IRI OBJECT_BUILD_VALUE = iri("object-build-value");
+	private static final IRI OPTIONAL_SUBJECT = iri("optional-subject");
+	private static final IRI OPTIONAL_VALUES = iri("optional-values");
 	// The store only has the spoc index, so a query without a hash build rescans the whole store for every probe. The
 	// time-limited native runs must stay well inside optimizeAndRun's limit on slow CI runners, so keep these small.
 	private static final int PROBE_ROWS = 1024;
@@ -88,6 +91,9 @@ class LmdbNativeScanBackedHashBuildParityTest {
 	private static final int BOUNDARY_CAP = 512;
 	private static final String QUERY = "SELECT ?probe ?build ?key WHERE { ?probe <" + PROBE + "> ?key . ?build <"
 			+ BUILD + "> ?key }";
+	private static final String HASH_BUILD_OPTIONAL_QUERY = "SELECT ?probe ?build ?key ?flag WHERE { ?probe <"
+			+ PROBE + "> ?key . ?build <" + BUILD + "> ?key . OPTIONAL { <" + OPTIONAL_SUBJECT + "> <"
+			+ OPTIONAL_VALUES + "> ?flag } }";
 	private static final String CONTEXT_QUERY = "SELECT ?probe ?build ?key ?context WHERE { ?probe <" + PROBE
 			+ "> ?key . GRAPH ?context { ?build <" + BUILD + "> ?key } }";
 	private static final String REPEATED_VARIABLE_QUERY = "SELECT ?probe ?same WHERE { ?probe <" + PROBE
@@ -163,6 +169,8 @@ class LmdbNativeScanBackedHashBuildParityTest {
 						connection.add(iri("object-probe/" + (i * 2 + 1)), OBJECT_PROBE, objectBuild);
 					}
 				}
+				connection.add(OPTIONAL_SUBJECT, OPTIONAL_VALUES, iri("optional/flag-a"));
+				connection.add(OPTIONAL_SUBJECT, OPTIONAL_VALUES, iri("optional/flag-b"));
 				connection.add(iri("probe/self"), PROBE, iri("same"));
 				connection.add(iri("same"), BUILD, iri("same"));
 				connection.commit();
@@ -393,12 +401,14 @@ class LmdbNativeScanBackedHashBuildParityTest {
 			CountedSource counted = new CountedSource((NativeLmdbQuerySource) dataset);
 			NativeRowsStep step = compileCountedStep(optimized, route, dataset, counted);
 			AtomicInteger calls = new AtomicInteger();
+			AtomicReference<LmdbFusedSipFactorizedRuntime.Session> callbackSession = new AtomicReference<>();
 			NativeBooleanFilter filter = new NativeBooleanFilter() {
 				@Override
 				public boolean accept(RowState row) {
-					assertThat(LmdbFusedSipFactorizedRuntime.currentOrNull())
-							.as("residual callbacks see the query's fused runtime")
-							.isNotNull();
+					assertThat(row.fusedSession).as("residual callbacks see their binding's fused runtime").isNotNull();
+					LmdbFusedSipFactorizedRuntime.Session first = callbackSession.updateAndGet(
+							previous -> previous == null ? row.fusedSession : previous);
+					assertThat(row.fusedSession).isSameAs(first);
 					calls.incrementAndGet();
 					return true;
 				}
@@ -422,12 +432,13 @@ class LmdbNativeScanBackedHashBuildParityTest {
 						.lowerRows(filtered, row, optimized.expression(), true);
 				assertThat(scan).isNotNull();
 				assertThat(scan.bindings.residualFilters).hasSize(1);
+				LmdbFusedSipFactorizedRuntime.Session previous = row.fusedSession;
 				try (RowCursor cursor = LmdbNativeKernelExecution.tryOpenRows(filtered, row, optimized.expression())) {
 					assertThat(cursor).isNotNull();
 					assertThat(cursor.next()).isTrue();
 					assertThat(cursor.next()).isTrue();
 					assertThat(calls).hasValue(2);
-					assertThat(LmdbFusedSipFactorizedRuntime.currentOrNull()).isNull();
+					assertThat(row.fusedSession).isSameAs(previous);
 				}
 			} finally {
 				row.memoryScope.close();
@@ -638,6 +649,86 @@ class LmdbNativeScanBackedHashBuildParityTest {
 		assertScanBackedHashBuild(OBJECT_CONSTANT_QUERY, route, OBJECT_BUILD, "probe", "build");
 	}
 
+	@ParameterizedTest(name = "interpreted={0}")
+	@ValueSource(booleans = { true, false })
+	void scanBackedHashBuildInitialFillRetainsCoordinatesForItsFirstBufferedRows(boolean interpreted) throws Exception {
+		String route = route(interpreted);
+		set(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, Boolean.toString(!interpreted));
+
+		Optimized optimized = optimizeAndRun(HASH_BUILD_OPTIONAL_QUERY, route, "probe", "build", "key", "flag");
+		assertThat(optimized.bag())
+				.isEqualTo(bag(memoryRepository, HASH_BUILD_OPTIONAL_QUERY, "probe", "build", "key", "flag"));
+		HashBuildSetup hashBuild = assertScanBackedHashBuildAndInitialFillRows(optimized.expression(), route);
+		assertThat(hashBuild.rowFillCapacity())
+				.as("the selected hash build has capacity for an initial output page")
+				.isGreaterThan(1);
+
+		NativeResultCoordinateObservation.Result observed = NativeResultCoordinateObservation.observe(store,
+				optimized.expression(), route, "probe", "build", "key", "flag");
+		long expectedRows = optimized.bag().values().stream().mapToLong(Integer::longValue).sum();
+		Map<List<Value>, Integer> observedBag = new LinkedHashMap<>();
+		observed.bag()
+				.forEach((bindings, count) -> observedBag.merge(
+						List.of(bindings.get("probe"), bindings.get("build"), bindings.get("key"),
+								bindings.get("flag")),
+						Math.toIntExact(count), Integer::sum));
+		assertThat(observed.route()).isEqualTo(route);
+		assertThat(observed.rows()).isEqualTo(expectedRows);
+		assertThat(observedBag).isEqualTo(optimized.bag());
+		assertThat(observed.retainedValues())
+				.as("first-page values remain reachable while their coordinates and lookup reuse are checked")
+				.hasSize(Math.toIntExact(expectedRows * 4L));
+		assertThat(observed.coordinateMasks()).hasSize(Math.toIntExact(expectedRows));
+		assertThat(observed.firstAdvanceKernelRows())
+				.as("the first NativeRowsIteration advance eagerly fills more than its first escaping row")
+				.isGreaterThan(1)
+				.isLessThanOrEqualTo(hashBuild.rowFillCapacity());
+		assertThat(observed.firstAdvanceReservedBytes())
+				.as("the actual first advance retained the selected hash build's query-ledger reservation")
+				.isGreaterThanOrEqualTo(hashBuild.estimatedBytes());
+		assertThat(observed.coordinateMasks()
+				.subList(0, Math.toIntExact(observed.firstAdvanceKernelRows())))
+						.as("the eager first buffer retains truthful coordinates before its first row escapes")
+						.allSatisfy(mask -> assertThat(mask).isNotZero());
+		assertThat(observed.sourceCells().get("flag")).hasSize(2);
+		assertThat(observed.totalCalls())
+				.as("repeated rows from the first hash bucket reuse retained values across the eager buffer")
+				.isLessThan(expectedRows * 4L);
+	}
+
+	private record HashBuildSetup(int rowFillCapacity, long estimatedBytes) {
+	}
+
+	private HashBuildSetup assertScanBackedHashBuildAndInitialFillRows(TupleExpr optimized, String route)
+			throws Exception {
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			LmdbNativeEvaluationStrategy strategy = spy(new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false));
+			doReturn(route).when(strategy).forcedExecutionStrategyName();
+			QueryEvaluationStep compiled = LmdbNativeAggregateCompiler.tryCompile(optimized.clone(),
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+			assertThat(compiled).isInstanceOf(NativeRowsStep.class);
+			NativeRowsStep step = (NativeRowsStep) compiled;
+			RowState row = new RowState(step.source, step.layout, EmptyBindingSet.getInstance());
+			try {
+				assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, row.source, row.layout)).isTrue();
+				LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering
+						.lowerRows(step.arg, row, optimized, true);
+				assertThat(lowered).isNotNull();
+				assertThat(nodes(lowered)).anyMatch(LmdbNativeKernelIr.HashBuild.class::isInstance);
+				long estimatedBytes = LmdbNativeKernelExecution.hashBuildBytesEstimate(lowered.kernel);
+				assertThat(estimatedBytes).isPositive();
+				return new HashBuildSetup(
+						LmdbNativeKernelExecution.rowFillSize(SlotPlan.encounterOrderReplaySafe(step.arg)),
+						estimatedBytes);
+			} finally {
+				row.memoryScope.close();
+			}
+		}
+	}
+
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
 	void underestimatedNoAdjacencyBuildRefusesBeforePublishingWhenGrowthCannotBeReserved(boolean interpreted)
@@ -728,10 +819,15 @@ class LmdbNativeScanBackedHashBuildParityTest {
 				LmdbNativeHashJoin.queryMemoryOverride = previousManager;
 			}
 			assertThat(memory.usedBytes()).as("decline and cursor close release all query-ledger bytes").isZero();
+			assertThat(memory.peakUsedBytes())
+					.as("the exact preflight hash reservation was admitted before its growth was refused")
+					.isEqualTo(preflightBytes);
 			assertThat(failure).as("memory refusal is a safe fallback, not a failed query: %s", failure).isNull();
 			assertThat(usedBeforeFirstPublishedRow)
-					.as("no under-reserved hash table is live when the first row is published")
-					.isZero();
+					.as("the full preflight claim must be released before publishing a fallback row; the fallback may "
+							+ "retain independently accounted coordinate/materializer bytes")
+					.isGreaterThanOrEqualTo(0L)
+					.isLessThan(preflightBytes);
 			assertThat(actual).as("memory refusal preserves the exact result bag").isEqualTo(expected);
 			assertThat(selected).containsExactly(route);
 			assertThat(counted.scanCloses).isEqualTo(counted.scanOpens);

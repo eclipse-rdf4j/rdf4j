@@ -41,7 +41,8 @@ public final class SelectedTupleSource extends BorrowedTupleBatch.Source {
 	private long count;
 	private BorrowedTupleBatch original, base;
 	private int originalLane, baseLane;
-	private long originalGeneration, originalReference, originalCount, baseGeneration;
+	private long originalGeneration, originalDescriptorVersion, originalReference, originalCount, baseGeneration,
+			baseDescriptorVersion;
 
 	/** Generic, range-based view; use the explicit direct overload for stable row captures. */
 	public SelectedTupleSource(int columns, int initialCapacity) {
@@ -75,10 +76,36 @@ public final class SelectedTupleSource extends BorrowedTupleBatch.Source {
 		return direct ? (long) rowOffsets.length * (Integer.BYTES + Long.BYTES) : ranges.retainedBytes();
 	}
 
+	/** Caller validates the selected-source chain before translating a current cursor position. */
+	long sourcePosition(long selectedPosition) {
+		if (selectedPosition < 0L || selectedPosition >= count)
+			return -1L;
+		if (direct)
+			return rowOffsets[memberAtPosition(selectedPosition)];
+		int range = ranges.rangeAt(selectedPosition);
+		long basePosition = ranges.start(range) + selectedPosition - ranges.prefixStart(range);
+		return base != null && base.source() instanceof SelectedTupleSource selected
+				? selected.sourcePosition(basePosition)
+				: basePosition;
+	}
+
+	/** Caller validates this source before mapping the current descriptor lane. */
+	int sourceLane() {
+		if (direct) {
+			return original == null ? -1
+					: original.source() instanceof SelectedTupleSource selected ? selected.sourceLane() : originalLane;
+		}
+		return base == null ? -1
+				: base.source() instanceof SelectedTupleSource selected ? selected.sourceLane() : baseLane;
+	}
+
 	/** Invalidates descriptors, including copies; safe to call after upstream advancement. */
 	public void clear() {
 		checkNotClosed();
 		original = base = null;
+		originalLane = baseLane = 0;
+		originalGeneration = originalDescriptorVersion = originalReference = originalCount = 0L;
+		baseGeneration = baseDescriptorVersion = 0L;
 		backing = null;
 		members = 0;
 		count = 0L;
@@ -124,11 +151,13 @@ public final class SelectedTupleSource extends BorrowedTupleBatch.Source {
 			base = view.base;
 			baseLane = view.baseLane;
 			baseGeneration = view.baseGeneration;
+			baseDescriptorVersion = view.baseDescriptorVersion;
 		} else {
 			ranges.copyFrom(selected);
 			base = input;
 			baseLane = lane;
 			baseGeneration = input.generation();
+			baseDescriptorVersion = input.coordinateDescriptorVersion();
 		}
 		count = ranges.count();
 		retainOriginal(input, lane);
@@ -152,8 +181,18 @@ public final class SelectedTupleSource extends BorrowedTupleBatch.Source {
 		original = input;
 		originalLane = lane;
 		originalGeneration = input.generation();
+		originalDescriptorVersion = input.coordinateDescriptorVersion();
 		originalReference = input.reference(lane);
 		originalCount = input.count(lane);
+	}
+
+	@Override
+	boolean coordinateAvailable(long reference, long exactCount) {
+		if (!coordinateSourceOpen() || reference != batch.generation() || exactCount <= 0L || exactCount != count
+				|| original == null || (base == null && !direct) || (direct && (backing == null || members == 0)))
+			return false;
+		// The original chain already includes the captured base descriptor, including composed selections.
+		return original.coordinateDescriptorAvailable(originalLane, originalGeneration, originalDescriptorVersion);
 	}
 
 	@Override
@@ -193,6 +232,18 @@ public final class SelectedTupleSource extends BorrowedTupleBatch.Source {
 		int capacity = (int) Math.min(Integer.MAX_VALUE, Math.max(required, Math.max(8L, 2L * rowOffsets.length)));
 		rowOffsets = Arrays.copyOf(rowOffsets, capacity);
 		prefixEnds = Arrays.copyOf(prefixEnds, capacity);
+	}
+
+	private int memberAtPosition(long position) {
+		int lo = 0, hi = members;
+		while (lo < hi) {
+			int mid = (lo + hi) >>> 1;
+			if (prefixEnds[mid] <= position)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		return lo;
 	}
 
 	private abstract class ViewReader implements BorrowedTupleBatch.Reader {
@@ -301,15 +352,7 @@ public final class SelectedTupleSource extends BorrowedTupleBatch.Source {
 		}
 
 		private int memberAt(long position) {
-			int lo = 0, hi = members;
-			while (lo < hi) {
-				int mid = (lo + hi) >>> 1;
-				if (prefixEnds[mid] <= position)
-					lo = mid + 1;
-				else
-					hi = mid;
-			}
-			return lo;
+			return memberAtPosition(position);
 		}
 	}
 

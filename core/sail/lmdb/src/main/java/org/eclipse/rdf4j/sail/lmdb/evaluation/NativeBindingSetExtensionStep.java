@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.NumericLiteral;
+import org.eclipse.rdf4j.model.impl.NumericLiteral.PrimitiveSnapshot;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -44,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** Semantic native Extension over BindingSets after a Group has materialized authoritative RDF values. */
 @Experimental
@@ -92,7 +95,82 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 	}
 
 	@Override
+	public NativeCompiledResultRecipe compiledRecipe() {
+		NativeCompiledResultRecipe child = arg instanceof NativeCompiledRecipeProvider provider
+				? provider.compiledRecipe()
+				: null;
+		if (child == null) {
+			return null;
+		}
+		AssignmentRecipe[] recipes = new AssignmentRecipe[assignments.length];
+		for (int i = 0; i < assignments.length; i++) {
+			Assignment assignment = assignments[i];
+			NativeCompiledBindingSetValue expression = NativeCompiledBindingSetValue.capture(assignment.expression());
+			if (expression == null) {
+				return null;
+			}
+			recipes[i] = new AssignmentRecipe(assignment.name(), expression, assignment.operations(),
+					assignment.definition());
+		}
+		return new ExtensionRecipe(child, recipes);
+	}
+
+	private record AssignmentRecipe(String name, NativeCompiledBindingSetValue expression, int operations,
+			Object definition) {
+	}
+
+	private record ExtensionRecipe(NativeCompiledResultRecipe child, AssignmentRecipe[] assignments)
+			implements NativeCompiledResultRecipe {
+		@Override
+		public QueryEvaluationStep bind(NativeResultBinding binding) {
+			if (binding == null || binding.worker() == null || binding.strategy() == null || binding.context() == null
+					|| binding.physicalPreparation() == null
+					|| binding.worker().invocationStrategy() != binding.strategy()
+					|| !binding.strategy().isBoundTo(binding.worker())) {
+				return null;
+			}
+			long bytes = 128L + 128L * assignments.length;
+			for (AssignmentRecipe assignment : assignments) {
+				bytes = Math.addExact(bytes, assignment.expression().bindingBytes());
+			}
+			if (!binding.physicalPreparation().reserveBytes(bytes)) {
+				return null;
+			}
+			Assignment[] boundAssignments = new Assignment[assignments.length];
+			for (int i = 0; i < assignments.length; i++) {
+				AssignmentRecipe assignment = assignments[i];
+				ValueExpr expression = assignment.expression().expression();
+				NativeBindingSetValueEvaluator evaluator = NativeBindingSetValueCompiler.compile(expression,
+						binding.strategy(), binding.context());
+				if (evaluator == null) {
+					return null;
+				}
+				boundAssignments[i] = new Assignment(assignment.name(), evaluator,
+						physicalEvaluator(expression, binding.strategy(), binding.context()), assignment.operations(),
+						expression, assignment.definition());
+			}
+			QueryEvaluationStep bound = child.bind(binding);
+			return bound == null ? null : new NativeBindingSetExtensionStep(bound, boundAssignments);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return child.requiresPhysicalResults();
+		}
+
+		@Override
+		public String describe() {
+			return "NativeBindingSetExtension(assignments=" + assignments.length + ", arg=" + child.describe() + ")";
+		}
+	}
+
+	@Override
 	public NativePhysicalResultPlan physicalPlan(BindingSet bindings) {
+		return physicalPlan(bindings, null);
+	}
+
+	@Override
+	public NativePhysicalResultPlan physicalPlan(BindingSet bindings, NativePhysicalQuote quote) {
 		int operations = 0;
 		for (Assignment assignment : assignments) {
 			if (assignment.operations() < 0) {
@@ -101,7 +179,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			operations = Math.addExact(operations, assignment.operations());
 		}
 		NativePhysicalResultPlan child = arg instanceof NativeResultStep nativeStep
-				? nativeStep.physicalPlan(bindings)
+				? nativeStep.physicalPlan(bindings, quote)
 				: null;
 		return child == null ? null : physicalResult(child, operations);
 	}
@@ -131,7 +209,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			NativeAggregateCostQuotes.Input input, NativePhysicalOutputEvidence evidence) {
 		return new NativePhysicalResultPlan(new NativeBindingSetExtensionStep(child.step(), assignments),
 				input,
-				child.rebindRecipe() == null ? null : (prepared, worker, bindings) -> {
+				child.rebindRecipe() == null ? null : (prepared, worker, bindings, preparation) -> {
 					if (!(prepared instanceof NativeBindingSetExtensionStep actual)
 							|| assignments.length != actual.assignments.length) {
 						return null;
@@ -143,7 +221,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 							return null;
 						}
 					}
-					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, bindings);
+					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, bindings, preparation);
 					return rebound == null ? null : actual.physicalResult(rebound, operations, input, evidence);
 				}, "EXTENSION[" + child.physicalProperties() + ']', evidence);
 	}
@@ -213,6 +291,9 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 	public NativeResultCursor evaluateNative(BindingSet bindings) {
 		NativeResultCursor delegate = NativeResultSteps.open(arg, bindings);
 		return NativeResultSteps.map(delegate, source -> {
+			NativeInvocationCarrier invocation = delegate.invocationCarrier();
+			NativeExecutionContext execution = invocation == null ? delegate.executionContext()
+					: invocation.executionContext();
 			Map<String, Integer> indices = new LinkedHashMap<>();
 			for (int index = 0; index < source.schema().size(); index++) {
 				indices.put(source.schema().name(index), index);
@@ -228,8 +309,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			NativeResultRow current = new NativeResultRow(schema, cells);
 			for (Assignment assignment : assignments) {
 				cells[indices.get(assignment.name())] = assignment.physical()
-						.evaluate(current,
-								delegate.executionContext());
+						.evaluate(current, execution, invocation);
 				current = new NativeResultRow(schema, cells);
 			}
 			return current;
@@ -254,24 +334,25 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 
 	@FunctionalInterface
 	private interface PhysicalEvaluator {
-		NativeResultCell evaluate(NativeResultRow row, NativeExecutionContext execution);
+		NativeResultCell evaluate(NativeResultRow row, NativeExecutionContext execution,
+				NativeInvocationCarrier invocation);
 	}
 
 	private static PhysicalEvaluator physicalEvaluator(ValueExpr expression, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context) {
 		if (expression instanceof Var variable) {
-			return variable.hasValue() ? (row, execution) -> NativeResultCell.term(variable.getValue())
-					: (row, execution) -> row.cell(variable.getName());
+			return variable.hasValue() ? (row, execution, invocation) -> NativeResultCell.term(variable.getValue())
+					: (row, execution, invocation) -> row.cell(variable.getName());
 		}
 		if (expression instanceof ValueConstant constant) {
-			return (row, execution) -> NativeResultCell.term(constant.getValue());
+			return (row, execution, invocation) -> NativeResultCell.term(constant.getValue());
 		}
 		ValueFactory factory = strategy.valueFactory();
 		if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
 				&& function.getArgs().size() == 1) {
 			PhysicalEvaluator input = physicalEvaluator(function.getArgs().get(0), strategy, context);
-			return (row, execution) -> {
-				NativeResultCell cell = input.evaluate(row, execution);
+			return (row, execution, invocation) -> {
+				NativeResultCell cell = input.evaluate(row, execution, invocation);
 				if (cell.state() != NativeResultCell.State.BOUND) {
 					return NativeResultCell.error();
 				}
@@ -290,8 +371,9 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 		if (expression instanceof MathExpr math) {
 			PhysicalEvaluator left = physicalEvaluator(math.getLeftArg(), strategy, context);
 			PhysicalEvaluator right = physicalEvaluator(math.getRightArg(), strategy, context);
-			return (row, execution) -> {
-				NativeResultCell l = left.evaluate(row, execution), r = right.evaluate(row, execution);
+			return (row, execution, invocation) -> {
+				NativeResultCell l = left.evaluate(row, execution, invocation);
+				NativeResultCell r = right.evaluate(row, execution, invocation);
 				if (l.state() != NativeResultCell.State.BOUND || r.state() != NativeResultCell.State.BOUND
 						|| !(l.value() instanceof Literal leftLiteral)
 						|| !(r.value() instanceof Literal rightLiteral)) {
@@ -306,8 +388,9 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			};
 		}
 		NativeBindingSetValueEvaluator fallback = NativeBindingSetValueCompiler.compile(expression, strategy, context);
-		return (row, execution) -> {
-			NativeValueOutcome outcome = fallback.evaluate(row.toBindingSet(), execution);
+		return (row, execution, invocation) -> {
+			NativeValueOutcome outcome = invocation == null ? fallback.evaluate(row.toBindingSet(), execution)
+					: fallback.evaluateInPreparation(row.toBindingSet(), execution, invocation.preparationScope());
 			return outcome.isBound() ? NativeResultCell.term(outcome.value())
 					: outcome.kind() == NativeValueOutcome.Kind.ERROR ? NativeResultCell.error()
 							: NativeResultCell.unbound();
@@ -320,21 +403,28 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 		private final Assignment[] assignments;
 		private final NativeExecutionContext executionContext;
 		private final NativeExecutionContext.Lease lease;
-		private boolean closed;
+		private final NativeInvocationCarrier invocation;
+		private final NativeInvocationCarrier.Lease invocationLease;
+		private final NativeInvocationOperations operations;
+		private volatile boolean closed;
 
 		private ExtensionIteration(CloseableIteration<BindingSet> delegate, Assignment[] assignments,
 				NativeExecutionContext executionContext) {
 			this.delegate = delegate;
 			this.assignments = assignments;
-			this.executionContext = executionContext;
-			this.lease = NativeExecutionContextCarrier.retain(delegate);
+			this.invocation = NativeExecutionContextCarrier.invocationOf(delegate);
+			this.executionContext = invocation == null ? executionContext : invocation.executionContext();
+			this.invocationLease = invocation == null ? null : invocation.retain();
+			this.lease = invocation == null ? NativeExecutionContextCarrier.retain(delegate) : null;
+			this.operations = new NativeInvocationOperations(invocationLease, lease);
 		}
 
 		@Override
 		public boolean hasNext() {
-			if (closed) {
+			if (!operations.enter()) {
 				return false;
 			}
+			Throwable primaryFailure = null;
 			try {
 				boolean result = delegate.hasNext();
 				if (!result) {
@@ -342,6 +432,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 				}
 				return result;
 			} catch (RuntimeException | Error e) {
+				primaryFailure = e;
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -350,22 +441,32 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 					}
 				}
 				throw e;
+			} finally {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(operations.leave(primaryFailure), primaryFailure);
 			}
 		}
 
 		@Override
 		public BindingSet next() {
-			if (!hasNext()) {
+			if (!operations.enter()) {
 				throw new NoSuchElementException();
 			}
+			Throwable primaryFailure = null;
 			try {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
 				BindingSet source = delegate.next();
 				MapBindingSet result = new MapBindingSet(source.size() + assignments.length);
 				for (Binding binding : source) {
 					result.setBinding(binding);
 				}
 				for (Assignment assignment : assignments) {
-					NativeValueOutcome outcome = assignment.evaluator().evaluate(result, executionContext);
+					NativeValueOutcome outcome = invocation == null
+							? assignment.evaluator().evaluate(result, executionContext)
+							: assignment.evaluator()
+									.evaluateInPreparation(result, executionContext,
+											invocation.preparationScope());
 					if (outcome.isBound()) {
 						result.setBinding(assignment.name(), outcome.value());
 					} else {
@@ -374,6 +475,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 				}
 				return result;
 			} catch (RuntimeException | Error e) {
+				primaryFailure = e;
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -382,6 +484,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 					}
 				}
 				throw e;
+			} finally {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(operations.leave(primaryFailure), primaryFailure);
 			}
 		}
 
@@ -392,9 +496,10 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 
 		@Override
 		public void close() {
-			if (!closed) {
+			if (operations.beginClose()) {
 				closed = true;
-				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
+				Throwable failure = KernelRuntime.closeResource(delegate, null);
+				KernelRuntime.rethrowCloseFailure(operations.delegateClosed(failure));
 			}
 		}
 
@@ -407,6 +512,120 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 		@Override
 		public NativeExecutionContext executionContext() {
 			return executionContext;
+		}
+
+		@Override
+		public NativeInvocationCarrier invocationCarrier() {
+			return invocation;
+		}
+	}
+}
+
+/** Detached expression metadata for the value-led result wrappers. Unknown callbacks decline the recipe. */
+interface NativeCompiledBindingSetValue {
+	ValueExpr expression();
+
+	long bindingBytes();
+
+	/** Preserve supported structure without resolving any possibly source-backed constant during ordinary planning. */
+	static ValueExpr snapshotStructure(ValueExpr expression) {
+		if (expression == null) {
+			return null;
+		}
+		if (expression.getClass() == Var.class) {
+			Var variable = (Var) expression;
+			Var copy = new Var(variable.getName(), variable.getValue(), variable.isAnonymous(), variable.isConstant(),
+					variable.isBNode());
+			copy.setGraphContextDepth(variable.getGraphContextDepth());
+			return variable.hasApiInputOrigin() ? copy.withApiInputOrigin() : copy;
+		}
+		if (expression.getClass() == ValueConstant.class) {
+			Value value = ((ValueConstant) expression).getValue();
+			return value == null ? null : new ValueConstant(value);
+		}
+		if (expression.getClass() == MathExpr.class) {
+			MathExpr math = (MathExpr) expression;
+			ValueExpr left = snapshotStructure(math.getLeftArg());
+			ValueExpr right = snapshotStructure(math.getRightArg());
+			return left == null || right == null || math.getOperator() == null ? null
+					: new MathExpr(left, right, math.getOperator());
+		}
+		return null;
+	}
+
+	static NativeCompiledBindingSetValue capture(ValueExpr expression) {
+		if (expression == null) {
+			return null;
+		}
+		if (expression.getClass() == Var.class) {
+			Var variable = (Var) expression;
+			Value value = variable.getValue();
+			PrimitiveSnapshot snapshot = primitiveConstant(value);
+			if (value != null && snapshot == null) {
+				return null;
+			}
+			return new Variable(variable.getName(), snapshot, variable.isAnonymous(),
+					variable.isConstant(), variable.isBNode(), variable.getGraphContextDepth(),
+					variable.hasApiInputOrigin());
+		}
+		if (expression.getClass() == ValueConstant.class) {
+			PrimitiveSnapshot snapshot = primitiveConstant(((ValueConstant) expression).getValue());
+			return snapshot == null ? null : new Constant(snapshot);
+		}
+		if (expression.getClass() == MathExpr.class) {
+			MathExpr math = (MathExpr) expression;
+			NativeCompiledBindingSetValue left = capture(math.getLeftArg());
+			NativeCompiledBindingSetValue right = capture(math.getRightArg());
+			return left == null || right == null || math.getOperator() == null ? null
+					: new Arithmetic(left, right, math.getOperator());
+		}
+		return null;
+	}
+
+	/** Unknown, cold and source-backed values remain owned by the ordinary invocation-bound fallback. */
+	private static PrimitiveSnapshot primitiveConstant(Value value) {
+		return value != null && value.getClass() == NumericLiteral.class
+				? ((NumericLiteral) value).primitiveSnapshot()
+				: null;
+	}
+
+	record Variable(String name, PrimitiveSnapshot value, boolean anonymous, boolean constant, boolean bnode,
+			int graphContextDepth, boolean apiInputOrigin) implements NativeCompiledBindingSetValue {
+		@Override
+		public ValueExpr expression() {
+			Var result = new Var(name, value == null ? null : value.toLiteral(), anonymous, constant, bnode);
+			result.setGraphContextDepth(graphContextDepth);
+			return apiInputOrigin ? result.withApiInputOrigin() : result;
+		}
+
+		@Override
+		public long bindingBytes() {
+			return value == null ? 128L : 256L;
+		}
+	}
+
+	record Constant(PrimitiveSnapshot value) implements NativeCompiledBindingSetValue {
+		@Override
+		public ValueExpr expression() {
+			return new ValueConstant(value.toLiteral());
+		}
+
+		@Override
+		public long bindingBytes() {
+			return 256L;
+		}
+	}
+
+	record Arithmetic(NativeCompiledBindingSetValue left, NativeCompiledBindingSetValue right, MathExpr.MathOp op)
+			implements NativeCompiledBindingSetValue {
+		@Override
+		public ValueExpr expression() {
+			return new MathExpr(left.expression(), right.expression(), op);
+		}
+
+		@Override
+		public long bindingBytes() {
+			return Math.addExact(128L, Math.addExact(left.bindingBytes(), right.bindingBytes()));
 		}
 	}
 }
@@ -439,6 +658,21 @@ interface NativeBindingSetValueEvaluator {
 	default NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
 		return evaluate(bindings);
 	}
+
+	/** Uses the exact source and invocation that own this evaluation, when the expression needs them. */
+	default NativeValueOutcome evaluateInInvocation(BindingSet bindings, NativeExecutionContext executionContext,
+			NativeLmdbQuerySource source, LmdbFusedSipFactorizedRuntime.Session invocation) {
+		return evaluate(bindings, executionContext);
+	}
+
+	default NativeValueOutcome evaluateInPreparation(BindingSet bindings, NativeExecutionContext executionContext,
+			LmdbFusedSipFactorizedRuntime.PreparationScope preparation) {
+		return evaluateInInvocation(bindings, executionContext, preparation.source(), preparation.session());
+	}
+
+	default NativeValueOutcome evaluateForRow(BindingSet bindings, RowState row) {
+		return evaluateInInvocation(bindings, row.executionContext(), row.source, row.fusedSession());
+	}
 }
 
 /** Value-led semantic compiler independent of LMDB id availability. */
@@ -454,10 +688,10 @@ final class NativeBindingSetValueCompiler {
 			return scalarSubquery;
 		}
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expression, strategy);
-		if (!descriptor.shareableAcrossEvaluations()) {
+		if (strategy.enclosingFusedInvocation() == null) {
 			return new EvaluationScopedValueEvaluator(descriptor, strategy, context);
 		}
-		QueryValueEvaluationStep valueStep = strategy.precompile(expression, context);
+		QueryValueEvaluationStep valueStep = descriptor.precompileValue(strategy, context);
 		return new NativeBindingSetValueEvaluator() {
 			@Override
 			public NativeValueOutcome evaluate(BindingSet bindings) {
@@ -466,7 +700,13 @@ final class NativeBindingSetValueCompiler {
 
 			@Override
 			public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
-				SyntheticValueSource source = executionContext == null ? null : executionContext.evaluationSource();
+				return evaluateInInvocation(bindings, executionContext, strategy.nativeSource(),
+						strategy.enclosingFusedInvocation());
+			}
+
+			@Override
+			public NativeValueOutcome evaluateInInvocation(BindingSet bindings, NativeExecutionContext executionContext,
+					NativeLmdbQuerySource source, LmdbFusedSipFactorizedRuntime.Session invocation) {
 				try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
 					try {
 						return NativeValueOutcome.bound(valueStep.evaluate(bindings));
@@ -497,19 +737,30 @@ final class NativeBindingSetValueCompiler {
 
 		@Override
 		public NativeValueOutcome evaluate(BindingSet bindings) {
-			return evaluate(bindings, null);
+			throw new IllegalStateException("semantic value requires an explicit preparation scope");
 		}
 
 		@Override
 		public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
-			QueryValueEvaluationStep valueStep = executionContext == null
-					? descriptor.precompileValue(strategy, compileContext)
-					: executionContext.genericStep(descriptor, () -> {
-						QueryEvaluationContext scoped = executionContext
-								.genericContext(compileContext, strategy);
-						return descriptor.precompileValue(strategy, scoped);
-					});
-			SyntheticValueSource source = executionContext == null ? null : executionContext.evaluationSource();
+			throw new IllegalStateException("semantic value requires an explicit preparation scope");
+		}
+
+		@Override
+		public NativeValueOutcome evaluateForRow(BindingSet bindings, RowState row) {
+			return evaluateInPreparation(bindings, row.executionContext(), row.preparationScope(row.source));
+		}
+
+		@Override
+		public NativeValueOutcome evaluateInPreparation(BindingSet bindings, NativeExecutionContext executionContext,
+				LmdbFusedSipFactorizedRuntime.PreparationScope preparation) {
+			NativeLmdbQuerySource source = preparation.source();
+			QueryValueEvaluationStep valueStep = preparation.prepare(descriptor, () -> {
+				LmdbNativeEvaluationStrategy bound = strategy.forInvocation(source, preparation.session(),
+						executionContext);
+				QueryEvaluationContext scoped = executionContext == null ? compileContext
+						: executionContext.genericInvocationContext(compileContext, bound);
+				return descriptor.precompileValue(bound, scoped);
+			});
 			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
 				try {
 					return NativeValueOutcome.bound(valueStep.evaluate(bindings));

@@ -27,6 +27,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -77,7 +78,9 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 @Experimental
 abstract class LmdbNativeAggregatePlannerBase {
@@ -104,8 +107,65 @@ abstract class LmdbNativeAggregatePlannerBase {
 	final ArrayList<String> slotNames = new ArrayList<>();
 	Set<String> requiredAggregateNames = Set.of();
 	/** One catalog builder per compiled root: every plan-synthetic constant of this compilation interns here. */
-	final PlanValueCatalog.Builder planValueCatalog = new PlanValueCatalog.Builder();
+	final PlanValueCatalog.Builder planValueCatalog;
 	final java.util.HashSet<String> syntheticVarNames = new java.util.HashSet<>();
+	private Set<BindingSetAssignment> ownedColdTables;
+	private boolean collectingValues;
+	private boolean valuesWereCollected;
+
+	private record ColdLookup(NativeLmdbQuerySource source, int positionMask, LmdbValue.ColdIdentityWitness witness,
+			long id,
+			LmdbQueryMemoryManager.Reservation reservation) {
+	}
+
+	private record ColdOccurrence(int row, String name, Value value, LmdbQueryMemoryManager.Reservation reservation) {
+	}
+
+	static final class ColdLookupTable implements AutoCloseable {
+		final IdentityHashMap<Value, ArrayList<ColdLookup>> values = new IdentityHashMap<>();
+		final ArrayList<ColdOccurrence> occurrences = new ArrayList<>();
+		final IdentityHashMap<LmdbNativeAggregatePlannerBase, LmdbQueryMemoryManager.Reservation> owners = new IdentityHashMap<>();
+
+		ColdLookup find(Value value, NativeLmdbQuerySource source, int positionMask) {
+			List<ColdLookup> candidates = values.get(value);
+			if (candidates != null) {
+				for (ColdLookup candidate : candidates) {
+					if (candidate.source() == source && candidate.positionMask() == positionMask) {
+						return candidate;
+					}
+				}
+			}
+			return null;
+		}
+
+		@Override
+		public void close() {
+			for (List<ColdLookup> candidates : values.values()) {
+				for (ColdLookup lookup : candidates) {
+					lookup.reservation().close();
+				}
+			}
+			for (ColdOccurrence occurrence : occurrences) {
+				occurrence.reservation().close();
+			}
+			for (LmdbQueryMemoryManager.Reservation owner : owners.values()) {
+				owner.close();
+			}
+			values.clear();
+			occurrences.clear();
+			owners.clear();
+		}
+	}
+
+	int valuesSourceIdDomains(NativeLmdbQuerySource.IdOrigin origin) {
+		return switch (origin) {
+		case STORED -> ValuesPlan.ID_DOMAIN_STORE;
+		case PLAN -> ValuesPlan.ID_DOMAIN_SOURCE_PLAN;
+		case RUNTIME -> ValuesPlan.ID_DOMAIN_SOURCE_RUNTIME;
+		case ABSENT, UNCERTIFIED -> ValuesPlan.ID_DOMAIN_UNKNOWN;
+		};
+	}
+
 	/**
 	 * Whether this compile serves the root host, where one {@code evaluate(...)} of the compiled step is one query
 	 * evaluation (M-A1a). Only then may generic bridges prepare per evaluation — an interior step is evaluated once per
@@ -336,9 +396,15 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	LmdbNativeAggregatePlannerBase(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
+		this(context, strategy, source, new PlanValueCatalog.Builder());
+	}
+
+	LmdbNativeAggregatePlannerBase(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
+			NativeLmdbQuerySource source, PlanValueCatalog.Builder planValueCatalog) {
 		this.context = context;
 		this.strategy = strategy;
 		this.source = source;
+		this.planValueCatalog = Objects.requireNonNull(planValueCatalog, "planValueCatalog");
 		this.layout = new NativeSlotLayout(slots, LmdbQueryEvaluationContext.layoutOf(context));
 	}
 
@@ -609,6 +675,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 */
 	void collectSyntheticValues(TupleExpr expr) {
 		HashSet<String> patternOrCopyVars = new HashSet<>();
+		NativeLmdbQuerySource.IdLookup lookup = new NativeLmdbQuerySource.IdLookup();
 		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(StatementPattern node) {
@@ -632,32 +699,49 @@ abstract class LmdbNativeAggregatePlannerBase {
 				super.meet(node);
 			}
 		});
-		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(BindingSetAssignment node) {
-				for (BindingSet bindings : node.getBindingSets()) {
-					for (Binding binding : bindings) {
-						Value value = binding.getValue();
-						long id = idOf(value, layout.positionMask(binding.getName()));
-						boolean unknown = id == UNKNOWN;
-						boolean unsafeEligible = !unknown && !termProbeSafeId(id, value)
-								&& !patternOrCopyVars.contains(binding.getName());
-						if (unknown && !termSafeAbsenceProof(value)
-								&& patternOrCopyVars.contains(binding.getName())) {
-							// M-F1: a store-absent langString may exist under a term-equal spelling with its own
-							// id, so a synthetic id must NOT constrain pattern probes — compileValues routes this
-							// cell to the value-guarded fallback instead
-							continue;
+		collectingValues = true;
+		try {
+			expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(BindingSetAssignment node) {
+					int row = 0;
+					for (BindingSet bindings : node.getBindingSets()) {
+						for (Binding binding : bindings) {
+							Value value = binding.getValue();
+							if (value instanceof LmdbValue nativeValue && !nativeValue.isInitialized()) {
+								lookupValuesSourceId(node, value, layout.positionMask(binding.getName()), lookup);
+								recordColdOccurrence(node, row, binding.getName(), value);
+								// A certified cold resource is term-safe and needs no plan-synthetic ID.
+								continue;
+							}
+							lookupSourceId(value, layout.positionMask(binding.getName()), lookup);
+							long id = lookup.id();
+							boolean unknown = id == UNKNOWN;
+							boolean foreignSynthetic = lookup.origin() == NativeLmdbQuerySource.IdOrigin.PLAN
+									|| lookup.origin() == NativeLmdbQuerySource.IdOrigin.RUNTIME;
+							boolean unsafeEligible = !unknown && !termProbeSafeId(id, value)
+									&& !patternOrCopyVars.contains(binding.getName());
+							if ((unknown || foreignSynthetic) && !termSafeAbsenceProof(value)
+									&& patternOrCopyVars.contains(binding.getName())) {
+								// M-F1: a store-absent langString may exist under a term-equal spelling with its own
+								// id, so a synthetic id must NOT constrain pattern probes — compileValues routes this
+								// cell to the value-guarded fallback instead
+								continue;
+							}
+							if (!unknown && !unsafeEligible && !foreignSynthetic) {
+								continue;
+							}
+							planValueCatalog.internConstant(value);
+							syntheticVarNames.add(binding.getName());
 						}
-						if (!unknown && !unsafeEligible) {
-							continue;
-						}
-						planValueCatalog.internConstant(value);
-						syntheticVarNames.add(binding.getName());
+						row++;
 					}
 				}
-			}
-		});
+			});
+			valuesWereCollected = true;
+		} finally {
+			collectingValues = false;
+		}
 	}
 
 	/**
@@ -1075,7 +1159,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 				if (kind != AggKind.COUNT) {
 					return null;
 				}
-				long id = idOf(var.getValue());
+				long id = ownedSourceId(var.getValue(), 0, false);
 				if (id == UNKNOWN) {
 					return null;
 				}
@@ -1266,7 +1350,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		QueryEvaluationContext.ActiveGraph active = context.getActiveGraph();
 		if (active != null && scope == Scope.DEFAULT_CONTEXTS) {
 			Resource physical = active.physicalGraph();
-			long id = physical == null ? NULL_CONTEXT_ID : idOf(physical, ValuePosition.CONTEXT);
+			long id = physical == null ? NULL_CONTEXT_ID : ownedSourceId(physical, ValuePosition.CONTEXT, true);
 			return id == UNKNOWN ? ContextConstraint.EMPTY : new ContextConstraint(new long[] { id });
 		}
 		if (dataset == null) {
@@ -1301,7 +1385,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 			if (graph == null || RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph)) {
 				id = NULL_CONTEXT_ID;
 			} else {
-				id = idOf(graph, ValuePosition.CONTEXT);
+				id = ownedSourceId(graph, ValuePosition.CONTEXT, true);
 				if (id == UNKNOWN) {
 					continue;
 				}
@@ -1312,6 +1396,13 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	Term compileTerm(Var var, NativePatternField field) {
+		return compileTerm(var, field, null);
+	}
+
+	Term compileTerm(Var var, NativePatternField field, NativeLmdbQuerySource.IdLookup origin) {
+		if (origin != null) {
+			origin.set(UNKNOWN, NativeLmdbQuerySource.IdOrigin.ABSENT);
+		}
 		if (var == null) {
 			return Term.unbound();
 		}
@@ -1326,7 +1417,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 			if (field == NativePatternField.CONTEXT && isNullContextValue(value)) {
 				return Term.constant(NULL_CONTEXT_ID);
 			}
-			long id = idOf(value, 1 << field.ordinal());
+			long id = origin == null ? ownedSourceId(value, 1 << field.ordinal(), true)
+					: ownedSourceId(value, 1 << field.ordinal(), true, origin);
 			if (id == UNKNOWN) {
 				return null;
 			}
@@ -1437,6 +1529,218 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return source.idOf(value, positionMask);
 	}
 
+	/** Retains source constants only after importing foreign synthetic IDs into this compiled tree's catalog. */
+	long ownedSourceId(Value value, int positionMask, boolean usedForProbe) {
+		return ownedSourceId(value, positionMask, usedForProbe, new NativeLmdbQuerySource.IdLookup());
+	}
+
+	private long ownedSourceId(Value value, int positionMask, boolean usedForProbe,
+			NativeLmdbQuerySource.IdLookup lookup) {
+		lookupSourceId(value, positionMask, lookup);
+		if (lookup.origin() == NativeLmdbQuerySource.IdOrigin.PLAN
+				|| lookup.origin() == NativeLmdbQuerySource.IdOrigin.RUNTIME) {
+			if (usedForProbe && !termSafeAbsenceProof(value)) {
+				throw new SourceTermRequiresGeneric();
+			}
+			return planValueCatalog.internConstant(value);
+		}
+		return lookup.id();
+	}
+
+	void lookupSourceId(Value value, int positionMask, NativeLmdbQuerySource.IdLookup lookup) {
+		lookup.set(UNKNOWN, NativeLmdbQuerySource.IdOrigin.UNCERTIFIED);
+		if (value instanceof LmdbValue nativeValue && !nativeValue.isInitialized()) {
+			LmdbQueryMemoryManager.Reservation scratch = reserveValuesScratch(256L);
+			if (scratch == null) {
+				throw new SourceTermRequiresGeneric();
+			}
+			try {
+				LmdbValue.ColdIdentityWitness witness = LmdbValue.ColdIdentityWitness.capture(value);
+				if (witness == null || source.knownStatementId(nativeValue) != witness.identity().id()) {
+					throw new SourceTermRequiresGeneric();
+				}
+				source.idOfWithOrigin(value, positionMask, lookup);
+				if (lookup.origin() != NativeLmdbQuerySource.IdOrigin.STORED
+						|| lookup.id() != witness.identity().id() || !witness.isCurrent()
+						|| source.knownStatementId(nativeValue) != lookup.id() || !witness.isCurrent()) {
+					throw new SourceTermRequiresGeneric();
+				}
+			} finally {
+				scratch.close();
+			}
+		} else {
+			source.idOfWithOrigin(value, positionMask, lookup);
+			if (lookup.origin() == NativeLmdbQuerySource.IdOrigin.UNCERTIFIED) {
+				throw new SourceTermRequiresGeneric();
+			}
+		}
+		if ((lookup.origin() == NativeLmdbQuerySource.IdOrigin.PLAN
+				|| lookup.origin() == NativeLmdbQuerySource.IdOrigin.RUNTIME)
+				&& !lookup.backingAbsenceCertified()) {
+			// A source-local synthetic number can coexist with the same term in the backing dictionary. Until this
+			// lookup proves absence, neither a local catalog ID nor an empty statement probe is authoritative.
+			throw new SourceTermRequiresGeneric();
+		}
+	}
+
+	/** A cold source-owned resource is looked up once and rechecked before its compiled table consumes the ID. */
+	void lookupValuesSourceId(BindingSetAssignment values, Value value, int positionMask,
+			NativeLmdbQuerySource.IdLookup lookup) {
+		ColdLookupTable table = planValueCatalog.coldLookups(values);
+		ColdLookup captured = table == null ? null : table.find(value, source, positionMask);
+		if (captured != null) {
+			retainColdTable(values, table);
+			if (!captured.witness().isCurrent()
+					|| source.knownStatementId(captured.witness().value()) != captured.id()
+					|| !captured.witness().isCurrent()) {
+				throw new SourceTermRequiresGeneric();
+			}
+			lookup.set(captured.id(), NativeLmdbQuerySource.IdOrigin.STORED);
+			return;
+		}
+		if (!(value instanceof LmdbValue nativeValue) || nativeValue.isInitialized()) {
+			lookupSourceId(value, positionMask, lookup);
+			return;
+		}
+		if (!collectingValues && valuesWereCollected) {
+			// A new cold cell appeared after the collection that determined synthetic-variable safety.
+			throw new SourceTermRequiresGeneric();
+		}
+		LmdbQueryMemoryManager.Reservation reservation = reserveValuesScratch(1024L);
+		if (reservation == null) {
+			throw new SourceTermRequiresGeneric();
+		}
+		try {
+			LmdbValue.ColdIdentityWitness witness = LmdbValue.ColdIdentityWitness.capture(value);
+			if (witness == null) {
+				throw new SourceTermRequiresGeneric();
+			}
+			lookupSourceId(value, positionMask, lookup);
+			if (lookup.origin() != NativeLmdbQuerySource.IdOrigin.STORED || lookup.id() != witness.identity().id()
+					|| !witness.isCurrent()) {
+				throw new SourceTermRequiresGeneric();
+			}
+			if (table == null) {
+				table = new ColdLookupTable();
+				retainColdTable(values, table);
+				try {
+					planValueCatalog.putColdLookups(values, table);
+				} catch (RuntimeException | Error failure) {
+					ownedColdTables.remove(values);
+					table.close();
+					throw failure;
+				}
+			} else {
+				retainColdTable(values, table);
+			}
+			table.values.computeIfAbsent(value, ignored -> new ArrayList<>())
+					.add(new ColdLookup(source, positionMask, witness, lookup.id(), reservation));
+			reservation = null;
+		} finally {
+			if (reservation != null) {
+				reservation.close();
+			}
+		}
+	}
+
+	private void retainColdTable(BindingSetAssignment values, ColdLookupTable table) {
+		if (table.owners.containsKey(this)) {
+			return;
+		}
+		LmdbQueryMemoryManager.Reservation reservation = reserveValuesScratch(384L);
+		if (reservation == null) {
+			throw new SourceTermRequiresGeneric();
+		}
+		try {
+			if (ownedColdTables == null) {
+				ownedColdTables = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+			}
+			ownedColdTables.add(values);
+			table.owners.put(this, reservation);
+			reservation = null;
+		} finally {
+			if (reservation != null) {
+				reservation.close();
+			}
+		}
+	}
+
+	private LmdbQueryMemoryManager.Reservation reserveValuesScratch(long bytes) {
+		NativeExecutionContext execution = source instanceof SyntheticValueSource synthetic
+				? synthetic.executionContext()
+				: null;
+		return planValueCatalog.reserveCompilationScratch(
+				execution != null ? execution : strategy.enclosingExecutionContext(), bytes);
+	}
+
+	private void recordColdOccurrence(BindingSetAssignment values, int row, String name, Value value) {
+		LmdbQueryMemoryManager.Reservation reservation = reserveValuesScratch(256L + 2L * name.length());
+		if (reservation == null) {
+			throw new SourceTermRequiresGeneric();
+		}
+		try {
+			planValueCatalog.coldLookups(values).occurrences.add(new ColdOccurrence(row, name, value, reservation));
+			reservation = null;
+		} finally {
+			if (reservation != null) {
+				reservation.close();
+			}
+		}
+	}
+
+	void validateValuesLookups(BindingSetAssignment values, List<BindingSet> rows) {
+		ColdLookupTable table = planValueCatalog.coldLookups(values);
+		if (table != null) {
+			for (ColdOccurrence occurrence : table.occurrences) {
+				List<ColdLookup> captured = table.values.get(occurrence.value());
+				if (occurrence.row() >= rows.size()
+						|| rows.get(occurrence.row()).getValue(occurrence.name()) != occurrence.value()
+						|| captured == null) {
+					throw new SourceTermRequiresGeneric();
+				}
+				for (ColdLookup candidate : captured) {
+					if (!candidate.witness().isCurrent()) {
+						throw new SourceTermRequiresGeneric();
+					}
+				}
+			}
+		}
+	}
+
+	void releaseValuesLookups(BindingSetAssignment values) {
+		ColdLookupTable table = planValueCatalog.coldLookups(values);
+		if (table != null) {
+			LmdbQueryMemoryManager.Reservation owner = table.owners.remove(this);
+			if (owner != null) {
+				owner.close();
+			}
+			if (table.owners.isEmpty()) {
+				planValueCatalog.removeColdLookups(values);
+				table.close();
+			}
+		}
+		if (ownedColdTables != null) {
+			ownedColdTables.remove(values);
+		}
+	}
+
+	void releaseAllValuesLookups() {
+		while (ownedColdTables != null && !ownedColdTables.isEmpty()) {
+			releaseValuesLookups(ownedColdTables.iterator().next());
+		}
+		ownedColdTables = null;
+		valuesWereCollected = false;
+	}
+
+	/** A term whose exact probe cannot be proved is a native admission decline, never an empty result. */
+	static final class SourceTermRequiresGeneric extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		SourceTermRequiresGeneric() {
+			super(null, null, false, false);
+		}
+	}
+
 	/**
 	 * Resolves a constant introduced by an Extension (SPARQL BIND), assigning a plan-local id when its exact term is
 	 * provably absent from the store. This keeps true constants on the replayable alias path instead of misclassifying
@@ -1444,7 +1748,16 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * dictionary miss does not prove term absence for them.
 	 */
 	long idOfExtensionConstant(Value value, String targetName) {
-		long id = idOf(value, layout.positionMask(targetName));
+		NativeLmdbQuerySource.IdLookup lookup = new NativeLmdbQuerySource.IdLookup();
+		lookupSourceId(value, layout.positionMask(targetName), lookup);
+		long id = lookup.id();
+		if (lookup.origin() == NativeLmdbQuerySource.IdOrigin.PLAN
+				|| lookup.origin() == NativeLmdbQuerySource.IdOrigin.RUNTIME) {
+			// Numeric IDs from a foreign plan/runtime authority may overlap this tree's catalog. Reuse the
+			// already supplied RDF spelling to give the constant this tree's own unambiguous plan identity.
+			syntheticVarNames.add(targetName);
+			return planValueCatalog.internConstant(value);
+		}
 		if (id != UNKNOWN || !termSafeAbsenceProof(value)) {
 			return id;
 		}

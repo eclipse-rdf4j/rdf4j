@@ -153,8 +153,8 @@ final class LmdbNativeMergeJoin {
 		if (contextKey(left, keyMask) || contextKey(right, keyMask)) {
 			return rejectAdmission(row, "context-key", record);
 		}
-		if (left.contexts.isFixed() && left.contexts.ids.length > 1
-				|| right.contexts.isFixed() && right.contexts.ids.length > 1) {
+		if (left.contexts.isFixed() && left.contexts.size() > 1
+				|| right.contexts.isFixed() && right.contexts.size() > 1) {
 			// fixed multi-context scans concatenate or merge per-context ranges: context-major, not key-major
 			return rejectAdmission(row, "multi-context", record);
 		}

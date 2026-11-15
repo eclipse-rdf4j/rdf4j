@@ -226,7 +226,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Converts a vectorized child to the mutable-row protocol without discarding an exact factor weight. */
 	static RowCursor asRows(BatchCursor cursor, RowState row, int capacity) {
-		LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+		LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 		long claimedBytes;
 		try {
 			long batchSlots = arrayBytes(Math.multiplyExact(row.slots.length, capacity), Long.BYTES);
@@ -605,7 +605,7 @@ final class LmdbWildcardPredicateBatch {
 	 */
 	private static RowCursor openWeightedWithinBudget(SlotPlan plan, RowState row, long liveMask, int capacity)
 			throws IOException {
-		LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+		LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 		while (true) {
 			long refusalsBefore = memory.memoryRefusals();
 			RowCursor cursor = openWeighted(plan, row, liveMask, capacity);
@@ -973,7 +973,7 @@ final class LmdbWildcardPredicateBatch {
 			if (!enabled() || !NativeBatch.enabled() || p.isConstant()) {
 				return null;
 			}
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = existenceScratchBytes(capacity);
 			if (!memory.claim(claimedBytes)) {
 				MEMORY_REFUSALS.incrementAndGet();
@@ -1027,7 +1027,7 @@ final class LmdbWildcardPredicateBatch {
 			BITMAP_TILES.incrementAndGet();
 			if (scheduledPredicates == ALL_PREDICATES && nodePredicates != null) {
 				try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, unresolved,
-						adjacency.predicateCount(), row.cancellation)) {
+						adjacency.predicateCount(), row.cancellation, row.fusedSession())) {
 					if (route != null) {
 						if (!selectRouted(batch, allowedMask, route)) {
 							return 0;
@@ -1383,7 +1383,7 @@ final class LmdbWildcardPredicateBatch {
 			existence.close();
 			return null;
 		}
-		LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+		LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 		long claimedBytes = minusScratchBytes(row.slots.length, capacity);
 		if (!memory.claim(claimedBytes)) {
 			MEMORY_REFUSALS.incrementAndGet();
@@ -1660,7 +1660,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private boolean directionWithLowerRootCount(RowState row) throws IOException {
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long scratchBytes = arrayBytes(2, Long.BYTES);
 			if (!memory.claim(scratchBytes)) {
 				return true;
@@ -1915,7 +1915,7 @@ final class LmdbWildcardPredicateBatch {
 		private PredicateMajorParallelScan(Shape shape, RowState row, int predicateCount) {
 			this.shape = shape;
 			this.row = row;
-			this.memory = LmdbFusedSipFactorizedRuntime.current();
+			this.memory = row.fusedSession();
 			this.predicateCount = predicateCount;
 		}
 
@@ -1975,7 +1975,7 @@ final class LmdbWildcardPredicateBatch {
 			Future<?>[] futures = new Future<?>[helpers];
 			AtomicInteger nextChunk = new AtomicInteger();
 			AtomicReference<Throwable> failure = new AtomicReference<>();
-			LmdbFusedSipFactorizedRuntime.Session parentSession = LmdbFusedSipFactorizedRuntime.currentOrNull();
+			LmdbFusedSipFactorizedRuntime.Session parentSession = memory;
 			admission = WildcardParallelAdmission.ACTIVE_ROUND;
 			try {
 				sources = row.source.openParallelSources(helpers);
@@ -1988,9 +1988,8 @@ final class LmdbWildcardPredicateBatch {
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures[helper] = LmdbNativeParallelPipelines.pool().submit(() -> {
 						try (var replayScope = replayContext.activate();
-								LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-										.inherit(parentSession)) {
-							processHelper(source, nextChunk, chunkCount);
+								LmdbFusedSipFactorizedRuntime.Session workerSession = parentSession.worker()) {
+							processHelper(source, nextChunk, chunkCount, workerSession);
 						} catch (Throwable problem) {
 							failure.compareAndSet(null, problem);
 						}
@@ -2090,7 +2089,7 @@ final class LmdbWildcardPredicateBatch {
 			NativeLmdbQuerySource.WildcardAdjacency coordinatorAdjacency = null;
 			Future<?>[] futures = new Future<?>[helpers];
 			AtomicReference<Throwable> failure = new AtomicReference<>();
-			LmdbFusedSipFactorizedRuntime.Session parentSession = LmdbFusedSipFactorizedRuntime.currentOrNull();
+			LmdbFusedSipFactorizedRuntime.Session parentSession = memory;
 			admission = WildcardParallelAdmission.ACTIVE_ROUND;
 			try {
 				sources = row.source.openParallelSources(helpers);
@@ -2109,9 +2108,8 @@ final class LmdbWildcardPredicateBatch {
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures[helper] = LmdbNativeParallelPipelines.pool().submit(() -> {
 						try (var replayScope = replayContext.activate();
-								LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-										.inherit(parentSession)) {
-							processDataHelper(source, round);
+								LmdbFusedSipFactorizedRuntime.Session workerSession = parentSession.worker()) {
+							processDataHelper(source, round, workerSession);
 						} catch (Throwable problem) {
 							failure.compareAndSet(null, problem);
 						}
@@ -2189,8 +2187,9 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void processHelper(NativeLmdbQuerySource.ParallelSource source, AtomicInteger nextChunk,
-				int chunkCount) throws IOException {
+				int chunkCount, LmdbFusedSipFactorizedRuntime.Session workerSession) throws IOException {
 			RowState workerRow = new RowState(source, row.layout, row.base, row.exactValuesMetrics, row.cancellation);
+			workerRow.fusedSession = workerSession;
 			workerRow.parallelOwnership = RowState.ParallelOwnership.WILDCARD_HELPER;
 			workerRow.memoryScope = row.memoryScope;
 			workerRow.runtimePlan = row.runtimePlan;
@@ -2209,9 +2208,11 @@ final class LmdbWildcardPredicateBatch {
 			}
 		}
 
-		private void processDataHelper(NativeLmdbQuerySource.ParallelSource source, DataRound round)
+		private void processDataHelper(NativeLmdbQuerySource.ParallelSource source, DataRound round,
+				LmdbFusedSipFactorizedRuntime.Session workerSession)
 				throws IOException {
 			RowState workerRow = new RowState(source, row.layout, row.base, row.exactValuesMetrics, row.cancellation);
+			workerRow.fusedSession = workerSession;
 			workerRow.parallelOwnership = RowState.ParallelOwnership.WILDCARD_HELPER;
 			workerRow.memoryScope = row.memoryScope;
 			workerRow.runtimePlan = row.runtimePlan;
@@ -2269,9 +2270,10 @@ final class LmdbWildcardPredicateBatch {
 							return;
 						}
 						int itemFrom = (int) (rawOffset - round.runOffset);
-						int count = contextSpan.copyAccepted(adjacency, handle[0], rawOffset, rawLimit,
+						int count = shape.wildcard.contexts.copyAccepted(contextSpan, adjacency, handle[0], rawOffset,
+								rawLimit,
 								to - itemFrom, round.neighbors, itemFrom, round.contexts, itemFrom,
-								shape.wildcard.c.lookup(localRow.slots), shape.wildcard.contexts.ids,
+								shape.wildcard.c.lookup(localRow.slots),
 								shape.wildcard.namedContextScope);
 						rawOffset = contextSpan.end();
 						PAYLOAD_ROWS_DECODED.addAndGet(count);
@@ -2615,7 +2617,7 @@ final class LmdbWildcardPredicateBatch {
 		static PredicateMajorPresenceCursor open(Shape shape, RowState row, int capacity) throws IOException {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = rootBatchScratchBytes(capacity);
 			boolean memoryClaimed = false;
 			try {
@@ -2806,7 +2808,7 @@ final class LmdbWildcardPredicateBatch {
 
 		static PredicateMajorPayloadCursor open(Shape shape, RowState row, int capacity) throws IOException {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = Math.addExact(Math.multiplyExact(2L, arrayBytes(capacity, Long.BYTES)),
 					arrayBytes(capacity, Byte.BYTES));
 			boolean memoryClaimed = false;
@@ -2875,8 +2877,8 @@ final class LmdbWildcardPredicateBatch {
 						decoded = requested;
 						runOffset += requested;
 					} else {
-						decoded = contextSpan.copyAccepted(keys, runOffset, runSize, requested, neighbors, 0,
-								contexts, 0, shape.wildcard.c.lookup(row.slots), shape.wildcard.contexts.ids,
+						decoded = shape.wildcard.contexts.copyAccepted(contextSpan, keys, runOffset, runSize,
+								requested, neighbors, 0, contexts, 0, shape.wildcard.c.lookup(row.slots),
 								shape.wildcard.namedContextScope);
 						runOffset = contextSpan.end();
 						PAYLOAD_ROWS_DECODED.addAndGet(decoded);
@@ -3034,7 +3036,7 @@ final class LmdbWildcardPredicateBatch {
 
 		static PredicateMajorMultiplicityCursor open(Shape shape, RowState row, int capacity) throws IOException {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes;
 			try {
 				claimedBytes = Math.addExact(rootBatchScratchBytes(capacity),
@@ -3251,7 +3253,7 @@ final class LmdbWildcardPredicateBatch {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor prefix = null;
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = 0L;
 			try {
 				adjacency = probe.wildcardAdjacency(shape.bySubject);
@@ -3326,7 +3328,7 @@ final class LmdbWildcardPredicateBatch {
 		private void sweepPredicates() throws IOException {
 			if (nodePredicates != null) {
 				try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(nodePredicates, unresolved,
-						unresolvedCount, adjacency.predicateCount(), row.cancellation)) {
+						unresolvedCount, adjacency.predicateCount(), row.cancellation, row.fusedSession())) {
 					if (route != null) {
 						sweepRoutedPredicates(route);
 						return;
@@ -3534,7 +3536,7 @@ final class LmdbWildcardPredicateBatch {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor prefix = null;
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = 0L;
 			try {
 				adjacency = probe.wildcardAdjacency(shape.bySubject);
@@ -3772,7 +3774,7 @@ final class LmdbWildcardPredicateBatch {
 				NODE_LANES_PRUNED.addAndGet(count - nodeCount);
 				route = nodePredicates == null ? null
 						: LmdbNodePredicateRoute.tryBuild(nodePredicates, nodes, nodeCount, adjacency.predicateCount(),
-								row.cancellation);
+								row.cancellation, row.fusedSession());
 				routeGroup = 0;
 				routeIncidence = route != null && route.predicateCount() > 0 ? route.predicateFrom(0) : 0;
 				routeGroupMatched = false;
@@ -3888,7 +3890,7 @@ final class LmdbWildcardPredicateBatch {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor prefix = null;
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = 0L;
 			try {
 				adjacency = probe.wildcardAdjacency(shape.bySubject);
@@ -4109,7 +4111,7 @@ final class LmdbWildcardPredicateBatch {
 				allPredicates = scheduled == ALL_PREDICATES;
 				route = allPredicates && nodePredicates != null
 						? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
-								row.cancellation)
+								row.cancellation, row.fusedSession())
 						: null;
 				predicateCount = route != null ? route.predicateCount()
 						: allPredicates ? adjacency.predicateCount() : scheduled;
@@ -4317,7 +4319,7 @@ final class LmdbWildcardPredicateBatch {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor seedCursor = null;
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = 0L;
 			try {
 				adjacency = probe.wildcardAdjacency(shape.bySubject);
@@ -4640,7 +4642,7 @@ final class LmdbWildcardPredicateBatch {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor prefixCursor = null;
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = 0L;
 			try {
 				adjacency = probe.wildcardAdjacency(shape.bySubject);
@@ -4750,9 +4752,10 @@ final class LmdbWildcardPredicateBatch {
 							}
 							int requested = (int) Math.min((long) target.capacity - outputRows,
 									runSize - runOffset);
-							int neighborCount = contextSpan.copyAccepted(adjacency, handle, runOffset, runSize,
+							int neighborCount = shape.wildcard.contexts.copyAccepted(contextSpan, adjacency, handle,
+									runOffset, runSize,
 									requested, neighbors, 0, contexts, 0,
-									value(shape.wildcard.c, prefixBatch, physicalInput), shape.wildcard.contexts.ids,
+									value(shape.wildcard.c, prefixBatch, physicalInput),
 									shape.wildcard.namedContextScope);
 							runOffset = contextSpan.end();
 							PAYLOAD_ROWS_DECODED.addAndGet(neighborCount);
@@ -4840,10 +4843,11 @@ final class LmdbWildcardPredicateBatch {
 							continue;
 						}
 						int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
-						int neighborCount = contextSpan.copyAccepted(runView, handle, runOffset, runSize,
+						int neighborCount = shape.wildcard.contexts.copyAccepted(contextSpan, runView, handle,
+								runOffset, runSize,
 								requested, neighbors, 0, contexts, 0,
 								shape.wildcard.c.isConstant() ? shape.wildcard.c.constant : UNKNOWN,
-								shape.wildcard.contexts.ids, shape.wildcard.namedContextScope);
+								shape.wildcard.namedContextScope);
 						if (row.cancellation.isCancellationRequested()) {
 							target.clear();
 							close();
@@ -5062,7 +5066,7 @@ final class LmdbWildcardPredicateBatch {
 				allPredicates = scheduled == ALL_PREDICATES;
 				route = allPredicates && nodePredicates != null
 						? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
-								row.cancellation)
+								row.cancellation, row.fusedSession())
 						: null;
 				oppositeRoute = route != null ? buildOppositeRoute(count) : null;
 				predicateCount = route != null ? route.predicateCount()
@@ -5096,7 +5100,7 @@ final class LmdbWildcardPredicateBatch {
 			}
 			sortUnsigned(uniqueRoots, 0, count - 1);
 			return LmdbNodePredicateRoute.tryBuild(oppositeNodePredicates, uniqueRoots, count,
-					adjacency.predicateCount(), row.cancellation);
+					adjacency.predicateCount(), row.cancellation, row.fusedSession());
 		}
 
 		@Override
@@ -5157,7 +5161,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static FactorizingBatchCursor open(BatchCursor arg, RowState row, long liveMask, int capacity) {
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = factorizingScratchBytes(row.slots.length, capacity);
 			if (!memory.claim(claimedBytes)) {
 				MEMORY_REFUSALS.incrementAndGet();
@@ -5249,7 +5253,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static WeightedRowBatchCursor open(RowCursor delegate, RowState row, int capacity) {
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = arrayBytes(capacity, Long.BYTES);
 			if (!memory.claim(claimedBytes)) {
 				MEMORY_REFUSALS.incrementAndGet();
@@ -5488,7 +5492,7 @@ final class LmdbWildcardPredicateBatch {
 					&& !Shape.available(right.c, available);
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = 0L;
 			try {
 				adjacency = probe.wildcardAdjacency(bySubject);
@@ -5601,7 +5605,7 @@ final class LmdbWildcardPredicateBatch {
 			allPredicates = scheduled == ALL_PREDICATES;
 			route = allPredicates && nodePredicates != null
 					? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
-							row.cancellation)
+							row.cancellation, row.fusedSession())
 					: null;
 			predicateCount = route != null ? route.predicateCount()
 					: allPredicates ? adjacency.predicateCount() : scheduled;
@@ -5697,9 +5701,10 @@ final class LmdbWildcardPredicateBatch {
 							break;
 						}
 						int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
-						int neighborCount = contextSpan.copyAccepted(runView, handle, runOffset, runSize,
+						int neighborCount = right.contexts.copyAccepted(contextSpan, runView, handle, runOffset,
+								runSize,
 								requested, neighbors, 0, contexts, 0,
-								right.c.isConstant() ? right.c.constant : UNKNOWN, right.contexts.ids,
+								right.c.isConstant() ? right.c.constant : UNKNOWN,
 								right.namedContextScope);
 						if (row.cancellation.isCancellationRequested()) {
 							return false;
@@ -5813,9 +5818,9 @@ final class LmdbWildcardPredicateBatch {
 						break;
 					}
 					int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
-					int neighborCount = contextSpan.copyAccepted(adjacency, handle, runOffset, runSize,
+					int neighborCount = right.contexts.copyAccepted(contextSpan, adjacency, handle, runOffset, runSize,
 							requested, neighbors, 0, contexts, 0, value(right.c, leftBatch, physical, constraintMask),
-							right.contexts.ids, right.namedContextScope);
+							right.namedContextScope);
 					runOffset = contextSpan.end();
 					copiedCount = neighborCount;
 					copiedIndex = 0;
@@ -5986,7 +5991,7 @@ final class LmdbWildcardPredicateBatch {
 			boolean bySubject = subjectAvailable;
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.NativeAdjacency adjacency = null;
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			long claimedBytes = 0L;
 			try {
 				adjacency = probe.adjacency(right.p.constant, bySubject);
@@ -6055,9 +6060,10 @@ final class LmdbWildcardPredicateBatch {
 							break;
 						}
 						int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
-						int neighborCount = contextSpan.copyAccepted(adjacency, handle, runOffset, runSize,
+						int neighborCount = right.contexts.copyAccepted(contextSpan, adjacency, handle, runOffset,
+								runSize,
 								requested, neighbors, 0, contexts, 0, value(right.c, leftBatch, physical),
-								right.contexts.ids, right.namedContextScope);
+								right.namedContextScope);
 						runOffset = contextSpan.end();
 						copiedCount = neighborCount;
 						copiedIndex = 0;
@@ -6220,7 +6226,7 @@ final class LmdbWildcardPredicateBatch {
 			this.wordsPerBatch = wordsPerBatch;
 			this.tileWidth = tileWidth;
 			this.payloadPages = payloadPages;
-			this.parentSession = LmdbFusedSipFactorizedRuntime.currentOrNull();
+			this.parentSession = memory;
 			this.memory = memory;
 			this.claimedBytes = claimedBytes;
 			this.reservation = reservation;
@@ -6301,7 +6307,7 @@ final class LmdbWildcardPredicateBatch {
 				recordParallelDecline(row, DECLINE_TOO_FEW_RANGES);
 				return null;
 			}
-			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+			LmdbFusedSipFactorizedRuntime.Session memory = row.fusedSession();
 			boolean memoryRefused = false;
 			for (int candidateWidth = maximumTileWidth; candidateWidth >= 2; candidateWidth = candidateWidth == 2 ? 1
 					: Math.max(2, candidateWidth >>> 1)) {
@@ -6914,11 +6920,13 @@ final class LmdbWildcardPredicateBatch {
 			@Override
 			public void run() {
 				boolean readySignalled = false;
-				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-						.inherit(parentSession)) {
+				LmdbFusedSipFactorizedRuntime.Session workerSession = null;
+				try {
+					workerSession = parentSession.worker();
 					try (var replayScope = replayContext.activate()) {
 						workerRow = new RowState(source, parentRow.layout, parentRow.base, parentRow.exactValuesMetrics,
 								parentRow.cancellation);
+						workerRow.fusedSession = workerSession;
 						workerRow.memoryScope = parentRow.memoryScope;
 						workerRow.runtimePlan = parentRow.runtimePlan;
 						probe = source.newProbe();
@@ -6987,6 +6995,17 @@ final class LmdbWildcardPredicateBatch {
 					}
 					try {
 						source.close();
+					} catch (RuntimeException | Error failure) {
+						if (cleanup == null) {
+							cleanup = failure;
+						} else if (cleanup != failure) {
+							cleanup.addSuppressed(failure);
+						}
+					}
+					try {
+						if (workerSession != null) {
+							workerSession.close();
+						}
 					} catch (RuntimeException | Error failure) {
 						if (cleanup == null) {
 							cleanup = failure;
@@ -7190,10 +7209,11 @@ final class LmdbWildcardPredicateBatch {
 								&& !workerRow.cancellation.isCancellationRequested()) {
 							int requested = (int) Math.min((long) capacity - output,
 									runSize - payloadRunOffset);
-							int neighborCount = contextSpan.copyAccepted(adjacency, handle, payloadRunOffset,
+							int neighborCount = shape.wildcard.contexts.copyAccepted(contextSpan, adjacency, handle,
+									payloadRunOffset,
 									runSize, requested, copyNeighbors, 0, copyContexts, 0,
 									value(shape.wildcard.c, round.constraintBatch, physicalInput),
-									shape.wildcard.contexts.ids, shape.wildcard.namedContextScope);
+									shape.wildcard.namedContextScope);
 							payloadRunOffset = contextSpan.end();
 							decoded += neighborCount;
 							for (int copied = 0; copied < neighborCount; copied++) {
@@ -7590,7 +7610,7 @@ final class LmdbWildcardPredicateBatch {
 	private static long nextAcceptedOffset(NativeLmdbQuerySource.RunView view, long handle, long from, long size,
 			ContextSpan span, long wanted, ContextConstraint contexts, boolean excludeDefault,
 			NativeCancellationToken cancellation) {
-		if (wanted < 0L && contexts.ids == null && !excludeDefault) {
+		if (wanted < 0L && !contexts.isFixed() && !excludeDefault) {
 			span.set(size, -1L);
 			return from;
 		}
@@ -7606,8 +7626,7 @@ final class LmdbWildcardPredicateBatch {
 			if (end <= from) {
 				throw new IllegalStateException("wildcard context span made no progress");
 			}
-			if (!span.hasCommonContext()
-					|| ContextSpan.acceptsContext(span.commonContext(), wanted, contexts.ids, excludeDefault)) {
+			if (!span.hasCommonContext() || contexts.accepts(span.commonContext(), wanted, excludeDefault)) {
 				return from;
 			}
 			from = end;
@@ -7618,7 +7637,7 @@ final class LmdbWildcardPredicateBatch {
 	private static long nextAcceptedOffset(NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys,
 			long from, long size, ContextSpan span, long wanted, ContextConstraint contexts, boolean excludeDefault,
 			NativeCancellationToken cancellation) {
-		if (wanted < 0L && contexts.ids == null && !excludeDefault) {
+		if (wanted < 0L && !contexts.isFixed() && !excludeDefault) {
 			span.set(size, -1L);
 			return from;
 		}
@@ -7636,8 +7655,7 @@ final class LmdbWildcardPredicateBatch {
 			if (end <= from) {
 				throw new IllegalStateException("wildcard key context span made no progress");
 			}
-			if (!span.hasCommonContext()
-					|| ContextSpan.acceptsContext(span.commonContext(), wanted, contexts.ids, excludeDefault)) {
+			if (!span.hasCommonContext() || contexts.accepts(span.commonContext(), wanted, excludeDefault)) {
 				return from;
 			}
 			from = end;

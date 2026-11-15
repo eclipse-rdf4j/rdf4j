@@ -55,7 +55,7 @@ final class LmdbNativeWideQueryDemotion {
 	}
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
-			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PlanValueCatalog.Builder catalog) {
 		if (!islandsOn()) {
 			return null;
 		}
@@ -114,7 +114,7 @@ final class LmdbNativeWideQueryDemotion {
 		for (int index : byRelief) {
 			demoted.put(operands.get(index), visibleNames(index, operandVars, requiredOutside));
 			attempts++;
-			LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+			LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source, catalog);
 			planner.rootEvaluationScoped = true;
 			planner.demotedIslands = demoted;
 			QueryEvaluationStep step = planner.compileRowRoot(expr);
@@ -130,7 +130,7 @@ final class LmdbNativeWideQueryDemotion {
 		for (int index : byRelief) {
 			demoted.put(operands.get(index), visibleNames(index, operandVars, requiredOutside));
 		}
-		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source, catalog);
 		planner.rootEvaluationScoped = true;
 		planner.demotedIslands = demoted;
 		QueryEvaluationStep step = planner.compileRowRoot(expr);

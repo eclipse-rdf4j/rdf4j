@@ -15,10 +15,14 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 
 @Experimental
 enum NativePatternField {
@@ -97,10 +101,10 @@ final class ContextConstraint {
 	static final ContextConstraint EMPTY = new ContextConstraint(new long[0]);
 	static final ContextConstraint UNRESTRICTED = new ContextConstraint(null);
 
-	final long[] ids;
+	private final long[] ids;
 
 	ContextConstraint(long[] ids) {
-		this.ids = ids;
+		this.ids = ids == null ? null : ids.clone();
 	}
 
 	boolean isFixed() {
@@ -109,6 +113,23 @@ final class ContextConstraint {
 
 	boolean isEmpty() {
 		return ids != null && ids.length == 0;
+	}
+
+	int size() {
+		return ids == null ? 0 : ids.length;
+	}
+
+	long idAt(int index) {
+		return ids[index];
+	}
+
+	/** A caller-owned copy, only for consumers that require an array beyond this constraint's boundary. */
+	long[] copyIds() {
+		return ids == null ? null : ids.clone();
+	}
+
+	boolean sameIds(ContextConstraint other) {
+		return Arrays.equals(ids, other.ids);
 	}
 
 	boolean contains(long id) {
@@ -122,6 +143,25 @@ final class ContextConstraint {
 		}
 		return false;
 	}
+
+	boolean accepts(long raw, long wanted, boolean excludeDefault) {
+		return !(excludeDefault && raw == 0L || wanted >= 0L && raw != wanted) && contains(raw);
+	}
+
+	/** ContextSpan is final and never passes the accepted array to the source's RunView callbacks. */
+	int copyAccepted(ContextSpan span, RunView view, long handle, long from, long limit, int maximum,
+			long[] neighbors, int neighborOffset, long[] graphs, int graphOffset, long wanted,
+			boolean excludeDefault) {
+		return span.copyAccepted(view, handle, from, limit, maximum, neighbors, neighborOffset, graphs, graphOffset,
+				wanted, ids, excludeDefault);
+	}
+
+	int copyAccepted(ContextSpan span, KeyRunCursor view, long from, long limit, int maximum,
+			long[] neighbors, int neighborOffset, long[] graphs, int graphOffset, long wanted,
+			boolean excludeDefault) {
+		return span.copyAccepted(view, from, limit, maximum, neighbors, neighborOffset, graphs, graphOffset, wanted,
+				ids, excludeDefault);
+	}
 }
 
 @Experimental
@@ -133,7 +173,7 @@ final class PatternCursor implements AutoCloseable {
 	long subj;
 	long pred;
 	long obj;
-	long[] contexts;
+	ContextConstraint contexts;
 	LmdbKeyRange range;
 	NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver;
 	NativeCancellationToken cancellation;
@@ -152,18 +192,18 @@ final class PatternCursor implements AutoCloseable {
 	}
 
 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
-			long pred, long obj, long[] contexts) {
+			long pred, long obj, ContextConstraint contexts) {
 		this(source, probe, subj, pred, obj, contexts, null, null);
 	}
 
 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
-			long pred, long obj, long[] contexts, LmdbKeyRange range,
+			long pred, long obj, ContextConstraint contexts, LmdbKeyRange range,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) {
 		this(source, probe, subj, pred, obj, contexts, range, accessObserver, false);
 	}
 
 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
-			long pred, long obj, long[] contexts, LmdbKeyRange range,
+			long pred, long obj, ContextConstraint contexts, LmdbKeyRange range,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
 		configure(source, probe, subj, pred, obj, contexts, range, accessObserver, encounterOrderRequired);
 	}
@@ -209,7 +249,7 @@ final class PatternCursor implements AutoCloseable {
 	}
 
 	PatternCursor resetContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
-			long pred, long obj, long[] contexts, LmdbKeyRange range,
+			long pred, long obj, ContextConstraint contexts, LmdbKeyRange range,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
 		prepareReset();
 		configure(source, probe, subj, pred, obj, contexts, range, accessObserver, encounterOrderRequired);
@@ -248,7 +288,7 @@ final class PatternCursor implements AutoCloseable {
 	}
 
 	private void configure(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
-			long pred, long obj, long[] contexts, LmdbKeyRange range,
+			long pred, long obj, ContextConstraint contexts, LmdbKeyRange range,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
 		this.source = source;
 		this.probe = probe;
@@ -277,23 +317,23 @@ final class PatternCursor implements AutoCloseable {
 	}
 
 	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
-			long subj, long pred, long obj, long[] contexts) {
+			long subj, long pred, long obj, ContextConstraint contexts) {
 		return new PatternCursor(source, probe, subj, pred, obj, contexts);
 	}
 
 	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
-			long subj, long pred, long obj, long[] contexts, LmdbKeyRange range) {
+			long subj, long pred, long obj, ContextConstraint contexts, LmdbKeyRange range) {
 		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, null);
 	}
 
 	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
-			long subj, long pred, long obj, long[] contexts, LmdbKeyRange range,
+			long subj, long pred, long obj, ContextConstraint contexts, LmdbKeyRange range,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) {
 		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, accessObserver);
 	}
 
 	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
-			long subj, long pred, long obj, long[] contexts, LmdbKeyRange range,
+			long subj, long pred, long obj, ContextConstraint contexts, LmdbKeyRange range,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
 		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, accessObserver,
 				encounterOrderRequired);
@@ -338,11 +378,11 @@ final class PatternCursor implements AutoCloseable {
 		}
 		while (true) {
 			if (current == null) {
-				if (contexts == null || contextIndex >= contexts.length) {
+				if (contexts == null || contextIndex >= contexts.size()) {
 					endOfInput();
 					return null;
 				}
-				current = openIterator(contexts[contextIndex++]);
+				current = openIterator(contexts.idAt(contextIndex++));
 			}
 			long[] row = current.next();
 			if (row != null) {
@@ -381,11 +421,11 @@ final class PatternCursor implements AutoCloseable {
 		}
 		while (true) {
 			if (current == null) {
-				if (contexts == null || contextIndex >= contexts.length) {
+				if (contexts == null || contextIndex >= contexts.size()) {
 					endOfInput();
 					return 0;
 				}
-				current = openIterator(contexts[contextIndex++]);
+				current = openIterator(contexts.idAt(contextIndex++));
 			}
 			int requestedRows = Math.min(maxRows, 1_024);
 			requestedRows = Math.min(requestedRows, 1_024 - (residualPollTick & 1_023));

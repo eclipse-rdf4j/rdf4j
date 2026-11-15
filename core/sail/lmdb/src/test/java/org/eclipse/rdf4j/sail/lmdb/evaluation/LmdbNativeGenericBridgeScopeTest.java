@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -73,6 +75,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -81,6 +84,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -88,6 +92,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Query-scope correctness of generic bridges embedded in compiled native plans (M-A1a): a retained compiled step must
@@ -313,6 +319,44 @@ public class LmdbNativeGenericBridgeScopeTest {
 		lease.close();
 		assertThat(execution.isClosed()).isTrue();
 		lease.close();
+	}
+
+	@Test
+	void rawInvocationSharesQueryScalarsWithNestedInvocationAndKeepsItsSource() {
+		NativeLmdbQuerySource raw = (NativeLmdbQuerySource) dataset;
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		assertThat(strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()).isFalse();
+		BindingSet bindings = EmptyBindingSet.getInstance();
+		QueryEvaluationContext structural = new QueryEvaluationContext.Minimal((Dataset) null);
+		NativeInvocationCarrier root = NativeInvocationCarrier.open(raw, strategy, bindings, 1L, null);
+		NativeInvocationCarrier nested = null;
+		try {
+			LmdbNativeEvaluationStrategy bound = strategy.forInvocation(raw, root.session(), root.executionContext());
+			nested = NativeInvocationCarrier.open(raw, bound, bindings, 2L, null);
+			assertThat(root.source()).isSameAs(raw);
+			assertThat(nested.source()).isSameAs(raw);
+			assertThat(nested.executionContext()).isNotSameAs(root.executionContext());
+			QueryEvaluationContext outer = root.executionContext().genericContext(structural, bound);
+			QueryEvaluationContext inner = nested.executionContext().genericContext(structural, bound);
+			assertThat(inner.getNow()).isSameAs(outer.getNow());
+			ValueFactory factory = repository.getValueFactory();
+			BNode blank = outer.getOrCreateBNode("shared", bindings, factory);
+			assertThat(inner.getOrCreateBNode("shared", bindings, factory)).isSameAs(blank);
+			try (NativeInvocationCarrier sibling = NativeInvocationCarrier.open(raw, strategy, bindings, 3L, null)) {
+				QueryEvaluationContext other = sibling.executionContext().genericContext(structural, strategy);
+				assertThat(sibling.source()).isSameAs(raw);
+				assertThat(other.getOrCreateBNode("shared", bindings, factory)).isNotEqualTo(blank);
+			}
+			root.close();
+			assertThat(root.executionContext().isClosed()).isFalse();
+		} finally {
+			if (nested != null) {
+				nested.close();
+			}
+			root.close();
+		}
+		assertThat(root.executionContext().isClosed()).isTrue();
 	}
 
 	@Test
@@ -669,6 +713,239 @@ public class LmdbNativeGenericBridgeScopeTest {
 	}
 
 	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void scalarSubqueryExecutedWithinIrKeepsSeparateRuntimeTelemetry() throws Exception {
+		Map<String, String> properties = new java.util.HashMap<>();
+		String[] propertyNames = { "rdf4j.lmdb.nativeBatch.enabled", LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+				LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "rdf4j.lmdb.janinoCodegen.synchronous",
+				"rdf4j.lmdb.janinoCodegen.failOnError", NATIVE_FLAG };
+		for (String name : propertyNames) {
+			properties.put(name, System.getProperty(name));
+		}
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.failOnError", "true");
+		System.setProperty(NATIVE_FLAG, "true");
+		SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder.set("scalar-subquery-isolation",
+				Query.QueryType.TUPLE, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+		LmdbNativeJaninoCodegen.resetForTests();
+		try {
+			ValueFactory vf = repository.getValueFactory();
+			BindingSetAssignment inner = new BindingSetAssignment();
+			inner.setBindingNames(Set.of("right"));
+			List<BindingSet> innerRows = new ArrayList<>(1_024);
+			for (int right = 1; right <= 1_024; right++) {
+				MapBindingSet innerRow = new MapBindingSet();
+				innerRow.addBinding("right", vf.createLiteral(right));
+				innerRows.add(innerRow);
+			}
+			inner.setBindingSets(innerRows);
+			inner.setRuntimeTelemetryEnabled(true);
+			CompareAny expression = new CompareAny(new ValueConstant(vf.createLiteral(1_024)), inner, CompareOp.EQ);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+			NativeBindingSetValueEvaluator scalar = NativeScalarSubqueryValueEvaluator.tryCompile(expression, strategy,
+					new QueryEvaluationContext.Minimal(null));
+			assertThat(scalar).as("the nested expression must use the real native scalar-subquery evaluator")
+					.isNotNull();
+
+			ValuesRow[] inputs = { new ValuesRow(new int[] { 0 }, new long[] { 21L }),
+					new ValuesRow(new int[] { 0 }, new long[] { 22L }),
+					new ValuesRow(new int[] { 0 }, new long[] { 23L }) };
+			long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
+			SlotPlan outer = new FilterPlan(new ValuesPlan(inputs), row -> {
+				NativeValueOutcome result = scalar.evaluateForRow(EmptyBindingSet.getInstance(), row);
+				return result.isBound() && BooleanLiteral.TRUE.equals(result.value());
+			}, 1L);
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("outer", 0), null);
+			layout.freeze(List.of("outer"));
+			SingletonSet outerTarget = new SingletonSet();
+			outerTarget.setRuntimeTelemetryEnabled(true);
+			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance(), outerTarget);
+			assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, source, layout)).isTrue();
+			row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(outerTarget, outer, layout, row.boundMask());
+			List<Long> actual = new ArrayList<>();
+			try (LmdbFusedSipFactorizedRuntime.Session invocation = LmdbFusedSipFactorizedRuntime.create(
+					System.identityHashCode(outer), true)) {
+				row.fusedSession = invocation;
+				try (LmdbNativeStrategyProposal<RowCursor> proposal = LmdbNativeKernelExecution.proposeRows(outer, row,
+						outerTarget, false)) {
+					assertThat(proposal).as("the outer VALUES kernel must be admitted").isNotNull();
+					assertThat(proposal.tag).isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+					try (RowCursor cursor = proposal.open()) {
+						assertThat(cursor).isNotNull();
+						while (cursor.next()) {
+							actual.add(row.id(0));
+						}
+					}
+				} finally {
+					invocation.recordMaterializationBoundary(actual.size());
+					row.runtimePlan.fusedTelemetry(invocation.telemetry());
+					row.closeDecodedInputs();
+					row.completeRuntimePlan();
+				}
+			}
+			assertThat(actual).containsExactly(21L, 22L, 23L);
+			assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore).isEqualTo(3L);
+			String outerTelemetry = outerTarget.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN);
+			String innerTelemetry = inner.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN);
+			assertThat(outerTelemetry).contains("route: irKernel", "cardinalityUpperBound: 3", "binds=1");
+			assertThat(innerTelemetry).contains("route: irKernel", "cardinalityUpperBound: 1024", "binds=1");
+		} finally {
+			SlowQueryContextHolder.restore(previous);
+			for (String name : propertyNames) {
+				String value = properties.get(name);
+				if (value == null) {
+					System.clearProperty(name);
+				} else {
+					System.setProperty(name, value);
+				}
+			}
+			LmdbNativeJaninoCodegen.resetForTests();
+		}
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void earlyClosedCompiledSubqueryReplaysAllValuesAndOwnsTelemetryUntilContextClose() throws Exception {
+		Map<String, String> properties = new java.util.HashMap<>();
+		String[] propertyNames = { "rdf4j.lmdb.nativeBatch.enabled", LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+				LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "rdf4j.lmdb.janinoCodegen.synchronous",
+				"rdf4j.lmdb.janinoCodegen.failOnError", NATIVE_FLAG };
+		for (String name : propertyNames) {
+			properties.put(name, System.getProperty(name));
+		}
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.failOnError", "true");
+		System.setProperty(NATIVE_FLAG, "true");
+		LmdbNativeJaninoCodegen.resetForTests();
+
+		NativeExecutionContext execution = null;
+		RowState outerRow = null;
+		try {
+			ValueFactory vf = repository.getValueFactory();
+			SyntheticValueSource evaluationSource = new SyntheticValueSource((NativeLmdbQuerySource) dataset,
+					PlanValueCatalog.EMPTY).forEvaluation();
+			execution = evaluationSource.executionContext();
+			execution.initializeQueryBase(EmptyBindingSet.getInstance());
+			var ledger = execution.memoryLedger();
+			NativeSlotLayout innerLayout = new NativeSlotLayout(Map.of("right", 0), null);
+			innerLayout.freeze(List.of("right"));
+			ValuesRow[] innerRows = new ValuesRow[1_024];
+			List<Value> expectedInner = new ArrayList<>(1_024);
+			for (int right = 1; right <= 1_024; right++) {
+				Value value = vf.createLiteral(right);
+				expectedInner.add(value);
+				long id = evaluationSource.internComputedValue(value, innerLayout.positionMask("right"));
+				innerRows[right - 1] = new ValuesRow(new int[] { 0 }, new long[] { id });
+			}
+			ValuesPlan innerPlan = new ValuesPlan(innerRows);
+
+			SingletonSet standaloneTarget = new SingletonSet();
+			standaloneTarget.setRuntimeTelemetryEnabled(true);
+			QueryEvaluationStep standalone = directIrValuesStep(innerPlan, evaluationSource, innerLayout,
+					standaloneTarget, "right");
+			List<BindingSet> standaloneRows = evaluateStep(standalone);
+			assertThat(standaloneRows).hasSize(1_024);
+			assertThat(standaloneRows).extracting(result -> result.getValue("right"))
+					.containsExactlyElementsOf(expectedInner);
+			assertThat(standaloneTarget.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+					.contains("route: irKernel", "cardinalityUpperBound: 1024", "binds=1");
+
+			SingletonSet innerTarget = new SingletonSet();
+			innerTarget.setRuntimeTelemetryEnabled(true);
+			QueryEvaluationStep replayStep = directIrValuesStep(innerPlan, evaluationSource, innerLayout, innerTarget,
+					"right");
+			NativeSubqueryPlan subquery = new NativeSubqueryPlan(replayStep, new int[] { 1 },
+					new String[] { "right" }, new int[0], new String[0]);
+
+			ValuesRow[] outerRows = { new ValuesRow(new int[] { 0 }, new long[] { 21L }),
+					new ValuesRow(new int[] { 0 }, new long[] { 22L }),
+					new ValuesRow(new int[] { 0 }, new long[] { 23L }) };
+			AtomicInteger firstReaders = new AtomicInteger();
+			SlotPlan outer = new FilterPlan(new ValuesPlan(outerRows), current -> {
+				try (NativeResultCursor firstReader = subquery.openSolutions(current)) {
+					NativeResultRow first = firstReader.next();
+					assertThat(first).as("the first reader must expose the first inner solution").isNotNull();
+					assertThat(first.cell("right").value()).isEqualTo(expectedInner.getFirst());
+					firstReaders.incrementAndGet();
+				}
+				return true;
+			}, 1L);
+			NativeSlotLayout outerLayout = new NativeSlotLayout(Map.of("outer", 0, "right", 1), null);
+			outerLayout.freeze(List.of("outer", "right"));
+			SingletonSet outerTarget = new SingletonSet();
+			outerTarget.setRuntimeTelemetryEnabled(true);
+			outerRow = new RowState(evaluationSource, outerLayout, EmptyBindingSet.getInstance(), outerTarget);
+			assertThat(LmdbNativeAggregateCompiler.initializeRow(outerRow, outerRow.base, evaluationSource,
+					outerLayout)).isTrue();
+			outerRow.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(outerTarget, outer, outerLayout,
+					outerRow.boundMask());
+			try (LmdbFusedSipFactorizedRuntime.Session invocation = LmdbFusedSipFactorizedRuntime.create(
+					System.identityHashCode(outer), true);
+					LmdbNativeStrategyProposal<RowCursor> proposal = LmdbNativeKernelExecution.proposeRows(outer,
+							outerRow, outerTarget, false)) {
+				outerRow.fusedSession = invocation;
+				assertThat(proposal).as("the outer VALUES/filter plan must offer a compiled IR kernel").isNotNull();
+				assertThat(proposal.tag).isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+				try (RowCursor cursor = proposal.open()) {
+					assertThat(cursor).isNotNull();
+					assertThat(cursor.next()).isTrue();
+					assertThat(outerRow.id(0)).isEqualTo(21L);
+					// The compiled fill evaluates the residual for all three VALUES rows before row 21 escapes.
+					assertThat(firstReaders).hasValue(3);
+				}
+				invocation.recordMaterializationBoundary(1L);
+				outerRow.runtimePlan.fusedTelemetry(invocation.telemetry());
+				outerRow.completeRuntimePlan();
+				outerRow.fusedSession = null;
+			}
+
+			List<Value> replayed = new ArrayList<>(1_024);
+			try (NativeResultCursor replay = subquery.openSolutions(outerRow)) {
+				NativeResultRow result;
+				while ((result = replay.next()) != null) {
+					assertThat(result.cell("right").state()).isEqualTo(NativeResultCell.State.BOUND);
+					replayed.add(result.cell("right").value());
+				}
+			}
+			assertThat(replayed).containsExactlyElementsOf(expectedInner);
+			assertThat(outerTarget.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+					.contains("route: irKernel", "cardinalityUpperBound: 3", "binds=1");
+			assertThat(innerTarget.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+					.contains("route: irKernel", "cardinalityUpperBound: 1024", "binds=1");
+			outerRow.closeDecodedInputs();
+			execution.close();
+			assertThat(execution.isClosed()).isTrue();
+			assertThat(ledger.usedBytes()).isZero();
+		} finally {
+			if (outerRow != null) {
+				outerRow.closeDecodedInputs();
+				outerRow.completeRuntimePlan();
+				outerRow.fusedSession = null;
+			}
+			if (execution != null) {
+				execution.close();
+			}
+			for (String name : propertyNames) {
+				String value = properties.get(name);
+				if (value == null) {
+					System.clearProperty(name);
+				} else {
+					System.setProperty(name, value);
+				}
+			}
+			LmdbNativeJaninoCodegen.resetForTests();
+		}
+	}
+
+	@Test
 	public void scalarSubquerySharesTheOuterNowScope() {
 		String previous = System.getProperty(NATIVE_FLAG);
 		System.setProperty(NATIVE_FLAG, "true");
@@ -882,6 +1159,148 @@ public class LmdbNativeGenericBridgeScopeTest {
 		}
 		assertThat(rows).as("the filter accepts everything, so all statements must survive").isEqualTo(3);
 		return new ArrayList<>(RECORDED);
+	}
+
+	private static QueryEvaluationStep directIrValuesStep(ValuesPlan plan, NativeLmdbQuerySource source,
+			NativeSlotLayout layout, SingletonSet telemetryTarget, String bindingName) {
+		return bindings -> {
+			RowState row = new RowState(source, layout, bindings, telemetryTarget);
+			if (!LmdbNativeAggregateCompiler.initializeRow(row, bindings, source, layout)) {
+				throw new IllegalStateException("direct VALUES row must initialize");
+			}
+			row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(telemetryTarget, plan, layout, row.boundMask());
+			LmdbFusedSipFactorizedRuntime.Session invocation = LmdbFusedSipFactorizedRuntime.create(
+					System.identityHashCode(plan), row.runtimePlan != null);
+			row.fusedSession = invocation;
+			LmdbNativeStrategyProposal<RowCursor> proposal = null;
+			try {
+				proposal = LmdbNativeKernelExecution.proposeRows(plan, row, telemetryTarget, false);
+				assertThat(proposal).as("the direct VALUES producer must be offered to compiled IR").isNotNull();
+				assertThat(proposal.tag).isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+				RowCursor cursor = proposal.open();
+				assertThat(cursor).as("the compiled VALUES proposal must open").isNotNull();
+				LmdbNativeStrategyProposal<RowCursor> openedProposal = proposal;
+				return new CloseableIteration<>() {
+					private BindingSet next;
+					private boolean exhausted;
+					private boolean closed;
+					private long emitted;
+
+					@Override
+					public boolean hasNext() {
+						if (closed) {
+							return false;
+						}
+						if (next != null) {
+							return true;
+						}
+						try {
+							if (!cursor.next()) {
+								exhausted = true;
+								close();
+								return false;
+							}
+							Value value = row.view.getValue(bindingName);
+							assertThat(value).as("the actual IR row must bind %s", bindingName).isNotNull();
+							MapBindingSet result = new MapBindingSet();
+							result.addBinding(bindingName, value);
+							next = result;
+							return true;
+						} catch (java.io.IOException failure) {
+							try {
+								close();
+							} catch (RuntimeException | Error cleanup) {
+								failure.addSuppressed(cleanup);
+							}
+							throw new org.eclipse.rdf4j.query.QueryEvaluationException(failure);
+						} catch (RuntimeException | Error failure) {
+							try {
+								close();
+							} catch (RuntimeException | Error cleanup) {
+								failure.addSuppressed(cleanup);
+							}
+							throw failure;
+						}
+					}
+
+					@Override
+					public BindingSet next() {
+						if (!hasNext()) {
+							throw new java.util.NoSuchElementException();
+						}
+						BindingSet result = next;
+						next = null;
+						emitted++;
+						return result;
+					}
+
+					@Override
+					public void close() {
+						if (closed) {
+							return;
+						}
+						closed = true;
+						Throwable failure = null;
+						try {
+							cursor.close();
+						} catch (RuntimeException | Error problem) {
+							failure = problem;
+						}
+						try {
+							openedProposal.close();
+						} catch (RuntimeException | Error problem) {
+							if (failure == null) {
+								failure = problem;
+							} else {
+								failure.addSuppressed(problem);
+							}
+						}
+						if (exhausted) {
+							invocation.recordMaterializationBoundary(emitted);
+						}
+						if (row.runtimePlan != null) {
+							row.runtimePlan.fusedTelemetry(invocation.telemetry());
+						}
+						row.closeDecodedInputs();
+						row.completeRuntimePlan();
+						row.fusedSession = null;
+						try {
+							invocation.close();
+						} catch (RuntimeException | Error problem) {
+							if (failure == null) {
+								failure = problem;
+							} else {
+								failure.addSuppressed(problem);
+							}
+						}
+						if (failure instanceof RuntimeException problem) {
+							throw problem;
+						}
+						if (failure instanceof Error problem) {
+							throw problem;
+						}
+					}
+				};
+			} catch (java.io.IOException failure) {
+				if (proposal != null) {
+					proposal.close();
+				}
+				row.closeDecodedInputs();
+				row.completeRuntimePlan();
+				row.fusedSession = null;
+				invocation.close();
+				throw new org.eclipse.rdf4j.query.QueryEvaluationException(failure);
+			} catch (RuntimeException | Error failure) {
+				if (proposal != null) {
+					proposal.close();
+				}
+				row.closeDecodedInputs();
+				row.completeRuntimePlan();
+				row.fusedSession = null;
+				invocation.close();
+				throw failure;
+			}
+		};
 	}
 
 	private static List<BindingSet> evaluateStep(QueryEvaluationStep step) {

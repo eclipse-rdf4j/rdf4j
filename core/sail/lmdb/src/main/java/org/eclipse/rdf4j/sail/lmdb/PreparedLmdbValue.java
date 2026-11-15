@@ -285,10 +285,18 @@ final class PreparedLmdbValue {
 
 	private static Value ownChild(Value child, Owner owner) {
 		if (child instanceof LmdbValue nativeValue) {
-			LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
-			if (identity.id() != LmdbValue.UNKNOWN_ID) {
-				Value readyCopy = nativeValue.copyInitializedValue(value -> ownChild(value, owner));
-				return create(new State(owner, child.getType(), identity, readyCopy));
+			long version = nativeValue.getSemanticVersion();
+			if (version != LmdbValue.UNKNOWN_ID) {
+				LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
+				if (identity.id() != LmdbValue.UNKNOWN_ID && identity.revision() != null) {
+					Value readyCopy = nativeValue.copyInitializedValue(value -> ownChild(value, owner));
+					if (nativeValue.getSemanticVersion() == version) {
+						LmdbValue.InternalIdentity current = nativeValue.getInternalIdentity();
+						if (current.id() == identity.id() && current.revision() == identity.revision()) {
+							return create(new State(owner, child.getType(), identity, readyCopy));
+						}
+					}
+				}
 			}
 		}
 		return ownDecoded(child, owner);

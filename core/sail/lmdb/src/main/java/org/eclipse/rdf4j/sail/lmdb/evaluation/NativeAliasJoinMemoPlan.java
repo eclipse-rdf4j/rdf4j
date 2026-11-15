@@ -515,7 +515,7 @@ final class NativeAliasJoinMemoPlan implements SlotPlan {
 			return saturatedAdd(maximumSweepRows(union.left, profile), maximumSweepRows(union.right, profile));
 		}
 		PatternPlan pattern = (PatternPlan) plan;
-		long contexts = pattern.contexts.isFixed() ? pattern.contexts.ids.length : 1L;
+		long contexts = pattern.contexts.isFixed() ? pattern.contexts.size() : 1L;
 		return saturatedMultiply(profile.entries(), contexts);
 	}
 
@@ -531,7 +531,7 @@ final class NativeAliasJoinMemoPlan implements SlotPlan {
 		if (!(plan instanceof PatternPlan pattern)) {
 			return null;
 		}
-		long contexts = pattern.contexts.isFixed() ? pattern.contexts.ids.length : 1L;
+		long contexts = pattern.contexts.isFixed() ? pattern.contexts.size() : 1L;
 		long entries = saturatedMultiply(profile.entries(), contexts);
 		long seeks = saturatedMultiply(profile.sources(), contexts);
 		int bindingMask = 0;

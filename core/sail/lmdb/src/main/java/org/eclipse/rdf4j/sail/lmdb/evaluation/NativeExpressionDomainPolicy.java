@@ -62,14 +62,14 @@ final class NativeExpressionDomainPolicy {
 	 * preserves order but makes N/D unknown. No facts are inferred from a logical pattern, alias, batch, or worker.
 	 */
 	static final class Input implements AutoCloseable {
-		private final ValuesRow[] rows;
+		private final ValuesTable table;
 		private final KernelRuntime.AggregateMemory memory;
 		private final NativeCancellationToken cancellation;
 		private Entry entries;
 		private boolean refused, closed;
 
-		Input(ValuesRow[] rows, RowState row) {
-			this.rows = rows;
+		Input(ValuesTable table, RowState row) {
+			this.table = table;
 			this.cancellation = row.cancellation;
 			memory = KernelRuntime.AggregateMemory.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
 			// Input owner (64), account (64), reservation bookkeeping (128), and conservative alignment/owner links.
@@ -101,22 +101,21 @@ final class NativeExpressionDomainPolicy {
 		private boolean orderedRepeats(long dependencies) {
 			FACT_ANALYSES.incrementAndGet();
 			boolean ascending = true, descending = true, repeated = false;
-			ValuesRow previous = null;
 			int tick = 0;
-			for (ValuesRow candidate : rows) {
+			for (int candidate = 0; candidate < table.rowCount(); candidate++) {
 				LmdbNativeProbeDeadline.poll(++tick);
 				cancellation.poll(tick);
 				for (long reads = dependencies; reads != 0L; reads &= reads - 1L) {
-					if (position(candidate, Long.numberOfTrailingZeros(reads)) < 0) {
+					if (table.slotIndex(candidate, Long.numberOfTrailingZeros(reads)) < 0) {
 						return false;
 					}
 				}
-				if (previous != null) {
+				if (candidate > 0) {
 					int comparison = 0;
 					for (long reads = dependencies; reads != 0L && comparison == 0; reads &= reads - 1L) {
 						int slot = Long.numberOfTrailingZeros(reads);
-						comparison = Long.compare(previous.values[position(previous, slot)],
-								candidate.values[position(candidate, slot)]);
+						comparison = Long.compare(table.valueAt(candidate - 1, table.slotIndex(candidate - 1, slot)),
+								table.valueAt(candidate, table.slotIndex(candidate, slot)));
 					}
 					ascending &= comparison <= 0;
 					descending &= comparison >= 0;
@@ -125,18 +124,8 @@ final class NativeExpressionDomainPolicy {
 						return false;
 					}
 				}
-				previous = candidate;
 			}
 			return repeated;
-		}
-
-		private static int position(ValuesRow row, int slot) {
-			for (int index = 0; index < row.slots.length; index++) {
-				if (row.slots[index] == slot) {
-					return index;
-				}
-			}
-			return -1;
 		}
 
 		@Override

@@ -13,22 +13,70 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.BatchCorrelationRequest;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.Mode;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * The former correlated-join bridge shapes remain entirely semantic-native after native subquery, OPTIONAL, JOIN,
@@ -239,6 +287,754 @@ class LmdbNativeAccumulateJoinTest {
 		assertThat(rows).hasSize(103);
 		assertThat(LmdbNativeAccumulateJoin.BATCHES.get()).isZero();
 		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS.get()).isZero();
+	}
+
+	@Test
+	void sourceAuthorityChangeDuringCollectionFallsBackBeforeOutput() {
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI first = values.createIRI(EX, "first");
+		IRI second = values.createIRI(EX, "second");
+		IRI match = values.createIRI(EX, "match");
+		QueryBindingSet firstRow = new QueryBindingSet();
+		firstRow.addBinding("key", first);
+		QueryBindingSet secondRow = new QueryBindingSet();
+		secondRow.addBinding("key", second);
+
+		AtomicBoolean originalAuthority = new AtomicBoolean(true);
+		Object before = new Object();
+		Object after = new Object();
+		NativeLmdbQuerySource.DomainStamp original = new NativeLmdbQuerySource.DomainStamp(before, new Object(),
+				new Object(), new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null);
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.idSpace()).thenAnswer(call -> originalAuthority.get() ? before : after);
+		when(source.valueLookupScope()).thenAnswer(call -> originalAuthority.get() ? original.lookupScope() : null);
+		when(source.certifiesIdOrigins()).thenAnswer(call -> originalAuthority.get());
+		when(source.detachedDomainStamp()).thenAnswer(call -> originalAuthority.get() ? original : null);
+		doAnswer(call -> {
+			NativeLmdbQuerySource.IdLookup lookup = call.getArgument(2);
+			lookup.set(NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.IdOrigin.ABSENT);
+			originalAuthority.set(false);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+		layout.freeze(List.of("key"));
+		AtomicInteger perRowClosed = new AtomicInteger();
+		NativeRowsStep bulk = mock(NativeRowsStep.class);
+		when(bulk.hasOptionalOnlyBinding(any(BindingSet.class))).thenReturn(true);
+		when(bulk.evaluate(any(BindingSet.class)))
+				.thenAnswer(call -> matchedRow(call.getArgument(0), match, perRowClosed));
+		when(bulk.genericFallback(any(BindingSet.class), any(NativeLmdbQuerySource.class), anyBoolean(), anyString()))
+				.thenAnswer(call -> matchedRow(call.getArgument(0), match, perRowClosed));
+		NativeBareRowsStep right = new NativeBareRowsStep(source, SlotPlan.singleton(), layout, new SingletonSet(),
+				bulk);
+		String[] shared = { "key" };
+		assertThat(LmdbNativeAccumulateJoin.INSTANCE.supports(right, shared, Mode.INNER, false))
+				.as("the source is initially eligible for batch admission")
+				.isTrue();
+		AtomicInteger outerClosed = new AtomicInteger();
+		CloseableIteratorIteration<BindingSet> outer = new CloseableIteratorIteration<>(
+				List.<BindingSet>of(firstRow, secondRow).iterator()) {
+			@Override
+			protected void handleClose() {
+				outerClosed.incrementAndGet();
+			}
+		};
+		BatchCorrelationRequest request = new BatchCorrelationRequest(outer, EmptyBindingSet.getInstance(), shared,
+				Mode.INNER);
+		List<BindingSet> result = new ArrayList<>();
+		try (CloseableIteration<BindingSet> rows = LmdbNativeAccumulateJoin.INSTANCE.tryBatchJoin(request, right)) {
+			while (rows.hasNext()) {
+				result.add(rows.next());
+			}
+		}
+		assertThat(result).extracting(row -> row.getValue("key")).containsExactly(first, second);
+		assertThat(result).extracting(row -> row.getValue("found")).containsExactly(match, match);
+		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS).hasValue(0L);
+		assertThat(LmdbNativeAccumulateJoin.PER_ROW_FALLBACK_ROWS).hasValue(2L);
+		assertThat(perRowClosed).hasValue(2);
+		assertThat(outerClosed).hasValue(1);
+	}
+
+	private static CloseableIteration<BindingSet> matchedRow(BindingSet input, IRI value, AtomicInteger closed) {
+		QueryBindingSet matched = new QueryBindingSet(input);
+		matched.addBinding("found", value);
+		return new CloseableIteratorIteration<BindingSet>(List.<BindingSet>of(matched).iterator()) {
+			@Override
+			protected void handleClose() {
+				closed.incrementAndGet();
+			}
+		};
+	}
+
+	@Test
+	void unboundJoinPrecompileAdmitsBatchProviderAndClosesItsInputs() {
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI first = values.createIRI(EX, "first");
+		IRI second = values.createIRI(EX, "second");
+		IRI firstMatch = values.createIRI(EX, "first-match");
+		IRI secondMatch = values.createIRI(EX, "second-match");
+		long firstId = ValueIds.createId(ValueIds.T_URI, 21L);
+		long secondId = ValueIds.createId(ValueIds.T_URI, 22L);
+		long firstMatchId = ValueIds.createId(ValueIds.T_URI, 23L);
+		long secondMatchId = ValueIds.createId(ValueIds.T_URI, 24L);
+		Map<Value, Long> ids = Map.of(first, firstId, second, secondId, firstMatch, firstMatchId, secondMatch,
+				secondMatchId);
+		Map<Long, Value> terms = Map.of(firstId, first, secondId, second, firstMatchId, firstMatch, secondMatchId,
+				secondMatch);
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		Object storedSpace = new Object();
+		Object lookupScope = new Object();
+		Object resultScope = new Object();
+		NativeLmdbQuerySource.DomainStamp domain = new NativeLmdbQuerySource.DomainStamp(storedSpace, lookupScope,
+				resultScope, new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null);
+		when(source.idSpace()).thenReturn(source);
+		when(source.valueLookupScope()).thenReturn(lookupScope);
+		when(source.resultValueScope()).thenReturn(resultScope);
+		when(source.detachedDomainStamp()).thenReturn(domain);
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		when(source.hasCanonicalIds()).thenReturn(true);
+		when(source.hasStatementsInSource()).thenReturn(true);
+		when(source.idOf(any(Value.class))).thenAnswer(call -> ids.getOrDefault(call.getArgument(0),
+				NativeLmdbQuerySource.UNKNOWN_ID));
+		doAnswer(call -> {
+			long id = ids.getOrDefault(call.getArgument(0), NativeLmdbQuerySource.UNKNOWN_ID);
+			NativeLmdbQuerySource.IdLookup lookup = call.getArgument(2);
+			lookup.set(id, id == NativeLmdbQuerySource.UNKNOWN_ID ? NativeLmdbQuerySource.IdOrigin.ABSENT
+					: NativeLmdbQuerySource.IdOrigin.STORED);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		when(source.lazyValue(anyLong())).thenAnswer(call -> terms.get(call.<Long>getArgument(0)));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = spy(new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(source, values), null, null, 0L, new EvaluationStatistics(), false));
+		assertThat(strategy.enclosingExecutionContext()).isNull();
+		assertThat(strategy.enclosingFusedInvocation()).isNull();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "found", 1), null);
+		layout.freeze(List.of("key", "found"));
+		SlotPlan body = SlotPlan.values(new ValuesRow[] {
+				new ValuesRow(new int[] { 0, 1 }, new long[] { firstId, firstMatchId }),
+				new ValuesRow(new int[] { 0, 1 }, new long[] { secondId, secondMatchId }) });
+		StatementPattern pattern = new StatementPattern(new Var("key"), new Var("predicate"), new Var("found"));
+		NativeBareRowsStep right = NativeRowsStep.bareFragment(source, body, layout, new int[] { 0, 1 },
+				new String[] { "key", "found" }, false, strategy, pattern, context);
+		QueryBindingSet firstRow = new QueryBindingSet();
+		firstRow.addBinding("key", first);
+		QueryBindingSet secondRow = new QueryBindingSet();
+		secondRow.addBinding("key", second);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("key"));
+		left.setBindingSets(List.of(firstRow, secondRow));
+		Join join = new Join(left, pattern);
+		AtomicInteger outerClosed = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<BindingSet>(
+				List.<BindingSet>of(firstRow, secondRow).iterator()) {
+			@Override
+			protected void handleClose() {
+				outerClosed.incrementAndGet();
+			}
+		};
+		doReturn(leftStep).when(strategy).precompile(same(left), same(context));
+		doReturn(right).when(strategy).precompile(same(pattern), same(context));
+		QueryEvaluationStep prepared = strategy.prepare(join, context);
+		List<BindingSet> result = new ArrayList<>();
+		try (CloseableIteration<BindingSet> rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			while (rows.hasNext()) {
+				result.add(rows.next());
+			}
+		}
+		assertThat(LmdbNativeAccumulateJoin.BATCHES).as("precompiled join selected the provider").hasValue(1L);
+		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS).hasValue(1L);
+		assertThat(result).extracting(row -> row.getValue("key")).containsExactly(first, second);
+		assertThat(result).extracting(row -> row.getValue("found")).containsExactly(firstMatch, secondMatch);
+		assertThat(outerClosed).hasValue(1);
+	}
+
+	@Test
+	void unboundJoinWithUncertifiedSourceFallsBackAndClosesItsInputs() throws Exception {
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI first = values.createIRI(EX, "first");
+		IRI second = values.createIRI(EX, "second");
+		IRI predicate = values.createIRI(EX, "predicate");
+		IRI firstMatch = values.createIRI(EX, "first-match");
+		IRI secondMatch = values.createIRI(EX, "second-match");
+		long firstId = ValueIds.createId(ValueIds.T_URI, 21L);
+		long secondId = ValueIds.createId(ValueIds.T_URI, 22L);
+		long firstMatchId = ValueIds.createId(ValueIds.T_URI, 23L);
+		long secondMatchId = ValueIds.createId(ValueIds.T_URI, 24L);
+		long predicateId = ValueIds.createId(ValueIds.T_URI, 25L);
+		Map<Value, Long> ids = Map.of(first, firstId, second, secondId, firstMatch, firstMatchId, secondMatch,
+				secondMatchId, predicate, predicateId);
+		Map<Long, Value> terms = Map.of(firstId, first, secondId, second, firstMatchId, firstMatch, secondMatchId,
+				secondMatch, predicateId, predicate);
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(source.idSpace()).thenReturn(source);
+		when(source.hasCanonicalIds()).thenReturn(true);
+		when(source.hasStatementsInSource()).thenReturn(true);
+		when(source.idOf(any(Value.class))).thenAnswer(call -> ids.getOrDefault(call.getArgument(0),
+				NativeLmdbQuerySource.UNKNOWN_ID));
+		when(source.lazyValue(anyLong())).thenAnswer(call -> terms.get(call.<Long>getArgument(0)));
+		AtomicInteger statementsClosed = new AtomicInteger();
+		doAnswer(call -> {
+			long subject = call.getArgument(0);
+			long[] record = subject == firstId ? new long[] { firstId, predicateId, firstMatchId, 0L }
+					: subject == secondId ? new long[] { secondId, predicateId, secondMatchId, 0L } : null;
+			return new RecordIterator() {
+				private long[] next = record;
+
+				@Override
+				public long[] next() {
+					long[] result = next;
+					next = null;
+					return result;
+				}
+
+				@Override
+				public void close() {
+					statementsClosed.incrementAndGet();
+				}
+			};
+		}).when(source).statements(anyLong(), anyLong(), anyLong(), anyLong());
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = spy(new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(source, values), null, null, 0L, new EvaluationStatistics(), false));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "found", 1), null);
+		layout.freeze(List.of("key", "found"));
+		SlotPlan body = SlotPlan.values(new ValuesRow[] {
+				new ValuesRow(new int[] { 0, 1 }, new long[] { firstId, firstMatchId }),
+				new ValuesRow(new int[] { 0, 1 }, new long[] { secondId, secondMatchId }) });
+		StatementPattern pattern = new StatementPattern(new Var("key"), new Var("predicate"), new Var("found"));
+		NativeBareRowsStep right = NativeRowsStep.bareFragment(source, body, layout, new int[] { 0, 1 },
+				new String[] { "key", "found" }, false, strategy, pattern, context);
+		QueryBindingSet firstRow = new QueryBindingSet();
+		firstRow.addBinding("key", first);
+		QueryBindingSet secondRow = new QueryBindingSet();
+		secondRow.addBinding("key", second);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("key"));
+		left.setBindingSets(List.of(firstRow, secondRow));
+		Join join = new Join(left, pattern);
+		AtomicInteger outerClosed = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<BindingSet>(
+				List.<BindingSet>of(firstRow, secondRow).iterator()) {
+			@Override
+			protected void handleClose() {
+				outerClosed.incrementAndGet();
+			}
+		};
+		doReturn(leftStep).when(strategy).precompile(same(left), same(context));
+		doReturn(right).when(strategy).precompile(same(pattern), same(context));
+		QueryEvaluationStep prepared = strategy.prepare(join, context);
+		List<BindingSet> result = new ArrayList<>();
+		try (CloseableIteration<BindingSet> rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			while (rows.hasNext()) {
+				result.add(rows.next());
+			}
+		}
+		assertThat(LmdbNativeAccumulateJoin.BATCHES).as("an uncertified source cannot admit a batch").hasValue(0L);
+		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS).hasValue(0L);
+		assertThat(result).extracting(row -> row.getValue("key")).containsExactly(first, second);
+		assertThat(result).extracting(row -> row.getValue("found")).containsExactly(firstMatch, secondMatch);
+		assertThat(statementsClosed).as("the semantic right cursors have closed").hasValue(2);
+		assertThat(outerClosed).hasValue(1);
+	}
+
+	@Test
+	void unboundBatchSharesItsExplicitScalarContext() {
+		QueryEvaluationContext supplied = new QueryEvaluationContext.Minimal((Dataset) null);
+		ScalarObservation first = observeUnboundBatchScalars(supplied);
+		ScalarObservation second = observeUnboundBatchScalars(supplied);
+		assertThat(first.innerNow()).isSameAs(first.suppliedNow());
+		assertThat(first.innerBlankNodes()).isSameAs(first.suppliedBlankNodes());
+		assertThat(first.innerBNode()).isSameAs(first.suppliedBNode());
+		assertThat(second.innerNow()).isSameAs(first.suppliedNow());
+		assertThat(second.innerBlankNodes()).isSameAs(first.suppliedBlankNodes());
+		assertThat(second.innerBNode()).isSameAs(second.suppliedBNode());
+	}
+
+	@Test
+	void unboundBatchesKeepIndependentSuppliedScalarContexts() {
+		ScalarObservation first = observeUnboundBatchScalars(new QueryEvaluationContext.Minimal((Dataset) null));
+		ScalarObservation second = observeUnboundBatchScalars(new QueryEvaluationContext.Minimal((Dataset) null));
+		assertThat(first.innerNow()).isSameAs(first.suppliedNow());
+		assertThat(second.innerNow()).isSameAs(second.suppliedNow());
+		assertThat(first.innerNow()).isNotSameAs(second.innerNow());
+		assertThat(first.innerBlankNodes()).isSameAs(first.suppliedBlankNodes());
+		assertThat(second.innerBlankNodes()).isSameAs(second.suppliedBlankNodes());
+		assertThat(first.innerBlankNodes()).isNotSameAs(second.innerBlankNodes());
+		assertThat(first.innerBNode()).isSameAs(first.suppliedBNode());
+		assertThat(second.innerBNode()).isSameAs(second.suppliedBNode());
+		assertThat(first.innerBNode()).isNotEqualTo(second.innerBNode());
+	}
+
+	private static ScalarObservation observeUnboundBatchScalars(QueryEvaluationContext context) {
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI key = values.createIRI(EX, "scalar-key");
+		long keyId = ValueIds.createId(ValueIds.T_URI, 31L);
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		Object lookup = new Object();
+		Object result = new Object();
+		NativeLmdbQuerySource.DomainStamp domain = new NativeLmdbQuerySource.DomainStamp(new Object(), lookup, result,
+				new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null);
+		when(source.idSpace()).thenReturn(source);
+		when(source.valueLookupScope()).thenReturn(lookup);
+		when(source.resultValueScope()).thenReturn(result);
+		when(source.detachedDomainStamp()).thenReturn(domain);
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		when(source.hasCanonicalIds()).thenReturn(true);
+		when(source.hasStatementsInSource()).thenReturn(true);
+		when(source.idOf(any(Value.class))).thenAnswer(call -> key.equals(call.getArgument(0)) ? keyId
+				: NativeLmdbQuerySource.UNKNOWN_ID);
+		when(source.lazyValue(keyId)).thenReturn(key);
+		doAnswer(call -> {
+			long id = key.equals(call.getArgument(0)) ? keyId : NativeLmdbQuerySource.UNKNOWN_ID;
+			NativeLmdbQuerySource.IdLookup target = call.getArgument(2);
+			target.set(id, id == NativeLmdbQuerySource.UNKNOWN_ID ? NativeLmdbQuerySource.IdOrigin.ABSENT
+					: NativeLmdbQuerySource.IdOrigin.STORED);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		LmdbNativeEvaluationStrategy strategy = spy(new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(source, values), null, null, 0L, new EvaluationStatistics(), false));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+		layout.freeze(List.of("key"));
+		Literal expectedNow = context.getNow();
+		Object expectedBlankNodes = context.getBlankNodeAllocationScope();
+		BindingSet blankNodeInput = new QueryBindingSet();
+		BNode expectedBNode = context.getOrCreateBNode("scope-test", blankNodeInput, values);
+		AtomicReference<Literal> actualNow = new AtomicReference<>();
+		AtomicReference<Object> actualBlankNodes = new AtomicReference<>();
+		AtomicReference<BNode> actualBNode = new AtomicReference<>();
+		SlotPlan body = new SlotPlan() {
+			@Override
+			public RowCursor open(RowState row) {
+				NativeExecutionContext invocation = row.executionContext();
+				actualNow.set(invocation.queryNow(context));
+				QueryEvaluationContext nativeContext = invocation.genericInvocationContext(context, strategy);
+				actualBlankNodes.set(nativeContext.getBlankNodeAllocationScope());
+				actualBNode.set(nativeContext.getOrCreateBNode("scope-test", blankNodeInput, values));
+				return new SingletonCursor();
+			}
+
+			@Override
+			public long producedMask() {
+				return 0L;
+			}
+		};
+		StatementPattern pattern = new StatementPattern(new Var("key"), new Var("predicate"), new Var("found"));
+		NativeBareRowsStep right = NativeRowsStep.bareFragment(source, body, layout, new int[] { 0 },
+				new String[] { "key" }, false, strategy, pattern, context);
+		QueryBindingSet outer = new QueryBindingSet();
+		outer.addBinding("key", key);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("key"));
+		left.setBindingSets(List.of(outer));
+		Join join = new Join(left, pattern);
+		AtomicInteger closed = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<BindingSet>(
+				List.of(outer).iterator()) {
+			@Override
+			protected void handleClose() {
+				closed.incrementAndGet();
+			}
+		};
+		doReturn(leftStep).when(strategy).precompile(same(left), same(context));
+		doReturn(right).when(strategy).precompile(same(pattern), same(context));
+		QueryEvaluationStep prepared = strategy.prepare(join, context);
+		List<BindingSet> output = new ArrayList<>();
+		try (CloseableIteration<BindingSet> rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			while (rows.hasNext()) {
+				output.add(rows.next());
+			}
+		}
+		assertThat(LmdbNativeAccumulateJoin.BATCHES).hasValue(1L);
+		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS).hasValue(1L);
+		assertThat(output).extracting(row -> row.getValue("key")).containsExactly(key);
+		assertThat(closed).hasValue(1);
+		assertThat(actualNow.get()).isNotNull();
+		assertThat(actualBlankNodes.get()).isNotNull();
+		assertThat(actualBNode.get()).isNotNull();
+		return new ScalarObservation(expectedNow, actualNow.get(), expectedBlankNodes, actualBlankNodes.get(),
+				expectedBNode, actualBNode.get());
+	}
+
+	private record ScalarObservation(Literal suppliedNow, Literal innerNow, Object suppliedBlankNodes,
+			Object innerBlankNodes, BNode suppliedBNode, BNode innerBNode) {
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void closedChildSourceDoesNotOwnRootScalarRegistrar() {
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(16L << 20, 16L << 20);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		QueryExecutionPolicy policy = QueryExecutionPolicy.of(true);
+		NativeExecutionContext root = new NativeExecutionContext(policy);
+		SyntheticValueSource sibling = null;
+		try {
+			root.initializeQueryBase(EmptyBindingSet.getInstance());
+			NativeLmdbQuerySource backing = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+			when(backing.certifiesIdOrigins()).thenReturn(true);
+			when(backing.idSpace()).thenReturn(backing);
+			when(backing.valueLookupScope()).thenReturn(new Object());
+			doAnswer(call -> {
+				NativeLmdbQuerySource.IdLookup result = call.getArgument(2);
+				result.set(NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.IdOrigin.ABSENT);
+				return null;
+			}).when(backing).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+			SyntheticValueSource template = new SyntheticValueSource(backing, PlanValueCatalog.EMPTY, policy);
+			SyntheticValueSource first = template.forOwnedFragment(root, EmptyBindingSet.getInstance());
+			assertThat(first).isNotNull();
+			Value firstValue = SimpleValueFactory.getInstance().createIRI(EX, "first-child-value");
+			long firstId = first.internComputedValue(firstValue);
+			assertThat(first.lazyValue(firstId)).isEqualTo(firstValue);
+			first.executionContext().close();
+			assertThat(first.executionContext().isClosed()).isTrue();
+			sibling = template.forOwnedFragment(root, EmptyBindingSet.getInstance());
+			assertThat(sibling).isNotNull();
+			QueryEvaluationContext structural = new QueryEvaluationContext.Minimal((Dataset) null);
+			Literal now = root.queryNow(structural);
+			assertThat(sibling.executionContext().queryNow(structural)).isSameAs(now);
+			long nowId = sibling.internComputedValue(now);
+			assertThat(sibling.lazyValue(nowId)).isSameAs(now);
+			assertThat(root.queryNow(structural)).isSameAs(now);
+		} finally {
+			try {
+				if (sibling != null) {
+					sibling.executionContext().close();
+				}
+			} finally {
+				try {
+					root.close();
+				} finally {
+					LmdbNativeHashJoin.queryMemoryOverride = previous;
+				}
+			}
+		}
+		assertThat(memory.usedBytes()).isZero();
+	}
+
+	@Test
+	void genericProjectionForwardsItsNativeOwnerBeforeAdvance() {
+		QueryExecutionPolicy policy = QueryExecutionPolicy.of(true);
+		NativeExecutionContext root = new NativeExecutionContext(policy);
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(88L, 1L << 20, false);
+		try {
+			root.initializeQueryBase(EmptyBindingSet.getInstance());
+			ValueFactory values = SimpleValueFactory.getInstance();
+			IRI expected = values.createIRI(EX, "projection-before-advance");
+			long expectedId = ValueIds.createId(ValueIds.T_URI, 61L);
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+			Object lookup = new Object();
+			Object result = new Object();
+			NativeLmdbQuerySource.DomainStamp domain = new NativeLmdbQuerySource.DomainStamp(new Object(), lookup,
+					result, new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null);
+			when(source.idSpace()).thenReturn(source);
+			when(source.valueLookupScope()).thenReturn(lookup);
+			when(source.resultValueScope()).thenReturn(result);
+			when(source.detachedDomainStamp()).thenReturn(domain);
+			when(source.certifiesIdOrigins()).thenReturn(true);
+			when(source.hasCanonicalIds()).thenReturn(true);
+			when(source.hasStatementsInSource()).thenReturn(true);
+			AtomicInteger reads = new AtomicInteger();
+			when(source.lazyValue(anyLong())).thenAnswer(call -> {
+				reads.incrementAndGet();
+				return call.<Long>getArgument(0) == expectedId ? expected : null;
+			});
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeEvaluationStrategy template = new LmdbNativeEvaluationStrategy(
+					new NativeWorkerTripleSource(source, values), null, null, 0L, new EvaluationStatistics(), false);
+			template.setQueryExecutionPolicy(policy);
+			LmdbNativeEvaluationStrategy strategy = template.forInvocation(source, session, root);
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+			layout.freeze(List.of("key"));
+			SlotPlan table = SlotPlan.values(new ValuesRow[] {
+					new ValuesRow(new int[] { 0 }, new long[] { expectedId }) }, false, ValuesPlan.ID_DOMAIN_STORE);
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			assignment.setBindingNames(Set.of("key"));
+			Projection projection = new Projection(assignment, new ProjectionElemList(new ProjectionElem("key")));
+			NativeBareRowsStep nativeLeft = NativeRowsStep.bareFragment(source, table, layout, new int[] { 0 },
+					new String[] { "key" }, false, strategy, assignment, context);
+			QueryEvaluationStep projected = new ProjectionQueryEvaluationStep(projection, nativeLeft, context);
+			try (CloseableIteration<BindingSet> rows = projected.evaluate(EmptyBindingSet.getInstance())) {
+				NativeInvocationCarrier owner = NativeExecutionContextCarrier.invocationOf(rows);
+				assertThat(owner).as("the generic cursor forwards its native invocation before the first advance")
+						.isNotNull();
+				assertThat(owner.executionContext().memoryLedger()).isSameAs(root.memoryLedger());
+				assertThat(owner.executionContext().detachedRuntimeIdSpace()).isSameAs(root.detachedRuntimeIdSpace());
+				assertThat(owner.source().detachedDomainStamp().sameBackingView(domain)).isTrue();
+				assertThat(reads).as("opening and inspecting the cursor does not read its first value").hasValue(0);
+				assertThat(rows.hasNext()).isTrue();
+				assertThat(rows.next().getValue("key")).isEqualTo(expected);
+				assertThat(rows.hasNext()).isFalse();
+			}
+		} finally {
+			try {
+				root.close();
+			} finally {
+				session.close();
+			}
+		}
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void nestedBatchWithProjectedNativeLeftSharesRootAuthorityAndBudget() {
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		QueryExecutionPolicy policy = QueryExecutionPolicy.of(true);
+		NativeExecutionContext root = new NativeExecutionContext(policy);
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(87L, 1L << 20, false);
+		try {
+			root.initializeQueryBase(EmptyBindingSet.getInstance());
+			LmdbQueryMemoryManager.QueryLedger ledger = root.memoryLedger();
+			LmdbQueryMemoryManager.Reservation parentClaim = ledger.reserve(1L, null);
+			assertThat(parentClaim).isNotNull();
+			Object rootRuntime = root.detachedRuntimeIdSpace();
+			ValueFactory values = SimpleValueFactory.getInstance();
+			IRI first = values.createIRI(EX, "projected-first");
+			IRI second = values.createIRI(EX, "projected-second");
+			IRI firstMatch = values.createIRI(EX, "projected-first-match");
+			IRI secondMatch = values.createIRI(EX, "projected-second-match");
+			long firstId = ValueIds.createId(ValueIds.T_URI, 51L);
+			long secondId = ValueIds.createId(ValueIds.T_URI, 52L);
+			long firstMatchId = ValueIds.createId(ValueIds.T_URI, 53L);
+			long secondMatchId = ValueIds.createId(ValueIds.T_URI, 54L);
+			Map<Value, Long> ids = Map.of(first, firstId, second, secondId, firstMatch, firstMatchId, secondMatch,
+					secondMatchId);
+			Map<Long, Value> terms = Map.of(firstId, first, secondId, second, firstMatchId, firstMatch, secondMatchId,
+					secondMatch);
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+			Object lookup = new Object();
+			Object resultScope = new Object();
+			NativeLmdbQuerySource.DomainStamp domain = new NativeLmdbQuerySource.DomainStamp(new Object(), lookup,
+					resultScope, new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null);
+			when(source.idSpace()).thenReturn(source);
+			when(source.valueLookupScope()).thenReturn(lookup);
+			when(source.resultValueScope()).thenReturn(resultScope);
+			when(source.detachedDomainStamp()).thenReturn(domain);
+			when(source.certifiesIdOrigins()).thenReturn(true);
+			when(source.hasCanonicalIds()).thenReturn(true);
+			when(source.hasStatementsInSource()).thenReturn(true);
+			when(source.idOf(any(Value.class))).thenAnswer(call -> ids.getOrDefault(call.getArgument(0),
+					NativeLmdbQuerySource.UNKNOWN_ID));
+			when(source.lazyValue(anyLong())).thenAnswer(call -> terms.get(call.<Long>getArgument(0)));
+			AtomicLong budgetAtLookup = new AtomicLong();
+			doAnswer(call -> {
+				budgetAtLookup.accumulateAndGet(ledger.usedBytes(), Math::max);
+				long id = ids.getOrDefault(call.getArgument(0), NativeLmdbQuerySource.UNKNOWN_ID);
+				NativeLmdbQuerySource.IdLookup target = call.getArgument(2);
+				target.set(id, id == NativeLmdbQuerySource.UNKNOWN_ID ? NativeLmdbQuerySource.IdOrigin.ABSENT
+						: NativeLmdbQuerySource.IdOrigin.STORED);
+				return null;
+			}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+			AtomicReference<LmdbQueryMemoryManager.QueryLedger> leftLedger = new AtomicReference<>();
+			AtomicReference<Object> leftRuntime = new AtomicReference<>();
+			AtomicReference<NativeLmdbQuerySource.DomainStamp> leftDomain = new AtomicReference<>();
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null) {
+				@Override
+				public Function<BindingSet, Value> getValue(String name) {
+					Function<BindingSet, Value> delegate = super.getValue(name);
+					return bindings -> {
+						if (bindings instanceof RowBindingSetView row
+								&& row.nativeSource() instanceof SyntheticValueSource synthetic) {
+							NativeExecutionContext execution = synthetic.executionContext();
+							leftLedger.compareAndSet(null, execution.memoryLedger());
+							leftRuntime.compareAndSet(null, execution.detachedRuntimeIdSpace());
+							leftDomain.compareAndSet(null, synthetic.detachedDomainStamp());
+						}
+						return delegate.apply(bindings);
+					};
+				}
+			};
+			LmdbNativeEvaluationStrategy template = new LmdbNativeEvaluationStrategy(
+					new NativeWorkerTripleSource(source, values), null, null, 0L, new EvaluationStatistics(), false);
+			template.setQueryExecutionPolicy(policy);
+			LmdbNativeEvaluationStrategy strategy = spy(template.forInvocation(source, session, root));
+			NativeSlotLayout leftLayout = new NativeSlotLayout(Map.of("key", 0), null);
+			leftLayout.freeze(List.of("key"));
+			SlotPlan leftValues = SlotPlan.values(new ValuesRow[] {
+					new ValuesRow(new int[] { 0 }, new long[] { firstId }),
+					new ValuesRow(new int[] { 0 }, new long[] { firstId }),
+					new ValuesRow(new int[] { 0 }, new long[] { secondId }) }, false, ValuesPlan.ID_DOMAIN_STORE);
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			assignment.setBindingNames(Set.of("key"));
+			Projection projection = new Projection(assignment, new ProjectionElemList(new ProjectionElem("key")));
+			NativeBareRowsStep left = NativeRowsStep.bareFragment(source, leftValues, leftLayout, new int[] { 0 },
+					new String[] { "key" }, false, strategy, assignment, context);
+			QueryEvaluationStep projected = new ProjectionQueryEvaluationStep(projection, left, context);
+			NativeSlotLayout rightLayout = new NativeSlotLayout(Map.of("key", 0, "found", 1), null);
+			rightLayout.freeze(List.of("key", "found"));
+			SlotPlan rightValues = SlotPlan.values(new ValuesRow[] {
+					new ValuesRow(new int[] { 0, 1 }, new long[] { firstId, firstMatchId }),
+					new ValuesRow(new int[] { 0, 1 }, new long[] { secondId, secondMatchId }) }, false,
+					ValuesPlan.ID_DOMAIN_STORE);
+			StatementPattern pattern = new StatementPattern(new Var("key"), new Var("predicate"), new Var("found"));
+			NativeBareRowsStep right = NativeRowsStep.bareFragment(source, rightValues, rightLayout,
+					new int[] { 0, 1 }, new String[] { "key", "found" }, false, strategy, pattern, context);
+			Join join = new Join(projection, pattern);
+			doReturn(projected).when(strategy).precompile(same(projection), same(context));
+			doReturn(right).when(strategy).precompile(same(pattern), same(context));
+			QueryEvaluationStep prepared = strategy.prepare(join, context);
+			List<BindingSet> output = new ArrayList<>();
+			try (CloseableIteration<BindingSet> rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+				while (rows.hasNext()) {
+					output.add(rows.next());
+				}
+			}
+			assertThat(LmdbNativeAccumulateJoin.BATCHES).hasValue(1L);
+			assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS).hasValue(1L);
+			assertThat(output).extracting(row -> List.of(row.getValue("key"), row.getValue("found")))
+					.containsExactlyInAnyOrder(List.of(first, firstMatch), List.of(first, firstMatch),
+							List.of(second, secondMatch));
+			assertThat(leftDomain.get()).as("native left emitted through the generic projection").isNotNull();
+			assertThat(leftDomain.get().sameBackingView(domain)).as("the left uses the original source view").isTrue();
+			assertThat(leftLedger.get()).as("the native left is charged to the existing root").isSameAs(ledger);
+			assertThat(leftRuntime.get()).as("the left shares the root runtime term authority").isSameAs(rootRuntime);
+			assertThat(budgetAtLookup.get()).as("the right lookup runs with the root batch reservation")
+					.isGreaterThanOrEqualTo(1L + 128L * 1024L);
+			assertThat(ledger.usedBytes()).as("only the parent's reservation survives close").isEqualTo(1L);
+			parentClaim.close();
+		} finally {
+			try {
+				root.close();
+			} finally {
+				try {
+					session.close();
+				} finally {
+					LmdbNativeHashJoin.queryMemoryOverride = previous;
+				}
+			}
+		}
+		assertThat(memory.usedBytes()).isZero();
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void nestedBatchRespectsItsRootLedgerRefusal() {
+		exerciseNestedBatchLedger(128L * 1024L, false);
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void acceptedNestedBatchReleasesItsClaimWithoutClosingTheRootLedger() {
+		exerciseNestedBatchLedger(1024L * 1024L, true);
+	}
+
+	private static void exerciseNestedBatchLedger(long limit, boolean expectSweep) {
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(limit, limit);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		NativeExecutionContext root = new NativeExecutionContext();
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(86L, 1L << 20, false);
+		try {
+			BindingSet empty = EmptyBindingSet.getInstance();
+			root.initializeQueryBase(empty);
+			LmdbQueryMemoryManager.QueryLedger ledger = root.memoryLedger();
+			LmdbQueryMemoryManager.Reservation parentClaim = ledger.reserve(1L, null);
+			assertThat(parentClaim).isNotNull();
+			ValueFactory values = SimpleValueFactory.getInstance();
+			IRI first = values.createIRI(EX, "budget-first");
+			IRI second = values.createIRI(EX, "budget-second");
+			IRI firstMatch = values.createIRI(EX, "budget-first-match");
+			IRI secondMatch = values.createIRI(EX, "budget-second-match");
+			long firstId = ValueIds.createId(ValueIds.T_URI, 41L);
+			long secondId = ValueIds.createId(ValueIds.T_URI, 42L);
+			long firstMatchId = ValueIds.createId(ValueIds.T_URI, 43L);
+			long secondMatchId = ValueIds.createId(ValueIds.T_URI, 44L);
+			Map<Value, Long> ids = Map.of(first, firstId, second, secondId, firstMatch, firstMatchId, secondMatch,
+					secondMatchId);
+			Map<Long, Value> terms = Map.of(firstId, first, secondId, second, firstMatchId, firstMatch, secondMatchId,
+					secondMatch);
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+			Object lookup = new Object();
+			Object result = new Object();
+			NativeLmdbQuerySource.DomainStamp domain = new NativeLmdbQuerySource.DomainStamp(new Object(), lookup,
+					result, new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null);
+			when(source.idSpace()).thenReturn(source);
+			when(source.valueLookupScope()).thenReturn(lookup);
+			when(source.resultValueScope()).thenReturn(result);
+			when(source.detachedDomainStamp()).thenReturn(domain);
+			when(source.certifiesIdOrigins()).thenReturn(true);
+			when(source.hasCanonicalIds()).thenReturn(true);
+			when(source.hasStatementsInSource()).thenReturn(true);
+			when(source.idOf(any(Value.class))).thenAnswer(call -> ids.getOrDefault(call.getArgument(0),
+					NativeLmdbQuerySource.UNKNOWN_ID));
+			when(source.lazyValue(anyLong())).thenAnswer(call -> terms.get(call.<Long>getArgument(0)));
+			doAnswer(call -> {
+				long id = ids.getOrDefault(call.getArgument(0), NativeLmdbQuerySource.UNKNOWN_ID);
+				NativeLmdbQuerySource.IdLookup target = call.getArgument(2);
+				target.set(id, id == NativeLmdbQuerySource.UNKNOWN_ID ? NativeLmdbQuerySource.IdOrigin.ABSENT
+						: NativeLmdbQuerySource.IdOrigin.STORED);
+				return null;
+			}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new NativeWorkerTripleSource(source, values), null, null, 0L, new EvaluationStatistics(), false)
+							.forInvocation(source, session, root);
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "found", 1), null);
+			layout.freeze(List.of("key", "found"));
+			SlotPlan body = SlotPlan.values(new ValuesRow[] {
+					new ValuesRow(new int[] { 0, 1 }, new long[] { firstId, firstMatchId }),
+					new ValuesRow(new int[] { 0, 1 }, new long[] { secondId, secondMatchId }) });
+			NativeBareRowsStep right = NativeRowsStep.bareFragment(source, body, layout, new int[] { 0, 1 },
+					new String[] { "key", "found" }, false, strategy, new SingletonSet(), context);
+			QueryBindingSet firstRow = new QueryBindingSet();
+			firstRow.addBinding("key", first);
+			QueryBindingSet secondRow = new QueryBindingSet();
+			secondRow.addBinding("key", second);
+			AtomicInteger outerClosed = new AtomicInteger();
+			CloseableIteration<BindingSet> outer = new CloseableIteratorIteration<BindingSet>(
+					List.<BindingSet>of(firstRow, secondRow).iterator()) {
+				@Override
+				protected void handleClose() {
+					outerClosed.incrementAndGet();
+				}
+			};
+			BatchCorrelationRequest request = new BatchCorrelationRequest(outer, empty, new String[] { "key" },
+					Mode.INNER);
+			List<BindingSet> output = new ArrayList<>();
+			try (CloseableIteration<BindingSet> rows = LmdbNativeAccumulateJoin.INSTANCE.tryBatchJoin(request, right)) {
+				assertThat(rows.hasNext()).isTrue();
+				if (expectSweep) {
+					assertThat(ledger.usedBytes()).as("the live batch is charged to its root query")
+							.isGreaterThanOrEqualTo(1L + 128L * 1024L);
+				}
+				while (rows.hasNext()) {
+					output.add(rows.next());
+				}
+			}
+			assertThat(output).extracting(row -> row.getValue("key")).containsExactly(first, second);
+			assertThat(output).extracting(row -> row.getValue("found")).containsExactly(firstMatch, secondMatch);
+			assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS).hasValue(expectSweep ? 1L : 0L);
+			assertThat(outerClosed).hasValue(1);
+			assertThat(ledger.usedBytes()).as("the batch releases its claim while the root claim remains")
+					.isEqualTo(1L);
+			assertThat(parentClaim.tryGrow(1L)).as("closing the batch does not close the root ledger").isTrue();
+			parentClaim.close();
+		} finally {
+			try {
+				root.close();
+			} finally {
+				try {
+					session.close();
+				} finally {
+					LmdbNativeHashJoin.queryMemoryOverride = previous;
+				}
+			}
+		}
+		assertThat(memory.usedBytes()).isZero();
 	}
 
 	@Test

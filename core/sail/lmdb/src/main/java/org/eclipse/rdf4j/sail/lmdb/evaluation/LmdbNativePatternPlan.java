@@ -29,6 +29,31 @@ import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 @Experimental
 final class PatternPlan implements SlotPlan {
+	/**
+	 * Semantic receipt owns only immutable executable terms, context constraint and range; never a source or session.
+	 */
+	private static final class PatternSemantics {
+		final Term s;
+		final Term p;
+		final Term o;
+		final Term c;
+		final ContextConstraint contexts;
+		final boolean namedContextScope;
+		final LmdbKeyRange range;
+
+		PatternSemantics(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+				LmdbKeyRange range) {
+			this.s = s;
+			this.p = p;
+			this.o = o;
+			this.c = c;
+			this.contexts = contexts;
+			this.namedContextScope = namedContextScope;
+			this.range = range;
+		}
+	}
+
+	private final PatternSemantics semantics;
 	final Term s;
 	final Term p;
 	final Term o;
@@ -65,15 +90,22 @@ final class PatternPlan implements SlotPlan {
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate,
 			NativeLmdbQuerySource.IndexAccessProfile accessProfile) {
-		this.s = s;
-		this.p = p;
-		this.o = o;
-		this.c = c;
-		this.contexts = contexts;
-		this.namedContextScope = namedContextScope;
+		this(new PatternSemantics(s, p, o, c, contexts, namedContextScope, range), statementOrder, indexName,
+				staticEstimate, accessProfile);
+	}
+
+	private PatternPlan(PatternSemantics semantics, StatementOrder statementOrder, String indexName,
+			double staticEstimate, NativeLmdbQuerySource.IndexAccessProfile accessProfile) {
+		this.semantics = semantics;
+		this.s = semantics.s;
+		this.p = semantics.p;
+		this.o = semantics.o;
+		this.c = semantics.c;
+		this.contexts = semantics.contexts;
+		this.namedContextScope = semantics.namedContextScope;
 		this.statementOrder = statementOrder;
 		this.indexName = indexName;
-		this.range = range;
+		this.range = semantics.range;
 		long mask = 0L;
 		if (s.hasSlot()) {
 			mask |= 1L << s.slot;
@@ -98,8 +130,12 @@ final class PatternPlan implements SlotPlan {
 	 * selected scan order cannot apply those bounds physically.
 	 */
 	PatternPlan withOrder(StatementOrder order, String selectedIndex) {
-		return new PatternPlan(s, p, o, c, contexts, namedContextScope, order, selectedIndex, range, staticEstimate,
-				accessProfile);
+		return new PatternPlan(semantics, order, selectedIndex, staticEstimate, accessProfile);
+	}
+
+	/** Identity only; source, snapshot, and value-authority compatibility remain separate proofs. */
+	Object semanticReceipt() {
+		return semantics;
 	}
 
 	@Override
@@ -186,7 +222,7 @@ final class PatternPlan implements SlotPlan {
 						openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
 								row.encounterOrderRequired, row.directLmdbSweep));
 			}
-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver,
+			return openContexts(row.source, probe, subj, pred, obj, contexts, accessObserver,
 					row.encounterOrderRequired, reusable).withDirectLmdbSweep(row.directLmdbSweep);
 		}
 		return singleCursor(reusable,
@@ -217,10 +253,10 @@ final class PatternPlan implements SlotPlan {
 		}
 		if (contexts.isFixed()) {
 			if (context == UNKNOWN) {
-				if (contexts.ids.length != 1) {
+				if (contexts.size() != 1) {
 					return null;
 				}
-				context = contexts.ids[0];
+				context = contexts.idAt(0);
 			} else if (!contexts.contains(context)) {
 				return null;
 			}
@@ -268,7 +304,7 @@ final class PatternPlan implements SlotPlan {
 						openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
 								row.encounterOrderRequired, false));
 			}
-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver,
+			return openContexts(row.source, probe, subj, pred, obj, contexts, accessObserver,
 					row.encounterOrderRequired, null);
 		}
 		return PatternCursor.single(
@@ -311,7 +347,7 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	private PatternCursor openContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
-			long subj, long pred, long obj, long[] contextIds,
+			long subj, long pred, long obj, ContextConstraint contextIds,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired,
 			PatternCursor reusable) throws IOException {
 		if (statementOrder == null) {
@@ -321,9 +357,10 @@ final class PatternPlan implements SlotPlan {
 					: reusable.resetContexts(source, probe, subj, pred, obj, contextIds, range, accessObserver,
 							encounterOrderRequired);
 		}
-		List<RecordIterator> iterators = new ArrayList<>(contextIds.length);
+		List<RecordIterator> iterators = new ArrayList<>(contextIds.size());
 		try {
-			for (long contextId : contextIds) {
+			for (int index = 0; index < contextIds.size(); index++) {
+				long contextId = contextIds.idAt(index);
 				iterators.add(source.statements(statementOrder, subj, pred, obj, contextId, accessObserver));
 			}
 			return singleCursor(reusable, OrderedRecordIterator.merge(iterators, statementOrder));
@@ -539,7 +576,7 @@ final class PatternPlan implements SlotPlan {
 		if (accessProfile == null) {
 			return LmdbNativeWork.RowBounds.UNKNOWN;
 		}
-		int scans = contexts.isFixed() ? contexts.ids.length : 1;
+		int scans = contexts.isFixed() ? contexts.size() : 1;
 		double upper = (double) accessProfile.entries() * scans;
 		// A free, non-repeating quad pattern emits every row of its pinned source. Other patterns can reject
 		// rows through constants, repeated variables, graph scope, ranges, or occupied input cells.
@@ -699,11 +736,11 @@ final class PatternPlan implements SlotPlan {
 		estimate = multiplyEstimate(estimate, nodePseudoCardinality(objectKnown, subjectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(c, boundMask, NativePatternField.CONTEXT));
 		if (contexts.isFixed()) {
-			if (contexts.ids.length == 0) {
+			if (contexts.isEmpty()) {
 				return 0L;
 			}
 			if (!termKnown(c, boundMask)) {
-				estimate = multiplyEstimate(estimate, contexts.ids.length);
+				estimate = multiplyEstimate(estimate, contexts.size());
 			}
 		}
 		return estimate;
@@ -739,11 +776,11 @@ final class PatternPlan implements SlotPlan {
 		estimate = multiplyEstimate(estimate, nodePseudoCardinality(objectKnown, subjectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(c, row.slots, NativePatternField.CONTEXT));
 		if (contexts.isFixed()) {
-			if (contexts.ids.length == 0) {
+			if (contexts.isEmpty()) {
 				return 0L;
 			}
 			if (c.lookup(row.slots) == UNKNOWN) {
-				estimate = multiplyEstimate(estimate, contexts.ids.length);
+				estimate = multiplyEstimate(estimate, contexts.size());
 			}
 		}
 		return estimate;
@@ -822,7 +859,8 @@ final class PatternPlan implements SlotPlan {
 						subj,
 						pred, obj, context);
 			}
-			for (long contextId : contexts.ids) {
+			for (int index = 0; index < contexts.size(); index++) {
+				long contextId = contexts.idAt(index);
 				if (source.has(subj, pred, obj, contextId, accessObserver)) {
 					return existsCursor(reusable, true, subj, pred, obj, contextId);
 				}
@@ -846,7 +884,7 @@ final class PatternPlan implements SlotPlan {
 	 * pinned to a single concrete value (directly or through a single-id dataset constraint).
 	 */
 	boolean atMostOneQuadCanMatch(long context) {
-		return context != UNKNOWN || (contexts.isFixed() && contexts.ids.length <= 1);
+		return context != UNKNOWN || (contexts.isFixed() && contexts.size() <= 1);
 	}
 
 	boolean termDoesNotProduceBinding(Term term, long[] slots) {

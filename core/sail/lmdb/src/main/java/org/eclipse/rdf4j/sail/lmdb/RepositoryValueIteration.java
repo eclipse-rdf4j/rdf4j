@@ -27,6 +27,7 @@ import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.common.iteration.OwnedPullIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -35,13 +36,13 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Repository-only, demand-driven materialization retaining ID capabilities through complete value waves. */
 final class RepositoryValueIteration<T> implements CloseableIteration<T>, CooperativeCancellation {
 
 	private static final int WAVE_VALUES = 1024;
-	private static final ThreadLocal<RepositoryValueIteration<?>> SOURCE_PULL = new ThreadLocal<>();
 
 	private record PendingValue(LmdbValue value, LmdbValue.InternalIdentity identity) {
 	}
@@ -142,10 +143,50 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			close();
 			return false;
 		}
-		T nextRow = extractor.snapshot(sourceNext());
+		T sourceRow = sourceNext();
+		NativeProjectedBindingSet nativeRow = extractor == (Object) SailResultValueExtractor.BINDING_SETS
+				&& sourceRow instanceof NativeProjectedBindingSet projected && projected.isDetachedAndFullyCaptured()
+						? projected
+						: null;
+		T nextRow = nativeRow == null ? extractor.snapshot(sourceRow) : sourceRow;
 		if (closed.get()) {
 			return false;
 		}
+		if (nativeRow != null) {
+			prepareNativeValues(nativeRow);
+		} else {
+			prepareExtractedValues(nextRow);
+		}
+		checkActive();
+		row = nextRow;
+		rowReady = true;
+		return true;
+	}
+
+	private void prepareNativeValues(NativeProjectedBindingSet row) {
+		int slots = row.capturedValueSlotCount();
+		boolean prepared = true;
+		for (int i = 0; i < slots; i++) {
+			Value root = row.capturedValueAt(i);
+			if (root != null) {
+				prepared &= isPrepared(root);
+			}
+		}
+		if (!prepared) {
+			List<Value> roots = new ArrayList<>(row.size());
+			Map<Value, Boolean> capturedOwners = new IdentityHashMap<>();
+			for (int i = 0; i < slots; i++) {
+				Value root = row.capturedValueAt(i);
+				if (root != null) {
+					roots.add(root);
+					captureReadyOwners(root, capturedOwners);
+				}
+			}
+			resolveWaves(roots);
+		}
+	}
+
+	private void prepareExtractedValues(T nextRow) {
 		List<Value> roots = new ArrayList<>();
 		boolean[] prepared = { true };
 		extractor.extract(nextRow, root -> {
@@ -162,43 +203,19 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			}
 			resolveWaves(roots);
 		}
-		checkActive();
-		row = nextRow;
-		rowReady = true;
-		return true;
 	}
 
-	/** A repository pull already owns cold values until its complete current-row wave finishes. */
-	boolean isPullingSource() {
-		return !closed.get() && SOURCE_PULL.get() == this;
+	/** An exact repository pull owns cold values until its complete current-row wave finishes. */
+	boolean ownsSourcePull(Object owner) {
+		return !closed.get() && owner == this;
 	}
 
 	private boolean sourceHasNext() {
-		RepositoryValueIteration<?> previous = SOURCE_PULL.get();
-		SOURCE_PULL.set(this);
-		try {
-			return source.hasNext();
-		} finally {
-			restoreSourcePull(previous);
-		}
+		return OwnedPullIteration.hasNext(source, this);
 	}
 
 	private T sourceNext() {
-		RepositoryValueIteration<?> previous = SOURCE_PULL.get();
-		SOURCE_PULL.set(this);
-		try {
-			return source.next();
-		} finally {
-			restoreSourcePull(previous);
-		}
-	}
-
-	private static void restoreSourcePull(RepositoryValueIteration<?> previous) {
-		if (previous == null) {
-			SOURCE_PULL.remove();
-		} else {
-			SOURCE_PULL.set(previous);
-		}
+		return OwnedPullIteration.next(source, this);
 	}
 
 	/** Cheap check that a root needs no owner scope, decode or child traversal; uncertain shapes take the full path. */

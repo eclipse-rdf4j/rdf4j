@@ -62,17 +62,17 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 	}
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
-			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PlanValueCatalog.Builder catalog) {
 		TupleExpr node = expr instanceof QueryRoot ? ((QueryRoot) expr).getArg() : expr;
 		if (!(node instanceof DescribeOperator describe)) {
 			return null;
 		}
-		QueryEvaluationStep child = LmdbNativeAggregateCompiler.tryCompile(describe.getArg(), context, strategy,
-				source);
+		QueryEvaluationStep child = LmdbNativeAggregateCompiler.tryCompileOwned(describe.getArg(), context, strategy,
+				source, catalog);
 		if (child == null || child instanceof GenericRootPlan) {
 			return null;
 		}
-		LmdbNativeAggregatePlanner contextCompiler = new LmdbNativeAggregatePlanner(context, strategy, source);
+		LmdbNativeAggregatePlanner contextCompiler = new LmdbNativeAggregatePlanner(context, strategy, source, catalog);
 		ContextConstraint contexts = contextCompiler.compileContextConstraint(Scope.DEFAULT_CONTEXTS,
 				context.getDataset());
 		return new NativeDescribeStep(child, source, describe.getBindingNames(), contexts);
@@ -313,7 +313,7 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 		private final NativeLmdbQuerySource source;
 		private final long subject;
 		private final long object;
-		private final long[] contextIds;
+		private final ContextConstraint contextIds;
 		private int contextIndex;
 		private int pollTick;
 		private RecordIterator current;
@@ -323,7 +323,7 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 			source = null;
 			subject = UNKNOWN;
 			object = UNKNOWN;
-			contextIds = new long[0];
+			contextIds = ContextConstraint.EMPTY;
 			closed = true;
 		}
 
@@ -332,7 +332,7 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 			this.source = source;
 			this.subject = subject;
 			this.object = object;
-			this.contextIds = contexts.isFixed() ? contexts.ids : null;
+			this.contextIds = contexts.isFixed() ? contexts : null;
 		}
 
 		static NativeDescribeRecordCursor empty() {
@@ -348,10 +348,10 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 						}
 						current = source.statements(subject, UNKNOWN, object, UNKNOWN);
 					} else {
-						if (contextIndex >= contextIds.length) {
+						if (contextIndex >= contextIds.size()) {
 							return null;
 						}
-						current = source.statements(subject, UNKNOWN, object, contextIds[contextIndex++]);
+						current = source.statements(subject, UNKNOWN, object, contextIds.idAt(contextIndex++));
 					}
 				}
 				long[] record = current.next();

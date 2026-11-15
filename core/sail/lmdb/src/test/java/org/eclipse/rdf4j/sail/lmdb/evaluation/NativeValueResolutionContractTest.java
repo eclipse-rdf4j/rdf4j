@@ -149,6 +149,92 @@ public class NativeValueResolutionContractTest {
 	}
 
 	@Test
+	public void directResolverDoesNotInternForeignPlanWithoutBackingAbsence() {
+		Source foreign = foreignSyntheticHit(NativeLmdbQuerySource.IdOrigin.PLAN);
+		NativeExecutionContext execution = new NativeExecutionContext();
+		try {
+			NativeValueResolver resolver = execution.valueResolver(foreign, PlanValueCatalog.EMPTY);
+			Value value = VF.createIRI("urn:foreign-plan-with-unknown-backing");
+			fails(IllegalStateException.class, () -> resolver.intern(value));
+			equal(0L, execution.runtimeValueAccountedBytes());
+		} finally {
+			execution.close();
+		}
+	}
+
+	@Test
+	public void directImportDoesNotInternForeignRuntimeWithoutBackingAbsence() {
+		Value value = VF.createIRI("urn:foreign-runtime-with-unknown-backing");
+		PlanValueCatalog.Builder builder = new PlanValueCatalog.Builder();
+		long planId = builder.internConstant(value);
+		NativeExecutionContext origin = new NativeExecutionContext();
+		NativeExecutionContext destination = new NativeExecutionContext();
+		try {
+			LmdbNativeTermAuthority from = new LmdbNativeTermAuthority(new Source(), builder.build(), origin);
+			LmdbNativeTermAuthority to = new LmdbNativeTermAuthority(
+					foreignSyntheticHit(NativeLmdbQuerySource.IdOrigin.RUNTIME), PlanValueCatalog.EMPTY, destination);
+			fails(IllegalStateException.class, () -> to.importId(from, planId));
+			equal(0L, destination.runtimeValueAccountedBytes());
+		} finally {
+			try {
+				destination.close();
+			} finally {
+				origin.close();
+			}
+		}
+	}
+
+	@Test
+	public void foreignPlanWithCertifiedBackingAbsenceCanBeImported() {
+		Value value = VF.createIRI("urn:foreign-plan-with-certified-absence");
+		Source emptyBacking = new Source() {
+			@Override
+			public void idOfWithOrigin(Value ignored, int positionMask, IdLookup result) {
+				result.set(UNKNOWN, IdOrigin.ABSENT);
+			}
+
+			@Override
+			public boolean certifiesIdOrigins() {
+				return true;
+			}
+		};
+		PlanValueCatalog.Builder builder = new PlanValueCatalog.Builder();
+		long foreignId = builder.internConstant(value);
+		PlanValueCatalog foreignCatalog = builder.build();
+		SyntheticValueSource foreign = new SyntheticValueSource(emptyBacking, foreignCatalog);
+		NativeExecutionContext origin = new NativeExecutionContext();
+		NativeExecutionContext destination = new NativeExecutionContext();
+		try {
+			LmdbNativeTermAuthority from = new LmdbNativeTermAuthority(emptyBacking, foreignCatalog, origin);
+			LmdbNativeTermAuthority to = new LmdbNativeTermAuthority(foreign, PlanValueCatalog.EMPTY, destination);
+			long imported = to.importId(from, foreignId);
+			check(imported != UNKNOWN);
+			check(value.equals(to.valueOf(imported)));
+			equal(imported, to.importId(from, foreignId));
+		} finally {
+			try {
+				destination.close();
+			} finally {
+				origin.close();
+			}
+		}
+	}
+
+	private static Source foreignSyntheticHit(NativeLmdbQuerySource.IdOrigin origin) {
+		return new Source() {
+			@Override
+			public void idOfWithOrigin(Value ignored, int positionMask, IdLookup result) {
+				result.set(77L, origin);
+			}
+
+			@Override
+			public boolean certifiesIdOrigins() {
+				return true;
+			}
+		};
+	}
+
+	@Test
 	public void initializedUnknownLmdbMissesShareQueryResolution() {
 		Source source = new Source();
 		SyntheticValueSource evaluation = eval(source);

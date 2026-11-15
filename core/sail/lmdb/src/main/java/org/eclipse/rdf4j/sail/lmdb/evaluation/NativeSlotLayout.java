@@ -51,6 +51,28 @@ final class NativeSlotLayout {
 		return layout;
 	}
 
+	boolean isFrozen() {
+		return frozen;
+	}
+
+	/** A recipe owns an independent, frozen copy; binding takes another copy before exposing its slot arrays. */
+	NativeSlotLayout snapshot() {
+		if (!frozen) {
+			throw new IllegalStateException("cannot snapshot an unfinished slot layout");
+		}
+		NativeSlotLayout copy = new NativeSlotLayout(Map.copyOf(slotsByName), queryLayout);
+		copy.slotNames = slotNames.clone();
+		copy.nativeBindingNames = nativeBindingNames;
+		copy.slotToQueryIndex = slotToQueryIndex.clone();
+		copy.queryIndexToSlot = queryIndexToSlot.clone();
+		copy.positionMasks = Map.copyOf(positionMasks);
+		copy.analyzedInputNames = analyzedInputNames;
+		copy.inputPositionMasks = Map.copyOf(inputPositionMasks);
+		copy.slotPositionMasks = slotPositionMasks.clone();
+		copy.frozen = true;
+		return copy;
+	}
+
 	void freeze(List<String> slotNames) {
 		if (frozen) {
 			throw new IllegalStateException("slot layout is already frozen");

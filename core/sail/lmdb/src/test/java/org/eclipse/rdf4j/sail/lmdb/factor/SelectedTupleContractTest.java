@@ -46,7 +46,7 @@ public class SelectedTupleContractTest {
 	public static final class DirectTuples extends BorrowedTupleBatch.Source {
 		public final long[] payload, weights;
 		public final long count;
-		public int navigations, copies, readers;
+		public int navigations, copies, readers, coordinateChecks;
 
 		public DirectTuples(int columns, long[] payload, long[] weights) {
 			super(columns);
@@ -75,6 +75,12 @@ public class SelectedTupleContractTest {
 			checkOpen();
 			if (reference != 0L || expected != count)
 				throw new IllegalArgumentException();
+		}
+
+		@Override
+		boolean coordinateAvailable(long reference, long expected) {
+			coordinateChecks++;
+			return reference == 0L && expected == count && super.coordinateAvailable(reference, expected);
 		}
 
 		@Override
@@ -194,7 +200,12 @@ public class SelectedTupleContractTest {
 			FactorSelection a = new FactorSelection(2);
 			a.add(2, 6);
 			a.add(10, 4);
-			BorrowedTupleBatch b = first.select(source.batch(), 0, a);
+			BorrowedTupleBatch root = new BorrowedTupleBatch(source, 2);
+			root.reset(2);
+			root.bind(0, 0L, source.count);
+			root.bind(1, 0L, source.count);
+			long rootGeneration = root.generation();
+			BorrowedTupleBatch b = first.select(root, 1, a);
 			yes(Map.of("10:100:", 3L, "20:200:", 5L, "30:300:", 2L).equals(bag(b, 3)));
 			FactorSelection cut = new FactorSelection(2);
 			cut.add(1, 3);
@@ -203,7 +214,33 @@ public class SelectedTupleContractTest {
 			cut.clear();
 			a.clear();
 			yes(Map.of("10:100:", 2L, "20:200:", 2L, "30:300:", 1L).equals(bag(c, 1)));
-			first.clear();
+			try (BorrowedTupleBatch.Cursor cursor = c.cursor(3)) {
+				cursor.bind(0);
+				eq(-1L, cursor.resultPosition());
+				eq(-1L, cursor.resultLane());
+				long[] expectedPositions = { 3L, 5L, 11L, 12L };
+				int index = 0;
+				while (cursor.next()) {
+					eq(expectedPositions[index++], cursor.resultPosition());
+					eq(1L, cursor.resultLane());
+				}
+				eq(expectedPositions.length, index);
+				eq(-1L, cursor.resultPosition());
+				eq(-1L, cursor.resultLane());
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(3L, cursor.resultPosition());
+				eq(1L, cursor.resultLane());
+				root.bind(1, 0L, source.count);
+				eq(rootGeneration, root.generation());
+				eq(-1L, cursor.resultPosition());
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(-1L, cursor.resultPosition());
+				first.clear();
+				eq(-1L, cursor.resultPosition());
+				eq(-1, cursor.resultLane());
+			}
 			fails(IllegalStateException.class, () -> c.count(0));
 		}
 	}
@@ -214,13 +251,23 @@ public class SelectedTupleContractTest {
 				new long[] { 2, 3, 5, 7 });
 				SelectedTupleSource a = new SelectedTupleSource(2, 2, true);
 				SelectedTupleSource b = new SelectedTupleSource(2, 2, true)) {
+			BorrowedTupleBatch root = new BorrowedTupleBatch(source, 2);
+			root.reset(2);
+			root.bind(0, 0L, source.count);
+			root.bind(1, 0L, source.count);
 			TupleSelection selection = new TupleSelection(2);
-			try (BorrowedTupleBatch.Cursor c = source.batch().cursor(2)) {
-				c.bind(0);
+			try (BorrowedTupleBatch.Cursor c = root.cursor(2)) {
+				c.bind(1);
 				selection.begin(c);
-				while (c.next())
+				long[] sourceOffsets = { 0L, 2L, 4L, 6L };
+				int index = 0;
+				while (c.next()) {
+					eq(sourceOffsets[index++], c.resultPosition());
+					eq(1L, c.resultLane());
 					if (c.value(0) > 1)
 						selection.add(c);
+				}
+				eq(sourceOffsets.length, index);
 			}
 			BorrowedTupleBatch first = a.select(selection);
 			try (BorrowedTupleBatch.Cursor c = first.cursor(1)) {
@@ -237,7 +284,15 @@ public class SelectedTupleContractTest {
 				yes(c.next());
 				eq(2, c.value(0));
 				eq(3, c.weight());
+				eq(2L, c.resultPosition());
+				eq(1L, c.resultLane());
+				long selectedGeneration = a.batch().generation();
+				a.batch().bind(0, selectedGeneration, a.batch().count(0));
+				eq(selectedGeneration, a.batch().generation());
+				eq(-1L, c.resultPosition());
 				a.clear();
+				eq(-1L, c.resultPosition());
+				eq(-1, c.resultLane());
 				fails(IllegalStateException.class, c::next);
 			}
 		}
@@ -532,6 +587,46 @@ public class SelectedTupleContractTest {
 				for (int i = chain.length - 1; i >= 0; i--)
 					if (chain[i] != null)
 						chain[i].close();
+			}
+		}
+	}
+
+	@Test
+	public void nestedCoordinateAvailabilityVisitsSharedDescriptorsOnceAndDeclinesAfterRebind() {
+		try (DirectTuples source = new DirectTuples(1, new long[] { 1, 2, 3 }, new long[] { 1, 1, 1 });
+				SelectedTupleSource direct = new SelectedTupleSource(1, 3, true)) {
+			BorrowedTupleBatch root = source.batch();
+			TupleSelection directSelection = new TupleSelection(3);
+			try (BorrowedTupleBatch.Cursor cursor = root.cursor(1)) {
+				cursor.bind(0);
+				directSelection.begin(cursor);
+				while (cursor.next())
+					directSelection.add(cursor);
+			}
+			BorrowedTupleBatch current = direct.select(directSelection);
+			FactorSelection all = new FactorSelection(1);
+			all.add(0, source.count);
+			SelectedTupleSource[] chain = new SelectedTupleSource[40];
+			try {
+				for (int index = 0; index < chain.length; index++) {
+					chain[index] = new SelectedTupleSource(1, 1);
+					current = chain[index].select(current, 0, all);
+				}
+				all.clear();
+				try (BorrowedTupleBatch.Cursor cursor = current.cursor(1)) {
+					cursor.bind(0);
+					yes(cursor.next());
+					source.coordinateChecks = 0;
+					eq(0L, cursor.resultPosition());
+					eq(1L, source.coordinateChecks);
+
+					root.bind(0, 0L, source.count);
+					eq(-1L, cursor.resultPosition());
+				}
+			} finally {
+				for (int index = chain.length - 1; index >= 0; index--)
+					if (chain[index] != null)
+						chain[index].close();
 			}
 		}
 	}

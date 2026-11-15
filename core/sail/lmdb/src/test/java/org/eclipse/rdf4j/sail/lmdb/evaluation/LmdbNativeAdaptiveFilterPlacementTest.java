@@ -329,6 +329,10 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 				new String[] { "v0", "v1", "v2" }, false, new int[0], new boolean[0], 0L, -1L, false, null,
 				telemetry, null, Set.of(), null, null);
 		RowState consumerRow = new RowState(worker, layout, EmptyBindingSet.getInstance());
+		NativeExecutionContext execution = new NativeExecutionContext();
+		consumerRow.setExecutionContext(execution);
+		LmdbFusedSipFactorizedRuntime.Session fused = LmdbFusedSipFactorizedRuntime.create(0L, false);
+		consumerRow.fusedSession = fused;
 		LmdbNativeParallelPipelines.ParallelRowCursor cursor = new LmdbNativeParallelPipelines.ParallelRowCursor(
 				step, consumerRow, root, new MultiJoinPlan[] { plan },
 				new NativeLmdbQuerySource.ParallelSource[] { worker, producer },
@@ -339,7 +343,9 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			cursor.input.add(new LmdbNativeExchange.Morsel(new long[] { 2L, 7L, 8L, 0L }, 1));
 			cursor.input.add(LmdbNativeExchange.Morsel.POISON);
 
-			cursor.runWorker(0);
+			try (LmdbFusedSipFactorizedRuntime.Session workerSession = fused.worker()) {
+				cursor.runWorker(0, plan, workerSession);
+			}
 
 			LmdbNativeParallelPipelines.OutputPage page = cursor.output.remove();
 			assertThat(page.batch.selectedCount).isEqualTo(25);
@@ -352,6 +358,8 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			restoreProperty("rdf4j.lmdb.chunkPipeline.externalRoot.experimental", previousChunk);
 			worker.close();
 			producer.close();
+			fused.close();
+			execution.close();
 		}
 	}
 
@@ -380,6 +388,8 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 				new String[] { "v0", "v1", "v2" }, false, new int[0], new boolean[0], 0L, -1L, false, null,
 				telemetry, null, Set.of(), null, null);
 		RowState consumerRow = new RowState(sources[0], layout, EmptyBindingSet.getInstance());
+		LmdbFusedSipFactorizedRuntime.Session fused = LmdbFusedSipFactorizedRuntime.create(0L, false);
+		consumerRow.fusedSession = fused;
 		LmdbNativeParallelPipelines.ParallelRowCursor cursor = new LmdbNativeParallelPipelines.ParallelRowCursor(
 				step, consumerRow, root, workerPlans, sources,
 				new LmdbNativeParallelPipelines.TaskReservation(0), false);
@@ -397,8 +407,8 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			List<Future<?>> tasks = new ArrayList<>(workers);
 			for (int worker = 0; worker < workers; worker++) {
 				int workerIndex = worker;
-				tasks.add(executor.submit(() -> cursor.runTask(() -> cursor.runWorker(workerIndex),
-						workerPlans[workerIndex], sources[workerIndex])));
+				tasks.add(executor.submit(() -> cursor.runTask(workerIndex,
+						NativeExecutionContext.captureWorkerContext())));
 			}
 
 			assertThat(entered.await(10, TimeUnit.SECONDS))
@@ -418,6 +428,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			release.countDown();
 			executor.shutdownNow();
 			cursor.close();
+			fused.close();
 			LmdbNativeParallelPipelines.closePlanFilters(ownerPlan, null);
 			restoreAdaptiveProperty(previousAdaptive);
 			restoreProperty("rdf4j.lmdb.chunkPipeline.externalRoot.experimental", previousChunk);

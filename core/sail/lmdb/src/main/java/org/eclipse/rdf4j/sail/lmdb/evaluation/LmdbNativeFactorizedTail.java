@@ -575,10 +575,10 @@ final class FactorizedTail {
 				groupedMemoEnabled, prefixOnly.toArray(new NativeBooleanFilter[0]), metrics);
 	}
 
-	void recordEngagement() {
+	void recordEngagement(RowState row) {
 		if (!engagementRecorded) {
 			engagementRecorded = true;
-			LmdbFusedSipFactorizedRuntime.current().markFactorizationMode("FACTORIZED_TAIL");
+			row.fusedSession().markFactorizationMode("FACTORIZED_TAIL");
 			metrics.recordFactorizedTailEngaged();
 		}
 	}

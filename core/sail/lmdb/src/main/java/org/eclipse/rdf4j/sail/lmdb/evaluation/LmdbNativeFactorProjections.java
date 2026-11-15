@@ -158,6 +158,26 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 		return factors.countProduct(~reader.expandedMask(), reader.exactMultiplicity());
 	}
 
+	private long coordinateActivation() {
+		return closed || current < 0 ? 0L : readers[current].coordinateActivation();
+	}
+
+	private long takeChangedSlots() {
+		return closed || current < 0 ? -1L : readers[current].takeChangedSlots();
+	}
+
+	private boolean coordinateValid(int slot, long activation) {
+		return !closed && current >= 0 && readers[current].coordinateValid(slot, activation);
+	}
+
+	private boolean mayReplay(int slot) {
+		return !closed && current >= 0 && readers[current].mayReplay(slot);
+	}
+
+	private boolean resultCoordinate(int slot, long[] coordinate) {
+		return !closed && current >= 0 && readers[current].resultCoordinate(slot, coordinate);
+	}
+
 	@Override
 	public void close() {
 		if (closed)
@@ -184,8 +204,8 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 		input.close();
 	}
 
-	private static final class Rows implements FactorizedRowCursor {
-		final NativeFactorProjections input;
+	private static final class Rows implements FactorizedRowCursor, NativeResultCoordinates {
+		final LmdbNativeFactorProjections input;
 		final RowState target;
 		final int[] slots;
 		final int mark;
@@ -194,7 +214,7 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 		boolean closed;
 		int tick;
 
-		Rows(NativeFactorProjections input, RowState target, int[] slots) {
+		Rows(LmdbNativeFactorProjections input, RowState target, int[] slots) {
 			this.input = input;
 			this.target = target;
 			this.slots = slots.clone();
@@ -253,6 +273,31 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 			long weight = repeat + 1L;
 			repeat = 0L;
 			return weight;
+		}
+
+		@Override
+		public long coordinateActivation() {
+			return closed ? 0L : input.coordinateActivation();
+		}
+
+		@Override
+		public long takeChangedSlots() {
+			return closed ? -1L : input.takeChangedSlots();
+		}
+
+		@Override
+		public boolean coordinateValid(int slot, long activation) {
+			return !closed && input.coordinateValid(slot, activation);
+		}
+
+		@Override
+		public boolean mayReplay(int slot) {
+			return !closed && input.mayReplay(slot);
+		}
+
+		@Override
+		public boolean resultCoordinate(int slot, long[] coordinate) {
+			return !closed && input.resultCoordinate(slot, coordinate);
 		}
 
 		@Override

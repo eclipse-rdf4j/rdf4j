@@ -12,11 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-
-import org.eclipse.rdf4j.common.order.StatementOrder;
-import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 
 /** Immutable semantic input correspondence. Physical order is restored separately from the selected recipe. */
 final class NativePhysicalInputRecipe {
@@ -29,46 +25,26 @@ final class NativePhysicalInputRecipe {
 		EMPTY
 	}
 
-	private record TermRecipe(int slot, long constant, boolean bindConstant) {
-		static TermRecipe of(Term term) {
-			return new TermRecipe(term.slot, term.constant, term.bindConstant);
-		}
-	}
-
-	private record PatternRecipe(TermRecipe subject, TermRecipe predicate, TermRecipe object, TermRecipe context,
-			List<Long> contexts, boolean unrestricted, boolean named, LmdbKeyRange range) {
-	}
-
-	private record OrderedPattern(PatternRecipe semantics, StatementOrder order, String index) {
-	}
-
 	private record Assignment(int target, int source, long constant, boolean checked, boolean nullOnError,
 			boolean replaySafe, NativeScalarPlan scalar) {
-	}
-
-	private record ValueRow(List<Integer> slots, List<Long> values) {
 	}
 
 	private final Kind kind;
 	private final Object description;
 	private final NativePhysicalInputRecipe child;
+	private final int valuesIdDomains;
 
 	private NativePhysicalInputRecipe(Kind kind, Object description, NativePhysicalInputRecipe child) {
 		this.kind = kind;
 		this.description = description;
 		this.child = child;
+		this.valuesIdDomains = (kind == Kind.VALUES ? ((ValuesTable) description).idDomains() : 0)
+				| (child == null ? 0 : child.valuesIdDomains);
 	}
 
 	static NativePhysicalInputRecipe capture(SlotPlan plan) {
 		if (plan instanceof PatternPlan pattern) {
-			List<Long> contexts = pattern.contexts.ids == null ? List.of()
-					: Arrays.stream(pattern.contexts.ids).boxed().toList();
-			return new NativePhysicalInputRecipe(Kind.PATTERN,
-					new OrderedPattern(new PatternRecipe(TermRecipe.of(pattern.s), TermRecipe.of(pattern.p),
-							TermRecipe.of(pattern.o),
-							TermRecipe.of(pattern.c), contexts, pattern.contexts.ids == null, pattern.namedContextScope,
-							pattern.range), pattern.statementOrder, pattern.indexName),
-					null);
+			return new NativePhysicalInputRecipe(Kind.PATTERN, pattern.semanticReceipt(), null);
 		}
 		if (plan instanceof ExtensionPlan extension) {
 			NativePhysicalInputRecipe child = capture(extension.arg);
@@ -88,12 +64,8 @@ final class NativePhysicalInputRecipe {
 			return new NativePhysicalInputRecipe(Kind.EXTENSION, List.copyOf(assignments), child);
 		}
 		if (plan instanceof ValuesPlan values) {
-			List<ValueRow> rows = new ArrayList<>(values.rows.length);
-			for (ValuesRow row : values.rows) {
-				rows.add(new ValueRow(Arrays.stream(row.slots).boxed().toList(),
-						Arrays.stream(row.values).boxed().toList()));
-			}
-			return new NativePhysicalInputRecipe(Kind.VALUES, List.copyOf(rows), null);
+			Object receipt = values.compiledReceipt();
+			return receipt == null ? null : new NativePhysicalInputRecipe(Kind.VALUES, receipt, null);
 		}
 		if (plan instanceof NativeSubqueryPlan lexical) {
 			return new NativePhysicalInputRecipe(Kind.LEXICAL, lexical.boundaryStructure(), null);
@@ -108,16 +80,233 @@ final class NativePhysicalInputRecipe {
 	}
 
 	boolean matches(SlotPlan actual) {
+		if (kind == Kind.PATTERN) {
+			return actual instanceof PatternPlan pattern && description == pattern.semanticReceipt();
+		}
+		if (kind == Kind.VALUES) {
+			return actual instanceof ValuesPlan values && description == values.compiledReceipt();
+		}
 		return equalsRecipe(capture(actual));
+	}
+
+	/** Bounded compile-time provenance flags; zero means this recipe has no VALUES leaf. */
+	int valuesIdDomains() {
+		return valuesIdDomains;
 	}
 
 	private boolean equalsRecipe(NativePhysicalInputRecipe actual) {
 		if (actual == null || kind != actual.kind) {
 			return false;
 		}
-		boolean same = kind == Kind.PATTERN
-				? ((OrderedPattern) description).semantics.equals(((OrderedPattern) actual.description).semantics)
+		boolean same = kind == Kind.PATTERN || kind == Kind.VALUES
+				? description == actual.description
 				: description.equals(actual.description);
 		return same && (child == null ? actual.child == null : child.equalsRecipe(actual.child));
+	}
+}
+
+/** Source-free executable input metadata; leaves never retain an invocation, source, callback, or result row. */
+interface NativeCompiledInputRecipe {
+	SlotPlan bind(NativeResultBinding binding);
+
+	static NativeCompiledInputRecipe capture(SlotPlan input) {
+		if (input instanceof PatternPlan || input instanceof SingletonPlan || input instanceof EmptyPlan) {
+			return new ImmutableLeaf(input);
+		}
+		if (input instanceof ValuesPlan values) {
+			return values.compiledReceipt() == null ? null : new ImmutableLeaf(values);
+		}
+		if (input instanceof ExtensionPlan extension) {
+			NativeCompiledInputRecipe child = capture(extension.arg);
+			if (child == null) {
+				return null;
+			}
+			List<PrimitiveCopy> copies = new ArrayList<>(extension.copies.length);
+			for (CopyBinding copy : extension.copies) {
+				if (copy.computed != null || copy.computedValue != null || copy.semanticValue != null) {
+					return null;
+				}
+				copies.add(new PrimitiveCopy(copy.targetSlot, copy.sourceSlot, copy.constant, copy.termChecked,
+						copy.setNullOnError));
+			}
+			return new PrimitiveExtension(child, List.copyOf(copies));
+		}
+		if (input instanceof JoinPlan join) {
+			return binary(BinaryKind.JOIN, join.left, join.right, 0L, null, null, false);
+		}
+		if (input instanceof LeftJoinPlan optional) {
+			return binary(BinaryKind.LEFT_JOIN, optional.left, optional.right, 0L, optional.lexicalSharedSlots,
+					optional.lexicalProblemSlots, optional.lexicalHashKeys);
+		}
+		if (input instanceof UnionPlan union) {
+			return binary(BinaryKind.UNION, union.left, union.right, 0L, null, null, false);
+		}
+		if (input instanceof OrderedUnionPlan union) {
+			return binary(BinaryKind.ORDERED_UNION, union.left, union.right, 0L, union.orderSlots, null, false);
+		}
+		if (input instanceof MinusPlan minus) {
+			return binary(BinaryKind.MINUS, minus.left, minus.right, minus.sharedMask, null, null, false);
+		}
+		if (input instanceof LateralPlan lateral) {
+			return binary(BinaryKind.LATERAL, lateral.left, lateral.right, lateral.rightInputMask, null, null, false);
+		}
+		if (input instanceof DrainGuardPlan guard) {
+			return binary(BinaryKind.DRAIN, guard.delegate, guard.drained, 0L, null, null,
+					guard.drainBeforeDelegate);
+		}
+		if (input instanceof RowDistinctPlan distinct) {
+			NativeCompiledInputRecipe child = capture(distinct.arg);
+			return child == null ? null : new DistinctInput(child, distinct.slots);
+		}
+		if (input instanceof MultiJoinPlan multi && multi.filters.length == 0) {
+			List<NativeCompiledInputRecipe> children = new ArrayList<>(multi.children.length);
+			for (SlotPlan child : multi.children) {
+				NativeCompiledInputRecipe recipe = capture(child);
+				if (recipe == null) {
+					return null;
+				}
+				children.add(recipe);
+			}
+			return new MultiInput(List.copyOf(children));
+		}
+		return null;
+	}
+
+	private static NativeCompiledInputRecipe binary(BinaryKind kind, SlotPlan left, SlotPlan right, long mask,
+			int[] first, int[] second, boolean flag) {
+		NativeCompiledInputRecipe leftRecipe = capture(left);
+		NativeCompiledInputRecipe rightRecipe = capture(right);
+		return leftRecipe == null || rightRecipe == null ? null
+				: new BinaryInput(kind, leftRecipe, rightRecipe, mask, first, second, flag);
+	}
+
+	/** These particular plan classes are sealed, source-free, immutable executable leaves. */
+	record ImmutableLeaf(SlotPlan plan) implements NativeCompiledInputRecipe {
+		@Override
+		public SlotPlan bind(NativeResultBinding binding) {
+			return plan;
+		}
+	}
+
+	record PrimitiveCopy(int target, int source, long constant, boolean checked, boolean nullOnError) {
+		CopyBinding bind() {
+			CopyBinding result = checked ? CopyBinding.termCheckedConstant(target, constant)
+					: source >= 0 ? CopyBinding.slot(target, source) : CopyBinding.constant(target, constant);
+			result.setNullOnError = nullOnError;
+			return result;
+		}
+	}
+
+	record PrimitiveExtension(NativeCompiledInputRecipe child, List<PrimitiveCopy> copies)
+			implements NativeCompiledInputRecipe {
+		@Override
+		public SlotPlan bind(NativeResultBinding binding) {
+			NativePhysicalPreparation preparation = binding.physicalPreparation();
+			if (preparation != null && !preparation.reserveBytes(64L + 96L * copies.size())) {
+				return null;
+			}
+			SlotPlan bound = child.bind(binding);
+			if (bound == null) {
+				return null;
+			}
+			CopyBinding[] bindings = new CopyBinding[copies.size()];
+			for (int i = 0; i < bindings.length; i++) {
+				bindings[i] = copies.get(i).bind();
+			}
+			return new ExtensionPlan(bound, bindings);
+		}
+	}
+
+	enum BinaryKind {
+		JOIN,
+		LEFT_JOIN,
+		UNION,
+		ORDERED_UNION,
+		MINUS,
+		LATERAL,
+		DRAIN
+	}
+
+	final class BinaryInput implements NativeCompiledInputRecipe {
+		private final BinaryKind kind;
+		private final NativeCompiledInputRecipe left;
+		private final NativeCompiledInputRecipe right;
+		private final long mask;
+		private final int[] first;
+		private final int[] second;
+		private final boolean flag;
+
+		BinaryInput(BinaryKind kind, NativeCompiledInputRecipe left, NativeCompiledInputRecipe right, long mask,
+				int[] first, int[] second, boolean flag) {
+			this.kind = kind;
+			this.left = left;
+			this.right = right;
+			this.mask = mask;
+			this.first = first == null ? null : first.clone();
+			this.second = second == null ? null : second.clone();
+			this.flag = flag;
+		}
+
+		@Override
+		public SlotPlan bind(NativeResultBinding binding) {
+			NativePhysicalPreparation preparation = binding.physicalPreparation();
+			if (preparation != null && !preparation.reserveBytes(160L + 4L * (first == null ? 0 : first.length)
+					+ 4L * (second == null ? 0 : second.length))) {
+				return null;
+			}
+			SlotPlan boundLeft = left.bind(binding);
+			SlotPlan boundRight = boundLeft == null ? null : right.bind(binding);
+			if (boundRight == null) {
+				return null;
+			}
+			return switch (kind) {
+			case JOIN -> new JoinPlan(boundLeft, boundRight);
+			case LEFT_JOIN -> new LeftJoinPlan(boundLeft, boundRight, first == null ? null : first.clone(), flag,
+					second == null ? null : second.clone());
+			case UNION -> new UnionPlan(boundLeft, boundRight);
+			case ORDERED_UNION -> new OrderedUnionPlan(boundLeft, boundRight, first);
+			case MINUS -> new MinusPlan(boundLeft, boundRight, mask);
+			case LATERAL -> new LateralPlan(boundLeft, boundRight, mask);
+			case DRAIN -> new DrainGuardPlan(boundLeft, boundRight, flag);
+			};
+		}
+	}
+
+	final class DistinctInput implements NativeCompiledInputRecipe {
+		private final NativeCompiledInputRecipe child;
+		private final int[] slots;
+
+		DistinctInput(NativeCompiledInputRecipe child, int[] slots) {
+			this.child = child;
+			this.slots = slots.clone();
+		}
+
+		@Override
+		public SlotPlan bind(NativeResultBinding binding) {
+			NativePhysicalPreparation preparation = binding.physicalPreparation();
+			if (preparation != null && !preparation.reserveBytes(96L + 4L * slots.length)) {
+				return null;
+			}
+			SlotPlan bound = child.bind(binding);
+			return bound == null ? null : new RowDistinctPlan(bound, slots.clone());
+		}
+	}
+
+	record MultiInput(List<NativeCompiledInputRecipe> children) implements NativeCompiledInputRecipe {
+		@Override
+		public SlotPlan bind(NativeResultBinding binding) {
+			NativePhysicalPreparation preparation = binding.physicalPreparation();
+			if (preparation != null && !preparation.reserveBytes(128L + 16L * children.size())) {
+				return null;
+			}
+			SlotPlan[] bound = new SlotPlan[children.size()];
+			for (int i = 0; i < bound.length; i++) {
+				bound[i] = children.get(i).bind(binding);
+				if (bound[i] == null) {
+					return null;
+				}
+			}
+			return new MultiJoinPlan(bound, new MaskedFilter[0]);
+		}
 	}
 }

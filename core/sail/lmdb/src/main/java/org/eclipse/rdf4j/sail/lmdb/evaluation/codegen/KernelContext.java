@@ -16,6 +16,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentBinding;
 
@@ -75,6 +76,49 @@ public final class KernelContext {
 	 * normal executions share identical generated source and one kernel-cache entry.
 	 */
 	public KernelCancellation cancellation;
+
+	/** Optional execution-owned provenance carrier for demanded replayable row outputs. */
+	public KernelResultCoordinates resultCoordinates;
+
+	private LmdbFusedKernelRuntime fusedRuntime;
+	private boolean ownsFusedRuntime;
+
+	/** Supplies the exact binding context; workers receive a runtime for their own worker-confined session. */
+	public KernelContext withFusedRuntime(LmdbFusedKernelRuntime runtime) {
+		if (fusedRuntime != null) {
+			throw new IllegalStateException("fused runtime is already bound");
+		}
+		this.fusedRuntime = Objects.requireNonNull(runtime, "runtime");
+		return this;
+	}
+
+	/** Explicitly gives a standalone low-level kernel its own bounded invocation. */
+	public KernelContext withStandaloneFusedRuntime() {
+		if (fusedRuntime != null) {
+			throw new IllegalStateException("fused runtime is already bound");
+		}
+		fusedRuntime = LmdbFusedKernelRuntime.standalone();
+		ownsFusedRuntime = true;
+		return this;
+	}
+
+	/** Every kernel must be bound to an invocation before its runtime is used. */
+	public LmdbFusedKernelRuntime fusedRuntime() {
+		if (fusedRuntime == null) {
+			throw new IllegalStateException("kernel context has no fused invocation");
+		}
+		return fusedRuntime;
+	}
+
+	/** Releases only the independently-created runtime, never an invocation supplied by the owning row. */
+	public void releaseOwnedFusedRuntime() {
+		if (ownsFusedRuntime) {
+			ownsFusedRuntime = false;
+			LmdbFusedKernelRuntime owned = fusedRuntime;
+			fusedRuntime = null;
+			owned.close();
+		}
+	}
 
 	/** Preflight reservation for the single private serial hash build, including any subsequent growth. */
 	public KernelRuntime.HashBuildMemory hashBuildMemory;

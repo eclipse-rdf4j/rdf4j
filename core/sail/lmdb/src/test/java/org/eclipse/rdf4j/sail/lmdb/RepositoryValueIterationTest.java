@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,23 +29,37 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeLazyProjectedResultTest;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
@@ -286,6 +301,190 @@ class RepositoryValueIterationTest {
 				assertEquals(1, store.admissions.get(), "Standalone batches must amortize one native reader");
 			}
 			assertTrue(store.readers.stream().allMatch(reader -> reader.isIdle() || reader.isClosed()));
+		}
+	}
+
+	@Test
+	void repositoryReusesDetachedNativeProjectedRowAsItsCurrentSnapshot(@TempDir File directory) throws Exception {
+		String lazyResultsProperty = "rdf4j.lmdb.nativeLazyResults.enabled";
+		String previousLazyResults = System.getProperty(lazyResultsProperty);
+		System.setProperty(lazyResultsProperty, "true");
+		LmdbStore sail = new LmdbStore(directory,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
+		SailRepository repository = new SailRepository(sail);
+		try {
+			repository.init();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				var valueFactory = connection.getValueFactory();
+				IRI predicate = valueFactory.createIRI("http://example.org/currentValue");
+				connection.begin();
+				for (int i = 0; i < 3; i++) {
+					connection.add(valueFactory.createIRI("http://example.org/subject" + i), predicate,
+							valueFactory.createLiteral("payload-" + i));
+				}
+				connection.commit();
+			}
+
+			String query = "SELECT ?s ?value WHERE { ?s <http://example.org/currentValue> ?value } ORDER BY ?s";
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			try (var sailConnection = sail.getConnection();
+					CloseableIteration<? extends BindingSet> raw = sailConnection.evaluate(expression, null,
+							EmptyBindingSet.getInstance(), false)) {
+				AtomicInteger sourcePulls = new AtomicInteger();
+				AtomicInteger sourceCloses = new AtomicInteger();
+				AtomicReference<BindingSet> latestSourceRow = new AtomicReference<>();
+				var observedSource = new IterationWrapper<BindingSet>(raw) {
+					@Override
+					public BindingSet next() {
+						BindingSet next = super.next();
+						sourcePulls.incrementAndGet();
+						latestSourceRow.set(next);
+						return next;
+					}
+
+					@Override
+					protected void handleClose() {
+						sourceCloses.incrementAndGet();
+						super.handleClose();
+					}
+				};
+				try (var exposed = new RepositoryValueIteration<>(observedSource, SailResultValueExtractor.BINDING_SETS,
+						sail.getBackingStore().valueStore(), null, ignored -> {
+						})) {
+					assertTrue(exposed.hasNext());
+					assertEquals(1, sourcePulls.get(), "Preparing a current row must not prefetch a later row");
+					BindingSet firstSourceRow = latestSourceRow.get();
+					assertInstanceOf(NativeProjectedBindingSet.class, firstSourceRow,
+							"The fixture must execute the actual native Sail projection");
+					BindingSet first = exposed.next();
+					assertSame(firstSourceRow, first,
+							"A detached immutable native projection is already a stable current-row snapshot");
+					Value firstSubject = first.getValue("s");
+					Value firstValue = first.getValue("value");
+					assertEquals("payload-0", firstValue.stringValue());
+
+					assertTrue(exposed.hasNext());
+					assertEquals(2, sourcePulls.get(), "Advancing once must pull only the next requested row");
+					BindingSet secondSourceRow = latestSourceRow.get();
+					BindingSet second = exposed.next();
+					assertInstanceOf(NativeProjectedBindingSet.class, secondSourceRow);
+					assertSame(secondSourceRow, second,
+							"Each detached native row can be returned as its own stable snapshot");
+					assertEquals("payload-1", second.getValue("value").stringValue());
+					assertSame(firstSubject, first.getValue("s"),
+							"Advancing the source must preserve first-row value identity");
+					assertSame(firstValue, first.getValue("value"),
+							"Advancing the source must preserve first-row value identity");
+
+					exposed.close();
+					assertEquals(1, sourceCloses.get(), "Early close must close the actual Sail cursor exactly once");
+					assertEquals("payload-0", first.getValue("value").stringValue(),
+							"The retained native row must remain readable after early close");
+				}
+			}
+		} finally {
+			repository.shutDown();
+			if (previousLazyResults == null) {
+				System.clearProperty(lazyResultsProperty);
+			} else {
+				System.setProperty(lazyResultsProperty, previousLazyResults);
+			}
+		}
+	}
+
+	@Test
+	void repositoryCopiesAttachedNativeProjectionWithDuplicateAndUnboundSlots(@TempDir File directory)
+			throws Exception {
+		try (ObservedValues store = new ObservedValues(directory)) {
+			Value earlier = SimpleValueFactory.getInstance().createLiteral("earlier duplicate");
+			Value winning = SimpleValueFactory.getInstance().createLiteral("winning duplicate");
+			NativeProjectedBindingSet attached = LmdbNativeLazyProjectedResultTest
+					.attachedDuplicateAndUnboundProjectionForRepositoryTest(earlier, winning);
+			try (var result = new RepositoryValueIteration<>(
+					new CloseableIteratorIteration<>(List.of(attached).iterator()),
+					SailResultValueExtractor.BINDING_SETS, store, null, ignored -> {
+					})) {
+				BindingSet copied = result.next();
+				assertNotSame(attached, copied,
+						"A projection that still owns its lookup source must use the stable generic snapshot path");
+				assertEquals(1, copied.size());
+				assertEquals(Set.of("value"), copied.getBindingNames());
+				assertSame(winning, copied.getValue("value"),
+						"Later bound duplicate occurrences must keep their canonical winner");
+				assertFalse(copied.hasBinding("optional"), "An unbound native projection slot must stay unbound");
+				assertFalse(result.hasNext());
+			}
+		}
+	}
+
+	@Test
+	void repositoryRejectsPrematurelyDetachedNativeProjectionWithMissingCapture(@TempDir File directory)
+			throws Exception {
+		try (ObservedValues store = new ObservedValues(directory)) {
+			NativeProjectedBindingSet incomplete = LmdbNativeLazyProjectedResultTest
+					.prematurelyDetachedIncompleteProjectionForRepositoryTest();
+			assertTrue(incomplete.hasBinding("value"), "The fixture must expose a bound native ID");
+			try (var result = new RepositoryValueIteration<>(
+					new CloseableIteratorIteration<>(List.of(incomplete).iterator()),
+					SailResultValueExtractor.BINDING_SETS, store, null, ignored -> {
+					})) {
+				IllegalStateException failure = assertThrows(IllegalStateException.class, result::next,
+						"A detached row with a bound but uncaptured ID must not escape as a stable snapshot");
+				assertTrue(failure.getMessage().contains("detached native result has an unresolved value"));
+			}
+		}
+	}
+
+	@Test
+	void repositorySnapshotsReusedMutableBindingSetsAndKeepsRecursiveValuesStable(@TempDir File directory)
+			throws Exception {
+		try (ObservedValues store = new ObservedValues(directory)) {
+			var valueFactory = SimpleValueFactory.getInstance();
+			TripleTerm firstNested = valueFactory.createTripleTerm(
+					valueFactory.createIRI("http://example.org/firstSubject"),
+					valueFactory.createIRI("http://example.org/predicate"),
+					valueFactory.createLiteral("first nested", valueFactory.createIRI("http://example.org/datatype")));
+			TripleTerm secondNested = valueFactory.createTripleTerm(
+					valueFactory.createIRI("http://example.org/secondSubject"),
+					valueFactory.createIRI("http://example.org/predicate"),
+					valueFactory.createLiteral("second nested", valueFactory.createIRI("http://example.org/datatype")));
+			MapBindingSet reused = new MapBindingSet();
+			reused.addBinding("value", firstNested);
+			AtomicInteger pulls = new AtomicInteger();
+			AtomicInteger closes = new AtomicInteger();
+			var source = new IterationWrapper<BindingSet>(
+					new CloseableIteratorIteration<>(List.of(reused, reused).iterator())) {
+				@Override
+				public BindingSet next() {
+					int row = pulls.getAndIncrement();
+					reused.setBinding("value", row == 0 ? firstNested : secondNested);
+					return super.next();
+				}
+
+				@Override
+				protected void handleClose() {
+					closes.incrementAndGet();
+					super.handleClose();
+				}
+			};
+			try (var result = new RepositoryValueIteration<>(source, SailResultValueExtractor.BINDING_SETS, store, null,
+					ignored -> {
+					})) {
+				BindingSet first = result.next();
+				assertNotSame(reused, first, "Mutable generic rows require a per-request shallow copy");
+				assertSame(firstNested, first.getValue("value"));
+				assertEquals(1, pulls.get(), "Preparing the first value must not prefetch the next row");
+
+				BindingSet second = result.next();
+				assertNotSame(first, second, "Each reused source row needs its own immutable current snapshot");
+				assertSame(secondNested, second.getValue("value"));
+				assertSame(firstNested, first.getValue("value"),
+						"Source mutation must not replace recursively reachable values in the prior snapshot");
+				assertEquals(2, pulls.get());
+				result.close();
+				assertEquals(1, closes.get(), "Early result close must close the mutable source once");
+			}
 		}
 	}
 

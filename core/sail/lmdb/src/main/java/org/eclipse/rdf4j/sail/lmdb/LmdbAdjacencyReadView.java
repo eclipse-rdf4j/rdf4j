@@ -84,6 +84,11 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 		return state != null;
 	}
 
+	/** A zero lease count is final: retainLease never revives a released view. */
+	boolean isReleased() {
+		return leases.get() == 0L;
+	}
+
 	LmdbAdjacencyMetrics.FallbackReason fallbackReason() {
 		return fallbackReason;
 	}

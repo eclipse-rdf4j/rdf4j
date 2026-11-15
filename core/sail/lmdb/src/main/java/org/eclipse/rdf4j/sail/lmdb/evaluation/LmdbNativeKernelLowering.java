@@ -462,6 +462,12 @@ final class LmdbNativeKernelLowering {
 					: new Lowered(variant, bindings, planBridgeReason, strictOrderCompare, distinctRowInput);
 		}
 
+		Lowered withResultCoordinateColumns(long columns) {
+			Kernel variant = kernel.withResultCoordinateColumns(columns);
+			return variant == kernel ? this
+					: new Lowered(variant, bindings, planBridgeReason, strictOrderCompare, distinctRowInput);
+		}
+
 		Lowered withStrictOrderCompare(boolean strict) {
 			return strict == strictOrderCompare ? this
 					: new Lowered(kernel, bindings, planBridgeReason, strict, distinctRowInput);
@@ -3547,9 +3553,9 @@ final class LmdbNativeKernelLowering {
 			if (!path.contexts.isFixed()) {
 				return new Operand[0];
 			}
-			Operand[] contexts = new Operand[path.contexts.ids.length];
+			Operand[] contexts = new Operand[path.contexts.size()];
 			for (int i = 0; i < contexts.length; i++) {
-				contexts[i] = Operand.constant(constantIndex(path.contexts.ids[i]));
+				contexts[i] = Operand.constant(constantIndex(path.contexts.idAt(i)));
 			}
 			return contexts;
 		}
@@ -3879,7 +3885,7 @@ final class LmdbNativeKernelLowering {
 			}
 			// Several fixed contexts are concatenated in dataset order. They cannot satisfy one global ordered-scan
 			// promise, just as PatternPlan.openContexts has to use an explicit merge for that case.
-			if (pattern.contexts.isFixed() && pattern.contexts.ids.length > 1 && pattern.statementOrder != null) {
+			if (pattern.contexts.isFixed() && pattern.contexts.size() > 1 && pattern.statementOrder != null) {
 				return false;
 			}
 			if (pattern.namedContextScope && !pattern.c.hasSlot() && !pattern.c.isConstant()) {
@@ -3952,17 +3958,14 @@ final class LmdbNativeKernelLowering {
 		 */
 		private boolean lowerFixedContextScans(PatternPlan pattern, Operand[] terms, int[] outCols,
 				Operand contextOperand) {
-			long[] contextIds;
-			if (pattern.c.isConstant()) {
-				if (!pattern.contexts.contains(pattern.c.constant)) {
-					return false;
-				}
-				contextIds = new long[] { pattern.c.constant };
-			} else {
-				contextIds = pattern.contexts.ids;
+			boolean constantContext = pattern.c.isConstant();
+			if (constantContext && !pattern.contexts.contains(pattern.c.constant)) {
+				return false;
 			}
-			List<List<Node>> branches = contextIds.length > 1 ? new ArrayList<>(contextIds.length) : null;
-			for (long contextId : contextIds) {
+			int contextCount = constantContext ? 1 : pattern.contexts.size();
+			List<List<Node>> branches = contextCount > 1 ? new ArrayList<>(contextCount) : null;
+			for (int index = 0; index < contextCount; index++) {
+				long contextId = constantContext ? pattern.c.constant : pattern.contexts.idAt(index);
 				Operand fixedContext = Operand.constant(constantIndex(contextId));
 				Operand[] armTerms = terms.clone();
 				armTerms[LmdbNativeKernelIr.ScanQuad.CTX] = fixedContext;
@@ -3991,8 +3994,8 @@ final class LmdbNativeKernelLowering {
 		private String rangeDeclineReason(PatternPlan pattern) {
 			return reasonPrefix + "pattern-range[index=" + pattern.range.indexFieldSeq()
 					+ ",plannedIndex=" + pattern.indexName
-					+ ",low=" + (pattern.range.lowKey() == null ? "open" : "bounded")
-					+ ",high=" + (pattern.range.highKeyExclusive() == null ? "open" : "bounded")
+					+ ",low=" + (pattern.range.lowKeyLength() < 0 ? "open" : "bounded")
+					+ ",high=" + (pattern.range.highKeyExclusiveLength() < 0 ? "open" : "bounded")
 					+ ",firstVarying=" + pattern.range.firstVaryingField() + "]";
 		}
 
@@ -4058,13 +4061,12 @@ final class LmdbNativeKernelLowering {
 				return lowerNativeOperator(plan);
 			}
 			int slot = Long.numberOfTrailingZeros(plan.producedMask());
-			long[] domain = new long[plan.rows.length];
-			for (int i = 0; i < plan.rows.length; i++) {
-				ValuesRow valuesRow = plan.rows[i];
+			long[] domain = new long[plan.rowCount()];
+			for (int i = 0; i < plan.rowCount(); i++) {
 				long id = LmdbNativeAggregateCompiler.UNKNOWN;
-				for (int j = 0; j < valuesRow.slots.length; j++) {
-					if (valuesRow.slots[j] == slot) {
-						id = valuesRow.values[j];
+				for (int j = 0; j < plan.rowSize(i); j++) {
+					if (plan.slotAt(i, j) == slot) {
+						id = plan.valueAt(i, j);
 						break;
 					}
 				}
@@ -5604,7 +5606,7 @@ final class LmdbNativeKernelLowering {
 		 */
 		private boolean lowerWitnessValues(ValuesPlan plan, WitnessColumns witnessCols,
 				List<Node> pipeline) {
-			if (plan.rows.length == 0) {
+			if (plan.rowCount() == 0) {
 				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(new long[0]));
 				pipeline.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, scratchColumn()));
 				return true;
@@ -5620,7 +5622,7 @@ final class LmdbNativeKernelLowering {
 				pipeline.add(new LmdbNativeKernelIr.EnumerateEntry());
 				return true;
 			}
-			if (plan.rows.length > MAX_VALUES_TABLE_ROWS || variables > MAX_HOOK_ARGS * 2) {
+			if (plan.rowCount() > MAX_VALUES_TABLE_ROWS || variables > MAX_HOOK_ARGS * 2) {
 				reason = "agg:witness-values-shape";
 				return false;
 			}
@@ -5651,9 +5653,9 @@ final class LmdbNativeKernelLowering {
 			}
 
 			if (variables == 1) {
-				long[] domain = new long[plan.rows.length];
-				for (int row = 0; row < plan.rows.length; row++) {
-					domain[row] = witnessValue(plan.rows[row], slots[0]);
+				long[] domain = new long[plan.rowCount()];
+				for (int row = 0; row < plan.rowCount(); row++) {
+					domain[row] = witnessValue(plan, row, slots[0]);
 					if (domain[row] == LmdbNativeAggregateCompiler.UNKNOWN) {
 						reason = "agg:witness-values-missing-binding";
 						return false;
@@ -5672,11 +5674,11 @@ final class LmdbNativeKernelLowering {
 				return true;
 			}
 
-			List<List<Node>> branches = new ArrayList<>(plan.rows.length);
-			for (ValuesRow row : plan.rows) {
+			List<List<Node>> branches = new ArrayList<>(plan.rowCount());
+			for (int row = 0; row < plan.rowCount(); row++) {
 				List<Node> branch = new ArrayList<>(variables);
 				for (int i = 0; i < variables; i++) {
-					long value = witnessValue(row, slots[i]);
+					long value = witnessValue(plan, row, slots[i]);
 					if (value == LmdbNativeAggregateCompiler.UNKNOWN) {
 						reason = "agg:witness-values-missing-binding";
 						return false;
@@ -5698,10 +5700,10 @@ final class LmdbNativeKernelLowering {
 			return true;
 		}
 
-		private static long witnessValue(ValuesRow row, int slot) {
-			for (int i = 0; i < row.slots.length; i++) {
-				if (row.slots[i] == slot) {
-					return row.values[i];
+		private static long witnessValue(ValuesPlan plan, int row, int slot) {
+			for (int i = 0; i < plan.rowSize(row); i++) {
+				if (plan.slotAt(row, i) == slot) {
+					return plan.valueAt(row, i);
 				}
 			}
 			return LmdbNativeAggregateCompiler.UNKNOWN;

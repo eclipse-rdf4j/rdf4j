@@ -115,6 +115,12 @@ public final class FactorSelection {
 		return lo;
 	}
 
+	/** Map a position in this selected relation back to its source relation. */
+	long sourcePosition(long logicalPosition) {
+		int range = rangeAt(logicalPosition);
+		return starts[range] + logicalPosition - prefixStart(range);
+	}
+
 	public void copyFrom(FactorSelection from) {
 		if (from == this)
 			return;

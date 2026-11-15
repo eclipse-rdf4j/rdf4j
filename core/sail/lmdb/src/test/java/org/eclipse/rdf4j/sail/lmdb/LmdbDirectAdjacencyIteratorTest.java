@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -143,5 +145,122 @@ class LmdbDirectAdjacencyIteratorTest {
 		assertThatThrownBy(view::close)
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessageContaining("released more times than retained");
+	}
+
+	@Test
+	void sourceCoordinatesAreQualifiedByTheirExactViewCatalogAndContext() {
+		LmdbAdjacencyPublishedState state = new LmdbAdjacencyPublishedState(1L, null, null, null, 1L,
+				Long.MAX_VALUE, LmdbAdjacencyPublishedState.AdjacencyServingState.UNAVAILABLE, 1L,
+				LmdbAdjacencyPlaneStatistics.empty());
+		LmdbAdjacencyReadView firstView = LmdbAdjacencyReadView.exact(1L, state, null);
+		LmdbAdjacencyReadView secondView = LmdbAdjacencyReadView.exact(1L, state, null);
+		LmdbAdjacencyArenaCatalog otherCatalog = LmdbAdjacencyArenaCatalog.of(arena);
+		LmdbAdjacencyContextCatalog otherContexts = LmdbAdjacencyContextCatalog.base(arena, new long[] { G1, G2 });
+		LmdbDirectAdjacencyIterator first = new LmdbDirectAdjacencyIterator();
+		LmdbDirectAdjacencyIterator sameSource = new LmdbDirectAdjacencyIterator();
+		LmdbDirectAdjacencyIterator otherView = new LmdbDirectAdjacencyIterator();
+		LmdbDirectAdjacencyIterator otherCatalogIterator = new LmdbDirectAdjacencyIterator();
+		LmdbDirectAdjacencyIterator otherContextCatalog = new LmdbDirectAdjacencyIterator();
+		LmdbDirectAdjacencyIterator otherContext = new LmdbDirectAdjacencyIterator();
+		try {
+			first.init(firstView, catalog, contexts, handle, KEY, PRED, -1, LmdbDirectAdjacencyIterator.BY_SUBJECT,
+					"direct");
+			Object identity = first.copySourceCoordinateIdentity();
+			assertThat(first.hasSourceCoordinates()).isTrue();
+			assertThat(identity).isNotNull();
+			assertThat(first.matchesSourceCoordinateIdentity(identity)).isTrue();
+
+			sameSource.init(firstView, catalog, contexts, handle, KEY, PRED, -1,
+					LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+			assertThat(sameSource.matchesSourceCoordinateIdentity(identity)).isTrue();
+			assertThat(sameSource.sourceCoordinateHash()).isEqualTo(first.sourceCoordinateHash());
+
+			otherView.init(secondView, catalog, contexts, handle, KEY, PRED, -1,
+					LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+			assertThat(otherView.matchesSourceCoordinateIdentity(identity)).isFalse();
+
+			otherCatalogIterator.init(firstView, otherCatalog, contexts, handle, KEY, PRED, -1,
+					LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+			assertThat(otherCatalogIterator.matchesSourceCoordinateIdentity(identity)).isFalse();
+
+			otherContextCatalog.init(firstView, catalog, otherContexts, handle, KEY, PRED, -1,
+					LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+			assertThat(otherContextCatalog.matchesSourceCoordinateIdentity(identity)).isFalse();
+
+			otherContext.init(firstView, catalog, contexts, handle, KEY, PRED, G1,
+					LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+			assertThat(otherContext.matchesSourceCoordinateIdentity(identity)).isFalse();
+
+			long[] rows = new long[4 * 5];
+			long[] coordinates = new long[5 * 5];
+			assertThat(first.fillWithSourceCoordinates(rows, coordinates, 5, 7L, 101L)).isEqualTo(5);
+			for (int row = 0; row < 5; row++) {
+				int at = row * 5;
+				assertThat(coordinates[at]).isEqualTo(7L);
+				assertThat(coordinates[at + 1]).isEqualTo(handle);
+				assertThat(coordinates[at + 2]).isEqualTo(row);
+				assertThat(coordinates[at + 3]).isZero();
+				assertThat(coordinates[at + 4]).isEqualTo(101L);
+			}
+			first.close();
+			assertThat(first.hasSourceCoordinates()).isFalse();
+			assertThat(first.copySourceCoordinateIdentity()).isNull();
+		} finally {
+			first.close();
+			sameSource.close();
+			otherView.close();
+			otherCatalogIterator.close();
+			otherContextCatalog.close();
+			otherContext.close();
+			firstView.close();
+			secondView.close();
+			otherContexts.close();
+			otherCatalog.close();
+		}
+	}
+
+	@Test
+	void bufferedCoordinatesKeepTheReadViewAliveUntilTheirSourceCursorDrains() {
+		LmdbAdjacencyPublishedState state = new LmdbAdjacencyPublishedState(1L, null, null, null, 1L,
+				Long.MAX_VALUE, LmdbAdjacencyPublishedState.AdjacencyServingState.UNAVAILABLE, 1L,
+				LmdbAdjacencyPlaneStatistics.empty());
+		AtomicBoolean released = new AtomicBoolean();
+		LmdbAdjacencyReadView view = LmdbAdjacencyReadView.exact(1L, state, () -> released.set(true));
+		LmdbDirectAdjacencyIterator iterator = new LmdbDirectAdjacencyIterator();
+		boolean ownerClosed = false;
+		try {
+			iterator.init(view, catalog, contexts, handle, KEY, PRED, -1,
+					LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+			Object identity = iterator.copySourceCoordinateIdentity();
+			assertThat(identity).isInstanceOf(RecordIterator.SourceCoordinateIdentity.class);
+			RecordIterator.SourceCoordinateIdentity sourceIdentity = (RecordIterator.SourceCoordinateIdentity) identity;
+			assertThat(sourceIdentity.retired()).isFalse();
+
+			long[] rows = new long[4 * 5];
+			long[] coordinates = new long[5 * 5];
+			assertThat(iterator.fillWithSourceCoordinates(rows, coordinates, 5, 9L, 41L)).isEqualTo(5);
+			view.close();
+			ownerClosed = true;
+			assertThat(released).isFalse();
+			assertThat(sourceIdentity.retired()).isFalse();
+
+			for (int row = 0; row < 5; row++) {
+				int at = row * 5;
+				assertThat(coordinates[at]).isEqualTo(9L);
+				assertThat(coordinates[at + 1]).isEqualTo(handle);
+				assertThat(coordinates[at + 2]).isEqualTo(row);
+				assertThat(coordinates[at + 4]).isEqualTo(41L);
+				assertThat(rows[row * 4 + TripleIndex.PRED_IDX]).isEqualTo(PRED);
+			}
+			assertThat(iterator.next()).isNull();
+			iterator.close();
+			assertThat(released).isTrue();
+			assertThat(sourceIdentity.retired()).isTrue();
+		} finally {
+			iterator.close();
+			if (!ownerClosed) {
+				view.close();
+			}
+		}
 	}
 }

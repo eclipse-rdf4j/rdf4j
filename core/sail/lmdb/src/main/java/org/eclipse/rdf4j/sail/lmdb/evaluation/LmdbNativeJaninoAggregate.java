@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Fused Janino aggregation kernel (plan: plans/lmdb-native-engine/17-janino-whole-stage-codegen.md, M4). Recognizes
@@ -124,6 +125,7 @@ final class LmdbNativeJaninoAggregate {
 	}
 
 	private static List<BindingSet> evaluate(Recognized shape, RowState row, NativeGroupIteration emitter) {
+		LmdbFusedSipFactorizedRuntime.Session invocation = row.fusedSession();
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		try {
 			probe = row.source.newProbe();
@@ -158,9 +160,12 @@ final class LmdbNativeJaninoAggregate {
 			}
 
 			OPENED.incrementAndGet();
+			LmdbFusedSipFactorizedRuntime.Session binding = invocation.binding();
+			Throwable failure = null;
 			try {
 				LmdbNativeJaninoCodegen.bind(kernel, new KernelContext(adjacencies, shape.constants(), new long[0],
 						new long[][] { shape.domain })
+								.withFusedRuntime(binding.runtime())
 								.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation()),
 						"legacyAggregate");
 				List<BindingSet> results = new ArrayList<>();
@@ -172,9 +177,14 @@ final class LmdbNativeJaninoAggregate {
 					}
 				}
 				return results;
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+				throw problem;
 			} finally {
-				kernel.close();
-				probe.close();
+				Throwable retained = KernelRuntime.closeResource(kernel::close, failure);
+				retained = KernelRuntime.closeResource(binding, retained);
+				retained = KernelRuntime.closeResource(probe, retained);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			}
 		} catch (RuntimeException | IOException problem) {
 			LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
@@ -315,15 +325,15 @@ final class LmdbNativeJaninoAggregate {
 				producerFromValues = values.alternatives[0];
 			} else if (child instanceof ValuesPlan) {
 				ValuesPlan values = (ValuesPlan) child;
-				if (shape.domain != null || !values.bindsAllSlotsEveryRow || values.rows.length == 0) {
+				if (shape.domain != null || !values.bindsAllSlotsEveryRow || values.rowCount() == 0) {
 					return decline("valuesPlan not usable");
 				}
-				long[] ids = new long[values.rows.length];
-				for (int i = 0; i < values.rows.length; i++) {
-					if (values.rows[i].slots.length != 1 || values.rows[i].slots[0] != groupSlot) {
+				long[] ids = new long[values.rowCount()];
+				for (int i = 0; i < values.rowCount(); i++) {
+					if (values.rowSize(i) != 1 || values.slotAt(i, 0) != groupSlot) {
 						return null;
 					}
-					ids[i] = values.rows[i].values[0];
+					ids[i] = values.valueAt(i, 0);
 				}
 				shape.domain = ids;
 			} else if (child instanceof PatternPlan) {

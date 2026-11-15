@@ -25,9 +25,17 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.Carrier;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeEntryBindings.ValueWitness;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.DomainStamp;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.SyntheticValueSource.EntryDomainAnchor;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.InternalIdentity;
 
 /**
  * BindingSet view over a native LMDB row's primitive slot ids.
@@ -48,6 +56,11 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	private final transient RowState row;
 	private final transient long[] memoIds;
 	private final transient Value[] memoValues;
+	/** These are live-view witnesses; detached entry snapshots use only non-owning scope references. */
+	private final transient EntryDomainAnchor sourceAnchor;
+	private final transient Object lookupScope;
+	private final transient Object resultScope;
+	private final transient Object sourceFacade;
 	private transient Set<String> bindingNamesCache;
 	private int boundSlotCount;
 	private boolean empty;
@@ -66,6 +79,10 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	RowBindingSetView(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, long[] slots,
 			boolean stable, RowState row) {
 		this.source = source;
+		this.sourceAnchor = source instanceof SyntheticValueSource synthetic ? synthetic.entryDomainAnchor() : null;
+		this.lookupScope = sourceAnchor == null ? source.valueLookupScope() : sourceAnchor.lookup();
+		this.resultScope = sourceAnchor == null ? source.resultValueScope() : sourceAnchor.result();
+		this.sourceFacade = source instanceof SyntheticValueSource synthetic ? synthetic.entryAuthorityToken() : null;
 		this.layout = layout;
 		this.base = base;
 		this.baseEmpty = base == null || base.isEmpty();
@@ -231,22 +248,31 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	@Override
 	public long nativeIdByQueryIndex(int queryIndex) {
+		return reusableNativeIdByQueryIndex(queryIndex, source);
+	}
+
+	long reusableNativeIdByQueryIndex(int queryIndex, NativeLmdbQuerySource target) {
 		int slot = layout.slotForQueryIndex(queryIndex);
 		requireRdfTerm(slot);
 		if (slot >= 0 && slots[slot] != UNKNOWN) {
-			return slots[slot];
+			return reusableNativeId(slot, target);
 		}
 		QueryWideVarLayout queryLayout = layout.queryLayout();
-		if (base instanceof SlotBindingSetView && ((SlotBindingSetView) base).queryLayout() == queryLayout
-				&& ((SlotBindingSetView) base).sameIdSpace(source)) {
-			return ((SlotBindingSetView) base).nativeIdByQueryIndex(queryIndex);
+		if (queryLayout == null || base == null) {
+			return UNKNOWN;
+		}
+		if (base instanceof RowBindingSetView nativeBase && nativeBase.queryLayout() == queryLayout) {
+			return nativeBase.reusableNativeIdByQueryIndex(queryIndex, target);
+		}
+		if (base instanceof NativeEntryBindings entry) {
+			return entry.nativeId(queryLayout.nameOf(queryIndex), target);
 		}
 		return UNKNOWN;
 	}
 
 	@Override
 	public boolean sameIdSpace(NativeLmdbQuerySource other) {
-		return source == other || source.idSpace() == other.idSpace();
+		return sourceAnchor != null && compatibleSource(other, UNKNOWN);
 	}
 
 	@Override
@@ -286,6 +312,10 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 		return source.idSpace();
 	}
 
+	NativeLmdbQuerySource nativeSource() {
+		return source;
+	}
+
 	BindingSet baseBindings() {
 		return base;
 	}
@@ -294,6 +324,72 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 		int slot = slot(name);
 		requireRdfTerm(slot);
 		return slot >= 0 ? slots[slot] : UNKNOWN;
+	}
+
+	long reusableNativeId(String name, NativeLmdbQuerySource target) {
+		int slot = slot(name);
+		requireRdfTerm(slot);
+		return slot >= 0 ? reusableNativeId(slot, target) : UNKNOWN;
+	}
+
+	private long reusableNativeId(int slot, NativeLmdbQuerySource target) {
+		long id = slots[slot];
+		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
+			return id;
+		}
+		if (!compatibleSource(target, id)) {
+			return UNKNOWN;
+		}
+		Value value = value(slot);
+		long version = ValueWitness.immediateVersion(value, id);
+		if (version < 0) {
+			return UNKNOWN;
+		}
+		InternalIdentity identity = value.getClass() == LmdbIRI.class || value.getClass() == LmdbBNode.class
+				? ((LmdbValue) value).getInternalIdentity()
+				: null;
+		return compatibleSource(target, id) && ValueWitness.immediateVersion(value, id) == version
+				&& (identity == null || identity == ((LmdbValue) value).getInternalIdentity()) ? id : UNKNOWN;
+	}
+
+	private boolean compatibleSource(NativeLmdbQuerySource target, long id) {
+		if (!(source instanceof SyntheticValueSource synthetic)) {
+			return false;
+		}
+		Object facade = synthetic.entryAuthorityToken();
+		if (facade == null || lookupScope == null || resultScope == null || lookupScope != source.valueLookupScope()
+				|| resultScope != source.resultValueScope()) {
+			return false;
+		}
+		DomainStamp domain = sourceAnchor == null ? null : sourceAnchor.domain();
+		if (sourceAnchor == null) {
+			if (target != source || !synthetic.ownsPlanId(id)) {
+				return false;
+			}
+		} else if (sourceAnchor.facade() != facade || sourceAnchor.lookup() != lookupScope
+				|| sourceAnchor.result() != resultScope
+				|| domain != null && !domain.sameDomain(source.detachedDomainStamp())) {
+			return false;
+		}
+		if (target != source) {
+			Object targetLookup = target.valueLookupScope();
+			Object targetResult = target.resultValueScope();
+			SyntheticValueSource targetSynthetic = target instanceof SyntheticValueSource
+					? (SyntheticValueSource) target
+					: null;
+			Object targetFacade = targetSynthetic == null ? null : targetSynthetic.entryAuthorityToken();
+			if (domain == null || targetLookup == null || targetResult == null
+					|| targetSynthetic != null && targetFacade == null
+					|| !domain.sameDomain(target.detachedDomainStamp()) || targetLookup != target.valueLookupScope()
+					|| targetResult != target.resultValueScope()
+					|| targetSynthetic != null && targetSynthetic.entryAuthorityToken() != targetFacade
+					|| !domain.sameDomain(target.detachedDomainStamp())) {
+				return false;
+			}
+		}
+		return facade == synthetic.entryAuthorityToken() && lookupScope == source.valueLookupScope()
+				&& resultScope == source.resultValueScope()
+				&& (domain == null || domain.sameDomain(source.detachedDomainStamp()));
 	}
 
 	void slotBound() {
@@ -383,16 +479,55 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 		if (id == NULL_CONTEXT_ID || id == UNKNOWN) {
 			return null;
 		}
-		if (memoIds != null) {
-			if (memoIds[slot] == id) {
-				return memoValues[slot];
+		if (memoIds != null && memoIds[slot] == id && memoValues[slot] != null) {
+			return memoValues[slot];
+		}
+		Value value;
+		if (resultScope == null) {
+			value = retainedSyntheticValue(id, slot);
+		} else {
+			if (resultScope != source.resultValueScope() || !sameLiveFacade()) {
+				throw staleSource();
 			}
-			Value value = source.lazyValue(id, layout.positionMask(slot));
+			value = source.lazyValue(id, layout.positionMask(slot));
+			if (resultScope != source.resultValueScope() || !sameLiveFacade()) {
+				throw staleSource();
+			}
+		}
+		if (memoIds != null) {
 			memoIds[slot] = id;
 			memoValues[slot] = value;
-			return value;
 		}
-		return source.lazyValue(id, layout.positionMask(slot));
+		return value;
+	}
+
+	private Value retainedSyntheticValue(long id, int slot) {
+		if (source instanceof SyntheticValueSource synthetic) {
+			Object facade = synthetic.entryAuthorityToken();
+			if (facade != null && synthetic.ownsPlanId(id)) {
+				Value value = source.lazyValue(id, layout.positionMask(slot));
+				if (facade == synthetic.entryAuthorityToken() && synthetic.ownsPlanId(id)) {
+					return value;
+				}
+			}
+			NativeExecutionContext context = synthetic.executionContext();
+			if (facade != null && context != null && !context.isClosed()) {
+				Value value = context.internedValueOf(id);
+				if (value != null && !context.isClosed() && facade == synthetic.entryAuthorityToken()) {
+					return value;
+				}
+			}
+		}
+		throw staleSource();
+	}
+
+	private QueryEvaluationException staleSource() {
+		return new QueryEvaluationException("native row's original value generation is unavailable");
+	}
+
+	private boolean sameLiveFacade() {
+		return sourceFacade == null || source instanceof SyntheticValueSource synthetic
+				&& sourceFacade == synthetic.entryAuthorityToken();
 	}
 
 	private void requireRdfTerm(int slot) {

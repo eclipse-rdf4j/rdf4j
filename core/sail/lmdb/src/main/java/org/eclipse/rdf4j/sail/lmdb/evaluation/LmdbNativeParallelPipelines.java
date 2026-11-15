@@ -549,7 +549,7 @@ final class LmdbNativeParallelPipelines {
 		if (consumerRow.source instanceof SyntheticValueSource synthetic) {
 			NativeExecutionContext executionContext = synthetic.executionContext();
 			if (executionContext != null) {
-				return executionContext.genericContext(step.context, step.strategy);
+				return executionContext.genericInvocationContext(step.context, step.strategy);
 			}
 		}
 		return EvaluationScopedQueryEvaluationContext.create(step.context, step.strategy);
@@ -810,13 +810,7 @@ final class LmdbNativeParallelPipelines {
 				for (int i = 0; i < workerPlans.length; i++) {
 					int worker = i;
 					var replayContext = NativeExecutionContext.captureWorkerContext();
-					futures.add(pool().submit(() -> {
-						if (templatePlan == null) {
-							runTask(() -> runWorker(worker), workerPlans[worker], sources[worker], replayContext);
-						} else {
-							runTask(worker, replayContext);
-						}
-					}));
+					futures.add(pool().submit(() -> runTask(worker, replayContext)));
 					submitted++;
 				}
 				pumpProducer();
@@ -861,7 +855,8 @@ final class LmdbNativeParallelPipelines {
 
 		private void runTask(IoTask task, MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource,
 				NativeExecutionContext.WorkerContext replayContext) {
-			try (var worker = tasks.enter(() -> closeWorker(ownedPlan, ownedSource), this::recordCleanupFailure)) {
+			try (var worker = tasks.enter(() -> closeWorker(ownedPlan, null, ownedSource),
+					this::recordCleanupFailure)) {
 				try {
 					worker.activate(replayContext);
 					observeWorkerFilterCloseFailures(ownedPlan);
@@ -874,28 +869,61 @@ final class LmdbNativeParallelPipelines {
 
 		/** Binds and owns one plan entirely inside the worker that owns its sibling source. */
 		void runTask(int workerIndex, NativeExecutionContext.WorkerContext replayContext) {
+			started = true;
 			NativeLmdbQuerySource.ParallelSource ownedSource = sources[workerIndex];
+			LmdbFusedSipFactorizedRuntime.Session[] workerSession = new LmdbFusedSipFactorizedRuntime.Session[1];
+			RowState[] workerRow = new RowState[1];
 			try (var worker = tasks.enter(() -> {
-				closeWorker(workerPlans[workerIndex], ownedSource);
-				workerPlans[workerIndex] = null;
+				try {
+					closeWorker(workerPlans[workerIndex], workerRow[0], ownedSource);
+				} finally {
+					workerPlans[workerIndex] = null;
+					if (workerSession[0] != null) {
+						workerSession[0].close();
+					}
+				}
 			}, this::recordCleanupFailure)) {
 				try {
 					worker.activate(replayContext);
-					MultiJoinPlan ownedPlan = forkWorkerPlan(templatePlan,
-							NativeScalarPlan.WorkerContext.forSource(ownedSource, workerEvaluationContext));
+					LmdbFusedSipFactorizedRuntime.Session session = consumerRow.fusedSession().worker();
+					workerSession[0] = session;
+					NativeExecutionContext execution = NativeScalarPlan.WorkerContext.executionForSource(ownedSource,
+							consumerRow.executionContext());
+					LmdbNativeEvaluationStrategy workerStrategy = consumerRow.workerStrategy(ownedSource, session,
+							execution);
+					MultiJoinPlan ownedPlan = templatePlan == null ? workerPlans[workerIndex]
+							: forkWorkerPlan(templatePlan,
+									NativeScalarPlan.WorkerContext.forSource(ownedSource, workerEvaluationContext,
+											session, execution, workerStrategy, consumerRow.diagnosticRoot()));
 					workerPlans[workerIndex] = ownedPlan;
 					observeWorkerFilterCloseFailures(ownedPlan);
-					runWorker(workerIndex, ownedPlan);
+					RowState row = new RowState(ownedSource, step.layout, consumerRow.base,
+							consumerRow.exactValuesMetrics, consumerRow.cancellation);
+					workerRow[0] = row;
+					row.fusedSession = session;
+					row.setExecutionContext(execution);
+					row.inheritDiagnosticRoot(consumerRow);
+					if (workerStrategy != null) {
+						row.setInvocationStrategy(workerStrategy);
+					}
+					runWorker(workerIndex, ownedPlan, row);
 				} catch (Throwable problem) {
 					recordTaskFailure(problem, replayContext);
 				}
 			}
 		}
 
-		private void closeWorker(MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource) {
+		private void closeWorker(MultiJoinPlan ownedPlan, RowState row,
+				NativeLmdbQuerySource.ParallelSource ownedSource) {
 			Throwable filterFailure = closePlanFilters(ownedPlan, null);
 			if (filterFailure != null) {
 				recordCleanupFailure(filterFailure);
+			}
+			if (row != null) {
+				Throwable rowFailure = KernelRuntime.closeResource(row::closeDecodedInputs, null);
+				if (rowFailure != null) {
+					recordCleanupFailure(rowFailure);
+				}
 			}
 			try {
 				ownedSource.close();
@@ -1043,6 +1071,9 @@ final class LmdbNativeParallelPipelines {
 				NativeLmdbQuerySource producerSource = sources[workerPlans.length];
 				producerRow = new RowState(producerSource, step.layout, consumerRow.base,
 						consumerRow.exactValuesMetrics, consumerRow.cancellation);
+				producerRow.fusedSession = consumerRow.fusedSession();
+				producerRow.setExecutionContext(NativeScalarPlan.WorkerContext.executionForSource(producerSource,
+						consumerRow.executionContext()));
 				producerRow.memoryScope = consumerRow.memoryScope;
 				producerRow.runtimePlan = consumerRow.runtimePlan;
 				if (NativeRowSeeder.seed(producerRow.slots, step.layout, consumerRow.base, producerSource)) {
@@ -1095,6 +1126,12 @@ final class LmdbNativeParallelPipelines {
 					producerCursor = null;
 				}
 			}
+			if (producerRow != null) {
+				Throwable rowFailure = KernelRuntime.closeResource(producerRow::closeDecodedInputs, null);
+				if (rowFailure != null) {
+					recordCleanupFailure(rowFailure);
+				}
+			}
 			try {
 				sources[workerPlans.length].close();
 			} catch (Throwable closeFailure) {
@@ -1104,14 +1141,28 @@ final class LmdbNativeParallelPipelines {
 			}
 		}
 
-		void runWorker(int worker) throws IOException {
-			runWorker(worker, workerPlans[worker]);
-		}
-
-		void runWorker(int worker, MultiJoinPlan plan) throws IOException {
+		void runWorker(int worker, MultiJoinPlan plan, LmdbFusedSipFactorizedRuntime.Session workerSession)
+				throws IOException {
 			NativeLmdbQuerySource source = sources[worker];
 			RowState row = new RowState(source, step.layout, consumerRow.base, consumerRow.exactValuesMetrics,
 					consumerRow.cancellation);
+			row.fusedSession = workerSession;
+			row.setExecutionContext(NativeScalarPlan.WorkerContext.executionForSource(source,
+					consumerRow.executionContext()));
+			Throwable primaryFailure = null;
+			try {
+				runWorker(worker, plan, row);
+			} catch (IOException | RuntimeException | Error problem) {
+				primaryFailure = problem;
+				throw problem;
+			} finally {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(
+						KernelRuntime.closeResource(row::closeDecodedInputs, primaryFailure), primaryFailure);
+			}
+		}
+
+		private void runWorker(int worker, MultiJoinPlan plan, RowState row) throws IOException {
+			NativeLmdbQuerySource source = row.source;
 			row.parallelOwnership = RowState.ParallelOwnership.OUTER_PIPELINE;
 			row.memoryScope = consumerRow.memoryScope;
 			row.runtimePlan = consumerRow.runtimePlan;

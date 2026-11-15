@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -28,6 +29,112 @@ import org.junit.jupiter.api.parallel.Resources;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class NativeLazyResultReplayTest {
+	@Test
+	void nestedCandidateReplayDrainsAfterOuterCloseAndLastReader() {
+		assertNestedCandidateDrains(false);
+	}
+
+	@Test
+	void nestedCandidateReplayDrainsAfterCancellation() {
+		assertNestedCandidateDrains(true);
+	}
+
+	private static void assertNestedCandidateDrains(boolean cancel) {
+		NativeExecutionContext rootContext = new NativeExecutionContext();
+		rootContext.initializeQueryBase(EmptyBindingSet.getInstance());
+		NativeExecutionContext child = new NativeExecutionContext(rootContext, EmptyBindingSet.getInstance(), true);
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(8L, 1 << 20, true);
+		AtomicInteger finalized = new AtomicInteger();
+		session.onFinalClose(finalized::incrementAndGet);
+		NativePhysicalPreparation parent = NativePhysicalPreparation.tryCreate(session);
+		assertThat(parent).isNotNull();
+		assertThat(parent.add(child::close)).isTrue();
+		NativePhysicalPreparation descendants = parent.child(session);
+		assertThat(descendants).isNotNull();
+		Producer producer = new Producer(child, 3);
+		NativeResultCursor survivor = null;
+		try {
+			NativeLazyResultReplay replay = child.nativeState(new Object(),
+					() -> new NativeLazyResultReplay(new String[] { "term", "length", "error" }, child,
+							child.cancellation(), producer, descendants.retain()));
+			descendants.close();
+			try (NativeResultCursor first = replay.cursor(child.cancellation())) {
+				survivor = replay.cursor(child.cancellation());
+				check(first.next(), 0);
+			}
+			parent.close();
+			session.close();
+			rootContext.close();
+			assertThat(child.isClosed()).isFalse();
+			assertThat(finalized).hasValue(0);
+			check(survivor.next(), 0);
+			if (cancel) {
+				assertThat(survivor.requestCancellation()).isTrue();
+				NativeResultCursor reader = survivor;
+				assertThatThrownBy(reader::next).isInstanceOf(KernelQueryCancelledException.class);
+			} else {
+				check(survivor.next(), 1);
+				check(survivor.next(), 2);
+				assertThat(survivor.next()).isNull();
+			}
+		} finally {
+			if (survivor != null) {
+				survivor.close();
+			}
+			parent.close();
+			descendants.close();
+			child.close();
+			rootContext.close();
+			session.close();
+		}
+		assertThat(child.isClosed()).isTrue();
+		assertThat(rootContext.isClosed()).isTrue();
+		assertThat(producer.closes).hasValue(1);
+		assertThat(finalized).hasValue(1);
+	}
+
+	@Test
+	void runtimeLeaseDrainsAfterProducerAndLastReader() {
+		NativeExecutionContext context = new NativeExecutionContext();
+		var ledger = context.memoryLedger();
+		Producer producer = new Producer(context, 3);
+		AtomicInteger runtimeClosed = new AtomicInteger();
+		LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(9L, true);
+		LmdbFusedSipFactorizedRuntime.Session binding = root.binding();
+		root.onFinalClose(runtimeClosed::incrementAndGet);
+		LmdbFusedSipFactorizedRuntime.Session.Lease lifetime = binding.retain();
+		try {
+			NativeLazyResultReplay replay = context.nativeState(new Object(),
+					() -> new NativeLazyResultReplay(new String[] { "term", "length", "error" }, context,
+							context.cancellation(), producer, lifetime));
+			binding.close();
+			root.close();
+			try (NativeResultCursor first = replay.cursor(context.cancellation());
+					NativeResultCursor second = replay.cursor(context.cancellation())) {
+				check(first.next(), 0);
+				for (int index = 0; index < 3; index++) {
+					check(second.next(), index);
+				}
+				assertThat(second.next()).isNull();
+				assertThat(producer.closes).hasValue(1);
+				assertThat(runtimeClosed).hasValue(0);
+			}
+			assertThat(runtimeClosed).hasValue(1);
+			try (NativeResultCursor replayed = replay.cursor(context.cancellation())) {
+				for (int index = 0; index < 3; index++) {
+					check(replayed.next(), index);
+				}
+				assertThat(replayed.next()).isNull();
+			}
+		} finally {
+			context.close();
+			lifetime.close();
+			binding.close();
+			root.close();
+		}
+		assertThat(ledger.usedBytes()).isZero();
+	}
+
 	@Test
 	void independentReadersCrossSpillAndResumeAfterEarlyCloseWithoutReevaluating() {
 		String old = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);

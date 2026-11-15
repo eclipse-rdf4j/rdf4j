@@ -59,11 +59,15 @@ final class NativeUniformValuesJoin {
 			NativeLmdbQuerySource source) {
 		// A scope-changing join still owns both operands; the proof and hint stay inside this very join.
 		// Nested scope changes in either operand remain barriers below.
-		if (join.isMergeJoin() || !valuesOnly(join.getRightArg())) {
+		if (!source.certifiesIdOrigins() || join.isMergeJoin() || !valuesOnly(join.getRightArg())) {
 			return null;
 		}
 		if (!QueryEvaluationUtility.isRepeatableWithinPreparation(join.getRightArg())
 				|| !hasUnorderedRepeatableQueryRoot(join, strategy)) {
+			return null;
+		}
+		Object lookupScope = source.valueLookupScope();
+		if (lookupScope == null) {
 			return null;
 		}
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join.getRightArg(),
@@ -87,6 +91,7 @@ final class NativeUniformValuesJoin {
 		}
 		Map<String, Integer> masks = strategy.valuePositionMasks(join.getLeftArg());
 		Map<String, Value> constants = new HashMap<>();
+		NativeLmdbQuerySource.IdLookup lookup = new NativeLmdbQuerySource.IdLookup();
 		for (Map.Entry<String, Value> entry : facts.fixedValues().entrySet()) {
 			String name = entry.getKey();
 			Value value = entry.getValue();
@@ -95,12 +100,23 @@ final class NativeUniformValuesJoin {
 					|| !uniformInOccurrence(join.getRightArg(), name, value)) {
 				continue;
 			}
-			long id = source.idOf(value, masks.getOrDefault(name, 0));
-			if (LmdbNativeAggregatePlannerBase.termProbeSafeId(id, value)) {
+			// The hint retains the RDF value, never the source's numeric ID. Recheck the exact lookup view around
+			// each typed result; a source capability is only a promise, not proof for this particular lookup.
+			if (!source.certifiesIdOrigins() || source.valueLookupScope() != lookupScope) {
+				return null;
+			}
+			lookup.set(NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.IdOrigin.UNCERTIFIED);
+			source.idOfWithOrigin(value, masks.getOrDefault(name, 0), lookup);
+			if (lookup.origin() == NativeLmdbQuerySource.IdOrigin.UNCERTIFIED || !source.certifiesIdOrigins()
+					|| source.valueLookupScope() != lookupScope) {
+				return null;
+			}
+			if (lookup.origin() != NativeLmdbQuerySource.IdOrigin.ABSENT && lookup.id() != 0L
+					&& LmdbNativeAggregatePlannerBase.termProbeSafeId(lookup.id(), value)) {
 				constants.put(name, value);
 			}
 		}
-		if (constants.isEmpty()) {
+		if (constants.isEmpty() || !source.certifiesIdOrigins() || source.valueLookupScope() != lookupScope) {
 			return null;
 		}
 		// A context selector is not an ordinary RDF slot: default aliases and lexical GRAPH frames have their own

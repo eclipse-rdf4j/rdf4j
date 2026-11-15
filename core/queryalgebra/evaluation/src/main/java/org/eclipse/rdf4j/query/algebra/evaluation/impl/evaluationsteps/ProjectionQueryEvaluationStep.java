@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.InvocationCarrier;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.InvocationOwner;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 
 public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep {
@@ -41,7 +43,9 @@ public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep 
 
 		try {
 			evaluate = qes.evaluate(withInheritedGraphInput(projection, bindings, context));
-			return new ProjectionIterator(projection, evaluate, bindings, context);
+			return evaluate instanceof InvocationCarrier carrier
+					? new InvocationProjectionIterator(projection, evaluate, bindings, context, carrier)
+					: new ProjectionIterator(projection, evaluate, bindings, context);
 		} catch (Throwable t) {
 			if (evaluate != null) {
 				evaluate.close();
@@ -49,6 +53,22 @@ public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep 
 			throw t;
 		}
 
+	}
+
+	/** Forwards an existing owner without adding a lease to the ordinary projection lifetime. */
+	private static final class InvocationProjectionIterator extends ProjectionIterator implements InvocationCarrier {
+		private final InvocationCarrier delegate;
+
+		private InvocationProjectionIterator(Projection projection, CloseableIteration<BindingSet> rows,
+				BindingSet bindings, QueryEvaluationContext context, InvocationCarrier delegate) {
+			super(projection, rows, bindings, context);
+			this.delegate = delegate;
+		}
+
+		@Override
+		public InvocationOwner invocationOwner() {
+			return isClosed() ? null : delegate.invocationOwner();
+		}
 	}
 
 	/** Shared caller-to-private-parameter lowering for generic and native SELECT boundaries. */

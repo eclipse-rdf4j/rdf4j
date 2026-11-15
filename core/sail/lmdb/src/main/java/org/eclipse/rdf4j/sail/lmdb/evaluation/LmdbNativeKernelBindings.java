@@ -17,14 +17,17 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongConsumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelResultCoordinates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
@@ -313,6 +316,18 @@ final class LmdbNativeKernelBindings {
 
 		int count() {
 			return values.length;
+		}
+
+		/** Install the complete binding before workers bind individual domain windows. */
+		void seedFusedDomains(LmdbNativeKernelIr.Kernel kernel, LmdbFusedSipFactorizedRuntime.Session binding) {
+			if (kernel.telemetryMode != LmdbNativeKernelIr.Kernel.TelemetryMode.FULL) {
+				return;
+			}
+			LmdbFusedKernelRuntime runtime = binding.runtime();
+			for (int i = 0; i < kernel.requirements.domains; i++) {
+				runtime.installExactDomain(i, "keyDomain[" + i + "]", "KernelContext.keyDomains[" + i + "]",
+						values[i], offsets[i], lengths[i]);
+			}
 		}
 
 		int length(int domain) {
@@ -1084,6 +1099,7 @@ final class LmdbNativeKernelBindings {
 				hooks, scanner, plans, distinctExpected,
 				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics(),
 				variablePredicateViews.wildcards())
+						.withFusedRuntime(row.fusedSession().runtime())
 						.withMemoryLedgerSupplier(() -> row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))
 						.withCancellation(peerCancellation == null
 								? LmdbNativeProbeDeadline.currentKernelCancellation(
@@ -1101,11 +1117,26 @@ final class LmdbNativeKernelBindings {
 		private BoundFactorCursor activeFactors;
 		private BoundProjectionCursor activeProjections;
 		private final long[] inputs;
+		private KernelResultCoordinates coordinateScratchOwner;
+		private long[] coordinateScratch;
+		private boolean coordinateScratchRefused;
 
 		private BoundPlan(PlanRequest request, RowState parent) {
 			this.request = request;
 			this.parent = parent;
 			this.inputs = new long[request.inputSlots.length];
+		}
+
+		private long[] coordinateScratch(KernelResultCoordinates coordinates) {
+			if (coordinateScratchOwner != null && coordinateScratchOwner != coordinates) {
+				throw new IllegalStateException("plan coordinate owner changed");
+			}
+			coordinateScratchOwner = coordinates;
+			if (coordinateScratch == null && !coordinateScratchRefused) {
+				coordinateScratch = coordinates.newSourceBatch(1);
+				coordinateScratchRefused = coordinateScratch == null;
+			}
+			return coordinateScratch;
 		}
 
 		@Override
@@ -1120,17 +1151,30 @@ final class LmdbNativeKernelBindings {
 
 		@Override
 		public Cursor open() {
-			return openRows(request.factorProjection);
+			return openRows(request.factorProjection, 0L);
+		}
+
+		@Override
+		public Cursor openCoordinates(int[] outputColumns) {
+			long demand = 0L;
+			for (int column : outputColumns) {
+				int slot = request.outputSlots[Objects.checkIndex(column, request.outputSlots.length)];
+				if (slot >= 0 && slot < Long.SIZE) {
+					demand |= 1L << slot;
+				}
+			}
+			return openRows(request.factorProjection, demand);
 		}
 
 		@Override
 		public Cursor openWeighted() {
-			return openRows(request.batchSafe);
+			return openRows(request.batchSafe, 0L);
 		}
 
-		private Cursor openRows(boolean weighted) {
+		private Cursor openRows(boolean weighted, long coordinateDemand) {
 			close();
 			RowState scratch = parent.fork();
+			scratch.resultCoordinateDemand = coordinateDemand;
 			for (int i = 0; i < inputs.length; i++) {
 				scratch.slots[request.inputSlots[i]] = inputs[i];
 			}
@@ -1492,6 +1536,15 @@ final class LmdbNativeKernelBindings {
 		private final RowState row;
 		private final int[] outputSlots;
 		private final BoundPlan owner;
+		private long[] origin;
+		private LongConsumer retireSourceNamespace;
+		private KernelResultCoordinates coordinateOwner;
+		private LmdbQueryMemoryManager.Reservation mappingReservation;
+		private long[] sourceNamespaces, mappedNamespaces;
+		private boolean[] retiredNamespaces;
+		private int namespaceCount;
+		private long sourceActivation;
+		private boolean coordinateTracking, mappingRefused;
 		private long remainingLogicalRows;
 		private int pollTick;
 		private boolean closed;
@@ -1505,6 +1558,36 @@ final class LmdbNativeKernelBindings {
 
 		@Override
 		public int fill(long[] rowBuffer, int maxRows) {
+			return fillRows(rowBuffer, null, null, maxRows, null);
+		}
+
+		@Override
+		public int fillCoordinates(long[] rowBuffer, long[] coordinates, int[] outputColumns, int maxRows,
+				KernelResultCoordinates owner) {
+			if (maxRows < 0
+					|| (long) maxRows * outputColumns.length > coordinates.length / KernelResultCoordinates.WIDTH) {
+				throw new IllegalArgumentException("plan coordinate buffer capacity");
+			}
+			for (int column : outputColumns) {
+				Objects.checkIndex(column, outputSlots.length);
+			}
+			if (coordinateOwner != null && coordinateOwner != owner) {
+				throw new IllegalStateException("plan coordinate owner changed");
+			}
+			coordinateOwner = owner;
+			if (origin == null && !mappingRefused) {
+				origin = this.owner.coordinateScratch(owner);
+				if (origin == null) {
+					mappingRefused = true;
+				} else {
+					retireSourceNamespace = this::retireSourceNamespace;
+				}
+			}
+			return fillRows(rowBuffer, coordinates, outputColumns, maxRows, owner);
+		}
+
+		private int fillRows(long[] rowBuffer, long[] coordinates, int[] outputColumns, int maxRows,
+				KernelResultCoordinates coordinateOwner) {
 			if (closed || maxRows <= 0) {
 				return 0;
 			}
@@ -1515,9 +1598,20 @@ final class LmdbNativeKernelBindings {
 			int rows = 0;
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
+				NativeResultCoordinates source = coordinates != null && origin != null
+						&& cursor instanceof NativeResultCoordinates available
+								? available
+								: null;
+				if (source != null && !coordinateTracking) {
+					source.takeChangedSlots();
+					coordinateTracking = true;
+				}
 				while (rows < maxRows && !row.cancellation.isCancellationRequested()) {
 					LmdbNativeProbeDeadline.poll(++pollTick);
 					if (remainingLogicalRows == 0L) {
+						if (source != null) {
+							source.drainRetiredNamespaces(retireSourceNamespace);
+						}
 						if (!row.advance(cursor)) {
 							break;
 						}
@@ -1531,8 +1625,14 @@ final class LmdbNativeKernelBindings {
 					for (int i = 0; i < outputSlots.length; i++) {
 						rowBuffer[base + i] = row.slots[outputSlots[i]];
 					}
+					if (coordinates != null) {
+						captureCoordinates(source, coordinates, outputColumns, rows);
+					}
 					remainingLogicalRows--;
 					rows++;
+				}
+				if (coordinateOwner != null && rows > 0) {
+					coordinateOwner.retainBatch(coordinates, Math.multiplyExact(rows, outputColumns.length));
 				}
 				if (rows == 0)
 					close();
@@ -1546,6 +1646,113 @@ final class LmdbNativeKernelBindings {
 			} finally {
 				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			}
+		}
+
+		private void captureCoordinates(NativeResultCoordinates source, long[] destination, int[] outputColumns,
+				int rowIndex) {
+			long activation = source == null ? 0L : source.coordinateActivation();
+			if (sourceActivation != activation) {
+				retireMappings();
+				sourceActivation = activation;
+			}
+			for (int i = 0; i < outputColumns.length; i++) {
+				int at = (rowIndex * outputColumns.length + i) * KernelResultCoordinates.WIDTH;
+				destination[at + KernelResultCoordinates.POSITION] = -1L;
+				destination[at + KernelResultCoordinates.NAMESPACE] = 0L;
+				int slot = outputSlots[outputColumns[i]];
+				if (activation <= 0L || !source.mayReplay(slot) || !source.coordinateValid(slot, activation)) {
+					continue;
+				}
+				origin[NativeResultCoordinates.NAMESPACE] = 0L;
+				if (!source.resultCoordinate(slot, origin) || !source.coordinateValid(slot, activation)
+						|| origin[NativeResultCoordinates.POSITION] < 0L) {
+					continue;
+				}
+				long namespace = mappedNamespace(origin[NativeResultCoordinates.NAMESPACE]);
+				if (namespace > 0L) {
+					System.arraycopy(origin, 0, destination, at, NativeResultCoordinates.WIDTH);
+					destination[at + KernelResultCoordinates.NAMESPACE] = namespace;
+				}
+			}
+		}
+
+		private long mappedNamespace(long sourceNamespace) {
+			if (sourceNamespace < 0L || coordinateOwner == null || !coordinateOwner.enabled()) {
+				return 0L;
+			}
+			for (int i = 0; i < namespaceCount; i++) {
+				if (sourceNamespaces[i] == sourceNamespace) {
+					return retiredNamespaces[i] ? 0L : mappedNamespaces[i];
+				}
+			}
+			if (mappingRefused) {
+				return 0L;
+			}
+			if (!ensureMappingCapacity(namespaceCount + 1)) {
+				mappingRefused = true;
+				return 0L;
+			}
+			long mapped = coordinateOwner.newNamespace();
+			if (mapped > 0L) {
+				sourceNamespaces[namespaceCount] = sourceNamespace;
+				mappedNamespaces[namespaceCount] = mapped;
+				retiredNamespaces[namespaceCount++] = false;
+			} else {
+				mappingRefused = true;
+			}
+			return mapped;
+		}
+
+		private boolean ensureMappingCapacity(int required) {
+			if (sourceNamespaces != null && required <= sourceNamespaces.length) {
+				return true;
+			}
+			int capacity = sourceNamespaces == null ? 8 : sourceNamespaces.length * 2;
+			if (capacity < required || capacity < 0) {
+				return false;
+			}
+			LmdbQueryMemoryManager.Reservation claim = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+					.tryReserveWithoutReclamation(128L + 24L * capacity);
+			if (claim == null) {
+				return false;
+			}
+			try {
+				long[] sources = sourceNamespaces == null ? new long[capacity]
+						: Arrays.copyOf(sourceNamespaces, capacity);
+				long[] mapped = mappedNamespaces == null ? new long[capacity]
+						: Arrays.copyOf(mappedNamespaces, capacity);
+				boolean[] retired = retiredNamespaces == null ? new boolean[capacity]
+						: Arrays.copyOf(retiredNamespaces, capacity);
+				if (mappingReservation != null) {
+					mappingReservation.close();
+				}
+				sourceNamespaces = sources;
+				mappedNamespaces = mapped;
+				retiredNamespaces = retired;
+				mappingReservation = claim;
+				return true;
+			} catch (RuntimeException | Error failure) {
+				claim.close();
+				throw failure;
+			}
+		}
+
+		private void retireSourceNamespace(long namespace) {
+			for (int i = 0; i < namespaceCount; i++) {
+				if (sourceNamespaces[i] == namespace && !retiredNamespaces[i]) {
+					retiredNamespaces[i] = true;
+					coordinateOwner.requestRetirement(mappedNamespaces[i]);
+				}
+			}
+		}
+
+		private void retireMappings() {
+			if (coordinateOwner != null) {
+				for (int i = 0; i < namespaceCount; i++) {
+					coordinateOwner.requestRetirement(mappedNamespaces[i]);
+				}
+			}
+			namespaceCount = 0;
 		}
 
 		@Override
@@ -1614,7 +1821,15 @@ final class LmdbNativeKernelBindings {
 				try {
 					cursor.close();
 				} finally {
-					owner.released(this);
+					try {
+						retireMappings();
+						if (mappingReservation != null) {
+							mappingReservation.close();
+							mappingReservation = null;
+						}
+					} finally {
+						owner.released(this);
+					}
 				}
 			}
 		}

@@ -42,10 +42,12 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.lmdb.LmdbIndexOrderFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Semantic native solution-modifier pipeline for wrapper stacks that cannot be flattened into one slot-row root. Stages
@@ -76,6 +78,24 @@ final class NativeRootPipeline {
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluationScoped) {
+		PlanValueCatalog.Builder catalog = PlanValueCatalog.Builder.compiledTree();
+		try {
+			QueryEvaluationStep step = tryCompile(expr, context, strategy, source, rootEvaluationScoped, catalog);
+			if (step == null) {
+				catalog.abort();
+			} else {
+				catalog.freeze();
+			}
+			return step;
+		} catch (RuntimeException | Error failure) {
+			catalog.abort();
+			throw failure;
+		}
+	}
+
+	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluationScoped,
+			PlanValueCatalog.Builder catalog) {
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot) {
 			node = ((QueryRoot) node).getArg();
@@ -99,7 +119,7 @@ final class NativeRootPipeline {
 			}
 		}
 
-		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source, catalog);
 		planner.rootEvaluationScoped = rootEvaluationScoped;
 		QueryEvaluationStep step = planner.compileAggregateRoot(node);
 		if (step == null) {
@@ -184,18 +204,199 @@ final class NativeRootPipeline {
 			NativeBindingSetValueEvaluator evaluator = NativeBindingSetValueCompiler.compile(element.getExpr(),
 					strategy,
 					context);
-			keys[i] = new OrderKey(evaluator, element.isAscending());
+			keys[i] = new OrderKey(evaluator, element.isAscending(),
+					NativeCompiledBindingSetValue.snapshotStructure(element.getExpr()));
 		}
 		return keys;
 	}
 
-	static final class PipelineStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	/** These stages compare RDF mappings; a physical summary cannot cross that observer boundary. */
+	private static NativeCompiledResultRecipe semanticChild(QueryEvaluationStep step) {
+		NativeCompiledResultRecipe child = step instanceof NativeCompiledRecipeProvider provider
+				? provider.compiledRecipe()
+				: null;
+		return child == null || child.requiresPhysicalResults() ? null : child;
+	}
+
+	private static boolean reserveBinding(NativeResultBinding binding, long bytes) {
+		return binding != null && binding.worker() != null && binding.strategy() != null && binding.context() != null
+				&& binding.physicalPreparation() != null && binding.worker().invocationStrategy() == binding.strategy()
+				&& binding.strategy().isBoundTo(binding.worker()) && binding.physicalPreparation().reserveBytes(bytes);
+	}
+
+	private static List<CompiledOrderKey> captureOrderKeys(OrderKey[] keys) {
+		List<CompiledOrderKey> captured = new ArrayList<>(keys.length);
+		for (OrderKey key : keys) {
+			NativeCompiledBindingSetValue expression = NativeCompiledBindingSetValue.capture(key.expression());
+			if (expression == null) {
+				return null;
+			}
+			captured.add(new CompiledOrderKey(expression, key.ascending()));
+		}
+		return List.copyOf(captured);
+	}
+
+	private static long orderBindingBytes(List<CompiledOrderKey> keys) {
+		long bytes = 160L + 64L * keys.size();
+		for (CompiledOrderKey key : keys) {
+			bytes = Math.addExact(bytes, key.expression().bindingBytes());
+		}
+		return bytes;
+	}
+
+	private static OrderKey[] bindOrderKeys(List<CompiledOrderKey> keys, NativeResultBinding binding) {
+		OrderKey[] bound = new OrderKey[keys.size()];
+		for (int i = 0; i < bound.length; i++) {
+			CompiledOrderKey key = keys.get(i);
+			ValueExpr expression = key.expression().expression();
+			NativeBindingSetValueEvaluator evaluator = NativeBindingSetValueCompiler.compile(expression,
+					binding.strategy(), binding.context());
+			if (evaluator == null) {
+				return null;
+			}
+			bound[i] = new OrderKey(evaluator, key.ascending(), expression);
+		}
+		return bound;
+	}
+
+	private record CompiledOrderKey(NativeCompiledBindingSetValue expression, boolean ascending) {
+	}
+
+	private record PipelineRecipe(NativeCompiledResultRecipe child, String physicalPlan)
+			implements NativeCompiledResultRecipe {
+		@Override
+		public QueryEvaluationStep bind(NativeResultBinding binding) {
+			if (!reserveBinding(binding, 96L)) {
+				return null;
+			}
+			QueryEvaluationStep bound = child.bind(binding);
+			return bound == null ? null : new PipelineStep(bound, physicalPlan);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return false;
+		}
+
+		@Override
+		public String describe() {
+			return physicalPlan;
+		}
+	}
+
+	private record SliceRecipe(NativeCompiledResultRecipe child, long offset, long limit)
+			implements NativeCompiledResultRecipe {
+		@Override
+		public QueryEvaluationStep bind(NativeResultBinding binding) {
+			if (!reserveBinding(binding, 96L)) {
+				return null;
+			}
+			QueryEvaluationStep bound = child.bind(binding);
+			return bound == null ? null : new NativeSliceStep(bound, offset, limit);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return false;
+		}
+
+		@Override
+		public String describe() {
+			return "NativeSlice(offset=" + offset + ", limit=" + limit + ")";
+		}
+	}
+
+	private record DistinctRecipe(NativeCompiledResultRecipe child) implements NativeCompiledResultRecipe {
+		@Override
+		public QueryEvaluationStep bind(NativeResultBinding binding) {
+			if (!reserveBinding(binding, 96L)) {
+				return null;
+			}
+			QueryEvaluationStep bound = child.bind(binding);
+			return bound == null ? null : new NativeDistinctStep(bound);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return false;
+		}
+
+		@Override
+		public String describe() {
+			return "NativeDistinct";
+		}
+	}
+
+	private record TopKRecipe(NativeCompiledResultRecipe child, List<CompiledOrderKey> keys, boolean strict,
+			QueryExecutionPolicy policy, long offset, long limit, long retained) implements NativeCompiledResultRecipe {
+		@Override
+		public QueryEvaluationStep bind(NativeResultBinding binding) {
+			if (!reserveBinding(binding, orderBindingBytes(keys))
+					|| (binding.strategy().getQueryEvaluationMode() == QueryEvaluationMode.STRICT) != strict
+					|| binding.strategy().getQueryExecutionPolicy() != policy) {
+				return null;
+			}
+			OrderKey[] boundKeys = bindOrderKeys(keys, binding);
+			if (boundKeys == null) {
+				return null;
+			}
+			QueryEvaluationStep bound = child.bind(binding);
+			return bound == null ? null : new NativeTopKStep(bound, boundKeys, strict, policy, offset, limit, retained);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return false;
+		}
+
+		@Override
+		public String describe() {
+			return "NativeTopK(offset=" + offset + ", limit=" + limit + ", keys=" + keys.size() + ")";
+		}
+	}
+
+	private record OrderRecipe(NativeCompiledResultRecipe child, List<CompiledOrderKey> keys, boolean strict,
+			QueryExecutionPolicy policy) implements NativeCompiledResultRecipe {
+		@Override
+		public QueryEvaluationStep bind(NativeResultBinding binding) {
+			if (!reserveBinding(binding, orderBindingBytes(keys))
+					|| (binding.strategy().getQueryEvaluationMode() == QueryEvaluationMode.STRICT) != strict
+					|| binding.strategy().getQueryExecutionPolicy() != policy) {
+				return null;
+			}
+			OrderKey[] boundKeys = bindOrderKeys(keys, binding);
+			if (boundKeys == null) {
+				return null;
+			}
+			QueryEvaluationStep bound = child.bind(binding);
+			return bound == null ? null : new NativeOrderStep(bound, boundKeys, strict, policy);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return false;
+		}
+
+		@Override
+		public String describe() {
+			return "NativeOrder(keys=" + keys.size() + ")";
+		}
+	}
+
+	static final class PipelineStep
+			implements QueryEvaluationStep, NativeCompiledRecipeProvider, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep staged;
 		private final String physicalPlan;
 
 		private PipelineStep(QueryEvaluationStep staged, String physicalPlan) {
 			this.staged = staged;
 			this.physicalPlan = physicalPlan;
+		}
+
+		@Override
+		public NativeCompiledResultRecipe compiledRecipe() {
+			NativeCompiledResultRecipe child = semanticChild(staged);
+			return child == null ? null : new PipelineRecipe(child, physicalPlan);
 		}
 
 		@Override
@@ -215,7 +416,8 @@ final class NativeRootPipeline {
 	}
 
 	/** ORDER BY fused with its bounded LIMIT: a heap of the retained rows replaces staging the complete input. */
-	private static final class NativeTopKStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private static final class NativeTopKStep
+			implements QueryEvaluationStep, NativeCompiledRecipeProvider, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
 		private final OrderKey[] keys;
 		private final boolean strict;
@@ -233,6 +435,14 @@ final class NativeRootPipeline {
 			this.offset = offset;
 			this.limit = limit;
 			this.retained = retained;
+		}
+
+		@Override
+		public NativeCompiledResultRecipe compiledRecipe() {
+			NativeCompiledResultRecipe child = semanticChild(arg);
+			List<CompiledOrderKey> expressions = captureOrderKeys(keys);
+			return child == null || expressions == null ? null
+					: new TopKRecipe(child, expressions, strict, policy, offset, limit, retained);
 		}
 
 		@Override
@@ -300,11 +510,14 @@ final class NativeRootPipeline {
 
 	private static final class TopKIteration extends DelayedIteration<BindingSet>
 			implements CooperativeCancellation, NativeExecutionContextCarrier {
-		private CloseableIteration<BindingSet> source;
+		private volatile CloseableIteration<BindingSet> source;
 		private final OrderKey[] keys;
 		private final ValueComparator comparator;
 		private final NativeExecutionContext executionContext;
 		private final NativeExecutionContext.Lease lease;
+		private final NativeInvocationCarrier invocation;
+		private final NativeInvocationCarrier.Lease invocationLease;
+		private final NativeInvocationOperations operations;
 		private final long offset;
 		private final long limit;
 		private final int retained;
@@ -317,8 +530,11 @@ final class NativeRootPipeline {
 			this.keys = keys;
 			this.comparator = new ValueComparator(policy);
 			this.comparator.setStrict(strict);
-			this.executionContext = executionContext;
-			this.lease = NativeExecutionContextCarrier.retain(source);
+			this.invocation = NativeExecutionContextCarrier.invocationOf(source);
+			this.executionContext = invocation == null ? executionContext : invocation.executionContext();
+			this.invocationLease = invocation == null ? null : invocation.retain();
+			this.lease = invocation == null ? NativeExecutionContextCarrier.retain(source) : null;
+			this.operations = new NativeInvocationOperations(invocationLease, lease);
 			this.offset = offset;
 			this.limit = limit;
 			this.retained = Math.toIntExact(retained);
@@ -326,6 +542,14 @@ final class NativeRootPipeline {
 
 		@Override
 		protected CloseableIteration<? extends BindingSet> createIteration() {
+			CloseableIteration<BindingSet> currentSource;
+			synchronized (operations) {
+				if (!operations.enter()) {
+					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+				}
+				currentSource = source;
+			}
+			Throwable primaryFailure = null;
 			try {
 				if (retained == 0 || limit == 0L) {
 					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
@@ -337,8 +561,8 @@ final class NativeRootPipeline {
 				PriorityQueue<TopKEntry> heap = new PriorityQueue<>(Math.min(retained, 1 << 16) + 1,
 						order.reversed());
 				long sequence = 0L;
-				while (!cancellationRequested && source.hasNext()) {
-					BindingSet row = source.next();
+				while (!cancellationRequested && currentSource.hasNext()) {
+					BindingSet row = currentSource.next();
 					TopKEntry entry = new TopKEntry(row, keyValues(row), sequence++);
 					if (heap.size() < retained) {
 						heap.add(entry);
@@ -358,19 +582,19 @@ final class NativeRootPipeline {
 					rows.add(ordered.get(i).row);
 				}
 				return new CloseableIteratorIteration<>(rows.iterator());
+			} catch (RuntimeException | Error problem) {
+				primaryFailure = problem;
+				throw problem;
 			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
-				}
+				Throwable failure = releaseResources(primaryFailure);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(operations.leave(failure), primaryFailure);
 			}
 		}
 
 		private Value[] keyValues(BindingSet row) {
 			Value[] values = new Value[keys.length];
 			for (int i = 0; i < keys.length; i++) {
-				values[i] = keys[i].value(row, executionContext);
+				values[i] = keys[i].value(row, executionContext, invocation);
 			}
 			return values;
 		}
@@ -394,15 +618,13 @@ final class NativeRootPipeline {
 		@Override
 		protected void handleClose() {
 			cancellationRequested = true;
+			Throwable failure = null;
 			try {
 				super.handleClose();
-			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
-				}
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
 			}
+			KernelRuntime.rethrowCloseFailure(releaseResources(failure));
 		}
 
 		@Override
@@ -420,22 +642,27 @@ final class NativeRootPipeline {
 			return executionContext;
 		}
 
-		private void releaseSource() {
-			CloseableIteration<BindingSet> current = source;
-			source = null;
-			if (current != null) {
-				current.close();
-			}
+		@Override
+		public NativeInvocationCarrier invocationCarrier() {
+			return invocation;
 		}
 
-		private void releaseLease() {
-			if (lease != null) {
-				lease.close();
+		private Throwable releaseResources(Throwable failure) {
+			CloseableIteration<BindingSet> currentSource;
+			synchronized (operations) {
+				if (!operations.beginClose()) {
+					return failure;
+				}
+				currentSource = source;
+				source = null;
 			}
+			failure = KernelRuntime.closeResource(currentSource, failure);
+			return operations.delegateClosed(failure);
 		}
 	}
 
-	private static final class NativeSliceStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private static final class NativeSliceStep
+			implements QueryEvaluationStep, NativeCompiledRecipeProvider, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
 		private final long offset;
 		private final long limit;
@@ -444,6 +671,12 @@ final class NativeRootPipeline {
 			this.arg = arg;
 			this.offset = Math.max(0L, offset);
 			this.limit = limit;
+		}
+
+		@Override
+		public NativeCompiledResultRecipe compiledRecipe() {
+			NativeCompiledResultRecipe child = semanticChild(arg);
+			return child == null ? null : new SliceRecipe(child, offset, limit);
 		}
 
 		@Override
@@ -561,13 +794,25 @@ final class NativeRootPipeline {
 		public NativeExecutionContext executionContext() {
 			return executionContext;
 		}
+
+		@Override
+		public NativeInvocationCarrier invocationCarrier() {
+			return NativeExecutionContextCarrier.invocationOf(delegate);
+		}
 	}
 
-	private static final class NativeDistinctStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private static final class NativeDistinctStep
+			implements QueryEvaluationStep, NativeCompiledRecipeProvider, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
 
 		private NativeDistinctStep(QueryEvaluationStep arg) {
 			this.arg = arg;
+		}
+
+		@Override
+		public NativeCompiledResultRecipe compiledRecipe() {
+			NativeCompiledResultRecipe child = semanticChild(arg);
+			return child == null ? null : new DistinctRecipe(child);
 		}
 
 		@Override
@@ -665,9 +910,15 @@ final class NativeRootPipeline {
 		public NativeExecutionContext executionContext() {
 			return executionContext;
 		}
+
+		@Override
+		public NativeInvocationCarrier invocationCarrier() {
+			return NativeExecutionContextCarrier.invocationOf(delegate);
+		}
 	}
 
-	private static final class NativeOrderStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private static final class NativeOrderStep
+			implements QueryEvaluationStep, NativeCompiledRecipeProvider, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
 		private final OrderKey[] keys;
 		private final boolean strict;
@@ -678,6 +929,13 @@ final class NativeRootPipeline {
 			this.keys = keys;
 			this.strict = strict;
 			this.policy = policy;
+		}
+
+		@Override
+		public NativeCompiledResultRecipe compiledRecipe() {
+			NativeCompiledResultRecipe child = semanticChild(arg);
+			List<CompiledOrderKey> expressions = captureOrderKeys(keys);
+			return child == null || expressions == null ? null : new OrderRecipe(child, expressions, strict, policy);
 		}
 
 		@Override
@@ -702,20 +960,25 @@ final class NativeRootPipeline {
 		}
 	}
 
-	private record OrderKey(NativeBindingSetValueEvaluator evaluator, boolean ascending) {
-		private Value value(BindingSet bindings, NativeExecutionContext executionContext) {
-			NativeValueOutcome outcome = evaluator.evaluate(bindings, executionContext);
+	private record OrderKey(NativeBindingSetValueEvaluator evaluator, boolean ascending, ValueExpr expression) {
+		private Value value(BindingSet bindings, NativeExecutionContext executionContext,
+				NativeInvocationCarrier invocation) {
+			NativeValueOutcome outcome = invocation == null ? evaluator.evaluate(bindings, executionContext)
+					: evaluator.evaluateInPreparation(bindings, executionContext, invocation.preparationScope());
 			return outcome.isBound() ? outcome.value() : null;
 		}
 	}
 
 	private static final class OrderIteration extends DelayedIteration<BindingSet>
 			implements CooperativeCancellation, NativeExecutionContextCarrier {
-		private CloseableIteration<BindingSet> source;
+		private volatile CloseableIteration<BindingSet> source;
 		private final OrderKey[] keys;
 		private final ValueComparator comparator;
 		private final NativeExecutionContext executionContext;
 		private final NativeExecutionContext.Lease lease;
+		private final NativeInvocationCarrier invocation;
+		private final NativeInvocationCarrier.Lease invocationLease;
+		private final NativeInvocationOperations operations;
 		private volatile boolean cancellationRequested;
 
 		private OrderIteration(CloseableIteration<BindingSet> source, OrderKey[] keys, boolean strict,
@@ -724,16 +987,27 @@ final class NativeRootPipeline {
 			this.keys = keys;
 			this.comparator = new ValueComparator(policy);
 			this.comparator.setStrict(strict);
-			this.executionContext = executionContext;
-			this.lease = NativeExecutionContextCarrier.retain(source);
+			this.invocation = NativeExecutionContextCarrier.invocationOf(source);
+			this.executionContext = invocation == null ? executionContext : invocation.executionContext();
+			this.invocationLease = invocation == null ? null : invocation.retain();
+			this.lease = invocation == null ? NativeExecutionContextCarrier.retain(source) : null;
+			this.operations = new NativeInvocationOperations(invocationLease, lease);
 		}
 
 		@Override
 		protected CloseableIteration<? extends BindingSet> createIteration() {
+			CloseableIteration<BindingSet> currentSource;
+			synchronized (operations) {
+				if (!operations.enter()) {
+					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+				}
+				currentSource = source;
+			}
 			List<BindingSet> rows = new ArrayList<>();
+			Throwable primaryFailure = null;
 			try {
-				while (!cancellationRequested && source.hasNext()) {
-					rows.add(source.next());
+				while (!cancellationRequested && currentSource.hasNext()) {
+					rows.add(currentSource.next());
 				}
 				if (!cancellationRequested) {
 					rows.sort(this::compare);
@@ -741,12 +1015,12 @@ final class NativeRootPipeline {
 					rows.clear();
 				}
 				return new CloseableIteratorIteration<>(rows.iterator());
+			} catch (RuntimeException | Error problem) {
+				primaryFailure = problem;
+				throw problem;
 			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
-				}
+				Throwable failure = releaseResources(primaryFailure);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(operations.leave(failure), primaryFailure);
 			}
 		}
 
@@ -755,8 +1029,8 @@ final class NativeRootPipeline {
 				return 0;
 			}
 			for (OrderKey key : keys) {
-				int comparison = comparator.compare(key.value(left, executionContext),
-						key.value(right, executionContext));
+				int comparison = comparator.compare(key.value(left, executionContext, invocation),
+						key.value(right, executionContext, invocation));
 				if (comparison != 0) {
 					return key.ascending() ? comparison : -comparison;
 				}
@@ -767,15 +1041,13 @@ final class NativeRootPipeline {
 		@Override
 		protected void handleClose() {
 			cancellationRequested = true;
+			Throwable failure = null;
 			try {
 				super.handleClose();
-			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
-				}
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
 			}
+			KernelRuntime.rethrowCloseFailure(releaseResources(failure));
 		}
 
 		@Override
@@ -793,18 +1065,22 @@ final class NativeRootPipeline {
 			return executionContext;
 		}
 
-		private void releaseSource() {
-			CloseableIteration<BindingSet> current = source;
-			source = null;
-			if (current != null) {
-				current.close();
-			}
+		@Override
+		public NativeInvocationCarrier invocationCarrier() {
+			return invocation;
 		}
 
-		private void releaseLease() {
-			if (lease != null) {
-				lease.close();
+		private Throwable releaseResources(Throwable failure) {
+			CloseableIteration<BindingSet> currentSource;
+			synchronized (operations) {
+				if (!operations.beginClose()) {
+					return failure;
+				}
+				currentSource = source;
+				source = null;
 			}
+			failure = KernelRuntime.closeResource(currentSource, failure);
+			return operations.delegateClosed(failure);
 		}
 	}
 }

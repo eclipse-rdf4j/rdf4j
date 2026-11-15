@@ -14,6 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -27,12 +31,55 @@ import java.util.concurrent.TimeoutException;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class ValueStoreDetachedSnapshotReadTest {
+
+	@Test
+	void compiledLookupReceiptRotatesOnMutationAndDeclinesDetachedOrClosedSnapshot(@TempDir Path dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setValueDBSize(1024L * 1024L)
+				.setTripleDBSize(1024L * 1024L)
+				.setForceSync(false);
+		ValueStore values = new ValueStore(dataDir.resolve("values").toFile(), config);
+		try (TripleStore triples = new TripleStore(dataDir.resolve("triples").toFile(), config, values);
+				TxnManager.Txn triple = triples.getTxnManager().createReadTxnPinned(triples::getDataRevision);
+				ValueStore.ReadSnapshotReservation reserved = values.reserveReadSnapshot()) {
+			ValueStore.ReadSnapshot snapshot = reserved.start(triple);
+			try {
+				Object before = values.detachedValueLookupScope(snapshot);
+				assertNotNull(before);
+				assertNotSame(snapshot, before, "a compiled receipt must not own the read snapshot");
+				assertSame(before, values.detachedValueLookupScope(snapshot));
+
+				values.startTransaction(true);
+				try {
+					assertNull(values.detachedValueLookupScope(snapshot), "an active writer cannot certify a lookup");
+					values.storeValue(values.createIRI("urn:detached-receipt:later"));
+					values.commit();
+				} catch (Throwable failure) {
+					values.rollback();
+					throw failure;
+				}
+				Object after = values.detachedValueLookupScope(snapshot);
+				assertNotNull(after);
+				assertNotSame(before, after, "a writer must invalidate even a still-pinned receipt");
+				assertTrue(values.growMapForEstimatedWrite(Math.multiplyExact(values.mapSizeBytes(), 2L), null));
+				assertTrue(snapshot.dictionaryDetached());
+				assertNull(values.detachedValueLookupScope(snapshot), "a detached dictionary cannot reuse the receipt");
+			} finally {
+				snapshot.close();
+			}
+			assertThrows(IOException.class, () -> values.detachedValueLookupScope(snapshot));
+		} finally {
+			values.close();
+		}
+	}
 
 	@ParameterizedTest
 	@EnumSource(DetachedRead.class)

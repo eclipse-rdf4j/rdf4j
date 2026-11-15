@@ -133,6 +133,21 @@ final class LmdbNativeAggregateCompiler {
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		CompileResult result = compile(expr, context, strategy, source, false);
+		return recordCompiledResult(expr, result);
+	}
+
+	static QueryEvaluationStep tryCompileOwned(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PlanValueCatalog.Builder catalog) {
+		try {
+			CompileResult result = compileWithCatalog(expr, context, strategy, source, false, Set.of(), Set.of(),
+					catalog);
+			return recordCompiledResult(expr, result);
+		} catch (LmdbNativeAggregatePlannerBase.SourceTermRequiresGeneric decline) {
+			return null;
+		}
+	}
+
+	private static QueryEvaluationStep recordCompiledResult(TupleExpr expr, CompileResult result) {
 		if (result.step != null) {
 			LmdbNativeStrategyPreview.inspect(result.step);
 			if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
@@ -184,14 +199,29 @@ final class LmdbNativeAggregateCompiler {
 	static QueryEvaluationStep tryCompileSemanticSubquery(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		return tryCompileSemanticSubquery(expr, context, strategy, source, inheritedFrameInputNames,
+				inheritedLateralFrameInputNames, null);
+	}
+
+	static QueryEvaluationStep tryCompileSemanticSubquery(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames,
+			PlanValueCatalog.Builder catalog) {
 		Set<TupleExpr> compileStack = SEMANTIC_SUBQUERY_COMPILE_STACK.get();
 		if (!compileStack.add(expr)) {
 			return null;
 		}
 		try {
-			CompileResult result = compile(expr, context, strategy, source, false, inheritedFrameInputNames,
-					inheritedLateralFrameInputNames);
+			CompileResult result = catalog == null
+					? compile(expr, context, strategy, source, false, inheritedFrameInputNames,
+							inheritedLateralFrameInputNames)
+					: compileWithCatalog(expr, context, strategy, source, false, inheritedFrameInputNames,
+							inheritedLateralFrameInputNames, catalog);
 			return result.step != null && !result.sawIsland ? result.step : null;
+		} catch (PlanValueCatalog.MissingCompiledConstant
+				| LmdbNativeAggregatePlannerBase.SourceTermRequiresGeneric decline) {
+			// A late alternative needs its frozen catalog and a provable native term domain.
+			return null;
 		} finally {
 			compileStack.remove(expr);
 			if (compileStack.isEmpty()) {
@@ -207,19 +237,37 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static QueryValueEvaluationStep tryCompileExists(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
-		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
-		QueryEvaluationStep rows = planner.compileBareExists(expr);
-		if (!(rows instanceof NativeBareRowsStep)) {
+		if (!source.certifiesIdOrigins()) {
 			return null;
 		}
-		QueryValueEvaluationStep existsStep = ((NativeBareRowsStep) rows).existsStep();
-		if (LmdbNativeStrategyPreview.active() && existsStep instanceof NativeExistsValueStep nativeExists) {
-			nativeExists.explainStrategies();
+		PlanValueCatalog.Builder catalog = PlanValueCatalog.Builder.compiledTree();
+		try {
+			LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source, catalog);
+			QueryEvaluationStep rows = planner.compileBareExists(expr);
+			if (!(rows instanceof NativeBareRowsStep)) {
+				catalog.abort();
+				return null;
+			}
+			QueryValueEvaluationStep existsStep = ((NativeBareRowsStep) rows).existsStep();
+			if (existsStep == null) {
+				catalog.abort();
+				return null;
+			}
+			catalog.freeze();
+			if (LmdbNativeStrategyPreview.active() && existsStep instanceof NativeExistsValueStep nativeExists) {
+				nativeExists.explainStrategies();
+			}
+			if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
+				LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP, physicalPlan(rows));
+			}
+			return existsStep;
+		} catch (LmdbNativeAggregatePlannerBase.SourceTermRequiresGeneric decline) {
+			catalog.abort();
+			return null;
+		} catch (RuntimeException | Error failure) {
+			catalog.abort();
+			throw failure;
 		}
-		if (existsStep != null && LmdbNativeExplain.recordsExecutionPaths(expr)) {
-			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP, physicalPlan(rows));
-		}
-		return existsStep;
 	}
 
 	/**
@@ -292,10 +340,36 @@ final class LmdbNativeAggregateCompiler {
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		PlanValueCatalog.Builder catalog = PlanValueCatalog.Builder.compiledTree();
+		try {
+			CompileResult result = compileWithCatalog(expr, context, strategy, source, rootEvaluation,
+					inheritedFrameInputNames, inheritedLateralFrameInputNames, catalog);
+			if (result.step == null) {
+				catalog.abort();
+			} else {
+				catalog.freeze();
+			}
+			return result;
+		} catch (LmdbNativeAggregatePlannerBase.SourceTermRequiresGeneric decline) {
+			catalog.abort();
+			return new CompileResult(null, null, false, false);
+		} catch (RuntimeException | Error failure) {
+			catalog.abort();
+			throw failure;
+		}
+	}
+
+	private static CompileResult compileWithCatalog(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames,
+			PlanValueCatalog.Builder catalog) {
+		if (!source.certifiesIdOrigins()) {
+			return new CompileResult(null, null, false, false);
+		}
 		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context.getDataset(), strategy);
 		CompileResult result = strategy.withValuePositions(physical.positions(),
 				() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,
-						inheritedFrameInputNames, inheritedLateralFrameInputNames));
+						inheritedFrameInputNames, inheritedLateralFrameInputNames, catalog));
 		if (result.step != null && !physical.guardedSelectors().isEmpty()) {
 			QueryEvaluationStep guarded = new NativeGraphAliasGuardStep(result.step, physical.guardedSelectors(),
 					() -> compile(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
@@ -307,8 +381,9 @@ final class LmdbNativeAggregateCompiler {
 
 	private static CompileResult compilePhysical(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
-			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
-		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames,
+			PlanValueCatalog.Builder catalog) {
+		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source, catalog);
 		// Root-host compiles (one evaluate() = one query evaluation) may prepare generic bridges per evaluation;
 		// interior compiles must not — their steps evaluate once per outer input mapping (M-A1a).
 		compiler.rootEvaluationScoped = rootEvaluation;
@@ -323,7 +398,7 @@ final class LmdbNativeAggregateCompiler {
 			step = compiler.compile((Group) expr);
 			kind = LmdbNativeExplain.KIND_AGGREGATE;
 		} else {
-			step = NativeDescribeStep.tryCompile(expr, context, strategy, source);
+			step = NativeDescribeStep.tryCompile(expr, context, strategy, source, catalog);
 			if (step == null) {
 				step = compiler.compileAggregateRoot(expr);
 			}
@@ -346,14 +421,14 @@ final class LmdbNativeAggregateCompiler {
 			if (step == null && NativeRootPipeline.enabled()) {
 				// Modifier stacks are peeled before the ordinary row compiler: an aggregate projection beneath
 				// ORDER/SLICE must reach the aggregate entry point, not be mistaken for computed BIND expressions.
-				step = NativeRootPipeline.tryCompile(expr, context, strategy, source, rootEvaluation);
+				step = NativeRootPipeline.tryCompile(expr, context, strategy, source, rootEvaluation, catalog);
 			}
 			if (step == null && !rowRootAttempted) {
 				step = compiler.compileRowRoot(expr);
 			}
 			if (step == null && rootEvaluation && compiler.slotBudgetExceeded) {
 				// M-A4: slot-starved roots retry with internal-only variables demoted into restricted islands
-				step = LmdbNativeWideQueryDemotion.tryCompile(expr, context, strategy, source);
+				step = LmdbNativeWideQueryDemotion.tryCompile(expr, context, strategy, source, catalog);
 				if (step != null) {
 					kind = LmdbNativeExplain.KIND_HYBRID;
 				}
@@ -362,7 +437,7 @@ final class LmdbNativeAggregateCompiler {
 				// bare BGP fragments (no Projection root): a fresh planner, because the row-root
 				// attempt may have allocated slot state that must not leak into this compile. Bare fragments stay
 				// non-root-scoped: under a generic host they evaluate per outer row.
-				step = new LmdbNativeAggregatePlanner(context, strategy, source).compileBareRoot(expr);
+				step = new LmdbNativeAggregatePlanner(context, strategy, source, catalog).compileBareRoot(expr);
 				kind = LmdbNativeExplain.KIND_BGP;
 			}
 		}

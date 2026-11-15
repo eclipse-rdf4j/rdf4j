@@ -658,7 +658,7 @@ final class MultiJoinPlan implements SlotPlan {
 			return ((PatternPlan) plan).staticEstimate;
 		}
 		if (plan instanceof ValuesPlan) {
-			return ((ValuesPlan) plan).rows.length;
+			return ((ValuesPlan) plan).rowCount();
 		}
 		if (plan instanceof MultiValuePatternPlan) {
 			return ((MultiValuePatternPlan) plan).staticEstimate;

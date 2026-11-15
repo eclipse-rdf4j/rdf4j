@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
@@ -97,22 +98,100 @@ final class NativeScalarPlan {
 
 	/** Runtime objects are deliberately supplied at bind time and are never retained by this immutable plan. */
 	record WorkerContext(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
-			QueryEvaluationContext evaluationContext) {
+			QueryEvaluationContext evaluationContext, LmdbFusedSipFactorizedRuntime.Session fusedSession,
+			NativeExecutionContext nativeExecutionContext, LmdbNativeEvaluationStrategy invocationStrategy,
+			TupleExpr diagnosticRoot) {
 		WorkerContext {
 			Objects.requireNonNull(source, "source");
+			if (invocationStrategy != null && (fusedSession == null || nativeExecutionContext == null
+					|| !invocationStrategy.isBoundTo(source, fusedSession, nativeExecutionContext))) {
+				throw new IllegalArgumentException("worker strategy belongs to a different invocation");
+			}
+		}
+
+		WorkerContext(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
+				QueryEvaluationContext evaluationContext, LmdbFusedSipFactorizedRuntime.Session fusedSession,
+				NativeExecutionContext nativeExecutionContext) {
+			this(source, codec, evaluationContext, fusedSession, nativeExecutionContext, null, null);
+		}
+
+		/** Source-only scalar binding and planning previews do not execute a nested native invocation. */
+		WorkerContext(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
+				QueryEvaluationContext evaluationContext) {
+			this(source, codec, evaluationContext, null, null);
 		}
 
 		static WorkerContext forSource(NativeLmdbQuerySource source, QueryEvaluationContext evaluationContext) {
+			NativeExecutionContext execution = source instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext()
+					: null;
+			return forSourceInternal(source, evaluationContext, null, execution);
+		}
+
+		static WorkerContext forSource(NativeLmdbQuerySource source, QueryEvaluationContext evaluationContext,
+				LmdbFusedSipFactorizedRuntime.Session fusedSession) {
+			NativeExecutionContext execution = source instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext()
+					: null;
+			return forSourceInternal(source, evaluationContext, Objects.requireNonNull(fusedSession, "fusedSession"),
+					execution);
+		}
+
+		static WorkerContext forSource(NativeLmdbQuerySource source, QueryEvaluationContext evaluationContext,
+				LmdbFusedSipFactorizedRuntime.Session fusedSession, NativeExecutionContext nativeExecutionContext) {
+			return forSourceInternal(source, evaluationContext, Objects.requireNonNull(fusedSession, "fusedSession"),
+					Objects.requireNonNull(nativeExecutionContext, "nativeExecutionContext"));
+		}
+
+		static WorkerContext forSource(NativeLmdbQuerySource source, QueryEvaluationContext evaluationContext,
+				LmdbFusedSipFactorizedRuntime.Session fusedSession, NativeExecutionContext nativeExecutionContext,
+				LmdbNativeEvaluationStrategy invocationStrategy, TupleExpr diagnosticRoot) {
+			return forSourceInternal(source, evaluationContext, Objects.requireNonNull(fusedSession, "fusedSession"),
+					Objects.requireNonNull(nativeExecutionContext, "nativeExecutionContext"), invocationStrategy,
+					diagnosticRoot);
+		}
+
+		static NativeExecutionContext executionForSource(NativeLmdbQuerySource source,
+				NativeExecutionContext inherited) {
+			return source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null
+					? synthetic.executionContext()
+					: Objects.requireNonNull(inherited, "inherited execution context");
+		}
+
+		private static WorkerContext forSourceInternal(NativeLmdbQuerySource source,
+				QueryEvaluationContext evaluationContext, LmdbFusedSipFactorizedRuntime.Session fusedSession,
+				NativeExecutionContext nativeExecutionContext) {
+			return forSourceInternal(source, evaluationContext, fusedSession, nativeExecutionContext, null, null);
+		}
+
+		private static WorkerContext forSourceInternal(NativeLmdbQuerySource source,
+				QueryEvaluationContext evaluationContext, LmdbFusedSipFactorizedRuntime.Session fusedSession,
+				NativeExecutionContext nativeExecutionContext, LmdbNativeEvaluationStrategy invocationStrategy,
+				TupleExpr diagnosticRoot) {
 			Objects.requireNonNull(source, "source");
 			// Resolve the codec once at the worker boundary. Repeated compiler bindings then use the worker's immutable
 			// codec instead of independently probing the source (which may be a synthetic facade over a sibling
 			// source).
 			QueryEvaluationContext scope = evaluationContext;
-			if (scope == null && source instanceof SyntheticValueSource) {
-				NativeExecutionContext execution = ((SyntheticValueSource) source).executionContext();
-				scope = execution == null ? null : execution.genericContextOrNull();
+			if (scope == null && nativeExecutionContext != null) {
+				scope = nativeExecutionContext.genericContextOrNull();
 			}
-			return new WorkerContext(source, source.nativeValueCodec(), scope);
+			return new WorkerContext(source, source.nativeValueCodec(), scope, fusedSession, nativeExecutionContext,
+					invocationStrategy, diagnosticRoot);
+		}
+
+		LmdbFusedSipFactorizedRuntime.Session requireFusedSession() {
+			if (fusedSession == null) {
+				throw new IllegalStateException("worker invocation requires an explicit fused session");
+			}
+			return fusedSession;
+		}
+
+		NativeExecutionContext requireExecutionContext() {
+			if (nativeExecutionContext == null) {
+				throw new IllegalStateException("worker invocation requires an explicit execution context");
+			}
+			return nativeExecutionContext;
 		}
 	}
 

@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -64,6 +65,7 @@ final class LmdbNativeKernelEmitter {
 				    private static final int EDGE_BATCH = 256;
 				    private static final boolean LINKAGE = %s;
 				    private TypeMatrixContext matrix;
+				    private KernelContext runtimeContext;
 				    private KernelCancellation cancellation;
 				    private KernelRuntime.LongPairCounts counts;
 				    private final long[] subjects = new long[TYPE_ROOT_MORSEL];
@@ -83,6 +85,9 @@ final class LmdbNativeKernelEmitter {
 				    private boolean ran;
 
 				    public void bind(KernelContext context) {
+				        if (runtimeContext != null && runtimeContext != context) runtimeContext.releaseOwnedFusedRuntime();
+				        runtimeContext = context;
+				        context.fusedRuntime();
 				        matrix = context.typeMatrices[%d];
 				        cancellation = context.cancellation;
 				        if (!context.typeMatrixAccumulation || counts == null) {
@@ -90,6 +95,12 @@ final class LmdbNativeKernelEmitter {
 				            emitted = 0;
 				        }
 				        ran = false; pollTick = 0; targetBatch.clear();
+				    }
+
+				    public void close() {
+				        KernelContext previous = runtimeContext;
+				        runtimeContext = null;
+				        if (previous != null) previous.releaseOwnedFusedRuntime();
 				    }
 
 				    public int fill(long[] rowBuffer, int maxRows) {
@@ -313,6 +324,8 @@ final class LmdbNativeKernelEmitter {
 		 * Saved-counter field ids for every node reachable from a resumable pipeline, including OPTIONAL arms.
 		 */
 		private int nextStateId;
+		private int nextCoordinateFrameId;
+		private final List<PlanCoordinateSite> planCoordinateSites = new ArrayList<>();
 		/**
 		 * State ids whose continuation contains no later resumable producer.
 		 */
@@ -371,6 +384,8 @@ final class LmdbNativeKernelEmitter {
 		private final IdentityHashMap<Aggregate, Boolean> marginalResolvers = new IdentityHashMap<>();
 		private int nextProjectionMarginalId;
 		private ProjectionSite activeProjectionSite;
+		/** True only while emitting a scheduled scalar program whose origins flow to the row continuation. */
+		private boolean projectionCoordinateProgram;
 		private FlatRootExists flatRootExistsShape;
 
 		/**
@@ -382,12 +397,19 @@ final class LmdbNativeKernelEmitter {
 			final int id;
 			final LmdbNativeProducerSchedule schedule;
 			final List<String> programs;
+			final int[] coordinateFrames = new int[LmdbNativeProducerSchedule.GRAINS];
+			final long[] coordinateMasks = new long[LmdbNativeProducerSchedule.GRAINS];
+			boolean coordinates;
 
 			ProjectionSite(int id, LmdbNativeProducerSchedule schedule) {
 				this.id = id;
 				this.schedule = schedule;
 				this.programs = new ArrayList<>();
+				Arrays.fill(coordinateFrames, -1);
 			}
+		}
+
+		private record PlanCoordinateSite(int id, int frame, int[] outputs, long inputMask, long producedMask) {
 		}
 
 		private static boolean reusableProjection(LmdbNativeProducerSchedule schedule) {
@@ -470,6 +492,242 @@ final class LmdbNativeKernelEmitter {
 			return kernel.telemetryMode == Kernel.TelemetryMode.FULL;
 		}
 
+		private boolean coordinateShape() {
+			return kernel.resumable && kernel.terminal instanceof Emit && kernel.resultCoordinateColumns != 0L;
+		}
+
+		private static long producedMask(Node node) {
+			BitSet produced = new BitSet();
+			node.produced(produced);
+			long[] words = produced.toLongArray();
+			return words.length == 0 ? 0L : words[0];
+		}
+
+		private static long columnMask(int[] columns) {
+			long mask = 0L;
+			for (int column : columns) {
+				mask |= 1L << column;
+			}
+			return mask;
+		}
+
+		private static boolean hasProjectionCoordinateFrames(ProjectionSite site) {
+			for (int frame : site.coordinateFrames) {
+				if (frame >= 0) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/** Publishes only coordinates certified by the fixed bound adjacency that supplied this physical value. */
+		private void emitProjectionPhysicalCoordinate(StringBuilder source, ProjectionSite site, int column,
+				int grain) {
+			if (!site.coordinates || column < 0 || (kernel.resultCoordinateColumns & (1L << column)) == 0L) {
+				return;
+			}
+			if (site.schedule.producer instanceof Probe probe
+					&& (grain == LmdbNativeProducerSchedule.FIBER || grain == LmdbNativeProducerSchedule.QUAD)) {
+				String position = grain == LmdbNativeProducerSchedule.FIBER
+						? "sourceFiberPosition"
+						: "sourceContextPosition";
+				int tupleColumn = grain == LmdbNativeProducerSchedule.FIBER ? 0 : 1;
+				source.append("                        if (rc != null) {\n")
+						.append("                            long originRun = physical.sourceRunToken();\n")
+						.append("                            rc.set(")
+						.append(column)
+						.append(", KernelResultCoordinates.adjacencyGroup(")
+						.append(probe.adjacency)
+						.append("), originRun, physical.")
+						.append(position)
+						.append("(), ")
+						.append(tupleColumn)
+						.append("L, originRun > 0L ? 1L : 0L);\n")
+						.append("                        }\n");
+			} else {
+				source.append("                        if (rc != null) rc.clear(")
+						.append(column)
+						.append(");\n");
+			}
+		}
+
+		/** Action immediately before this node's continuation, once its output values have been written. */
+		private String coordinateAction(Node node) {
+			if (node instanceof BindAlias alias) {
+				return alias.source.kind == Operand.COL
+						? "if (rc != null) rc.copy(" + alias.dstCol + ", " + alias.source.index + ");\n%I%"
+						: "if (rc != null) rc.clear(" + alias.dstCol + ");\n%I%";
+			}
+			if (node instanceof EnumerateDomain || node instanceof Probe || node instanceof LeftProbe
+					|| node instanceof ScanQuad || node instanceof LeftGroup || node instanceof LexicalFrameLeftJoin
+					|| node instanceof Union || node instanceof PlanRows) {
+				return "";
+			}
+			long mask = producedMask(node) & kernel.resultCoordinateColumns;
+			return mask == 0L ? "" : "if (rc != null) rc.clearMask(" + mask + "L);\n%I%";
+		}
+
+		private void emitRunCoordinates(StringBuilder body, String indent, int adjacency, String cursor,
+				String offset, int valueCol, int contextCol) {
+			if (!coordinateShape()) {
+				return;
+			}
+			long mask = (1L << valueCol) | (contextCol < 0 ? 0L : 1L << contextCol);
+			if ((mask & kernel.resultCoordinateColumns) == 0L) {
+				return;
+			}
+			body.append(indent)
+					.append("if (rc != null) {\n")
+					.append(indent)
+					.append("    long originRun = ")
+					.append(cursor)
+					.append(".sourceRunToken();\n");
+			if (contextCol >= 0 && (kernel.resultCoordinateColumns & (1L << contextCol)) != 0L) {
+				body.append(indent)
+						.append("    rc.set(")
+						.append(contextCol)
+						.append(", KernelResultCoordinates.adjacencyGroup(")
+						.append(adjacency)
+						.append("), originRun, ")
+						.append(offset)
+						.append(", 1L, originRun > 0L ? 1L : 0L);\n");
+			}
+			if ((kernel.resultCoordinateColumns & (1L << valueCol)) != 0L) {
+				body.append(indent)
+						.append("    rc.set(")
+						.append(valueCol)
+						.append(", KernelResultCoordinates.adjacencyGroup(")
+						.append(adjacency)
+						.append("), originRun, ")
+						.append(offset)
+						.append(", 0L, originRun > 0L ? 1L : 0L);\n");
+			}
+			body.append(indent).append("}\n");
+		}
+
+		private void emitScanCoordinates(StringBuilder body, String indent, ScanQuad scan, String row) {
+			if (!coordinateShape()) {
+				return;
+			}
+			long mask = producedMask(scan) & kernel.resultCoordinateColumns;
+			if (mask == 0L) {
+				return;
+			}
+			String sidecar = "qc" + scan.scan;
+			body.append(indent)
+					.append("if (rc != null) {\n")
+					.append(indent)
+					.append("    if (")
+					.append(sidecar)
+					.append(" == null) { rc.clearMask(")
+					.append(mask)
+					.append("L); } else {\n")
+					.append(indent)
+					.append("        int originAt = (int)(")
+					.append(row)
+					.append(") * 5;\n");
+			for (int position = 0; position < scan.outCols.length; position++) {
+				int col = scan.outCols[position];
+				if (col >= 0 && (kernel.resultCoordinateColumns & (1L << col)) != 0L) {
+					body.append(indent)
+							.append("        rc.set(")
+							.append(col)
+							.append(", ")
+							.append(sidecar)
+							.append("[originAt], ")
+							.append(sidecar)
+							.append("[originAt + 1], ")
+							.append(sidecar)
+							.append("[originAt + 2], ")
+							.append(position)
+							.append("L, ")
+							.append(sidecar)
+							.append("[originAt + 4]);\n");
+				}
+			}
+			body.append(indent).append("    }\n").append(indent).append("}\n");
+		}
+
+		private PlanCoordinateSite planCoordinateSite(PlanRows plan) {
+			int[] outputs = new int[plan.outCols.length];
+			int count = 0;
+			long inputs = 0L;
+			for (int i = 0; i < plan.outCols.length; i++) {
+				int col = plan.outCols[i];
+				if ((kernel.resultCoordinateColumns & (1L << col)) == 0L) {
+					continue;
+				}
+				if (plan.inputForColumn(col) >= 0) {
+					inputs |= 1L << col;
+				} else {
+					outputs[count++] = i;
+				}
+			}
+			PlanCoordinateSite site = new PlanCoordinateSite(planCoordinateSites.size(), nextCoordinateFrameId++,
+					Arrays.copyOf(outputs, count), inputs, producedMask(plan) & kernel.resultCoordinateColumns);
+			planCoordinateSites.add(site);
+			return site;
+		}
+
+		private void emitPlanCoordinates(StringBuilder body, String indent, PlanRows plan, PlanCoordinateSite site,
+				String row) {
+			body.append(indent).append("if (rc != null) {\n");
+			if (site.inputMask != 0L) {
+				body.append(indent)
+						.append("    rc.restore(rcf")
+						.append(site.frame)
+						.append(", ")
+						.append(site.inputMask)
+						.append("L);\n");
+			}
+			if (site.outputs.length != 0) {
+				body.append(indent)
+						.append("    if (pq")
+						.append(site.id)
+						.append(" == null) { rc.clearMask(")
+						.append(site.producedMask)
+						.append("L); } else {\n")
+						.append(indent)
+						.append("        int originAt = (int)(")
+						.append(row)
+						.append(") * ")
+						.append(site.outputs.length * 5)
+						.append(";\n");
+				for (int i = 0; i < site.outputs.length; i++) {
+					String array = "pq" + site.id;
+					String at = "originAt + " + (i * 5);
+					body.append(indent)
+							.append("        rc.set(")
+							.append(plan.outCols[site.outputs[i]])
+							.append(", ")
+							.append(array)
+							.append('[')
+							.append(at)
+							.append("], ")
+							.append(array)
+							.append('[')
+							.append(at)
+							.append(" + 1], ")
+							.append(array)
+							.append('[')
+							.append(at)
+							.append(" + 2], ")
+							.append(array)
+							.append('[')
+							.append(at)
+							.append(" + 3], ")
+							.append(array)
+							.append('[')
+							.append(at)
+							.append(" + 4]);\n");
+				}
+				body.append(indent).append("    }\n");
+			} else if (site.producedMask != 0L) {
+				body.append(indent).append("    rc.clearMask(").append(site.producedMask).append("L);\n");
+			}
+			body.append(indent).append("}\n");
+		}
+
 		private boolean streamingGroups() {
 			return kernel.aggregateStateMode == Kernel.AggregateStateMode.STREAMING_GROUPS;
 		}
@@ -525,6 +783,9 @@ final class LmdbNativeKernelEmitter {
 
 			StringBuilder source = new StringBuilder(8192);
 			source.append("package org.eclipse.rdf4j.sail.lmdb.gen;\n\n");
+			if (coordinateShape()) {
+				source.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelResultCoordinates;\n");
+			}
 			if (flatRootExists != null || !sipBatchProbeSites.isEmpty()) {
 				source.append("import org.eclipse.rdf4j.sail.lmdb.LmdbDecodedNativeAdjacency;\n");
 			}
@@ -981,6 +1242,35 @@ final class LmdbNativeKernelEmitter {
 		// ------------------------------------------------------------------
 
 		private void emitFields(StringBuilder source) {
+			if (coordinateShape()) {
+				source.append("    private KernelResultCoordinates rc;\n");
+				for (int frame = 0; frame < nextCoordinateFrameId; frame++) {
+					source.append("    private int rcf").append(frame).append(";\n");
+				}
+				for (PlanCoordinateSite site : planCoordinateSites) {
+					if (site.outputs.length != 0) {
+						source.append("    private long[] pq")
+								.append(site.id)
+								.append(";\n")
+								.append("    private int pn")
+								.append(site.id)
+								.append(";\n")
+								.append("    private boolean pa")
+								.append(site.id)
+								.append(";\n")
+								.append("    private static final int[] pi")
+								.append(site.id)
+								.append(" = new int[]{");
+						for (int i = 0; i < site.outputs.length; i++) {
+							if (i != 0) {
+								source.append(',');
+							}
+							source.append(site.outputs[i]);
+						}
+						source.append("};\n");
+					}
+				}
+			}
 			for (int i = 0; i < expansionCursorTypes.size(); i++) {
 				source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.")
 						.append(expansionCursorTypes.get(i))
@@ -1229,6 +1519,17 @@ final class LmdbNativeKernelEmitter {
 					// Staging buffer and (when streaming) the live cursor, both per scan site and both lazily created.
 					source.append("    private long[] qb").append(i).append(";\n");
 					source.append("    private KernelQuadCursor sc").append(i).append(";\n");
+					if (coordinateShape()) {
+						source.append("    private long[] qc")
+								.append(i)
+								.append(";\n")
+								.append("    private int qn")
+								.append(i)
+								.append(";\n")
+								.append("    private boolean qa")
+								.append(i)
+								.append(";\n");
+					}
 				}
 			}
 			if (kernel.requirements.plans > 0) {
@@ -1508,6 +1809,33 @@ final class LmdbNativeKernelEmitter {
 					.append("        closed = false;\n")
 					.append("        try {\n");
 			source.append("        this.context = context;\n");
+			source.append("        context.fusedRuntime();\n");
+			if (coordinateShape()) {
+				source.append("        rc = context.resultCoordinates;\n");
+				for (int frame = 0; frame < nextCoordinateFrameId; frame++) {
+					source.append("        rcf").append(frame).append(" = rc == null ? -1 : rc.newFrame();\n");
+				}
+				for (int i = 0; i < kernel.requirements.scans; i++) {
+					source.append("        qc")
+							.append(i)
+							.append(" = null; qn")
+							.append(i)
+							.append(" = 0; qa")
+							.append(i)
+							.append(" = false;\n");
+				}
+				for (PlanCoordinateSite site : planCoordinateSites) {
+					if (site.outputs.length != 0) {
+						source.append("        pq")
+								.append(site.id)
+								.append(" = null; pn")
+								.append(site.id)
+								.append(" = 0; pa")
+								.append(site.id)
+								.append(" = false;\n");
+					}
+				}
+			}
 			source.append(
 					"        aggregateMemory = KernelRuntime.AggregateMemory.forLedger(context.groupMemoryLedger());\n")
 					.append("        aggregateArrayBytes = 0L;\n")
@@ -1574,7 +1902,7 @@ final class LmdbNativeKernelEmitter {
 
 			if (telemetryEnabled()) {
 				source.append(
-						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.markNestedKernelFactorization();\n");
+						"        context.fusedRuntime().markNestedKernelFactorization();\n");
 			}
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("        a").append(i).append(" = context.adjacencies[").append(i).append("];\n");
@@ -1683,7 +2011,7 @@ final class LmdbNativeKernelEmitter {
 						.append("];\n");
 				if (telemetryEnabled()) {
 					source.append(
-							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.installExactDomain(")
+							"        context.fusedRuntime().installExactDomain(")
 							.append(i)
 							.append(", \"keyDomain[")
 							.append(i)
@@ -1700,7 +2028,7 @@ final class LmdbNativeKernelEmitter {
 			}
 			for (FilterInConstants filter : sipFilterSites) {
 				source.append(
-						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer(")
+						"        context.fusedRuntime().registerDomainConsumer(")
 						.append(filter.domain)
 						.append(", \"")
 						.append(javaString(filter.consumer == null ? "exact-membership" : filter.consumer))
@@ -1708,7 +2036,7 @@ final class LmdbNativeKernelEmitter {
 			}
 			for (EnumerateDomain enumerate : sipDrivenSites) {
 				source.append(
-						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer(")
+						"        context.fusedRuntime().registerDomainConsumer(")
 						.append(enumerate.domain)
 						.append(", \"")
 						.append(javaString(enumerate.consumer == null ? "domain-driven" : enumerate.consumer))
@@ -1718,7 +2046,7 @@ final class LmdbNativeKernelEmitter {
 				for (Node batch : sipBatchProbeSites) {
 					if (batch instanceof SipDomainProbe probe) {
 						source.append(
-								"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer(")
+								"        context.fusedRuntime().registerDomainConsumer(")
 								.append(probe.domain)
 								.append(", \"BatchProbe(adjacency=")
 								.append(probe.probeAdjacency)
@@ -1731,7 +2059,7 @@ final class LmdbNativeKernelEmitter {
 				int selected = filter.selectedFilterStage >= 0 ? filter.selectedFilterStage : i;
 				int original = filter.originalFilterStage >= 0 ? filter.originalFilterStage : selected;
 				source.append(
-						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordGeneratedFilterPlacement(")
+						"        context.fusedRuntime().recordGeneratedFilterPlacement(")
 						.append(filterKey(filter))
 						.append(", \"")
 						.append(javaString(filterLabel(filter)))
@@ -1881,10 +2209,10 @@ final class LmdbNativeKernelEmitter {
 		private void emitClose(StringBuilder source) {
 			source.append("    public void close() {\n")
 					.append("        if (closed) return;\n        closed = true;\n");
-			source.append("        Throwable closeFailure = null;\n        try {\n");
+			source.append("        Throwable closeFailure = null;\n        if (context != null) { try {\n");
 			for (int i = 0; i < sipFilterSites.size(); i++) {
 				FilterInConstants filter = sipFilterSites.get(i);
-				source.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordSipBatch(")
+				source.append("        context.fusedRuntime().recordSipBatch(")
 						.append(filter.domain)
 						.append(", \"")
 						.append(javaString(filter.consumer == null ? "exact-membership" : filter.consumer))
@@ -1897,7 +2225,7 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < sipDrivenSites.size(); i++) {
 				EnumerateDomain enumerate = sipDrivenSites.get(i);
 				source.append(
-						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordDomainDriven(")
+						"        context.fusedRuntime().recordDomainDriven(")
 						.append(enumerate.domain)
 						.append(", \"")
 						.append(javaString(enumerate.consumer == null ? "domain-driven" : enumerate.consumer))
@@ -1908,7 +2236,7 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < implicitSipDrivenSites.size(); i++) {
 				EnumerateAdjKeys enumerate = implicitSipDrivenSites.get(i);
 				source.append(
-						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordImplicitDomainDriven(\"")
+						"        context.fusedRuntime().recordImplicitDomainDriven(\"")
 						.append("adjacency-key-domain[a=")
 						.append(enumerate.adjacency)
 						.append("]\", \"physical adjacency key cursor\", \"")
@@ -1923,7 +2251,7 @@ final class LmdbNativeKernelEmitter {
 					Node batch = sipBatchProbeSites.get(i);
 					if (batch instanceof SipDomainProbe probe) {
 						source.append(
-								"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordSipBatch(")
+								"        context.fusedRuntime().recordSipBatch(")
 								.append(probe.domain)
 								.append(", \"BatchProbe(adjacency=")
 								.append(probe.probeAdjacency)
@@ -1935,7 +2263,7 @@ final class LmdbNativeKernelEmitter {
 					} else {
 						SipKeyProbe probe = (SipKeyProbe) batch;
 						source.append(
-								"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordImplicitSip(\"")
+								"        context.fusedRuntime().recordImplicitSip(\"")
 								.append("adjacency-key-batch[a=")
 								.append(probe.domainAdjacency)
 								.append("]\", \"physical adjacency key cursor\", \"BatchProbe(adjacency=")
@@ -1954,7 +2282,7 @@ final class LmdbNativeKernelEmitter {
 				int selected = filter.selectedFilterStage >= 0 ? filter.selectedFilterStage : i;
 				int original = filter.originalFilterStage >= 0 ? filter.originalFilterStage : selected;
 				source.append(
-						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.observeGeneratedFilter(")
+						"        context.fusedRuntime().observeGeneratedFilter(")
 						.append(filterKey(filter))
 						.append(", \"")
 						.append(javaString(filterLabel(filter)))
@@ -1974,10 +2302,10 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (!runtimeFilterSites.isEmpty()) {
 				source.append(
-						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordFactorizedLevel(0L, 0L, factorCandidates, factorCandidates - factorRejected, factorRejected, 0L, factorCandidates, 0L);\n");
+						"        context.fusedRuntime().recordFactorizedLevel(0L, 0L, factorCandidates, factorCandidates - factorRejected, factorRejected, 0L, factorCandidates, 0L);\n");
 			}
 			source.append("        } catch (RuntimeException failure) { closeFailure = failure; }\n")
-					.append("        catch (Error failure) { closeFailure = failure; }\n");
+					.append("        catch (Error failure) { closeFailure = failure; } }\n");
 			for (ProjectionSite site : projectionSites) {
 				source.append("        try { closeProjection")
 						.append(site.id)
@@ -2088,6 +2416,20 @@ final class LmdbNativeKernelEmitter {
 						.append("        aggregateMemory = null;\n");
 			}
 			for (int i = 0; i < kernel.requirements.scans; i++) {
+				if (coordinateShape()) {
+					source.append("        if (rc != null && qc")
+							.append(i)
+							.append(" != null) rc.releaseBatch(qc")
+							.append(i)
+							.append(", qn")
+							.append(i)
+							.append(");\n")
+							.append("        qc")
+							.append(i)
+							.append(" = null; qn")
+							.append(i)
+							.append(" = 0;\n");
+				}
 				emitCloseResource(source, "sc" + i);
 			}
 			for (int i = 0; i < expansionCursorTypes.size(); i++) {
@@ -2119,10 +2461,30 @@ final class LmdbNativeKernelEmitter {
 				emitCloseResource(source, "pc" + i);
 				emitCloseResource(source, "p" + i);
 			}
+			if (coordinateShape()) {
+				for (PlanCoordinateSite site : planCoordinateSites) {
+					if (site.outputs.length != 0) {
+						source.append("        if (rc != null && pq")
+								.append(site.id)
+								.append(" != null) rc.releaseBatch(pq")
+								.append(site.id)
+								.append(", pn")
+								.append(site.id)
+								.append(");\n        pq")
+								.append(site.id)
+								.append(" = null; pn")
+								.append(site.id)
+								.append(" = 0;\n");
+					}
+				}
+			}
 			if (flatRootExistsShape == null) {
 				source.append("        out = null;\n");
 			}
-			source.append("        KernelRuntime.rethrowCloseFailure(closeFailure);\n    }\n\n");
+			source.append(
+					"        if (context != null) { try { context.releaseOwnedFusedRuntime(); } catch (RuntimeException cleanup) { if (closeFailure == null) closeFailure = cleanup; else closeFailure.addSuppressed(cleanup); } catch (Error cleanup) { if (closeFailure == null) closeFailure = cleanup; else closeFailure.addSuppressed(cleanup); } }\n")
+					.append("        context = null;\n")
+					.append("        KernelRuntime.rethrowCloseFailure(closeFailure);\n    }\n\n");
 		}
 
 		private static void emitCloseResource(StringBuilder source, String field) {
@@ -2185,6 +2547,7 @@ final class LmdbNativeKernelEmitter {
 						.append("        sink = rowBuffer;\n")
 						.append("        cap = maxRows;\n")
 						.append("        sinkRows = 0;\n")
+						.append(coordinateShape() ? "        if (rc != null) rc.beginFill();\n" : "")
 						.append("        full = false;\n")
 						.append("        run();\n")
 						.append("        if (!full) {\n")
@@ -2373,6 +2736,9 @@ final class LmdbNativeKernelEmitter {
 				source.append("        int base = sinkRows * ").append(stride).append(";\n");
 				for (int i = 0; i < emit.cols.length; i++) {
 					source.append("        sink[base + ").append(i).append("] = v").append(emit.cols[i]).append(";\n");
+				}
+				if (coordinateShape()) {
+					source.append("        if (rc != null) rc.emit();\n");
 				}
 				if (emit.mods.limit >= 0) {
 					source.append("        if (++streamReturned >= ")
@@ -3533,6 +3899,16 @@ final class LmdbNativeKernelEmitter {
 						scheduledNext = terminalStatement;
 					}
 					ProjectionSite site = new ProjectionSite(projectionSites.size(), schedule);
+					if (coordinateShape() && !booleanMode && synchronousPipelineDepth == 0) {
+						site.coordinates = true;
+						for (int level = LmdbNativeProducerSchedule.INPUT; level < LmdbNativeProducerSchedule.GRAINS; level++) {
+							site.coordinateMasks[level] = columnMask(schedule.savedColumns[level])
+									& kernel.resultCoordinateColumns;
+							if (site.coordinateMasks[level] != 0L) {
+								site.coordinateFrames[level] = nextCoordinateFrameId++;
+							}
+						}
+					}
 					projectionSites.add(site);
 					// The fallback contains the producer and its absorbed scalar suffix. It uses the same continuation
 					// as
@@ -3540,16 +3916,19 @@ final class LmdbNativeKernelEmitter {
 					// semantics.
 					String fallback;
 					ProjectionSite previous = activeProjectionSite;
+					boolean previousCoordinateProgram = projectionCoordinateProgram;
 					activeProjectionSite = site;
 					try {
 						fallback = emitPipeline(List.copyOf(nodes.subList(i, schedule.nextIndex)), scheduledNext,
 								booleanMode,
 								statefulTerminal);
+						projectionCoordinateProgram = site.coordinates;
 						for (int level = LmdbNativeProducerSchedule.INPUT; level < LmdbNativeProducerSchedule.GRAINS; level++) {
 							site.programs.add(emitPipeline(schedule.programs.get(level), "return true;", true));
 						}
 					} finally {
 						activeProjectionSite = previous;
+						projectionCoordinateProgram = previousCoordinateProgram;
 					}
 					emitProjectionSupport(site);
 					StringBuilder body = new StringBuilder();
@@ -3560,6 +3939,21 @@ final class LmdbNativeKernelEmitter {
 					methods.add(wrapMethod(prefix + i, body.toString(), booleanMode, booleanMode));
 					i = schedule.nextIndex;
 					continue;
+				}
+				if (coordinateShape() && ((!booleanMode && synchronousPipelineDepth == 0)
+						|| projectionCoordinateProgram)) {
+					if (i == tail) {
+						long mask = 0L;
+						for (int written = i; written < nodes.size(); written++) {
+							mask |= producedMask(nodes.get(written));
+						}
+						mask &= kernel.resultCoordinateColumns;
+						if (mask != 0L) {
+							next = "if (rc != null) rc.clearMask(" + mask + "L);\n%I%" + next;
+						}
+					} else {
+						next = coordinateAction(nodes.get(i)) + next;
+					}
 				}
 				StringBuilder body = new StringBuilder();
 				// Container arms need the same saved-counter discipline as the root. The resumability proof admits
@@ -3617,8 +4011,11 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("if (ppFallback")
 						.append(siteId)
-						.append(") {\n")
-						.append(indent)
+						.append(") {\n");
+				if (hasProjectionCoordinateFrames(site)) {
+					body.append(indent).append("    releaseProjectionCoordinates").append(siteId).append("();\n");
+				}
+				body.append(indent)
 						.append("    ")
 						.append(fallback)
 						.append("();\n")
@@ -3803,6 +4200,10 @@ final class LmdbNativeKernelEmitter {
 						.append(inputColumns[index])
 						.append(";\n");
 			}
+			int inputFrame = site.coordinateFrames[LmdbNativeProducerSchedule.INPUT];
+			if (inputFrame >= 0) {
+				source.append("        if (rc != null) rc.save(rcf").append(inputFrame).append(");\n");
+			}
 			for (int proof = 0; proof < proofs.size(); proof++) {
 				source.append("        ppFact")
 						.append(id)
@@ -3855,6 +4256,8 @@ final class LmdbNativeKernelEmitter {
 				source.append("                        v")
 						.append(schedule.layout.predicateCol())
 						.append(" = predicate;\n");
+				emitProjectionPhysicalCoordinate(source, site, schedule.layout.predicateCol(),
+						LmdbNativeProducerSchedule.PLANE);
 			}
 			source.append("                        break;\n")
 					.append("                    case KernelProjectionCursor.ROOT:\n")
@@ -3863,6 +4266,8 @@ final class LmdbNativeKernelEmitter {
 				source.append("                        v")
 						.append(schedule.layout.rootCol())
 						.append(" = physical.rootId();\n");
+				emitProjectionPhysicalCoordinate(source, site, schedule.layout.rootCol(),
+						LmdbNativeProducerSchedule.ROOT);
 			}
 			source.append("                        break;\n")
 					.append("                    case KernelProjectionCursor.FIBER:\n")
@@ -3871,6 +4276,8 @@ final class LmdbNativeKernelEmitter {
 				source.append("                        v")
 						.append(schedule.layout.neighborCol())
 						.append(" = physical.neighborId();\n");
+				emitProjectionPhysicalCoordinate(source, site, schedule.layout.neighborCol(),
+						LmdbNativeProducerSchedule.FIBER);
 			}
 			source.append("                        break;\n")
 					.append("                    case KernelProjectionCursor.QUAD:\n")
@@ -3879,6 +4286,8 @@ final class LmdbNativeKernelEmitter {
 				source.append("                        v")
 						.append(schedule.layout.contextCol())
 						.append(" = physical.contextId();\n");
+				emitProjectionPhysicalCoordinate(source, site, schedule.layout.contextCol(),
+						LmdbNativeProducerSchedule.QUAD);
 			}
 			source.append("                        break;\n")
 					.append("                    case KernelProjectionCursor.INPUT:\n")
@@ -3915,6 +4324,11 @@ final class LmdbNativeKernelEmitter {
 							.append(columns[index])
 							.append(";\n");
 				}
+				if (site.coordinateFrames[level] >= 0) {
+					source.append("                        if (rc != null) rc.save(rcf")
+							.append(site.coordinateFrames[level])
+							.append(");\n");
+				}
 				source.append("                    }\n");
 			}
 			source.append("                    return true;\n                }\n\n")
@@ -3936,6 +4350,13 @@ final class LmdbNativeKernelEmitter {
 							.append('[')
 							.append(index)
 							.append("];\n");
+				}
+				if (site.coordinateFrames[level] >= 0) {
+					source.append("                        if (rc != null) rc.restore(rcf")
+							.append(site.coordinateFrames[level])
+							.append(", ")
+							.append(site.coordinateMasks[level])
+							.append("L);\n");
 				}
 				source.append("                    }\n");
 			}
@@ -4061,11 +4482,32 @@ final class LmdbNativeKernelEmitter {
 					.append(" = null;\n")
 					.append("        ppPending")
 					.append(id)
-					.append(" = false;\n")
-					.append("        if (owned != null) {\n")
+					.append(" = false;\n");
+			if (hasProjectionCoordinateFrames(site)) {
+				close.append("        try {\n");
+			}
+			close.append("        if (owned != null) {\n")
 					.append("            try { owned.close(); } finally { workCounters.addProjection(owned); }\n")
-					.append("        }\n    }\n\n");
+					.append("        }\n");
+			if (hasProjectionCoordinateFrames(site)) {
+				close.append("        } finally { releaseProjectionCoordinates")
+						.append(id)
+						.append("(); }\n");
+			}
+			close.append("    }\n\n");
 			methods.add(close.toString());
+			if (hasProjectionCoordinateFrames(site)) {
+				StringBuilder release = new StringBuilder("    private void releaseProjectionCoordinates")
+						.append(id)
+						.append("() {\n        if (rc != null) {\n");
+				for (int frame : site.coordinateFrames) {
+					if (frame >= 0) {
+						release.append("            rc.releaseFrame(rcf").append(frame).append(");\n");
+					}
+				}
+				release.append("        }\n    }\n\n");
+				methods.add(release.toString());
+			}
 
 			if (schedule.aggregate) {
 				if (!(kernel.terminal instanceof Aggregate aggregate)) {
@@ -6637,6 +7079,7 @@ final class LmdbNativeKernelEmitter {
 						.append("        ")
 						.append(matched)
 						.append(" = true;\n");
+				emitRunCoordinates(body, indent + "        ", probe.adjacency, cursor, a, probe.valueCol, -1);
 				body.append(next(nextTemplate, indent + "        "));
 				emitPause(body, indent + "        ", a, tailmost);
 				body.append(indent).append("    }\n");
@@ -6645,6 +7088,12 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("if (").append(c).append(" == 1) {\n");
 				body.append(indent).append("    if (!").append(matched).append(") {\n");
 				body.append(indent).append("        v").append(probe.valueCol).append(" = -1L;\n");
+				if (coordinateShape()) {
+					body.append(indent)
+							.append("        if (rc != null) rc.clear(")
+							.append(probe.valueCol)
+							.append(");\n");
+				}
 				body.append(next(nextTemplate, indent + "        "));
 				body.append(indent).append("        if (full) {\n");
 				if (tailmost) {
@@ -6662,6 +7111,10 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof LexicalFrameLeftJoin lexical) {
 				int frameId = lexicalFrames.size();
 				lexicalFrames.add(lexical);
+				int originFrame = coordinateShape() ? nextCoordinateFrameId++ : -1;
+				int leftOriginFrame = coordinateShape() ? nextCoordinateFrameId++ : -1;
+				long problemMask = columnMask(lexical.problemCols) & kernel.resultCoordinateColumns;
+				long resetMask = columnMask(lexical.resetColumns()) & kernel.resultCoordinateColumns;
 				String prefix = "lfj" + frameId;
 				StringBuilder compatible = new StringBuilder();
 				StringBuilder clear = new StringBuilder(), restore = new StringBuilder();
@@ -6692,16 +7145,27 @@ final class LmdbNativeKernelEmitter {
 							.append(i)
 							.append(";\n%I%");
 				}
+				String restoreOrigin = coordinateShape() && problemMask != 0L
+						? "if (rc != null) rc.restore(rcf" + originFrame + ", " + problemMask + "L);\n%I%"
+						: "";
+				String clearOrigin = coordinateShape() && problemMask != 0L
+						? "if (rc != null) rc.clearMask(" + problemMask + "L);\n%I%"
+						: "";
 				String rightTerminal = prefix + "Exists = true;\n%I%if (" + compatible + ") {\n%I%"
-						+ restore + nextTemplate + "\n%I%}";
+						+ restore + restoreOrigin + nextTemplate + "\n%I%}";
 				String rightFirst = emitPipeline(lexical.right, rightTerminal, false, !tailmost);
 				StringBuilder leftTerminal = new StringBuilder("if (").append(b)
 						.append(" < 0) { ")
 						.append(b)
 						.append(" = 0; ")
 						.append(prefix)
-						.append("Exists = false; }\n%I%")
+						.append("Exists = false; ");
+				if (coordinateShape()) {
+					leftTerminal.append("if (rc != null) rc.save(rcf").append(leftOriginFrame).append("); ");
+				}
+				leftTerminal.append("}\n%I%")
 						.append(clear)
+						.append(clearOrigin)
 						.append("if (")
 						.append(b)
 						.append(" == 0) {\n%I%    ")
@@ -6721,11 +7185,24 @@ final class LmdbNativeKernelEmitter {
 				for (int col : lexical.resetColumns()) {
 					leftTerminal.append("v").append(col).append(" = -1L;\n%I%");
 				}
-				leftTerminal.append(restore).append(nextTemplate).append("\n%I%if (full) { ");
+				if (coordinateShape()) {
+					leftTerminal.append("if (rc != null) { rc.restore(rcf").append(leftOriginFrame).append(");");
+					if (resetMask != 0L) {
+						leftTerminal.append(" rc.clearMask(").append(resetMask).append("L);");
+					}
+					leftTerminal.append(" }\n%I%");
+				}
+				leftTerminal.append(restore).append(restoreOrigin).append(nextTemplate).append("\n%I%if (full) { ");
 				if (tailmost) {
 					leftTerminal.append(b).append(" = 2; ");
 				}
-				leftTerminal.append("return; }\n%I%}\n%I%").append(b).append(" = -1;");
+				leftTerminal.append("return; }\n%I%}\n%I%");
+				if (coordinateShape()) {
+					leftTerminal.append("if (rc != null) rc.releaseFrame(rcf")
+							.append(leftOriginFrame)
+							.append(");\n%I%");
+				}
+				leftTerminal.append(b).append(" = -1;");
 				// The right activation, including a pending null extension, belongs to the current left mapping.
 				String leftFirst = emitPipeline(lexical.left, leftTerminal.toString(), false, true);
 				body.append(indent).append("if (").append(a).append(" < 0) {\n");
@@ -6739,6 +7216,9 @@ final class LmdbNativeKernelEmitter {
 							.append(lexical.problemCols[i])
 							.append(";\n");
 				}
+				if (coordinateShape()) {
+					body.append(indent).append("    if (rc != null) rc.save(rcf").append(originFrame).append(");\n");
+				}
 				body.append(indent)
 						.append("    ")
 						.append(a)
@@ -6748,6 +7228,9 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("}\n");
 				body.append(next(clear.toString(), indent));
+				if (!clearOrigin.isEmpty()) {
+					body.append(next(clearOrigin, indent));
+				}
 				body.append(indent)
 						.append("try {\n")
 						.append(indent)
@@ -6765,7 +7248,20 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("} finally {\n");
 				body.append(next(restore.toString(), indent + "    "));
+				if (!restoreOrigin.isEmpty()) {
+					body.append(next(restoreOrigin, indent + "    "));
+				}
 				body.append(indent).append("}\n");
+				if (coordinateShape()) {
+					body.append(indent)
+							.append("if (")
+							.append(a)
+							.append(" < 0 && rc != null) {")
+							.append(" rc.releaseFrame(rcf")
+							.append(originFrame)
+							.append("); }")
+							.append('\n');
+				}
 				return true;
 			}
 
@@ -6783,6 +7279,13 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent).append("if (").append(a).append(" == ").append(branchIndex).append(") {\n");
 					for (int col : resetColumns) {
 						body.append(indent).append("    v").append(col).append(" = -1L;\n");
+					}
+					long resetMask = columnMask(resetColumns) & kernel.resultCoordinateColumns;
+					if (coordinateShape() && resetMask != 0L) {
+						body.append(indent)
+								.append("    if (rc != null) rc.clearMask(")
+								.append(resetMask)
+								.append("L);\n");
 					}
 					body.append(indent).append("    ").append(branchMethods.get(branchIndex)).append("();\n");
 					body.append(indent).append("    if (full) {\n");
@@ -6811,6 +7314,7 @@ final class LmdbNativeKernelEmitter {
 				LmdbNativeKernelIr.LeftGroup group = (LmdbNativeKernelIr.LeftGroup) node;
 				int[] restoreColumns = group.restoreColumns();
 				int groupId = registerLeftGroup(restoreColumns);
+				int originFrame = coordinateShape() ? nextCoordinateFrameId++ : -1;
 				String matched = "lg" + groupId;
 				String armFirst = emitPipeline(group.arm, matched + " = true;\n%I%" + nextTemplate, false,
 						!tailmost);
@@ -6824,6 +7328,9 @@ final class LmdbNativeKernelEmitter {
 							.append("] = v")
 							.append(restoreColumns[i])
 							.append(";\n");
+				}
+				if (coordinateShape()) {
+					body.append(indent).append("    if (rc != null) rc.save(rcf").append(originFrame).append(");\n");
 				}
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("    ").append(matched).append(" = false;\n");
@@ -6849,6 +7356,24 @@ final class LmdbNativeKernelEmitter {
 				for (int col : group.resetColumns()) {
 					body.append(indent).append("    v").append(col).append(" = -1L;\n");
 				}
+				if (coordinateShape()) {
+					long restoreMask = columnMask(restoreColumns) & kernel.resultCoordinateColumns;
+					long resetMask = columnMask(group.resetColumns()) & kernel.resultCoordinateColumns;
+					if (restoreMask != 0L) {
+						body.append(indent)
+								.append("    if (rc != null) rc.restore(rcf")
+								.append(originFrame)
+								.append(", ")
+								.append(restoreMask)
+								.append("L);\n");
+					}
+					if (resetMask != 0L) {
+						body.append(indent)
+								.append("    if (rc != null) rc.clearMask(")
+								.append(resetMask)
+								.append("L);\n");
+					}
+				}
 				body.append(next(nextTemplate, indent + "    "));
 				body.append(indent).append("    if (full) {\n");
 				if (tailmost) {
@@ -6857,6 +7382,12 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("        return;\n");
 				body.append(indent).append("    }\n");
 				body.append(indent).append("}\n");
+				if (coordinateShape()) {
+					body.append(indent)
+							.append("if (rc != null) rc.releaseFrame(rcf")
+							.append(originFrame)
+							.append(");\n");
+				}
 				body.append(indent).append(a).append(" = -1;\n");
 				return true;
 			}
@@ -6889,6 +7420,16 @@ final class LmdbNativeKernelEmitter {
 						.append(" = dom[domO + (int) ")
 						.append(a)
 						.append("];\n");
+				if (coordinateShape() && (kernel.resultCoordinateColumns & (1L << enumerate.col)) != 0L) {
+					body.append(indent)
+							.append("    if (rc != null) rc.set(")
+							.append(enumerate.col)
+							.append(", KernelResultCoordinates.domainGroup(")
+							.append(enumerate.domain)
+							.append("), 0L, (long)domO + ")
+							.append(a)
+							.append(", 0L, 1L);\n");
+				}
 				body.append(next(nextTemplate, indent + "    "));
 				emitPause(body, indent + "    ", a, tailmost);
 				body.append(indent).append("}\n");
@@ -6922,6 +7463,7 @@ final class LmdbNativeKernelEmitter {
 						.append(ctxActive(node) ? ".neighborInContextSpan(" : ".neighborAt(")
 						.append(a)
 						.append(");\n");
+				emitRunCoordinates(body, probeInner, probe.adjacency, cursor, a, probe.valueCol, probe.ctxCol);
 				body.append(next(nextTemplate, probeInner));
 				closeCtxEntry(body, indent + "        ", probe);
 				emitPause(body, indent + "        ", a, tailmost);
@@ -7028,6 +7570,10 @@ final class LmdbNativeKernelEmitter {
 				ScanQuad scan = (ScanQuad) node;
 				String cursor = "sc" + scan.scan;
 				String buffer = "qb" + scan.scan;
+				boolean coordinateScan = coordinateShape()
+						&& (producedMask(scan) & kernel.resultCoordinateColumns) != 0L;
+				String sidecar = "qc" + scan.scan;
+				String sidecarCount = "qn" + scan.scan;
 				body.append(indent).append("if (").append(cursor).append(" == null) {\n");
 				body.append(indent)
 						.append("    ")
@@ -7041,17 +7587,64 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    ").append(b).append(" = 0;\n");
 				body.append(indent).append("}\n");
 				emitScanBuffer(body, indent, buffer);
+				if (coordinateScan) {
+					body.append(indent)
+							.append("if (!qa")
+							.append(scan.scan)
+							.append(") { qa")
+							.append(scan.scan)
+							.append(" = true; if (rc != null) ")
+							.append(sidecar)
+							.append(" = rc.newSourceBatch(KernelRuntime.SCAN_BATCH_ROWS); }\n");
+				}
 				body.append(indent).append("while (true) {\n");
 				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				body.append(indent).append("    if (").append(a).append(" >= ").append(b).append(") {\n");
+				if (coordinateScan) {
+					body.append(indent)
+							.append("        if (rc != null && ")
+							.append(sidecar)
+							.append(" != null) { rc.releaseBatch(")
+							.append(sidecar)
+							.append(", ")
+							.append(sidecarCount)
+							.append("); ")
+							.append(sidecarCount)
+							.append(" = 0; }\n");
+				}
 				body.append(indent)
 						.append("        ")
 						.append(b)
-						.append(" = ")
-						.append(cursor)
+						.append(" = ");
+				if (coordinateScan) {
+					body.append("rc != null && ").append(sidecar).append(" != null ? ");
+				}
+				body.append(cursor)
 						.append(".fill(")
-						.append(buffer)
-						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+						.append(buffer);
+				if (coordinateScan) {
+					body.append(", ")
+							.append(sidecar)
+							.append(", KernelRuntime.SCAN_BATCH_ROWS) : ")
+							.append(cursor)
+							.append(".fill(")
+							.append(buffer)
+							.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+					body.append(indent)
+							.append("        if (rc != null && ")
+							.append(sidecar)
+							.append(" != null) { ")
+							.append(sidecarCount)
+							.append(" = (int)")
+							.append(b)
+							.append("; rc.retainBatch(")
+							.append(sidecar)
+							.append(", ")
+							.append(sidecarCount)
+							.append("); }\n");
+				} else {
+					body.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				}
 				body.append(indent).append("        ").append(a).append(" = 0;\n");
 				body.append(indent).append("        if (").append(b).append(" <= 0) {\n");
 				body.append(indent).append("            break;\n");
@@ -7067,10 +7660,23 @@ final class LmdbNativeKernelEmitter {
 						.append("++) {\n");
 				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				emitScanColumns(body, indent + "        ", scan, buffer, a);
+				emitScanCoordinates(body, indent + "        ", scan, a);
 				body.append(next(nextTemplate, indent + "        "));
 				emitPause(body, indent + "        ", a, tailmost);
 				body.append(indent).append("    }\n");
 				body.append(indent).append("}\n");
+				if (coordinateScan) {
+					body.append(indent)
+							.append("if (rc != null && ")
+							.append(sidecar)
+							.append(" != null) { rc.releaseBatch(")
+							.append(sidecar)
+							.append(", ")
+							.append(sidecarCount)
+							.append("); ")
+							.append(sidecarCount)
+							.append(" = 0; }\n");
+				}
 				body.append(indent).append(cursor).append(".close();\n");
 				body.append(indent).append(cursor).append(" = null;\n");
 				body.append(indent).append(a).append(" = -1;\n");
@@ -7081,9 +7687,38 @@ final class LmdbNativeKernelEmitter {
 				PlanRows plan = (PlanRows) node;
 				String cursor = "pc" + plan.plan;
 				String buffer = "pb" + plan.plan;
+				PlanCoordinateSite site = coordinateShape() ? planCoordinateSite(plan) : null;
+				boolean hasOutputs = site != null && site.outputs.length != 0;
+				String sidecar = site == null ? "" : "pq" + site.id;
+				String sidecarCount = site == null ? "" : "pn" + site.id;
 				body.append(indent).append("if (").append(cursor).append(" == null) {\n");
+				if (site != null) {
+					body.append(indent).append("    if (rc != null) rc.save(rcf").append(site.frame).append(");\n");
+					if (hasOutputs) {
+						body.append(indent)
+								.append("    if (!pa")
+								.append(site.id)
+								.append(") { pa")
+								.append(site.id)
+								.append(" = true; if (rc != null) ")
+								.append(sidecar)
+								.append(" = rc.newSourceBatch(KernelRuntime.SCAN_BATCH_ROWS * ")
+								.append(site.outputs.length)
+								.append("); }\n");
+					}
+				}
 				emitPlanInputs(body, indent + "    ", plan);
-				body.append(indent).append("    ").append(cursor).append(" = p").append(plan.plan).append(".open();\n");
+				body.append(indent).append("    ").append(cursor).append(" = ");
+				if (hasOutputs) {
+					body.append("rc != null && ")
+							.append(sidecar)
+							.append(" != null ? p")
+							.append(plan.plan)
+							.append(".openCoordinates(pi")
+							.append(site.id)
+							.append(") : ");
+				}
+				body.append('p').append(plan.plan).append(".open();\n");
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("    ").append(b).append(" = 0;\n");
 				body.append(indent).append("}\n");
@@ -7091,14 +7726,48 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("while (true) {\n");
 				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				body.append(indent).append("    if (").append(a).append(" >= ").append(b).append(") {\n");
+				if (hasOutputs) {
+					body.append(indent)
+							.append("        if (rc != null && ")
+							.append(sidecar)
+							.append(" != null) { rc.releaseBatch(")
+							.append(sidecar)
+							.append(", ")
+							.append(sidecarCount)
+							.append("); ")
+							.append(sidecarCount)
+							.append(" = 0; }\n");
+				}
 				body.append(indent)
 						.append("        ")
 						.append(b)
-						.append(" = ")
-						.append(cursor)
-						.append(".fill(")
-						.append(buffer)
-						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+						.append(" = ");
+				if (hasOutputs) {
+					body.append("rc != null && ")
+							.append(sidecar)
+							.append(" != null ? ")
+							.append(cursor)
+							.append(".fillCoordinates(")
+							.append(buffer)
+							.append(", ")
+							.append(sidecar)
+							.append(", pi")
+							.append(site.id)
+							.append(", KernelRuntime.SCAN_BATCH_ROWS, rc) : ");
+				}
+				body.append(cursor).append(".fill(").append(buffer).append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				if (hasOutputs) {
+					body.append(indent)
+							.append("        if (rc != null && ")
+							.append(sidecar)
+							.append(" != null) ")
+							.append(sidecarCount)
+							.append(" = (int)")
+							.append(b)
+							.append(" * ")
+							.append(site.outputs.length)
+							.append(";\n");
+				}
 				body.append(indent).append("        ").append(a).append(" = 0;\n");
 				body.append(indent).append("        if (").append(b).append(" <= 0) {\n");
 				body.append(indent).append("            break;\n");
@@ -7114,13 +7783,42 @@ final class LmdbNativeKernelEmitter {
 						.append("++) {\n");
 				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				emitPlanColumns(body, indent + "        ", plan, buffer, a);
+				if (site != null) {
+					emitPlanCoordinates(body, indent + "        ", plan, site, a);
+				}
 				body.append(next(nextTemplate, indent + "        "));
 				emitPause(body, indent + "        ", a, tailmost);
 				body.append(indent).append("    }\n");
 				body.append(indent).append("}\n");
+				if (hasOutputs) {
+					body.append(indent)
+							.append("if (rc != null && ")
+							.append(sidecar)
+							.append(" != null) { rc.releaseBatch(")
+							.append(sidecar)
+							.append(", ")
+							.append(sidecarCount)
+							.append("); ")
+							.append(sidecarCount)
+							.append(" = 0; }\n");
+				}
 				body.append(indent).append(cursor).append(".close();\n");
 				body.append(indent).append(cursor).append(" = null;\n");
 				emitPlanRestore(body, indent, plan);
+				if (site != null) {
+					body.append(indent).append("if (rc != null) { ");
+					if (site.inputMask != 0L) {
+						body.append("rc.restore(rcf")
+								.append(site.frame)
+								.append(", ")
+								.append(site.inputMask)
+								.append("L); ");
+					}
+					if (site.producedMask != 0L) {
+						body.append("rc.clearMask(").append(site.producedMask).append("L); ");
+					}
+					body.append("rc.releaseFrame(rcf").append(site.frame).append("); }\n");
+				}
 				body.append(indent).append(a).append(" = -1;\n");
 				body.append(indent).append(b).append(" = -1;\n");
 				return true;

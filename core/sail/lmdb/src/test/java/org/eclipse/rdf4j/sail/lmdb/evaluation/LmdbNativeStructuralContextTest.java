@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 import java.util.List;
 import java.util.Set;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.junit.jupiter.api.Test;
@@ -97,6 +99,50 @@ class LmdbNativeStructuralContextTest {
 			}
 			assertThatThrownBy(() -> owner.genericContext(first, null)).isInstanceOf(IllegalStateException.class)
 					.hasMessage("execution context is closed");
+		}
+	}
+
+	@Test
+	void invocationStructuralViewsDrainWithTheirPreparation() {
+		QueryEvaluationContext stable = structural(new AtomicInteger());
+		NativeExecutionContext owner = new NativeExecutionContext();
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(71L, 4096L, true);
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		try {
+			QueryEvaluationContext firstStructure = new BindingSetQueryEvaluationContext(stable);
+			QueryEvaluationContext first = owner.genericContext(firstStructure, null);
+			assertThat(first).as("the root query-scope template does not retain the first invocation view")
+					.isNotSameAs(owner.genericContextOrNull());
+			Value queryNow = first.getNow();
+			long available = session.remainingBytes();
+			QueryEvaluationContext retained = null;
+			for (int attemptNumber = 0; attemptNumber < 128; attemptNumber++) {
+				QueryEvaluationContext invocation = new BindingSetQueryEvaluationContext(stable);
+				Object recipe = new Object();
+				try (LmdbFusedSipFactorizedRuntime.PreparationAttempt attempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(
+						null, new Object())) {
+					LmdbFusedSipFactorizedRuntime.PreparationScope scope = attempt.scope(session, source);
+					QueryEvaluationContext view = scope.prepare(recipe, () -> owner.genericContext(invocation, null));
+					assertThat(scope.prepare(recipe, () -> owner.genericContext(invocation, null)))
+							.as("one live attempt reuses its prepared view")
+							.isSameAs(view);
+					assertThat(owner.genericContext(invocation, null))
+							.as("the query owner does not cache an invocation-specific structural view")
+							.isNotSameAs(view);
+					assertThat(view.getNow()).isSameAs(queryNow);
+					retained = view;
+				}
+				assertThat(session.remainingBytes()).as("retired attempts release their directory claims")
+						.isEqualTo(available);
+			}
+			try (NativeExecutionContext.Lease reader = owner.retainActiveLease()) {
+				owner.close();
+				assertThat(retained.getActiveGraph()).isSameAs(stable.getActiveGraph());
+				assertThat(retained.getNow()).isSameAs(queryNow);
+			}
+		} finally {
+			owner.close();
+			session.close();
 		}
 	}
 

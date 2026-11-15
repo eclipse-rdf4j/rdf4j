@@ -995,6 +995,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private boolean nativeMutation;
 	private volatile TxnReplayPolicy.Decision replayDecision;
 	private final Object capacityOrigin = new Object();
+	/** Identity only: compiled metadata must not retain this ValueStore or any native snapshot. */
+	private final Object detachedStoredIdSpace = new Object();
 	private long bulkMapGrowthCount;
 	// main database
 	private int dbi;
@@ -10121,6 +10123,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return knownStatementIdAdmitted(snapshot, identity);
 	}
 
+	/** Metadata-only statement-domain proof; an unknown result never claims dictionary absence. */
+	long knownStatementId(ReadSnapshot snapshot, LmdbValue value) throws IOException {
+		if (snapshot.valueStore() != this || value.getSemanticVersion() == LmdbValue.UNKNOWN_ID) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		LmdbValue.InternalIdentity identity = value.getInternalIdentity();
+		return identity == null || identity.revision() == null ? LmdbValue.UNKNOWN_ID
+				: knownStatementId(snapshot, identity);
+	}
+
 	/** As {@link #knownStatementId} for a caller that validated the snapshot itself and re-validates afterwards. */
 	private long knownStatementIdAdmitted(ReadSnapshot snapshot, LmdbValue.InternalIdentity identity) {
 		ValueStoreRevision.Lazy paired = snapshot.stableRevision;
@@ -11108,6 +11120,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** A write-commit-stable reader whose lifetime is owned by the caller. */
 	final class ReadSnapshot implements AutoCloseable {
+		/** Both fields are guarded by {@link #txn}; the published token has no reference back to this snapshot. */
+		private Object detachedLookupGeneration;
+		private Object detachedLookupScope;
 		private final PreparedLmdbValue.Owner preparationOwner = new PreparedLmdbValue.Owner();
 		private volatile PreparedLmdbValue.Generation preparationGeneration = new PreparedLmdbValue.Generation(
 				preparationOwner);
@@ -11912,6 +11927,36 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 		}
 		return valueLookupScope();
+	}
+
+	/** Detached identity for this store's ID encoding; lookup and snapshot proofs are still independently required. */
+	Object detachedStoredIdSpace() {
+		return detachedStoredIdSpace;
+	}
+
+	/**
+	 * A receipt for compiling against an attached, pinned dictionary snapshot. Unlike the ordinary lookup cache scope,
+	 * this identity retains neither the snapshot nor its store. A writer rotates it, even for a still-pinned reader;
+	 * map growth or dictionary detachment declines certification. Callers must compare before and after preparation and
+	 * again before use, and keep the actual source alive separately.
+	 */
+	Object detachedValueLookupScope(ReadSnapshot snapshot) throws IOException {
+		if (snapshot.valueStore() != this) {
+			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+		}
+		Object generation = valueLookupGeneration;
+		synchronized (snapshot.txnRef()) {
+			snapshot.ensureValid();
+			if (snapshot.closed || generation == null || valueLookupGeneration != generation
+					|| snapshot.dictionaryDetached() || nativeMapGeneration != snapshot.nativeMapGeneration()) {
+				return null;
+			}
+			if (snapshot.detachedLookupGeneration != generation) {
+				snapshot.detachedLookupGeneration = generation;
+				snapshot.detachedLookupScope = new Object();
+			}
+			return valueLookupGeneration == generation ? snapshot.detachedLookupScope : null;
+		}
 	}
 
 	/** Reuse an already open native snapshot when validating lookup-local absence and namespace prefix proofs. */

@@ -428,7 +428,7 @@ final class LmdbNativeHashJoin {
 	}
 
 	private static int membershipScans(PatternPlan pattern) {
-		return pattern.contexts.isFixed() ? Math.max(1, pattern.contexts.ids.length) : 1;
+		return pattern.contexts.isFixed() ? Math.max(1, pattern.contexts.size()) : 1;
 	}
 
 	private static boolean termKnown(Term term, long mask) {

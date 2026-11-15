@@ -60,6 +60,8 @@ public final class LmdbFactorizedBatch {
 	private static final MemoryAccount UNBOUNDED = bytes -> true;
 
 	private final MemoryAccount memory;
+	/** Null only for batches explicitly constructed outside a native invocation. */
+	private final LmdbFusedSipFactorizedRuntime.Session session;
 	private long[] roots;
 	private long[] rootMultiplicity;
 	private long[] rootSurvival;
@@ -68,11 +70,13 @@ public final class LmdbFactorizedBatch {
 	private int levelCount;
 
 	public LmdbFactorizedBatch(int rootCapacity, int levelCapacity) {
-		this(rootCapacity, levelCapacity, UNBOUNDED);
+		this(rootCapacity, levelCapacity, UNBOUNDED, null);
 	}
 
-	LmdbFactorizedBatch(int rootCapacity, int levelCapacity, MemoryAccount memory) {
+	LmdbFactorizedBatch(int rootCapacity, int levelCapacity, MemoryAccount memory,
+			LmdbFusedSipFactorizedRuntime.Session session) {
 		this.memory = memory;
+		this.session = session;
 		int rootsCapacity = Math.max(1, rootCapacity);
 		int levelsCapacity = Math.max(1, levelCapacity);
 		long bytes = rootsCapacity * 16L + ((rootsCapacity + 63L) >>> 6) * Long.BYTES
@@ -195,8 +199,10 @@ public final class LmdbFactorizedBatch {
 			level.offsets[parent + 1] = level.valueCount;
 		}
 		levelCount++;
-		LmdbFusedKernelRuntime.recordFactorizedLevel(rootCount, parentCount, candidates, level.valueCount, rejected,
-				optionalNulls, flatEquivalent, multiplicityExtra);
+		if (session != null) {
+			session.recordFactorizedLevel(rootCount, parentCount, candidates, level.valueCount, rejected,
+					optionalNulls, flatEquivalent, multiplicityExtra);
+		}
 		if (rejected > 0) {
 			LmdbFusedKernelRuntime.factorizedRowsAvoided(rejected);
 		}
@@ -318,7 +324,9 @@ public final class LmdbFactorizedBatch {
 
 	/** Lazily flattens only at a semantic/output boundary; no row array is materialized. */
 	public FlatCursor flatCursor() {
-		LmdbFusedKernelRuntime.materializationBoundary(sumLeafMultiplicity());
+		if (session != null) {
+			session.recordMaterializationBoundary(sumLeafMultiplicity());
+		}
 		return new FlatCursor(this);
 	}
 

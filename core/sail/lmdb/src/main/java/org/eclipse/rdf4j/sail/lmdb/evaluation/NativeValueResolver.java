@@ -137,7 +137,7 @@ final class NativeValueResolver implements AutoCloseable {
 	}
 
 	private long uncached(Value value, int mode, int positionMask) {
-		long id = store.idOf(value, positionMask);
+		long id = sourceDictionaryId(value, positionMask);
 		ensureOpen();
 		if (mode == 0 || id != UNKNOWN) {
 			return id;
@@ -177,7 +177,7 @@ final class NativeValueResolver implements AutoCloseable {
 			ensureOpen();
 		}
 		try {
-			long id = store.idOf(value, positionMask); // exceptions must never be memoized as UNKNOWN
+			long id = sourceDictionaryId(value, positionMask); // exceptions must never be memoized as UNKNOWN
 			ensureOpen();
 			long lookupId = id != UNKNOWN ? id : catalog.idOfKey(key);
 			Entry entry = new Entry(key, scope, id, lookupId, hash);
@@ -194,6 +194,30 @@ final class NativeValueResolver implements AutoCloseable {
 			}
 			claim.finish();
 		}
+	}
+
+	/**
+	 * A delegate's PLAN/RUNTIME number belongs to that delegate's authority, not this resolver's local catalog or
+	 * interner. Resolve the already supplied RDF value in the local catalog/interner instead of copying that number:
+	 * independent plan catalogs can assign the same id to different terms. The lookup-only mode remains non-interning.
+	 */
+	private long sourceDictionaryId(Value value, int positionMask) {
+		NativeLmdbQuerySource.IdLookup lookup = new NativeLmdbQuerySource.IdLookup();
+		store.idOfWithOrigin(value, positionMask, lookup);
+		return switch (lookup.origin()) {
+		case PLAN, RUNTIME -> {
+			// A foreign synthetic hit identifies that source's value, but does not itself say whether the backing
+			// statement dictionary also contains it. Only a lookup carrying that separate proof can be treated as
+			// a store miss before a destination catalog or runtime table assigns a new ID.
+			if (!lookup.backingAbsenceCertified()) {
+				throw new IllegalStateException("native source did not certify backing dictionary absence");
+			}
+			yield UNKNOWN;
+		}
+		case ABSENT -> UNKNOWN;
+		case STORED -> lookup.id();
+		case UNCERTIFIED -> throw new IllegalStateException("native source did not certify its value ID origin");
+		};
 	}
 
 	private void ensureOpen() {

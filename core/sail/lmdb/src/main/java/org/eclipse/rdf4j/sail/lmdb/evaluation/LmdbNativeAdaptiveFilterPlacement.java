@@ -1505,13 +1505,13 @@ final class AdaptiveOwningCursor implements RowCursor {
 	 * Chooses a stable factorized filter stage from runtime selectivity/cost feedback. The returned stage is fixed when
 	 * a kernel is bound, so generated loops contain no dynamic relocation branch.
 	 */
-	static int chooseFactorizedStage(int filterKey, int fallbackStage) {
-		return LmdbFusedKernelRuntime.preferredFilterStage(filterKey, fallbackStage);
+	static int chooseFactorizedStage(LmdbFusedKernelRuntime runtime, int filterKey, int fallbackStage) {
+		return runtime.preferredFilterStage(filterKey, fallbackStage);
 	}
 
-	static void observeFactorizedFilter(int filterKey, int stage, long tested, long accepted, long elapsedNanos,
-			long downstreamRowsAvoided) {
-		LmdbFusedKernelRuntime.observeFilterVector(filterKey, stage, tested, accepted, elapsedNanos,
+	static void observeFactorizedFilter(LmdbFusedKernelRuntime runtime, int filterKey, int stage, long tested,
+			long accepted, long elapsedNanos, long downstreamRowsAvoided) {
+		runtime.observeFilterVector(filterKey, stage, tested, accepted, elapsedNanos,
 				downstreamRowsAvoided);
 	}
 }

@@ -354,7 +354,7 @@ final class LmdbNativeJaninoCodegen {
 	}
 
 	static void bind(JaninoKernel kernel, KernelContext context, String route) {
-		LmdbFusedKernelRuntime.recordKernelBind(route, kernel);
+		context.fusedRuntime().recordKernelBind(route, kernel);
 		try {
 			kernel.bind(context);
 			LmdbNativeKernelExecution.recordKernelBind(route, kernel);

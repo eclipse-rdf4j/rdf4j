@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjace
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates.PredicateRowCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Physical plan for the type-matrix shapes: GROUP BY over a join of one edge pattern with the type assignment of its
@@ -243,13 +244,27 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	 * compile-scoped source captured in this plan.
 	 */
 	CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeLmdbQuerySource evaluationSource) {
+		LmdbFusedSipFactorizedRuntime.Session invocation = strategy == null
+				? LmdbFusedSipFactorizedRuntime.create(System.identityHashCode(this), false)
+				: strategy.newFusedInvocation(System.identityHashCode(this), false);
+		try {
+			return GenericRootPlan.ownInvocation(evaluate(bindings, evaluationSource, invocation), invocation);
+		} catch (RuntimeException | Error failure) {
+			Throwable retained = KernelRuntime.closeResource(invocation, failure);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+			throw failure;
+		}
+	}
+
+	private CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeLmdbQuerySource evaluationSource,
+			LmdbFusedSipFactorizedRuntime.Session invocation) {
 		if (strategy != null) {
 			strategy.captureEvaluationValues(evaluationSource);
 		}
 		if (evaluationSource != source) {
-			return copyForEvaluation(evaluationSource).evaluateCurrentSource(bindings);
+			return copyForEvaluation(evaluationSource).evaluateCurrentSource(bindings, invocation);
 		}
-		return evaluateCurrentSource(bindings);
+		return evaluateCurrentSource(bindings, invocation);
 	}
 
 	CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeLmdbQuerySource evaluationSource,
@@ -258,6 +273,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		// the thread-local; parallel workers are handed the token object and enter it themselves.
 		try (NativeCancellationToken.Scope ignored = NativeCancellationToken.inherit(cancellation)) {
 			return evaluate(bindings, evaluationSource);
+		}
+	}
+
+	CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeLmdbQuerySource evaluationSource,
+			NativeCancellationToken cancellation, LmdbFusedSipFactorizedRuntime.Session invocation) {
+		try (NativeCancellationToken.Scope ignored = NativeCancellationToken.inherit(cancellation)) {
+			return evaluate(bindings, evaluationSource, invocation);
 		}
 	}
 
@@ -273,13 +295,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 	}
 
-	private CloseableIteration<BindingSet> evaluateCurrentSource(BindingSet bindings) {
+	private CloseableIteration<BindingSet> evaluateCurrentSource(BindingSet bindings,
+			LmdbFusedSipFactorizedRuntime.Session invocation) {
 		if (!bindings.isEmpty()) {
 			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		LongHashSet acceptedPredicates;
 		try {
-			acceptedPredicates = precomputeAcceptedPredicates(bindings);
+			acceptedPredicates = precomputeAcceptedPredicates(bindings, invocation);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -355,7 +378,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			QueryEvaluationContext evaluationContext = context;
 			if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
 				evaluationContext = synthetic.executionContext()
-						.genericContext(context, strategy);
+						.genericInvocationContext(context, strategy);
 			}
 			QueryEvaluationContext preparedContext = evaluationContext;
 			genericStep = strategy.withValuePositions(valuePositions,
@@ -368,7 +391,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	 * Evaluates every predicate filter once per distinct predicate id, on the query thread (the compiled filters have
 	 * unknown thread-affinity). Returns null when the distinct predicates cannot be enumerated.
 	 */
-	private LongHashSet precomputeAcceptedPredicates(BindingSet bindings) throws IOException {
+	private LongHashSet precomputeAcceptedPredicates(BindingSet bindings,
+			LmdbFusedSipFactorizedRuntime.Session invocation) throws IOException {
 		if (predicateFilters.length == 0) {
 			return null;
 		}
@@ -378,6 +402,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			return null;
 		}
 		RowState row = new RowState(source, layout, bindings);
+		row.fusedSession = invocation;
 		if (!LmdbNativeAggregateCompiler.initializeRow(row, bindings, source, layout)) {
 			return null;
 		}

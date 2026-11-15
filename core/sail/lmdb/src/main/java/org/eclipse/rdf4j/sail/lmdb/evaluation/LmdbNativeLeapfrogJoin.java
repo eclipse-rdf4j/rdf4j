@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.Session;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Worst-case-optimal join (leapfrog triejoin) over a cyclic sub-bag of a {@code MultiJoinPlan}. Instead of joining
@@ -1606,7 +1608,7 @@ final class LmdbNativeLeapfrogJoin {
 		if (pattern.c.hasSlot() || pattern.c.isConstant()) {
 			return false;
 		}
-		return !pattern.contexts.isFixed() || pattern.contexts.ids.length > 1;
+		return !pattern.contexts.isFixed() || pattern.contexts.size() > 1;
 	}
 
 	/**
@@ -1837,6 +1839,7 @@ final class LmdbNativeLeapfrogJoin {
 		private int activeIndex;
 		private int consumerMark = -1;
 		private boolean exhausted;
+		private volatile boolean failureDelivered;
 
 		/** A page is a flat row buffer; the first array element is the row count, rows follow densely. */
 		private static long[] newPage(int width) {
@@ -1861,6 +1864,9 @@ final class LmdbNativeLeapfrogJoin {
 				}
 				return null;
 			}
+			if (!LmdbNativeParallelPipelines.parallelWorkerForkable(filters)) {
+				return null;
+			}
 			LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
 					.tryReserveTasks(false, desiredWorkers);
 			if (reservation == null || reservation.grantedWorkers() < 2) {
@@ -1874,34 +1880,12 @@ final class LmdbNativeLeapfrogJoin {
 				return null;
 			}
 			int workers = reservation.grantedWorkers();
-			// worker-confined filter forks; any unforkable filter keeps the whole run serial
-			MaskedFilter[][] workerFilters = new MaskedFilter[workers][];
-			for (int w = 0; w < workers; w++) {
-				workerFilters[w] = new MaskedFilter[filters.length];
-				for (int f = 0; f < filters.length; f++) {
-					NativeBooleanFilter fork = filters[f].filter.forkForParallelWorker();
-					if (fork == null) {
-						if (debug) {
-							NativeBooleanFilter unforkable = filters[f].filter;
-							String detail = unforkable instanceof RecordingNativeBooleanFilter recording
-									? recording.delegate.getClass().getName()
-									: unforkable.getClass().getName();
-							System.err.println("[wcoj] parallel declined: unforkable filter " + detail);
-						}
-						closeWorkerFilters(workerFilters, null);
-						reservation.close();
-						return null;
-					}
-					workerFilters[w][f] = new MaskedFilter(fork, filters[f].mask,
-							AdaptiveFilterMetadata.missing(), -1);
-				}
-			}
 			NativeLmdbQuerySource.ParallelSource[] sources;
 			try {
 				sources = row.source.openParallelSources(workers);
 			} catch (IOException | RuntimeException | Error problem) {
-				closeWorkerFilters(workerFilters, null);
-				reservation.close();
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(reservation, problem),
+						problem);
 				throw problem;
 			}
 			if (sources == null || sources.length < workers) {
@@ -1909,43 +1893,30 @@ final class LmdbNativeLeapfrogJoin {
 					System.err.println("[wcoj] parallel declined: sources="
 							+ (sources == null ? "null" : sources.length) + " workers=" + workers);
 				}
-				closeSources(sources);
-				closeWorkerFilters(workerFilters, null);
-				reservation.close();
+				Throwable failure = closeSources(sources, null);
+				failure = KernelRuntime.closeResource(reservation, failure);
+				KernelRuntime.rethrowCloseFailure(failure);
 				return null;
 			}
 			PARALLEL_RUNS.incrementAndGet();
 			if (debug) {
 				System.err.println("[wcoj] parallel engaged: candidates=" + candidates + " workers=" + workers);
 			}
-			return new ParallelLeapfrog(plan, row, levels, reservation, sources, workers, workerFilters);
+			return new ParallelLeapfrog(plan, row, levels, reservation, sources, workers, filters);
 		}
 
-		private static void closeWorkerFilters(MaskedFilter[][] workerFilters, Throwable primary) {
-			if (workerFilters == null) {
-				return;
-			}
-			for (MaskedFilter[] filters : workerFilters) {
-				if (filters == null) {
-					continue;
-				}
-				for (MaskedFilter filter : filters) {
-					if (filter != null) {
-						try {
-							filter.filter.close();
-						} catch (RuntimeException | Error problem) {
-							if (primary != null && primary != problem) {
-								primary.addSuppressed(problem);
-							}
-						}
-					}
+		private static Throwable closeWorkerFilters(MaskedFilter[] filters, Throwable failure) {
+			for (MaskedFilter filter : filters) {
+				if (filter != null) {
+					failure = KernelRuntime.closeResource(filter.filter::close, failure);
 				}
 			}
+			return failure;
 		}
 
 		private ParallelLeapfrog(LeapfrogPlan plan, RowState row, Level[] levels,
 				LmdbNativeParallelPipelines.TaskReservation reservation,
-				NativeLmdbQuerySource.ParallelSource[] sources, int workers, MaskedFilter[][] workerFilters) {
+				NativeLmdbQuerySource.ParallelSource[] sources, int workers, MaskedFilter[] filters) {
 			this.consumerRow = row;
 			this.reservation = reservation;
 			this.sources = sources;
@@ -1975,39 +1946,54 @@ final class LmdbNativeLeapfrogJoin {
 			try {
 				for (int w = 0; w < workers; w++) {
 					NativeLmdbQuerySource.ParallelSource workerSource = sources[w];
-					MaskedFilter[] ownFilters = workerFilters[w];
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					java.util.concurrent.Future<?> ignored = LmdbNativeParallelPipelines.pool()
-							.submit(() -> runWorker(plan, workerSource, ownFilters, entrySlots, firstSlot, candidates,
+							.submit(() -> runWorker(plan, workerSource, filters, entrySlots, firstSlot, candidates,
 									candidateMults, ranges, replayContext));
 					submitted++;
 				}
-			} finally {
+			} catch (RuntimeException | Error problem) {
+				cancelled.set(true);
+				Throwable cleanupFailure = problem;
 				for (int w = submitted; w < workers; w++) {
-					closeWorkerFilters(new MaskedFilter[][] { workerFilters[w] }, null);
+					cleanupFailure = KernelRuntime.closeResource(sources[w], cleanupFailure);
+					cleanupFailure = KernelRuntime.closeResource(tasks::countDown, cleanupFailure);
+				}
+				boolean interrupted = false;
+				while (tasks.getCount() > 0) {
 					try {
-						sources[w].close();
-					} catch (RuntimeException | Error ignoredProblem) {
-						// startup failure path; the primary failure propagates from the submit call
+						tasks.await();
+					} catch (InterruptedException e) {
+						interrupted = true;
 					}
-					tasks.countDown();
 				}
-				if (submitted < workers) {
-					cancelled.set(true);
+				if (interrupted) {
+					Thread.currentThread().interrupt();
 				}
+				Throwable workerCleanupFailure = tasks.cleanupFailure();
+				if (workerCleanupFailure != null && workerCleanupFailure != cleanupFailure) {
+					cleanupFailure.addSuppressed(workerCleanupFailure);
+				}
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(cleanupFailure, problem);
+				throw problem;
 			}
 		}
 
 		private void runWorker(LeapfrogPlan sharedPlan, NativeLmdbQuerySource.ParallelSource workerSource,
-				MaskedFilter[] ownFilters, long[] entrySlots, int firstSlot, long[] candidates, long[] candidateMults,
+				MaskedFilter[] filters, long[] entrySlots, int firstSlot, long[] candidates, long[] candidateMults,
 				java.util.concurrent.ConcurrentLinkedQueue<int[]> ranges,
 				NativeExecutionContext.WorkerContext replayContext) {
+			MaskedFilter[] ownFilters = new MaskedFilter[filters.length];
+			RowState[] ownedRow = new RowState[1];
+			Session[] ownedSession = new Session[1];
 			try (var worker = tasks.enter(() -> {
-				try {
-					closeWorkerFilters(new MaskedFilter[][] { ownFilters }, failure.get());
-				} finally {
-					workerSource.close();
+				Throwable closeFailure = closeWorkerFilters(ownFilters, null);
+				if (ownedRow[0] != null) {
+					closeFailure = KernelRuntime.closeResource(ownedRow[0]::closeDecodedInputs, closeFailure);
 				}
+				closeFailure = KernelRuntime.closeResource(workerSource, closeFailure);
+				closeFailure = KernelRuntime.closeResource(ownedSession[0], closeFailure);
+				KernelRuntime.rethrowCloseFailure(closeFailure);
 			}, problem -> {
 				Throwable primary = failure.get();
 				if (primary == null && failure.compareAndSet(null, problem)) {
@@ -2022,11 +2008,37 @@ final class LmdbNativeLeapfrogJoin {
 			})) {
 				try {
 					worker.activate(replayContext);
+					if (cancelled.get()) {
+						return;
+					}
+					Session session = consumerRow.fusedSession().worker();
+					ownedSession[0] = session;
+					NativeExecutionContext execution = NativeScalarPlan.WorkerContext.executionForSource(workerSource,
+							consumerRow.executionContext());
+					LmdbNativeEvaluationStrategy workerStrategy = consumerRow.workerStrategy(workerSource, session,
+							execution);
+					NativeScalarPlan.WorkerContext workerContext = NativeScalarPlan.WorkerContext.forSource(
+							workerSource,
+							null, session, execution, workerStrategy, consumerRow.diagnosticRoot());
+					for (int i = 0; i < filters.length; i++) {
+						NativeBooleanFilter fork = filters[i].filter.forkForParallelWorker(workerContext);
+						if (fork == null) {
+							throw new IllegalStateException("parallel leapfrog filter could not bind to its worker");
+						}
+						ownFilters[i] = new MaskedFilter(fork, filters[i].mask, AdaptiveFilterMetadata.missing(), -1);
+					}
 					// the plan and its frontier cache are shared: cached frontiers are immutable, and worker scans
 					// happen against snapshot-sibling sources of the same store snapshot
 					LeapfrogPlan workerPlan = sharedPlan;
 					RowState workerRow = new RowState(workerSource, consumerRow.layout, consumerRow.base,
 							consumerRow.exactValuesMetrics, consumerRow.cancellation);
+					ownedRow[0] = workerRow;
+					workerRow.fusedSession = session;
+					workerRow.setExecutionContext(execution);
+					workerRow.inheritDiagnosticRoot(consumerRow);
+					if (workerStrategy != null) {
+						workerRow.setInvocationStrategy(workerStrategy);
+					}
 					workerRow.memoryScope = consumerRow.memoryScope;
 					for (int i = 0; i < entrySlots.length; i++) {
 						workerRow.slots[i] = entrySlots[i];
@@ -2159,6 +2171,7 @@ final class LmdbNativeLeapfrogJoin {
 				return;
 			}
 			cancelled.set(true);
+			failureDelivered = true;
 			if (problem instanceof IOException io) {
 				throw io;
 			}
@@ -2188,17 +2201,19 @@ final class LmdbNativeLeapfrogJoin {
 			if (interrupted) {
 				Thread.currentThread().interrupt();
 			}
+			if (!failureDelivered) {
+				KernelRuntime.rethrowCloseFailure(tasks.cleanupFailure());
+			}
 		}
 
-		private static void closeSources(NativeLmdbQuerySource.ParallelSource[] sources) {
+		private static Throwable closeSources(NativeLmdbQuerySource.ParallelSource[] sources, Throwable failure) {
 			if (sources == null) {
-				return;
+				return failure;
 			}
 			for (NativeLmdbQuerySource.ParallelSource source : sources) {
-				if (source != null) {
-					source.close();
-				}
+				failure = KernelRuntime.closeResource(source, failure);
 			}
+			return failure;
 		}
 	}
 }

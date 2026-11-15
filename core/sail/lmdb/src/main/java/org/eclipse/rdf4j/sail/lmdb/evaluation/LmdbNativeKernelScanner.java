@@ -14,14 +14,19 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 
 /**
@@ -49,6 +54,10 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 	/** Scan site restricted to one planned key range, or -1 when every site scans in full. */
 	private int rootScanId = -1;
 	private LmdbRootScanPartition rootPartition;
+	private SourceCoordinateRegistry coordinateRegistry;
+	private QueryLedger coordinateLedger;
+	private LongSupplier allocateCoordinateNamespace;
+	private LongConsumer requestCoordinateRetirement;
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, int scanCount) {
 		this(source, null, scanSites(new StatementOrder[scanCount]));
@@ -92,6 +101,55 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 		return sites;
 	}
 
+	@Override
+	public void configureCoordinates(QueryLedger ledger, LongSupplier allocateNamespace,
+			LongConsumer requestRetirement) {
+		if (coordinateLedger != null) {
+			throw new IllegalStateException("source coordinates already configured");
+		}
+		if (ledger != null && allocateNamespace != null && requestRetirement != null) {
+			coordinateLedger = ledger;
+			allocateCoordinateNamespace = allocateNamespace;
+			requestCoordinateRetirement = requestRetirement;
+		}
+	}
+
+	private long sourceNamespace(RecordIterator source) {
+		if (coordinateLedger == null || !source.hasSourceCoordinates()) {
+			return 0L;
+		}
+		SourceCoordinateRegistry registry = coordinateRegistry;
+		if (registry == null) {
+			Reservation base = coordinateLedger.tryReserveWithoutReclamation(SourceCoordinateRegistry.BASE_BYTES);
+			if (base == null) {
+				return 0L;
+			}
+			Reservation first = coordinateLedger.tryReserveWithoutReclamation(SourceCoordinateRegistry.ENTRY_BYTES);
+			if (first == null) {
+				base.close();
+				return 0L;
+			}
+			Reservation directory = coordinateLedger
+					.tryReserveWithoutReclamation(SourceCoordinateRegistry.directoryBytes(8));
+			if (directory == null) {
+				first.close();
+				base.close();
+				return 0L;
+			}
+			try {
+				registry = new SourceCoordinateRegistry(coordinateLedger, allocateCoordinateNamespace,
+						requestCoordinateRetirement, base, first, directory);
+				coordinateRegistry = registry;
+			} catch (RuntimeException | Error failure) {
+				directory.close();
+				first.close();
+				base.close();
+				throw failure;
+			}
+		}
+		return registry.namespaceFor(source);
+	}
+
 	/**
 	 * Confines one scan site to a single planned key range, so a worker's kernel instance reads its own slice of the
 	 * root scan instead of the whole thing (plan: plans/lmdb-native-engine/32-parallel-kernel-parity-closure.md). This
@@ -125,7 +183,7 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 					: runtimePlan.adjacencyAccessAt("JaninoScan[" + scanId + "]");
 			ReusableCursor cursor = cursors[scanId];
 			if (cursor == null) {
-				cursor = new ReusableCursor();
+				cursor = new ReusableCursor(scanId, this);
 				cursors[scanId] = cursor;
 			}
 			if (scanId == rootScanId && rootPartition != null) {
@@ -215,6 +273,7 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 
 	@Override
 	public void close() {
+		Throwable failure = null;
 		for (int i = 0; i < probes.length; i++) {
 			NativeLmdbQuerySource.NativeProbe probe = probes[i];
 			probes[i] = null;
@@ -223,13 +282,16 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 			if (cursors[i] != null) {
 				cursors[i].reset(null);
 			}
-			if (probe != null) {
-				probe.close();
-			}
-			if (ordered != null) {
-				ordered.close();
-			}
+			failure = KernelRuntime.closeResource(probe, failure);
+			failure = KernelRuntime.closeResource(ordered, failure);
 		}
+		SourceCoordinateRegistry registry = coordinateRegistry;
+		coordinateRegistry = null;
+		coordinateLedger = null;
+		allocateCoordinateNamespace = null;
+		requestCoordinateRetirement = null;
+		failure = KernelRuntime.closeResource(registry, failure);
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	/**
@@ -239,10 +301,21 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 	 */
 	private static final class ReusableCursor implements KernelQuadCursor {
 
+		private final int scanId;
+		private final LmdbNativeKernelScanner scanner;
 		private RecordIterator delegate;
+		private boolean namespaceResolved;
+		private long namespace;
+
+		ReusableCursor(int scanId, LmdbNativeKernelScanner scanner) {
+			this.scanId = scanId;
+			this.scanner = scanner;
+		}
 
 		void reset(RecordIterator delegate) {
 			this.delegate = delegate;
+			this.namespaceResolved = false;
+			this.namespace = 0L;
 		}
 
 		@Override
@@ -255,8 +328,243 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 		}
 
 		@Override
+		public int fill(long[] quadBuffer, long[] coordinates, int maxRows) {
+			RecordIterator current = delegate;
+			if (current == null) {
+				return 0;
+			}
+			if (!namespaceResolved) {
+				namespaceResolved = true;
+				namespace = scanner.sourceNamespace(current);
+			}
+			if (namespace <= 0L) {
+				return KernelQuadCursor.super.fill(quadBuffer, coordinates, maxRows);
+			}
+			return current.fillWithSourceCoordinates(quadBuffer, coordinates, maxRows, scanId, namespace);
+		}
+
+		@Override
 		public void close() {
 			delegate = null;
+		}
+	}
+
+	/**
+	 * Open-addressed exact identity table. Hashes only choose a probe sequence; source-owned exact comparisons decide
+	 * equality. Base state, directory arrays and each retained key have separate non-reclaiming reservations. Weak
+	 * witnesses do not prolong snapshot lifetimes; a bounded sweep requests retirement after their generation expires.
+	 */
+	private static final class SourceCoordinateRegistry implements AutoCloseable {
+		private static final long BASE_BYTES = 512L;
+		/** Covers one certificate, weak identity witnesses, copied bounds, and reservation bookkeeping. */
+		private static final long ENTRY_BYTES = 1024L;
+		private static final Object TOMBSTONE = new Object();
+		private static final int RETIREMENT_SWEEP = 16;
+		private final QueryLedger ledger;
+		private final LongSupplier allocateNamespace;
+		private final LongConsumer requestRetirement;
+		private final Reservation baseReservation;
+		private Reservation firstReservation;
+		private Reservation directoryReservation;
+		private Object[] identities;
+		private int[] hashes;
+		private long[] namespaces;
+		private Reservation[] reservations;
+		private int size;
+		private int used;
+		private int sweepCursor;
+
+		SourceCoordinateRegistry(QueryLedger ledger, LongSupplier allocateNamespace, LongConsumer requestRetirement,
+				Reservation baseReservation, Reservation firstReservation, Reservation directoryReservation) {
+			this.ledger = ledger;
+			this.allocateNamespace = allocateNamespace;
+			this.requestRetirement = requestRetirement;
+			this.baseReservation = baseReservation;
+			this.firstReservation = firstReservation;
+			this.directoryReservation = directoryReservation;
+		}
+
+		private static long directoryBytes(int capacity) {
+			// Four array headers plus conservative 8-byte reference slots, one int and one long per slot.
+			return 256L + (long) capacity * (Long.BYTES * 3 + Integer.BYTES);
+		}
+
+		long namespaceFor(RecordIterator source) {
+			if (!source.hasSourceCoordinates()) {
+				return 0L;
+			}
+			sweepRetired();
+			int hash = source.sourceCoordinateHash();
+			if (identities != null) {
+				int slot = slot(source, hash);
+				if (identities[slot] != null && identities[slot] != TOMBSTONE) {
+					return namespaces[slot];
+				}
+				if (size >= (1 << 29)) {
+					return 0L;
+				}
+			}
+			Reservation claim = firstReservation;
+			firstReservation = null;
+			if (claim == null) {
+				claim = ledger.tryReserveWithoutReclamation(ENTRY_BYTES);
+			}
+			if (claim == null) {
+				return 0L;
+			}
+			boolean retained = false;
+			try {
+				if (!ensureDirectory()) {
+					return 0L;
+				}
+				Object identity = source.copySourceCoordinateIdentity();
+				if (identity == null || !source.matchesSourceCoordinateIdentity(identity)) {
+					return 0L;
+				}
+				long namespace = allocateNamespace.getAsLong();
+				if (namespace <= 1L) {
+					return 0L;
+				}
+				int slot = slot(source, hash);
+				if (identities[slot] == null) {
+					used++;
+				}
+				identities[slot] = identity;
+				hashes[slot] = hash;
+				namespaces[slot] = namespace;
+				reservations[slot] = claim;
+				size++;
+				retained = true;
+				return namespace;
+			} finally {
+				if (!retained) {
+					claim.close();
+				}
+			}
+		}
+
+		private int slot(RecordIterator source, int hash) {
+			int mask = identities.length - 1;
+			int slot = (hash ^ (hash >>> 16)) & mask;
+			int firstTombstone = -1;
+			while (identities[slot] != null) {
+				if (identities[slot] == TOMBSTONE) {
+					if (firstTombstone < 0) {
+						firstTombstone = slot;
+					}
+				} else if (hashes[slot] == hash && source.matchesSourceCoordinateIdentity(identities[slot])) {
+					return slot;
+				}
+				slot = (slot + 1) & mask;
+			}
+			return firstTombstone < 0 ? slot : firstTombstone;
+		}
+
+		private void sweepRetired() {
+			if (identities == null) {
+				return;
+			}
+			int count = Math.min(identities.length, RETIREMENT_SWEEP);
+			for (int i = 0; i < count; i++) {
+				int slot = sweepCursor++ & (identities.length - 1);
+				Object identity = identities[slot];
+				if (identity instanceof RecordIterator.SourceCoordinateIdentity source && source.retired()) {
+					long namespace = namespaces[slot];
+					Reservation claim = reservations[slot];
+					identities[slot] = TOMBSTONE;
+					reservations[slot] = null;
+					namespaces[slot] = 0L;
+					size--;
+					try {
+						requestRetirement.accept(namespace);
+					} finally {
+						claim.close();
+					}
+				}
+			}
+		}
+
+		private boolean ensureDirectory() {
+			if (identities == null) {
+				resize(8, directoryReservation);
+				return true;
+			}
+			if (used < identities.length / 2) {
+				return true;
+			}
+			int capacity = size < identities.length / 4 ? identities.length : identities.length * 2;
+			Reservation claim = ledger.tryReserveWithoutReclamation(directoryBytes(capacity));
+			if (claim == null) {
+				return false;
+			}
+			try {
+				resize(capacity, claim);
+				return true;
+			} catch (RuntimeException | Error failure) {
+				claim.close();
+				throw failure;
+			}
+		}
+
+		private void resize(int capacity, Reservation newDirectory) {
+			Object[] oldIdentities = identities;
+			int[] oldHashes = hashes;
+			long[] oldNamespaces = namespaces;
+			Reservation[] oldReservations = reservations;
+			Object[] newIdentities = new Object[capacity];
+			int[] newHashes = new int[capacity];
+			long[] newNamespaces = new long[capacity];
+			Reservation[] newReservations = new Reservation[capacity];
+			if (oldIdentities != null) {
+				for (int i = 0; i < oldIdentities.length; i++) {
+					if (oldIdentities[i] != null && oldIdentities[i] != TOMBSTONE) {
+						int slot = (oldHashes[i] ^ (oldHashes[i] >>> 16)) & (capacity - 1);
+						while (newIdentities[slot] != null) {
+							slot = (slot + 1) & (capacity - 1);
+						}
+						newIdentities[slot] = oldIdentities[i];
+						newHashes[slot] = oldHashes[i];
+						newNamespaces[slot] = oldNamespaces[i];
+						newReservations[slot] = oldReservations[i];
+					}
+				}
+			}
+			identities = newIdentities;
+			hashes = newHashes;
+			namespaces = newNamespaces;
+			reservations = newReservations;
+			used = size;
+			sweepCursor = 0;
+			Reservation oldDirectory = directoryReservation;
+			directoryReservation = newDirectory;
+			if (oldIdentities != null) {
+				oldDirectory.close();
+			}
+		}
+
+		@Override
+		public void close() {
+			Throwable failure = null;
+			failure = KernelRuntime.closeResource(firstReservation, failure);
+			firstReservation = null;
+			if (identities != null) {
+				for (int i = 0; i < identities.length; i++) {
+					if (identities[i] != null && identities[i] != TOMBSTONE) {
+						long namespace = namespaces[i];
+						failure = KernelRuntime.closeResource(() -> requestRetirement.accept(namespace), failure);
+						failure = KernelRuntime.closeResource(reservations[i], failure);
+					}
+				}
+				identities = null;
+				hashes = null;
+				namespaces = null;
+				reservations = null;
+				size = 0;
+			}
+			failure = KernelRuntime.closeResource(directoryReservation, failure);
+			directoryReservation = null;
+			failure = KernelRuntime.closeResource(baseReservation, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 }

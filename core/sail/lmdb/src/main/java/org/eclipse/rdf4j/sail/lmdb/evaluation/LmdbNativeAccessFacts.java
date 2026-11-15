@@ -161,7 +161,7 @@ final class LmdbNativeAccessFacts {
 	/** Prices the pattern with the given physical fields bound; constant terms are always bound. */
 	Quote quote(int physicalMask) {
 		int mask = physicalMask | constantMask();
-		int scans = pattern.contexts.isFixed() && (mask & CONTEXT) == 0 ? pattern.contexts.ids.length : 1;
+		int scans = pattern.contexts.isFixed() && (mask & CONTEXT) == 0 ? pattern.contexts.size() : 1;
 		if (pattern.contexts.isFixed()) {
 			mask |= CONTEXT;
 		}

@@ -3413,6 +3413,8 @@ final class LmdbNativeKernelIr {
 		final FactorCountGuards factorCountGuards;
 		final AggregateProjections aggregateProjections;
 		final LmdbNativeProducerSchedule.Index producerSchedules;
+		/** IR registers whose source origins are needed by this row kernel's outward projection. */
+		final long resultCoordinateColumns;
 		/** Emission choice is captured once and participates in the compiler cache identity. */
 		final boolean compiledCountSpecialization;
 		/** Shared native top-K/spill sink; capture admission in the generated shape. */
@@ -3461,10 +3463,16 @@ final class LmdbNativeKernelIr {
 		}
 
 		Kernel(int columnCount, List<Node> pipeline, Terminal terminal, TelemetryMode telemetryMode) {
+			this(columnCount, pipeline, terminal, telemetryMode, 0L);
+		}
+
+		private Kernel(int columnCount, List<Node> pipeline, Terminal terminal, TelemetryMode telemetryMode,
+				long resultCoordinateColumns) {
 			if (columnCount < 0 || columnCount > 64) {
 				throw new IllegalArgumentException("column count out of range: " + columnCount);
 			}
 			this.telemetryMode = java.util.Objects.requireNonNull(telemetryMode, "telemetryMode");
+			this.resultCoordinateColumns = resultCoordinateColumns;
 			validateFactorPlacement(pipeline, true);
 			OptimizedKernel optimized = distinctRootExistsEnabled()
 					? optimizeDistinctRootExists(pipeline, terminal)
@@ -3518,6 +3526,9 @@ final class LmdbNativeKernelIr {
 					? -1
 					: vectorTail;
 			StringBuilder key = new StringBuilder("ir1:");
+			if (resultCoordinateColumns != 0L) {
+				key.append("rc").append(Long.toUnsignedString(resultCoordinateColumns, 16)).append(';');
+			}
 			producerSchedules.key(key);
 			if (aggregateProjections != null)
 				key.append("marginals1;");
@@ -3556,7 +3567,13 @@ final class LmdbNativeKernelIr {
 		}
 
 		Kernel withTelemetry(TelemetryMode mode) {
-			return telemetryMode == mode ? this : new Kernel(columnCount, pipeline, terminal, mode);
+			return telemetryMode == mode ? this
+					: new Kernel(columnCount, pipeline, terminal, mode, resultCoordinateColumns);
+		}
+
+		Kernel withResultCoordinateColumns(long columns) {
+			return resultCoordinateColumns == columns ? this
+					: new Kernel(columnCount, pipeline, terminal, telemetryMode, columns);
 		}
 
 		/**

@@ -16,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * Process-wide byte accounting for query-owned native structures. Each cursor owns a {@link QueryLedger}; closing that
@@ -177,6 +178,23 @@ public final class LmdbQueryMemoryManager {
 				reservations.add(reservation);
 				account(this, bytes);
 				touch(reservation);
+				return reservation;
+			}
+		}
+
+		/** Attempts an optional positive reservation without reclaiming another owner's memory. */
+		@InternalUseOnly
+		public Reservation tryReserveWithoutReclamation(long bytes) {
+			if (bytes <= 0L) {
+				throw new IllegalArgumentException("Reservation size must be positive");
+			}
+			synchronized (LmdbQueryMemoryManager.this) {
+				if (closed || !fits(this, bytes)) {
+					return null;
+				}
+				Reservation reservation = new Reservation(this, bytes, null);
+				reservations.add(reservation);
+				account(this, bytes);
 				return reservation;
 			}
 		}

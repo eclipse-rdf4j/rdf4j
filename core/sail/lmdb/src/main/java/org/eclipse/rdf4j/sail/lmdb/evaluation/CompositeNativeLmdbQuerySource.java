@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 @Experimental
 final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
@@ -75,8 +76,53 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public void idOfWithOrigin(Value value, int positionMask, IdLookup result) throws QueryEvaluationException {
+		sources.get(0).idOfWithOrigin(value, positionMask, result);
+	}
+
+	@Override
+	public boolean certifiesIdOrigins() {
+		return sources.stream().allMatch(NativeLmdbQuerySource::certifiesIdOrigins) && detachedDomainStamp() != null;
+	}
+
+	@Override
+	public long knownStatementId(LmdbValue value) {
+		return sources.get(0).knownStatementId(value);
+	}
+
+	@Override
 	public Object valueLookupScope() {
 		return sources.get(0).valueLookupScope();
+	}
+
+	@Override
+	public DomainStamp detachedDomainStamp() {
+		DomainStamp lookup = sources.get(0).detachedDomainStamp();
+		if (lookup == null || activeSources.isEmpty()) {
+			return null;
+		}
+		for (NativeLmdbQuerySource source : sources) {
+			if (!lookup.sameAuthority(source.detachedDomainStamp())) {
+				return null;
+			}
+		}
+		DomainStamp combined = null;
+		for (NativeLmdbQuerySource source : activeSources) {
+			DomainStamp active = source.detachedDomainStamp();
+			if (!lookup.sameAuthority(active)) {
+				return null;
+			}
+			combined = combined == null ? active : combined.combineDisjoint(active);
+			if (combined == null) {
+				return null;
+			}
+		}
+		return combined;
+	}
+
+	@Override
+	public Object resultValueScope() {
+		return sources.get(0).resultValueScope();
 	}
 
 	@Override
@@ -1249,8 +1295,33 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public void idOfWithOrigin(Value value, int positionMask, IdLookup result) throws QueryEvaluationException {
+			delegate.idOfWithOrigin(value, positionMask, result);
+		}
+
+		@Override
+		public boolean certifiesIdOrigins() {
+			return delegate.certifiesIdOrigins();
+		}
+
+		@Override
+		public long knownStatementId(LmdbValue value) {
+			return delegate.knownStatementId(value);
+		}
+
+		@Override
 		public Object valueLookupScope() {
 			return delegate.valueLookupScope();
+		}
+
+		@Override
+		public DomainStamp detachedDomainStamp() {
+			return delegate.detachedDomainStamp();
+		}
+
+		@Override
+		public Object resultValueScope() {
+			return delegate.resultValueScope();
 		}
 
 		@Override

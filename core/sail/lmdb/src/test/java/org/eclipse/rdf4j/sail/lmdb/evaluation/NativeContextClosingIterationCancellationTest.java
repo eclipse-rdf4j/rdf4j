@@ -203,6 +203,50 @@ class NativeContextClosingIterationCancellationTest {
 	}
 
 	@Test
+	void filteringCloseWaitsForActivePredicateToReleaseContext() throws Exception {
+		NativeExecutionContext context = new NativeExecutionContext();
+		CloseableIteration<BindingSet> source = new CloseableIteratorIteration<>(
+				List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator());
+		NativeContextClosingIteration delegate = new NativeContextClosingIteration(source, context);
+		CountDownLatch predicateEntered = new CountDownLatch(1);
+		CountDownLatch finishPredicate = new CountDownLatch(1);
+		AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+		FilteringIteration filtering = new FilteringIteration(delegate, (Predicate<BindingSet>) ignored -> {
+			predicateEntered.countDown();
+			try {
+				if (!finishPredicate.await(5, TimeUnit.SECONDS)) {
+					throw new AssertionError("predicate was not released");
+				}
+			} catch (InterruptedException failure) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(failure);
+			}
+			assertFalse(context.isClosed(), "the predicate still owns its evaluation context");
+			return true;
+		});
+		Thread consumer = new Thread(() -> {
+			try {
+				filtering.hasNext();
+			} catch (Throwable failure) {
+				workerFailure.set(failure);
+			}
+		});
+		consumer.start();
+		try {
+			assertTrue(predicateEntered.await(5, TimeUnit.SECONDS));
+			filtering.close();
+			assertFalse(context.isClosed(), "close must defer the final lease while the predicate runs");
+		} finally {
+			finishPredicate.countDown();
+			consumer.join(TimeUnit.SECONDS.toMillis(5));
+			filtering.close();
+		}
+		assertFalse(consumer.isAlive());
+		assertNull(workerFailure.get());
+		assertTrue(context.isClosed());
+	}
+
+	@Test
 	void delegateNextAssertionErrorClosesContextAndPreservesFailure() {
 		NativeExecutionContext context = new NativeExecutionContext();
 		ThrowingNextIteration source = new ThrowingNextIteration();

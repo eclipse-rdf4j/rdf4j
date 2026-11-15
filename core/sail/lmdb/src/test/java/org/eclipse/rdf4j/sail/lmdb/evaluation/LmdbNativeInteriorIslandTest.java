@@ -382,6 +382,25 @@ public class LmdbNativeInteriorIslandTest {
 	}
 
 	@Test
+	public void joinedNativeLexicalChildrenPreserveTheirExistingRouteAndResults() {
+		String query = "SELECT ?s ?o ?n ?c WHERE { "
+				+ "{ SELECT ?s ?o ?n WHERE { ?s <" + EX + "p> ?o . ?s <" + EX + "q> ?n } LIMIT 10 } "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) WHERE { } } }";
+		List<String> expected = genericRows(query);
+		assertThat(expected).hasSize(2);
+		withIslands(() -> {
+			assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(expected);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String plan = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
+				assertThat(plan).contains("NativeSubquery(", "Join(").doesNotContain("GenericEvalPlan");
+				assertThat(plan.split("NativeSubquery\\(", -1).length - 1)
+						.as("both independent lexical children stay in the native host")
+						.isGreaterThanOrEqualTo(2);
+			}
+		});
+	}
+
+	@Test
 	public void nestedOptionalViewHasNoGenericChild() {
 		String query = "SELECT DISTINCT * WHERE { "
 				+ "?root <" + EX + "type> <" + EX + "Thing> ; <" + EX + "p> ?followed . "

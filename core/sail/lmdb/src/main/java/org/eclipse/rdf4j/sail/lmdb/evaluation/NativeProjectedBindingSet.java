@@ -16,8 +16,10 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -46,16 +48,26 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	final Value[] values;
 	final int[] positionMasks;
 	final int size;
+	private final Map<String, Integer> nameIndexes;
 	Set<String> bindingNames;
+	private NativeResultMaterializer materializer;
+	private long coordinateSequence;
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, String[] names, int[] sourceSlots, long[] row) {
 		this(source, ProjectionLayout.create(names, sourceSlots), row);
 	}
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, ProjectionLayout layout, long[] row) {
+		this(source, layout, row, null);
+	}
+
+	NativeProjectedBindingSet(NativeLmdbQuerySource source, ProjectionLayout layout, long[] row,
+			NativeResultMaterializer materializer) {
 		this.source = source;
+		this.materializer = materializer;
 		this.names = layout.names;
 		this.positionMasks = layout.positionMasks;
+		this.nameIndexes = layout.nameIndexes;
 		this.ids = new long[layout.names.length];
 		layout.copyIds(row, ids);
 		this.values = new Value[this.ids.length];
@@ -67,6 +79,16 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		}
 		this.size = bound;
 		CREATED.incrementAndGet();
+	}
+
+	/** Associates a sorted row with its still-live output iteration, without resolving or admitting any values. */
+	void attachMaterializer(NativeResultMaterializer materializer) {
+		this.materializer = materializer;
+	}
+
+	/** A primitive sequence only: a detached or delayed row never retains the producer cursor. */
+	void setCoordinateSequence(long sequence) {
+		coordinateSequence = sequence;
 	}
 
 	private static int indexOf(String[] names, int length, String name) {
@@ -85,12 +107,18 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		final int[] positionMasks;
 		/** Original projection occurrence to canonical target, or {@code null} when names are already unique. */
 		final int[] targets;
+		private final Map<String, Integer> nameIndexes;
 
 		private ProjectionLayout(String[] names, int[] sourceSlots, int[] targets, int[] positionMasks) {
 			this.names = names.clone();
 			this.sourceSlots = sourceSlots.clone();
 			this.targets = targets;
 			this.positionMasks = positionMasks;
+			Map<String, Integer> indexes = new HashMap<>();
+			for (int i = 0; i < this.names.length; i++) {
+				indexes.put(this.names[i], i);
+			}
+			this.nameIndexes = Collections.unmodifiableMap(indexes);
 		}
 
 		static ProjectionLayout create(String[] names, int[] sourceSlots) {
@@ -256,9 +284,150 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		}
 	}
 
+	/**
+	 * Captures an accepted outward row using its evaluation-local reference memo, without initializing lexical values.
+	 */
+	public void captureForOutput(Object exposureScope) {
+		NativeResultMaterializer current = materializer;
+		Object view = null;
+		long[][] masks = null;
+		long provisionalHits = 0L;
+		long directHits = 0L;
+		boolean committed = false;
+		int materializedValues = 0;
+		try {
+			NativeLmdbQuerySource currentSource = source;
+			if (currentSource == null) {
+				return;
+			}
+			view = current == null ? null : current.begin(currentSource, exposureScope);
+			if (view != null && ids.length > Long.SIZE) {
+				masks = current.acquireHitMasks();
+				if (masks == null) {
+					view = null;
+				}
+			}
+			for (int i = 0; i < ids.length; i++) {
+				long id = ids[i];
+				if (!isBound(id)) {
+					if (current != null) {
+						current.unbound(i);
+					}
+					continue;
+				}
+				Value value = values[i];
+				if (value == null) {
+					int duplicate = findMaterializedDuplicateIndex(i);
+					boolean provisional = duplicate >= 0 && marked(provisionalHits, masks, 0, duplicate);
+					boolean direct = false;
+					value = duplicate < 0 ? null : values[duplicate];
+					if (value == null && view != null) {
+						value = current.find(i, id, currentSource, exposureScope, view, coordinateSequence);
+						direct = value != null;
+						provisional = direct;
+					}
+					if (value == null) {
+						value = currentSource.lazyValue(id, positionMasks[i]);
+						materializedValues++;
+					}
+					values[i] = value;
+					if (provisional) {
+						if (masks == null) {
+							provisionalHits |= 1L << i;
+							if (direct) {
+								directHits |= 1L << i;
+							}
+						} else {
+							masks[0][i >>> 6] |= 1L << (i & 63);
+							if (direct) {
+								masks[1][i >>> 6] |= 1L << (i & 63);
+							}
+						}
+					}
+				}
+			}
+			if (view != null) {
+				for (int i = 0; i < ids.length; i++) {
+					if (isBound(ids[i]) && !marked(directHits, masks, 1, i)) {
+						current.remember(i, ids[i], values[i], currentSource, exposureScope, view, coordinateSequence);
+					}
+				}
+				if (currentSource.resultValueScope() != view) {
+					current.abandon(view, exposureScope);
+					// Clear all provisional hits before resolving again, so aliases cannot copy a stale hit.
+					for (int i = 0; i < ids.length; i++) {
+						if (marked(provisionalHits, masks, 0, i)) {
+							values[i] = null;
+						}
+					}
+					for (int i = 0; i < ids.length; i++) {
+						if (marked(provisionalHits, masks, 0, i)) {
+							Value value = findMaterializedDuplicate(i);
+							if (value == null) {
+								value = currentSource.lazyValue(ids[i], positionMasks[i]);
+								materializedValues++;
+							}
+							values[i] = value;
+						}
+					}
+				}
+				committed = true;
+			}
+		} finally {
+			if (view != null && !committed) {
+				current.abandon(view, exposureScope);
+				// A retry must not mistake unvalidated cache hits for values read earlier by a predicate.
+				for (int i = 0; i < ids.length; i++) {
+					if (marked(provisionalHits, masks, 0, i)) {
+						values[i] = null;
+					}
+				}
+			}
+			if (masks != null) {
+				current.releaseHitMasks(masks);
+			}
+			materializer = null;
+			coordinateSequence = 0L;
+			if (materializedValues > 0) {
+				MATERIALIZED_VALUES.addAndGet(materializedValues);
+			}
+		}
+	}
+
+	private static boolean marked(long inline, long[][] masks, int mask, int index) {
+		return masks == null ? (inline & (1L << index)) != 0L
+				: (masks[mask][index >>> 6] & (1L << (index & 63))) != 0L;
+	}
+
 	/** Removes the native source after every bound value has been captured independently of that source. */
 	public void detachAfterMaterialization() {
 		source = null;
+	}
+
+	/** Whether this row can safely serve as a stable snapshot without consulting its native source. */
+	public boolean isDetachedAndFullyCaptured() {
+		if (source != null) {
+			return false;
+		}
+		for (int i = 0; i < ids.length; i++) {
+			if (isBound(ids[i]) && values[i] == null) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Number of canonical projection slots, including unbound slots. */
+	public int capturedValueSlotCount() {
+		return ids.length;
+	}
+
+	/**
+	 * Returns a captured value without materializing it. Call after {@link #isDetachedAndFullyCaptured()}; unbound
+	 * slots return null.
+	 */
+	public Value capturedValueAt(int index) {
+		return isBound(ids[index]) ? values[index] : null;
 	}
 
 	int nextBound(int from) {
@@ -270,12 +439,8 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	}
 
 	int indexOf(String name) {
-		for (int i = 0; i < names.length; i++) {
-			if (names[i].equals(name)) {
-				return i;
-			}
-		}
-		return -1;
+		Integer index = name == null ? null : nameIndexes.get(name);
+		return index == null ? -1 : index;
 	}
 
 	Value value(int index) {
@@ -299,13 +464,26 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	}
 
 	private Value findMaterializedDuplicate(int index) {
+		int duplicate = findMaterializedDuplicateIndex(index);
+		return duplicate < 0 ? null : values[duplicate];
+	}
+
+	private int findMaterializedDuplicateIndex(int index) {
 		long id = ids[index];
-		for (int i = 0; i < values.length; i++) {
-			if (i != index && ids[i] == id && positionMasks[i] == positionMasks[index] && values[i] != null) {
-				return values[i];
+		NativeResultMaterializer current = materializer;
+		if (current != null) {
+			int alias = current.alias(index);
+			if (alias != index && ids[alias] == id && values[alias] != null) {
+				return alias;
 			}
 		}
-		return null;
+		for (int i = 0; i < values.length; i++) {
+			if (i != index && values[i] != null && (current == null || current.sameCacheBank(i, index))
+					&& ids[i] == id && positionMasks[i] == positionMasks[index]) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	static boolean isBound(long id) {

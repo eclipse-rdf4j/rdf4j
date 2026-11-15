@@ -19,10 +19,12 @@ import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.iteration.OwnedPullIteration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCancellation, IndexReportingIterator {
+final class CleanerIteration<E>
+		implements CloseableIteration<E>, CooperativeCancellation, IndexReportingIterator, OwnedPullIteration<E> {
 
 	private static final Logger logger = LoggerFactory.getLogger(CleanerIteration.class);
 
@@ -62,6 +64,20 @@ final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCan
 	@Override
 	public E next() {
 		return delegate.next();
+	}
+
+	@Override
+	public boolean hasNextWithOwner(Object owner) {
+		if (OwnedPullIteration.hasNext(delegate, owner)) {
+			return true;
+		}
+		close();
+		return false;
+	}
+
+	@Override
+	public E nextWithOwner(Object owner) {
+		return OwnedPullIteration.next(delegate, owner);
 	}
 
 	@Override

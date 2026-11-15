@@ -287,6 +287,9 @@ final class LmdbNativeParallelKernelRows {
 			}
 			probeKernel.close();
 		}
+		// Every worker may bind a narrowed root window. Install the complete domains before any worker can bind so
+		// the shared binding registry never captures whichever window happens to run first.
+		domains.seedFusedDomains(workerKernel, row.fusedSession());
 		LmdbNativeParallelPipelines.TaskReservation reservation = quotedReservation == null
 				? LmdbNativeParallelPipelines.tryReserveTasks(false, desiredWorkers)
 				: quotedReservation;
@@ -360,13 +363,14 @@ final class LmdbNativeParallelKernelRows {
 		NativeCancellationToken workerCancellation = new NativeCancellationToken(row.cancellation);
 		CountDownLatch startup = new CountDownLatch(threads);
 		NativeExecutionContext.WorkerTasks tasks = new NativeExecutionContext.WorkerTasks(threads, reservation::close);
-		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		LmdbFusedSipFactorizedRuntime.Session fusedParent = row.fusedSession();
 		LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
 		ArrayList<Future<?>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
 			NativeLmdbQuerySource.ParallelSource source = sources[w];
 			int workerIndex = w;
 			AtomicBoolean startupReported = new AtomicBoolean();
+			LmdbFusedSipFactorizedRuntime.Session[] workerFused = new LmdbFusedSipFactorizedRuntime.Session[1];
 			try {
 				var replayContext = NativeExecutionContext.captureWorkerContext();
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
@@ -374,8 +378,8 @@ final class LmdbNativeParallelKernelRows {
 						if (startupReported.compareAndSet(false, true)) {
 							startup.countDown();
 						}
-						try {
-							source.close();
+						try (LmdbFusedSipFactorizedRuntime.Session session = workerFused[0]; source) {
+							// Close the snapshot before releasing the worker session.
 						} finally {
 							sources[workerIndex] = null;
 						}
@@ -393,16 +397,16 @@ final class LmdbNativeParallelKernelRows {
 					})) {
 						try {
 							activateWorkerContext(worker, replayContext, activationFailure);
-							try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-									.inherit(fusedParent);
-									LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline
-											.inherit(probeParent);
+							LmdbFusedSipFactorizedRuntime.Session workerSession = fusedParent.worker();
+							workerFused[0] = workerSession;
+							try (LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline
+									.inherit(probeParent);
 									NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
 											.inputScope(row.cancellation)) {
 								NativeExecutionPhaseEvent.kernelInput(lowered.kernel, lowered.bindings,
 										row.cancellation);
 								runWorker(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, source,
-										row, workerCancellation,
+										row, workerSession, workerCancellation,
 										ranges, scanQueue, output, kernelFactory, failure, ownerCancellation, cancelled,
 										startup,
 										startupReported, replayContext);
@@ -688,7 +692,8 @@ final class LmdbNativeParallelKernelRows {
 
 	private static void runWorker(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
 			int rootWildcard, int rootScan, LmdbNativeKernelBindings.BoundDomains domains,
-			NativeLmdbQuerySource source, RowState consumerRow, NativeCancellationToken workerCancellation,
+			NativeLmdbQuerySource source, RowState consumerRow, LmdbFusedSipFactorizedRuntime.Session workerSession,
+			NativeCancellationToken workerCancellation,
 			Queue<long[]> ranges,
 			Queue<LmdbRootScanPartition> scanQueue,
 			ArrayBlockingQueue<Page> output, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
@@ -699,9 +704,19 @@ final class LmdbNativeParallelKernelRows {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		RowState workerRow = new RowState(source, consumerRow.layout, consumerRow.base,
 				consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, workerCancellation);
+		workerRow.fusedSession = workerSession;
+		NativeExecutionContext execution = NativeScalarPlan.WorkerContext.executionForSource(source,
+				consumerRow.executionContext());
+		workerRow.setExecutionContext(execution);
+		workerRow.inheritDiagnosticRoot(consumerRow);
+		LmdbNativeEvaluationStrategy workerStrategy = consumerRow.workerStrategy(source, workerSession, execution);
+		if (workerStrategy != null) {
+			workerRow.setInvocationStrategy(workerStrategy);
+		}
 		workerRow.memoryScope = consumerRow.memoryScope;
 		workerRow.enableDecodedInputAccounting();
-		NativeScalarPlan.WorkerContext workerContext = NativeScalarPlan.WorkerContext.forSource(source, null);
+		NativeScalarPlan.WorkerContext workerContext = NativeScalarPlan.WorkerContext.forSource(source, null,
+				workerSession, execution, workerStrategy, consumerRow.diagnosticRoot());
 		NativeWorkerPlanBinder workerPlans = new NativeWorkerPlanBinder(workerContext);
 		// Worker-confined forks of the shared plan filters (admission proved every filter forkable); the worker owns
 		// their release — a fork may lazily acquire native read state, and leaking it wedges the dataset close exactly
@@ -759,6 +774,12 @@ final class LmdbNativeParallelKernelRows {
 				// row with the packed columns bound on top (admission guarantees the entry is reproducible)
 				residualRow = new RowState(source, consumerRow.layout, consumerRow.base,
 						consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, workerCancellation);
+				residualRow.fusedSession = workerSession;
+				residualRow.setExecutionContext(execution);
+				residualRow.inheritDiagnosticRoot(consumerRow);
+				if (workerStrategy != null) {
+					residualRow.setInvocationStrategy(workerStrategy);
+				}
 				residualRow.memoryScope = consumerRow.memoryScope;
 				residualRow.enableDecodedInputAccounting();
 				if (!NativeRowSeeder.seed(residualRow.slots, consumerRow.layout, consumerRow.base, source)) {

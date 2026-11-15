@@ -64,7 +64,7 @@ final class LmdbNativeExplain {
 		physical.setRuntimeTelemetryEnabled(origin.isRuntimeTelemetryEnabled());
 	}
 
-	private static TupleExpr logicalOrigin(TupleExpr expression) {
+	static TupleExpr logicalOrigin(TupleExpr expression) {
 		if (expression == null) {
 			return null;
 		}
@@ -444,7 +444,7 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof ValuesPlan) {
 			ValuesPlan values = (ValuesPlan) plan;
-			return "Values(rows=" + values.rows.length + ")";
+			return "Values(rows=" + values.rowCount() + ")";
 		}
 		if (plan instanceof PathPlan) {
 			return "Path";
@@ -535,7 +535,7 @@ final class LmdbNativeExplain {
 		if (!contexts.isFixed()) {
 			return "any";
 		}
-		return "fixed(" + contexts.ids.length + ")";
+		return "fixed(" + contexts.size() + ")";
 	}
 
 	private static final class ExecutionPathSummary {

@@ -26,6 +26,7 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 	private final BindingSet base;
 	private final NativeExecutionContext context;
 	private final NativeExecutionContext.Lease lease;
+	private final NativeInvocationCarrier invocation;
 	private final boolean closeContext;
 	private final NativeCancellationToken cancellation;
 	private final NativeExecutionPhaseEvent.InputOwner inputPhases;
@@ -33,33 +34,74 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 	private final int[] targets;
 	private RowState row;
 	private RowCursor input;
+	private LmdbFusedSipFactorizedRuntime.Session fusedSession;
 	private NativeResultRow repeated;
 	private long remainingCopies, remainingOffset, remainingLimit;
+	private long emittedRows;
 	private boolean initialized, active, closeRequested, cleanupStarted, completed;
 
 	NativeRowsResultCursor(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base,
 			NativeExecutionContext context, boolean closeContext) {
+		this(step, source, base, context, closeContext, null);
+	}
+
+	/** A preflight may supply the exact invocation that already owns this physical row recipe. */
+	NativeRowsResultCursor(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base,
+			NativeExecutionContext context, boolean closeContext, NativeInvocationCarrier prepared) {
 		this.step = step;
 		this.source = source;
 		this.base = base;
-		this.context = context;
 		this.closeContext = closeContext;
 		this.lease = closeContext && context != null ? context.retainLease() : null;
-		this.cancellation = NativeCancellationToken.forSource(source);
-		this.inputPhases = NativeExecutionPhaseEvent.inputOwner(cancellation);
-		this.remainingOffset = Math.max(0L, step.offset);
-		this.remainingLimit = step.limit < 0L ? Long.MAX_VALUE : step.limit;
-		Map<String, Integer> indices = new LinkedHashMap<>();
-		this.targets = new int[step.targetNames.length];
-		for (int index = 0; index < targets.length; index++) {
-			targets[index] = indices.computeIfAbsent(step.targetNames[index], ignored -> indices.size());
+		try {
+			if (prepared != null && (prepared.source() != source || prepared.executionContext() != context)) {
+				throw new IllegalStateException("prepared row invocation has a different source or context");
+			}
+			this.invocation = prepared == null ? NativeInvocationCarrier.open(source, step.strategy, base,
+					System.identityHashCode(step.arg), step.originalExpr) : prepared;
+		} catch (RuntimeException | Error failure) {
+			Throwable cleanup = KernelRuntime.closeResource(prepared, failure);
+			cleanup = KernelRuntime.closeResource(lease, cleanup);
+			if (closeContext) {
+				cleanup = KernelRuntime.closeResource(context, cleanup);
+			}
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(cleanup, failure);
+			throw failure;
 		}
-		this.schema = new NativeResultRow.Schema(indices.keySet().toArray(String[]::new));
+		this.context = context == null ? invocation.executionContext() : context;
+		NativeExecutionPhaseEvent.InputOwner acquiredPhases = null;
+		try {
+			this.cancellation = new NativeCancellationToken(this.context.cancellation());
+			this.inputPhases = NativeExecutionPhaseEvent.inputOwner(cancellation);
+			acquiredPhases = inputPhases;
+			this.remainingOffset = Math.max(0L, step.offset);
+			this.remainingLimit = step.limit < 0L ? Long.MAX_VALUE : step.limit;
+			Map<String, Integer> indices = new LinkedHashMap<>();
+			this.targets = new int[step.targetNames.length];
+			for (int index = 0; index < targets.length; index++) {
+				targets[index] = indices.computeIfAbsent(step.targetNames[index], ignored -> indices.size());
+			}
+			this.schema = new NativeResultRow.Schema(indices.keySet().toArray(String[]::new));
+		} catch (RuntimeException | Error failure) {
+			Throwable cleanup = KernelRuntime.closeResource(acquiredPhases, failure);
+			cleanup = KernelRuntime.closeResource(invocation, cleanup);
+			cleanup = KernelRuntime.closeResource(lease, cleanup);
+			if (closeContext) {
+				cleanup = KernelRuntime.closeResource(context, cleanup);
+			}
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(cleanup, failure);
+			throw failure;
+		}
 	}
 
 	@Override
 	public NativeExecutionContext executionContext() {
 		return context;
+	}
+
+	@Override
+	public NativeInvocationCarrier invocationCarrier() {
+		return invocation;
 	}
 
 	@Override
@@ -115,6 +157,9 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 		if (failure != null) {
 			NativeContextClosingIteration.throwFailure(failure);
 		}
+		if (result != null) {
+			emittedRows++;
+		}
 		return result;
 	}
 
@@ -128,6 +173,13 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 			if (!LmdbNativeAggregateCompiler.initializeRow(row, base, source, step.layout)) {
 				return null;
 			}
+			row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
+					row.boundMask());
+			fusedSession = invocation.session();
+			row.fusedSession = fusedSession;
+			row.setExecutionContext(invocation.executionContext());
+			row.bindInvocationStrategy(step.strategy);
+			row.swapPreparationAttempt(invocation.preparationAttempt());
 			input = step.arg.open(row);
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, "nativePhysicalCells");
 		}
@@ -210,9 +262,26 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 			failure = KernelRuntime.closeResource(row::closeDecodedInputs, failure);
 		}
 		if (completed && failure == null) {
-			inputPhases.complete();
+			failure = KernelRuntime.closeResource(inputPhases::complete, failure);
 		}
 		failure = KernelRuntime.closeResource(inputPhases, failure);
+		if (fusedSession != null) {
+			LmdbFusedSipFactorizedRuntime.Session activeSession = fusedSession;
+			fusedSession = null;
+			long materialized = emittedRows;
+			boolean completePlan = completed && failure == null;
+			LmdbNativeRuntimePlan.Invocation runtimePlan = row == null ? null : row.runtimePlan;
+			failure = KernelRuntime.closeResource(() -> invocation.onClose(() -> {
+				activeSession.recordMaterializationBoundary(materialized);
+				if (runtimePlan != null) {
+					runtimePlan.fusedTelemetry(activeSession.telemetry());
+					if (completePlan) {
+						runtimePlan.complete();
+					}
+				}
+			}), failure);
+		}
+		failure = KernelRuntime.closeResource(invocation, failure);
 		repeated = null;
 		failure = KernelRuntime.closeResource(lease, failure);
 		return closeContext ? KernelRuntime.closeResource(context, failure) : failure;

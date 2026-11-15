@@ -13,8 +13,22 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.junit.jupiter.api.Test;
 
 class LmdbFusedRuntimeTelemetryTest {
@@ -23,32 +37,34 @@ class LmdbFusedRuntimeTelemetryTest {
 	void mergesRuntimeSipFactorizationAndFilterTelemetryAcrossWorkers() throws Exception {
 		LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(17L, 1 << 20, true);
 		try {
-			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(root)) {
+			try (LmdbFusedSipFactorizedRuntime.Session binding = root.binding()) {
+				LmdbFusedKernelRuntime runtime = binding.runtime();
 				long[] domain = { 2L, 4L, 7L, 11L };
-				LmdbFusedKernelRuntime.installExactDomain(0, "?enc", "hasEncounter.object", domain, 0,
+				runtime.installExactDomain(0, "?enc", "hasEncounter.object", domain, 0,
 						domain.length);
-				LmdbFusedKernelRuntime.registerDomainConsumer(0, "recordedOn.subject");
-				assertTrue(LmdbFusedKernelRuntime.sipMayContain(0, 2L));
-				assertFalse(LmdbFusedKernelRuntime.sipMayContain(0, 3L));
-				LmdbFusedKernelRuntime.markNestedKernelFactorization();
-				LmdbFusedKernelRuntime.recordFactorizedLevel(3, 3, 24, 6, 18, 1, 24, 2);
-				LmdbFusedKernelRuntime.materializationBoundary(3);
-				LmdbFusedKernelRuntime.recordGeneratedFilterPlacement(7, "?date >= cutoff", 3, 1);
-				LmdbFusedKernelRuntime.observeGeneratedFilter(7, "?date >= cutoff", 3, 1, 10, 2, 100,
+				runtime.registerDomainConsumer(0, "recordedOn.subject");
+				assertTrue(runtime.sipMayContain(0, 2L));
+				assertFalse(runtime.sipMayContain(0, 3L));
+				runtime.markNestedKernelFactorization();
+				runtime.recordFactorizedLevel(3, 3, 24, 6, 18, 1, 24, 2);
+				runtime.materializationBoundary(3);
+				runtime.recordGeneratedFilterPlacement(7, "?date >= cutoff", 3, 1);
+				runtime.observeGeneratedFilter(7, "?date >= cutoff", 3, 1, 10, 2, 100,
 						40);
-			}
 
-			Thread worker = new Thread(() -> {
-				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.inherit(root)) {
-					assertTrue(LmdbFusedKernelRuntime.sipMayContain(0, 7L));
-					assertFalse(LmdbFusedKernelRuntime.sipMayContain(0, 8L));
-					// A worker ordinal window must not replace the root domain or reset its counters.
-					LmdbFusedKernelRuntime.installExactDomain(0, "worker-window", "worker", new long[] { 7L },
-							0, 1);
-				}
-			});
-			worker.start();
-			worker.join();
+				FutureTask<Void> worker = new FutureTask<>(() -> {
+					try (LmdbFusedSipFactorizedRuntime.Session child = binding.worker()) {
+						LmdbFusedKernelRuntime workerRuntime = child.runtime();
+						assertTrue(workerRuntime.sipMayContain(0, 7L));
+						assertFalse(workerRuntime.sipMayContain(0, 8L));
+						// A worker ordinal window must not replace the full binding domain or reset its counters.
+						workerRuntime.installExactDomain(0, "worker-window", "worker", new long[] { 7L }, 0, 1);
+					}
+					return null;
+				});
+				new Thread(worker).start();
+				worker.get();
+			}
 
 			LmdbFusedSipFactorizedRuntime.Telemetry telemetry = root.telemetry();
 			assertTrue(telemetry.runtimeSipUsed());
@@ -94,17 +110,18 @@ class LmdbFusedRuntimeTelemetryTest {
 	void recordsKernelIdentityPerBindAcrossWorkers() throws Exception {
 		LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(19L, 1 << 20, true);
 		try {
-			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(root)) {
-				LmdbFusedKernelRuntime.recordKernelBind("irKernel", new StubKernel());
+			try (LmdbFusedSipFactorizedRuntime.Session binding = root.binding()) {
+				binding.runtime().recordKernelBind("irKernel", new StubKernel());
+				FutureTask<Void> worker = new FutureTask<>(() -> {
+					try (LmdbFusedSipFactorizedRuntime.Session child = binding.worker()) {
+						child.runtime().recordKernelBind("irKernelParallel", new StubKernel());
+						child.runtime().recordKernelBind("irKernelParallel", new StubKernel());
+					}
+					return null;
+				});
+				new Thread(worker).start();
+				worker.get();
 			}
-			Thread worker = new Thread(() -> {
-				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.inherit(root)) {
-					LmdbFusedKernelRuntime.recordKernelBind("irKernelParallel", new StubKernel());
-					LmdbFusedKernelRuntime.recordKernelBind("irKernelParallel", new StubKernel());
-				}
-			});
-			worker.start();
-			worker.join();
 
 			LmdbFusedSipFactorizedRuntime.Telemetry telemetry = root.telemetry();
 			assertEquals(2, telemetry.kernelBinds().size());
@@ -112,6 +129,275 @@ class LmdbFusedRuntimeTelemetryTest {
 			assertEquals(2L, telemetry.kernelBinds().get("StubKernel route=irKernelParallel"));
 		} finally {
 			root.close();
+		}
+	}
+
+	@Test
+	void siblingBindingsIsolateDomainOrdinalsAndWorkersKeepPrivateBatches() {
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(23L, 1 << 20, true);
+				LmdbFusedSipFactorizedRuntime.Session first = root.binding();
+				LmdbFusedSipFactorizedRuntime.Session second = root.binding();
+				LmdbFusedSipFactorizedRuntime.Session firstWorker = first.worker();
+				LmdbFusedSipFactorizedRuntime.Session secondWorker = second.worker()) {
+			first.runtime().installExactDomain(0, "first", "full-first", new long[] { 2L, 4L, 7L }, 0, 3);
+			second.runtime().installExactDomain(0, "second", "full-second", new long[] { 101L, 103L }, 0, 2);
+			firstWorker.runtime().installExactDomain(0, "window", "worker", new long[] { 2L }, 0, 1);
+			assertTrue(firstWorker.runtime().sipMayContain(0, 7L));
+			assertFalse(firstWorker.runtime().sipMayContain(0, 101L));
+			assertTrue(secondWorker.runtime().sipMayContain(0, 101L));
+			assertFalse(secondWorker.runtime().sipMayContain(0, 7L));
+			assertNotSame(first.runtime().newFactorizedBatch(2, 1), firstWorker.runtime().newFactorizedBatch(2, 1));
+			assertNotSame(firstWorker.runtime().newFactorizedBatch(2, 1),
+					secondWorker.runtime().newFactorizedBatch(2, 1));
+			assertEquals(2, root.telemetry().domains().size());
+		}
+	}
+
+	@Test
+	void nestedInvocationSharesBudgetWithoutSharingTelemetryOrDomains() {
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(31L, 100L, true);
+				LmdbFusedSipFactorizedRuntime.Session nested = root.invocation(37L, true)) {
+			root.runtime().installExactDomain(0, "outer", "outer", new long[] { 2L }, 0, 1);
+			nested.runtime().installExactDomain(0, "inner", "inner", new long[] { 101L }, 0, 1);
+			assertTrue(root.claim(70L));
+			assertFalse(nested.claim(31L));
+			assertTrue(nested.claim(30L));
+			assertEquals(0L, nested.remainingBytes());
+			assertTrue(root.runtime().sipMayContain(0, 2L));
+			assertFalse(nested.runtime().sipMayContain(0, 2L));
+			assertTrue(nested.runtime().sipMayContain(0, 101L));
+			assertEquals("outer", root.telemetry().domains().get(0).label());
+			assertEquals("inner", nested.telemetry().domains().get(0).label());
+			assertEquals(0L, root.memoryRefusals());
+			assertEquals(1L, nested.memoryRefusals());
+			nested.release(30L);
+			root.release(70L);
+		}
+	}
+
+	@Test
+	void replayLeaseRetainsExactBindingAndParentUntilFinalRelease() {
+		List<String> closed = new ArrayList<>();
+		LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(46L, 1_024L, true);
+		LmdbFusedSipFactorizedRuntime.Session binding = root.binding();
+		LmdbFusedSipFactorizedRuntime.Session worker = binding.worker();
+		binding.runtime().installExactDomain(0, "binding", "full", new long[] { 2L, 4L }, 0, 2);
+		root.onFinalClose(() -> closed.add("root"));
+		binding.onFinalClose(() -> closed.add("binding"));
+		worker.onFinalClose(() -> closed.add("worker"));
+		LmdbFusedSipFactorizedRuntime.Session.Lease replay = worker.retain();
+		worker.close();
+		binding.close();
+		root.close();
+		assertTrue(closed.isEmpty());
+		assertTrue(worker.runtime().sipMayContain(0, 4L));
+		assertFalse(worker.runtime().sipMayContain(0, 9L));
+		replay.close();
+		replay.close();
+		assertEquals(List.of("worker", "binding", "root"), closed);
+		assertThrows(IllegalStateException.class, worker::retain);
+	}
+
+	@Test
+	void preparationScopesAreAttemptConfinedAndReleaseTheirBudget() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		Object recipe = new Object();
+		AtomicInteger preparations = new AtomicInteger();
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(39L, 512L, true);
+				LmdbFusedSipFactorizedRuntime.PreparationScope first = root.preparationScope(source, new Object());
+				LmdbFusedSipFactorizedRuntime.PreparationScope second = root.preparationScope(source, new Object());
+				LmdbFusedSipFactorizedRuntime.PreparationScope refused = root.preparationScope(source, new Object())) {
+			Object firstValue = first.prepare(recipe, () -> {
+				preparations.incrementAndGet();
+				return new Object();
+			});
+			assertSame(firstValue, first.prepare(recipe, Object::new));
+			Object secondValue = second.prepare(recipe, () -> {
+				preparations.incrementAndGet();
+				return new Object();
+			});
+			assertNotSame(firstValue, secondValue);
+			assertEquals(0L, root.remainingBytes());
+			assertNotSame(refused.prepare(recipe, Object::new), refused.prepare(recipe, Object::new));
+			assertEquals(2L, root.memoryRefusals());
+			first.close();
+			assertEquals(256L, root.remainingBytes());
+			Object admitted = refused.prepare(recipe, Object::new);
+			assertSame(admitted, refused.prepare(recipe, Object::new));
+			assertEquals(2, preparations.get());
+			assertThrows(IllegalStateException.class, () -> first.prepare(recipe, Object::new));
+		}
+	}
+
+	@Test
+	void speculativeAttemptsAndShortLivedFramesReleasePreparedCallbacks() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
+		layout.freeze(List.of("value"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(40L, 1_024L, false)) {
+			row.fusedSession = root;
+			try {
+				RowState.AttemptStart initial = row.attemptStart();
+				row.startScalarFilterAttempt();
+				LmdbFusedSipFactorizedRuntime.PreparationScope speculative = row.preparationScope(source);
+				speculative.prepare(new Object(), Object::new);
+				assertEquals(512L, root.remainingBytes());
+				row.restore(initial);
+				assertNull(speculative.source());
+				assertEquals(1_024L, root.remainingBytes());
+				assertThrows(IllegalStateException.class, () -> speculative.prepare(new Object(), Object::new));
+
+				LmdbFusedSipFactorizedRuntime.PreparationAttempt parent = row.preparationAttempt();
+				for (int index = 0; index < 20; index++) {
+					NativeLmdbQuerySource frameSource = mock(NativeLmdbQuerySource.class);
+					LmdbFusedSipFactorizedRuntime.PreparationAttempt frame = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(
+							parent, new Object());
+					LmdbFusedSipFactorizedRuntime.PreparationScope scope = frame.scope(root, frameSource);
+					scope.prepare(new Object(), Object::new);
+					frame.close();
+					assertNull(scope.source());
+					assertEquals(1_024L, root.remainingBytes());
+				}
+			} finally {
+				row.closeDecodedInputs();
+			}
+		}
+	}
+
+	@Test
+	void replacedConditionRowsReleaseTheirSourcePreparations() {
+		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
+		layout.freeze(List.of("value"));
+		RowState owner = new RowState(store, layout, EmptyBindingSet.getInstance());
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(42L, 1_024L, false)) {
+			owner.fusedSession = root;
+			try {
+				for (int index = 0; index < 20; index++) {
+					SyntheticValueSource source = SyntheticValueSource.forInvocation(store,
+							EmptyBindingSet.getInstance());
+					RowState parent = new RowState(source, layout, EmptyBindingSet.getInstance());
+					parent.fusedSession = root;
+					parent.borrowPreparationAttempt(owner);
+					RowState projected = parent.projectConditionInput(Set.of("value"));
+					try {
+						LmdbFusedSipFactorizedRuntime.PreparationScope scope = projected
+								.preparationScope(projected.source);
+						assertSame(scope, projected.preparationScope(projected.source));
+						scope.prepare(new Object(), Object::new);
+						assertEquals(512L, root.remainingBytes());
+						owner.preparationAttempt().closeSession(root);
+						assertNull(scope.source());
+						assertEquals(1_024L, root.remainingBytes());
+						LmdbFusedSipFactorizedRuntime.PreparationScope replacement = projected
+								.preparationScope(projected.source);
+						assertNotSame(scope, replacement);
+						replacement.prepare(new Object(), Object::new);
+						projected.closeDecodedInputs();
+						assertNull(replacement.source());
+						assertEquals(1_024L, root.remainingBytes());
+					} finally {
+						projected.closeDecodedInputs();
+						parent.closeDecodedInputs();
+						source.executionContext().close();
+					}
+				}
+			} finally {
+				owner.closeDecodedInputs();
+			}
+		}
+	}
+
+	@Test
+	void workersKeepIndependentPreparationsWhenOneBindingCloses() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		Object recipe = new Object();
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(43L, 2_048L, true);
+				LmdbFusedSipFactorizedRuntime.Session binding = root.binding();
+				LmdbFusedSipFactorizedRuntime.Session firstWorker = binding.worker();
+				LmdbFusedSipFactorizedRuntime.Session secondWorker = binding.worker();
+				LmdbFusedSipFactorizedRuntime.PreparationAttempt attempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(
+						null, new Object())) {
+			LmdbFusedSipFactorizedRuntime.PreparationScope first = attempt.scope(firstWorker, source);
+			LmdbFusedSipFactorizedRuntime.PreparationScope second = attempt.scope(secondWorker, source);
+			Object firstValue = first.prepare(recipe, Object::new);
+			Object secondValue = second.prepare(recipe, Object::new);
+			assertNotSame(firstValue, secondValue);
+			assertEquals(1_024L, root.remainingBytes());
+			attempt.closeSession(firstWorker);
+			assertNull(first.source());
+			assertSame(secondValue, second.prepare(recipe, Object::new));
+			assertEquals(1_536L, root.remainingBytes());
+			attempt.close();
+			assertNull(second.source());
+			assertEquals(2_048L, root.remainingBytes());
+		}
+	}
+
+	@Test
+	void reentrantAttemptCloseReleasesInFlightPreparation() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(44L, 1_024L, false);
+				LmdbFusedSipFactorizedRuntime.PreparationAttempt attempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(
+						null, new Object())) {
+			LmdbFusedSipFactorizedRuntime.PreparationScope scope = attempt.scope(root, source);
+			assertThrows(IllegalStateException.class, () -> scope.prepare(new Object(), () -> {
+				attempt.close();
+				return new Object();
+			}));
+			assertNull(scope.source());
+			assertEquals(1_024L, root.remainingBytes());
+			assertThrows(IllegalStateException.class, () -> scope.prepare(new Object(), Object::new));
+		}
+	}
+
+	@Test
+	void eagerDispatchDoesNotRetireTheEnclosingAttempt() throws Exception {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
+		layout.freeze(List.of("value"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(45L, 1_024L, false)) {
+			row.fusedSession = root;
+			try {
+				LmdbFusedSipFactorizedRuntime.PreparationAttempt enclosing = row.preparationAttempt();
+				LmdbFusedSipFactorizedRuntime.PreparationScope scope = row.preparationScope(source);
+				Object recipe = new Object();
+				Object prepared = scope.prepare(recipe, Object::new);
+				LmdbNativeCandidate<String> candidate = LmdbNativeCandidate.of("selected",
+						LmdbNativeCostQuote.streaming(
+								LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 1D), 1D),
+						() -> {
+							LmdbFusedSipFactorizedRuntime.PreparationAttempt nested = row.preparationAttempt();
+							assertNotSame(enclosing, nested);
+							row.endPreparationAttempt(nested);
+							return "done";
+						});
+				LmdbNativeStrategy<Void, String> strategy = LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ROW,
+						"selected", ignored -> LmdbNativeAdmission.of(candidate));
+				LmdbNativeDispatchLoop.Selection<String> selection = new LmdbNativeDispatchLoop<>(
+						LmdbNativeDecisionPoint.ROW, List.of(strategy), null).sharedRow(row).eager().dispatch(null);
+				assertEquals("done", selection.value());
+				assertSame(enclosing, row.preparationAttempt());
+				assertSame(prepared, scope.prepare(recipe, Object::new));
+				assertEquals(512L, root.remainingBytes());
+			} finally {
+				row.closeDecodedInputs();
+			}
+		}
+	}
+
+	@Test
+	void kernelContextRequiresOneExplicitBinding() {
+		try (LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(41L, 1 << 20, true);
+				LmdbFusedSipFactorizedRuntime.Session first = root.binding();
+				LmdbFusedSipFactorizedRuntime.Session second = root.binding()) {
+			KernelContext context = new KernelContext(null, new long[0], new long[0], null);
+			assertThrows(IllegalStateException.class, context::fusedRuntime);
+			context.withFusedRuntime(first.runtime());
+			assertThrows(IllegalStateException.class, () -> context.withFusedRuntime(second.runtime()));
+			assertSame(first.runtime(), context.fusedRuntime());
 		}
 	}
 

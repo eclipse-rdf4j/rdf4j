@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.OwnedPullIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -26,7 +27,8 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author Jeen Broekstra
  */
-class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> implements IndexReportingIterator {
+class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T>
+		implements IndexReportingIterator, OwnedPullIteration<T> {
 
 	private final AbstractSailConnection connection;
 	/**
@@ -167,6 +169,39 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 		beginPull();
 		try {
 			return super.next();
+		} finally {
+			endPull();
+		}
+	}
+
+	@Override
+	public boolean hasNextWithOwner(Object owner) {
+		if (isClosed()) {
+			failIfClosedByConnection();
+			return false;
+		}
+		beginPull();
+		try {
+			if (delegatedHasNext(owner)) {
+				return true;
+			}
+			failIfClosedByConnection();
+			close();
+			return false;
+		} finally {
+			endPull();
+		}
+	}
+
+	@Override
+	public T nextWithOwner(Object owner) {
+		if (isClosed()) {
+			failIfClosedByConnection();
+			return delegatedNext(owner);
+		}
+		beginPull();
+		try {
+			return delegatedNext(owner);
 		} finally {
 			endPull();
 		}

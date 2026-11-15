@@ -29,6 +29,7 @@ final class LmdbNativeTypeMatrixKernel implements JaninoKernel {
 	private final int subjectPosition;
 	private final int outputCount;
 	private TypeMatrixContext matrix;
+	private KernelContext runtimeContext;
 	private KernelCancellation cancellation;
 	private KernelRuntime.LongPairCounts counts;
 	private final long[] subjects = new long[TYPE_ROOT_MORSEL];
@@ -57,6 +58,11 @@ final class LmdbNativeTypeMatrixKernel implements JaninoKernel {
 
 	@Override
 	public void bind(KernelContext context) {
+		if (runtimeContext != null && runtimeContext != context) {
+			runtimeContext.releaseOwnedFusedRuntime();
+		}
+		runtimeContext = context;
+		context.fusedRuntime();
 		matrix = context.typeMatrices[view];
 		cancellation = context.cancellation;
 		if (!context.typeMatrixAccumulation || counts == null) {
@@ -66,6 +72,15 @@ final class LmdbNativeTypeMatrixKernel implements JaninoKernel {
 		ran = false;
 		pollTick = 0;
 		targetBatch.clear();
+	}
+
+	@Override
+	public void close() {
+		KernelContext previous = runtimeContext;
+		runtimeContext = null;
+		if (previous != null) {
+			previous.releaseOwnedFusedRuntime();
+		}
 	}
 
 	@Override

@@ -88,12 +88,12 @@ final class LmdbNativeGeneratedSourceOptimizer {
 				String key = normalize(domain.group(2));
 				DomainInfo info = domains.get(key);
 				String indent = domain.group(1);
-				lines.add(indent + "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.installExactDomain("
+				lines.add(indent + "rdf4jFusedRuntime.installExactDomain("
 						+ info.id + ", \"" + escape(info.variable) + "\", \"generated:" + escape(info.producer)
 						+ "\", " + info.variable + ", 0, " + info.variable + ".length);");
 				for (String consumer : consumers.getOrDefault(key, Set.of())) {
 					lines.add(indent
-							+ "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer("
+							+ "rdf4jFusedRuntime.registerDomainConsumer("
 							+ info.id + ", \"" + escape(consumer) + "\");");
 				}
 				continue;
@@ -105,7 +105,7 @@ final class LmdbNativeGeneratedSourceOptimizer {
 				lines.add(line);
 				if (telemetry && info != null) {
 					lines.add(child.group(1)
-							+ "if (!org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.sipMayContain("
+							+ "if (!rdf4jFusedRuntime.sipMayContain("
 							+ info.id + ", " + child.group(2) + ")) { continue; }");
 				}
 				continue;
@@ -129,8 +129,10 @@ final class LmdbNativeGeneratedSourceOptimizer {
 				break;
 			}
 		}
-		if (classLine >= 0 && !moves.isEmpty()) {
+		if (classLine >= 0) {
 			int insert = classLine + 1;
+			lines.add(insert++,
+					"    private org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime rdf4jFusedRuntime;");
 			for (FilterMove move : moves) {
 				lines.add(insert++, "    private long rdf4jRfTest" + move.id + ";");
 				lines.add(insert++, "    private long rdf4jRfReject" + move.id + ";");
@@ -140,13 +142,23 @@ final class LmdbNativeGeneratedSourceOptimizer {
 		for (int i = 0; i < lines.size(); i++) {
 			if (BIND_OPEN.matcher(lines.get(i)).matches()) {
 				int insert = i + 1;
+				// Close telemetry from the preceding binding with its old runtime before installing the new one.
+				for (int scan = insert; scan < Math.min(lines.size(), i + 12); scan++) {
+					if (lines.get(scan).contains("this.context = context;")) {
+						insert = scan + 1;
+						break;
+					}
+				}
+				lines.add(insert++, "        rdf4jFusedRuntime = context.fusedRuntime();");
 				if (!containsNearby(lines, insert, "markNestedKernelFactorization")) {
 					lines.add(insert++,
-							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.markNestedKernelFactorization();");
+							"        rdf4jFusedRuntime.markNestedKernelFactorization();");
 				}
 				for (FilterMove move : moves) {
+					lines.add(insert++, "        rdf4jRfTest" + move.id + " = 0L;");
+					lines.add(insert++, "        rdf4jRfReject" + move.id + " = 0L;");
 					lines.add(insert++,
-							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordGeneratedFilterPlacement("
+							"        rdf4jFusedRuntime.recordGeneratedFilterPlacement("
 									+ move.key + ", \"" + escape(move.label) + "\", " + move.originalStage + ", "
 									+ move.selectedStage + ");");
 				}
@@ -157,9 +169,15 @@ final class LmdbNativeGeneratedSourceOptimizer {
 			for (int i = 0; i < lines.size(); i++) {
 				if (CLOSE_OPEN.matcher(lines.get(i)).matches()) {
 					int insert = i + 1;
+					for (int scan = insert; scan < Math.min(lines.size(), i + 5); scan++) {
+						if (lines.get(scan).contains("closed = true;")) {
+							insert = scan + 1;
+							break;
+						}
+					}
 					for (FilterMove move : moves) {
 						lines.add(insert++,
-								"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.observeGeneratedFilter("
+								"        if (rdf4jFusedRuntime != null) rdf4jFusedRuntime.observeGeneratedFilter("
 										+ move.key + ", \"" + escape(move.label) + "\", " + move.originalStage + ", "
 										+ move.selectedStage + ", rdf4jRfTest" + move.id + ", rdf4jRfTest" + move.id
 										+ " - rdf4jRfReject" + move.id + ", 0L, rdf4jRfReject" + move.id + ");");

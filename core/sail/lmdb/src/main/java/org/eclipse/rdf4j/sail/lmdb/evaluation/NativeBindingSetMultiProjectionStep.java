@@ -25,7 +25,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /** Semantic native MultiProjection preserving projection-list order and per-list adjacent duplicate suppression. */
 @Experimental
-final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+final class NativeBindingSetMultiProjectionStep
+		implements QueryEvaluationStep, NativeCompiledRecipeProvider, LmdbNativePhysicalPlan {
 
 	private final QueryEvaluationStep arg;
 	private final ProjectionSpec[] projections;
@@ -36,6 +37,56 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 				.stream()
 				.map(ProjectionSpec::create)
 				.toArray(ProjectionSpec[]::new);
+	}
+
+	private NativeBindingSetMultiProjectionStep(QueryEvaluationStep arg, ProjectionSpec[] projections) {
+		this.arg = arg;
+		this.projections = projections;
+	}
+
+	@Override
+	public NativeCompiledResultRecipe compiledRecipe() {
+		NativeCompiledResultRecipe child = arg instanceof NativeCompiledRecipeProvider provider
+				? provider.compiledRecipe()
+				: null;
+		if (child == null || child.requiresPhysicalResults()) {
+			return null;
+		}
+		ProjectionSpec[] snapshot = new ProjectionSpec[projections.length];
+		for (int i = 0; i < snapshot.length; i++) {
+			snapshot[i] = new ProjectionSpec(projections[i].sourceNames().clone(),
+					projections[i].targetNames().clone());
+		}
+		return new MultiProjectionRecipe(child, snapshot);
+	}
+
+	private record MultiProjectionRecipe(NativeCompiledResultRecipe child, ProjectionSpec[] projections)
+			implements NativeCompiledResultRecipe {
+		@Override
+		public QueryEvaluationStep bind(NativeResultBinding binding) {
+			long bytes = 128L + 32L * projections.length;
+			for (ProjectionSpec projection : projections) {
+				bytes = Math.addExact(bytes, 16L * projection.sourceNames().length);
+			}
+			if (binding == null || binding.worker() == null || binding.strategy() == null || binding.context() == null
+					|| binding.worker().invocationStrategy() != binding.strategy()
+					|| !binding.strategy().isBoundTo(binding.worker()) || binding.physicalPreparation() == null
+					|| !binding.physicalPreparation().reserveBytes(bytes)) {
+				return null;
+			}
+			QueryEvaluationStep bound = child.bind(binding);
+			return bound == null ? null : new NativeBindingSetMultiProjectionStep(bound, projections);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return false;
+		}
+
+		@Override
+		public String describe() {
+			return "NativeMultiProjection(projections=" + projections.length + ", arg=" + child.describe() + ")";
+		}
 	}
 
 	@Override

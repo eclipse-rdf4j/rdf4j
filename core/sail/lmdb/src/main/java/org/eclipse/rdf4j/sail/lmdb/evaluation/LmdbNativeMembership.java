@@ -324,6 +324,7 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 	private long sipTests;
 	private long sipRejects;
 	private boolean sipPublished;
+	private LmdbFusedSipFactorizedRuntime.Session sipSession;
 
 	private AdjacencyIntersectionProbe(Term s, Term p, Term o, Term c) {
 		this.s = s;
@@ -377,6 +378,15 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 		long obj = lookup(o, row, allowedMask);
 		if (subj == UNKNOWN && obj == UNKNOWN) {
 			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+		LmdbFusedSipFactorizedRuntime.Session session = row.fusedSession();
+		if (sipSession != session) {
+			publishSipTelemetry();
+			sipSession = session;
+			sipTests = 0L;
+			sipRejects = 0L;
+			streamedAnswers = 0L;
+			sipPublished = false;
 		}
 		try {
 			if (subj != UNKNOWN && obj != UNKNOWN) {
@@ -587,15 +597,16 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 			return;
 		}
 		sipPublished = true;
-		LmdbFusedKernelRuntime.recordImplicitSip(
-				"adjacency-semijoin[p=" + p.constant + "]",
-				"adjacency-key/run-domain(predicate=" + p.constant + ")",
-				"EXISTS/NOT_EXISTS/MINUS membership probe",
-				streamedAnswers > 0 ? "ADJACENCY_MERGE_SEMIJOIN" : "ADJACENCY_SEMIJOIN",
-				true,
-				Long.MAX_VALUE,
-				sipTests,
-				sipRejects);
+		sipSession.runtime()
+				.recordImplicitSip(
+						"adjacency-semijoin[p=" + p.constant + "]",
+						"adjacency-key/run-domain(predicate=" + p.constant + ")",
+						"EXISTS/NOT_EXISTS/MINUS membership probe",
+						streamedAnswers > 0 ? "ADJACENCY_MERGE_SEMIJOIN" : "ADJACENCY_SEMIJOIN",
+						true,
+						Long.MAX_VALUE,
+						sipTests,
+						sipRejects);
 	}
 
 	/**

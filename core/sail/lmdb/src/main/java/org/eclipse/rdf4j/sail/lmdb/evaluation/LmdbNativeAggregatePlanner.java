@@ -129,6 +129,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		super(context, strategy, source);
 	}
 
+	LmdbNativeAggregatePlanner(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
+			NativeLmdbQuerySource source, PlanValueCatalog.Builder catalog) {
+		super(context, strategy, source, catalog);
+	}
+
 	QueryEvaluationStep compile(Filter filter) {
 		if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
 			// Raw HAVING guards cannot see a different mapping from the authoritative condition.
@@ -299,6 +304,15 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	QueryEvaluationStep compileGroup(Group group, ValueExpr havingCondition, TupleExpr originalExpr) {
+		try {
+			return compileGroupWithLookups(group, havingCondition, originalExpr);
+		} finally {
+			releaseAllValuesLookups();
+		}
+	}
+
+	private QueryEvaluationStep compileGroupWithLookups(Group group, ValueExpr havingCondition,
+			TupleExpr originalExpr) {
 		layout.positionMasks(strategy.valuePositionMasks(originalExpr), strategy.valuePositionMasks(group.getArg()));
 		QueryEvaluationStep census = LmdbNativeCensusAggregate.tryCreate(group, source, strategy, context, originalExpr,
 				pattern -> compileContextConstraint(pattern, context.getDataset()));
@@ -435,21 +449,33 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			Set<String> lateralInputs = Set.copyOf(inheritedLateralFrameInputNames);
 			Set<String> lateralNames = Set.copyOf(lateralFrameInputNames);
 			boolean rootScoped = rootEvaluationScoped;
+			PlanValueCatalog compiledCatalog = planValueCatalog.build();
 			groupStep.fullValueCompiler = () -> {
 				Group copied = group.clone();
 				NativeGraphFusion.linkLogicalOrigins(group, copied);
 				NativeValuePositionAnalysis full = frozen.copySubtree(group, copied).fullAggregateValues();
-				return strategy.withValuePositions(full, () -> {
-					LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
-					compiler.inheritedFrameInputNames = frameInputs;
-					compiler.inheritedLateralFrameInputNames = lateralInputs;
-					compiler.lateralFrameInputNames = lateralNames;
-					compiler.rootEvaluationScoped = rootScoped;
-					QueryEvaluationStep candidate = compiler.compileGroup(copied,
-							havingCondition == null ? null : havingCondition.clone(), originalExpr);
-					return candidate instanceof NativeGroupStep nativeCandidate
-							&& !nativeCandidate.requiresPhysicalResults() ? nativeCandidate : null;
-				});
+				try {
+					return strategy.withValuePositions(full, () -> {
+						PlanValueCatalog.Builder fallback = PlanValueCatalog.Builder.forFrozenCatalog(compiledCatalog);
+						try {
+							LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy,
+									source,
+									fallback);
+							compiler.inheritedFrameInputNames = frameInputs;
+							compiler.inheritedLateralFrameInputNames = lateralInputs;
+							compiler.lateralFrameInputNames = lateralNames;
+							compiler.rootEvaluationScoped = rootScoped;
+							QueryEvaluationStep candidate = compiler.compileGroup(copied,
+									havingCondition == null ? null : havingCondition.clone(), originalExpr);
+							return candidate instanceof NativeGroupStep nativeCandidate
+									&& !nativeCandidate.requiresPhysicalResults() ? nativeCandidate : null;
+						} finally {
+							fallback.closeCompilationScratch();
+						}
+					});
+				} catch (PlanValueCatalog.MissingCompiledConstant missing) {
+					return null;
+				}
 			};
 		}
 		return groupStep;
@@ -463,6 +489,14 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * piece is unsupported so the generic evaluator remains the fallback.
 	 */
 	QueryEvaluationStep compileRowRoot(TupleExpr expr) {
+		try {
+			return compileRowRootWithLookups(expr);
+		} finally {
+			releaseAllValuesLookups();
+		}
+	}
+
+	private QueryEvaluationStep compileRowRootWithLookups(TupleExpr expr) {
 		layout.positionMasks(strategy.valuePositionMasks(expr), strategy.valuePositionMasks(expr));
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot) {
@@ -1593,7 +1627,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				&& sameTerm(left.objTerm, right.objTerm)
 				&& sameTerm(left.pattern.c, right.pattern.c)
 				&& left.pattern.namedContextScope == right.pattern.namedContextScope
-				&& Arrays.equals(left.pattern.contexts.ids, right.pattern.contexts.ids);
+				&& left.pattern.contexts.sameIds(right.pattern.contexts);
 	}
 
 	private static boolean sameTerm(Term left, Term right) {
@@ -2435,11 +2469,23 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			nestedLateralFrameInputNames = Collections.unmodifiableSet(lateralInputs);
 		}
-		NativeSubqueryPlan.BoundExecution prepared = prepareNativeSubquery(expr, context, strategy, source,
-				nestedFrameInputNames, nestedLateralFrameInputNames, declaredLateralInputs);
+		NativeLmdbQuerySource.DomainStamp compileDomain = source.detachedDomainStamp();
+		NativeSubqueryPlan.BoundExecution prepared;
+		NativeExecutionContext estimateExecution = source instanceof SyntheticValueSource synthetic
+				? synthetic.executionContext()
+				: null;
+		if (estimateExecution == null) {
+			estimateExecution = strategy.enclosingExecutionContext();
+		}
+		try (PlanValueCatalog.Builder.EstimateScope ignored = planValueCatalog.beginEstimateScope(source, compileDomain,
+				estimateExecution)) {
+			prepared = prepareNativeSubquery(expr, context, strategy, source, nestedFrameInputNames,
+					nestedLateralFrameInputNames, declaredLateralInputs, planValueCatalog);
+		}
 		if (prepared == null) {
 			return null;
 		}
+		NativeLmdbQuerySource.DomainStamp completedDomain = source.detachedDomainStamp();
 		String[] outNames = expr.getBindingNames().toArray(String[]::new);
 		int[] outSlots = new int[outNames.length];
 		for (int i = 0; i < outNames.length; i++) {
@@ -2458,47 +2504,144 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		requiresExecutionContext = true;
+		GenericSubplanDescriptor invocationRecipe = GenericSubplanDescriptor.create(expr, strategy);
+		TupleExpr recipe = invocationRecipe.pinnedExpr();
+		NativeValuePositionAnalysis recipePositions = strategy.copyValuePositions(expr, recipe);
+		Set<String> recipeFrames = Set.copyOf(nestedFrameInputNames);
+		Set<String> recipeLateralFrames = Set.copyOf(nestedLateralFrameInputNames);
+		Set<String> recipeDeclaredInputs = Set.copyOf(declaredLateralInputs);
+		PlanValueCatalog compiledCatalog = planValueCatalog.build();
+		NativeSubqueryPlan.InvocationFactory invocationFactory = subqueryInvocationFactory(recipe, recipePositions,
+				context, recipeFrames, recipeLateralFrames, recipeDeclaredInputs, compiledCatalog);
 		NativeSubqueryPlan.WorkerFactory workerFactory = null;
 		if (QueryEvaluationUtility.isRepeatable(expr)) {
-			TupleExpr recipe = expr.clone();
-			NativeGraphFusion.linkLogicalOrigins(expr, recipe);
-			NativeValuePositionAnalysis recipePositions = strategy.copyValuePositions(expr, recipe);
-			Set<String> recipeFrames = Set.copyOf(nestedFrameInputNames);
-			Set<String> recipeLateralFrames = Set.copyOf(nestedLateralFrameInputNames);
-			Set<String> recipeDeclaredInputs = Set.copyOf(declaredLateralInputs);
-			workerFactory = worker -> {
-				TupleExpr copy = recipe.clone();
-				NativeGraphFusion.linkLogicalOrigins(recipe, copy);
-				LmdbNativeEvaluationStrategy workerStrategy = strategy.forWorker(worker.source());
-				QueryEvaluationContext structural = worker.evaluationContext() == null ? context
-						: worker.evaluationContext();
-				QueryEvaluationContext workerContext = worker.source() instanceof SyntheticValueSource synthetic
-						? new BindingSetQueryEvaluationContext(
-								synthetic.executionContext().genericContext(structural, workerStrategy))
-						: structural;
-				NativeValuePositionAnalysis positions = recipePositions == null ? null
-						: recipePositions.copySubtree(recipe, copy);
-				return workerStrategy.withValuePositions(positions,
-						() -> prepareNativeSubquery(copy, workerContext, workerStrategy, worker.source(), recipeFrames,
-								recipeLateralFrames, recipeDeclaredInputs));
+			workerFactory = new NativeSubqueryPlan.WorkerFactory() {
+				@Override
+				public NativeSubqueryPlan.BoundExecution bind(NativeScalarPlan.WorkerContext worker) {
+					return bindWorker(worker, false);
+				}
+
+				@Override
+				public NativeSubqueryPlan.BoundExecution bindForSubplan(NativeScalarPlan.WorkerContext worker) {
+					return bindWorker(worker, true);
+				}
+
+				private NativeSubqueryPlan.BoundExecution bindWorker(NativeScalarPlan.WorkerContext worker,
+						boolean subplan) {
+					LmdbNativeEvaluationStrategy workerStrategy = worker.invocationStrategy();
+					if (workerStrategy == null || !workerStrategy.isBoundTo(worker)) {
+						return null;
+					}
+					NativeSubqueryPlan.BoundExecution bound = bindNativeSubquery(recipe, recipePositions, context,
+							worker, recipeFrames, recipeLateralFrames, recipeDeclaredInputs, false,
+							subplan, compiledCatalog);
+					if (bound == null) {
+						return null;
+					}
+					NativeSubqueryPlan.InvocationFactory workerInvocation = subqueryInvocationFactory(recipe,
+							recipePositions, context, recipeFrames, recipeLateralFrames,
+							recipeDeclaredInputs, compiledCatalog);
+					return new NativeSubqueryPlan.BoundExecution(bound.step(), bound.context(),
+							bound.lateralStepFactory(),
+							workerInvocation);
+				}
 			};
 		}
 		return new NativeSubqueryPlan(prepared.step(), outSlots, outNames, frameInputSlots, sourceNames, parameterNames,
 				privateParameters.toArray(String[]::new), boundary, prepared.context(), workerFactory,
-				prepared.lateralStepFactory());
+				prepared.lateralStepFactory(), invocationFactory,
+				NativeSubqueryPlan.CompiledResultRecipe.capture(prepared.step(), compileDomain, completedDomain,
+						compiledCatalog, boundary, source, planValueCatalog));
+	}
+
+	private static NativeSubqueryPlan.InvocationFactory subqueryInvocationFactory(TupleExpr recipe,
+			NativeValuePositionAnalysis positions, QueryEvaluationContext context,
+			Set<String> frameInputs, Set<String> lateralFrames, Set<String> declaredInputs,
+			PlanValueCatalog compiledCatalog) {
+		return new NativeSubqueryPlan.InvocationFactory() {
+			@Override
+			public NativeSubqueryPlan.BoundExecution bind(NativeScalarPlan.WorkerContext invocation) {
+				return bindNativeSubquery(recipe, positions, context, invocation, frameInputs, lateralFrames,
+						declaredInputs, true, false, compiledCatalog);
+			}
+
+			@Override
+			public NativeSubqueryPlan.BoundExecution bindForSubplan(NativeScalarPlan.WorkerContext invocation) {
+				return bindNativeSubquery(recipe, positions, context, invocation, frameInputs, lateralFrames,
+						declaredInputs, true, true, compiledCatalog);
+			}
+		};
+	}
+
+	private static NativeSubqueryPlan.BoundExecution bindNativeSubquery(TupleExpr recipe,
+			NativeValuePositionAnalysis recipePositions, QueryEvaluationContext context,
+			NativeScalarPlan.WorkerContext invocation,
+			Set<String> frameInputs, Set<String> lateralFrames, Set<String> declaredInputs,
+			boolean allowGenericFallback, boolean subplan, PlanValueCatalog compiledCatalog) {
+		TupleExpr copy = recipe.clone();
+		NativeGraphFusion.linkLogicalOrigins(recipe, copy);
+		NativeValuePositionAnalysis positions = recipePositions == null ? null
+				: recipePositions.copySubtree(recipe, copy);
+		LmdbNativeEvaluationStrategy strategy = invocation.invocationStrategy();
+		if (strategy == null || !strategy.isBoundTo(invocation)) {
+			throw new IllegalStateException("native lexical preparation requires its invocation strategy");
+		}
+		LmdbNativeEvaluationStrategy bound = subplan
+				? strategy.forSubplanInvocation(invocation.source(), invocation.requireFusedSession(),
+						invocation.requireExecutionContext(), positions)
+				: strategy.forInvocation(invocation.source(), invocation.requireFusedSession(),
+						invocation.requireExecutionContext());
+		NativeExecutionContext ownerExecution = invocation.requireExecutionContext();
+		QueryEvaluationContext supplied = invocation.evaluationContext();
+		QueryEvaluationContext structural = supplied == null || ownerExecution.isGenericScopeTemplate(supplied)
+				? context
+				: supplied;
+		QueryEvaluationContext scoped = new BindingSetQueryEvaluationContext(
+				ownerExecution.genericInvocationContext(structural, bound));
+		PlanValueCatalog.Builder catalog = PlanValueCatalog.Builder.forFrozenCatalog(compiledCatalog);
+		NativeSubqueryPlan.BoundExecution result;
+		try {
+			result = subplan
+					? prepareNativeSubquery(copy, scoped, bound, invocation.source(), frameInputs, lateralFrames,
+							declaredInputs, catalog)
+					: bound.withValuePositions(positions, () -> prepareNativeSubquery(copy, scoped, bound,
+							invocation.source(), frameInputs, lateralFrames, declaredInputs, catalog));
+		} finally {
+			catalog.closeCompilationScratch();
+		}
+		if (result != null || !allowGenericFallback) {
+			return result;
+		}
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(copy, bound, positions);
+		QueryEvaluationStep generic = descriptor.genericPrecompile(bound, scoped);
+		BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateral = null;
+		if (!declaredInputs.isEmpty()) {
+			lateral = (domain, execution) -> {
+				TupleExpr original = descriptor.pinnedExpr();
+				TupleExpr adjusted = LateralQueryEvaluationStep.prepareRightScope(original, declaredInputs, domain);
+				NativeValuePositionAnalysis adjustedPositions = bound.copyValuePositions(original, adjusted);
+				QueryEvaluationContext actual = new BindingSetQueryEvaluationContext(
+						execution.genericInvocationContext(scoped, bound));
+				return GenericSubplanDescriptor.create(adjusted, bound, adjustedPositions)
+						.genericPrecompile(bound, actual);
+			};
+		}
+		return new NativeSubqueryPlan.BoundExecution(generic, scoped, lateral);
 	}
 
 	/** One lexical preparation recipe, bound independently to the coordinator or an actual worker authority. */
 	private static NativeSubqueryPlan.BoundExecution prepareNativeSubquery(TupleExpr expr,
 			QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source,
-			Set<String> frameInputs, Set<String> lateralFrames, Set<String> declaredLateralInputs) {
+			Set<String> frameInputs, Set<String> lateralFrames, Set<String> declaredLateralInputs,
+			PlanValueCatalog.Builder catalog) {
 		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(expr, context, strategy,
-				source, frameInputs, lateralFrames);
+				source, frameInputs, lateralFrames, catalog);
 		if (step == null) {
 			return null;
 		}
 		BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> scopedStep = null;
 		if (!declaredLateralInputs.isEmpty()) {
+			PlanValueCatalog compiledCatalog = catalog.build();
 			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr, strategy);
 			Set<String> declaredInputs = Set.copyOf(declaredLateralInputs);
 			Set<String> selectedFrames = Set.copyOf(frameInputs);
@@ -2512,10 +2655,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				}
 				NativeValuePositionAnalysis positions = strategy.copyValuePositions(original, scoped);
 				QueryEvaluationContext evaluationContext = new BindingSetQueryEvaluationContext(
-						execution.genericContext(context, strategy));
-				QueryEvaluationStep nativeStep = strategy.withValuePositions(positions,
-						() -> LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(scoped, evaluationContext,
-								strategy, source, selectedFrames, selectedLateralFrames));
+						execution.genericInvocationContext(context, strategy));
+				PlanValueCatalog.Builder fallback = PlanValueCatalog.Builder.forFrozenCatalog(compiledCatalog);
+				QueryEvaluationStep nativeStep;
+				try {
+					nativeStep = strategy.withValuePositions(positions,
+							() -> LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(scoped, evaluationContext,
+									strategy, source, selectedFrames, selectedLateralFrames, fallback));
+				} finally {
+					fallback.closeCompilationScratch();
+				}
 				if (nativeStep != null) {
 					return nativeStep;
 				}
@@ -2626,12 +2775,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				contextVar != null ? StatementPattern.Scope.NAMED_CONTEXTS : StatementPattern.Scope.DEFAULT_CONTEXTS,
 				context.getDataset());
 		if (contextVar == null) {
-			return constraint.ids;
+			return constraint.copyIds();
 		}
 		if (!contextVar.hasValue()) {
 			return DECLINED_CONTEXTS;
 		}
-		long ctxConst = idOf(contextVar.getValue(), ValuePosition.CONTEXT);
+		long ctxConst = ownedSourceId(contextVar.getValue(), ValuePosition.CONTEXT, true);
 		if (ctxConst == UNKNOWN || !constraint.contains(ctxConst)) {
 			// absent graph, or a constant graph outside the dataset's named graphs: enumeration finds nothing
 			return new long[0];
@@ -2642,7 +2791,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	/** One endpoint as {slot, constant-id}; named fixed variables retain both so the result row binds their name. */
 	private long[] zeroLengthEndpoint(Var var) {
 		if (var.hasValue()) {
-			long id = idOf(var.getValue(), ValuePosition.SUBJECT | ValuePosition.OBJECT);
+			long id = ownedSourceId(var.getValue(), ValuePosition.SUBJECT | ValuePosition.OBJECT, false);
 			if (id == UNKNOWN) {
 				if (!termSafeAbsenceProof(var.getValue())) {
 					return null;
@@ -2684,7 +2833,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		if (contextVar != null && contextVar.hasValue()
-				&& idOf(contextVar.getValue(), ValuePosition.CONTEXT) == UNKNOWN) {
+				&& ownedSourceId(contextVar.getValue(), ValuePosition.CONTEXT, true) == UNKNOWN) {
 			return SlotPlan.empty();
 		}
 		ContextConstraint contextConstraint = compileContextConstraint(
@@ -2694,9 +2843,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		int contextSlot = -1;
 		long contextConst = UNKNOWN;
 		if (contextVar == null) {
-			enumerationContexts = contextConstraint.ids;
+			enumerationContexts = contextConstraint.copyIds();
 		} else if (contextVar.hasValue()) {
-			long contextId = idOf(contextVar.getValue(), ValuePosition.CONTEXT);
+			long contextId = ownedSourceId(contextVar.getValue(), ValuePosition.CONTEXT, true);
 			enumerationContexts = contextConstraint.contains(contextId) ? new long[] { contextId } : new long[0];
 			if (!contextVar.isAnonymous()) {
 				contextSlot = slot(contextVar.getName());
@@ -2706,7 +2855,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			// The graph variable is part of the path state. GeneralPathPlan evaluates one BFS per named graph,
 			// binds this slot while expanding the step, and includes it in result deduplication.
 			contextSlot = slot(contextVar.getName());
-			enumerationContexts = contextConstraint.ids;
+			enumerationContexts = contextConstraint.copyIds();
 		}
 		String subjName = alp.getSubjectVar().getName();
 		String objName = alp.getObjectVar().getName();

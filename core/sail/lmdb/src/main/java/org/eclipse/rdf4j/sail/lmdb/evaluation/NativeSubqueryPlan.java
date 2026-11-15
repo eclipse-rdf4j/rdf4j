@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -51,11 +54,73 @@ final class NativeSubqueryPlan implements SlotPlan {
 	@FunctionalInterface
 	interface WorkerFactory {
 		BoundExecution bind(NativeScalarPlan.WorkerContext worker);
+
+		default BoundExecution bindForSubplan(NativeScalarPlan.WorkerContext worker) {
+			return bind(worker);
+		}
+	}
+
+	@FunctionalInterface
+	interface InvocationFactory {
+		BoundExecution bind(NativeScalarPlan.WorkerContext invocation);
+
+		default BoundExecution bindForSubplan(NativeScalarPlan.WorkerContext invocation) {
+			return bind(invocation);
+		}
 	}
 
 	/** Both preparations belong to the same actual source/strategy/frame; worker forks never copy a parent closure. */
 	record BoundExecution(QueryEvaluationStep step, QueryEvaluationContext context,
-			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory,
+			InvocationFactory invocationFactory) {
+		BoundExecution(QueryEvaluationStep step, QueryEvaluationContext context,
+				BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
+			this(step, context, lateralStepFactory, null);
+		}
+	}
+
+	/** The detached domain receipt is captured around the original preparation, never inferred from numeric IDs. */
+	record CompiledResultRecipe(NativeCompiledResultRecipe recipe, NativeLmdbQuerySource.DomainStamp domain,
+			PlanValueCatalog catalog, LmdbNativeCostVectors.AlgebraEstimate estimate) {
+		static CompiledResultRecipe capture(QueryEvaluationStep prepared, NativeLmdbQuerySource.DomainStamp before,
+				NativeLmdbQuerySource.DomainStamp after, PlanValueCatalog catalog, Projection projection,
+				NativeLmdbQuerySource source, PlanValueCatalog.Builder receipts) {
+			if (!(prepared instanceof NativeCompiledRecipeProvider provider) || before == null
+					|| !before.sameDomain(after)) {
+				return null;
+			}
+			NativeCompiledResultRecipe recipe = provider.compiledRecipe();
+			if (recipe == null) {
+				return null;
+			}
+			LmdbNativeCostVectors.AlgebraEstimate estimate = LmdbNativeCostVectors.captureAlgebraEstimate(projection,
+					receipts, before);
+			return before.sameDomain(source.detachedDomainStamp())
+					? new CompiledResultRecipe(recipe, before, catalog, estimate)
+					: null;
+		}
+
+		boolean compatible(NativeLmdbQuerySource source) {
+			return compatible(source, 0);
+		}
+
+		boolean compatible(NativeLmdbQuerySource source, int valuesDomains) {
+			NativeLmdbQuerySource.DomainStamp target = source.detachedDomainStamp();
+			if (!domain.sameBackingView(target) || domain.statementMask() != target.statementMask()
+					|| domain.planCatalog() != null && domain.planCatalog() != target.planCatalog()
+					|| domain.runtimeAuthority() != null && domain.runtimeAuthority() != target.runtimeAuthority()
+					|| (valuesDomains & ValuesPlan.ID_DOMAIN_UNKNOWN) != 0
+					|| (valuesDomains & ValuesPlan.ID_DOMAIN_SOURCE_PLAN) != 0 && domain.planCatalog() == null
+					|| (valuesDomains & ValuesPlan.ID_DOMAIN_SOURCE_RUNTIME) != 0
+							&& domain.runtimeAuthority() == null) {
+				return false;
+			}
+			if (catalog.isEmpty() && (valuesDomains & ValuesPlan.ID_DOMAIN_OWN_PLAN) == 0) {
+				return true;
+			}
+			Object ownCatalog = catalog.detachedIdentity();
+			return ownCatalog != null && ownCatalog == target.planCatalog();
+		}
 	}
 
 	private final QueryEvaluationStep step;
@@ -70,10 +135,73 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final QueryEvaluationContext context;
 	private final long producedMask;
 	private final WorkerFactory workerFactory;
+	private final InvocationFactory invocationFactory;
+	private final CompiledResultRecipe compiledResultRecipe;
 	private final BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory;
 	private final NativeAggregateCostQuotes.Input physicalInput;
 	private final NativePhysicalResultPlan physicalRecipe;
 	private final BindingSet physicalBindings;
+	private final NativePhysicalEntryWitness physicalEntryWitness;
+	private final NativePhysicalPreparation quoteOwner;
+	/** Physical candidates are attempt-owned and must never become the query-wide replay key. */
+	private final Object replayIdentity;
+	/** All physical bindings of one lexical recipe reuse this immutable, invocation-free key. */
+	private final Object physicalReplayIdentity;
+	private final NativeSubqueryPlan physicalTemplate;
+	private final PhysicalBinding physicalBinding;
+
+	private record PhysicalBinding(NativeLmdbQuerySource source, NativeExecutionContext execution,
+			LmdbFusedSipFactorizedRuntime.Session session, QueryEvaluationContext context,
+			NativePhysicalPreparation preparation, Object idSpace, Object lookupScope, Object valueScope, long snapshot,
+			NativeLmdbQuerySource.DomainStamp domain) {
+		static PhysicalBinding capture(NativeScalarPlan.WorkerContext worker, QueryEvaluationContext context,
+				NativePhysicalPreparation preparation) {
+			NativeLmdbQuerySource source = worker.source();
+			return new PhysicalBinding(source, worker.requireExecutionContext(), worker.requireFusedSession(), context,
+					preparation, source.idSpace(), source.valueLookupScope(), source.resultValueScope(),
+					sourceSnapshot(source), source.detachedDomainStamp());
+		}
+
+		boolean sameGeneration(NativeLmdbQuerySource actual) {
+			return domain != null && domain.sameDomain(actual.detachedDomainStamp())
+					&& source == actual && idSpace == actual.idSpace() && lookupScope == actual.valueLookupScope()
+					&& valueScope == actual.resultValueScope()
+					&& snapshot == sourceSnapshot(actual);
+		}
+
+		PhysicalBinding withContext(QueryEvaluationContext actual) {
+			return new PhysicalBinding(source, execution, session, actual, preparation, idSpace, lookupScope,
+					valueScope,
+					snapshot, domain);
+		}
+
+		boolean matches(RowState row) {
+			return preparation.isLive() && sameGeneration(row.source) && execution == row.executionContextOrNull()
+					&& session == row.fusedSession;
+		}
+	}
+
+	private record QuoteGeneration(NativeLmdbQuerySource source, Object idSpace, Object lookupScope,
+			Object resultScope, long snapshot, NativeLmdbQuerySource.DomainStamp domain) {
+		static QuoteGeneration capture(NativeLmdbQuerySource source) {
+			return new QuoteGeneration(source, source.idSpace(), source.valueLookupScope(), source.resultValueScope(),
+					sourceSnapshot(source), source.detachedDomainStamp());
+		}
+
+		boolean isCurrent() {
+			return domain != null && domain.sameDomain(source.detachedDomainStamp())
+					&& idSpace == source.idSpace() && lookupScope == source.valueLookupScope()
+					&& resultScope == source.resultValueScope() && snapshot == sourceSnapshot(source);
+		}
+	}
+
+	private static long sourceSnapshot(NativeLmdbQuerySource source) {
+		if (source instanceof ParallelSource parallel) {
+			return parallel.snapshotId();
+		}
+		return source instanceof SyntheticValueSource synthetic ? sourceSnapshot(synthetic.delegate)
+				: ParallelSource.UNKNOWN_SNAPSHOT_ID;
+	}
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames) {
@@ -99,6 +227,24 @@ final class NativeSubqueryPlan implements SlotPlan {
 			Projection projection, QueryEvaluationContext context,
 			WorkerFactory workerFactory,
 			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, workerFactory, lateralStepFactory, null);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context, WorkerFactory workerFactory,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory,
+			InvocationFactory invocationFactory) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, workerFactory, lateralStepFactory, invocationFactory, null);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context, WorkerFactory workerFactory,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory,
+			InvocationFactory invocationFactory, CompiledResultRecipe compiledResultRecipe) {
 		this.step = step;
 		this.outSlots = outSlots.clone();
 		this.outNames = outNames.clone();
@@ -114,10 +260,18 @@ final class NativeSubqueryPlan implements SlotPlan {
 		this.projection = projection;
 		this.context = context;
 		this.workerFactory = workerFactory;
+		this.invocationFactory = invocationFactory;
+		this.compiledResultRecipe = compiledResultRecipe;
 		this.lateralStepFactory = lateralStepFactory;
 		this.physicalInput = null;
 		this.physicalRecipe = null;
 		this.physicalBindings = null;
+		this.physicalEntryWitness = null;
+		this.quoteOwner = null;
+		this.replayIdentity = this;
+		this.physicalReplayIdentity = new Object();
+		this.physicalTemplate = null;
+		this.physicalBinding = null;
 		long mask = 0L;
 		for (int slot : outSlots) {
 			mask |= 1L << slot;
@@ -125,7 +279,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 		this.producedMask = mask;
 	}
 
-	private NativeSubqueryPlan(NativeSubqueryPlan original, NativePhysicalResultPlan recipe, BindingSet bindings) {
+	private NativeSubqueryPlan(NativeSubqueryPlan original, NativePhysicalResultPlan recipe, BindingSet bindings,
+			PhysicalBinding binding, NativePhysicalEntryWitness entryWitness, NativePhysicalPreparation quoteOwner) {
 		step = recipe.step();
 		outSlots = original.outSlots;
 		outNames = original.outNames;
@@ -138,10 +293,18 @@ final class NativeSubqueryPlan implements SlotPlan {
 		context = original.context;
 		producedMask = original.producedMask;
 		workerFactory = original.workerFactory;
+		invocationFactory = original.invocationFactory;
+		compiledResultRecipe = original.compiledResultRecipe;
 		lateralStepFactory = null;
 		physicalInput = recipe.input();
 		physicalRecipe = recipe;
 		physicalBindings = NativeEntryBindings.copyValues(bindings);
+		physicalEntryWitness = entryWitness;
+		this.quoteOwner = quoteOwner;
+		physicalReplayIdentity = original.physicalReplayIdentity;
+		replayIdentity = physicalReplayIdentity;
+		physicalTemplate = original.physicalTemplate == null ? original : original.physicalTemplate;
+		physicalBinding = binding;
 	}
 
 	boolean workerBindable() {
@@ -154,6 +317,10 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	NativeAggregateCostQuotes.Input physicalInput() {
 		return physicalInput;
+	}
+
+	NativePhysicalPreparation physicalPreparation() {
+		return physicalBinding == null ? null : physicalBinding.preparation();
 	}
 
 	NativePhysicalOutputEvidence outputEvidence() {
@@ -200,12 +367,12 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	NativeSubqueryPlan withPhysicalPlan(RowState row) {
-		if (physicalInput != null) {
-			return this;
-		}
+		return withPhysicalPlan(row, null);
+	}
+
+	NativeSubqueryPlan withPhysicalPlan(RowState row, NativePhysicalPreparation quotePreparation) {
 		// A parameter-dependent recipe needs a separate per-entry quote. Do not price it as one independent child.
-		if (frameInputSlots.length != 0 || privateGraphParameters.length != 0 || lateralStepFactory != null
-				|| !(step instanceof NativeResultStep nativeStep)) {
+		if (frameInputSlots.length != 0 || privateGraphParameters.length != 0 || lateralStepFactory != null) {
 			return null;
 		}
 		NativeExecutionContext execution = executionContextOrNull(row);
@@ -213,57 +380,247 @@ final class NativeSubqueryPlan implements SlotPlan {
 			return null;
 		}
 		BindingSet input = frameBindings(row, execution.queryBase());
-		BindingSet body = NativeEntryBindings.preserve(input, projection == null ? input
-				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
-		NativePhysicalResultPlan recipe = inLexicalScope(row.source, row.cancellation,
-				() -> {
-					NativePhysicalResultPlan selected = nativeStep.physicalPlan(body);
-					if (selected != null && LmdbNativeStrategyPreview.active()) {
-						LmdbNativeStrategyPreview.inspect(selected.step());
-					}
-					return selected;
-				});
-		return recipe == null ? null : boundPhysical(recipe, body);
-	}
-
-	private NativeSubqueryPlan boundPhysical(NativePhysicalResultPlan recipe, BindingSet bindings) {
-		return new NativeSubqueryPlan(this, recipe, bindings);
-	}
-
-	NativeSubqueryPlan rebindPhysicalPlan(NativeSubqueryPlan actual, NativeScalarPlan.WorkerContext worker) {
-		if (physicalRecipe == null) {
+		if (physicalInput != null) {
+			QueryEvaluationContext activeContext = physicalBinding == null ? context : physicalBinding.context();
+			BindingSet body = NativeEntryBindings.preserve(input, projection == null ? input
+					: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, activeContext));
+			if (physicalEntryWitness == null || quoteOwner == null || !quoteOwner.isLive()
+					|| !physicalEntryWitness.matches(body)) {
+				return null;
+			}
+			if (row.fusedSession == null) {
+				return this;
+			}
+			if (physicalBinding != null && physicalBinding.source() == row.source
+					&& !physicalBinding.sameGeneration(row.source)) {
+				return null;
+			}
+			NativePhysicalOutputEvidence evidence = physicalRecipe.outputEvidence();
+			return physicalBinding != null && physicalBinding.matches(row) && evidence != null
+					&& evidence.validFor(row.source) ? this
+							: preflight(row, physicalTemplate);
+		}
+		if (compiledResultRecipe == null || !compiledResultRecipe.compatible(row.source)) {
 			return null;
 		}
-		NativePhysicalResultPlan recipe = physicalRecipe.rebind(actual.step, worker, physicalBindings);
-		return recipe == null ? null : actual.boundPhysical(recipe, physicalBindings);
+		if (row.fusedSession == null || row.invocationStrategyOrNull() == null) {
+			return null;
+		}
+		NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(row.source, context,
+				row.fusedSession(), execution, row.invocationStrategyOrNull(), row.diagnosticRoot());
+		if (quotePreparation != null) {
+			return quoteCompiled(worker, input, quotePreparation);
+		}
+		NativePhysicalPreparation preparation = NativePhysicalPreparation.tryCreate(row.fusedSession());
+		if (preparation == null) {
+			return null;
+		}
+		Throwable primary = null;
+		boolean accepted = false;
+		try (NativeExecutionContext.Lease active = execution.retainActiveLease()) {
+			NativeSubqueryPlan quoted = quoteCompiled(worker, input, preparation);
+			if (quoted == null) {
+				return null;
+			}
+			NativeSubqueryPlan rebound = quoted.rebindPhysicalPlan(this, worker, preparation);
+			if (rebound == null) {
+				return null;
+			}
+			preparation.register(row.preparationAttempt());
+			accepted = true;
+			return rebound;
+		} catch (RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			if (!accepted) {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(preparation, primary),
+						primary);
+			}
+		}
+	}
+
+	private NativeSubqueryPlan quoteCompiled(NativeScalarPlan.WorkerContext worker, BindingSet input,
+			NativePhysicalPreparation preparation) {
+		NativeResultBinding binding = compiledBinding(worker, preparation);
+		if (binding == null) {
+			return null;
+		}
+		QueryEvaluationStep prepared = compiledResultRecipe.recipe().bind(binding);
+		if (!(prepared instanceof NativeResultStep nativeStep)) {
+			return null;
+		}
+		BindingSet body = NativeEntryBindings.preserve(input, projection == null ? input
+				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, binding.context()));
+		return quotePhysicalPlan(nativeStep, body, preparation, binding);
+	}
+
+	/** Every binding has an exact source/session, nested policy, and candidate-owned preparation directory. */
+	private NativeResultBinding compiledBinding(NativeScalarPlan.WorkerContext worker,
+			NativePhysicalPreparation preparation) {
+		LmdbNativeEvaluationStrategy parentStrategy = worker.invocationStrategy();
+		if (preparation == null || parentStrategy == null || worker.fusedSession() == null
+				|| worker.nativeExecutionContext() == null || !parentStrategy.isBoundTo(worker)) {
+			return null;
+		}
+		NativeExecutionContext execution = worker.requireExecutionContext();
+		QueryEvaluationContext supplied = worker.evaluationContext();
+		QueryEvaluationContext structural = supplied == null || execution.isGenericScopeTemplate(supplied)
+				? context
+				: supplied;
+		if (structural == null) {
+			return null;
+		}
+		LmdbNativeEvaluationStrategy nested = parentStrategy.forSubplanInvocation(worker.source(),
+				worker.requireFusedSession(), execution, parentStrategy.valuePositionSnapshot());
+		NativeScalarPlan.WorkerContext scopedWorker = NativeScalarPlan.WorkerContext.forSource(worker.source(),
+				structural, worker.requireFusedSession(), execution, nested, worker.diagnosticRoot());
+		LmdbFusedSipFactorizedRuntime.PreparationAttempt attempt = preparation.newBindingAttempt();
+		if (attempt == null) {
+			return null;
+		}
+		QueryEvaluationContext scoped = execution.genericInvocationContext(structural, nested);
+		return new NativeResultBinding(scopedWorker, nested, scoped, attempt, preparation,
+				NativeDiagnosticTargets.forRoot(worker.diagnosticRoot()));
+	}
+
+	private NativeSubqueryPlan quotePhysicalPlan(NativeResultStep nativeStep, BindingSet body,
+			NativePhysicalPreparation preparation, NativeResultBinding binding) {
+		if (!preparation.reserveBytes(256L)) {
+			return null;
+		}
+		NativeLmdbQuerySource source = binding.worker().source();
+		QuoteGeneration generation = QuoteGeneration.capture(source);
+		NativePhysicalEntryWitness witness = NativePhysicalEntryWitness.capture(body, preparation);
+		if (witness == null) {
+			return null;
+		}
+		NativePhysicalResultPlan recipe = nativeStep.physicalPlan(body,
+				new NativePhysicalQuote(preparation, source, binding));
+		if (recipe == null || recipe.rebindRecipe() == null || recipe.outputEvidence() == null
+				|| !witness.matches(body) || !generation.isCurrent()
+				|| !compiledResultRecipe.compatible(source, recipe.outputEvidence().valuesIdDomains())) {
+			return null;
+		}
+		if (LmdbNativeStrategyPreview.active()) {
+			LmdbNativeStrategyPreview.inspect(recipe.step());
+		}
+		return boundPhysical(recipe, body, null, witness, preparation);
+	}
+
+	private NativeSubqueryPlan boundPhysical(NativePhysicalResultPlan recipe, BindingSet bindings,
+			PhysicalBinding binding, NativePhysicalEntryWitness witness, NativePhysicalPreparation preparation) {
+		return new NativeSubqueryPlan(this, recipe, bindings, binding, witness, preparation);
+	}
+
+	private NativeSubqueryPlan preflight(RowState row, NativeSubqueryPlan actual) {
+		NativeExecutionContext execution = executionContext(row);
+		LmdbFusedSipFactorizedRuntime.Session session = row.fusedSession();
+		NativePhysicalPreparation preparation = NativePhysicalPreparation.tryCreate(session);
+		if (preparation == null) {
+			return null;
+		}
+		Throwable primary = null;
+		boolean accepted = false;
+		try (NativeExecutionContext.Lease active = execution.retainActiveLease()) {
+			if (row.invocationStrategyOrNull() == null) {
+				return null;
+			}
+			NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(row.source, context,
+					session, execution, row.invocationStrategyOrNull(), row.diagnosticRoot());
+			NativeSubqueryPlan rebound = rebindPhysicalPlan(actual, worker, preparation);
+			if (rebound == null) {
+				return null;
+			}
+			preparation.register(row.preparationAttempt());
+			accepted = true;
+			return rebound;
+		} catch (RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			if (!accepted) {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(preparation, primary),
+						primary);
+			}
+		}
+	}
+
+	NativeSubqueryPlan rebindPhysicalPlan(NativeSubqueryPlan actual, NativeScalarPlan.WorkerContext worker,
+			NativePhysicalPreparation preparation) {
+		if (worker == null || worker.fusedSession() == null || worker.nativeExecutionContext() == null
+				|| worker.invocationStrategy() == null || physicalRecipe == null || physicalEntryWitness == null
+				|| quoteOwner == null || !quoteOwner.isLive()
+				|| !physicalEntryWitness.matches(physicalBindings)) {
+			return null;
+		}
+		if (preparation == null || !preparation.reserveBinding(physicalBindings)) {
+			return null;
+		}
+		PhysicalBinding generation = PhysicalBinding.capture(worker, null, preparation);
+		if (actual.compiledResultRecipe == null || physicalRecipe.outputEvidence() == null
+				|| !actual.compiledResultRecipe.compatible(worker.source(),
+						physicalRecipe.outputEvidence().valuesIdDomains())) {
+			return null;
+		}
+		NativeResultBinding descriptorBinding = actual.compiledBinding(worker, preparation);
+		QueryEvaluationStep prepared = descriptorBinding == null ? null
+				: actual.compiledResultRecipe.recipe().bind(descriptorBinding);
+		if (prepared == null || !generation.sameGeneration(worker.source())) {
+			return null;
+		}
+		BindingSet input = worker.requireExecutionContext().queryBase();
+		BindingSet body = NativeEntryBindings.preserve(input, actual.projection == null ? input
+				: ProjectionQueryEvaluationStep.withInheritedGraphInput(actual.projection, input,
+						descriptorBinding.context()));
+		if (!physicalEntryWitness.matches(body)) {
+			return null;
+		}
+		NativePhysicalEntryWitness witness = NativePhysicalEntryWitness.capture(body, preparation);
+		if (witness == null) {
+			return null;
+		}
+		PhysicalBinding binding = generation.withContext(descriptorBinding.context());
+		NativePhysicalResultPlan recipe = physicalRecipe.rebind(prepared, descriptorBinding.worker(), physicalBindings,
+				preparation);
+		return recipe == null || !binding.sameGeneration(worker.source()) || !witness.matches(body)
+				|| !actual.compiledResultRecipe.compatible(worker.source(),
+						physicalRecipe.outputEvidence().valuesIdDomains()) ? null
+								: actual.boundPhysical(recipe, physicalBindings, binding, witness, preparation);
 	}
 
 	NativeSubqueryPlan forWorker(NativeScalarPlan.WorkerContext worker) {
+		return forWorker(worker, null);
+	}
+
+	NativeSubqueryPlan forWorker(NativeScalarPlan.WorkerContext worker, NativePhysicalPreparation preparation) {
+		if (physicalInput != null) {
+			NativeSubqueryPlan actual = physicalTemplate == null ? this : physicalTemplate;
+			NativeSubqueryPlan bound = rebindPhysicalPlan(actual, worker, preparation);
+			if (bound == null) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("quoted-child-worker-recipe-unavailable");
+			}
+			WORKER_BINDINGS.incrementAndGet();
+			return bound;
+		}
 		BoundExecution bound = workerFactory == null ? null : workerFactory.bind(worker);
 		if (bound == null || bound.step() == null) {
 			throw new IllegalStateException("native lexical boundary has no worker construction recipe");
 		}
 		WORKER_BINDINGS.incrementAndGet();
-		NativeSubqueryPlan result = new NativeSubqueryPlan(bound.step(), outSlots, outNames, frameInputSlots,
+		return new NativeSubqueryPlan(bound.step(), outSlots, outNames, frameInputSlots,
 				frameInputNames,
 				frameParameterNames, privateGraphParameters, projection, bound.context(), workerFactory,
-				bound.lateralStepFactory());
-		if (physicalInput != null) {
-			NativePhysicalResultPlan recipe;
-			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
-					.attachEvaluation(worker.source())) {
-				recipe = physicalRecipe.rebind(bound.step(), worker, physicalBindings);
-			}
-			if (recipe == null) {
-				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("quoted-child-worker-recipe-unavailable");
-			}
-			result = result.boundPhysical(recipe, physicalBindings);
-		}
-		return result;
+				bound.lateralStepFactory(), bound.invocationFactory(), compiledResultRecipe);
 	}
 
 	@Override
 	public double estimateRows(RowState row, long boundMask) {
+		if (compiledResultRecipe != null) {
+			return row == null ? compiledResultRecipe.estimate().rows(null)
+					: compiledResultRecipe.compatible(row.source) ? compiledResultRecipe.estimate().rows(row.source)
+							: Double.NaN;
+		}
 		return LmdbNativeCostVectors.algebraRows(projection, row == null ? null : row.source);
 	}
 
@@ -322,7 +679,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 						frameIds[i] = row.slots[frameInputSlots[i]];
 					}
 				}
-				state = replayState(execution, new FrameKey(this, frameIds, suppliedGraphs),
+				state = replayState(execution, new FrameKey(replayIdentity, frameIds, suppliedGraphs),
 						() -> evaluateOnce(row, frameBindings(row, row.base)));
 			}
 		}
@@ -366,7 +723,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	private NativeLazyResultReplay frameFreeState(RowState row) {
 		NativeExecutionContext execution = executionContext(row);
-		return replayState(execution, this, () -> evaluateOnce(row, frameBindings(row, execution.queryBase())));
+		return replayState(execution, replayIdentity,
+				() -> evaluateOnce(row, frameBindings(row, execution.queryBase())));
 	}
 
 	/** A withheld trial cannot publish its mutable producer, terminal signal or first-row prefix to another attempt. */
@@ -399,11 +757,11 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	/** Memo key of one frame-parameterized evaluation: the boundary plus the frame slot ids it was opened with. */
 	private static final class FrameKey {
-		private final NativeSubqueryPlan plan;
+		private final Object plan;
 		private final long[] frameIds;
 		private final Value[] suppliedGraphs;
 
-		FrameKey(NativeSubqueryPlan plan, long[] frameIds, Value[] suppliedGraphs) {
+		FrameKey(Object plan, long[] frameIds, Value[] suppliedGraphs) {
 			this.plan = plan;
 			this.frameIds = frameIds;
 			this.suppliedGraphs = suppliedGraphs;
@@ -465,54 +823,133 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	private NativeLazyResultReplay prepareReplay(RowState row, BindingSet input, NativeExecutionContext owner) {
 		row.cancellation.check();
-		QueryEvaluationStep prepared = preparedStep(row);
-		BindingSet bodyInput = NativeEntryBindings.preserve(input, projection == null ? input
-				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
 		NativeLmdbQuerySource source = row.source;
 		NativeCancellationToken cancellation = row.cancellation;
-		NativeResultCursor delegate = inLexicalScope(source, cancellation,
-				() -> NativeResultSteps.open(prepared, bodyInput));
-		NativeResultCursor scoped = new NativeResultCursor() {
-			@Override
-			public NativeResultRow next() {
-				try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
-						: owner.borrowCachedProducer()) {
-					return inLexicalScope(source, cancellation, () -> {
-						cancellation.check();
-						NativeResultRow next = delegate.next();
-						cancellation.check();
-						return next;
-					});
+		LmdbFusedSipFactorizedRuntime.Session session = row.fusedSession();
+		LmdbFusedSipFactorizedRuntime.Session.Lease sessionLease = session.retain();
+		NativePhysicalPreparation.Lease physicalLease = null;
+		LmdbFusedSipFactorizedRuntime.PreparationAttempt preparation = null;
+		NativeResultCursor scoped = null;
+		try {
+			if (physicalBinding != null) {
+				if (!physicalBinding.matches(row)) {
+					throw new IllegalStateException("physical child was not prepared for this invocation");
 				}
+				physicalLease = physicalBinding.preparation().retain();
+				physicalBinding.preparation().close();
 			}
-
-			@Override
-			public NativeCancellationToken cancellation() {
-				return delegate.cancellation();
+			preparation = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(null, new Object());
+			LmdbFusedSipFactorizedRuntime.PreparationAttempt replayPreparation = preparation;
+			NativePhysicalPreparation.Lease replayPhysical = physicalLease;
+			BoundExecution bound = inLexicalScope(source, cancellation,
+					() -> preparedExecution(row, session, replayPreparation));
+			BindingSet bodyInput = NativeEntryBindings.preserve(input, projection == null ? input
+					: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, bound.context()));
+			if (physicalBinding != null && (!physicalBinding.matches(row)
+					|| physicalEntryWitness == null || !physicalEntryWitness.matches(bodyInput))) {
+				throw new IllegalStateException("physical child entry changed after admission");
 			}
-
-			@Override
-			public NativeExecutionContext executionContext() {
-				return delegate.executionContext();
+			NativeResultCursor delegate = inLexicalScope(source, cancellation,
+					() -> NativeResultSteps.open(bound.step(), bodyInput));
+			if (physicalBinding != null
+					&& (!physicalBinding.matches(row) || !physicalEntryWitness.matches(bodyInput))) {
+				QueryEvaluationException failure = new QueryEvaluationException(
+						"physical child source or entry changed while opening");
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(delegate, failure), failure);
+				throw failure;
 			}
+			scoped = new NativeResultCursor() {
+				private boolean closed;
 
-			@Override
-			public boolean requestCancellation() {
-				return delegate.requestCancellation();
-			}
-
-			@Override
-			public void close() {
-				try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
-						: owner.borrowCachedProducer()) {
-					inLexicalScope(source, cancellation, () -> {
-						delegate.close();
-						return null;
-					});
+				@Override
+				public NativeResultRow next() {
+					try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
+							: owner.borrowCachedProducer()) {
+						return inLexicalScope(source, cancellation, () -> {
+							cancellation.check();
+							NativeResultRow next = delegate.next();
+							cancellation.check();
+							return next;
+						});
+					}
 				}
+
+				@Override
+				public NativeCancellationToken cancellation() {
+					return delegate.cancellation();
+				}
+
+				@Override
+				public NativeExecutionContext executionContext() {
+					return delegate.executionContext();
+				}
+
+				@Override
+				public NativeInvocationCarrier invocationCarrier() {
+					return delegate.invocationCarrier();
+				}
+
+				@Override
+				public boolean requestCancellation() {
+					return delegate.requestCancellation();
+				}
+
+				@Override
+				public synchronized void close() {
+					if (closed) {
+						return;
+					}
+					closed = true;
+					try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
+							: owner.borrowCachedProducer()) {
+						inLexicalScope(source, cancellation, () -> {
+							delegate.close();
+							return null;
+						});
+					}
+				}
+			};
+			AutoCloseable lifetime = () -> {
+				Throwable failure = KernelRuntime.closeResource(replayPreparation, null);
+				failure = KernelRuntime.closeResource(replayPhysical, failure);
+				failure = KernelRuntime.closeResource(sessionLease, failure);
+				KernelRuntime.rethrowCloseFailure(failure);
+			};
+			return new NativeLazyResultReplay(outNames, owner, cancellation, scoped, lifetime);
+		} catch (RuntimeException | Error failure) {
+			Throwable retained = KernelRuntime.closeResource(scoped, failure);
+			retained = KernelRuntime.closeResource(preparation, retained);
+			retained = KernelRuntime.closeResource(physicalLease, retained);
+			retained = KernelRuntime.closeResource(sessionLease, retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+			throw failure;
+		}
+	}
+
+	/** Bind once when the original replay key creates its producer; subsequent readers reuse that producer. */
+	private BoundExecution preparedExecution(RowState row, LmdbFusedSipFactorizedRuntime.Session session,
+			LmdbFusedSipFactorizedRuntime.PreparationAttempt preparation) {
+		if (physicalInput != null) {
+			if (physicalBinding == null || !physicalBinding.matches(row)) {
+				throw new IllegalStateException("physical child has no matching preflight");
 			}
-		};
-		return new NativeLazyResultReplay(outNames, owner, cancellation, scoped);
+			return new BoundExecution(step, physicalBinding.context(), null);
+		}
+		if (invocationFactory == null) {
+			return new BoundExecution(preparedStep(row), context, null);
+		}
+		NativeScalarPlan.WorkerContext invocation = NativeScalarPlan.WorkerContext.forSource(row.source, context,
+				session, row.executionContext(), row.invocationStrategyOrNull(), row.diagnosticRoot());
+		BoundExecution bound = preparation.scope(session, row.source)
+				.prepare(this,
+						() -> Objects.requireNonNull(invocationFactory.bind(invocation),
+								"native invocation preparation"));
+		QueryEvaluationStep selected = bound.step();
+		if (bound.lateralStepFactory() != null) {
+			Set<String> originalDomain = Set.copyOf(row.base.getBindingNames());
+			selected = bound.lateralStepFactory().apply(originalDomain, executionContext(row));
+		}
+		return new BoundExecution(Objects.requireNonNull(selected, "native invocation step"), bound.context(), null);
 	}
 
 	private QueryEvaluationStep preparedStep(RowState row) {
@@ -553,7 +990,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	private static NativeExecutionContext executionContextOrNull(RowState row) {
-		return row.source instanceof SyntheticValueSource synthetic ? synthetic.executionContext() : null;
+		return row.executionContextOrNull();
 	}
 
 	private long idOfOrIntern(RowState row, Value value, int targetSlot) {

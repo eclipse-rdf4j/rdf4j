@@ -34,7 +34,7 @@ class LmdbNodePredicateRouteTest {
 				.row(20L, new long[] { 1L, 2L }, new long[] { 201L, 202L })
 				.row(30L, new long[] { 2L }, new long[] { 302L });
 
-		try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(predicates,
+		try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuildStandalone(predicates,
 				new long[] { 10L, 20L, 30L }, 3, 64, 1L << 20, 0D)) {
 			assertThat(route).isNotNull();
 			assertThat(route.incidenceCount()).isEqualTo(5);
@@ -52,7 +52,7 @@ class LmdbNodePredicateRouteTest {
 				.row(10L, new long[] { 2L, highUnsigned }, new long[] { 102L, 109L })
 				.row(20L, new long[] { 1L }, new long[] { 201L });
 
-		try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(predicates,
+		try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuildStandalone(predicates,
 				new long[] { 10L, 20L }, 2, 64, 1L << 20, 0D)) {
 			assertThat(route).isNotNull();
 			assertThat(route.predicateAt(0)).isEqualTo(1L);
@@ -67,7 +67,7 @@ class LmdbNodePredicateRouteTest {
 				.row(10L, new long[] { 1L }, new long[] { 101L })
 				.row(20L, new long[] { 2L }, new long[] { 202L });
 
-		try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(predicates,
+		try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuildStandalone(predicates,
 				new long[] { 10L, 10L, 20L }, 3, 64, 1L << 20, 0D)) {
 			assertThat(route).isNotNull();
 			assertThat(route.rootCount()).isEqualTo(2);
@@ -88,10 +88,33 @@ class LmdbNodePredicateRouteTest {
 				.row(20L, new long[] { 1L, 2L, 3L }, new long[] { 201L, 202L, 203L })
 				.row(30L, new long[] { 1L, 2L, 3L }, new long[] { 301L, 302L, 303L });
 
-		assertThat(LmdbNodePredicateRoute.tryBuild(dense, new long[] { 10L, 20L, 30L }, 3, 3,
+		assertThat(LmdbNodePredicateRoute.tryBuildStandalone(dense, new long[] { 10L, 20L, 30L }, 3, 3,
 				1L << 20, 0.25D)).isNull();
-		assertThat(LmdbNodePredicateRoute.tryBuild(dense, new long[] { 10L, 20L, 30L }, 3, 64,
+		assertThat(LmdbNodePredicateRoute.tryBuildStandalone(dense, new long[] { 10L, 20L, 30L }, 3, 64,
 				128L, 0D)).isNull();
+	}
+
+	@Test
+	void routeChargesAndReleasesTheOwningInvocation() {
+		FixtureNodePredicates predicates = new FixtureNodePredicates()
+				.row(10L, new long[] { 1L }, new long[] { 101L })
+				.row(20L, new long[] { 2L }, new long[] { 202L })
+				.row(30L, new long[] { 3L }, new long[] { 303L });
+		long maximumBytes = 1L << 20;
+		try (LmdbFusedSipFactorizedRuntime.Session invocation = LmdbFusedSipFactorizedRuntime.create(0L,
+				maximumBytes, false)) {
+			try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(predicates,
+					new long[] { 10L, 20L, 30L }, 3, 64, new NativeCancellationToken(), invocation)) {
+				assertThat(route).isNotNull();
+				assertThat(invocation.remainingBytes()).isLessThan(maximumBytes);
+			}
+			assertThat(invocation.remainingBytes()).isEqualTo(maximumBytes);
+			assertThat(invocation.claim(maximumBytes - 128L)).isTrue();
+			assertThat(LmdbNodePredicateRoute.tryBuild(predicates, new long[] { 10L, 20L, 30L }, 3, 64,
+					new NativeCancellationToken(), invocation)).isNull();
+			assertThat(invocation.remainingBytes()).isEqualTo(128L);
+			invocation.release(maximumBytes - 128L);
+		}
 	}
 
 	@Test
@@ -100,7 +123,7 @@ class LmdbNodePredicateRouteTest {
 				.meanPredicateDegree(64D)
 				.row(10L, sequence(1L, 64), sequence(101L, 64));
 
-		assertThat(LmdbNodePredicateRoute.tryBuild(predicates, new long[] { 10L }, 1, 64,
+		assertThat(LmdbNodePredicateRoute.tryBuildStandalone(predicates, new long[] { 10L }, 1, 64,
 				1L << 20, 0.25D)).isNull();
 		assertThat(predicates.findCalls).as("the cheap density gate must run before row enumeration").isEmpty();
 	}
@@ -120,7 +143,7 @@ class LmdbNodePredicateRouteTest {
 				predicates.row(root, new long[] { 1L }, new long[] { 100L + root });
 			}
 
-			assertThat(LmdbNodePredicateRoute.tryBuild(predicates, roots, roots.length, 64,
+			assertThat(LmdbNodePredicateRoute.tryBuildStandalone(predicates, roots, roots.length, 64,
 					1L << 20, 0.25D)).isNull();
 			assertThat(predicates.findCalls)
 					.as("route admission must compare against the available parallel predicate sweep")
@@ -137,7 +160,7 @@ class LmdbNodePredicateRouteTest {
 		FixtureNodePredicates predicates = new FixtureNodePredicates()
 				.row(10L, new long[] { 1L, 7L }, new long[] { 101L, 107L });
 
-		try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(predicates,
+		try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuildStandalone(predicates,
 				new long[] { 10L }, 1, 64, 1L << 20, 0D)) {
 			assertThat(route).isNotNull();
 			assertThat(predicates.rowSizeCalls)
@@ -151,7 +174,7 @@ class LmdbNodePredicateRouteTest {
 		FixtureNodePredicates predicates = new FixtureNodePredicates()
 				.row(10L, sequence(1L, 16), sequence(101L, 16));
 
-		assertThat(LmdbNodePredicateRoute.tryBuild(predicates, new long[] { 10L }, 1, 64,
+		assertThat(LmdbNodePredicateRoute.tryBuildStandalone(predicates, new long[] { 10L }, 1, 64,
 				2_048L, 0D))
 						.as("the radix histograms are live during transpose and belong inside the route ceiling")
 						.isNull();
@@ -166,7 +189,7 @@ class LmdbNodePredicateRouteTest {
 				.row(30L, new long[] { 3L }, new long[] { 303L });
 
 		try {
-			assertThat(LmdbNodePredicateRoute.tryBuild(predicates, new long[] { 10L, 20L, 30L }, 3, 64,
+			assertThat(LmdbNodePredicateRoute.tryBuildStandalone(predicates, new long[] { 10L, 20L, 30L }, 3, 64,
 					1L << 20, 0D)).isNull();
 			assertThat(predicates.findCalls).as("construction must stop at the first cancellation poll").hasSize(1);
 		} finally {

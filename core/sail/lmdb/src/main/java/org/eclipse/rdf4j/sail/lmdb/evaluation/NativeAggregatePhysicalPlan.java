@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.Arrays;
 import java.util.List;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+
 /** Actual producer and reducer storage chosen by an aggregate proposal, independently of its strategy label. */
 record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer producer) {
 
@@ -107,20 +109,59 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 
 	/** Binds only proven independent lexical producers. The original AUTO plan remains a separate alternative. */
 	static SlotPlan bindLexicalInputs(SlotPlan input, RowState row) {
+		return bindLexicalInputs(input, row, null);
+	}
+
+	static SlotPlan bindLexicalInputs(SlotPlan input, RowState row, NativePhysicalPreparation preparation) {
 		if (input instanceof NativeSubqueryPlan subquery) {
-			return subquery.withPhysicalPlan(row);
+			return subquery.withPhysicalPlan(row, preparation);
 		}
 		if (input instanceof ExtensionPlan extension) {
-			SlotPlan child = bindLexicalInputs(extension.arg, row);
+			SlotPlan child = bindLexicalInputs(extension.arg, row, preparation);
 			return child == null ? null : child == extension.arg ? input : new ExtensionPlan(child, extension.copies);
 		}
 		return input;
 	}
 
+	static boolean hasPhysicalLexicalInput(SlotPlan input) {
+		if (input instanceof NativeSubqueryPlan subquery) {
+			return subquery.physicalInput() != null;
+		}
+		return input instanceof ExtensionPlan extension && hasPhysicalLexicalInput(extension.arg);
+	}
+
+	static NativePhysicalPreparation physicalPreparation(SlotPlan input) {
+		if (input instanceof NativeSubqueryPlan subquery) {
+			return subquery.physicalPreparation();
+		}
+		return input instanceof ExtensionPlan extension ? physicalPreparation(extension.arg) : null;
+	}
+
+	/** Transfers candidate ownership to a lease; unopened or rejected candidates close the returned lease. */
+	static NativePhysicalPreparation.Lease transferPreparation(SlotPlan input) {
+		NativePhysicalPreparation preparation = physicalPreparation(input);
+		if (preparation == null) {
+			return null;
+		}
+		NativePhysicalPreparation.Lease lease = preparation.retain();
+		try {
+			preparation.close();
+			return lease;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(lease, failure), failure);
+			throw failure;
+		}
+	}
+
 	/** Uses the already prepared worker callbacks and the selected physical order, never a new child ranking. */
 	static SlotPlan rebindInput(SlotPlan selected, SlotPlan prepared, NativeScalarPlan.WorkerContext worker) {
+		return rebindInput(selected, prepared, worker, null);
+	}
+
+	static SlotPlan rebindInput(SlotPlan selected, SlotPlan prepared, NativeScalarPlan.WorkerContext worker,
+			NativePhysicalPreparation preparation) {
 		if (selected instanceof NativeSubqueryPlan lexical && prepared instanceof NativeSubqueryPlan actual) {
-			return lexical.rebindPhysicalPlan(actual, worker);
+			return lexical.rebindPhysicalPlan(actual, worker, preparation);
 		}
 		if (selected instanceof PatternPlan pattern && prepared instanceof PatternPlan actual) {
 			NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(pattern);
@@ -134,7 +175,7 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 			if (recipe == null || !recipe.matches(actual)) {
 				return null;
 			}
-			SlotPlan child = rebindInput(extension.arg, actual.arg, worker);
+			SlotPlan child = rebindInput(extension.arg, actual.arg, worker, preparation);
 			return child == null ? null : new ExtensionPlan(child, actual.copies);
 		}
 		if (selected instanceof ValuesPlan && prepared instanceof ValuesPlan) {

@@ -84,6 +84,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	/** Allocated only by a genuine batch/frontier request; scalar probes retain the page-local parent path. */
 	private ImmutablePagedQuadCsfIndex.PartitionLookup basePartitionLookup;
 	private boolean closed;
+	private boolean sourceCoordinateViewStable = true;
 	/** Exact one-entry provenance memo for repeated probes and key-run consumers. */
 	private boolean memoValid;
 	private long memoKey;
@@ -157,6 +158,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		if (predicate == newPredicate && basePredicateOrdinal == newBasePredicateOrdinal) {
 			return;
 		}
+		sourceCoordinateViewStable = false;
 		releasePredicateState();
 		bindPredicateState(newPredicate, newBasePredicateOrdinal);
 	}
@@ -201,6 +203,15 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 	static long localOf(long kernelHandle) {
 		return kernelHandle & LOCAL_MASK;
+	}
+
+	int sourcePlane() {
+		return plane;
+	}
+
+	@Override
+	public long sourceRunToken(long runHandle) {
+		return !closed && sourceCoordinateViewStable && runHandle > 0L ? runHandle : 0L;
 	}
 
 	@Override

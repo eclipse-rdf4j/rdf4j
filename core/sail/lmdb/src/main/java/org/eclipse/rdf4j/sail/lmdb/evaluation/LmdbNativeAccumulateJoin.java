@@ -28,11 +28,13 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Accumulate–semijoin–probe provider for correlated entries into native fragments (ExecPlan
@@ -88,6 +90,9 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		if (!(rightStep instanceof NativeBareRowsStep step)) {
 			return false;
 		}
+		if (!step.source.certifiesIdOrigins()) {
+			return false;
+		}
 		for (String name : sharedVariables) {
 			if (slotOf(step.layout, name) < 0) {
 				return false;
@@ -98,7 +103,41 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 	@Override
 	public CloseableIteration<BindingSet> tryBatchJoin(BatchCorrelationRequest request, QueryEvaluationStep rightStep) {
-		return new AccumulateJoinIteration((NativeBareRowsStep) rightStep, request);
+		NativeBareRowsStep step = (NativeBareRowsStep) rightStep;
+		NativeInvocationCarrier invocation = null;
+		try {
+			invocation = openInvocation(step, request.entryBindings());
+			return new AccumulateJoinIteration(step, request, invocation);
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeResource(invocation, failure);
+			KernelRuntime.closeResource(request.outer(), failure);
+			throw failure;
+		}
+	}
+
+	private static NativeInvocationCarrier openInvocation(NativeBareRowsStep step, BindingSet bindings) {
+		LmdbNativeEvaluationStrategy strategy = step.bulk.strategy;
+		NativeExecutionContext execution = strategy == null ? null : strategy.enclosingExecutionContext();
+		LmdbFusedSipFactorizedRuntime.Session session = strategy == null ? null : strategy.enclosingFusedInvocation();
+		if ((execution == null) != (session == null)) {
+			throw new IllegalStateException("batch invocation requires both its parent execution and session");
+		}
+		long key = System.identityHashCode(step.arg);
+		QueryExecutionPolicy policy = strategy == null ? QueryExecutionPolicy.DEFAULT
+				: strategy.getQueryExecutionPolicy();
+		if (execution == null) {
+			if (step.source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
+				throw new IllegalStateException("an evaluation source requires its explicit parent invocation");
+			}
+			return NativeInvocationCarrier.openStandalone(step.source, bindings, key, step.originalExpr, policy,
+					step.bulk.context);
+		}
+		if (step.source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null
+				&& !synthetic.executionContext().sharesQueryScope(execution)) {
+			throw new IllegalStateException("batch source belongs to another query invocation");
+		}
+		return NativeInvocationCarrier.openNested(step.source, execution, session, bindings, key, step.originalExpr,
+				policy);
 	}
 
 	private static int slotOf(NativeSlotLayout layout, String name) {
@@ -121,7 +160,9 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 	private static final class AccumulateJoinIteration extends LookAheadIteration<BindingSet> {
 
 		private final NativeBareRowsStep step;
+		private final NativeBareRowsStep boundStep;
 		private final BatchCorrelationRequest request;
+		private final NativeInvocationCarrier invocation;
 		private final String[] sharedNames;
 		private final Mode mode;
 		private final Predicate<BindingSet> condition;
@@ -129,8 +170,16 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		private boolean initialized;
 		private List<BindingSet> outerRows;
 		private List<BindingSet> perRowRows;
+		/** All buffered inputs in encounter order, for a pre-publication abandonment of the whole batch. */
+		private List<BindingSet> bufferedRows;
 		private Map<List<Value>, List<BindingSet>> matches;
 		private boolean overflow;
+		private boolean semanticFallback;
+		private NativeLmdbQuerySource sweepSource;
+		private NativeExecutionContext ownedSweepContext;
+		private NativeLmdbQuerySource.DomainStamp compiledDomain;
+		private NativeLmdbQuerySource.DomainStamp sweepDomain;
+		private Object sweepLookupScope;
 
 		private LmdbQueryMemoryManager.QueryLedger ledger;
 		private LmdbQueryMemoryManager.Reservation reservation;
@@ -146,9 +195,21 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		private BindingSet perRowOuter;
 		private boolean perRowMatched;
 
-		AccumulateJoinIteration(NativeBareRowsStep step, BatchCorrelationRequest request) {
+		AccumulateJoinIteration(NativeBareRowsStep step, BatchCorrelationRequest request,
+				NativeInvocationCarrier invocation) {
 			this.step = step;
 			this.request = request;
+			this.invocation = invocation;
+			LmdbNativeEvaluationStrategy strategy = step.bulk.strategy;
+			if (strategy == null) {
+				boundStep = step;
+			} else {
+				LmdbNativeEvaluationStrategy bound = strategy.forInvocation(step.source, invocation.session(),
+						invocation.executionContext());
+				boundStep = NativeRowsStep.bareFragment(step.source, step.arg, step.layout, step.bulk.sourceSlots,
+						step.bulk.targetNames, step.bulk.strictCompare, bound, step.originalExpr, step.bulk.context,
+						Set.copyOf(Arrays.asList(step.bulk.optionalOnlyNames)));
+			}
 			this.sharedNames = request.sharedVariables();
 			this.mode = request.mode();
 			this.condition = request.condition();
@@ -156,6 +217,15 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 		@Override
 		protected BindingSet getNextElement() throws QueryEvaluationException {
+			try {
+				return nextElement();
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeResource(this, failure);
+				throw failure;
+			}
+		}
+
+		private BindingSet nextElement() {
 			if (!initialized) {
 				initialize();
 			}
@@ -210,35 +280,60 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 			BATCHES.incrementAndGet();
 			outerRows = new ArrayList<>();
 			perRowRows = new ArrayList<>();
-			ledger = LmdbQueryMemoryManager.process().openQuery();
-			reservation = ledger.reserve(GROW_STEP * ROW_BYTES, null);
+			bufferedRows = new ArrayList<>();
+			matches = Map.of();
+			ledger = invocation.executionContext().memoryLedger();
+			reservation = ledger.tryReserveWithoutReclamation(GROW_STEP * ROW_BYTES);
 			if (reservation == null) {
 				overflow = true;
+				return;
+			}
+			if (!prepareSweepSource()) {
+				abandonBatch();
+				return;
 			}
 			Set<List<Long>> keyTuples = new HashSet<>();
+			NativeLmdbQuerySource.IdLookup lookup = new NativeLmdbQuerySource.IdLookup();
 			int sinceGrow = 0;
-			outer: while (!overflow && request.outer().hasNext()) {
+			while (!overflow && request.outer().hasNext()) {
 				BindingSet row = request.outer().next();
-				for (String name : sharedNames) {
-					if (row.getValue(name) == null) {
-						perRowRows.add(row);
-						continue outer;
-					}
-				}
-				outerRows.add(row);
-				List<Long> ids = new ArrayList<>(sharedNames.length);
+				bufferedRows.add(row);
 				boolean known = true;
+				List<Long> ids = new ArrayList<>(sharedNames.length);
 				for (String name : sharedNames) {
-					long id = step.source.idOf(row.getValue(name), step.layout.positionMask(slotOf(step.layout, name)));
-					if (id == NativeLmdbQuerySource.UNKNOWN_ID || id == 0L) {
-						// A value the store has no id for cannot appear in fragment output: no matches.
+					Value value = row.getValue(name);
+					if (value == null) {
 						known = false;
 						break;
 					}
-					ids.add(id);
+					if (!sweepAuthorityIsCurrent()) {
+						abandonBatch();
+						return;
+					}
+					lookup.set(NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.IdOrigin.UNCERTIFIED);
+					sweepSource.idOfWithOrigin(value, step.layout.positionMask(slotOf(step.layout, name)), lookup);
+					if (!sweepAuthorityIsCurrent() || lookup.origin() == NativeLmdbQuerySource.IdOrigin.UNCERTIFIED
+							|| lookup.origin() == NativeLmdbQuerySource.IdOrigin.PLAN
+									&& sweepDomain.planCatalog() == null
+							|| lookup.origin() == NativeLmdbQuerySource.IdOrigin.RUNTIME
+									&& sweepDomain.runtimeAuthority() == null
+							|| lookup.origin() != NativeLmdbQuerySource.IdOrigin.ABSENT && lookup.id() == 0L) {
+						abandonBatch();
+						return;
+					}
+					if (lookup.origin() == NativeLmdbQuerySource.IdOrigin.ABSENT) {
+						// Absence from a dictionary is not a proof that an arbitrary native fragment cannot produce
+						// this value. The original correlated evaluation remains authoritative for this row.
+						known = false;
+						break;
+					}
+					ids.add(lookup.id());
 				}
 				if (known) {
+					outerRows.add(row);
 					keyTuples.add(ids);
+				} else {
+					perRowRows.add(row);
 				}
 				if (++sinceGrow >= GROW_STEP) {
 					sinceGrow = 0;
@@ -247,38 +342,109 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 					}
 				}
 			}
-			matches = keyTuples.isEmpty() ? Map.of() : sweepFragmentOnce(keyTuples);
+			if (!sweepAuthorityIsCurrent()) {
+				abandonBatch();
+				return;
+			}
+			if (!keyTuples.isEmpty()) {
+				Map<List<Value>, List<BindingSet>> swept = sweepFragmentOnce(keyTuples);
+				if (swept == null) {
+					abandonBatch();
+					return;
+				}
+				matches = swept;
+			}
+			bufferedRows.clear();
+		}
+
+		private boolean prepareSweepSource() {
+			if (!step.source.certifiesIdOrigins()) {
+				return false;
+			}
+			compiledDomain = step.source.detachedDomainStamp();
+			if (compiledDomain == null) {
+				return false;
+			}
+			sweepSource = step.source;
+			if (sweepSource instanceof SyntheticValueSource synthetic && synthetic.executionContext() == null) {
+				SyntheticValueSource owned = synthetic.forOwnedFragment(invocation.executionContext(),
+						EmptyBindingSet.getInstance());
+				if (owned == null) {
+					return false;
+				}
+				sweepSource = owned;
+				ownedSweepContext = owned.executionContext();
+				if (boundStep.bulk.strategy != null) {
+					boundStep.bulk.strategy.captureEvaluationValues(owned);
+				}
+				NativeRowsStep.initializeQueryBase(owned, EmptyBindingSet.getInstance());
+			}
+			sweepDomain = sweepSource.detachedDomainStamp();
+			sweepLookupScope = sweepSource.valueLookupScope();
+			// A new execution may add its own runtime table. A compiled source with no runtime authority cannot
+			// have compiled IDs from that table; existing plan and runtime authorities must still match exactly.
+			return sweepDomain != null && compiledDomain.sameBackingView(sweepDomain)
+					&& compiledDomain.statementMask() == sweepDomain.statementMask()
+					&& compiledDomain.planCatalog() == sweepDomain.planCatalog()
+					&& (compiledDomain.runtimeAuthority() == null
+							|| compiledDomain.runtimeAuthority() == sweepDomain.runtimeAuthority())
+					&& sweepLookupScope != null && sweepAuthorityIsCurrent();
+		}
+
+		private boolean sweepAuthorityIsCurrent() {
+			return sweepSource != null && step.source.certifiesIdOrigins() && sweepSource.certifiesIdOrigins()
+					&& compiledDomain.sameDomain(step.source.detachedDomainStamp())
+					&& sweepDomain.sameDomain(sweepSource.detachedDomainStamp())
+					&& sweepSource.valueLookupScope() == sweepLookupScope;
+		}
+
+		private void abandonBatch() {
+			semanticFallback = true;
+			outerRows.clear();
+			perRowRows.clear();
+			perRowRows.addAll(bufferedRows);
+			bufferedRows.clear();
+			matches = Map.of();
+			overflow = true;
+			closeSweepContext();
+		}
+
+		private void closeSweepContext() {
+			NativeExecutionContext owned = ownedSweepContext;
+			ownedSweepContext = null;
+			sweepSource = null;
+			if (owned != null) {
+				owned.close();
+			}
 		}
 
 		/** One native execution of the fragment, key-bounded by a VALUES table over the outer id-tuple domain. */
 		private Map<List<Value>, List<BindingSet>> sweepFragmentOnce(Set<List<Long>> keyTuples) {
+			if (!sweepAuthorityIsCurrent()) {
+				return null;
+			}
 			int[] sharedSlots = new int[sharedNames.length];
 			for (int i = 0; i < sharedNames.length; i++) {
 				sharedSlots[i] = slotOf(step.layout, sharedNames[i]);
 			}
-			ValuesRow[] rows = new ValuesRow[keyTuples.size()];
-			int at = 0;
-			for (List<Long> tuple : keyTuples) {
-				long[] ids = new long[tuple.size()];
-				for (int i = 0; i < ids.length; i++) {
-					ids[i] = tuple.get(i);
-				}
-				rows[at++] = new ValuesRow(sharedSlots.clone(), ids);
-			}
-			SlotPlan combined = new MultiJoinPlan(new SlotPlan[] { new ValuesPlan(rows), step.arg },
+			SlotPlan combined = new MultiJoinPlan(
+					new SlotPlan[] { ValuesPlan.runtimeFixedSlots(sharedSlots, keyTuples), step.arg },
 					new MaskedFilter[0]);
 			NativeBareRowsStep sweep = NativeRowsStep.bareFragment(step.source, combined, step.layout,
-					step.bulk.sourceSlots, step.bulk.targetNames, step.bulk.strictCompare, step.bulk.strategy,
+					step.bulk.sourceSlots, step.bulk.targetNames, step.bulk.strictCompare, boundStep.bulk.strategy,
 					step.bulk.originalExpr, step.bulk.context, java.util.Set.of());
 			FRAGMENT_EXECUTIONS.incrementAndGet();
 			Map<List<Value>, List<BindingSet>> result = new HashMap<>();
-			try (CloseableIteration<BindingSet> iteration = sweep.evaluate(EmptyBindingSet.getInstance())) {
+			// Use the exact source whose lookup/domain witnesses were checked above. Calling sweep.evaluate would
+			// create another source and could silently change the runtime or plan authority of the copied IDs.
+			try (CloseableIteration<BindingSet> iteration = new NativeRowsIteration(sweep.bulk, sweepSource,
+					EmptyBindingSet.getInstance())) {
 				while (iteration.hasNext()) {
 					BindingSet fragmentRow = iteration.next();
 					result.computeIfAbsent(keyOf(fragmentRow), key -> new ArrayList<>()).add(fragmentRow);
 				}
 			}
-			return result;
+			return sweepAuthorityIsCurrent() ? result : null;
 		}
 
 		/** Join-key tuple of a row; every shared variable is bound by construction on both sides of the probe. */
@@ -326,7 +492,84 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 			PER_ROW_FALLBACK_ROWS.incrementAndGet();
 			perRowOuter = outerRow;
 			perRowMatched = false;
-			perRowIteration = step.evaluate(outerRow);
+			perRowIteration = semanticFallback || !step.source.certifiesIdOrigins()
+					? semanticRight(outerRow)
+					: evaluateRight(outerRow);
+		}
+
+		/** Opens a correlated right input under this batch's exact query owner. */
+		private CloseableIteration<BindingSet> evaluateRight(BindingSet outerRow) {
+			if (boundStep.bulk.hasOptionalOnlyBinding(outerRow)) {
+				return semanticRight(outerRow);
+			}
+			NativeLmdbQuerySource source = step.source;
+			NativeExecutionContext owned = null;
+			try {
+				if (source instanceof SyntheticValueSource synthetic) {
+					if (synthetic.executionContext() == null) {
+						SyntheticValueSource child = synthetic.forOwnedFragment(invocation.executionContext(),
+								outerRow);
+						if (child == null) {
+							return semanticRight(outerRow);
+						}
+						source = child;
+						owned = child.executionContext();
+					} else if (!synthetic.executionContext().sharesQueryScope(invocation.executionContext())) {
+						throw new IllegalStateException("correlated source belongs to another query invocation");
+					}
+				} else if (boundStep.bulk.strategy != null
+						&& boundStep.bulk.strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
+					SyntheticValueSource template = new SyntheticValueSource(source, PlanValueCatalog.EMPTY,
+							boundStep.bulk.strategy.getQueryExecutionPolicy());
+					SyntheticValueSource child = template.forOwnedFragment(invocation.executionContext(), outerRow);
+					source = child;
+					owned = child.executionContext();
+				}
+				if (boundStep.bulk.strategy != null) {
+					boundStep.bulk.strategy.captureEvaluationValues(source);
+				}
+				NativeRowsStep.initializeQueryBase(source, outerRow);
+				if (!NativeRowSeeder.supports(outerRow, step.layout, source)) {
+					if (owned != null) {
+						owned.close();
+						owned = null;
+					}
+					return semanticRight(outerRow);
+				}
+				CloseableIteration<BindingSet> result = outerRow == null || outerRow.isEmpty()
+						? new NativeRowsIteration(boundStep.bulk, source, outerRow)
+						: new NativeBareRowsIteration(boundStep, source, outerRow);
+				return owned == null ? result : new NativeContextClosingIteration(result, owned);
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeResource(owned, failure);
+				throw failure;
+			}
+		}
+
+		/** The compiled native seeder cannot prove an uncertified source; use its original semantic right operand. */
+		private CloseableIteration<BindingSet> semanticRight(BindingSet outerRow) {
+			LmdbNativeEvaluationStrategy strategy = boundStep.bulk.strategy;
+			NativeExecutionContext parent = invocation.executionContext();
+			SyntheticValueSource owned = null;
+			if (parent != null) {
+				SyntheticValueSource template = step.source instanceof SyntheticValueSource synthetic ? synthetic
+						: new SyntheticValueSource(step.source, PlanValueCatalog.EMPTY,
+								strategy == null ? QueryExecutionPolicy.DEFAULT : strategy.getQueryExecutionPolicy());
+				if (template.executionContext() == null) {
+					owned = template.forOwnedFragment(parent, outerRow);
+				}
+			}
+			NativeLmdbQuerySource source = owned == null ? step.source : owned;
+			boolean borrowed = owned == null && source instanceof SyntheticValueSource synthetic
+					&& synthetic.executionContext() != null;
+			try {
+				return boundStep.bulk.genericFallback(outerRow, source, borrowed, "uncertifiedBatchSource");
+			} catch (RuntimeException | Error failure) {
+				if (owned != null) {
+					KernelRuntime.closeResource(owned.executionContext(), failure);
+				}
+				throw failure;
+			}
 		}
 
 		private BindingSet merge(BindingSet outer, BindingSet fragment) {
@@ -344,22 +587,22 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
-			try {
-				if (perRowIteration != null) {
-					perRowIteration.close();
-					perRowIteration = null;
-				}
-			} finally {
-				try {
-					request.outer().close();
-				} finally {
-					if (ledger != null) {
-						ledger.close();
-						ledger = null;
-						reservation = null;
-					}
-				}
-			}
+			Throwable failure = KernelRuntime.closeResource(perRowIteration, null);
+			perRowIteration = null;
+			failure = KernelRuntime.closeResource(request.outer(), failure);
+			failure = KernelRuntime.closeResource(this::closeSweepContext, failure);
+			failure = KernelRuntime.closeResource(reservation, failure);
+			ledger = null;
+			reservation = null;
+			failure = KernelRuntime.closeResource(invocation, failure);
+			outerRows = null;
+			perRowRows = null;
+			bufferedRows = null;
+			matches = null;
+			currentMatches = null;
+			currentOuter = null;
+			perRowOuter = null;
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 }

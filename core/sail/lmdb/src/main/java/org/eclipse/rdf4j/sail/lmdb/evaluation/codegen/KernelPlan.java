@@ -32,6 +32,11 @@ public interface KernelPlan extends AutoCloseable {
 	/** Opens a fresh cursor over this bound physical plan. */
 	Cursor open();
 
+	/** Opens a scalar cursor with demand for the indicated plan output columns' original source coordinates. */
+	default Cursor openCoordinates(int[] outputColumns) {
+		return open();
+	}
+
 	/**
 	 * Opens exact weighted output when the consumer can account for multiplicities. This is a demand hint, not
 	 * permission to compress volatile or effectful producers. The default preserves ordinary evaluation; engine
@@ -177,6 +182,28 @@ public interface KernelPlan extends AutoCloseable {
 
 		/** Writes up to {@code maxRows} rows and returns the number written; zero means exhausted. */
 		int fill(long[] rowBuffer, int maxRows);
+
+		/**
+		 * Fills IDs and the requested columns' row-major original coordinates before the underlying source advances.
+		 * There are {@link KernelResultCoordinates#WIDTH} words per requested column. The returned sidecar is pinned
+		 * until its caller releases it with {@link KernelResultCoordinates#releaseBatch(long[], int)}. Implementations
+		 * without a source certificate decline individual cells by returning a negative position.
+		 */
+		default int fillCoordinates(long[] rowBuffer, long[] coordinates, int[] outputColumns, int maxRows,
+				KernelResultCoordinates owner) {
+			if (maxRows < 0
+					|| (long) maxRows * outputColumns.length > coordinates.length / KernelResultCoordinates.WIDTH) {
+				throw new IllegalArgumentException("plan coordinate buffer capacity");
+			}
+			int count = fill(rowBuffer, maxRows);
+			int cells = Math.multiplyExact(count, outputColumns.length);
+			for (int i = 0; i < cells; i++) {
+				int at = i * KernelResultCoordinates.WIDTH;
+				coordinates[at + KernelResultCoordinates.POSITION] = -1L;
+				coordinates[at + KernelResultCoordinates.NAMESPACE] = 0L;
+			}
+			return count;
+		}
 
 		/**
 		 * Optional exact bag transfer. A consumer must account for every positive weight; a weight is not a physical

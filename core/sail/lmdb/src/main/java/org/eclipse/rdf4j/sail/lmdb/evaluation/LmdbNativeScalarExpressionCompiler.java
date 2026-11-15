@@ -305,9 +305,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			if (executionContext == null) {
 				return LmdbNativeValueCodec.DecodedValue.ERROR;
 			}
-			Literal now = executionContext
-					.genericContext(capturedCompileContext, null)
-					.getNow();
+			Literal now = executionContext.queryNow(capturedCompileContext);
 			scope.retainQueryScopedValue(now);
 			return LmdbNativeValueCodec.fromValue(now);
 		});

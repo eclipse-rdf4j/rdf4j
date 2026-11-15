@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -59,9 +60,17 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		implements org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.Host {
 
 	private final NativeLmdbQuerySource nativeSource;
+	/** The exact invocation authority, separate from native optimization eligibility. */
+	private final NativeLmdbQuerySource invocationSource;
 	private final boolean nativeEnabled;
 	private final boolean forceRootGeneric;
 	private final String forcedExecutionStrategy;
+	/** Non-null only on a strategy view prepared for one exact native invocation. */
+	private final LmdbFusedSipFactorizedRuntime.Session fusedInvocation;
+	/** Exact query-scalar owner of that invocation, independent of its physical source. */
+	private final NativeExecutionContext invocationExecutionContext;
+	/** Invocation-bound preparations inside a kernel do not inherit its forced root strategy or VALUES hint. */
+	private final boolean subplanPreparation;
 	// Keep only the inactive Boolean between callbacks: removing it would allocate a fresh entry for every row.
 	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = ThreadLocal.withInitial(() -> Boolean.FALSE);
 	private final EvaluationStatistics evaluationStatistics;
@@ -170,15 +179,31 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
 			EvaluationStatistics evaluationStatistics, boolean trackResultSize, boolean nativeEnabled) {
+		this(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics, trackResultSize,
+				nativeEnabled, null, null, null, null, false, false, false);
+	}
+
+	private LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
+			EvaluationStatistics evaluationStatistics, boolean trackResultSize, boolean nativeEnabled,
+			NativeLmdbQuerySource invocationSource, LmdbFusedSipFactorizedRuntime.Session fusedInvocation,
+			NativeExecutionContext invocationExecutionContext, String forcedExecutionStrategy, boolean preserveForcing,
+			boolean capturedForceRootGeneric, boolean subplanPreparation) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
 				trackResultSize);
-		NativeLmdbQuerySource extracted = extractNativeSource(tripleSource);
+		NativeLmdbQuerySource extracted = invocationSource == null ? extractNativeSource(tripleSource)
+				: invocationSource;
 		// legacy stores without canonical language tags can hold two ids for one RDF term, so every id-keyed
 		// native path could diverge from the generic engine there — decline them entirely
 		this.nativeSource = extracted != null && extracted.hasCanonicalIds() ? extracted : null;
+		this.invocationSource = invocationSource;
 		this.nativeEnabled = nativeEnabled;
-		this.forceRootGeneric = Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceRootGeneric");
-		this.forcedExecutionStrategy = resolveForcedExecutionStrategy();
+		this.forceRootGeneric = preserveForcing ? capturedForceRootGeneric
+				: Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceRootGeneric");
+		this.forcedExecutionStrategy = preserveForcing ? forcedExecutionStrategy : resolveForcedExecutionStrategy();
+		this.fusedInvocation = fusedInvocation;
+		this.invocationExecutionContext = invocationExecutionContext;
+		this.subplanPreparation = subplanPreparation;
 		this.evaluationStatistics = evaluationStatistics;
 		this.stableOrderPlanner = new LmdbStableOrderPlanner(tripleSource);
 		this.tripleSourceArg = tripleSource;
@@ -231,7 +256,11 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * {@link LmdbNativeForceableStrategies}), or {@code null} when the engine's own selection should decide as usual.
 	 */
 	String forcedExecutionStrategyName() {
-		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : forcedExecutionStrategy;
+		return subplanPreparation || Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : forcedExecutionStrategy;
+	}
+
+	boolean allowsRootUniformValuesHint() {
+		return !subplanPreparation && !Boolean.TRUE.equals(KERNEL_SUBPLAN.get());
 	}
 
 	/**
@@ -285,7 +314,9 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 				view = genericOnlyView;
 				if (view == null) {
 					view = new LmdbNativeEvaluationStrategy(tripleSourceArg, datasetArg, serviceResolverShadow,
-							iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, false);
+							iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, false,
+							nativeSource, fusedInvocation, invocationExecutionContext, forcedExecutionStrategy, true,
+							forceRootGeneric, subplanPreparation);
 					view.setCollectionFactory(getCollectionFactory());
 					view.setTrackTime(trackTimeShadow);
 					view.setTrackResultSize(trackResultSizeShadow);
@@ -327,14 +358,97 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	/** A source-confined sibling; only immutable configuration and the evaluation's scalar scope are shared. */
-	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source) {
-		return forWorker(source, valuePositionSnapshot());
+	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source,
+			LmdbFusedSipFactorizedRuntime.Session invocation) {
+		return forWorker(source, valuePositionSnapshot(), invocation);
 	}
 
-	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source, NativeValuePositionAnalysis positions) {
+	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source, NativeValuePositionAnalysis positions,
+			LmdbFusedSipFactorizedRuntime.Session invocation) {
+		return forWorker(source, positions, invocation, existingInvocationContext(source));
+	}
+
+	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source, NativeValuePositionAnalysis positions,
+			LmdbFusedSipFactorizedRuntime.Session invocation, NativeExecutionContext executionContext) {
 		LmdbNativeEvaluationStrategy worker = new LmdbNativeEvaluationStrategy(
 				new NativeWorkerTripleSource(source, valueFactory()), datasetArg, serviceResolverShadow,
-				iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, nativeEnabled);
+				iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, nativeEnabled,
+				source, Objects.requireNonNull(invocation, "invocation"),
+				Objects.requireNonNull(executionContext, "executionContext"), null, subplanPreparation,
+				subplanPreparation && forceRootGeneric, subplanPreparation);
+		return configureView(worker, positions);
+	}
+
+	/** Captures an invocation without replacing the generic TripleSource used for semantic operators. */
+	LmdbNativeEvaluationStrategy forInvocation(NativeLmdbQuerySource source,
+			LmdbFusedSipFactorizedRuntime.Session invocation) {
+		return forInvocation(source, invocation, existingInvocationContext(source));
+	}
+
+	LmdbNativeEvaluationStrategy forInvocation(NativeLmdbQuerySource source,
+			LmdbFusedSipFactorizedRuntime.Session invocation, NativeExecutionContext executionContext) {
+		LmdbNativeEvaluationStrategy view = new LmdbNativeEvaluationStrategy(
+				tripleSourceArg, datasetArg, serviceResolverShadow, iterationCacheSyncThresholdArg,
+				evaluationStatistics,
+				trackResultSizeArg, nativeEnabled, source, Objects.requireNonNull(invocation, "invocation"),
+				Objects.requireNonNull(executionContext, "executionContext"), forcedExecutionStrategyName(), true,
+				forceRootGeneric, subplanPreparation);
+		return configureView(view, valuePositionSnapshot());
+	}
+
+	/** An exact invocation view for preflighting a nested kernel operand without an ambient forcing scope. */
+	LmdbNativeEvaluationStrategy forSubplanInvocation(NativeLmdbQuerySource source,
+			LmdbFusedSipFactorizedRuntime.Session invocation, NativeExecutionContext executionContext,
+			NativeValuePositionAnalysis positions) {
+		LmdbNativeEvaluationStrategy view = new LmdbNativeEvaluationStrategy(tripleSourceArg, datasetArg,
+				serviceResolverShadow, iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg,
+				nativeEnabled, source, Objects.requireNonNull(invocation, "invocation"),
+				Objects.requireNonNull(executionContext, "executionContext"), null, true, forceRootGeneric, true);
+		return configureView(view, positions);
+	}
+
+	/** A worker view with the same explicit nested policy and the worker's own triple source. */
+	LmdbNativeEvaluationStrategy forSubplanWorker(NativeLmdbQuerySource source, NativeValuePositionAnalysis positions,
+			LmdbFusedSipFactorizedRuntime.Session invocation, NativeExecutionContext executionContext) {
+		LmdbNativeEvaluationStrategy view = new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(source, valueFactory()), datasetArg, serviceResolverShadow,
+				iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, nativeEnabled, source,
+				Objects.requireNonNull(invocation, "invocation"),
+				Objects.requireNonNull(executionContext, "executionContext"), null, true, forceRootGeneric, true);
+		return configureView(view, positions);
+	}
+
+	private NativeExecutionContext existingInvocationContext(NativeLmdbQuerySource source) {
+		if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
+			return synthetic.executionContext();
+		}
+		return Objects.requireNonNull(invocationExecutionContext, "invocationExecutionContext");
+	}
+
+	LmdbFusedSipFactorizedRuntime.Session newFusedInvocation(long key, boolean telemetryEnabled) {
+		return fusedInvocation == null ? LmdbFusedSipFactorizedRuntime.create(key, telemetryEnabled)
+				: fusedInvocation.invocation(key, telemetryEnabled);
+	}
+
+	LmdbFusedSipFactorizedRuntime.Session enclosingFusedInvocation() {
+		return fusedInvocation;
+	}
+
+	NativeExecutionContext enclosingExecutionContext() {
+		return invocationExecutionContext;
+	}
+
+	boolean isBoundTo(NativeScalarPlan.WorkerContext worker) {
+		return isBoundTo(worker.source(), worker.fusedSession(), worker.nativeExecutionContext());
+	}
+
+	boolean isBoundTo(NativeLmdbQuerySource source, LmdbFusedSipFactorizedRuntime.Session session,
+			NativeExecutionContext execution) {
+		return invocationSource == source && fusedInvocation == session && invocationExecutionContext == execution;
+	}
+
+	private LmdbNativeEvaluationStrategy configureView(LmdbNativeEvaluationStrategy worker,
+			NativeValuePositionAnalysis positions) {
 		worker.setCollectionFactory(getCollectionFactory());
 		worker.setTrackTime(trackTimeShadow);
 		worker.setTrackResultSize(trackResultSizeShadow);
@@ -436,7 +550,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Join join, QueryEvaluationContext context) {
 		NativeUniformValuesJoin.Hint hint = nativeEnabled && nativeSource != null && !forceRootGeneric
-				&& !Boolean.TRUE.equals(KERNEL_SUBPLAN.get())
+				&& allowsRootUniformValuesHint()
 						? NativeUniformValuesJoin.prepare(join, context, this, nativeSource)
 						: null;
 		if (hint == null) {
@@ -498,8 +612,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		// generic operators lands on it; default mode keeps today's generic compilation, whose recursion re-enters
 		// this strategy and preserves the interior native fragment claims.
 		LmdbNativeEvaluationStrategy hostCompiler = forceRootGeneric ? genericOnlyView() : this;
-		GenericRootPlan hosted = new GenericRootPlan(hostCompiler.genericPrecompile(expr, context),
-				outcome.hostReason(), expr);
+		GenericRootPlan hosted = new GenericRootPlan(GenericSubplanDescriptor.create(expr, hostCompiler), hostCompiler,
+				context, outcome.hostReason(), expr);
 		LmdbNativeAggregateCompiler.HOSTED_GENERIC.incrementAndGet();
 		if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
 			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_GENERIC_HOSTED, hosted.nativePhysicalPlan());

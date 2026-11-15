@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.OwnedPullIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -1071,8 +1072,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				if (row instanceof NativeProjectedBindingSet nativeRow) {
 					// Capture this row while its native source is live. Sail callbacks still receive lazy values;
 					// the repository exposure scope initializes them without speculatively requesting later rows.
-					nativeRow.collectMaterializationValues(ignored -> {
-					});
+					ValueStore valueStore = (ValueStore) lmdbStore.getBackingStore().getValueFactory();
+					nativeRow.captureForOutput(ValueResolutionScope.activeExposure(valueStore));
 					nativeRow.detachAfterMaterialization();
 				}
 				return row;
@@ -3645,7 +3646,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private final class ReplayableIteration<T> extends AbstractCloseableIteration<T>
-			implements CooperativeCancellation {
+			implements CooperativeCancellation, OwnedPullIteration<T> {
 		private final ValueResolutionScope valueScope;
 		private final SailResultValueExtractor<T> rawExtractor;
 		private final boolean queryResult;
@@ -3725,6 +3726,16 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 		@Override
 		public T next() {
+			return nextWithOwner(null);
+		}
+
+		@Override
+		public boolean hasNextWithOwner(Object owner) {
+			return hasNext();
+		}
+
+		@Override
+		public T nextWithOwner(Object pullOwner) {
 			if (isClosed()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
@@ -3733,7 +3744,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					T row = currentDelegate().next();
 					WeakReference<RepositoryValueIteration<?>> owner = repositoryExposure;
 					RepositoryValueIteration<?> exposure = owner == null ? null : owner.get();
-					if (rawExtractor != null && (exposure == null || !exposure.isPullingSource())) {
+					if (rawExtractor != null && (exposure == null || !exposure.ownsSourcePull(pullOwner))) {
 						rawExtractor.extract(row, LmdbStoreConnection::protectValueTree);
 					}
 					return row;

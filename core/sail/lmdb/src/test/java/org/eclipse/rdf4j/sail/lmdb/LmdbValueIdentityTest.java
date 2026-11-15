@@ -38,6 +38,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.InternedIRI;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.impl.SimpleIRIExposureForTest;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleModelExposureForTest;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -86,6 +91,149 @@ class LmdbValueIdentityTest {
 		assertNotEquals(outerFirst, outerSecond);
 		outerFirst.hashCode();
 		assertEquals(1, cacheReads.get(), "Nested LMDB terms must retain their hash-cache dispatch");
+	}
+
+	@Test
+	void childVersionTracksExactSimpleIriSplitMutationWithUnchangedString() {
+		SimpleIRI iri = SimpleIRIExposureForTest.createWithSplit("urn:child-version:", "nested:local");
+		String originalString = iri.stringValue();
+		LmdbValue.ChildVersion witness = LmdbValue.ChildVersion.capture(iri);
+
+		assertNotNull(witness, "Exact SimpleIRI children need a mutation witness");
+		assertTrue(witness.isCurrent(), "A freshly captured IRI witness must be current");
+
+		SimpleIRIExposureForTest.resetSplitWithSameString(iri);
+
+		assertEquals(originalString, iri.stringValue(), "The test mutation must preserve the full IRI string");
+		assertFalse(witness.isCurrent(), "Changing the namespace/local-name split must invalidate the witness");
+	}
+
+	@Test
+	void childVersionTracksExactSimpleLiteralMutatorsAndNestedLiteralMutation() {
+		SimpleLiteral label = SimpleModelExposureForTest.simpleLiteral("before");
+		assertSimpleLiteralMutationWitness(label, () -> SimpleModelExposureForTest.setLabel(label, "after"), "label");
+
+		SimpleLiteral language = SimpleModelExposureForTest.languageLiteral("label", "en");
+		assertSimpleLiteralMutationWitness(language, () -> SimpleModelExposureForTest.setLanguage(language, "fr"),
+				"language");
+
+		SimpleLiteral direction = SimpleModelExposureForTest.directedLanguageLiteral("label", "en",
+				Literal.BaseDirection.NONE);
+		assertSimpleLiteralMutationWitness(direction,
+				() -> SimpleModelExposureForTest.setBaseDirection(direction, Literal.BaseDirection.RTL), "direction");
+
+		SimpleLiteral datatype = SimpleModelExposureForTest.typedLiteral("label",
+				new InternedIRI("urn:child-version:datatype:", "before"));
+		assertSimpleLiteralMutationWitness(datatype,
+				() -> SimpleModelExposureForTest.setDatatype(datatype,
+						new InternedIRI("urn:child-version:datatype:", "after")),
+				"datatype");
+
+		SimpleLiteral nested = SimpleModelExposureForTest.simpleLiteral("nested-before");
+		Value composite = SimpleModelExposureForTest.simpleTripleTerm(new InternedIRI("urn:", "subject"),
+				new InternedIRI("urn:", "predicate"), nested);
+		LmdbValue.ChildVersion nestedWitness = LmdbValue.ChildVersion.capture(composite);
+		assertNotNull(nestedWitness, "A composite witness must include an exact nested SimpleLiteral");
+		assertTrue(nestedWitness.isCurrent(), "The nested literal witness must begin current");
+		SimpleModelExposureForTest.setLabel(nested, "nested-after");
+		assertFalse(nestedWitness.isCurrent(), "Nested literal mutation must invalidate its composite witness");
+	}
+
+	private static void assertSimpleLiteralMutationWitness(SimpleLiteral literal, Runnable mutation, String field) {
+		LmdbValue.ChildVersion witness = LmdbValue.ChildVersion.capture(literal);
+		assertNotNull(witness, "Exact SimpleLiteral children need a mutation witness for " + field);
+		assertTrue(witness.isCurrent(), "A freshly captured SimpleLiteral witness must be current for " + field);
+		mutation.run();
+		assertFalse(witness.isCurrent(), "The SimpleLiteral witness must detect " + field + " mutation");
+	}
+
+	@Test
+	void serializationRejectsMutatedExactSimpleIriDatatypeWithoutPriorIdentityRead() throws Exception {
+		ValueStoreRevision revision = new ValueStoreRevision.Default(null);
+		SimpleIRI datatype = SimpleModelExposureForTest.simpleIRI("urn:serialized-mutation:before");
+		LmdbLiteral original = new LmdbLiteral(revision, "typed", datatype, 101L);
+		assertEquals(101L, original.getInternalID(), "The unchanged literal starts with its stored ID");
+		assertNotEquals(LmdbValue.UNKNOWN_ID, original.getSemanticVersion(),
+				"An exact SimpleIRI datatype has a mutation witness");
+
+		SimpleModelExposureForTest.setIriString(datatype, "urn:serialized-mutation:after");
+		LmdbLiteral restored = serializedRoundTrip(original);
+
+		assertEquals("urn:serialized-mutation:after", restored.getDatatype().stringValue(),
+				"Serialization must retain the changed datatype payload");
+		assertEquals(LmdbValue.UNKNOWN_ID, restored.getInternalID(),
+				"A changed datatype cannot retain the literal's previous dictionary ID");
+	}
+
+	@Test
+	void serializationRejectsMutatedExactSimpleLiteralChildWithoutPriorIdentityRead() throws Exception {
+		ValueStoreRevision revision = new ValueStoreRevision.Default(null);
+		SimpleLiteral object = SimpleModelExposureForTest.simpleLiteral("before");
+		LmdbTripleTerm original = new LmdbTripleTerm(revision, new InternedIRI("urn:serialized-mutation:", "subject"),
+				new InternedIRI("urn:serialized-mutation:", "predicate"), object, 202L);
+		assertEquals(202L, original.getInternalID(), "The unchanged triple starts with its stored ID");
+		assertNotEquals(LmdbValue.UNKNOWN_ID, original.getSemanticVersion(),
+				"An exact SimpleLiteral child has a mutation witness");
+
+		SimpleModelExposureForTest.setLabel(object, "after");
+		LmdbTripleTerm restored = serializedRoundTrip(original);
+
+		assertEquals("after", ((Literal) restored.getObject()).getLabel(),
+				"Serialization must retain the changed literal child");
+		assertEquals(LmdbValue.UNKNOWN_ID, restored.getInternalID(),
+				"A changed literal child cannot retain the triple's previous dictionary ID");
+	}
+
+	@Test
+	void serializationRejectsMutatedExactSimpleIriTripleChildWithoutPriorIdentityRead() throws Exception {
+		ValueStoreRevision revision = new ValueStoreRevision.Default(null);
+		SimpleIRI object = SimpleModelExposureForTest.simpleIRI("urn:serialized-mutation:before");
+		LmdbTripleTerm original = new LmdbTripleTerm(revision, new InternedIRI("urn:serialized-mutation:", "subject"),
+				new InternedIRI("urn:serialized-mutation:", "predicate"), object, 303L);
+		assertEquals(303L, original.getInternalID(), "The unchanged triple starts with its stored ID");
+		assertNotEquals(LmdbValue.UNKNOWN_ID, original.getSemanticVersion(),
+				"An exact SimpleIRI child has a mutation witness");
+
+		SimpleModelExposureForTest.setIriString(object, "urn:serialized-mutation:after");
+		LmdbTripleTerm restored = serializedRoundTrip(original);
+
+		assertEquals("urn:serialized-mutation:after", restored.getObject().stringValue(),
+				"Serialization must retain the changed IRI child");
+		assertEquals(LmdbValue.UNKNOWN_ID, restored.getInternalID(),
+				"A changed IRI child cannot retain the triple's previous dictionary ID");
+	}
+
+	@Test
+	void serializationPreservesUnchangedAndUnsupportedHistoricalIdentities() throws Exception {
+		ValueStoreRevision revision = new ValueStoreRevision.Default(null);
+		SimpleIRI unchangedDatatype = SimpleModelExposureForTest.simpleIRI("urn:serialized-identity:unchanged");
+		LmdbLiteral unchanged = new LmdbLiteral(revision, "typed", unchangedDatatype, 404L);
+		LmdbLiteral unchangedRestored = serializedRoundTrip(unchanged);
+		assertEquals(404L, unchangedRestored.getInternalID(), "An unchanged exact child preserves its stored ID");
+
+		SimpleIRI unsupportedDatatype = SimpleModelExposureForTest.subclassIri("urn:serialized-identity:before");
+		LmdbLiteral unsupported = new LmdbLiteral(revision, "typed", unsupportedDatatype, 505L);
+		assertEquals(505L, unsupported.getInternalID(), "Unsupported children keep their historical association");
+		assertEquals(LmdbValue.UNKNOWN_ID, unsupported.getSemanticVersion(),
+				"Unsupported children cannot certify historical ID freshness");
+		SimpleModelExposureForTest.setIriString(unsupportedDatatype, "urn:serialized-identity:after");
+		LmdbLiteral unsupportedRestored = serializedRoundTrip(unsupported);
+		assertEquals("urn:serialized-identity:after", unsupportedRestored.getDatatype().stringValue());
+		assertEquals(505L, unsupportedRestored.getInternalID(),
+				"An unsupported child retains its historical association after serialization");
+		assertEquals(LmdbValue.UNKNOWN_ID, unsupportedRestored.getSemanticVersion());
+	}
+
+	private static <T> T serializedRoundTrip(T value) throws Exception {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(value);
+		}
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			@SuppressWarnings("unchecked")
+			T restored = (T) input.readObject();
+			return restored;
+		}
 	}
 
 	@ParameterizedTest

@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -37,11 +38,13 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -360,11 +363,15 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final NativeExecutionContext queryFrameOwner;
 	/** Term-space owner; an invocation can replace its input/caches without replacing already bound native terms. */
 	private final NativeExecutionContext termOwner;
+	/** A projected source must outlive every reader of a frame projected from it. */
+	private final NativeExecutionContext sourceFrameOwner;
 	final boolean valueResolutionCacheEnabled;
 	final QueryExecutionPolicy queryExecutionPolicy;
 	private final long executionId = NEXT_EXECUTION_ID.getAndIncrement();
 	/** Lazily allocated: pure stored-ID executions never allocate a runtime interner or touch its hash tables. */
 	private volatile NativeRuntimeValueTable runtimeValues;
+	/** Lazily created inert receipt for this exact runtime table; shared only by contexts with the same term owner. */
+	private volatile Object detachedRuntimeIdSpace;
 	/** Protects lazy runtime-value table creation; native-state factories use the context monitor below. */
 	private final Object runtimeValuesLock = new Object();
 	/** One admission budget across the separately owned runtime-ID spaces of nested native roots. */
@@ -408,6 +415,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	private boolean closeRequested;
 	/** Number of active consumers that may still evaluate against this context after an inner close request. */
 	private int leaseCount;
+	/** A source owner may release its backing source after this frame and all of its readers have drained. */
+	private Runnable finalCloseAction;
 	/** Immutable ownership graph, not retained claims: cached producers must never keep their own owners alive. */
 	private volatile NativeExecutionContext[] leaseOwners;
 
@@ -420,6 +429,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		this.cancellation = new NativeCancellationToken();
 		this.queryFrameOwner = this;
 		this.termOwner = this;
+		this.sourceFrameOwner = null;
 		this.queryExecutionPolicy = policy;
 		this.valueResolutionCacheEnabled = !"false".equalsIgnoreCase(System.getProperty(NativeValueResolver.PROPERTY));
 	}
@@ -429,6 +439,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		this.cancellation = new NativeCancellationToken(parent.cancellation);
 		this.queryFrameOwner = parent.queryFrameOwner;
 		this.termOwner = this;
+		this.sourceFrameOwner = null;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
 		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
 	}
@@ -446,14 +457,20 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	NativeExecutionContext(NativeExecutionContext parent, BindingSet projectedQueryBase) {
-		this(parent, projectedQueryBase, true);
+		this(parent, projectedQueryBase, true, parent);
 	}
 
 	NativeExecutionContext(NativeExecutionContext parent, BindingSet input, boolean shareTermSpace) {
+		this(parent, input, shareTermSpace, parent.sourceFrameOwner == null ? null : parent);
+	}
+
+	private NativeExecutionContext(NativeExecutionContext parent, BindingSet input, boolean shareTermSpace,
+			NativeExecutionContext sourceFrameOwner) {
 		this.queryScopeOwner = parent.queryScopeOwner;
 		this.cancellation = new NativeCancellationToken(parent.cancellation);
 		this.queryFrameOwner = this;
 		this.termOwner = shareTermSpace ? parent.termOwner : this;
+		this.sourceFrameOwner = sourceFrameOwner;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
 		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
 		this.queryBase = NativeEntryBindings.snapshot(input);
@@ -475,10 +492,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (scope.retainsAllBindings()) {
 			return this;
 		}
-		return nativeState(new ConditionFrameKey(scope, source), () -> source.forConditionBindings(scope));
-	}
-
-	private record ConditionFrameKey(ConditionBindingScope scope, SyntheticValueSource source) {
+		return source.conditionFrame(scope);
 	}
 
 	void initializeQueryBase(BindingSet bindings) {
@@ -537,8 +551,24 @@ final class NativeExecutionContext implements AutoCloseable {
 		return context;
 	}
 
+	/** The explicit standalone entry shares the scalar authority used to prepare its existing callbacks. */
+	void adoptPreparedScalarScope(QueryEvaluationContext prepared) {
+		if (queryScopeOwner != this) {
+			throw new IllegalStateException("only a standalone query owner may adopt a prepared scalar scope");
+		}
+		genericContext(() -> EvaluationScopedQueryEvaluationContext.forPreparedScope(prepared).detachedQueryScope());
+	}
+
+	boolean sharesQueryScope(NativeExecutionContext other) {
+		return other != null && queryScopeOwner == other.queryScopeOwner;
+	}
+
 	/** Shares query scalar state while retaining the exact structural context of this compiled subtree. */
 	QueryEvaluationContext genericContext(QueryEvaluationContext structural, LmdbNativeEvaluationStrategy strategy) {
+		if (structural instanceof BindingSetQueryEvaluationContext
+				|| structural instanceof EvaluationScopedQueryEvaluationContext) {
+			return genericInvocationContext(structural, strategy);
+		}
 		if (queryScopeOwner != this) {
 			return queryScopeOwner.genericContext(structural, strategy);
 		}
@@ -550,15 +580,56 @@ final class NativeExecutionContext implements AutoCloseable {
 			if (existing != null) {
 				return existing;
 			}
-			QueryEvaluationContext shared = genericContext(
-					() -> EvaluationScopedQueryEvaluationContext.create(structural, strategy));
-			if (!(shared instanceof EvaluationScopedQueryEvaluationContext scoped)) {
-				throw new IllegalStateException("generic query scope must preserve structural views");
-			}
+			EvaluationScopedQueryEvaluationContext scoped = genericScope(structural, strategy);
 			QueryEvaluationContext view = scoped.withStructuralContext(structural);
 			genericContexts.put(structural, view);
 			return view;
 		}
+	}
+
+	/** A source/attempt-specific structural view is owned by its caller, never by the root query cache. */
+	QueryEvaluationContext genericInvocationContext(QueryEvaluationContext structural,
+			LmdbNativeEvaluationStrategy strategy) {
+		if (queryScopeOwner != this) {
+			return queryScopeOwner.genericInvocationContext(structural, strategy);
+		}
+		synchronized (this) {
+			if (closed) {
+				throw new IllegalStateException("execution context is closed");
+			}
+			EvaluationScopedQueryEvaluationContext scoped = genericScope(structural, strategy);
+			return structural == scoped ? scoped : scoped.withStructuralContext(structural);
+		}
+	}
+
+	/** One detached template shares NOW/BNODE state without retaining the first caller's structural context. */
+	private EvaluationScopedQueryEvaluationContext genericScope(QueryEvaluationContext structural,
+			LmdbNativeEvaluationStrategy strategy) {
+		QueryEvaluationContext shared = genericContext(() -> {
+			QueryEvaluationContext created = structural instanceof EvaluationScopedQueryEvaluationContext
+					? structural
+					: EvaluationScopedQueryEvaluationContext.create(structural, strategy);
+			if (!(created instanceof EvaluationScopedQueryEvaluationContext scoped)) {
+				throw new IllegalStateException("generic query scope must preserve structural views");
+			}
+			return scoped.detachedQueryScope();
+		});
+		if (!(shared instanceof EvaluationScopedQueryEvaluationContext scoped)) {
+			throw new IllegalStateException("generic query scope must preserve structural views");
+		}
+		return scoped;
+	}
+
+	/** NOW is query-wide and needs no per-row structural-view allocation. */
+	Literal queryNow(QueryEvaluationContext structural) {
+		if (queryScopeOwner != this) {
+			return queryScopeOwner.queryNow(structural);
+		}
+		return genericScope(structural, null).getNow();
+	}
+
+	boolean isGenericScopeTemplate(QueryEvaluationContext context) {
+		return context != null && context == genericContextOrNull();
 	}
 
 	/** Returns the already-created query scope without allocating one for a worker that cannot supply its factory. */
@@ -848,6 +919,28 @@ final class NativeExecutionContext implements AutoCloseable {
 		return table;
 	}
 
+	Object detachedRuntimeIdSpace() {
+		if (isClosed()) {
+			throw new IllegalStateException("execution context is closed");
+		}
+		if (termOwner != this) {
+			return termOwner.detachedRuntimeIdSpace();
+		}
+		Object identity = detachedRuntimeIdSpace;
+		if (identity == null) {
+			synchronized (runtimeValuesLock) {
+				if (isClosed()) {
+					throw new IllegalStateException("execution context is closed");
+				}
+				identity = detachedRuntimeIdSpace;
+				if (identity == null) {
+					detachedRuntimeIdSpace = identity = new Object();
+				}
+			}
+		}
+		return identity;
+	}
+
 	private NativeRuntimeValueTable.Budget runtimeValueBudget() {
 		if (queryScopeOwner != this) {
 			return queryScopeOwner.runtimeValueBudget();
@@ -996,6 +1089,16 @@ final class NativeExecutionContext implements AutoCloseable {
 		return closed || queryScopeOwner.closed;
 	}
 
+	/** Registers a frame-owner notification without retaining a lease on this context or any of its authorities. */
+	void onFinalClose(Runnable action) {
+		synchronized (this) {
+			if (closed || closeRequested || finalCloseAction != null) {
+				throw new IllegalStateException("execution context cannot accept a final-close action");
+			}
+			finalCloseAction = Objects.requireNonNull(action, "action");
+		}
+	}
+
 	/**
 	 * Retains this context and its actual scalar, entry-frame and term authorities while an accepted consumer may
 	 * continue evaluating after an inner carrier requests close. Unrelated parent contexts are not dependencies.
@@ -1012,15 +1115,30 @@ final class NativeExecutionContext implements AutoCloseable {
 		return retainLease(true);
 	}
 
+	/**
+	 * A prepared producer is owned by a cache in {@code cacheOwner}; its own context is owned by the prepared
+	 * candidate. Retain only independent authorities. Accepted readers and advances retain the full closure.
+	 */
+	Lease retainForOwnedProducer(NativeExecutionContext cacheOwner) {
+		Objects.requireNonNull(cacheOwner, "cacheOwner");
+		return retainLease(false, cacheOwner.leaseOwners(), this);
+	}
+
 	private Lease retainLease(boolean active) {
+		return retainLease(active, active ? null : BORROWED_PRODUCER_OWNERS.get(), null);
+	}
+
+	private Lease retainLease(boolean active, NativeExecutionContext[] borrowed,
+			NativeExecutionContext ownedContext) {
 		NativeExecutionContext[] owners = leaseOwners();
-		NativeExecutionContext[] borrowed = active ? null : BORROWED_PRODUCER_OWNERS.get();
-		if (borrowed != null) {
+		if (borrowed != null || ownedContext != null) {
 			ArrayList<NativeExecutionContext> retained = new ArrayList<>();
 			for (NativeExecutionContext owner : owners) {
-				boolean internal = false;
-				for (NativeExecutionContext ancestor : borrowed) {
-					internal |= owner == ancestor;
+				boolean internal = owner == ownedContext;
+				if (borrowed != null) {
+					for (NativeExecutionContext ancestor : borrowed) {
+						internal |= owner == ancestor;
+					}
 				}
 				if (!internal) {
 					retained.add(owner);
@@ -1062,8 +1180,8 @@ final class NativeExecutionContext implements AutoCloseable {
 		for (int index = 0; index < owners.size(); index++) {
 			NativeExecutionContext owner = owners.get(index);
 			for (NativeExecutionContext dependency : new NativeExecutionContext[] {
-					owner.queryScopeOwner, owner.queryFrameOwner, owner.termOwner }) {
-				if (seen.put(dependency, Boolean.TRUE) == null) {
+					owner.queryScopeOwner, owner.queryFrameOwner, owner.termOwner, owner.sourceFrameOwner }) {
+				if (dependency != null && seen.put(dependency, Boolean.TRUE) == null) {
 					owners.add(dependency);
 				}
 			}
@@ -1132,11 +1250,24 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** Performs terminal cleanup while this context's monitor is held. */
 	private RuntimeException closeResourcesLocked() {
 		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("cleanup", cancellation)) {
-			RuntimeException failure = closeResourcesUnmeasured();
+			Throwable failure;
+			try {
+				failure = closeResourcesUnmeasured();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+			Runnable action = finalCloseAction;
+			finalCloseAction = null;
+			failure = KernelRuntime.closeResource(action == null ? null : action::run, failure);
 			if (failure == null) {
 				phase.complete();
+				return null;
 			}
-			return failure;
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			return failure instanceof RuntimeException runtime ? runtime
+					: new IllegalStateException("failed to close native evaluation context", failure);
 		}
 	}
 
@@ -1166,6 +1297,17 @@ final class NativeExecutionContext implements AutoCloseable {
 					} else {
 						failure.addSuppressed(cleanup);
 					}
+				}
+			}
+		}
+		if (queryFrameOwner == this && evaluationSource != null) {
+			try {
+				evaluationSource.closeConditionFrames(null);
+			} catch (RuntimeException cleanup) {
+				if (failure == null) {
+					failure = cleanup;
+				} else {
+					failure.addSuppressed(cleanup);
 				}
 			}
 		}

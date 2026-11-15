@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.Plan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.RootMorsels;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.Runtime;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 
 /**
@@ -153,7 +154,7 @@ final class LmdbNativePackedMorsels {
 
 	static FactorizedRowCursor tryRows(SlotPlan plan, RowState row, int[] outputs, boolean distinct,
 			TupleExpr explainTarget, LmdbNativeParallelPipelines.TaskReservation reservation) throws IOException {
-		if (!eligible(plan, row)) {
+		if (!NativeWorkerPlanBinder.canBindDeferredStreamingJobs(plan) || !eligible(plan, row)) {
 			if (reservation != null)
 				reservation.close();
 			return null;
@@ -420,8 +421,17 @@ final class LmdbNativePackedMorsels {
 		}
 	}
 
-	private static RowState workerRow(NativeLmdbQuerySource source, RowState parent, NativeCancellationToken token) {
+	private static RowState workerRow(NativeLmdbQuerySource source, RowState parent, NativeCancellationToken token,
+			LmdbFusedSipFactorizedRuntime.Session fusedSession) {
 		RowState row = new RowState(source, parent.layout, parent.base, (ExactValuesRuntimeMetrics) null, token);
+		row.fusedSession = fusedSession;
+		row.setExecutionContext(NativeScalarPlan.WorkerContext.executionForSource(source, parent.executionContext()));
+		row.inheritDiagnosticRoot(parent);
+		LmdbNativeEvaluationStrategy workerStrategy = parent.workerStrategy(source, fusedSession,
+				row.executionContext());
+		if (workerStrategy != null) {
+			row.setInvocationStrategy(workerStrategy);
+		}
 		System.arraycopy(parent.slots, 0, row.slots, 0, row.slots.length);
 		row.recomputeBoundMask();
 		row.lexicalInputMask = parent.lexicalInputMask;
@@ -441,7 +451,8 @@ final class LmdbNativePackedMorsels {
 		Leaf leaf;
 
 		WorkerPlan(Job job, RowState row, boolean orderedReplay) {
-			super(NativeScalarPlan.WorkerContext.forSource(row.source, null));
+			super(NativeScalarPlan.WorkerContext.forSource(row.source, null, row.fusedSession(),
+					row.executionContext(), row.invocationStrategyOrNull(), row.diagnosticRoot()));
 			this.job = job;
 			this.row = row;
 			this.orderedReplay = orderedReplay;
@@ -674,6 +685,7 @@ final class LmdbNativePackedMorsels {
 		final LongAdder completed = new LongAdder();
 		final AggContext[] contexts;
 		final NativeGroupTable[] tables;
+		final LmdbFusedSipFactorizedRuntime.Session[] fusedWorkers;
 		final NativeTypedGroupStore typedGroups;
 		final ArrayBlockingQueue<Page> free;
 		final LmdbQueryMemoryManager.Reservation outputMemory;
@@ -700,6 +712,7 @@ final class LmdbNativePackedMorsels {
 			execution = new LmdbNativeMorselExecutor<>(sources.length, queuePages, parent.cancellation);
 			contexts = new AggContext[sources.length];
 			tables = new NativeGroupTable[sources.length];
+			fusedWorkers = new LmdbFusedSipFactorizedRuntime.Session[sources.length];
 			typedGroups = aggregate != null && aggregate.bounded
 					? new NativeTypedGroupStore(aggregate.groups, aggregate.specs, aggregate.owner.aggContext,
 							this.parent, null, !aggregate.scalarReplay)
@@ -799,10 +812,12 @@ final class LmdbNativePackedMorsels {
 		void start() throws IOException {
 			started = true;
 			execution.start(LmdbNativeParallelPipelines.pool(), (index, executor) -> {
+				LmdbFusedSipFactorizedRuntime.Session workerSession = parent.fusedSession().worker();
+				fusedWorkers[index] = workerSession;
 				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeDeadline);
 						NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
 								.inputScope(execution.cancellation)) {
-					runWorker(index);
+					runWorker(index, workerSession);
 					if (!execution.stopped()) {
 						inputPhases.complete();
 					}
@@ -810,7 +825,8 @@ final class LmdbNativePackedMorsels {
 			});
 		}
 
-		void runWorker(int index) throws IOException, InterruptedException {
+		void runWorker(int index, LmdbFusedSipFactorizedRuntime.Session workerSession)
+				throws IOException, InterruptedException {
 			WorkerPlan worker = null;
 			int workerJob = -1;
 			RowState projected = null;
@@ -823,7 +839,7 @@ final class LmdbNativePackedMorsels {
 						tables[index] = NativeGroupTable.createParallel(aggregate.groups, aggregate.specs,
 								contexts[index], aggregate.membership);
 					}
-					projected = workerRow(sources[index], parent, execution.cancellation);
+					projected = workerRow(sources[index], parent, execution.cancellation, workerSession);
 				}
 				int mark = projected == null ? 0 : projected.mark();
 				while (!execution.stopped()) {
@@ -847,7 +863,8 @@ final class LmdbNativePackedMorsels {
 						worker = null;
 						if (previous != null)
 							previous.close();
-						worker = WorkerPlan.open(job, workerRow(sources[index], parent, execution.cancellation),
+						worker = WorkerPlan.open(job,
+								workerRow(sources[index], parent, execution.cancellation, workerSession),
 								aggregate != null && aggregate.scalarReplay);
 						workerJob = at;
 					}
@@ -1005,6 +1022,8 @@ final class LmdbNativePackedMorsels {
 				} catch (RuntimeException | Error problem) {
 					failure = addFailure(failure, problem);
 				}
+				for (LmdbFusedSipFactorizedRuntime.Session workerSession : fusedWorkers)
+					failure = KernelRuntime.closeResource(workerSession, failure);
 				if (free != null)
 					free.clear();
 				try {

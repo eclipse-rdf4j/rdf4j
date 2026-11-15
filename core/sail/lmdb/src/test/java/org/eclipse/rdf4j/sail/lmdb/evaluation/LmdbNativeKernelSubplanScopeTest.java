@@ -63,6 +63,41 @@ class LmdbNativeKernelSubplanScopeTest {
 	private static final String FORCE = LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
 
 	@Test
+	void invocationBoundSubplanPolicyMatchesLexicalForcingWithoutChangingItsParent() {
+		SlowQueryContextHolder.SlowQueryContext previous = forcingContext();
+		try (EvaluationFixture fixture = new EvaluationFixture();
+				LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(41L, true)) {
+			LmdbNativeEvaluationStrategy root = strategy();
+			LmdbNativeEvaluationStrategy ordinary = root.forInvocation(fixture.row.source, session, fixture.root);
+			assertForced(root);
+			assertThat(ordinary.forcedExecutionStrategyName()).isEqualTo(FORCE);
+			assertThat(ordinary.allowsRootUniformValuesHint()).isTrue();
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+			try {
+				assertThat(ordinary.forcedExecutionStrategyName()).isNull();
+				assertThat(ordinary.allowsRootUniformValuesHint()).isFalse();
+			} finally {
+				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
+			}
+			LmdbNativeEvaluationStrategy explicit = root.forSubplanInvocation(fixture.row.source, session,
+					fixture.root, null);
+			assertThat(explicit.forcedExecutionStrategyName()).isNull();
+			assertThat(explicit.allowsRootUniformValuesHint()).isFalse();
+			assertThat(explicit.forInvocation(fixture.row.source, session, fixture.root).forcedExecutionStrategyName())
+					.isNull();
+			assertThat(
+					explicit.forWorker(fixture.row.source, null, session, fixture.root).forcedExecutionStrategyName())
+							.isNull();
+			assertThat(explicit.genericOnlyView().forcedExecutionStrategyName()).isNull();
+			assertForced(root);
+			assertThat(ordinary.forcedExecutionStrategyName()).isEqualTo(FORCE);
+			assertThat(ordinary.allowsRootUniformValuesHint()).isTrue();
+		} finally {
+			SlowQueryContextHolder.restore(previous);
+		}
+	}
+
+	@Test
 	@Timeout(30)
 	void lexicalSubplanScopesRestoreForcingAfterNestingAndTerminalExits() throws Exception {
 		SlowQueryContextHolder.SlowQueryContext previous = forcingContext();

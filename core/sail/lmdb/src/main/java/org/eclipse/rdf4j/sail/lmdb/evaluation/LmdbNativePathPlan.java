@@ -297,7 +297,7 @@ final class PathPlan implements SlotPlan {
 				}
 				return PatternCursor.single(probe.open(subj, predId, obj, context));
 			}
-			return PatternCursor.contexts(source, probe, subj, predId, obj, contexts.ids);
+			return PatternCursor.contexts(source, probe, subj, predId, obj, contexts);
 		}
 		return PatternCursor.single(probe.open(subj, predId, obj, context));
 	}
@@ -481,14 +481,14 @@ final class PathTargetDecision {
 
 	private static double estimateProviderRows(SlotPlan provider, RowState row) {
 		if (provider instanceof ValuesPlan values) {
-			return values.rows.length;
+			return values.rowCount();
 		}
 		return ((PatternPlan) provider).estimateForBoundMask(row.boundMask(), row.source);
 	}
 
 	private static int expectedSize(SlotPlan provider, double estimatedRows, int maxValues) {
 		if (provider instanceof ValuesPlan values) {
-			return Math.min(maxValues, values.rows.length);
+			return Math.min(maxValues, values.rowCount());
 		}
 		if (Double.isFinite(estimatedRows) && estimatedRows >= 0D) {
 			return Math.min(maxValues, (int) Math.ceil(estimatedRows));
@@ -619,17 +619,17 @@ final class PathTargetSet {
 	}
 
 	boolean collect(SlotPlan provider, RowState row, int maxValues) throws IOException {
-		if (provider instanceof ValuesPlan) {
-			if (((ValuesPlan) provider).rows.length > maxValues) {
+		if (provider instanceof ValuesPlan values) {
+			if (values.rowCount() > maxValues) {
 				return false;
 			}
-			for (ValuesRow valuesRow : ((ValuesPlan) provider).rows) {
-				int index = slotIndex(valuesRow.slots, targetSlot);
+			for (int rowIndex = 0; rowIndex < values.rowCount(); rowIndex++) {
+				int index = values.slotIndex(rowIndex, targetSlot);
 				if (index < 0) {
 					return false;
 				}
 				providerRows++;
-				if (ids.add(valuesRow.values[index]) && ids.size() > maxValues) {
+				if (ids.add(values.valueAt(rowIndex, index)) && ids.size() > maxValues) {
 					return false;
 				}
 			}
@@ -650,15 +650,6 @@ final class PathTargetSet {
 			}
 		}
 		return true;
-	}
-
-	private static int slotIndex(int[] slots, int targetSlot) {
-		for (int index = 0; index < slots.length; index++) {
-			if (slots[index] == targetSlot) {
-				return index;
-			}
-		}
-		return -1;
 	}
 
 	void discard() {

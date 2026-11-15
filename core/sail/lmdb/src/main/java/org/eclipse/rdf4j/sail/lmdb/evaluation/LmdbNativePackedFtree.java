@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
@@ -848,6 +849,7 @@ final class LmdbNativePackedFtree {
 		if (desired < 2 || !LmdbNativeParallelPipelines.parallelWorkerForkable(multiJoin.filters)) {
 			return null;
 		}
+		LmdbFusedSipFactorizedRuntime.Session parentSession = row.fusedSession();
 		RootPartition[] partitions = runtime.planRootPartitions(desired * PARALLEL_OVERSPLIT,
 				parallelMinRootsPerPartition());
 		if (partitions == null || partitions.length < 2) {
@@ -874,28 +876,37 @@ final class LmdbNativePackedFtree {
 			reservation.close();
 			return null;
 		}
-		MultiJoinPlan[] workerJoins = null;
+		MultiJoinPlan[] workerJoins = new MultiJoinPlan[workers];
+		LmdbFusedSipFactorizedRuntime.Session[] workerSessions = new LmdbFusedSipFactorizedRuntime.Session[workers];
 		Throwable failure = null;
 		T finished = null;
-		try {
-			workerJoins = LmdbNativeParallelPipelines.forkWorkerPlans(multiJoin, workers);
-		} catch (RuntimeException | Error e) {
-			failure = e;
-		}
 		if (failure == null) {
 			int[] demandedSlots = aggregateDemandedSlots(groupSlots, aggregates);
 			AtomicInteger nextPartition = new AtomicInteger();
 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
 			ArrayList<Future<HashMap<GroupKey, AggState>>> futures = new ArrayList<>(workers);
 			for (int i = 0; i < workers && failure == null; i++) {
-				MultiJoinPlan workerJoin = workerJoins[i];
+				int workerIndex = i;
 				NativeLmdbQuerySource workerSource = sources[i];
 				try {
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 						try (var replayScope = replayContext.activate()) {
+							LmdbFusedSipFactorizedRuntime.Session workerSession = parentSession.worker();
+							workerSessions[workerIndex] = workerSession;
+							NativeExecutionContext execution = NativeScalarPlan.WorkerContext.executionForSource(
+									workerSource,
+									row.executionContext());
+							LmdbNativeEvaluationStrategy workerStrategy = row.workerStrategy(workerSource,
+									workerSession,
+									execution);
+							MultiJoinPlan workerJoin = LmdbNativeParallelPipelines.forkWorkerPlan(multiJoin,
+									NativeScalarPlan.WorkerContext.forSource(workerSource, null, workerSession,
+											execution, workerStrategy, row.diagnosticRoot()));
+							workerJoins[workerIndex] = workerJoin;
 							return runPartitionWorker(workerJoin, workerSource, row, plan.root.slot, demandedSlots,
-									partitions, nextPartition, groupSlots, aggregates, strictCompare, workerFailure);
+									partitions, nextPartition, groupSlots, aggregates, strictCompare, workerFailure,
+									workerSession, execution, workerStrategy, workerJoins, workerIndex);
 						} catch (Throwable t) {
 							workerFailure.compareAndSet(null, t);
 							throw t;
@@ -948,6 +959,9 @@ final class LmdbNativePackedFtree {
 		}
 		failure = LmdbNativeParallelPipelines.closeWorkerPlans(workerJoins, 0, failure);
 		failure = LmdbNativeParallelPipelines.closeSources(sources, failure);
+		for (LmdbFusedSipFactorizedRuntime.Session workerSession : workerSessions) {
+			failure = KernelRuntime.closeResource(workerSession, failure);
+		}
 		reservation.close();
 		if (failure != null) {
 			if (failure instanceof PackedParallelDecline) {
@@ -1004,32 +1018,57 @@ final class LmdbNativePackedFtree {
 	private static HashMap<GroupKey, AggState> runPartitionWorker(MultiJoinPlan workerJoin,
 			NativeLmdbQuerySource workerSource, RowState parentRow, int expectedRootSlot, int[] demandedSlots,
 			RootPartition[] partitions, AtomicInteger nextPartition, int[] groupSlots, AggregateSpec[] aggregates,
-			boolean strictCompare, AtomicReference<Throwable> failure) throws IOException {
+			boolean strictCompare, AtomicReference<Throwable> failure,
+			LmdbFusedSipFactorizedRuntime.Session workerSession, NativeExecutionContext execution,
+			LmdbNativeEvaluationStrategy workerStrategy, MultiJoinPlan[] workerJoins, int workerIndex)
+			throws IOException {
 		RowState workerRow = new RowState(workerSource, parentRow.layout, parentRow.base,
 				parentRow.exactValuesMetrics, parentRow.cancellation);
-		System.arraycopy(parentRow.slots, 0, workerRow.slots, 0, workerRow.slots.length);
-		workerRow.recomputeBoundMask();
-		workerRow.memoryScope = parentRow.memoryScope;
-		Plan workerPlan = Planner.plan(workerJoin, workerRow, demandedSlots);
-		if (workerPlan == null || workerPlan.root.slot != expectedRootSlot) {
-			// a replan divergence would seed the partitioned domain into the wrong variable
-			throw new PackedParallelDecline("worker plan diverged from the partitioned root");
-		}
-		AggContext context = new AggContext(workerSource, strictCompare, true, true);
-		HashMap<GroupKey, AggState> collected = null;
-		try (Runtime runtime = Runtime.openForWorker(workerPlan, workerRow)) {
-			if (runtime == null) {
-				throw new PackedParallelDecline("worker runtime unavailable");
+		AggContext context = null;
+		Throwable primaryFailure = null;
+		try {
+			workerRow.fusedSession = workerSession;
+			workerRow.setExecutionContext(execution);
+			workerRow.inheritDiagnosticRoot(parentRow);
+			if (workerStrategy != null) {
+				workerRow.setInvocationStrategy(workerStrategy);
 			}
-			for (int index = nextPartition.getAndIncrement(); index < partitions.length
-					&& failure.get() == null; index = nextPartition.getAndIncrement()) {
-				runtime.resetRoots(partitions[index].openFor(runtime));
-				collected = mergeGroupMaps(collected,
-						collectGroups(runtime, workerPlan, workerRow, groupSlots, aggregates, context),
-						parentRow.cancellation);
+			System.arraycopy(parentRow.slots, 0, workerRow.slots, 0, workerRow.slots.length);
+			workerRow.recomputeBoundMask();
+			workerRow.memoryScope = parentRow.memoryScope;
+			Plan workerPlan = Planner.plan(workerJoin, workerRow, demandedSlots);
+			if (workerPlan == null || workerPlan.root.slot != expectedRootSlot) {
+				// a replan divergence would seed the partitioned domain into the wrong variable
+				throw new PackedParallelDecline("worker plan diverged from the partitioned root");
 			}
+			context = new AggContext(workerSource, strictCompare, true, true);
+			HashMap<GroupKey, AggState> collected = null;
+			try (Runtime runtime = Runtime.openForWorker(workerPlan, workerRow)) {
+				if (runtime == null) {
+					throw new PackedParallelDecline("worker runtime unavailable");
+				}
+				for (int index = nextPartition.getAndIncrement(); index < partitions.length
+						&& failure.get() == null; index = nextPartition.getAndIncrement()) {
+					runtime.resetRoots(partitions[index].openFor(runtime));
+					collected = mergeGroupMaps(collected,
+							collectGroups(runtime, workerPlan, workerRow, groupSlots, aggregates, context),
+							parentRow.cancellation);
+				}
+			}
+			return collected == null ? new HashMap<>() : collected;
+		} catch (IOException | RuntimeException | Error problem) {
+			primaryFailure = problem;
+			throw problem;
+		} finally {
+			Throwable closeFailure = LmdbNativeParallelPipelines.closePlanFilters(workerJoin, primaryFailure);
+			workerJoins[workerIndex] = null;
+			if (context != null) {
+				AggContext workerContext = context;
+				closeFailure = KernelRuntime.closeResource(workerContext::close, closeFailure);
+			}
+			closeFailure = KernelRuntime.closeResource(workerRow::closeDecodedInputs, closeFailure);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(closeFailure, primaryFailure);
 		}
-		return collected == null ? new HashMap<>() : collected;
 	}
 
 	/**
@@ -1692,6 +1731,8 @@ final class LmdbNativePackedFtree {
 		final NodePlan[] nodes;
 		final int[][] childOrdinals;
 		final Map<Integer, NodePlan> bySlot;
+		final NodePlan[] coordinateNodes;
+		final long[] replayInvalidations;
 		final ConstantPattern[] constants;
 		final long variableMask;
 		final int[] fixedSlots;
@@ -1704,11 +1745,39 @@ final class LmdbNativePackedFtree {
 			this.root = root;
 			this.nodes = nodes;
 			this.childOrdinals = new int[nodes.length][];
+			this.coordinateNodes = new NodePlan[Long.SIZE];
+			this.replayInvalidations = new long[nodes.length];
 			for (NodePlan node : nodes) {
 				int[] children = new int[node.children.length];
 				for (int i = 0; i < children.length; i++)
 					children[i] = node.children[i].ordinal;
 				childOrdinals[node.ordinal] = children;
+				long replayPredecessors = 0L;
+				for (NodePlan earlier : nodes) {
+					if (earlier.ordinal >= node.ordinal) {
+						break;
+					}
+					boolean ancestor = false;
+					for (NodePlan parent = node.parent; parent != null; parent = parent.parent) {
+						ancestor |= parent == earlier;
+					}
+					if (!ancestor) {
+						replayPredecessors |= 1L << earlier.ordinal;
+					}
+				}
+				node.replayPredecessors = replayPredecessors;
+			}
+			for (NodePlan node : nodes) {
+				if (node.slot >= 0 && node.slot < coordinateNodes.length) {
+					coordinateNodes[node.slot] = node;
+				}
+				long dependencies = node.replayPredecessors;
+				for (NodePlan parent = node.parent; parent != null; parent = parent.parent) {
+					dependencies |= 1L << parent.ordinal;
+				}
+				for (long rest = dependencies; rest != 0L; rest &= rest - 1L) {
+					replayInvalidations[Long.numberOfTrailingZeros(rest)] |= 1L << node.ordinal;
+				}
 			}
 			this.constants = constants;
 			this.variableMask = variableMask;
@@ -1848,6 +1917,8 @@ final class LmdbNativePackedFtree {
 		RootSeed seed;
 		RootSeed[] seeds = new RootSeed[0];
 		int depth;
+		/** Earlier independent nodes can rewind this node's relation during product traversal. */
+		long replayPredecessors;
 
 		NodePlan(int ordinal, int slot) {
 			this.ordinal = ordinal;
@@ -6353,6 +6424,8 @@ final class LmdbNativePackedFtree {
 		final boolean[] included;
 		final int[] lanes;
 		boolean initialized;
+		boolean coordinateTracking;
+		long changedCoordinateNodes;
 		long currentWeight;
 
 		PackedProjectionCursor(Chunk chunk, long demandedMask) {
@@ -6394,6 +6467,22 @@ final class LmdbNativePackedFtree {
 			return currentWeight;
 		}
 
+		long takeChangedNodes() {
+			if (!coordinateTracking) {
+				coordinateTracking = true;
+				return -1L;
+			}
+			long changed = changedCoordinateNodes;
+			changedCoordinateNodes = 0L;
+			return changed;
+		}
+
+		private void markCoordinateChanged(NodePlan node) {
+			if (coordinateTracking) {
+				changedCoordinateNodes |= 1L << node.ordinal;
+			}
+		}
+
 		private boolean initialize() {
 			Arrays.fill(lanes, -1);
 			for (NodePlan node : chunk.plan.nodes) {
@@ -6419,12 +6508,14 @@ final class LmdbNativePackedFtree {
 				if (next < 0) {
 					continue;
 				}
+				markCoordinateChanged(node);
 				lanes[ordinal] = next;
 				boolean reset = true;
 				for (int later = ordinal + 1; later < chunk.plan.nodes.length; later++) {
 					if (!included[later]) {
 						continue;
 					}
+					markCoordinateChanged(chunk.plan.nodes[later]);
 					int first = firstLane(chunk.plan.nodes[later]);
 					if (first < 0) {
 						reset = false;
@@ -6740,6 +6831,8 @@ final class LmdbNativePackedFtree {
 		PackedProjectionCursor projection;
 		int active = -1, completed = -1, tick;
 		boolean scalarPending, positioned, closed, started, prefixPartitions;
+		long coordinateEpoch;
+		long replayKnown, replayAllowed;
 		ProjectionCounts counts;
 		long weight;
 
@@ -6808,6 +6901,7 @@ final class LmdbNativePackedFtree {
 						close();
 						return false;
 					}
+					advanceCoordinateEpoch();
 					NodeData root = chunk.data[plan.root.ordinal];
 					int first = root.state.nextSetBit(root.startLane());
 					if (first >= 0 && first < root.endLane())
@@ -6930,10 +7024,135 @@ final class LmdbNativePackedFtree {
 				changed |= chunk.data[node.ordinal].borrowed != null && (demand & (1L << node.slot)) != 0L;
 			if (changed) {
 				chunk.materializeBorrowed(demand);
+				advanceCoordinateEpoch();
 				// Cached lane arrays describe the previous representation; relation semantics
 				// did not change, but newly packed lanes require a fresh positional cache.
 				counts = new ProjectionCounts(chunk, row);
 			}
+		}
+
+		private void advanceCoordinateEpoch() {
+			replayKnown = replayAllowed = 0L;
+			if (coordinateEpoch >= 0L) {
+				coordinateEpoch = coordinateEpoch == Long.MAX_VALUE ? -1L : coordinateEpoch + 1L;
+			}
+		}
+
+		long coordinateActivation() {
+			return !closed && positioned && !scalarWindow && chunk != null && coordinateEpoch > 0L
+					? coordinateEpoch
+					: 0L;
+		}
+
+		long takeChangedSlots() {
+			if (projection == null) {
+				replayKnown = 0L;
+				return -1L;
+			}
+			long changedNodes = projection.takeChangedNodes();
+			if (changedNodes == -1L) {
+				replayKnown = 0L;
+				return -1L;
+			}
+			long changedSlots = 0L;
+			for (long rest = changedNodes; rest != 0L; rest &= rest - 1L) {
+				int ordinal = Long.numberOfTrailingZeros(rest);
+				changedSlots |= 1L << plan.nodes[ordinal].slot;
+				replayKnown &= ~plan.replayInvalidations[ordinal];
+			}
+			return changedSlots;
+		}
+
+		boolean coordinateValid(int slot, long activation) {
+			if (coordinateActivation() != activation || activation <= 0L || projection == null
+					|| slot < 0 || slot >= plan.coordinateNodes.length) {
+				return false;
+			}
+			NodePlan node = plan.coordinateNodes[slot];
+			return node != null && projection.included[node.ordinal] && projection.lanes[node.ordinal] >= 0
+					&& chunk.data[node.ordinal].borrowed == null;
+		}
+
+		boolean mayReplay(int slot) {
+			if (slot < 0 || slot >= plan.coordinateNodes.length) {
+				return false;
+			}
+			NodePlan node = plan.coordinateNodes[slot];
+			return node != null && node.replayPredecessors != 0L;
+		}
+
+		boolean resultCoordinate(int slot, long[] coordinate) {
+			long activation = coordinateEpoch;
+			if (!coordinateValid(slot, activation) || !mayReplay(slot)) {
+				return false;
+			}
+			NodePlan node = plan.coordinateNodes[slot];
+			if (!canReplay(node)) {
+				return false;
+			}
+			coordinate[NativeResultCoordinates.GROUP] = node.ordinal;
+			coordinate[NativeResultCoordinates.PARENT] = 0L;
+			coordinate[NativeResultCoordinates.POSITION] = projection.lanes[node.ordinal];
+			coordinate[NativeResultCoordinates.COLUMN] = 0L;
+			return coordinateValid(slot, activation);
+		}
+
+		private boolean canReplay(NodePlan node) {
+			if (!projection.coordinateTracking) {
+				projection.takeChangedNodes();
+				replayKnown = 0L;
+			} else {
+				for (long rest = projection.changedCoordinateNodes; rest != 0L; rest &= rest - 1L) {
+					replayKnown &= ~plan.replayInvalidations[Long.numberOfTrailingZeros(rest)];
+				}
+			}
+			long bit = 1L << node.ordinal;
+			if ((replayKnown & bit) == 0L) {
+				if (computeCanReplay(node)) {
+					replayAllowed |= bit;
+				} else {
+					replayAllowed &= ~bit;
+				}
+				replayKnown |= bit;
+			}
+			return (replayAllowed & bit) != 0L;
+		}
+
+		private boolean computeCanReplay(NodePlan node) {
+			for (long rest = node.replayPredecessors; rest != 0L; rest &= rest - 1L) {
+				NodePlan earlier = plan.nodes[Long.numberOfTrailingZeros(rest)];
+				if (!projection.included[earlier.ordinal]) {
+					continue;
+				}
+				NodeData data = chunk.data[earlier.ordinal];
+				if (data.borrowed != null) {
+					return true;
+				}
+				if (data.sharedWithParent) {
+					continue;
+				}
+				int from;
+				int to;
+				if (earlier.parent == null) {
+					from = data.startLane();
+					to = data.endLane();
+				} else {
+					int parent = projection.lanes[earlier.parent.ordinal];
+					if (parent < 0) {
+						continue;
+					}
+					from = data.offsets[parent];
+					to = data.offsets[parent + 1];
+				}
+				int first = data.state.nextSetBit(from);
+				if (first >= 0 && first < to) {
+					int second = data.state.nextSetBit(first + 1);
+					if (second >= 0 && second < to) {
+						return true;
+					}
+				}
+			}
+			return false;
 		}
 
 		/** A window never crosses its parent binding: all other requested columns remain scalar. */
@@ -7350,11 +7569,11 @@ final class LmdbNativePackedFtree {
 	 * scalar slot. Multiplicity-aware consumers take a bag in one call, ordinary consumers see its exact replay.
 	 * Eligibility and placement must establish that per-solution expressions and ordering are not observable here.
 	 */
-	static final class ProjectedRowCursor implements FactorizedRowCursor {
+	static final class ProjectedRowCursor implements FactorizedRowCursor, NativeResultCoordinates {
 		final RowState row;
 		final int[] outputSlots;
 		final int baseMark;
-		final NativeFactorProjections input;
+		final ChunkProjectionCursor input;
 		long repeatRemaining;
 		boolean batch, closed;
 		int ticks;
@@ -7371,6 +7590,31 @@ final class LmdbNativePackedFtree {
 			long weight = repeatRemaining + 1L;
 			repeatRemaining = 0L;
 			return weight;
+		}
+
+		@Override
+		public long coordinateActivation() {
+			return closed ? 0L : input.coordinateActivation();
+		}
+
+		@Override
+		public long takeChangedSlots() {
+			return closed ? -1L : input.takeChangedSlots();
+		}
+
+		@Override
+		public boolean coordinateValid(int slot, long activation) {
+			return !closed && input.coordinateValid(slot, activation);
+		}
+
+		@Override
+		public boolean mayReplay(int slot) {
+			return !closed && input.mayReplay(slot);
+		}
+
+		@Override
+		public boolean resultCoordinate(int slot, long[] coordinate) {
+			return !closed && input.resultCoordinate(slot, coordinate);
 		}
 
 		@Override
@@ -7438,7 +7682,7 @@ final class LmdbNativePackedFtree {
 	}
 
 	/** Pull cursor that flattens only at the RDF4J row boundary. */
-	static final class PackedRowCursor implements FactorizedRowCursor {
+	static final class PackedRowCursor implements FactorizedRowCursor, NativeResultCoordinates {
 		final Plan plan;
 		final RowState row;
 		final Runtime runtime;
@@ -7453,6 +7697,10 @@ final class LmdbNativePackedFtree {
 		int cancellationTick;
 		boolean initialized;
 		boolean closed;
+		long coordinateBuild;
+		boolean coordinateTracking;
+		long changedCoordinateSlots;
+		long replayKnown, replayAllowed;
 
 		/**
 		 * Consume-on-read transfer of the current tuple's exact bag multiplicity (gap-analysis G9/G40): a
@@ -7533,6 +7781,13 @@ final class LmdbNativePackedFtree {
 						close();
 						return false;
 					}
+					if (coordinateBuild >= 0L) {
+						coordinateBuild = coordinateBuild == Long.MAX_VALUE ? -1L : coordinateBuild + 1L;
+					}
+					replayKnown = replayAllowed = 0L;
+					if (coordinateTracking) {
+						changedCoordinateSlots = -1L;
+					}
 					initialized = false;
 				}
 				boolean has = !initialized ? initializeTuple() : advanceTuple();
@@ -7575,6 +7830,7 @@ final class LmdbNativePackedFtree {
 				if (next < 0) {
 					continue;
 				}
+				markCoordinateChanged(node);
 				lanes[ordinal] = next;
 				if (orderedOccurrences) {
 					nodeRepeats[ordinal] = repeat ? nodeRepeats[ordinal] - 1L : nodeWeight(node) - 1L;
@@ -7582,6 +7838,7 @@ final class LmdbNativePackedFtree {
 				boolean resetOk = true;
 				for (int later = ordinal + 1; later < plan.nodes.length; later++) {
 					NodePlan laterNode = plan.nodes[later];
+					markCoordinateChanged(laterNode);
 					int first = firstLane(laterNode);
 					if (first < 0) {
 						resetOk = false;
@@ -7597,6 +7854,13 @@ final class LmdbNativePackedFtree {
 				}
 			}
 			return false;
+		}
+
+		private void markCoordinateChanged(NodePlan node) {
+			replayKnown &= ~plan.replayInvalidations[node.ordinal];
+			if (coordinateTracking) {
+				changedCoordinateSlots |= 1L << node.slot;
+			}
 		}
 
 		private int firstLane(NodePlan node) {
@@ -7656,6 +7920,157 @@ final class LmdbNativePackedFtree {
 		private long nodeWeight(NodePlan node) {
 			NodeData data = chunk.data[node.ordinal];
 			return data.borrowed == null ? data.weight(lanes[node.ordinal]) : borrowedReaders[node.ordinal].weight();
+		}
+
+		@Override
+		public long coordinateActivation() {
+			if (closed || chunk == null || !initialized || coordinateBuild <= 0L) {
+				return 0L;
+			}
+			for (NodePlan node : plan.nodes) {
+				if (chunk.data[node.ordinal].borrowed != null) {
+					BorrowedFactorBatch.Cursor reader = borrowedReaders[node.ordinal];
+					if (reader == null || reader.resultLane() < 0) {
+						return 0L;
+					}
+				}
+			}
+			return coordinateBuild;
+		}
+
+		@Override
+		public long takeChangedSlots() {
+			if (!coordinateTracking) {
+				coordinateTracking = true;
+				return -1L;
+			}
+			long changed = changedCoordinateSlots;
+			changedCoordinateSlots = 0L;
+			return changed;
+		}
+
+		@Override
+		public boolean coordinateValid(int slot, long activation) {
+			if (closed || chunk == null || !initialized || coordinateBuild != activation || activation <= 0L
+					|| slot < 0 || slot >= plan.coordinateNodes.length) {
+				return false;
+			}
+			NodePlan node = plan.coordinateNodes[slot];
+			if (node == null || lanes[node.ordinal] < 0) {
+				return false;
+			}
+			if (chunk.data[node.ordinal].borrowed == null) {
+				return true;
+			}
+			BorrowedFactorBatch.Cursor reader = borrowedReaders[node.ordinal];
+			return reader != null && reader.resultLane() >= 0;
+		}
+
+		@Override
+		public boolean mayReplay(int slot) {
+			if (slot < 0 || slot >= plan.coordinateNodes.length) {
+				return false;
+			}
+			NodePlan node = plan.coordinateNodes[slot];
+			return node != null && (node.replayPredecessors != 0L || orderedOccurrences && node.parent != null);
+		}
+
+		@Override
+		public boolean resultCoordinate(int slot, long[] coordinate) {
+			long activation = coordinateBuild;
+			if (!coordinateValid(slot, activation) || !mayReplay(slot)) {
+				return false;
+			}
+			NodePlan node = plan.coordinateNodes[slot];
+			if (!canReplay(node)) {
+				return false;
+			}
+			NodeData data = chunk.data[node.ordinal];
+			long member;
+			long parent = 0L;
+			if (data.borrowed == null) {
+				member = lanes[node.ordinal];
+			} else {
+				BorrowedFactorBatch.Cursor reader = borrowedReaders[node.ordinal];
+				if (reader == null || node.parent == null) {
+					return false;
+				}
+				member = reader.resultPosition();
+				int sourceLane = reader.resultLane();
+				int parentLane = lanes[node.parent.ordinal];
+				if (member < 0L || sourceLane < 0 || parentLane < 0) {
+					return false;
+				}
+				parent = ((long) parentLane << Integer.SIZE) | Integer.toUnsignedLong(sourceLane);
+			}
+			coordinate[NativeResultCoordinates.GROUP] = node.ordinal;
+			coordinate[NativeResultCoordinates.PARENT] = parent;
+			coordinate[NativeResultCoordinates.POSITION] = member;
+			coordinate[NativeResultCoordinates.COLUMN] = 0L;
+			return coordinateValid(slot, activation);
+		}
+
+		private boolean canReplay(NodePlan node) {
+			long bit = 1L << node.ordinal;
+			if ((replayKnown & bit) != 0L) {
+				return (replayAllowed & bit) != 0L;
+			}
+			boolean allowed = false;
+			for (long rest = node.replayPredecessors; rest != 0L; rest &= rest - 1L) {
+				NodePlan earlier = plan.nodes[Long.numberOfTrailingZeros(rest)];
+				if (canAdvance(earlier)) {
+					allowed = true;
+					break;
+				}
+			}
+			if (!allowed && orderedOccurrences) {
+				for (NodePlan parent = node.parent; parent != null; parent = parent.parent) {
+					if (nodeWeight(parent) > 1L) {
+						allowed = true;
+						break;
+					}
+				}
+			}
+			replayKnown |= bit;
+			if (allowed) {
+				replayAllowed |= bit;
+			} else {
+				replayAllowed &= ~bit;
+			}
+			return allowed;
+		}
+
+		private boolean canAdvance(NodePlan node) {
+			NodeData data = chunk.data[node.ordinal];
+			if (data.borrowed != null) {
+				BorrowedFactorBatch.Cursor reader = borrowedReaders[node.ordinal];
+				return reader != null && reader.resultCount() > 1L;
+			}
+			if (orderedOccurrences && nodeWeight(node) > 1L) {
+				return true;
+			}
+			if (data.sharedWithParent) {
+				return false;
+			}
+			int from;
+			int to;
+			if (node.parent == null) {
+				from = data.startLane();
+				to = data.endLane();
+			} else {
+				int parent = lanes[node.parent.ordinal];
+				if (parent < 0) {
+					return false;
+				}
+				from = data.offsets[parent];
+				to = data.offsets[parent + 1];
+			}
+			int first = data.state.nextSetBit(from);
+			if (first < 0 || first >= to) {
+				return false;
+			}
+			int second = data.state.nextSetBit(first + 1);
+			return second >= 0 && second < to;
 		}
 
 		private void installCurrentRow() {

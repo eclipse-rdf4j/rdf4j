@@ -13,26 +13,52 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.DomainStamp;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.IdLookup;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.IdOrigin;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -156,6 +182,571 @@ public class LmdbNativeEntryBindingSeedTest {
 		assertThat(rows(query, "x", bound))
 				.as("native rows must match the generic evaluator for a store-absent filter binding")
 				.isEqualTo(generic);
+	}
+
+	@Test
+	public void customInitialBindingPreservesExistsNotExistsAndOptionalResults() {
+		String query = "SELECT ?s ?alias ?optional WHERE { "
+				+ "?s <" + EX + "q> ?o . BIND(?x AS ?alias) "
+				+ "OPTIONAL { ?s <" + EX + "q> ?optional } "
+				+ "FILTER EXISTS { ?s <" + EX + "q> ?o } "
+				+ "FILTER NOT EXISTS { ?s <" + EX + "missing> ?none } }";
+		MutableIri bound = new MutableIri(EX + "before-custom-binding");
+		bound.change(EX + "after-custom-binding");
+		List<String> expected = List.of("alias=" + EX + "after-custom-binding|optional=\"plain\"|s=" + EX + "s2");
+		assertThat(genericRows(query, "x", bound)).isEqualTo(expected);
+		assertThat(rows(query, "x", bound)).isEqualTo(expected);
+	}
+
+	@Test
+	public void customComputedValueSurvivesCorrelatedExistsAndNotExists() {
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return "urn:rdf4j:test:entry-mutable-result";
+			}
+
+			@Override
+			@SuppressWarnings("deprecation")
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				return new MutableIri(EX + "generated-custom");
+			}
+		};
+		FunctionRegistry.getInstance().add(function);
+		try {
+			String query = "SELECT ?s ?custom WHERE { ?s <" + EX + "q> ?o . "
+					+ "BIND(<" + function.getURI() + ">(?o) AS ?custom) "
+					+ "FILTER EXISTS { { SELECT ?s WHERE { ?s <" + EX + "q> ?match } } "
+					+ "FILTER(BOUND(?custom)) } "
+					+ "FILTER NOT EXISTS { { SELECT ?s WHERE { ?s <" + EX + "missing> ?none } } } }";
+			Value unused = SimpleValueFactory.getInstance().createIRI(EX, "unused-entry");
+			List<String> expected = List.of("custom=" + EX + "generated-custom|s=" + EX + "s2");
+			assertThat(genericRows(query, "unused", unused)).isEqualTo(expected);
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				TupleQuery prepared = conn.prepareTupleQuery(query);
+				prepared.setBinding("unused", unused);
+				System.out.println("ENTRY_CUSTOM_EXISTS_PLAN " + prepared.explain(Explanation.Level.Optimized));
+			}
+			assertThat(rows(query, "unused", unused)).isEqualTo(expected);
+		} finally {
+			FunctionRegistry.getInstance().remove(function);
+		}
+	}
+
+	@Test
+	public void sharedStoreIdentityDoesNotProveEntryIdAcrossReadGenerations() {
+		assertEntryAuthorityMismatchFallsBackOrTranslates(new Object());
+	}
+
+	@Test
+	public void nullStoreIdentitiesDoNotProveEntryIdCompatibility() {
+		assertEntryAuthorityMismatchFallsBackOrTranslates(null);
+	}
+
+	@Test
+	public void sourceRenewalInvalidatesPreviouslyCapturedEntryId() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "before-renewal");
+		Value collision = SimpleValueFactory.getInstance().createIRI(EX, "after-renewal");
+		AtomicBoolean renewed = new AtomicBoolean();
+		Object identity = new Object();
+		Object originalLookup = new Object();
+		Object renewedLookup = new Object();
+		Object originalResult = new Object();
+		Object renewedResult = new Object();
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.idSpace()).thenReturn(identity);
+		when(source.valueLookupScope()).thenAnswer(call -> renewed.get() ? renewedLookup : originalLookup);
+		when(source.resultValueScope()).thenAnswer(call -> renewed.get() ? renewedResult : originalResult);
+		when(source.lazyValue(101L, 0)).thenAnswer(call -> renewed.get() ? collision : expected);
+		when(source.lazyValue(202L, 0)).thenReturn(expected);
+		when(source.idOf(expected, 0)).thenReturn(202L);
+		NativeSlotLayout layout = entryLayout();
+		RowBindingSetView row = new RowBindingSetView(source, layout, EmptyBindingSet.getInstance(),
+				new long[] { 101L }, true);
+		BindingSet snapshot = NativeEntryBindings.snapshot(row);
+		renewed.set(true);
+		assertSafeEntry(snapshot, source, layout, expected);
+	}
+
+	@Test
+	public void sameLiveSourceSeedsNativeEntriesWithoutAnotherLookup() {
+		Value value = SimpleValueFactory.getInstance().createIRI(EX, "same-authority");
+		NativeLmdbQuerySource backing = mock(NativeLmdbQuerySource.class);
+		when(backing.idSpace()).thenReturn(new Object());
+		when(backing.valueLookupScope()).thenReturn(new Object());
+		when(backing.resultValueScope()).thenReturn(new Object());
+		when(backing.idOf(any(Value.class), anyInt())).thenAnswer(call -> {
+			throw new AssertionError("a compatible native entry should not need another lookup");
+		});
+		PlanValueCatalog.Builder catalog = new PlanValueCatalog.Builder();
+		long id = catalog.internConstant(value);
+		SyntheticValueSource source = new SyntheticValueSource(backing, catalog.build());
+		NativeSlotLayout layout = entryLayout();
+		RowBindingSetView row = new RowBindingSetView(source, layout, EmptyBindingSet.getInstance(),
+				new long[] { id }, true);
+		BindingSet snapshot = NativeEntryBindings.snapshot(row);
+		assertAll(() -> assertCompatibleEntry(row, source, layout, id),
+				() -> assertCompatibleEntry(snapshot, source, layout, id));
+	}
+
+	@Test
+	public void runtimeEntryWithDetachedBackingGenerationSeedsChildWithoutAnotherLookup() {
+		Value value = SimpleValueFactory.getInstance().createIRI(EX, "pinned-runtime-entry");
+		NativeLmdbQuerySource backing = mock(NativeLmdbQuerySource.class);
+		when(backing.certifiesIdOrigins()).thenReturn(true);
+		DomainStamp backingDomain = new DomainStamp(new Object(), new Object(), new Object(), new Object(),
+				DomainStamp.EXPLICIT, null, null);
+		when(backing.detachedDomainStamp()).thenReturn(backingDomain);
+		AtomicInteger lookups = new AtomicInteger();
+		doAnswer(call -> {
+			lookups.incrementAndGet();
+			IdLookup lookup = call.getArgument(2);
+			lookup.set(NativeLmdbQuerySource.UNKNOWN_ID, IdOrigin.ABSENT);
+			return null;
+		}).when(backing).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		SyntheticValueSource source = new SyntheticValueSource(backing, PlanValueCatalog.EMPTY).forEvaluation();
+		SyntheticValueSource child = null;
+		try {
+			NativeSlotLayout layout = entryLayout();
+			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			long runtimeId = source.internComputedValue(value, 0);
+			row.slots[0] = runtimeId;
+			row.recomputeBoundMask();
+			BindingSet entry = NativeEntryBindings.snapshot(row.view);
+			child = source.forInvocation(entry);
+			assertThat(source.valueLookupScope()).isNull();
+			assertThat(source.resultValueScope()).isNull();
+			assertThat(source.detachedDomainStamp().sameDomain(child.detachedDomainStamp())).isTrue();
+			int lookupsBeforeSeed = lookups.get();
+			long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+			assertThat(NativeRowSeeder.seed(slots, layout, entry, child)).isTrue();
+			assertThat(slots[0]).isEqualTo(runtimeId);
+			assertThat(lookups).hasValue(lookupsBeforeSeed);
+		} finally {
+			if (child != null) {
+				child.executionContext().close();
+			}
+			source.executionContext().close();
+		}
+	}
+
+	@Test
+	public void sameRuntimeTableWithoutBackingGenerationCannotTrustPriorAbsence() {
+		Value value = SimpleValueFactory.getInstance().createIRI(EX, "newly-stored-runtime-entry");
+		NativeLmdbQuerySource backing = mock(NativeLmdbQuerySource.class);
+		when(backing.certifiesIdOrigins()).thenReturn(true);
+		AtomicBoolean nowStored = new AtomicBoolean();
+		long storedId = 77L;
+		doAnswer(call -> {
+			IdLookup lookup = call.getArgument(2);
+			if (nowStored.get()) {
+				lookup.set(storedId, IdOrigin.STORED);
+			} else {
+				lookup.set(NativeLmdbQuerySource.UNKNOWN_ID, IdOrigin.ABSENT);
+			}
+			return null;
+		}).when(backing).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		SyntheticValueSource source = new SyntheticValueSource(backing, PlanValueCatalog.EMPTY).forEvaluation();
+		SyntheticValueSource child = null;
+		try {
+			NativeSlotLayout layout = entryLayout();
+			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			long runtimeId = source.internComputedValue(value, 0);
+			assertThat(runtimeId).isNotEqualTo(storedId);
+			row.slots[0] = runtimeId;
+			row.recomputeBoundMask();
+			BindingSet entry = NativeEntryBindings.snapshot(row.view);
+			child = source.forInvocation(entry);
+			assertThat(source.executionContext().detachedRuntimeIdSpace())
+					.isSameAs(child.executionContext().detachedRuntimeIdSpace());
+			assertThat(source.valueLookupScope()).isNull();
+			assertThat(source.resultValueScope()).isNull();
+			assertThat(source.detachedDomainStamp()).isNull();
+			nowStored.set(true);
+			long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+			if (NativeRowSeeder.seed(slots, layout, entry, child)) {
+				assertThat(slots[0]).as("a newly stored term cannot reuse the old runtime-only ID")
+						.isEqualTo(storedId);
+			} else {
+				assertThat(entry.getValue("key")).isEqualTo(value);
+			}
+		} finally {
+			if (child != null) {
+				child.executionContext().close();
+			}
+			source.executionContext().close();
+		}
+	}
+
+	@Test
+	public void serializedEntryRetainsValuesAndGraphButNotLiveNativeAuthority() throws Exception {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "serialized-entry");
+		Value graph = SimpleValueFactory.getInstance().createIRI(EX, "serialized-graph");
+		NativeLmdbQuerySource backing = emptyEntrySource();
+		PlanValueCatalog.Builder catalog = new PlanValueCatalog.Builder();
+		long originalId = catalog.internConstant(expected);
+		SyntheticValueSource source = new SyntheticValueSource(backing, catalog.build());
+		MutableBindingSet base = new QueryBindingSet();
+		base.setBinding("unbound", null);
+		base = GraphFrameBindings.supply(base, "graph", graph);
+		RowBindingSetView row = new RowBindingSetView(source, entryLayout(), base, new long[] { originalId }, true);
+		BindingSet entry = NativeEntryBindings.snapshot(row);
+		assertThat(((NativeEntryBindings) entry).nativeId("key", source))
+				.as("the original snapshot must have admitted an actual native proof")
+				.isEqualTo(originalId);
+
+		byte[] serialized;
+		try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+				ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(entry);
+			output.flush();
+			serialized = bytes.toByteArray();
+		}
+		BindingSet restored;
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(serialized))) {
+			restored = (BindingSet) input.readObject();
+		}
+		assertThat(restored.getValue("key")).isEqualTo(expected);
+		assertThat(restored.hasBinding("unbound")).isTrue();
+		assertThat(restored.getValue("unbound")).isNull();
+		assertThat(restored.getValue("graph")).isEqualTo(graph);
+		assertThat(GraphFrameBindings.isSupplied(restored, "graph")).isTrue();
+		assertThat(((NativeEntryBindings) restored).nativeId("key", source))
+				.as("a serialized snapshot cannot carry the original live authority")
+				.isEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+
+		NativeLmdbQuerySource otherBacking = emptyEntrySource();
+		when(otherBacking.certifiesIdOrigins()).thenReturn(true);
+		doAnswer(call -> {
+			IdLookup lookup = call.getArgument(2);
+			lookup.set(NativeLmdbQuerySource.UNKNOWN_ID, IdOrigin.ABSENT);
+			return null;
+		}).when(otherBacking).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		PlanValueCatalog.Builder otherCatalog = new PlanValueCatalog.Builder();
+		Value collision = SimpleValueFactory.getInstance().createIRI(EX, "serialized-id-collision");
+		assertThat(otherCatalog.internConstant(collision)).isEqualTo(originalId);
+		SyntheticValueSource other = new SyntheticValueSource(otherBacking, otherCatalog.build()).forEvaluation();
+		try {
+			long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+			assertThat(NativeRowSeeder.seed(slots, entryLayout(), restored, other)).isTrue();
+			assertThat(slots[0]).isNotEqualTo(originalId);
+			assertThat(other.lazyValue(slots[0], 0)).isEqualTo(expected);
+		} finally {
+			other.executionContext().close();
+		}
+	}
+
+	@Test
+	public void unmaterializedLiveRowCannotReadAnIdFromARenewedGeneration() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "old-live-value");
+		Value collision = SimpleValueFactory.getInstance().createIRI(EX, "renewed-live-value");
+		AtomicBoolean renewed = new AtomicBoolean();
+		Object oldLookup = new Object();
+		Object newLookup = new Object();
+		Object oldResult = new Object();
+		Object newResult = new Object();
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.idSpace()).thenReturn(new Object());
+		when(source.valueLookupScope()).thenAnswer(call -> renewed.get() ? newLookup : oldLookup);
+		when(source.resultValueScope()).thenAnswer(call -> renewed.get() ? newResult : oldResult);
+		when(source.lazyValue(101L, 0)).thenAnswer(call -> renewed.get() ? collision : expected);
+		NativeSlotLayout layout = entryLayout();
+		RowBindingSetView row = new RowBindingSetView(source, layout, EmptyBindingSet.getInstance(),
+				new long[] { 101L }, true);
+		renewed.set(true);
+		long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+		try {
+			if (NativeRowSeeder.seed(slots, layout, row, source)) {
+				assertThat(source.lazyValue(slots[0], 0))
+						.as("a live row must not reinterpret an old ID in a renewed generation")
+						.isEqualTo(expected);
+			} else {
+				assertThat(row.getValue("key")).isEqualTo(expected);
+			}
+		} catch (QueryEvaluationException staleView) {
+			// A source that can no longer recover the original generation must fail before returning a wrong term.
+		}
+	}
+
+	@Test
+	public void mutableEntryValueCannotReuseItsOriginalSyntheticId() {
+		MutableIri value = new MutableIri(EX + "before-mutation");
+		NativeLmdbQuerySource backing = mock(NativeLmdbQuerySource.class);
+		when(backing.idSpace()).thenReturn(new Object());
+		when(backing.valueLookupScope()).thenReturn(new Object());
+		when(backing.resultValueScope()).thenReturn(new Object());
+		when(backing.idOf(any(Value.class), anyInt())).thenReturn(202L);
+		PlanValueCatalog.Builder catalog = new PlanValueCatalog.Builder();
+		long originalId = catalog.internConstant(value);
+		SyntheticValueSource source = new SyntheticValueSource(backing, catalog.build());
+		NativeSlotLayout layout = entryLayout();
+		BindingSet entry = NativeEntryBindings.snapshot(new RowBindingSetView(source, layout,
+				EmptyBindingSet.getInstance(), new long[] { originalId }, true));
+		value.change(EX + "after-mutation");
+		long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+		if (NativeRowSeeder.seed(slots, layout, entry, source)) {
+			assertThat(slots[0]).as("a mutated term must be resolved afresh").isEqualTo(202L);
+		} else {
+			assertThat(entry.getValue("key")).isSameAs(value);
+		}
+	}
+
+	@Test
+	public void uncertifiedLookupCannotSeedAnIdForADifferentTerm() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "external-input");
+		Value collision = SimpleValueFactory.getInstance().createIRI(EX, "lookup-collision");
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.idOf(expected, 0)).thenReturn(101L);
+		when(source.lazyValue(101L, 0)).thenReturn(collision);
+		QueryBindingSet entry = new QueryBindingSet();
+		entry.setBinding("key", expected);
+		assertSafeEntry(entry, source, entryLayout(), expected);
+	}
+
+	@Test
+	public void everyLookupMustCertifyItsOwnOrigin() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "promised-input");
+		Value collision = SimpleValueFactory.getInstance().createIRI(EX, "uncertified-result");
+		NativeLmdbQuerySource source = emptyEntrySource();
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		when(source.idOf(expected, 0)).thenReturn(101L);
+		when(source.lazyValue(101L, 0)).thenReturn(collision);
+		doAnswer(call -> {
+			IdLookup lookup = call.getArgument(2);
+			lookup.set(101L, IdOrigin.UNCERTIFIED);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		QueryBindingSet entry = new QueryBindingSet();
+		entry.setBinding("key", expected);
+		assertSafeEntry(entry, source, entryLayout(), expected);
+	}
+
+	@Test
+	public void lookupGenerationMustRemainStableWhileTranslatingEntry() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "stable-input");
+		Value collision = SimpleValueFactory.getInstance().createIRI(EX, "renewed-lookup");
+		AtomicBoolean renewed = new AtomicBoolean();
+		Object oldScope = new Object();
+		Object newScope = new Object();
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		when(source.valueLookupScope()).thenAnswer(call -> renewed.get() ? newScope : oldScope);
+		when(source.resultValueScope()).thenReturn(new Object());
+		when(source.idOf(expected, 0)).thenReturn(101L);
+		when(source.lazyValue(101L, 0)).thenReturn(collision);
+		doAnswer(call -> {
+			renewed.set(true);
+			IdLookup lookup = call.getArgument(2);
+			lookup.set(101L, IdOrigin.STORED);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		QueryBindingSet entry = new QueryBindingSet();
+		entry.setBinding("key", expected);
+		assertSafeEntry(entry, source, entryLayout(), expected);
+	}
+
+	@Test
+	public void certifiedStoredLookupSeedsTheCorrectTerm() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "certified-input");
+		NativeLmdbQuerySource source = emptyEntrySource();
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		when(source.lazyValue(202L, 0)).thenReturn(expected);
+		doAnswer(call -> {
+			IdLookup lookup = call.getArgument(2);
+			lookup.set(202L, IdOrigin.STORED);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		QueryBindingSet entry = new QueryBindingSet();
+		entry.setBinding("key", expected);
+		long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+		assertThat(NativeRowSeeder.seed(slots, entryLayout(), entry, source)).isTrue();
+		assertThat(slots[0]).isEqualTo(202L);
+		assertThat(source.lazyValue(slots[0], 0)).isEqualTo(expected);
+	}
+
+	@Test
+	public void certifiedPlanLookupUsesTheDestinationCatalog() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "certified-plan");
+		NativeLmdbQuerySource backing = emptyEntrySource();
+		when(backing.certifiesIdOrigins()).thenReturn(true);
+		doAnswer(call -> {
+			IdLookup lookup = call.getArgument(2);
+			lookup.set(NativeLmdbQuerySource.UNKNOWN_ID, IdOrigin.ABSENT);
+			return null;
+		}).when(backing).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		PlanValueCatalog.Builder catalog = new PlanValueCatalog.Builder();
+		long expectedId = catalog.internConstant(expected);
+		SyntheticValueSource source = new SyntheticValueSource(backing, catalog.build());
+		QueryBindingSet entry = new QueryBindingSet();
+		entry.setBinding("key", expected);
+		long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+		assertThat(NativeRowSeeder.seed(slots, entryLayout(), entry, source)).isTrue();
+		assertThat(slots[0]).isEqualTo(expectedId);
+		assertThat(source.lazyValue(slots[0], 0)).isSameAs(expected);
+	}
+
+	@Test
+	public void certifiedRuntimeLookupRequiresTheCurrentRuntimeAuthority() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "certified-runtime");
+		NativeLmdbQuerySource source = emptyEntrySource();
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		DomainStamp domain = new DomainStamp(new Object(), new Object(), new Object(), new Object(),
+				DomainStamp.EXPLICIT, null, new Object());
+		when(source.detachedDomainStamp()).thenReturn(domain);
+		when(source.lazyValue(303L, 0)).thenReturn(expected);
+		doAnswer(call -> {
+			IdLookup lookup = call.getArgument(2);
+			lookup.set(303L, IdOrigin.RUNTIME);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		QueryBindingSet entry = new QueryBindingSet();
+		entry.setBinding("key", expected);
+		long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+		assertThat(NativeRowSeeder.seed(slots, entryLayout(), entry, source)).isTrue();
+		assertThat(slots[0]).isEqualTo(303L);
+		assertThat(source.lazyValue(slots[0], 0)).isEqualTo(expected);
+	}
+
+	@Test
+	public void foreignPlanLookupIsNotProofOfBackingAbsence() {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "foreign-plan");
+		NativeLmdbQuerySource backing = emptyEntrySource();
+		when(backing.certifiesIdOrigins()).thenReturn(true);
+		when(backing.idOf(expected, 0)).thenReturn(77L);
+		doAnswer(call -> {
+			IdLookup lookup = call.getArgument(2);
+			lookup.set(77L, IdOrigin.PLAN);
+			return null;
+		}).when(backing).idOfWithOrigin(any(Value.class), anyInt(), any(IdLookup.class));
+		SyntheticValueSource source = new SyntheticValueSource(backing, PlanValueCatalog.EMPTY).forEvaluation();
+		try {
+			QueryBindingSet entry = new QueryBindingSet();
+			entry.setBinding("key", expected);
+			long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+			assertThat(NativeRowSeeder.seed(slots, entryLayout(), entry, source))
+					.as("a foreign PLAN hit cannot certify store absence for local runtime interning")
+					.isFalse();
+			assertThat(entry.getValue("key")).isSameAs(expected);
+		} finally {
+			source.executionContext().close();
+		}
+	}
+
+	@Test
+	public void aliasesKeepOriginalValuesAcrossDistinctPlanAndRuntimeAuthorities() {
+		Value planValue = SimpleValueFactory.getInstance().createIRI(EX, "origin-plan");
+		Value runtimeValue = SimpleValueFactory.getInstance().createIRI(EX, "origin-runtime");
+		PlanValueCatalog.Builder originCatalog = new PlanValueCatalog.Builder();
+		long planId = originCatalog.internConstant(planValue);
+		PlanValueCatalog.Builder otherCatalog = new PlanValueCatalog.Builder();
+		long otherPlanId = otherCatalog.internConstant(SimpleValueFactory.getInstance().createIRI(EX, "other-plan"));
+		NativeLmdbQuerySource originBacking = emptyEntrySource();
+		NativeLmdbQuerySource otherBacking = emptyEntrySource();
+		SyntheticValueSource origin = new SyntheticValueSource(originBacking, originCatalog.build()).forEvaluation();
+		SyntheticValueSource other = new SyntheticValueSource(otherBacking, otherCatalog.build()).forEvaluation();
+		try {
+			long runtimeId = origin.internComputedValue(runtimeValue, 0);
+			long otherRuntimeId = other.internComputedValue(SimpleValueFactory.getInstance()
+					.createIRI(EX, "other-runtime"), 0);
+			assertThat(otherPlanId).isEqualTo(planId);
+			assertThat(otherRuntimeId).isEqualTo(runtimeId);
+			NativeSlotLayout originLayout = new NativeSlotLayout(Map.of("plan", 0, "runtime", 1), null);
+			originLayout.freeze(List.of("plan", "runtime"));
+			RowBindingSetView row = new RowBindingSetView(origin, originLayout, EmptyBindingSet.getInstance(),
+					new long[] { planId, runtimeId }, true);
+			QueryBindingSet parameters = new QueryBindingSet();
+			parameters.setBinding("planAlias", planValue);
+			parameters.setBinding("runtimeAlias", runtimeValue);
+			parameters.setBinding("unbound", null);
+			BindingSet entry = NativeEntryBindings.preserveFrame(EmptyBindingSet.getInstance(), parameters, row,
+					new String[] { "plan", "runtime" }, new String[] { "planAlias", "runtimeAlias" });
+			NativeSlotLayout target = new NativeSlotLayout(Map.of("planAlias", 0, "runtimeAlias", 1, "unbound", 2),
+					null);
+			target.freeze(List.of("planAlias", "runtimeAlias", "unbound"));
+			long[] seeded = new long[3];
+			if (NativeRowSeeder.seed(seeded, target, entry, other)) {
+				assertThat(other.lazyValue(seeded[0], 0)).isEqualTo(planValue);
+				assertThat(other.lazyValue(seeded[1], 0)).isEqualTo(runtimeValue);
+				assertThat(seeded[2]).isZero();
+			}
+			assertThat(entry.getValue("planAlias")).isSameAs(planValue);
+			assertThat(entry.getValue("runtimeAlias")).isSameAs(runtimeValue);
+			assertThat(entry.hasBinding("unbound")).isTrue();
+			assertThat(entry.getValue("unbound")).isNull();
+		} finally {
+			origin.executionContext().close();
+			other.executionContext().close();
+		}
+	}
+
+	private static NativeLmdbQuerySource emptyEntrySource() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.idSpace()).thenReturn(new Object());
+		when(source.valueLookupScope()).thenReturn(new Object());
+		when(source.resultValueScope()).thenReturn(new Object());
+		when(source.idOf(any(Value.class), anyInt())).thenReturn(NativeLmdbQuerySource.UNKNOWN_ID);
+		return source;
+	}
+
+	private static final class MutableIri extends SimpleIRI {
+		private static final long serialVersionUID = 1L;
+
+		private MutableIri(String value) {
+			super(value);
+		}
+
+		private void change(String value) {
+			setIRIString(value);
+		}
+	}
+
+	private static void assertEntryAuthorityMismatchFallsBackOrTranslates(Object sharedIdSpace) {
+		Value expected = SimpleValueFactory.getInstance().createIRI(EX, "original");
+		Value collision = SimpleValueFactory.getInstance().createIRI(EX, "different");
+		NativeLmdbQuerySource origin = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource destination = mock(NativeLmdbQuerySource.class);
+		when(origin.idSpace()).thenReturn(sharedIdSpace);
+		when(destination.idSpace()).thenReturn(sharedIdSpace);
+		when(origin.valueLookupScope()).thenReturn(new Object());
+		when(destination.valueLookupScope()).thenReturn(new Object());
+		when(origin.resultValueScope()).thenReturn(new Object());
+		when(destination.resultValueScope()).thenReturn(new Object());
+		when(origin.lazyValue(101L, 0)).thenReturn(expected);
+		when(destination.lazyValue(101L, 0)).thenReturn(collision);
+		when(destination.lazyValue(202L, 0)).thenReturn(expected);
+		when(destination.idOf(expected, 0)).thenReturn(202L);
+		NativeSlotLayout layout = entryLayout();
+		RowBindingSetView row = new RowBindingSetView(origin, layout, EmptyBindingSet.getInstance(),
+				new long[] { 101L }, true);
+		BindingSet snapshot = NativeEntryBindings.snapshot(row);
+		assertAll(() -> assertSafeEntry(row, destination, layout, expected),
+				() -> assertSafeEntry(snapshot, destination, layout, expected));
+	}
+
+	private static NativeSlotLayout entryLayout() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+		layout.freeze(List.of("key"));
+		return layout;
+	}
+
+	private static void assertSafeEntry(BindingSet entry, NativeLmdbQuerySource destination, NativeSlotLayout layout,
+			Value expected) {
+		long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+		if (NativeRowSeeder.seed(slots, layout, entry, destination)) {
+			assertThat(destination.lazyValue(slots[0], 0))
+					.as("a reused or translated ID must resolve to the entry's exact term")
+					.isEqualTo(expected);
+		} else {
+			assertThat(entry.getValue("key")).as("a declined native seed retains the semantic fallback value")
+					.isEqualTo(expected);
+		}
+	}
+
+	private static void assertCompatibleEntry(BindingSet entry, NativeLmdbQuerySource source, NativeSlotLayout layout,
+			long id) {
+		long[] slots = { NativeLmdbQuerySource.UNKNOWN_ID };
+		assertThat(NativeRowSeeder.seed(slots, layout, entry, source)).isTrue();
+		assertThat(slots[0]).isEqualTo(id);
 	}
 
 	private void openRepository() {

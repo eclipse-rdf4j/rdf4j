@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +76,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelIdMasks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelProjectionCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelResultCoordinates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelWorkCounters;
@@ -228,6 +230,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private final boolean telemetry;
 
 	private KernelContext context;
+	private KernelResultCoordinates coordinates;
 	private KernelHooks hooks;
 	private KernelHooks keyHooks;
 	/** Query cancellation and optional private probe deadline; polled by every data-proportional loop. */
@@ -372,6 +375,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	private void bindOpen(KernelContext context) {
 		this.context = context;
+		context.fusedRuntime();
+		this.coordinates = context.resultCoordinates;
 		this.aggregateMemory = KernelRuntime.AggregateMemory.forLedger(context.groupMemoryLedger());
 		this.ran = false;
 		this.outCount = 0;
@@ -484,6 +489,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (maxRows <= 0)
 			return 0;
 		try {
+			if (coordinates != null && pullRows != null) {
+				coordinates.beginFill();
+			}
 			return fillOpen(rowBuffer, maxRows);
 		} catch (RuntimeException | Error failure) {
 			KernelRuntime.closeAfterFailure(this, failure);
@@ -596,7 +604,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		failure = KernelRuntime.closeResource(aggregateMemory, failure);
 		aggregateMemory = null;
 		chargeAggregateOutput = false;
+		if (context != null) {
+			failure = KernelRuntime.closeResource(context::releaseOwnedFusedRuntime, failure);
+		}
 		context = null;
+		coordinates = null;
 		hooks = null;
 		keyHooks = null;
 		cancel = null;
@@ -740,6 +752,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			if (position < emit.mods.offset)
 				continue;
 			System.arraycopy(rowScratch, 0, target, count * stride, stride);
+			if (coordinates != null) {
+				coordinates.emit();
+			}
 			count++;
 		}
 		return count;
@@ -748,16 +763,25 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	/** One frame per IR site, reused across correlated activations; no thread, replay, or generated-code fallback. */
 	private abstract class PullStage {
 		final long[] saved = new long[kernel.columnCount];
+		final int originFrame = coordinates == null ? -1 : coordinates.newFrame();
+		long clearBefore;
 		boolean active;
 
 		final void open() {
 			System.arraycopy(v, 0, saved, 0, v.length);
+			if (coordinates != null) {
+				coordinates.save(originFrame);
+			}
 			active = true; // publish ownership before activation, so failures are swept as well
 			reset();
 		}
 
 		final boolean next() {
 			System.arraycopy(saved, 0, v, 0, v.length);
+			if (coordinates != null) {
+				coordinates.restore(originFrame);
+				coordinates.clearMask(clearBefore);
+			}
 			poll();
 			return advance();
 		}
@@ -770,6 +794,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				release();
 			} finally {
 				System.arraycopy(saved, 0, v, 0, v.length);
+				if (coordinates != null) {
+					coordinates.restore(originFrame);
+					coordinates.releaseFrame(originFrame);
+				}
 			}
 		}
 
@@ -782,6 +810,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 	}
 
+	private static long producedColumns(Node node) {
+		BitSet produced = new BitSet();
+		node.produced(produced);
+		long[] words = produced.toLongArray();
+		return words.length == 0 ? 0L : words[0];
+	}
+
 	private final class PullPipeline implements AutoCloseable {
 		final PullStage[] stages;
 		int depth;
@@ -792,7 +827,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			for (int i = 0; i < nodes.size();) {
 				LmdbNativeProducerSchedule schedule = kernel.producerSchedules.get(nodes, nodes.get(i));
 				if (schedule == null) {
-					compiled.add(pullStage(nodes.get(i++)));
+					Node node = nodes.get(i++);
+					PullStage stage = pullStage(node);
+					if (!(node instanceof LeftGroup || node instanceof LexicalFrameLeftJoin
+							|| node instanceof Union || node instanceof BindAlias)) {
+						stage.clearBefore = producedColumns(node);
+					}
+					compiled.add(stage);
 				} else {
 					compiled.add(pullProjection(schedule, List.copyOf(nodes.subList(i, schedule.nextIndex))));
 					i = schedule.nextIndex;
@@ -852,8 +893,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private PullStage pullProjection(LmdbNativeProducerSchedule schedule, List<Node> ordinary) {
-		ProjectionProgram program = new ProjectionProgram(schedule);
+		ProjectionProgram program = new ProjectionProgram(schedule, true);
 		PullPipeline fallback = new PullPipeline(ordinary);
+		long produced = 0L;
+		for (Node node : ordinary) {
+			produced |= producedColumns(node);
+		}
+		final long producedBySchedule = produced;
 		return new PullStage() {
 			boolean ordinaryActive;
 
@@ -867,7 +913,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 			@Override
 			boolean advance() {
-				return ordinaryActive ? fallback.next() : program.cursor.advance();
+				boolean found = ordinaryActive ? fallback.next() : program.cursor.advance();
+				if (found && !ordinaryActive && coordinates != null && !program.transportsCoordinates()) {
+					// The scheduled physical projection has its own retained pages. Until it exports their source
+					// positions, preserve incoming origins but decline the columns it produced.
+					coordinates.clearMask(producedBySchedule);
+				}
+				return found;
 			}
 
 			@Override
@@ -886,6 +938,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		final LmdbNativeProducerSchedule schedule;
 		final Op[] entry = new Op[LmdbNativeProducerSchedule.GRAINS];
 		final long[][] saved = new long[LmdbNativeProducerSchedule.GRAINS][];
+		/** Frame indices followed by grain-local register masks for this scheduled site. */
+		final long[] originFrames;
 		final Map<FilterValue, IntUnaryOperator> pageReaders = new IdentityHashMap<>();
 		final Map<FilterValue, IntUnaryOperator> idReaders = new IdentityHashMap<>();
 		final Map<FilterValue, Integer> pageFacts = new IdentityHashMap<>();
@@ -893,10 +947,25 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		KernelProjectionCursor cursor;
 		KernelProjectionCursor.Owner owner;
 
-		ProjectionProgram(LmdbNativeProducerSchedule schedule) {
+		ProjectionProgram(LmdbNativeProducerSchedule schedule, boolean coordinateTransport) {
 			this.schedule = schedule;
+			this.originFrames = coordinateTransport && coordinates != null
+					? coordinates.newMetadataWords(2 * LmdbNativeProducerSchedule.GRAINS)
+					: null;
 			for (int level = 0; level < entry.length; level++) {
-				entry[level] = build(schedule.programs.get(level), 0, () -> true, true);
+				if (originFrames != null) {
+					long mask = 0L;
+					for (int column : schedule.savedColumns[level]) {
+						if (coordinates.tracks(column)) {
+							mask |= 1L << column;
+						}
+					}
+					originFrames[level] = mask == 0L ? -1 : coordinates.newFrame();
+					originFrames[LmdbNativeProducerSchedule.GRAINS + level] = mask;
+				}
+				entry[level] = originFrames == null
+						? build(schedule.programs.get(level), 0, () -> true, true)
+						: buildCoordinateProjectionEntry(schedule.programs.get(level), 0);
 				saved[level] = new long[schedule.savedColumns[level].length];
 				for (Node node : schedule.programs.get(level)) {
 					if (node instanceof FilterValue filter && filter.pageProof != null) {
@@ -908,6 +977,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			projectionPrograms.add(this);
 		}
 
+		boolean transportsCoordinates() {
+			return originFrames != null && coordinates.enabled();
+		}
+
+		private void releaseOrigins() {
+			if (originFrames != null) {
+				for (int level = 0; level < LmdbNativeProducerSchedule.GRAINS; level++) {
+					coordinates.releaseFrame((int) originFrames[level]);
+				}
+			}
+		}
+
 		private void clearPageFacts() {
 			if (!pageFacts.isEmpty()) {
 				pageFacts.clear();
@@ -916,6 +997,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		KernelProjectionCursor open() {
 			clearPageFacts();
+			if (originFrames != null) {
+				coordinates.save((int) originFrames[LmdbNativeProducerSchedule.INPUT]);
+			}
 			var layout = schedule.layout;
 			int[] inputs = schedule.savedColumns[LmdbNativeProducerSchedule.INPUT];
 			for (int index = 0; index < inputs.length; index++) {
@@ -925,6 +1009,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				if (owner == null) {
 					owner = KernelProjectionCursor.Owner.open(context.groupMemoryLedger(), schedule.retainedColumns());
 					if (owner == null) {
+						releaseOrigins();
 						return null;
 					}
 				}
@@ -940,18 +1025,25 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						layout.contextMatch() == null ? -1L : read(layout.contextMatch()), layout.excludeDefault(),
 						cancel, context.groupMemoryLedger(), schedule.retainedColumns());
 			}
+			if (cursor == null) {
+				releaseOrigins();
+			}
 			return cursor;
 		}
 
 		void closeCursor() {
 			KernelProjectionCursor owned = cursor;
 			cursor = null;
-			if (owned != null) {
-				try {
-					owned.closeActivation();
-				} finally {
-					workCounters.addProjection(owned);
+			try {
+				if (owned != null) {
+					try {
+						owned.closeActivation();
+					} finally {
+						workCounters.addProjection(owned);
+					}
 				}
+			} finally {
+				releaseOrigins();
 			}
 		}
 
@@ -1027,21 +1119,41 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				clearPageFacts();
 				if (layout.predicateCol() >= 0) {
 					v[layout.predicateCol()] = predicate;
+					if (originFrames != null) {
+						coordinates.clear(layout.predicateCol());
+					}
 				}
 				break;
 			case LmdbNativeProducerSchedule.ROOT:
 				if (layout.rootCol() >= 0) {
 					v[layout.rootCol()] = physical.rootId();
+					if (originFrames != null) {
+						coordinates.clear(layout.rootCol());
+					}
 				}
 				break;
 			case LmdbNativeProducerSchedule.FIBER:
 				if (layout.neighborCol() >= 0) {
 					v[layout.neighborCol()] = physical.neighborId();
+					if (originFrames != null && schedule.producer instanceof Probe probe) {
+						long run = physical.sourceRunToken();
+						coordinates.set(layout.neighborCol(), KernelResultCoordinates.adjacencyGroup(probe.adjacency),
+								run, physical.sourceFiberPosition(), 0L, run > 0L ? 1L : 0L);
+					} else if (originFrames != null) {
+						coordinates.clear(layout.neighborCol());
+					}
 				}
 				break;
 			case LmdbNativeProducerSchedule.QUAD:
 				if (layout.contextCol() >= 0) {
 					v[layout.contextCol()] = physical.contextId();
+					if (originFrames != null && schedule.producer instanceof Probe probe) {
+						long run = physical.sourceRunToken();
+						coordinates.set(layout.contextCol(), KernelResultCoordinates.adjacencyGroup(probe.adjacency),
+								run, physical.sourceContextPosition(), 1L, run > 0L ? 1L : 0L);
+					} else if (originFrames != null) {
+						coordinates.clear(layout.contextCol());
+					}
 				}
 				break;
 			default:
@@ -1056,6 +1168,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			} finally {
 				activeProjection = previous;
 			}
+			if (originFrames != null) {
+				coordinates.save((int) originFrames[level]);
+			}
 			int[] columns = schedule.savedColumns[level];
 			for (int index = 0; index < columns.length; index++) {
 				saved[level][index] = v[columns[index]];
@@ -1069,6 +1184,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				int[] columns = schedule.savedColumns[g];
 				for (int index = 0; index < columns.length; index++) {
 					v[columns[index]] = saved[g][index];
+				}
+				if (originFrames != null) {
+					coordinates.restore((int) originFrames[g], originFrames[LmdbNativeProducerSchedule.GRAINS + g]);
 				}
 			}
 		}
@@ -1131,10 +1249,65 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 	}
 
+	/** Builds only a coordinate-aware scheduled scalar program; ordinary interpreter programs stay unchanged. */
+	private Op buildCoordinateProjectionEntry(List<Node> nodes, int index) {
+		if (index == nodes.size()) {
+			return () -> true;
+		}
+		Node node = nodes.get(index);
+		Op next = buildCoordinateProjectionEntry(nodes, index + 1);
+		Op continuation;
+		if (node instanceof BindAlias alias) {
+			continuation = () -> {
+				if (alias.source.kind == Operand.COL) {
+					coordinates.copy(alias.dstCol, alias.source.index);
+				} else {
+					coordinates.clear(alias.dstCol);
+				}
+				return next.run();
+			};
+		} else {
+			long produced = producedColumns(node);
+			continuation = produced == 0L ? next : () -> {
+				coordinates.clearMask(produced);
+				return next.run();
+			};
+		}
+		return buildNode(node, continuation, true);
+	}
+
+	private int[] coordinatePlanOutputs(PlanRows plan) {
+		if (coordinates == null) {
+			return new int[0];
+		}
+		int[] indices = new int[plan.outCols.length];
+		int count = 0;
+		for (int i = 0; i < plan.outCols.length; i++) {
+			if (plan.inputForColumn(plan.outCols[i]) < 0 && coordinates.tracks(plan.outCols[i])) {
+				indices[count++] = i;
+			}
+		}
+		return count == indices.length ? indices : Arrays.copyOf(indices, count);
+	}
+
+	private boolean tracksAny(int[] columns) {
+		if (coordinates != null) {
+			for (int column : columns) {
+				if (coordinates.tracks(column)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	private PullStage pullStage(Node node) {
 		if (node instanceof PlanRows plan) {
 			return new PullStage() {
 				final long[] values = new long[Math.max(1, plan.outCols.length)];
+				final int[] outputIndices = coordinatePlanOutputs(plan);
+				final long[] origins = coordinates == null || outputIndices.length == 0 ? null
+						: coordinates.newSourceBatch(outputIndices.length);
 				KernelPlan.Cursor cursor;
 
 				@Override
@@ -1142,20 +1315,36 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					KernelPlan owner = context.plans[plan.plan];
 					for (int i = 0; i < plan.inputs.length; i++)
 						owner.setInput(i, read(plan.inputs[i]));
-					cursor = owner.open();
+					cursor = origins == null ? owner.open() : owner.openCoordinates(outputIndices);
 				}
 
 				@Override
 				boolean advance() {
 					KernelRuntime.checkCancelled(cancel);
 					// Pull one result, not an arbitrary batch: this is an observable/effectful boundary.
-					int count = cursor.fill(values, 1);
+					int count = origins == null ? cursor.fill(values, 1)
+							: cursor.fillCoordinates(values, origins, outputIndices, 1, coordinates);
 					if (count == 0)
 						return false;
 					if (count != 1)
 						throw new IllegalStateException("plan cursor exceeded row demand");
 					for (int i = 0; i < plan.outCols.length; i++)
 						v[plan.outCols[i]] = values[i];
+					if (origins != null) {
+						try {
+							for (int i = 0; i < outputIndices.length; i++) {
+								int at = i * KernelResultCoordinates.WIDTH;
+								coordinates.set(plan.outCols[outputIndices[i]],
+										origins[at + KernelResultCoordinates.GROUP],
+										origins[at + KernelResultCoordinates.PARENT],
+										origins[at + KernelResultCoordinates.POSITION],
+										origins[at + KernelResultCoordinates.COLUMN],
+										origins[at + KernelResultCoordinates.NAMESPACE]);
+							}
+						} finally {
+							coordinates.releaseBatch(origins, outputIndices.length);
+						}
+					}
 					return true;
 				}
 
@@ -1256,7 +1445,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				@Override
 				boolean advance() {
 					if (position < end) {
-						v[probe.valueCol] = cursor.neighborAt(position++);
+						long at = position++;
+						v[probe.valueCol] = cursor.neighborAt(at);
+						if (coordinates != null) {
+							long run = cursor.sourceRunToken();
+							coordinates.set(probe.valueCol, KernelResultCoordinates.adjacencyGroup(probe.adjacency),
+									run, at, 0L, run > 0L ? 1L : 0L);
+						}
 						return true;
 					}
 					if (end <= 0 && !nullSent) {
@@ -1283,8 +1478,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				boolean advance() {
 					if (position >= context.keyDomainLengths[domain.domain])
 						return false;
-					v[domain.col] = context.keyDomains[domain.domain][context.keyDomainOffsets[domain.domain]
-							+ position++];
+					int at = context.keyDomainOffsets[domain.domain] + position++;
+					v[domain.col] = context.keyDomains[domain.domain][at];
+					if (coordinates != null) {
+						coordinates.set(domain.col, KernelResultCoordinates.domainGroup(domain.domain), 0L, at, 0L, 1L);
+					}
 					if (site >= 0)
 						sipDriven[site]++;
 					return true;
@@ -1324,6 +1522,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						v[probe.valueCol] = (probe.ctxActive() ? cursor.neighborInContextSpan(at)
 								: cursor.neighborAt(at));
+						if (coordinates != null) {
+							long run = cursor.sourceRunToken();
+							long namespace = run > 0L ? 1L : 0L;
+							long group = KernelResultCoordinates.adjacencyGroup(probe.adjacency);
+							coordinates.set(probe.valueCol, group, run, at, 0L, namespace);
+							if (probe.ctxCol >= 0) {
+								coordinates.set(probe.ctxCol, group, run, at, 1L, namespace);
+							}
+						}
 						return true;
 					}
 					return false;
@@ -1406,6 +1613,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof ScanQuad scan) {
 			return new PullStage() {
 				final long[] values = new long[4];
+				final long[] origin = tracksAny(scan.outCols) ? coordinates.newSourceBatch(1) : null;
 				KernelQuadCursor cursor;
 
 				@Override
@@ -1420,14 +1628,28 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				@Override
 				boolean advance() {
 					KernelRuntime.checkCancelled(cancel);
-					int count = cursor.fill(values, 1);
+					int count = origin == null ? cursor.fill(values, 1) : cursor.fill(values, origin, 1);
 					if (count == 0)
 						return false;
 					if (count != 1)
 						throw new IllegalStateException("scan cursor exceeded row demand");
-					for (int i = 0; i < 4; i++)
-						if (scan.outCols[i] >= 0)
+					if (origin != null) {
+						coordinates.retainBatch(origin, 1);
+					}
+					for (int i = 0; i < 4; i++) {
+						if (scan.outCols[i] >= 0) {
 							v[scan.outCols[i]] = values[i];
+							if (origin != null) {
+								coordinates.set(scan.outCols[i], origin[KernelResultCoordinates.GROUP],
+										origin[KernelResultCoordinates.PARENT],
+										origin[KernelResultCoordinates.POSITION], i,
+										origin[KernelResultCoordinates.NAMESPACE]);
+							}
+						}
+					}
+					if (origin != null) {
+						coordinates.releaseBatch(origin, 1);
+					}
 					return true;
 				}
 
@@ -1457,8 +1679,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				boolean advance() {
 					while (branch < branches.length) {
 						if (!opened) {
-							for (int col : union.resetColumns())
+							for (int col : union.resetColumns()) {
 								v[col] = -1L;
+								if (coordinates != null) {
+									coordinates.clear(col);
+								}
+							}
 							branches[branch].reset();
 							opened = true;
 						}
@@ -1466,6 +1692,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							return true;
 						branches[branch].close();
 						System.arraycopy(saved, 0, v, 0, v.length);
+						if (coordinates != null) {
+							coordinates.restore(originFrame);
+						}
 						branch++;
 						opened = false;
 					}
@@ -1500,8 +1729,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					if (!matched && !nullSent) {
 						nullSent = true;
 						System.arraycopy(saved, 0, v, 0, v.length);
-						for (int col : left.resetColumns())
+						if (coordinates != null) {
+							coordinates.restore(originFrame);
+						}
+						for (int col : left.resetColumns()) {
 							v[col] = -1L;
+							if (coordinates != null) {
+								coordinates.clear(col);
+							}
+						}
 						return true;
 					}
 					return false;
@@ -1516,14 +1752,25 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof LexicalFrameLeftJoin lexical) {
 			PullPipeline left = new PullPipeline(lexical.left);
 			PullPipeline right = new PullPipeline(lexical.right);
+			long problemMask = 0L;
+			for (int col : lexical.problemCols) {
+				if (col < Long.SIZE) {
+					problemMask |= 1L << col;
+				}
+			}
+			final long restoreProblems = problemMask;
 			return new PullStage() {
 				final long[] leftRow = new long[kernel.columnCount];
+				final int leftOriginFrame = coordinates == null ? -1 : coordinates.newFrame();
 				boolean rightActive, rightExists;
 
 				@Override
 				void reset() {
 					rightActive = rightExists = false;
 					clearLexicalFrame(lexical.problemCols);
+					if (coordinates != null) {
+						coordinates.clearMask(restoreProblems);
+					}
 					left.reset();
 				}
 
@@ -1544,6 +1791,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 								if (compatible) {
 									for (int col : lexical.problemCols)
 										v[col] = saved[col];
+									if (coordinates != null) {
+										coordinates.restore(originFrame, restoreProblems);
+									}
 									return true;
 								}
 							}
@@ -1551,18 +1801,37 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							rightActive = false;
 							if (!rightExists) {
 								System.arraycopy(leftRow, 0, v, 0, v.length);
-								for (int col : lexical.resetColumns())
+								if (coordinates != null) {
+									coordinates.restore(leftOriginFrame);
+								}
+								for (int col : lexical.resetColumns()) {
 									v[col] = -1L;
+									if (coordinates != null) {
+										coordinates.clear(col);
+									}
+								}
 								for (int col : lexical.problemCols)
 									v[col] = saved[col];
+								if (coordinates != null) {
+									coordinates.restore(originFrame, restoreProblems);
+								}
 								return true;
 							}
 						}
 						clearLexicalFrame(lexical.problemCols);
+						if (coordinates != null) {
+							coordinates.clearMask(restoreProblems);
+						}
 						if (!left.next())
 							return false;
 						System.arraycopy(v, 0, leftRow, 0, v.length);
+						if (coordinates != null) {
+							coordinates.save(leftOriginFrame);
+						}
 						clearLexicalFrame(lexical.problemCols);
+						if (coordinates != null) {
+							coordinates.clearMask(restoreProblems);
+						}
 						right.reset();
 						rightActive = true;
 						rightExists = false;
@@ -1584,6 +1853,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							failure = problem;
 						else if (failure != problem)
 							failure.addSuppressed(problem);
+					}
+					if (coordinates != null) {
+						coordinates.releaseFrame(leftOriginFrame);
 					}
 					KernelRuntime.rethrowCloseFailure(failure);
 				}
@@ -1657,7 +1929,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					if (done)
 						return false;
 					done = true;
-					return scalar.run();
+					boolean found = scalar.run();
+					if (found && coordinates != null && node instanceof BindAlias alias) {
+						if (alias.source.kind == Operand.COL) {
+							coordinates.copy(alias.dstCol, alias.source.index);
+						} else {
+							coordinates.clear(alias.dstCol);
+						}
+					}
+					return found;
 				}
 			};
 		}
@@ -2408,7 +2688,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (schedule != null) {
 			Op continuation = build(nodes, schedule.nextIndex, terminal, booleanMode);
 			Op fallback = buildNode(nodes.get(idx), build(nodes, idx + 1, terminal, booleanMode), booleanMode);
-			ProjectionProgram program = new ProjectionProgram(schedule);
+			ProjectionProgram program = new ProjectionProgram(schedule, false);
 			return () -> {
 				if (schedule.weightedNumeric && !hooks.supportsWeightedNumericAggregates()) {
 					return fallback.run();
@@ -5112,32 +5392,37 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (!telemetry) {
 			return;
 		}
-		LmdbFusedKernelRuntime.markNestedKernelFactorization();
+		context.fusedRuntime().markNestedKernelFactorization();
 		for (int i = 0; i < kernel.requirements.domains; i++) {
-			LmdbFusedKernelRuntime.installExactDomain(i, "keyDomain[" + i + "]", "KernelContext.keyDomains[" + i + "]",
-					context.keyDomains[i], context.keyDomainOffsets[i], context.keyDomainLengths[i]);
+			context.fusedRuntime()
+					.installExactDomain(i, "keyDomain[" + i + "]", "KernelContext.keyDomains[" + i + "]",
+							context.keyDomains[i], context.keyDomainOffsets[i], context.keyDomainLengths[i]);
 		}
 		for (FilterInConstants filter : sipFilterSites) {
-			LmdbFusedKernelRuntime.registerDomainConsumer(filter.domain,
-					filter.consumer == null ? "exact-membership" : filter.consumer);
+			context.fusedRuntime()
+					.registerDomainConsumer(filter.domain,
+							filter.consumer == null ? "exact-membership" : filter.consumer);
 		}
 		for (EnumerateDomain enumerate : sipDrivenSites) {
-			LmdbFusedKernelRuntime.registerDomainConsumer(enumerate.domain,
-					enumerate.consumer == null ? "domain-driven" : enumerate.consumer);
+			context.fusedRuntime()
+					.registerDomainConsumer(enumerate.domain,
+							enumerate.consumer == null ? "domain-driven" : enumerate.consumer);
 		}
 		for (Node batch : sipBatchProbeSites) {
 			if (batch instanceof SipDomainProbe) {
 				SipDomainProbe probe = (SipDomainProbe) batch;
-				LmdbFusedKernelRuntime.registerDomainConsumer(probe.domain,
-						"BatchProbe(adjacency=" + probe.probeAdjacency + ")");
+				context.fusedRuntime()
+						.registerDomainConsumer(probe.domain,
+								"BatchProbe(adjacency=" + probe.probeAdjacency + ")");
 			}
 		}
 		for (int i = 0; i < filterSites.size(); i++) {
 			Node filter = filterSites.get(i);
 			int selected = filter.selectedFilterStage >= 0 ? filter.selectedFilterStage : i;
 			int original = filter.originalFilterStage >= 0 ? filter.originalFilterStage : selected;
-			LmdbFusedKernelRuntime.recordGeneratedFilterPlacement(filterKey(filter), filterLabel(filter), original,
-					selected);
+			context.fusedRuntime()
+					.recordGeneratedFilterPlacement(filterKey(filter), filterLabel(filter), original,
+							selected);
 		}
 	}
 
@@ -5147,44 +5432,52 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		for (int i = 0; i < sipFilterSites.size(); i++) {
 			FilterInConstants filter = sipFilterSites.get(i);
-			LmdbFusedKernelRuntime.recordSipBatch(filter.domain,
-					filter.consumer == null ? "exact-membership" : filter.consumer, sipTest[i], sipReject[i]);
+			context.fusedRuntime()
+					.recordSipBatch(filter.domain,
+							filter.consumer == null ? "exact-membership" : filter.consumer, sipTest[i], sipReject[i]);
 		}
 		for (int i = 0; i < sipDrivenSites.size(); i++) {
 			EnumerateDomain enumerate = sipDrivenSites.get(i);
-			LmdbFusedKernelRuntime.recordDomainDriven(enumerate.domain,
-					enumerate.consumer == null ? "domain-driven" : enumerate.consumer, sipDriven[i]);
+			context.fusedRuntime()
+					.recordDomainDriven(enumerate.domain,
+							enumerate.consumer == null ? "domain-driven" : enumerate.consumer, sipDriven[i]);
 		}
 		for (int i = 0; i < implicitSipDrivenSites.size(); i++) {
 			EnumerateAdjKeys enumerate = implicitSipDrivenSites.get(i);
-			LmdbFusedKernelRuntime.recordImplicitDomainDriven("adjacency-key-domain[a=" + enumerate.adjacency + "]",
-					"physical adjacency key cursor",
-					enumerate.sipConsumer == null ? "domain-driven probe" : enumerate.sipConsumer,
-					"ADJACENCY_KEY_DOMAIN", true, Long.MAX_VALUE, implicitSipDriven[i]);
+			context.fusedRuntime()
+					.recordImplicitDomainDriven("adjacency-key-domain[a=" + enumerate.adjacency + "]",
+							"physical adjacency key cursor",
+							enumerate.sipConsumer == null ? "domain-driven probe" : enumerate.sipConsumer,
+							"ADJACENCY_KEY_DOMAIN", true, Long.MAX_VALUE, implicitSipDriven[i]);
 		}
 		for (int i = 0; i < sipBatchProbeSites.size(); i++) {
 			Node batch = sipBatchProbeSites.get(i);
 			if (batch instanceof SipDomainProbe) {
 				SipDomainProbe probe = (SipDomainProbe) batch;
-				LmdbFusedKernelRuntime.recordSipBatch(probe.domain,
-						"BatchProbe(adjacency=" + probe.probeAdjacency + ")", sipBatchTests[i], sipBatchRejects[i]);
+				context.fusedRuntime()
+						.recordSipBatch(probe.domain,
+								"BatchProbe(adjacency=" + probe.probeAdjacency + ")", sipBatchTests[i],
+								sipBatchRejects[i]);
 			} else {
 				SipKeyProbe probe = (SipKeyProbe) batch;
-				LmdbFusedKernelRuntime.recordImplicitSip("adjacency-key-batch[a=" + probe.domainAdjacency + "]",
-						"physical adjacency key cursor", "BatchProbe(adjacency=" + probe.probeAdjacency + ")",
-						"ADJACENCY_BATCH_SEMIJOIN", true, Long.MAX_VALUE, sipBatchTests[i], sipBatchRejects[i]);
+				context.fusedRuntime()
+						.recordImplicitSip("adjacency-key-batch[a=" + probe.domainAdjacency + "]",
+								"physical adjacency key cursor", "BatchProbe(adjacency=" + probe.probeAdjacency + ")",
+								"ADJACENCY_BATCH_SEMIJOIN", true, Long.MAX_VALUE, sipBatchTests[i], sipBatchRejects[i]);
 			}
 		}
 		for (int i = 0; i < filterSites.size(); i++) {
 			Node filter = filterSites.get(i);
 			int selected = filter.selectedFilterStage >= 0 ? filter.selectedFilterStage : i;
 			int original = filter.originalFilterStage >= 0 ? filter.originalFilterStage : selected;
-			LmdbFusedKernelRuntime.observeGeneratedFilter(filterKey(filter), filterLabel(filter), original, selected,
-					rfTest[i], rfAccept[i], 0L, rfTest[i] - rfAccept[i]);
+			context.fusedRuntime()
+					.observeGeneratedFilter(filterKey(filter), filterLabel(filter), original, selected,
+							rfTest[i], rfAccept[i], 0L, rfTest[i] - rfAccept[i]);
 		}
 		if (!filterSites.isEmpty()) {
-			LmdbFusedKernelRuntime.recordFactorizedLevel(0L, 0L, factorCandidates,
-					factorCandidates - factorRejected, factorRejected, 0L, factorCandidates, 0L);
+			context.fusedRuntime()
+					.recordFactorizedLevel(0L, 0L, factorCandidates,
+							factorCandidates - factorRejected, factorRejected, 0L, factorCandidates, 0L);
 		}
 	}
 

@@ -258,6 +258,11 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 		}
 
 		@Override
+		public long sourceRunToken() {
+			return token;
+		}
+
+		@Override
 		public long bind(long key) {
 			return bindSize(key);
 		}

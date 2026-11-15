@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
@@ -32,6 +34,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * Query source over a compiled plan's synthetic id spaces. Two lifetimes share this class:
@@ -72,10 +76,18 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	private final LmdbNativeTermAuthority authority;
 	private NativeGeneratedKeyPlan generatedKeyPlan = NativeGeneratedKeyPlan.NONE;
 	private NativeGeneratedKeyAuthority generatedKeyAuthority;
+	private boolean generatedKeyActivationPending;
 	/**
 	 * Shared token for wrappers with the same complete synthetic term space; {@code null} means this source owns it.
 	 */
 	private final Object syntheticIdSpace;
+	/** Detached identity for this exact facade; it does not retain the source, catalog, or runtime owner. */
+	private final Object entryAuthorityToken = new Object();
+	private volatile boolean entryDomainAnchored;
+	private volatile EntryDomainAnchor entryDomainAnchor;
+	/** Only frames made for this exact source may retain its delegate or worker-owned authorities. */
+	private ConditionFrames conditionFrames;
+	private boolean conditionFramesClosed;
 
 	/** Compile-scoped carrier: catalog resolution only, no runtime interning. */
 	SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog) {
@@ -127,6 +139,10 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		if (parent == null && context != null) {
 			parent = this;
 		}
+		return forInvocation(bindings, parent);
+	}
+
+	private SyntheticValueSource forInvocation(BindingSet bindings, SyntheticValueSource parent) {
 		if (parent != null && parent.queryExecutionPolicy == queryExecutionPolicy) {
 			boolean shareTerms = parent.delegate == delegate && parent.catalog == catalog
 					&& parent.generatedKeyAuthority == null;
@@ -140,7 +156,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	/** Shares scalar/term authority while masking the independent entry frame used by nested native subqueries. */
-	NativeExecutionContext forConditionBindings(ConditionBindingScope scope) {
+	private NativeExecutionContext newConditionFrame(ConditionBindingScope scope) {
 		BindingSet base = context.queryBase();
 		QueryBindingSet projected = NativeEntryBindings.copyValues(base);
 		for (String name : base.getBindingNames()) {
@@ -150,8 +166,158 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		}
 		NativeExecutionContext projectedContext = new NativeExecutionContext(context,
 				NativeEntryBindings.preserve(base, projected));
-		new SyntheticValueSource(delegate, catalog, projectedContext, idSpace(), queryExecutionPolicy);
-		return projectedContext;
+		try {
+			new SyntheticValueSource(delegate, catalog, projectedContext, idSpace(), queryExecutionPolicy);
+			return projectedContext;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(projectedContext, failure),
+					failure);
+			throw failure;
+		}
+	}
+
+	/** Reuses a live source's projected frame without installing worker identities on the query-frame owner. */
+	final NativeExecutionContext conditionFrame(ConditionBindingScope scope) {
+		if (context == null) {
+			throw new IllegalStateException("condition frame requires an evaluation source");
+		}
+		// Frame creation may touch the query owner. Keep that owner alive without holding the source directory lock.
+		try (NativeExecutionContext.Lease ignored = context.retainActiveLease()) {
+			ConditionFrames frames;
+			synchronized (this) {
+				if (conditionFramesClosed) {
+					throw new IllegalStateException("condition frame source is closed");
+				}
+				if (conditionFrames == null) {
+					conditionFrames = new ConditionFrames(this);
+				}
+				frames = conditionFrames;
+			}
+			return frames.frame(scope);
+		}
+	}
+
+	/** Requests frame closure; a worker's delegate is released only after its final frame reader has drained. */
+	final void closeConditionFrames(Runnable afterDrained) {
+		ConditionFrames frames;
+		synchronized (this) {
+			if (conditionFramesClosed) {
+				return;
+			}
+			conditionFramesClosed = true;
+			frames = conditionFrames;
+			conditionFrames = null;
+		}
+		if (frames == null) {
+			if (afterDrained != null) {
+				afterDrained.run();
+			}
+		} else {
+			frames.close(afterDrained);
+		}
+	}
+
+	/**
+	 * The directory belongs to one source, not the shared query frame. It owns no execution lease: active consumers
+	 * retain frames themselves, while idle cached producers are closed by their frame. In-flight creation delays source
+	 * retirement without holding this monitor across user code or context cleanup.
+	 */
+	private static final class ConditionFrames {
+		private final SyntheticValueSource source;
+		private final Map<ConditionBindingScope, NativeExecutionContext> frames = new HashMap<>();
+		private int creating;
+		private boolean closing;
+		private Runnable afterDrained;
+
+		private ConditionFrames(SyntheticValueSource source) {
+			this.source = source;
+		}
+
+		private NativeExecutionContext frame(ConditionBindingScope scope) {
+			synchronized (this) {
+				if (closing) {
+					throw new IllegalStateException("condition frame source is closed");
+				}
+				NativeExecutionContext existing = frames.get(scope);
+				if (existing != null) {
+					return existing;
+				}
+				creating++;
+			}
+			NativeExecutionContext created = null;
+			boolean published = false;
+			Throwable primary = null;
+			try {
+				created = source.newConditionFrame(scope);
+				NativeExecutionContext candidate = created;
+				candidate.onFinalClose(() -> frameDrained(scope, candidate));
+				synchronized (this) {
+					if (closing) {
+						throw new IllegalStateException("condition frame source is closed");
+					}
+					NativeExecutionContext existing = frames.get(scope);
+					if (existing != null) {
+						return existing;
+					}
+					frames.put(scope, candidate);
+					published = true;
+					return candidate;
+				}
+			} catch (RuntimeException | Error problem) {
+				primary = problem;
+				throw problem;
+			} finally {
+				Throwable failure = published ? primary : KernelRuntime.closeResource(created, primary);
+				Runnable drained;
+				synchronized (this) {
+					creating--;
+					drained = takeDrainedAction();
+				}
+				if (drained != null) {
+					failure = KernelRuntime.closeResource(drained::run, failure);
+				}
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, primary);
+			}
+		}
+
+		private void close(Runnable action) {
+			NativeExecutionContext[] snapshot;
+			Runnable drained;
+			synchronized (this) {
+				closing = true;
+				afterDrained = action;
+				snapshot = frames.values().toArray(NativeExecutionContext[]::new);
+				drained = takeDrainedAction();
+			}
+			Throwable failure = null;
+			for (NativeExecutionContext frame : snapshot) {
+				failure = KernelRuntime.closeResource(frame, failure);
+			}
+			if (drained != null) {
+				failure = KernelRuntime.closeResource(drained::run, failure);
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+
+		private void frameDrained(ConditionBindingScope scope, NativeExecutionContext frame) {
+			Runnable drained;
+			synchronized (this) {
+				frames.remove(scope, frame);
+				drained = takeDrainedAction();
+			}
+			if (drained != null) {
+				drained.run();
+			}
+		}
+
+		private Runnable takeDrainedAction() {
+			if (!closing || creating != 0 || !frames.isEmpty()) {
+				return null;
+			}
+			Runnable result = afterDrained;
+			afterDrained = null;
+			return result;
+		}
 	}
 
 	/** Returns the active source for a nested raw-source operator, or creates an empty-catalog evaluation source. */
@@ -189,16 +355,105 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		return forInvocation(source, policy, bindings);
 	}
 
+	/** A quote takes its parent authority explicitly and never attaches a current evaluation. */
+	static SyntheticValueSource forOwnedQuote(NativeLmdbQuerySource compiled, NativeLmdbQuerySource parentSource,
+			QueryExecutionPolicy policy, BindingSet bindings) {
+		if (!(parentSource instanceof SyntheticValueSource parent) || parent.context == null
+				|| parent.queryExecutionPolicy != policy) {
+			return null;
+		}
+		SyntheticValueSource template = compiled instanceof SyntheticValueSource synthetic ? synthetic
+				: new SyntheticValueSource(compiled, PlanValueCatalog.EMPTY, policy);
+		return template.queryExecutionPolicy == policy ? template.forInvocation(bindings, parent) : null;
+	}
+
+	static SyntheticValueSource forOwnedQuote(NativeLmdbQuerySource compiled, NativeLmdbQuerySource parent,
+			QueryExecutionPolicy policy, BindingSet bindings, NativeGeneratedKeyPlan proof, NativeSlotLayout layout) {
+		SyntheticValueSource result = forOwnedQuote(compiled, parent, policy, bindings);
+		return result == null ? null : configureInvocation(result, proof, layout, bindings, false);
+	}
+
 	/** Activate once, before evaluation: no first-batch guesses, property changes or mutable plan flags. */
 	SyntheticValueSource forInvocation(NativeGeneratedKeyPlan proof, NativeSlotLayout layout, BindingSet bindings) {
-		SyntheticValueSource result = forInvocation(bindings);
-		if (proof.enabled(layout, bindings)) {
-			result.generatedKeyPlan = proof;
-			result.generatedKeyAuthority = result.context.nativeState(proof,
-					() -> new NativeGeneratedKeyAuthority(result.authority, result.context));
-			proof.activated();
+		return forInvocation(proof, layout, bindings, true);
+	}
+
+	/** Creates a fragment under the explicitly bound query owner, independently of any ambient evaluation. */
+	SyntheticValueSource forExplicitInvocation(NativeExecutionContext parent, NativeGeneratedKeyPlan proof,
+			NativeSlotLayout layout, BindingSet bindings) {
+		if (parent == null || parent.queryExecutionPolicy != queryExecutionPolicy) {
+			throw new IllegalArgumentException("native fragment requires its exact query execution policy");
 		}
-		return result;
+		SyntheticValueSource result;
+		if (context == null) {
+			result = forOwnedFragment(parent, bindings);
+		} else {
+			if (!context.sharesQueryScope(parent)) {
+				throw new IllegalArgumentException("native fragment source belongs to another query owner");
+			}
+			// Use this source's term owner and catalog even if another frame shares the same scalar query scope.
+			result = forInvocation(bindings, this);
+		}
+		if (result == null) {
+			throw new IllegalStateException("native fragment could not create its explicit source frame");
+		}
+		return configureInvocation(result, proof, layout, bindings, true);
+	}
+
+	SyntheticValueSource forInvocation(NativeGeneratedKeyPlan proof, NativeSlotLayout layout, BindingSet bindings,
+			boolean recordActivation) {
+		return configureInvocation(forInvocation(bindings), proof, layout, bindings, recordActivation);
+	}
+
+	/** Prepares a child from this exact evaluation source without consulting a current-source scope. */
+	SyntheticValueSource forOwnedInvocation(NativeGeneratedKeyPlan proof, NativeSlotLayout layout,
+			BindingSet bindings) {
+		if (context == null) {
+			throw new IllegalStateException("owned native invocation requires an evaluation source");
+		}
+		return configureInvocation(forInvocation(bindings, this), proof, layout, bindings, false);
+	}
+
+	/** Creates an explicitly owned fragment source over a compile-time catalog and the supplied query frame. */
+	SyntheticValueSource forOwnedFragment(NativeExecutionContext parent, BindingSet bindings) {
+		if (context != null || parent == null || parent.queryExecutionPolicy != queryExecutionPolicy) {
+			return null;
+		}
+		NativeExecutionContext child = new NativeExecutionContext(parent, bindings, true);
+		try {
+			return new SyntheticValueSource(delegate, catalog, child, null, queryExecutionPolicy);
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeResource(child, failure);
+			throw failure;
+		}
+	}
+
+	private static SyntheticValueSource configureInvocation(SyntheticValueSource result,
+			NativeGeneratedKeyPlan proof, NativeSlotLayout layout, BindingSet bindings, boolean recordActivation) {
+		try {
+			if (proof.enabled(layout, bindings)) {
+				result.generatedKeyPlan = proof;
+				result.generatedKeyAuthority = result.context.nativeState(proof,
+						() -> new NativeGeneratedKeyAuthority(result.authority, result.context));
+				if (recordActivation) {
+					proof.activated();
+				} else {
+					result.generatedKeyActivationPending = true;
+				}
+			}
+			return result;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeResource(result.context, failure);
+			throw failure;
+		}
+	}
+
+	/** A speculative physical source becomes an activation only when its candidate is opened. */
+	synchronized void recordGeneratedKeyActivation() {
+		if (generatedKeyActivationPending) {
+			generatedKeyActivationPending = false;
+			generatedKeyPlan.activated();
+		}
 	}
 
 	NativeTermAuthority keyAuthority() {
@@ -406,8 +661,77 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public void idOfWithOrigin(Value value, int positionMask, IdLookup result) throws QueryEvaluationException {
+		delegate.idOfWithOrigin(value, positionMask, result);
+		if (result.origin() == IdOrigin.PLAN || result.origin() == IdOrigin.RUNTIME) {
+			// A foreign synthetic hit does not itself prove absence from the backing statement dictionary.
+			if (!result.backingAbsenceCertified()) {
+				result.set(UNKNOWN, IdOrigin.UNCERTIFIED);
+				return;
+			}
+			// The delegated lookup proved backing absence, but its numeric synthetic ID is not our catalog's ID.
+			result.set(UNKNOWN, IdOrigin.ABSENT);
+		}
+		if (value != null && result.origin() == IdOrigin.ABSENT) {
+			long id = catalog.idOf(value);
+			if (id == UNKNOWN) {
+				result.set(UNKNOWN, IdOrigin.ABSENT);
+			} else {
+				result.setPlanAfterBackingAbsence(id);
+			}
+		}
+	}
+
+	@Override
+	public boolean certifiesIdOrigins() {
+		return delegate.certifiesIdOrigins();
+	}
+
+	@Override
+	public long knownStatementId(LmdbValue value) {
+		return delegate.knownStatementId(value);
+	}
+
+	@Override
 	public Object valueLookupScope() {
 		return delegate.valueLookupScope();
+	}
+
+	@Override
+	public DomainStamp detachedDomainStamp() {
+		DomainStamp backing = delegate.detachedDomainStamp();
+		if (backing == null) {
+			return null;
+		}
+		Object plan = backing.planCatalog();
+		if (!catalog.isEmpty()) {
+			Object ownPlan = catalog.detachedIdentity();
+			if (ownPlan == null || plan != null && plan != ownPlan) {
+				// Different plan catalogs can assign the same numeric ID to different spellings.
+				return null;
+			}
+			plan = ownPlan;
+		}
+		Object runtime = backing.runtimeAuthority();
+		if (context != null) {
+			Object ownRuntime = context.detachedRuntimeIdSpace();
+			if (runtime != null && runtime != ownRuntime) {
+				// Independent runtime tables use the same numeric range and cannot be copied raw.
+				return null;
+			}
+			runtime = ownRuntime;
+		}
+		DomainStamp checked = delegate.detachedDomainStamp();
+		if (!backing.sameDomain(checked) || context != null && context.isClosed()) {
+			return null;
+		}
+		return new DomainStamp(backing.storedIdSpace(), backing.lookupScope(), backing.resultScope(),
+				backing.statementSnapshot(), backing.statementMask(), plan, runtime);
+	}
+
+	@Override
+	public Object resultValueScope() {
+		return delegate.resultValueScope();
 	}
 
 	@Override
@@ -442,6 +766,45 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public Object idSpace() {
 		return syntheticIdSpace == null ? this : syntheticIdSpace;
+	}
+
+	/** Same-facade entry proofs also require current non-null lookup/result views and value witnesses. */
+	Object entryAuthorityToken() {
+		return generatedKeyAuthority != null || context != null && context.isClosed() ? null : entryAuthorityToken;
+	}
+
+	/** Exact catalog membership, without assuming an ID range or resolving its RDF spelling. */
+	boolean ownsPlanId(long id) {
+		return entryAuthorityToken() != null && catalog.frozenContains(id)
+				&& (context == null || !context.contains(id));
+	}
+
+	/** Source-owned snapshot taken before an ID-producing cursor is opened. */
+	record EntryDomainAnchor(Object facade, Object lookup, Object result, DomainStamp domain) {
+	}
+
+	void anchorEntryDomain() {
+		if (entryDomainAnchored) {
+			return;
+		}
+		Object facade = entryAuthorityToken();
+		Object lookup = valueLookupScope();
+		Object result = resultValueScope();
+		DomainStamp domain = detachedDomainStamp();
+		boolean stable = facade != null && lookup != null && result != null && facade == entryAuthorityToken()
+				&& lookup == valueLookupScope() && result == resultValueScope()
+				&& (domain == null || domain.sameDomain(detachedDomainStamp()));
+		synchronized (this) {
+			if (!entryDomainAnchored) {
+				entryDomainAnchor = stable ? new EntryDomainAnchor(facade, lookup, result, domain) : null;
+				entryDomainAnchored = true;
+			}
+		}
+	}
+
+	/** Does not initialize or refresh a proof after a row may already have been produced. */
+	EntryDomainAnchor entryDomainAnchor() {
+		return entryDomainAnchor;
 	}
 
 	@Override
@@ -917,11 +1280,17 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		}
 
 		@Override
-		public synchronized void close() {
-			if (closed) {
-				return;
+		public void close() {
+			synchronized (this) {
+				if (closed) {
+					return;
+				}
+				closed = true;
 			}
-			closed = true;
+			closeConditionFrames(this::closeOwned);
+		}
+
+		private void closeOwned() {
 			Throwable failure = null;
 			try {
 				owned.close();

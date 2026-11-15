@@ -520,6 +520,30 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	@Test
+	void parallelDomainWindowsReportTheCompleteBinding() {
+		StringBuilder query = new StringBuilder("SELECT (COUNT(*) AS ?c) WHERE { VALUES ?s { ");
+		for (int i = 0; i < 48; i++) {
+			query.append('<').append(EX).append('s').append(i).append("> ");
+		}
+		query.append("} ?s <").append(EX).append("p> ?m . ?m <").append(EX).append("q> ?v }");
+		String sparql = query.toString();
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		assertThat(count(sparql, null)).isEqualTo(96);
+		assertAllExecutionRungs(sparql);
+
+		for (boolean interpreted : new boolean[] { false, true }) {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(!interpreted));
+			String strategy = interpreted ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL;
+			long before = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+			GenericPlanNode plan = explainPlan(sparql, strategy);
+			assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get()).isGreaterThan(before);
+			assertThat(metric(plan, "nativeIrSelectedOperatorActual")).isEqualTo("EnumerateDomain");
+			assertThat(plan.toString()).contains("label: keyDomain[0]", "cardinalityUpperBound: 48");
+		}
+	}
+
+	@Test
 	void parallelIrAggregateRunsForkableFilterHooks() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(FORKABLE_FILTER_QUERY);

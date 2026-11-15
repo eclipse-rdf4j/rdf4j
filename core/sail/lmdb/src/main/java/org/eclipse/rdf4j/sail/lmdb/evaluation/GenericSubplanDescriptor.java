@@ -77,7 +77,8 @@ final class GenericSubplanDescriptor {
 
 	static GenericSubplanDescriptor create(QueryModelNode expr, LmdbNativeEvaluationStrategy strategy) {
 		QueryModelNode pinned = expr.clone();
-		NativeGraphFusion.preserveLexicalScopes(expr, pinned);
+		// Prepared callbacks execute cloned algebra but their diagnostics belong to the logical query tree.
+		NativeGraphFusion.linkLogicalOrigins(expr, pinned);
 		NativeValuePositionAnalysis positions = strategy == null ? null : strategy.copyValuePositions(expr, pinned);
 		pinned = QueryEvaluationUtility.pinFunctions(pinned);
 		if (pinned instanceof TupleExpr) {
@@ -92,6 +93,10 @@ final class GenericSubplanDescriptor {
 
 	<T> T prepare(Supplier<T> factory) {
 		return positionOwner == null ? factory.get() : positionOwner.withValuePositions(valuePositions, factory);
+	}
+
+	<T> T prepare(LmdbNativeEvaluationStrategy strategy, Supplier<T> factory) {
+		return strategy.withValuePositions(valuePositions, factory);
 	}
 
 	QueryEvaluationStep precompile(LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {

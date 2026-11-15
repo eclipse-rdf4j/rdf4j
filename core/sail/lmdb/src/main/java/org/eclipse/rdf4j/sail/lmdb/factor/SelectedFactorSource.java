@@ -34,11 +34,11 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 	private final FactorSelection ranges;
 	private final byte readAheadMode;
 	private BorrowedFactorBatch original;
-	private long originalGeneration;
+	private long originalGeneration, originalDescriptorVersion;
 	private int originalLane;
 	private BorrowedFactorBatch base;
 	private int baseLane;
-	private long baseGeneration;
+	private long baseGeneration, baseDescriptorVersion;
 
 	/** Use bounded dense read-ahead by default only for encoded physical sources. */
 	public SelectedFactorSource(int initialRanges) {
@@ -71,10 +71,25 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 		return ranges.retainedBytes();
 	}
 
+	/** Caller validates this source before translating a current cursor position. */
+	long sourcePosition(long selectedPosition) {
+		return ranges.sourcePosition(selectedPosition);
+	}
+
+	/** Caller validates this source before mapping the current descriptor lane. */
+	int sourceLane() {
+		if (base == null)
+			return -1;
+		return base.source() instanceof SelectedFactorSource selected ? selected.sourceLane() : baseLane;
+	}
+
 	/** Invalidates published descriptors, but can be called after the upstream producer advances. */
 	public void clear() {
 		checkNotClosed();
 		original = base = null;
+		originalGeneration = originalDescriptorVersion = 0L;
+		originalLane = baseLane = 0;
+		baseGeneration = baseDescriptorVersion = 0L;
 		ranges.clear();
 		batch.reset(1);
 	}
@@ -100,17 +115,29 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 			base = selected.base;
 			baseLane = selected.baseLane;
 			baseGeneration = selected.baseGeneration;
+			baseDescriptorVersion = selected.baseDescriptorVersion;
 		} else {
 			ranges.copyFrom(selection);
 			base = input;
 			baseLane = lane;
 			baseGeneration = input.generation();
+			baseDescriptorVersion = input.coordinateDescriptorVersion();
 		}
 		original = input;
 		originalLane = lane;
 		originalGeneration = input.generation();
+		originalDescriptorVersion = input.coordinateDescriptorVersion();
 		batch.bindSelected(0, ranges.count());
 		return batch;
+	}
+
+	@Override
+	boolean coordinateAvailable(byte kind, long reference, int coordinate, long count) {
+		if (!coordinateSourceOpen() || count <= 0L || count != ranges.count() || reference != batch.generation()
+				|| kind != BorrowedFactorBatch.SELECTED || original == null || base == null)
+			return false;
+		return original.coordinateDescriptorAvailable(originalLane, originalGeneration, originalDescriptorVersion)
+				&& base.coordinateDescriptorAvailable(baseLane, baseGeneration, baseDescriptorVersion);
 	}
 
 	@Override

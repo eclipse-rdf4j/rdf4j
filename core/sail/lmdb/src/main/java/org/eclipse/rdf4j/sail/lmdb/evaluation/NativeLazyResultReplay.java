@@ -51,6 +51,8 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 	private final List<Cursor> readers = new ArrayList<>();
 	private List<NativeResultRow> resident = new ArrayList<>();
 	private volatile NativeResultCursor producer;
+	/** Runtime-only ownership; the cached producer must not retain its own execution-context owner. */
+	private AutoCloseable producerLifetime;
 	private volatile Throwable terminalFailure;
 	private volatile boolean closeRequested;
 	private DataOutputStream output;
@@ -61,10 +63,16 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 
 	NativeLazyResultReplay(String[] names, NativeExecutionContext context, NativeCancellationToken cancellation,
 			NativeResultCursor producer) {
+		this(names, context, cancellation, producer, null);
+	}
+
+	NativeLazyResultReplay(String[] names, NativeExecutionContext context, NativeCancellationToken cancellation,
+			NativeResultCursor producer, AutoCloseable producerLifetime) {
 		this.schema = new NativeResultRow.Schema(names);
 		this.context = context;
 		this.cancellation = new NativeCancellationToken(cancellation);
 		this.producer = producer;
+		this.producerLifetime = producerLifetime;
 		this.maxBytes = Math.max(WORKSPACE_BYTES, NativeCountGroupStore.configuredMaxBytes());
 		this.codec = new NativeSpillValueCodec(this.cancellation,
 				context == null ? null : context::authoritativeQueryScopedValue);
@@ -84,6 +92,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		} catch (Throwable problem) {
 			failure = cleanup(problem);
 		}
+		failure = KernelRuntime.closeResource(takeDrainedProducerLifetime(), failure);
 		failure = KernelRuntime.closeResource(activeLease, failure);
 		if (failure != null) {
 			terminalFailure = failure;
@@ -232,16 +241,29 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		closeRequested = true;
 		requestCancellation();
 		Throwable failure;
+		AutoCloseable drained;
 		synchronized (advanceLock) {
 			failure = KernelRuntime.closeResource(producer, null);
 			producer = null;
 			if (readers.isEmpty()) {
 				failure = cleanup(failure);
 			}
+			drained = takeDrainedProducerLifetime();
 		}
+		failure = KernelRuntime.closeResource(drained, failure);
 		if (failure != null) {
 			NativeContextClosingIteration.throwFailure(failure);
 		}
+	}
+
+	/** Called while the replay is unpublished or while holding advanceLock. */
+	private AutoCloseable takeDrainedProducerLifetime() {
+		if (producer != null || !readers.isEmpty()) {
+			return null;
+		}
+		AutoCloseable drained = producerLifetime;
+		producerLifetime = null;
+		return drained;
 	}
 
 	private Throwable cleanup(Throwable failure) {
@@ -390,6 +412,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		@Override
 		public void close() {
 			Throwable failure;
+			AutoCloseable drained;
 			synchronized (advanceLock) {
 				if (closed) {
 					return;
@@ -402,7 +425,9 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 				if (readers.isEmpty() && (closeRequested || terminalFailure != null)) {
 					failure = cleanup(failure);
 				}
+				drained = takeDrainedProducerLifetime();
 			}
+			failure = KernelRuntime.closeResource(drained, failure);
 			failure = KernelRuntime.closeResource(lease, failure);
 			if (failure != null) {
 				NativeContextClosingIteration.throwFailure(failure);

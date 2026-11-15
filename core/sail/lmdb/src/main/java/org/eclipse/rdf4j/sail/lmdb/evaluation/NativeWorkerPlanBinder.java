@@ -13,9 +13,12 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.List;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 
 /**
@@ -27,17 +30,28 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 	final NativeScalarPlan.WorkerContext context;
 	private final NativeFilterLease filters = new NativeFilterLease(true);
 	private final IdentityHashMap<NativeBooleanFilter, NativeBooleanFilter> copies = new IdentityHashMap<>();
+	private final List<NativePhysicalPreparation> physicalPreparations = new ArrayList<>();
 
 	NativeWorkerPlanBinder(NativeScalarPlan.WorkerContext context) {
 		this.context = context;
 	}
 
 	static boolean canBind(SlotPlan input) {
+		return canBind(input, true);
+	}
+
+	/** Deferred streaming jobs cannot discover a new physical-child refusal after earlier rows were emitted. */
+	static boolean canBindDeferredStreamingJobs(SlotPlan input) {
+		return canBind(input, false);
+	}
+
+	private static boolean canBind(SlotPlan input, boolean allowPhysicalChildren) {
 		if (input instanceof NativeSubqueryPlan subquery) {
-			return subquery.workerBindable();
+			return (allowPhysicalChildren || subquery.physicalInput() == null) && subquery.workerBindable();
 		}
 		if (input instanceof NativeKeyedSubqueryJoinPlan keyed) {
-			return keyed.subPlan.workerBindable() && canBind(keyed.probe);
+			return (allowPhysicalChildren || keyed.subPlan.physicalInput() == null) && keyed.subPlan.workerBindable()
+					&& canBind(keyed.probe, allowPhysicalChildren);
 		}
 		if (input instanceof NativeGraphPlan graph) {
 			return graph.workerBindable();
@@ -48,10 +62,10 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return true;
 		}
 		if (input instanceof FilterPlan filter) {
-			return filter.filter.parallelWorkerForkable() && canBind(filter.arg);
+			return filter.filter.parallelWorkerForkable() && canBind(filter.arg, allowPhysicalChildren);
 		}
 		if (input instanceof EntryBindingCompatibilityPlan entry) {
-			return canBind(entry.arg);
+			return canBind(entry.arg, allowPhysicalChildren);
 		}
 		if (input instanceof ExtensionPlan extension) {
 			for (CopyBinding binding : extension.copies) {
@@ -67,45 +81,45 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 					return false;
 				}
 			}
-			return canBind(extension.arg);
+			return canBind(extension.arg, allowPhysicalChildren);
 		}
 		if (input instanceof MultiJoinPlan multi) {
 			for (SlotPlan child : multi.children) {
-				if (!canBind(child)) {
+				if (!canBind(child, allowPhysicalChildren)) {
 					return false;
 				}
 			}
 			return LmdbNativeParallelPipelines.parallelWorkerForkable(multi.filters);
 		}
 		if (input instanceof NativeAliasJoinPlan alias) {
-			return canBind(alias.original);
+			return canBind(alias.original, allowPhysicalChildren);
 		}
 		if (input instanceof NativeAliasJoinMemoPlan memo) {
-			return canBind(memo.original);
+			return canBind(memo.original, allowPhysicalChildren);
 		}
 		if (input instanceof JoinPlan join) {
-			return canBind(join.left) && canBind(join.right);
+			return canBind(join.left, allowPhysicalChildren) && canBind(join.right, allowPhysicalChildren);
 		}
 		if (input instanceof LeftJoinPlan optional) {
-			return canBind(optional.left) && canBind(optional.right);
+			return canBind(optional.left, allowPhysicalChildren) && canBind(optional.right, allowPhysicalChildren);
 		}
 		if (input instanceof UnionPlan union) {
-			return canBind(union.left) && canBind(union.right);
+			return canBind(union.left, allowPhysicalChildren) && canBind(union.right, allowPhysicalChildren);
 		}
 		if (input instanceof OrderedUnionPlan union) {
-			return canBind(union.left) && canBind(union.right);
+			return canBind(union.left, allowPhysicalChildren) && canBind(union.right, allowPhysicalChildren);
 		}
 		if (input instanceof MinusPlan minus) {
-			return canBind(minus.left) && canBind(minus.right);
+			return canBind(minus.left, allowPhysicalChildren) && canBind(minus.right, allowPhysicalChildren);
 		}
 		if (input instanceof LateralPlan lateral) {
-			return canBind(lateral.left) && canBind(lateral.right);
+			return canBind(lateral.left, allowPhysicalChildren) && canBind(lateral.right, allowPhysicalChildren);
 		}
 		if (input instanceof RowDistinctPlan distinct) {
-			return canBind(distinct.arg);
+			return canBind(distinct.arg, allowPhysicalChildren);
 		}
 		if (input instanceof DrainGuardPlan guard) {
-			return canBind(guard.delegate) && canBind(guard.drained);
+			return canBind(guard.delegate, allowPhysicalChildren) && canBind(guard.drained, allowPhysicalChildren);
 		}
 		return false;
 	}
@@ -135,10 +149,10 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return replacement;
 		}
 		if (input instanceof NativeSubqueryPlan subquery) {
-			return subquery.forWorker(context);
+			return bindSubquery(subquery);
 		}
 		if (input instanceof NativeKeyedSubqueryJoinPlan keyed) {
-			return keyed.forWorker(bind(keyed.probe), keyed.subPlan.forWorker(context));
+			return keyed.forWorker(bind(keyed.probe), bindSubquery(keyed.subPlan));
 		}
 		if (input instanceof NativeGraphPlan graph) {
 			return graph.forWorker(context);
@@ -231,11 +245,39 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 	}
 
 	void abort(Throwable problem) {
-		filters.abort(problem);
+		Throwable failure = KernelRuntime.closeResource(() -> filters.abort(problem), problem);
+		for (NativePhysicalPreparation preparation : physicalPreparations) {
+			failure = KernelRuntime.closeResource(preparation, failure);
+		}
+		physicalPreparations.clear();
+		KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, problem);
 	}
 
 	@Override
 	public void close() {
-		filters.commit();
+		Throwable failure = KernelRuntime.closeResource(filters::commit, null);
+		for (NativePhysicalPreparation preparation : physicalPreparations) {
+			failure = KernelRuntime.closeResource(preparation, failure);
+		}
+		physicalPreparations.clear();
+		KernelRuntime.rethrowCloseFailure(failure);
+	}
+
+	private NativeSubqueryPlan bindSubquery(NativeSubqueryPlan subquery) {
+		if (subquery.physicalInput() == null) {
+			return subquery.forWorker(context);
+		}
+		NativePhysicalPreparation preparation = NativePhysicalPreparation.tryCreate(context.requireFusedSession());
+		if (preparation == null) {
+			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("quoted-child-worker-memory");
+		}
+		try (NativeExecutionContext.Lease ignored = context.requireExecutionContext().retainActiveLease()) {
+			NativeSubqueryPlan bound = subquery.forWorker(context, preparation);
+			physicalPreparations.add(preparation);
+			return bound;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(preparation, failure), failure);
+			throw failure;
+		}
 	}
 }

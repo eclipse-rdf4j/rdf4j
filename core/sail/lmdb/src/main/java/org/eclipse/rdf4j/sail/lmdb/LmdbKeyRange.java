@@ -49,8 +49,6 @@ public final class LmdbKeyRange {
 	 * index. Pass {@code -1} for ranges, such as root-scan partitions, whose bounds do not depend on that condition.
 	 */
 	public LmdbKeyRange(byte[] lowKey, byte[] highKeyExclusive, String indexFieldSeq, int firstVaryingField) {
-		this.lowKey = lowKey;
-		this.highKeyExclusive = highKeyExclusive;
 		this.indexFieldSeq = Objects.requireNonNull(indexFieldSeq, "indexFieldSeq");
 		if (firstVaryingField < -1 || firstVaryingField > TripleIndex.CONTEXT_IDX) {
 			throw new IllegalArgumentException("invalid first varying field: " + firstVaryingField);
@@ -60,22 +58,42 @@ public final class LmdbKeyRange {
 				|| highKeyExclusive != null && highKeyExclusive.length > TripleIndex.MAX_KEY_LENGTH) {
 			throw new IllegalArgumentException("key bound exceeds maximum index key length");
 		}
-		long[] decodedLow = decodeCanonicalPrefix(lowKey);
-		long[] decodedHigh = decodeCanonicalPrefix(highKeyExclusive);
-		this.decodedBounds = (lowKey == null || decodedLow != null)
-				&& (highKeyExclusive == null || decodedHigh != null)
+		this.lowKey = lowKey == null ? null : lowKey.clone();
+		this.highKeyExclusive = highKeyExclusive == null ? null : highKeyExclusive.clone();
+		long[] decodedLow = decodeCanonicalPrefix(this.lowKey);
+		long[] decodedHigh = decodeCanonicalPrefix(this.highKeyExclusive);
+		this.decodedBounds = (this.lowKey == null || decodedLow != null)
+				&& (this.highKeyExclusive == null || decodedHigh != null)
 						? new DecodedBounds(decodedLow, decodedHigh)
 						: null;
 	}
 
-	/** Inclusive lower bound as raw index key bytes, or {@code null} for the pattern's natural start. */
+	/** Copy of the inclusive lower key bound, or {@code null} for the pattern's natural start. */
 	public byte[] lowKey() {
-		return lowKey;
+		return lowKey == null ? null : lowKey.clone();
 	}
 
-	/** Exclusive upper bound as raw index key bytes, or {@code null} for the pattern's natural end. */
+	/** Copy of the exclusive upper key bound, or {@code null} for the pattern's natural end. */
 	public byte[] highKeyExclusive() {
-		return highKeyExclusive;
+		return highKeyExclusive == null ? null : highKeyExclusive.clone();
+	}
+
+	/** Presence and length checks avoid copying a bound merely to inspect its shape. */
+	public int lowKeyLength() {
+		return lowKey == null ? -1 : lowKey.length;
+	}
+
+	public int highKeyExclusiveLength() {
+		return highKeyExclusive == null ? -1 : highKeyExclusive.length;
+	}
+
+	/** Copies an existing bound into the transaction's internal key buffer. */
+	void writeLowKey(ByteBuffer target) {
+		target.put(lowKey);
+	}
+
+	void writeHighKeyExclusive(ByteBuffer target) {
+		target.put(highKeyExclusive);
 	}
 
 	/** Field sequence of the index these bounds were planned against, e.g. {@code "posc"}. */

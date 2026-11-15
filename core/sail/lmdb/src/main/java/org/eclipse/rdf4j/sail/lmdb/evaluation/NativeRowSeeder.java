@@ -17,6 +17,10 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeEntryBindings.ValueWitness;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.DomainStamp;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.IdLookup;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.IdOrigin;
 
 /**
  * Seeds native slot rows from external or native base bindings.
@@ -63,11 +67,11 @@ final class NativeRowSeeder {
 
 	private static long resolve(int slot, NativeSlotLayout layout, BindingSet base, NativeLmdbQuerySource source) {
 		QueryWideVarLayout queryLayout = layout.queryLayout();
-		if (queryLayout != null && base instanceof SlotBindingSetView nativeBase
-				&& nativeBase.queryLayout() == queryLayout && nativeBase.sameIdSpace(source)) {
+		if (queryLayout != null && base instanceof RowBindingSetView nativeBase
+				&& nativeBase.queryLayout() == queryLayout) {
 			int queryIndex = layout.queryIndexForSlot(slot);
 			if (queryIndex >= 0) {
-				long id = nativeBase.nativeIdByQueryIndex(queryIndex);
+				long id = nativeBase.reusableNativeIdByQueryIndex(queryIndex, source);
 				if (id != UNKNOWN) {
 					return id;
 				}
@@ -80,9 +84,11 @@ final class NativeRowSeeder {
 				return id;
 			}
 		}
-		if (base instanceof RowBindingSetView nativeBase && nativeBase.sameIdSpace(source)
-				&& nativeBase.hasNativeId(name)) {
-			return nativeBase.nativeId(name);
+		if (base instanceof RowBindingSetView nativeBase && nativeBase.hasNativeId(name)) {
+			long id = nativeBase.reusableNativeId(name, source);
+			if (id != UNKNOWN) {
+				return id;
+			}
 		}
 		if (!base.hasBinding(name)) {
 			return UNKNOWN;
@@ -91,12 +97,72 @@ final class NativeRowSeeder {
 		if (value == null) {
 			return NULL_CONTEXT_ID;
 		}
-		long id = source.idOf(value, layout.positionMask(slot));
-		if (id == UNKNOWN && source instanceof SyntheticValueSource synthetic) {
+		return resolveValue(value, layout.positionMask(slot), source);
+	}
+
+	/** A source-wide promise is only admission: each lookup must also certify its actual origin and live view. */
+	private static long resolveValue(Value value, int positionMask, NativeLmdbQuerySource source) {
+		if (!source.certifiesIdOrigins()) {
+			return UNKNOWN;
+		}
+		ValueWitness witness = ValueWitness.captureForLookup(value);
+		if (witness == null || !witness.matches(value)) {
+			return UNKNOWN;
+		}
+		Object lookupScope = source.valueLookupScope();
+		Object resultScope = source.resultValueScope();
+		SyntheticValueSource synthetic = source instanceof SyntheticValueSource ? (SyntheticValueSource) source : null;
+		Object facade = synthetic == null ? null : synthetic.entryAuthorityToken();
+		if (lookupScope == null || resultScope == null || synthetic != null && facade == null) {
+			return UNKNOWN;
+		}
+		DomainStamp domain = source.detachedDomainStamp();
+		IdLookup lookup = new IdLookup();
+		lookup.set(UNKNOWN, IdOrigin.UNCERTIFIED);
+		source.idOfWithOrigin(value, positionMask, lookup);
+		if (!lookupIsCurrent(source, synthetic, facade, lookupScope, resultScope, domain, witness, value)) {
+			return UNKNOWN;
+		}
+		long id = lookup.id();
+		switch (lookup.origin()) {
+		case STORED:
+			if (id == NULL_CONTEXT_ID || synthetic != null && synthetic.synthetic(id)) {
+				return UNKNOWN;
+			}
+			break;
+		case PLAN:
+			if (id == NULL_CONTEXT_ID || (synthetic != null ? !synthetic.ownsPlanId(id)
+					: domain == null || domain.planCatalog() == null)) {
+				return UNKNOWN;
+			}
+			break;
+		case RUNTIME:
+			if (id == NULL_CONTEXT_ID || domain == null || domain.runtimeAuthority() == null) {
+				return UNKNOWN;
+			}
+			break;
+		case ABSENT:
+			if (synthetic == null) {
+				return UNKNOWN;
+			}
 			// Only term-safe classes may mint an unresolved runtime ID. Language/triple values may have a
 			// term-equal stored spelling that lexical lookup missed, so retain the conservative import guard.
 			id = synthetic.internEntryBinding(value);
+			break;
+		default:
+			return UNKNOWN;
 		}
-		return id;
+		return id != NULL_CONTEXT_ID
+				&& lookupIsCurrent(source, synthetic, facade, lookupScope, resultScope, domain, witness, value)
+						? id
+						: UNKNOWN;
+	}
+
+	private static boolean lookupIsCurrent(NativeLmdbQuerySource source, SyntheticValueSource synthetic, Object facade,
+			Object lookupScope, Object resultScope, DomainStamp domain, ValueWitness witness, Value value) {
+		return witness.matches(value) && source.certifiesIdOrigins() && lookupScope == source.valueLookupScope()
+				&& resultScope == source.resultValueScope()
+				&& (synthetic == null || facade == synthetic.entryAuthorityToken())
+				&& (domain == null || domain.sameDomain(source.detachedDomainStamp())) && witness.matches(value);
 	}
 }

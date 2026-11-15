@@ -16,12 +16,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -116,6 +120,7 @@ public class LmdbNativeLazyProjectedResultTest {
 		var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT ?s ?value WHERE { ?s <" + EX + "value> ?value }", null);
 		List<BindingSet> retained = new ArrayList<>();
+		Set<LmdbValue> rawShells = Collections.newSetFromMap(new IdentityHashMap<>());
 		try (var connection = repository.getSail().getConnection();
 				var rows = connection.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
 			while (rows.hasNext()) {
@@ -123,8 +128,11 @@ public class LmdbNativeLazyProjectedResultTest {
 				assertThat(row).isInstanceOf(NativeProjectedBindingSet.class);
 				assertThat(((NativeProjectedBindingSet) row).source).isNull();
 				for (Binding binding : row) {
-					assertThat(((LmdbValue) binding.getValue()).getValueStoreRevision())
+					LmdbValue value = (LmdbValue) binding.getValue();
+					rawShells.add(value);
+					assertThat(value.getValueStoreRevision())
 							.isInstanceOf(ValueStoreRevision.Lazy.class);
+					assertThat(value.isInitialized()).isFalse();
 				}
 				retained.add(row);
 			}
@@ -132,8 +140,122 @@ public class LmdbNativeLazyProjectedResultTest {
 		assertThat(retained).hasSize(64);
 		assertThat(NativeProjectedBindingSet.CREATED.get()).isEqualTo(64);
 		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(128);
+		assertThat(rawShells).hasSize(128);
+		assertThat(rawShells.stream().filter(LmdbValue::isInitialized).count())
+				.as("raw capture must create no lexical initialization transitions")
+				.isZero();
 		for (BindingSet row : retained) {
 			assertThat(((NativeProjectedBindingSet) row).source).isNull();
+		}
+	}
+
+	@Test
+	public void acceptedRowsReuseRepeatedProjectedValueWithoutInitializingIt() {
+		ValueFactory valueFactory = repository.getValueFactory();
+		IRI predicate = valueFactory.createIRI(EX, "sharedValue");
+		Value shared = valueFactory.createLiteral("shared projected payload");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < 64; i++) {
+				connection.add(valueFactory.createIRI(EX, "shared-s" + i), predicate, shared);
+			}
+			connection.commit();
+		}
+
+		NativeProjectedBindingSet.CREATED.set(0);
+		NativeProjectedBindingSet.MATERIALIZED_VALUES.set(0);
+		var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s ?value WHERE { ?s <" + predicate + "> ?value }", null);
+		List<BindingSet> retainedRows = new ArrayList<>();
+		List<Value> retainedValues = new ArrayList<>();
+		try (var connection = repository.getSail().getConnection();
+				var rows = connection.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
+			while (rows.hasNext()) {
+				BindingSet row = rows.next();
+				assertThat(row).isInstanceOf(NativeProjectedBindingSet.class);
+				Value value = row.getValue("value");
+				assertThat(((LmdbValue) value).getValueStoreRevision()).isInstanceOf(ValueStoreRevision.Lazy.class);
+				assertThat(((LmdbValue) value).isInitialized()).isFalse();
+				retainedRows.add(row);
+				retainedValues.add(value);
+			}
+		}
+
+		assertThat(retainedRows).hasSize(64);
+		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES)
+				.as("the accepted capture resolves each distinct subject and the repeated object once")
+				.hasValue(65);
+		assertThat(retainedValues).allSatisfy(value -> assertThat(value).isSameAs(retainedValues.getFirst()));
+		assertThat(NativeProjectedBindingSet.CREATED).hasValue(64);
+		assertThat(retainedValues.getFirst().stringValue()).isEqualTo("shared projected payload");
+		Set<LmdbValue> distinctShells = Collections.newSetFromMap(new IdentityHashMap<>());
+		retainedValues.forEach(value -> distinctShells.add((LmdbValue) value));
+		assertThat(distinctShells).hasSize(1);
+		assertThat(distinctShells.stream().filter(LmdbValue::isInitialized).count())
+				.as("one requested shared lexical value produces one observed initialization transition")
+				.isEqualTo(1L);
+	}
+
+	@Test
+	public void rejectedOffsetAndLimitedRowsAreNotCapturedOrPrefetched() {
+		IRI predicate = repository.getValueFactory().createIRI(EX, "acceptedRowsOnly");
+		Value shared = repository.getValueFactory().createLiteral("accepted-only shared value");
+		addRepeatedObjectRows(predicate, "accepted-s", shared, 8);
+
+		String projection = "SELECT ?s ?value WHERE { ?s <" + predicate + "> ?value ";
+		assertRawProjectionCounts(projection + "FILTER (?s = <" + EX + "accepted-s3>) }", 1, 2);
+		assertRawProjectionCounts(projection + "} LIMIT 1 OFFSET 1", 1, 2);
+		assertRawProjectionCounts(projection + "} LIMIT 2", 2, 3);
+		assertRawProjectionCounts(projection + "} ORDER BY ?s", 8, 9);
+	}
+
+	@Test
+	public void repositoryExposureCompletesEachRecursiveWaveBeforeRequestingTheNextRow() {
+		ValueFactory valueFactory = repository.getValueFactory();
+		IRI predicate = valueFactory.createIRI(EX, "recursiveSharedValue");
+		IRI embeddedSubject = valueFactory.createIRI(EX, "embeddedSubject");
+		IRI embeddedPredicate = valueFactory.createIRI(EX, "embeddedPredicate");
+		Literal embeddedLiteral = valueFactory.createLiteral("recursive payload",
+				valueFactory.createIRI(EX, "recursiveDatatype"));
+		TripleTerm inner = valueFactory.createTripleTerm(embeddedSubject, embeddedPredicate, embeddedLiteral);
+		TripleTerm shared = valueFactory.createTripleTerm(embeddedSubject, embeddedPredicate, inner);
+		addRepeatedObjectRows(predicate, "recursive-s", shared, 6);
+
+		NativeProjectedBindingSet.MATERIALIZED_VALUES.set(0);
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult rows = connection.prepareTupleQuery(
+						"SELECT ?s ?value WHERE { ?s <" + predicate + "> ?value }").evaluate()) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES)
+					.as("only the row demanded by hasNext is captured")
+					.hasValue(2);
+			BindingSet first = rows.next();
+			Value firstValue = first.getValue("value");
+			assertRepositoryValueReady(firstValue);
+			Set<LmdbValue> firstWaveValues = nativeValues(firstValue);
+			assertThat(firstWaveValues).isNotEmpty();
+			assertThat(firstWaveValues.stream().filter(LmdbValue::isInitialized).count())
+					.as("repository exposure completes every native value in the current recursive wave")
+					.isEqualTo(firstWaveValues.size());
+
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES)
+					.as("the next source row is captured only when that row is requested")
+					.hasValue(3);
+			BindingSet second = rows.next();
+			assertThat(second.getValue("value")).isSameAs(firstValue);
+			assertRepositoryValueReady(second.getValue("value"));
+
+			int count = 2;
+			while (rows.hasNext()) {
+				BindingSet row = rows.next();
+				assertThat(row.getValue("value")).isSameAs(firstValue);
+				count++;
+			}
+			assertThat(count).isEqualTo(6);
+			assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES)
+					.as("each subject is captured once while the repeated recursive value is reused")
+					.hasValue(7);
 		}
 	}
 
@@ -216,6 +338,79 @@ public class LmdbNativeLazyProjectedResultTest {
 		assertThat(source.lazyValueCalls).as("duplicate ID %s must be resolved once", id).isEqualTo(1);
 	}
 
+	private void addRepeatedObjectRows(IRI predicate, String subjectPrefix, Value object, int count) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			ValueFactory valueFactory = connection.getValueFactory();
+			for (int i = 0; i < count; i++) {
+				connection.add(valueFactory.createIRI(EX, subjectPrefix + i), predicate, object);
+			}
+			connection.commit();
+		}
+	}
+
+	private void assertRawProjectionCounts(String queryText, int expectedRows, long expectedMaterializedValues) {
+		NativeProjectedBindingSet.CREATED.set(0);
+		NativeProjectedBindingSet.MATERIALIZED_VALUES.set(0);
+		var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, queryText, null);
+		try (var connection = repository.getSail().getConnection();
+				var rows = connection.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES)
+					.as("hasNext does not capture the current raw Sail row")
+					.hasValue(0);
+			int count = 0;
+			while (rows.hasNext()) {
+				rows.next();
+				count++;
+				long expectedAtThisRow = count == 1 ? 2 : count + 1L;
+				assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES)
+						.as("only values from accepted row %s are captured", count)
+						.hasValue(expectedAtThisRow);
+				if (rows.hasNext()) {
+					assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES)
+							.as("checking availability does not capture a later Sail row")
+							.hasValue(expectedAtThisRow);
+				}
+			}
+			assertThat(count).isEqualTo(expectedRows);
+			assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES).hasValue(expectedMaterializedValues);
+		}
+	}
+
+	private static void assertRepositoryValueReady(Value value) {
+		if (value instanceof LmdbValue lmdbValue) {
+			assertThat(lmdbValue.getValueStoreRevision()).isInstanceOf(ValueStoreRevision.Default.class);
+			assertThat(lmdbValue.isInitialized()).isTrue();
+		}
+		if (value instanceof TripleTerm triple) {
+			assertRepositoryValueReady(triple.getSubject());
+			assertRepositoryValueReady(triple.getPredicate());
+			assertRepositoryValueReady(triple.getObject());
+		} else if (value instanceof Literal literal) {
+			assertRepositoryValueReady(literal.getDatatype());
+		}
+	}
+
+	private static Set<LmdbValue> nativeValues(Value value) {
+		Set<LmdbValue> values = Collections.newSetFromMap(new IdentityHashMap<>());
+		collectNativeValues(value, values);
+		return values;
+	}
+
+	private static void collectNativeValues(Value value, Set<LmdbValue> values) {
+		if (value instanceof LmdbValue lmdbValue) {
+			values.add(lmdbValue);
+		}
+		if (value instanceof TripleTerm triple) {
+			collectNativeValues(triple.getSubject(), values);
+			collectNativeValues(triple.getPredicate(), values);
+			collectNativeValues(triple.getObject(), values);
+		} else if (value instanceof Literal literal) {
+			collectNativeValues(literal.getDatatype(), values);
+		}
+	}
+
 	@Test
 	public void compiledStepReusesCanonicalDuplicateProjectionLayoutAcrossRows() {
 		ValueFactory vf = repository.getValueFactory();
@@ -250,6 +445,22 @@ public class LmdbNativeLazyProjectedResultTest {
 		assertThat(first.getValue("y")).isSameAs(y);
 	}
 
+	/** Supplies an attached duplicate-name projection to repository snapshot contract tests. */
+	public static NativeProjectedBindingSet attachedDuplicateAndUnboundProjectionForRepositoryTest(
+			Value earlier, Value winning) {
+		NativeLmdbQuerySource source = new StubSource(Map.of(42L, earlier, 43L, winning));
+		return new NativeProjectedBindingSet(source, new String[] { "value", "value", "optional" },
+				new int[] { 0, 1, 2 }, new long[] { 42L, 43L, NativeLmdbQuerySource.UNKNOWN_ID });
+	}
+
+	/** Supplies a bound, prematurely detached row with no captured value to repository snapshot contract tests. */
+	public static NativeProjectedBindingSet prematurelyDetachedIncompleteProjectionForRepositoryTest() {
+		NativeProjectedBindingSet row = new NativeProjectedBindingSet(null, new String[] { "value" }, new int[] { 0 },
+				new long[] { 42L });
+		row.materializeAndDetach();
+		return row;
+	}
+
 	private static final class StubSource implements NativeLmdbQuerySource {
 		private final Map<Long, Value> values;
 		private int lazyValueCalls;
@@ -271,6 +482,11 @@ public class LmdbNativeLazyProjectedResultTest {
 		public Value lazyValue(long id) {
 			lazyValueCalls++;
 			return values.get(id);
+		}
+
+		@Override
+		public Object resultValueScope() {
+			return values;
 		}
 
 		@Override

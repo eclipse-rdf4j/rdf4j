@@ -26,6 +26,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
@@ -66,6 +67,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private final long txn;
 
 	private int dbi;
+	private boolean explicitStatements;
 
 	private volatile boolean closed = false;
 
@@ -121,6 +123,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private final ValueStore.ReadSnapshot readSnapshot;
 	private final long txnLease;
 	private long[] resumeExclusive;
+	private boolean sourceCoordinateValid = true;
 
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
@@ -165,6 +168,7 @@ class LmdbRecordIterator implements RecordIterator {
 		this.quad = new long[] { subj, pred, obj, context };
 		this.index = index;
 		this.dbi = index.getDB(explicit);
+		this.explicitStatements = explicit;
 		this.txnRef = txnRef;
 		this.readSnapshot = readSnapshot;
 		this.txnLockManager = txnRef.lockManager();
@@ -213,20 +217,20 @@ class LmdbRecordIterator implements RecordIterator {
 					if (exactKeySearch) {
 						throw new IllegalArgumentException("Bounded scans are not supported for exact key lookups");
 					}
-					if (range.lowKey() != null) {
+					if (range.lowKeyLength() >= 0) {
 						if (minKeyBuf == null) {
 							minKeyBuf = txnRef.takeKeyBuffer();
 						}
 						minKeyBuf.clear();
-						minKeyBuf.put(range.lowKey());
+						range.writeLowKey(minKeyBuf);
 						minKeyBuf.flip();
 					}
-					if (range.highKeyExclusive() != null) {
+					if (range.highKeyExclusiveLength() >= 0) {
 						if (maxKeyBuf == null) {
 							maxKeyBuf = txnRef.takeKeyBuffer();
 						}
 						maxKeyBuf.clear();
-						maxKeyBuf.put(range.highKeyExclusive());
+						range.writeHighKeyExclusive(maxKeyBuf);
 						maxKeyBuf.flip();
 						this.upperExclusive = true;
 					}
@@ -298,12 +302,131 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
+	/** Exact immutable description of one ordered, matched LMDB relation. */
+	private record SourceIdentity(WeakReference<Txn> transaction, WeakReference<ValueStore.ReadSnapshot> snapshot,
+			WeakReference<TripleIndex> index, long lease, long version, long revision, int dbi, boolean explicit,
+			int prefixLength, boolean exact, long subj, long pred, long obj, long context, byte[] lower, byte[] upper,
+			boolean upperExclusive) implements SourceCoordinateIdentity {
+		@Override
+		public boolean retired() {
+			Txn owner = transaction.get();
+			return owner == null || !owner.isNativeActive() || owner.lease() != lease || owner.version() != version
+					|| owner.snapshotRevision() != revision || index.get() == null
+					|| snapshot != null && snapshot.get() == null;
+		}
+	}
+
+	@Override
+	public boolean hasSourceCoordinates() {
+		return !closed && sourceCoordinateValid && txnRef.isReadOnly() && txnRef.snapshotRevision() >= 0L
+				&& txnRef.lease() == txnLease && txnRef.version() == txnRefVersion;
+	}
+
+	@Override
+	public int sourceCoordinateHash() {
+		int hash = System.identityHashCode(txnRef);
+		hash = 31 * hash + System.identityHashCode(readSnapshot);
+		hash = 31 * hash + System.identityHashCode(index);
+		hash = 31 * hash + Long.hashCode(txnLease);
+		hash = 31 * hash + Long.hashCode(txnRefVersion);
+		hash = 31 * hash + Long.hashCode(txnRef.snapshotRevision());
+		hash = 31 * hash + dbi;
+		hash = 31 * hash + Boolean.hashCode(explicitStatements);
+		hash = 31 * hash + rangePrefixLength;
+		hash = 31 * hash + Boolean.hashCode(exactKeySearch);
+		hash = 31 * hash + Long.hashCode(matchSubj);
+		hash = 31 * hash + Long.hashCode(matchPred);
+		hash = 31 * hash + Long.hashCode(matchObj);
+		hash = 31 * hash + Long.hashCode(matchContext);
+		hash = 31 * hash + keyHash(minKeyBuf);
+		hash = 31 * hash + keyHash(maxKeyBuf);
+		return 31 * hash + Boolean.hashCode(upperExclusive);
+	}
+
+	@Override
+	public boolean matchesSourceCoordinateIdentity(Object value) {
+		if (!hasSourceCoordinates() || !(value instanceof SourceIdentity identity)) {
+			return false;
+		}
+		return identity.transaction.get() == txnRef && (identity.snapshot == null ? readSnapshot == null
+				: readSnapshot != null && identity.snapshot.get() == readSnapshot) && identity.index.get() == index
+				&& identity.lease == txnLease && identity.version == txnRefVersion
+				&& identity.revision == txnRef.snapshotRevision() && identity.dbi == dbi
+				&& identity.explicit == explicitStatements
+				&& identity.prefixLength == rangePrefixLength && identity.exact == exactKeySearch
+				&& identity.subj == matchSubj && identity.pred == matchPred && identity.obj == matchObj
+				&& identity.context == matchContext && identity.upperExclusive == upperExclusive
+				&& sameKey(identity.lower, minKeyBuf) && sameKey(identity.upper, maxKeyBuf);
+	}
+
+	@Override
+	public Object copySourceCoordinateIdentity() {
+		if (!hasSourceCoordinates()) {
+			return null;
+		}
+		return new SourceIdentity(new WeakReference<>(txnRef),
+				readSnapshot == null ? null : new WeakReference<>(readSnapshot), new WeakReference<>(index),
+				txnLease, txnRefVersion, txnRef.snapshotRevision(),
+				dbi, explicitStatements, rangePrefixLength, exactKeySearch, matchSubj, matchPred, matchObj,
+				matchContext,
+				copyKey(minKeyBuf), copyKey(maxKeyBuf), upperExclusive);
+	}
+
+	private static int keyHash(ByteBuffer key) {
+		if (key == null) {
+			return 0;
+		}
+		int hash = 1;
+		for (int i = key.position(); i < key.limit(); i++) {
+			hash = 31 * hash + key.get(i);
+		}
+		return hash;
+	}
+
+	private static boolean sameKey(byte[] expected, ByteBuffer key) {
+		if (expected == null || key == null) {
+			return expected == null && key == null;
+		}
+		if (expected.length != key.remaining()) {
+			return false;
+		}
+		for (int i = 0; i < expected.length; i++) {
+			if (expected[i] != key.get(key.position() + i)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static byte[] copyKey(ByteBuffer key) {
+		if (key == null) {
+			return null;
+		}
+		byte[] copy = new byte[key.remaining()];
+		for (int i = 0; i < copy.length; i++) {
+			copy[i] = key.get(key.position() + i);
+		}
+		return copy;
+	}
+
+	private void writeSourceCoordinate(long[] coordinates, int row, long group, long namespace) {
+		int at = row * 5;
+		coordinates[at] = group;
+		coordinates[at + 1] = 0L;
+		// This counter advances only for matched source members, in both next() and fill(). Exact-key lookup
+		// increments it once when the successful singleton is discovered, before that singleton is consumed.
+		coordinates[at + 2] = sourceRowsMatchedActual > 0L ? sourceRowsMatchedActual - 1L : -1L;
+		coordinates[at + 3] = 0L;
+		coordinates[at + 4] = sourceRowsMatchedActual > 0L && hasSourceCoordinates() ? namespace : 0L;
+	}
+
 	void resumeAfter(long[] lastQuad) {
 		synchronized (txnRef) {
 			if (fetchNext || closed) {
 				throw new IllegalStateException("A bounded scan must set its continuation before reading");
 			}
 			validateSnapshot();
+			sourceCoordinateValid = false;
 			if (minKeyBuf == null) {
 				minKeyBuf = txnRef.takeKeyBuffer();
 			}
@@ -343,6 +466,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 				int lastResult;
 				if (txnRefVersion != txnRef.version()) {
+					sourceCoordinateValid = false;
 					// a pinned SNAPSHOT transaction must fail here instead of silently rebinding to a newer snapshot
 					validateSnapshot();
 					// cursor must be renewed
@@ -444,6 +568,16 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public int fill(long[] buffer, int maxRows) {
+		return fillInternal(buffer, null, maxRows, 0L, 0L);
+	}
+
+	@Override
+	public int fillWithSourceCoordinates(long[] buffer, long[] coordinates, int maxRows, long group,
+			long namespace) {
+		return fillInternal(buffer, coordinates, maxRows, group, namespace);
+	}
+
+	private int fillInternal(long[] buffer, long[] coordinates, int maxRows, long group, long namespace) {
 
 		long readStamp;
 		try {
@@ -466,11 +600,15 @@ class LmdbRecordIterator implements RecordIterator {
 					}
 					pollCancellationCandidate();
 					System.arraycopy(record, 0, buffer, 0, 4);
+					if (coordinates != null) {
+						writeSourceCoordinate(coordinates, 0, group, namespace);
+					}
 					return 1;
 				}
 
 				int lastResult;
 				if (txnRefVersion != txnRef.version()) {
+					sourceCoordinateValid = false;
 					// a pinned SNAPSHOT transaction must fail here instead of silently rebinding to a newer snapshot
 					validateSnapshot();
 					// cursor must be renewed; quad holds the last key handed out, which is also the last
@@ -535,6 +673,9 @@ class LmdbRecordIterator implements RecordIterator {
 						sourceRowsMatchedActual++;
 						consecutiveFiltered = 0;
 						System.arraycopy(quad, 0, buffer, rows * 4, 4);
+						if (coordinates != null) {
+							writeSourceCoordinate(coordinates, rows, group, namespace);
+						}
 						rows++;
 						if (rows == maxRows) {
 							fetchNext = true;
@@ -591,6 +732,7 @@ class LmdbRecordIterator implements RecordIterator {
 				return false;
 			}
 			validateSnapshot();
+			sourceCoordinateValid = false;
 			if (minKeyBuf == null) {
 				minKeyBuf = txnRef.takeKeyBuffer();
 			}
@@ -738,6 +880,7 @@ class LmdbRecordIterator implements RecordIterator {
 				this.sourceRowsMatchedActual = 0L;
 				this.sourceRowsFilteredActual = 0L;
 				this.cancellationPollTick = 0;
+				this.sourceCoordinateValid = true;
 				this.matchSubj = subj > 0 ? subj : -1;
 				this.matchPred = pred > 0 ? pred : -1;
 				this.matchObj = obj > 0 ? obj : -1;
@@ -751,6 +894,7 @@ class LmdbRecordIterator implements RecordIterator {
 				this.exactKeyFound = false;
 				this.consecutiveFiltered = 0;
 				this.index = index;
+				this.explicitStatements = explicit;
 				// reset() re-derives the pattern's natural (inclusive) bounds; any injected exclusive bound is gone
 				this.upperExclusive = false;
 				if (rangeSearch) {

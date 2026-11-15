@@ -831,7 +831,7 @@ final class LmdbNativeOrderPlanner {
 			return new NativeOrderedPlan(pattern, NativeSlotOrder.NONE);
 		}
 		PatternPlan ordered = pattern.withOrder(statementOrder, index);
-		if (statementOrder == null && pattern.contexts.isFixed() && pattern.contexts.ids.length > 1) {
+		if (statementOrder == null && pattern.contexts.isFixed() && pattern.contexts.size() > 1) {
 			// PatternCursor concatenates default-order scans for fixed contexts. Only an explicit ordered request uses
 			// OrderedRecordIterator to restore one global index order across those scans.
 			return new NativeOrderedPlan(ordered, NativeSlotOrder.NONE);
@@ -856,7 +856,7 @@ final class LmdbNativeOrderPlanner {
 			Term term = term(pattern, field);
 			long bit = term.slot < 0 ? 0L : 1L << term.slot;
 			boolean fixedContext = field == TripleIndex.CONTEXT_IDX && pattern.contexts.isFixed()
-					&& pattern.contexts.ids.length == 1;
+					&& pattern.contexts.size() == 1;
 			if (term.lookup(row.slots) != UNKNOWN || fixedContext) {
 				fixed |= bit;
 				continue;
@@ -1172,6 +1172,10 @@ final class OrderedUnionCursor implements RowCursor {
 					parent.exactValuesMetrics, parent.cancellation);
 			this.row.memoryScope = parent.memoryScope;
 			this.row.runtimePlan = parent.runtimePlan;
+			this.row.fusedSession = parent.fusedSession;
+			if (parent.fusedSession != null) {
+				this.row.borrowPreparationAttempt(parent);
+			}
 			this.row.scalarFilterTelemetryEnabled = parent.scalarFilterTelemetryEnabled;
 			this.row.scalarFilterAttempt = parent.scalarFilterAttempt;
 			System.arraycopy(parent.slots, 0, row.slots, 0, parent.slots.length);

@@ -44,6 +44,8 @@ final class RowState implements LmdbNativeSlotReader {
 	final NativeSlotLayout layout;
 	final BindingSet base;
 	final TupleExpr telemetryTarget;
+	/** Logical invocation root used only to resolve detached diagnostic paths. */
+	private TupleExpr diagnosticRoot;
 	final long[] slots;
 	final long baseBindingMask;
 	final RowBindingSetView view;
@@ -56,6 +58,16 @@ final class RowState implements LmdbNativeSlotReader {
 	private NativeResultCell[] summaryCells;
 	private NativeResultCell[] trailOldCells;
 	LmdbNativeRuntimePlan.Invocation runtimePlan;
+	/** Exact invocation or binding whose resources this row and its derived operator state use. */
+	LmdbFusedSipFactorizedRuntime.Session fusedSession;
+	/** Query-scalar and cancellation authority; independent of the physical source's concrete type. */
+	private NativeExecutionContext executionContext;
+	/** Invocation-owned strategy view, carried explicitly to bound recipes and derived rows. */
+	private LmdbNativeEvaluationStrategy invocationStrategy;
+	private LmdbNativeEvaluationStrategy conditionParentStrategy;
+	/** The active producer attempt owns its prepared callbacks independently of telemetry. */
+	private LmdbFusedSipFactorizedRuntime.PreparationAttempt preparationAttempt;
+	private Object preparationOwner;
 	/** Enabled only for measured NativeRowsStep routes; aggregate and IR filters keep separate metrics. */
 	boolean scalarFilterTelemetryEnabled;
 	/** Private scalar-filter owner for the current selected or probed row attempt. */
@@ -69,6 +81,8 @@ final class RowState implements LmdbNativeSlotReader {
 	PathResultMemo pathEstimateMemos;
 	/** Replay the ordinary generic source order without mandating adjacency or LMDB. */
 	boolean encounterOrderRequired;
+	/** Engine slots requested by the outward lazy-result materializer, or zero for other consumers. */
+	long resultCoordinateDemand;
 	int trailSize;
 	long boundMask;
 	/**
@@ -131,12 +145,18 @@ final class RowState implements LmdbNativeSlotReader {
 			TupleExpr telemetryTarget, ExactValuesRuntimeMetrics exactValuesMetrics,
 			NativeCancellationToken cancellation) {
 		this.source = source;
+		// Capture the source generation before this row can open or advance any ID-producing cursor.
+		if (source instanceof SyntheticValueSource synthetic) {
+			synthetic.anchorEntryDomain();
+		}
 		if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
+			this.executionContext = synthetic.executionContext();
 			this.memoryScope = synthetic.executionContext().memoryScope();
 		}
 		this.layout = layout;
 		this.base = base;
 		this.telemetryTarget = telemetryTarget;
+		this.diagnosticRoot = telemetryTarget;
 		NativeExpressionDomain.initializeMetrics(telemetryTarget);
 		this.slots = new long[layout.slotNames().length];
 		long baseMask = 0L;
@@ -152,6 +172,116 @@ final class RowState implements LmdbNativeSlotReader {
 		this.cancellation = cancellation;
 		this.trailSlots = new int[Math.max(8, slots.length * 4)];
 		this.trailOldValues = new long[this.trailSlots.length];
+	}
+
+	/** Execution entry points must attach the invocation whose resources this row uses. */
+	LmdbFusedSipFactorizedRuntime.Session fusedSession() {
+		if (fusedSession == null) {
+			throw new IllegalStateException("native row has no fused invocation");
+		}
+		return fusedSession;
+	}
+
+	NativeExecutionContext executionContext() {
+		if (executionContext == null) {
+			throw new IllegalStateException("native row has no execution context");
+		}
+		return executionContext;
+	}
+
+	NativeExecutionContext executionContextOrNull() {
+		return executionContext;
+	}
+
+	void setExecutionContext(NativeExecutionContext executionContext) {
+		this.executionContext = Objects.requireNonNull(executionContext, "executionContext");
+		this.memoryScope = executionContext.memoryScope();
+	}
+
+	void setInvocationStrategy(LmdbNativeEvaluationStrategy strategy) {
+		Objects.requireNonNull(strategy, "strategy");
+		if (!strategy.isBoundTo(source, fusedSession(), executionContext())) {
+			throw new IllegalArgumentException("strategy belongs to a different native invocation");
+		}
+		invocationStrategy = strategy;
+		conditionParentStrategy = null;
+	}
+
+	LmdbNativeEvaluationStrategy invocationStrategyOrNull() {
+		return invocationStrategy;
+	}
+
+	TupleExpr diagnosticRoot() {
+		return diagnosticRoot;
+	}
+
+	void inheritDiagnosticRoot(RowState parent) {
+		diagnosticRoot = parent.diagnosticRoot;
+	}
+
+	LmdbNativeEvaluationStrategy workerStrategy(NativeLmdbQuerySource workerSource,
+			LmdbFusedSipFactorizedRuntime.Session workerSession, NativeExecutionContext workerExecution) {
+		return workerStrategy(invocationStrategy, workerSource, workerSession, workerExecution);
+	}
+
+	static LmdbNativeEvaluationStrategy workerStrategy(LmdbNativeEvaluationStrategy parent,
+			NativeLmdbQuerySource workerSource, LmdbFusedSipFactorizedRuntime.Session workerSession,
+			NativeExecutionContext workerExecution) {
+		return parent == null ? null
+				: parent.forWorker(workerSource, parent.valuePositionSnapshot(), workerSession,
+						workerExecution);
+	}
+
+	void bindInvocationStrategy(LmdbNativeEvaluationStrategy template) {
+		if (template != null) {
+			setInvocationStrategy(template.isBoundTo(source, fusedSession(), executionContext()) ? template
+					: template.forInvocation(source, fusedSession(), executionContext()));
+		}
+	}
+
+	private Object preparationOwner() {
+		if (preparationOwner == null) {
+			preparationOwner = new Object();
+		}
+		return preparationOwner;
+	}
+
+	LmdbFusedSipFactorizedRuntime.PreparationAttempt preparationAttempt() {
+		if (preparationAttempt == null) {
+			preparationAttempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(null, preparationOwner());
+		}
+		return preparationAttempt;
+	}
+
+	LmdbFusedSipFactorizedRuntime.PreparationAttempt swapPreparationAttempt(
+			LmdbFusedSipFactorizedRuntime.PreparationAttempt next) {
+		LmdbFusedSipFactorizedRuntime.PreparationAttempt previous = preparationAttempt;
+		preparationAttempt = next;
+		return previous;
+	}
+
+	LmdbFusedSipFactorizedRuntime.PreparationScope preparationScope(NativeLmdbQuerySource scopeSource) {
+		return preparationAttempt().scope(fusedSession(), scopeSource);
+	}
+
+	void borrowPreparationAttempt(RowState parent) {
+		preparationAttempt = parent.preparationAttempt();
+	}
+
+	void endPreparationAttempt(LmdbFusedSipFactorizedRuntime.PreparationAttempt attempt) {
+		if (attempt != null && attempt.ownedBy(preparationOwner)) {
+			attempt.close();
+		}
+		if (preparationAttempt == attempt && attempt != null) {
+			preparationAttempt = attempt.parent();
+		}
+	}
+
+	void closePreparationAttempts() {
+		while (preparationAttempt != null && preparationAttempt.ownedBy(preparationOwner)) {
+			endPreparationAttempt(preparationAttempt);
+		}
+		preparationAttempt = null;
 	}
 
 	@Override
@@ -307,6 +437,7 @@ final class RowState implements LmdbNativeSlotReader {
 
 	/** Releases this row's decoded-input reservation and all retained decoded values. Safe to call more than once. */
 	void closeDecodedInputs() {
+		closePreparationAttempts();
 		clearDecodedValues();
 		if (decodedInputReservation != null) {
 			decodedInputReservation.close();
@@ -389,6 +520,7 @@ final class RowState implements LmdbNativeSlotReader {
 	/** Independent binding/trail state at an operator boundary, sharing this evaluation's resources and scope. */
 	RowState fork() {
 		RowState copy = new RowState(source, layout, base, telemetryTarget, exactValuesMetrics, cancellation);
+		copy.diagnosticRoot = diagnosticRoot;
 		System.arraycopy(slots, 0, copy.slots, 0, slots.length);
 		if (summaryCells != null) {
 			copy.summaryCells = summaryCells.clone();
@@ -396,7 +528,13 @@ final class RowState implements LmdbNativeSlotReader {
 		}
 		copy.recomputeBoundMask();
 		copy.memoryScope = memoryScope;
+		copy.executionContext = executionContext;
+		copy.invocationStrategy = invocationStrategy;
 		copy.runtimePlan = runtimePlan;
+		copy.fusedSession = fusedSession;
+		if (fusedSession != null) {
+			copy.borrowPreparationAttempt(this);
+		}
 		copy.scalarFilterTelemetryEnabled = scalarFilterTelemetryEnabled;
 		copy.scalarFilterAttempt = scalarFilterAttempt;
 		copy.probeWorkObserver = probeWorkObserver;
@@ -415,8 +553,16 @@ final class RowState implements LmdbNativeSlotReader {
 		BindingSet input = NativeEntryBindings.snapshot(view);
 		SyntheticValueSource invocation = SyntheticValueSource.forInvocation(source, input);
 		RowState copy = new RowState(invocation, layout, input, telemetryTarget, exactValuesMetrics, cancellation);
+		copy.diagnosticRoot = diagnosticRoot;
 		copy.inheritDecodedInputAccounting(this);
 		copy.runtimePlan = runtimePlan;
+		copy.fusedSession = fusedSession;
+		if (invocationStrategy != null && copy.fusedSession != null && copy.executionContext != null) {
+			copy.setInvocationStrategy(invocationStrategy.forInvocation(copy.source, copy.fusedSession,
+					copy.executionContext));
+		}
+		copy.preparationAttempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(preparationAttempt(),
+				copy.preparationOwner());
 		copy.scalarFilterTelemetryEnabled = scalarFilterTelemetryEnabled;
 		copy.scalarFilterAttempt = scalarFilterAttempt;
 		copy.lexicalScopeDepth = lexicalScopeDepth;
@@ -449,6 +595,14 @@ final class RowState implements LmdbNativeSlotReader {
 	}
 
 	void copyConditionInput(RowState parent, Set<String> retainedNames) {
+		diagnosticRoot = parent.diagnosticRoot;
+		LmdbFusedSipFactorizedRuntime.PreparationAttempt incoming = parent.preparationAttempt();
+		if (preparationAttempt != null && preparationAttempt.parent() != incoming) {
+			closePreparationAttempts();
+		}
+		if (preparationAttempt == null) {
+			preparationAttempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(incoming, preparationOwner());
+		}
 		rollback(0);
 		if (parent.summaryCells != null && summaryCells == null) {
 			summaryCells = new NativeResultCell[slots.length];
@@ -463,7 +617,21 @@ final class RowState implements LmdbNativeSlotReader {
 		}
 		recomputeBoundMask();
 		memoryScope = parent.memoryScope;
+		if (executionContext == null) {
+			executionContext = parent.executionContext;
+		}
 		runtimePlan = parent.runtimePlan;
+		fusedSession = parent.fusedSession;
+		if (parent.invocationStrategy == null || fusedSession == null || executionContext == null) {
+			invocationStrategy = null;
+			conditionParentStrategy = null;
+		} else if (conditionParentStrategy != parent.invocationStrategy || invocationStrategy == null
+				|| !invocationStrategy.isBoundTo(source, fusedSession, executionContext)) {
+			setInvocationStrategy(parent.invocationStrategy.isBoundTo(source, fusedSession, executionContext)
+					? parent.invocationStrategy
+					: parent.invocationStrategy.forInvocation(source, fusedSession, executionContext));
+			conditionParentStrategy = parent.invocationStrategy;
+		}
 		scalarFilterTelemetryEnabled = parent.scalarFilterTelemetryEnabled;
 		scalarFilterAttempt = parent.scalarFilterAttempt;
 		lexicalInputMask = parent.lexicalInputMask & boundMask;
@@ -628,12 +796,13 @@ final class RowState implements LmdbNativeSlotReader {
 	 * attempt that a probe deadline stops inside its consumer loop leaves bindings the trail mark alone cannot undo.
 	 */
 	record AttemptStart(int trailMark, long lexicalInputMask, int lexicalScopeDepth, long[] slots,
-			NativeResultCell[] summaryCells, NativeScalarFilterAttempt scalarFilterAttempt) {
+			NativeResultCell[] summaryCells, NativeScalarFilterAttempt scalarFilterAttempt,
+			LmdbFusedSipFactorizedRuntime.PreparationAttempt preparationAttempt) {
 	}
 
 	AttemptStart attemptStart() {
 		return new AttemptStart(trailSize, lexicalInputMask, lexicalScopeDepth, slots.clone(),
-				summaryCells == null ? null : summaryCells.clone(), scalarFilterAttempt);
+				summaryCells == null ? null : summaryCells.clone(), scalarFilterAttempt, preparationAttempt);
 	}
 
 	/**
@@ -641,6 +810,11 @@ final class RowState implements LmdbNativeSlotReader {
 	 * as usual, and every slot or summary cell that still differs from the snapshot is written back directly.
 	 */
 	void restore(AttemptStart start) {
+		while (preparationAttempt != start.preparationAttempt() && preparationAttempt != null
+				&& preparationAttempt.ownedBy(preparationOwner)) {
+			endPreparationAttempt(preparationAttempt);
+		}
+		preparationAttempt = start.preparationAttempt();
 		rollback(start.trailMark());
 		lexicalInputMask = start.lexicalInputMask();
 		lexicalScopeDepth = start.lexicalScopeDepth();
@@ -672,6 +846,8 @@ final class RowState implements LmdbNativeSlotReader {
 	}
 
 	void startScalarFilterAttempt() {
+		preparationAttempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(preparationAttempt,
+				preparationOwner());
 		if (scalarFilterTelemetryEnabled) {
 			scalarFilterAttempt = new NativeScalarFilterAttempt(telemetryTarget, scalarFilterAttempt);
 		}
@@ -1365,10 +1541,7 @@ final class CopyBinding {
 	long value(RowState row) {
 		if (semanticValue != null) {
 			NativeExpressionDomain.checkReader(row);
-			NativeExecutionContext executionContext = row.source instanceof SyntheticValueSource synthetic
-					? synthetic.executionContext()
-					: null;
-			NativeValueOutcome outcome = semanticValue.evaluate(row.view, executionContext);
+			NativeValueOutcome outcome = semanticValue.evaluateForRow(row.view, row);
 			NativeExpressionDomain.checkReader(row);
 			if (!outcome.isBound() || !(row.source instanceof SyntheticValueSource)) {
 				return UNKNOWN;

@@ -60,6 +60,11 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		super(context, strategy, source);
 	}
 
+	LmdbNativeAggregateValuesCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
+			NativeLmdbQuerySource source, PlanValueCatalog.Builder catalog) {
+		super(context, strategy, source, catalog);
+	}
+
 	/**
 	 * Folds a VALUES table that sits anywhere in a pure inner-join tree under a filter. The older fold only recognized
 	 * {@code Join(data, Filter(VALUES))}; the shared algebra optimizers commonly produce
@@ -671,7 +676,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 				if (expression instanceof Var) {
 					Var sourceVar = (Var) expression;
 					if (sourceVar.hasValue()) {
-						long id = idOf(sourceVar.getValue(), layout.positionMask(elem.getName()));
+						long id = ownedSourceId(sourceVar.getValue(), layout.positionMask(elem.getName()), false);
 						if (id == UNKNOWN) {
 							return null;
 						}
@@ -820,11 +825,22 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 	}
 
 	SlotPlan compileValues(BindingSetAssignment values) {
+		try {
+			return compileValuesWithLookups(values);
+		} finally {
+			releaseValuesLookups(values);
+		}
+	}
+
+	private SlotPlan compileValuesWithLookups(BindingSetAssignment values) {
 		ArrayList<BindingSet> bindingSets = new ArrayList<>();
 		for (BindingSet bindingSet : values.getBindingSets()) {
 			bindingSets.add(bindingSet);
 		}
+		validateValuesLookups(values, bindingSets);
 		ValuesRow[] rows = new ValuesRow[bindingSets.size()];
+		int idDomains = 0;
+		NativeLmdbQuerySource.IdLookup lookup = new NativeLmdbQuerySource.IdLookup();
 		for (int i = 0; i < bindingSets.size(); i++) {
 			BindingSet bindings = bindingSets.get(i);
 			int[] rowSlots = new int[bindings.size()];
@@ -832,7 +848,18 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			int size = 0;
 			for (Binding binding : bindings) {
 				Value value = binding.getValue();
-				long id = idOf(value, layout.positionMask(binding.getName()));
+				lookupValuesSourceId(values, value, layout.positionMask(binding.getName()), lookup);
+				long id = lookup.id();
+				boolean ownPlanId = false;
+				if ((lookup.origin() == NativeLmdbQuerySource.IdOrigin.PLAN
+						|| lookup.origin() == NativeLmdbQuerySource.IdOrigin.RUNTIME) && termSafeAbsenceProof(value)) {
+					long canonical = planValueCatalog.idOf(value);
+					if (canonical == UNKNOWN) {
+						return null;
+					}
+					id = canonical;
+					ownPlanId = true;
+				}
 				if (!termProbeSafeId(id, value)) {
 					// allocated by collectSyntheticValues before compilation started; only variables it
 					// marked may carry synthetic ids (others must keep raw-id semantics and fall back)
@@ -841,6 +868,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 							: UNKNOWN;
 					if (synthetic != UNKNOWN) {
 						id = synthetic;
+						ownPlanId = true;
 					} else if (valueGuardsSupported && bindingSets.size() == 1) {
 						// M-F1 value-guarded fallback: drop the unsafe cell from the id row and record a
 						// root-level term-checked constant bind instead. Patterns below enumerate the variable
@@ -859,14 +887,16 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 						return null;
 					}
 				}
+				idDomains |= ownPlanId ? ValuesPlan.ID_DOMAIN_OWN_PLAN : valuesSourceIdDomains(lookup.origin());
 				rowSlots[size] = slot(binding.getName());
 				rowValues[size] = id;
 				size++;
 			}
 			rows[i] = new ValuesRow(Arrays.copyOf(rowSlots, size), Arrays.copyOf(rowValues, size));
 		}
+		planValueCatalog.recordValuesRowCount(values, rows.length);
 		return SlotPlan.values(rows,
-				values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L);
+				values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L, idDomains);
 	}
 
 	/**

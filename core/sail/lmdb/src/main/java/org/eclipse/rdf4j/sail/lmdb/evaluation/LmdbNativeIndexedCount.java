@@ -38,7 +38,8 @@ final class LmdbNativeIndexedCount {
 
 	private LmdbNativeIndexedCount(PatternPlan pattern) {
 		this.pattern = pattern;
-		this.contexts = pattern.contexts.isFixed() ? LongHashSet.newSetWith(pattern.contexts.ids).toArray() : null;
+		this.contexts = pattern.contexts.isFixed() ? LongHashSet.newSetWith(pattern.contexts.copyIds()).toArray()
+				: null;
 	}
 
 	/** Kill switch for the exact indexed-count strategy, mirroring the other native specialists. */
@@ -53,14 +54,11 @@ final class LmdbNativeIndexedCount {
 				|| pattern.range != null || pattern.hasRepeatedSlot()) {
 			return null;
 		}
-		if (pattern.namedContextScope && pattern.contexts.isFixed()) {
-			for (long context : pattern.contexts.ids) {
-				if (context == NULL_CONTEXT_ID) {
-					// A dataset's rdf4j:nil extension has special graph binding semantics. Leave that case to
-					// ordinary evaluation instead of treating a null graph as an ordinary named graph.
-					return null;
-				}
-			}
+		if (pattern.namedContextScope && pattern.contexts.isFixed()
+				&& pattern.contexts.contains(NULL_CONTEXT_ID)) {
+			// A dataset's rdf4j:nil extension has special graph binding semantics. Leave that case to ordinary
+			// evaluation instead of treating a null graph as an ordinary named graph.
+			return null;
 		}
 		for (AggregateSpec aggregate : aggregates) {
 			if (!countsEveryRow(aggregate, pattern)) {
@@ -87,12 +85,7 @@ final class LmdbNativeIndexedCount {
 
 	private static boolean bindsNamedContext(PatternPlan pattern) {
 		if (pattern.contexts.isFixed()) {
-			for (long context : pattern.contexts.ids) {
-				if (context == NULL_CONTEXT_ID) {
-					return false;
-				}
-			}
-			return true;
+			return !pattern.contexts.contains(NULL_CONTEXT_ID);
 		}
 		return pattern.namedContextScope || pattern.c.isConstant() && pattern.c.constant != NULL_CONTEXT_ID;
 	}

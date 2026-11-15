@@ -53,8 +53,8 @@ public final class PackedFtreeKernelSource {
 				.append("public final class ")
 				.append(simpleName)
 				.append(" implements PackedFtreeKernel {\n")
-				.append("  private PackedFtreeContext p; private KernelCancellation cancel; private boolean done; private int ticks;\n")
-				.append("  public void bind(KernelContext c){ p=c.packedFtree; cancel=c.cancellation; done=false; ticks=0; }\n"
+				.append("  private PackedFtreeContext p; private KernelCancellation cancel; private KernelContext runtimeContext; private boolean done; private int ticks;\n")
+				.append("  public void bind(KernelContext c){ if(runtimeContext!=null&&runtimeContext!=c)runtimeContext.releaseOwnedFusedRuntime(); runtimeContext=c; c.fusedRuntime(); p=c.packedFtree; cancel=c.cancellation; done=false; ticks=0; }\n"
 						+ "  private void poll(){ if((++ticks&1023)==0)KernelRuntime.checkCancelled(cancel); }\n"
 						+ "  private void clear(long[] a,int end){ for(int from=0;from<end;){ KernelRuntime.checkCancelled(cancel); int to=from+Math.min(16384,end-from); java.util.Arrays.fill(a,from,to,0L); from=to; }}\n")
 				.append("  private int next(long[] b,int from,int end){ poll(); if(from>=end)return -1; int w=from>>>6; long x=b[w]&(-1L<<(from&63)); for(;;){ if(x!=0){int v=(w<<6)+Long.numberOfTrailingZeros(x); return v<end?v:-1;} if(((++w)<<6)>=end)return -1; poll(); x=b[w]; }}\n")
@@ -95,7 +95,8 @@ public final class PackedFtreeKernelSource {
 				emitOutside(s, node, children);
 			}
 		}
-		s.append("    return 0; }\n  public void close(){ done=true; p=null; cancel=null; }\n}");
+		s.append(
+				"    return 0; }\n  public void close(){ done=true; p=null; cancel=null; KernelContext c=runtimeContext; runtimeContext=null; if(c!=null)c.releaseOwnedFusedRuntime(); }\n}");
 		return s.toString();
 	}
 

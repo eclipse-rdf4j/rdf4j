@@ -22,9 +22,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongConsumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -40,6 +42,49 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 @Experimental
 interface FactorizedRowCursor extends RowCursor {
 	long multiplicity();
+}
+
+/**
+ * Primitive coordinates of the current terminal factor row; sampling is serialized with advance and close. Sampling and
+ * retirement delivery use producer-owned state and do not require a thread-attached fused runtime session.
+ */
+interface NativeResultCoordinates {
+	int GROUP = 0;
+	int PARENT = 1;
+	int POSITION = 2;
+	int COLUMN = 3;
+	/** Zero is the original single-owner activation; positive namespaces distinguish buffered source generations. */
+	int NAMESPACE = 4;
+	int WIDTH = 5;
+
+	/** Changes when the represented source binding or its physical representation is replaced. */
+	long coordinateActivation();
+
+	/** Accumulates source-slot changes since the previous call; unknown producers conservatively change all slots. */
+	default long takeChangedSlots() {
+		return -1L;
+	}
+
+	/** Checks a single source slot against a previously observed activation without acquiring its coordinates. */
+	default boolean coordinateValid(int slot, long activation) {
+		return activation > 0L && coordinateActivation() == activation;
+	}
+
+	/** A false result excludes the slot for this binding; true may conservatively include non-replaying slots. */
+	default boolean mayReplay(int slot) {
+		return true;
+	}
+
+	/**
+	 * Report retired positive namespaces only after every buffered snapshot that could refer to them is consumed. A
+	 * namespace must never be reused within the coordinate owner's activation; independent sources may retire while
+	 * that activation remains live.
+	 */
+	default void drainRetiredNamespaces(LongConsumer retired) {
+	}
+
+	/** Captures a replayable source cell without retaining its producer or decoding a value. */
+	boolean resultCoordinate(int slot, long[] coordinate);
 }
 
 /**
@@ -791,10 +836,10 @@ final class LmdbNativeFactorizedRows {
 						keysOnlyRoot.distinctKeyEstimate(row));
 	}
 
-	void recordEngagement() {
+	void recordEngagement(RowState row) {
 		if (!engagementRecorded) {
 			engagementRecorded = true;
-			LmdbFusedSipFactorizedRuntime.current().markFactorizationMode("FACTORIZED_ROWS");
+			row.fusedSession().markFactorizationMode("FACTORIZED_ROWS");
 			metrics.recordFactorizedRowsEngaged();
 		}
 	}
@@ -893,7 +938,7 @@ final class LmdbNativeFactorizedRows {
 		return new Cursor(this, row, prefix);
 	}
 
-	private static final class Cursor implements FactorizedRowCursor {
+	private static final class Cursor implements FactorizedRowCursor, NativeResultCoordinates {
 		final LmdbNativeFactorizedRows owner;
 		final RowState row;
 		final RowCursor prefix;
@@ -907,6 +952,11 @@ final class LmdbNativeFactorizedRows {
 		boolean adaptiveSuffixAttempted;
 		boolean adaptiveSuffixFailed;
 		boolean closed;
+		long coordinatePrefix;
+		boolean coordinateTracking, coordinateMappingRefused;
+		long changedCoordinateSlots, replayableSlots;
+		int[] coordinateMappings;
+		LmdbQueryMemoryManager.Reservation coordinateMappingReservation;
 
 		Cursor(LmdbNativeFactorizedRows owner, RowState row, RowCursor prefix) {
 			this.owner = owner;
@@ -933,7 +983,7 @@ final class LmdbNativeFactorizedRows {
 				if (enumActive) {
 					if (advanceOdometer()) {
 						writeEnumSlots();
-						owner.recordEngagement();
+						owner.recordEngagement(row);
 						return true;
 					}
 					clearEnumSlots();
@@ -942,9 +992,15 @@ final class LmdbNativeFactorizedRows {
 				if (!prefix.next()) {
 					close();
 					if (!sawRefusal || sawOptimizedPrefix) {
-						owner.recordEngagement();
+						owner.recordEngagement(row);
 					}
 					return false;
+				}
+				if (coordinatePrefix >= 0L) {
+					coordinatePrefix = coordinatePrefix == Long.MAX_VALUE ? -1L : coordinatePrefix + 1L;
+				}
+				if (coordinateTracking) {
+					changedCoordinateSlots = -1L;
 				}
 				for (NativeBooleanFilter filter : owner.prefixOnlyTailFilters) {
 					if (!filter.accept(row)) {
@@ -954,6 +1010,8 @@ final class LmdbNativeFactorizedRows {
 				}
 				multiplicity = 1L;
 				enumCount = 0;
+				replayableSlots = 0L;
+				boolean earlierCanVary = false;
 				for (TailBranch branch : owner.branches) {
 					TailResult result = branch.result(row, owner);
 					if (result == TailResult.REFUSED) {
@@ -985,6 +1043,10 @@ final class LmdbNativeFactorizedRows {
 							multiplicity *= result.count;
 						}
 					} else if (branch.role == ROLE_ENUM) {
+						if (earlierCanVary) {
+							replayableSlots |= branch.valueSlotMask;
+						}
+						earlierCanVary |= result.count > 1L;
 						owner.enumResults[enumCount] = result;
 						owner.enumBranches[enumCount] = branch;
 						enumCount++;
@@ -992,14 +1054,14 @@ final class LmdbNativeFactorizedRows {
 				}
 				if (enumCount == 0) {
 					sawOptimizedPrefix = true;
-					owner.recordEngagement();
+					owner.recordEngagement(row);
 					return true;
 				}
 				Arrays.fill(owner.odometer, 0, enumCount, 0);
 				writeEnumSlots();
 				enumActive = true;
 				sawOptimizedPrefix = true;
-				owner.recordEngagement();
+				owner.recordEngagement(row);
 				return true;
 			}
 			return false;
@@ -1029,6 +1091,11 @@ final class LmdbNativeFactorizedRows {
 			while (k >= 0) {
 				owner.odometer[k]++;
 				if (owner.odometer[k] < owner.enumResults[k].count) {
+					if (coordinateTracking) {
+						for (int changed = k; changed < enumCount; changed++) {
+							changedCoordinateSlots |= owner.enumBranches[changed].valueSlotMask;
+						}
+					}
 					return true;
 				}
 				owner.odometer[k] = 0;
@@ -1065,11 +1132,107 @@ final class LmdbNativeFactorizedRows {
 		}
 
 		@Override
+		public long coordinateActivation() {
+			return !closed && ordinarySuffix == null && enumActive && coordinatePrefix > 0L ? coordinatePrefix : 0L;
+		}
+
+		@Override
+		public long takeChangedSlots() {
+			if (!coordinateTracking) {
+				coordinateTracking = true;
+				return -1L;
+			}
+			long changed = changedCoordinateSlots;
+			changedCoordinateSlots = 0L;
+			return changed;
+		}
+
+		@Override
+		public boolean coordinateValid(int slot, long activation) {
+			return slot >= 0 && slot < Long.SIZE && activation > 0L && coordinateActivation() == activation;
+		}
+
+		@Override
+		public boolean mayReplay(int slot) {
+			return !coordinateMappingRefused && slot >= 0 && slot < Long.SIZE
+					&& (replayableSlots & (1L << slot)) != 0L;
+		}
+
+		private boolean prepareCoordinateMappings() {
+			if (coordinateMappings != null) {
+				return true;
+			}
+			if (coordinateMappingRefused) {
+				return false;
+			}
+			LmdbQueryMemoryManager.Reservation claim = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+					.tryReserveWithoutReclamation(512L);
+			if (claim == null) {
+				coordinateMappingRefused = true;
+				return false;
+			}
+			try {
+				int[] mappings = new int[Long.SIZE];
+				Arrays.fill(mappings, -1);
+				int group = 0;
+				for (TailBranch branch : owner.branches) {
+					if (branch.role != ROLE_ENUM) {
+						continue;
+					}
+					if (group >= Long.SIZE || branch.valueSlots.length > Long.SIZE) {
+						claim.close();
+						coordinateMappingRefused = true;
+						return false;
+					}
+					for (int column = 0; column < branch.valueSlots.length; column++) {
+						int slot = branch.valueSlots[column];
+						if (slot < 0 || slot >= Long.SIZE || mappings[slot] != -1) {
+							claim.close();
+							coordinateMappingRefused = true;
+							return false;
+						}
+						mappings[slot] = (group << 6) | column;
+					}
+					group++;
+				}
+				coordinateMappings = mappings;
+				coordinateMappingReservation = claim;
+				return true;
+			} catch (RuntimeException | Error failure) {
+				claim.close();
+				throw failure;
+			}
+		}
+
+		@Override
+		public boolean resultCoordinate(int slot, long[] coordinate) {
+			long activation = coordinatePrefix;
+			if (!coordinateValid(slot, activation) || !mayReplay(slot) || !prepareCoordinateMappings()) {
+				return false;
+			}
+			int mapping = coordinateMappings[slot];
+			int group = mapping >>> 6;
+			if (mapping < 0 || group >= enumCount) {
+				return false;
+			}
+			coordinate[NativeResultCoordinates.GROUP] = group;
+			coordinate[NativeResultCoordinates.PARENT] = 0L;
+			coordinate[NativeResultCoordinates.POSITION] = owner.odometer[group];
+			coordinate[NativeResultCoordinates.COLUMN] = mapping & 63;
+			return coordinateValid(slot, activation);
+		}
+
+		@Override
 		public void close() {
 			if (closed) {
 				return;
 			}
 			closed = true;
+			coordinateMappings = null;
+			if (coordinateMappingReservation != null) {
+				coordinateMappingReservation.close();
+				coordinateMappingReservation = null;
+			}
 			clearEnumSlots();
 			Throwable failure = null;
 			try {
@@ -1293,6 +1456,7 @@ final class LmdbNativeFactorizedRows {
 		final int[] freshQuadPos;
 		final int[] valueSlots;
 		final int[] valueQuadPos;
+		final long valueSlotMask;
 		final NativeBooleanFilter[] filters;
 		final boolean rejectNullContext;
 		final HashMap<GroupKey, TailResult> memo = new HashMap<>();
@@ -1318,6 +1482,11 @@ final class LmdbNativeFactorizedRows {
 			this.freshQuadPos = freshQuadPos;
 			this.valueSlots = valueSlots;
 			this.valueQuadPos = valueQuadPos;
+			long mask = 0L;
+			for (int slot : valueSlots) {
+				mask |= 1L << slot;
+			}
+			this.valueSlotMask = mask;
 			this.filters = filters;
 			this.rejectNullContext = rejectNullContext;
 			this.probeKey = new GroupKey(new long[keySlots.length]);

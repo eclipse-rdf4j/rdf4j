@@ -63,12 +63,14 @@ final class LmdbNodePredicateRoute implements AutoCloseable {
 	private final double routedCandidateWork;
 	private final LmdbFusedSipFactorizedRuntime.Session memory;
 	private final long claimedBytes;
+	private final boolean ownsMemory;
 	private boolean closed;
 
 	private LmdbNodePredicateRoute(NativeLmdbQuerySource.NodePredicates runView, long[] roots, int rootCount,
 			int[] lineageOffsets, int[] lineage, long[] predicateIds, int[] predicateOffsets, int predicateCount,
 			int[] rootOrdinals, long[] runReferences, int incidenceCount, double globalCandidateWork,
-			double routedCandidateWork, LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
+			double routedCandidateWork, LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes,
+			boolean ownsMemory) {
 		this.runView = runView;
 		this.roots = roots;
 		this.rootCount = rootCount;
@@ -84,36 +86,50 @@ final class LmdbNodePredicateRoute implements AutoCloseable {
 		this.routedCandidateWork = routedCandidateWork;
 		this.memory = memory;
 		this.claimedBytes = claimedBytes;
+		this.ownsMemory = ownsMemory;
 	}
 
 	static LmdbNodePredicateRoute tryBuild(NativeLmdbQuerySource.NodePredicates predicates, long[] sortedRoots,
-			int rootCount, int globalPredicateCount) {
+			int rootCount, int globalPredicateCount, NativeCancellationToken cancellation,
+			LmdbFusedSipFactorizedRuntime.Session memory) {
 		long maximumBytes = Long.getLong(MAX_BYTES_PROPERTY, DEFAULT_MAXIMUM_BYTES);
 		double minimumSavings = doubleProperty(MINIMUM_SAVINGS_PROPERTY, DEFAULT_MINIMUM_SAVINGS);
 		return tryBuild(predicates, sortedRoots, rootCount, globalPredicateCount, maximumBytes, minimumSavings,
-				new NativeCancellationToken());
+				cancellation, memory, false);
 	}
 
-	static LmdbNodePredicateRoute tryBuild(NativeLmdbQuerySource.NodePredicates predicates, long[] sortedRoots,
-			int rootCount, int globalPredicateCount, NativeCancellationToken cancellation) {
-		long maximumBytes = Long.getLong(MAX_BYTES_PROPERTY, DEFAULT_MAXIMUM_BYTES);
-		double minimumSavings = doubleProperty(MINIMUM_SAVINGS_PROPERTY, DEFAULT_MINIMUM_SAVINGS);
-		return tryBuild(predicates, sortedRoots, rootCount, globalPredicateCount, maximumBytes, minimumSavings,
-				cancellation);
-	}
-
-	static LmdbNodePredicateRoute tryBuild(NativeLmdbQuerySource.NodePredicates predicates, long[] sortedRoots,
+	static LmdbNodePredicateRoute tryBuildStandalone(NativeLmdbQuerySource.NodePredicates predicates,
+			long[] sortedRoots,
 			int rootCount, int globalPredicateCount, long maximumBytes, double minimumSavings) {
-		return tryBuild(predicates, sortedRoots, rootCount, globalPredicateCount, maximumBytes, minimumSavings,
+		return tryBuildStandalone(predicates, sortedRoots, rootCount, globalPredicateCount, maximumBytes,
+				minimumSavings,
 				new NativeCancellationToken());
+	}
+
+	private static LmdbNodePredicateRoute tryBuildStandalone(NativeLmdbQuerySource.NodePredicates predicates,
+			long[] sortedRoots, int rootCount, int globalPredicateCount, long maximumBytes, double minimumSavings,
+			NativeCancellationToken cancellation) {
+		LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.create(0L, maximumBytes, false);
+		boolean transferred = false;
+		try {
+			LmdbNodePredicateRoute route = tryBuild(predicates, sortedRoots, rootCount, globalPredicateCount,
+					maximumBytes, minimumSavings, cancellation, memory, true);
+			transferred = route != null;
+			return route;
+		} finally {
+			if (!transferred) {
+				memory.close();
+			}
+		}
 	}
 
 	private static LmdbNodePredicateRoute tryBuild(NativeLmdbQuerySource.NodePredicates predicates,
 			long[] sortedRoots, int rootCount, int globalPredicateCount, long maximumBytes, double minimumSavings,
-			NativeCancellationToken cancellation) {
+			NativeCancellationToken cancellation, LmdbFusedSipFactorizedRuntime.Session memory, boolean ownsMemory) {
 		Objects.requireNonNull(predicates, "predicates");
 		Objects.requireNonNull(sortedRoots, "sortedRoots");
 		Objects.requireNonNull(cancellation, "cancellation");
+		Objects.requireNonNull(memory, "memory");
 		if (rootCount < 0 || rootCount > sortedRoots.length) {
 			throw new IllegalArgumentException("invalid route root count: " + rootCount);
 		}
@@ -141,7 +157,6 @@ final class LmdbNodePredicateRoute implements AutoCloseable {
 			}
 		}
 
-		LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
 		int incidenceCapacity = INITIAL_INCIDENCE_CAPACITY;
 		long peakBytes;
 		try {
@@ -238,7 +253,7 @@ final class LmdbNodePredicateRoute implements AutoCloseable {
 			claimed = residentBytes;
 			LmdbNodePredicateRoute route = new LmdbNodePredicateRoute(predicates, uniqueRoots, uniqueCount,
 					lineageOffsets, lineage, predicateIds, predicateOffsets, groups, rootsByPredicate,
-					runsByPredicate, incidences, globalWork, routeWork, memory, residentBytes);
+					runsByPredicate, incidences, globalWork, routeWork, memory, residentBytes, ownsMemory);
 			BUILDS.incrementAndGet();
 			INCIDENCES.addAndGet(incidences);
 			ownershipTransferred = true;
@@ -632,7 +647,13 @@ final class LmdbNodePredicateRoute implements AutoCloseable {
 	public void close() {
 		if (!closed) {
 			closed = true;
-			memory.release(claimedBytes);
+			try {
+				memory.release(claimedBytes);
+			} finally {
+				if (ownsMemory) {
+					memory.close();
+				}
+			}
 		}
 	}
 }

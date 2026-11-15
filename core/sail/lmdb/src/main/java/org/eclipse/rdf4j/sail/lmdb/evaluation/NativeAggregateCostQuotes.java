@@ -428,7 +428,7 @@ final class NativeAggregateCostQuotes {
 		}
 		if (plan instanceof ValuesPlan values) {
 			LmdbNativeWork.RowBounds bounds = LmdbNativeCostVectors.rowBounds(values, row, boundMask);
-			return new Input(values.rows.length, 0D, 0D, 0D, 0D, bounds.low(), bounds.high(),
+			return new Input(values.rowCount(), 0D, 0D, 0D, 0D, bounds.low(), bounds.high(),
 					LmdbNativeCostVector.zero());
 		}
 		if (plan instanceof SingletonPlan || plan instanceof EmptyPlan) {

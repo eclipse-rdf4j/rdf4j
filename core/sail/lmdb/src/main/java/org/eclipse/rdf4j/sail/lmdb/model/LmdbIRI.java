@@ -78,6 +78,14 @@ public class LmdbIRI implements LmdbResource, IRI {
 		return initialized;
 	}
 
+	boolean hasMetadataSemanticPayload() {
+		return initialized && iriString != null;
+	}
+
+	boolean hasPristineColdPayload() {
+		return !initialized && iriString == null;
+	}
+
 	/**
 	 * The IRI string.
 	 */

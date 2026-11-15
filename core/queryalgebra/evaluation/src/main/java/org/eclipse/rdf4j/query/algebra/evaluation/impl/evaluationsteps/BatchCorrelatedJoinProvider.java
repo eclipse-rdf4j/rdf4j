@@ -42,6 +42,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 @Experimental
 public interface BatchCorrelatedJoinProvider {
 
+	/** An invocation-owned capability which generic evaluation can forward without knowing its store implementation. */
+	@InternalUseOnly
+	interface InvocationOwner {
+	}
+
+	/** A live cursor can expose the exact invocation that owns its native inputs. */
+	@InternalUseOnly
+	interface InvocationCarrier {
+		InvocationOwner invocationOwner();
+	}
+
 	/** Join semantics the provider may be asked to reproduce. */
 	@Experimental
 	enum Mode {

@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -194,6 +195,7 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 	private final GenericSubplanDescriptor descriptor;
 	private final Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluationCompile;
 	private final Supplier<NativeBindingSetValueEvaluator> sharedFallbackCompile;
+	private final BiFunction<RowState, NativeExecutionContext, NativeBindingSetValueEvaluator> invocationCompile;
 	private volatile NativeBindingSetValueEvaluator sharedFallback;
 
 	NativeValueOutcomeBooleanFilter(NativeBindingSetValueEvaluator evaluator, long readMask) {
@@ -202,6 +204,7 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 		this.descriptor = null;
 		this.perEvaluationCompile = null;
 		this.sharedFallbackCompile = null;
+		this.invocationCompile = null;
 	}
 
 	/**
@@ -218,14 +221,23 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 		this.descriptor = descriptor;
 		this.perEvaluationCompile = perEvaluationCompile;
 		this.sharedFallbackCompile = sharedFallbackCompile;
+		this.invocationCompile = null;
+	}
+
+	NativeValueOutcomeBooleanFilter(GenericSubplanDescriptor descriptor,
+			BiFunction<RowState, NativeExecutionContext, NativeBindingSetValueEvaluator> invocationCompile,
+			long readMask) {
+		this.evaluator = null;
+		this.readMask = readMask;
+		this.descriptor = descriptor;
+		this.perEvaluationCompile = null;
+		this.sharedFallbackCompile = null;
+		this.invocationCompile = invocationCompile;
 	}
 
 	@Override
 	public boolean accept(RowState row) {
-		NativeExecutionContext executionContext = row.source instanceof SyntheticValueSource synthetic
-				? synthetic.executionContext()
-				: null;
-		NativeValueOutcome outcome = resolveEvaluator(row).evaluate(row.view, executionContext);
+		NativeValueOutcome outcome = resolveEvaluator(row).evaluateForRow(row.view, row);
 		return outcome.isBound()
 				&& QueryEvaluationUtility.getEffectiveBooleanValue(outcome.value()).orElse(false);
 	}
@@ -234,11 +246,15 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 		if (evaluator != null) {
 			return evaluator;
 		}
-		if (row.source instanceof SyntheticValueSource) {
-			NativeExecutionContext context = ((SyntheticValueSource) row.source).executionContext();
-			if (context != null) {
-				return context.genericStep(descriptor, () -> perEvaluationCompile.apply(context));
-			}
+		if (invocationCompile != null) {
+			NativeExecutionContext context = row.executionContext();
+			return row.preparationScope(row.source)
+					.prepare(descriptor,
+							() -> descriptor.prepare(() -> invocationCompile.apply(row, context)));
+		}
+		NativeExecutionContext context = row.executionContextOrNull();
+		if (context != null) {
+			return context.genericStep(descriptor, () -> perEvaluationCompile.apply(context));
 		}
 		NativeBindingSetValueEvaluator shared = sharedFallback;
 		if (shared == null) {
@@ -899,7 +915,8 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 				if (context != UNKNOWN) {
 					return contexts.contains(context) && source.has(subj, pred, obj, context);
 				}
-				for (long contextId : contexts.ids) {
+				for (int index = 0; index < contexts.size(); index++) {
+					long contextId = contexts.idAt(index);
 					if (source.has(subj, pred, obj, contextId)) {
 						return true;
 					}

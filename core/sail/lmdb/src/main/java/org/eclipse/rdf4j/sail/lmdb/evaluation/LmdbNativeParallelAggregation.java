@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.Session;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Intra-query morsel parallelism for native COUNT-style aggregation. The root scan of the ordered physical plan is
@@ -144,7 +146,8 @@ final class LmdbNativeParallelAggregation {
 		int threads = reservation.grantedWorkers();
 		int sourceCount = threads + (morselMode ? 1 : 0);
 		double estCost = LmdbNativeWork.parallelCost(totalWork, threads);
-		AggregateCandidate candidate = new AggregateCandidate(it, plan, parentMetrics, derived, root,
+		AggregateCandidate candidate = new AggregateCandidate(it, plan, row.fusedSession(), row.executionContext(),
+				parentMetrics, derived, root,
 				preflightAggregateSlots, partitions, reservation, threads, sourceCount);
 		// declare the genuinely front-loaded worker-start cost separately (gap-analysis C4): workers, snapshot
 		// sources and read transactions all exist before the first group can be produced, exactly as in the
@@ -174,6 +177,8 @@ final class LmdbNativeParallelAggregation {
 	private static List<BindingSet> open(AggregateCandidate candidate) {
 		NativeGroupIteration it = candidate.it;
 		MultiJoinPlan plan = candidate.plan;
+		Session parentSession = candidate.parentSession;
+		NativeExecutionContext parentExecution = candidate.parentExecution;
 		LmdbNativeAttemptMetrics parentMetrics = candidate.parentMetrics;
 		MultiJoinPlan.OrderedPlan derived = candidate.derived;
 		PatternPlan root = candidate.root;
@@ -188,6 +193,9 @@ final class LmdbNativeParallelAggregation {
 		PreparedRootScan preparedRoot = null;
 		MultiJoinPlan[] workerPlans = null;
 		NativeLmdbQuerySource.ParallelSource[] sources = null;
+		Session[] workerSessions = new Session[threads];
+		Session producerSession = null;
+		RowState preflightRow = null;
 		LmdbNativeAttemptMetrics metrics = null;
 		List<BindingSet> results = null;
 		String dynamicDecline = null;
@@ -199,20 +207,45 @@ final class LmdbNativeParallelAggregation {
 			// observe one pinned snapshot.
 			sources = it.source.openParallelSources(sourceCount);
 			if (sources != null) {
+				if (partitions == null) {
+					producerSession = parentSession.worker();
+				}
 				boolean setupReady = preflightAggregateSlots == 0L;
 				if (!setupReady && partitions != null) {
 					// no producer sibling exists in partition mode: run the floating SUM/AVG sample on the query
 					// thread's own source over a throwaway cursor and discard it (partition 0's worker re-reads
 					// those rows — noise against the >=50k-row gate); EncounterOrderFallback propagates unchanged
 					RowState sampleRow = new RowState(it.source, it.layout, it.base, it.explainTarget, it.cancellation);
-					if (NativeRowSeeder.seed(sampleRow.slots, it.layout, it.base, it.source)) {
-						sampleRow.recomputeBoundMask();
-						prepareFloatingRootSample(derived, root, sampleRow, preflightAggregateSlots).close();
-						setupReady = true;
+					sampleRow.fusedSession = parentSession;
+					sampleRow.setExecutionContext(parentExecution);
+					sampleRow.bindInvocationStrategy(it.invocationStrategy);
+					Throwable sampleFailure = null;
+					try {
+						if (NativeRowSeeder.seed(sampleRow.slots, it.layout, it.base, it.source)) {
+							sampleRow.recomputeBoundMask();
+							prepareFloatingRootSample(derived, root, sampleRow, preflightAggregateSlots).close();
+							setupReady = true;
+						}
+					} catch (IOException | RuntimeException | Error problem) {
+						sampleFailure = problem;
+						throw problem;
+					} finally {
+						KernelRuntime.rethrowCloseFailureIfNotPrimary(
+								KernelRuntime.closeResource(sampleRow::closeDecodedInputs, sampleFailure),
+								sampleFailure);
 					}
 				} else if (!setupReady) {
 					RowState producerRow = new RowState(sources[threads], it.layout, it.base, it.explainTarget,
 							it.cancellation);
+					preflightRow = producerRow;
+					producerRow.fusedSession = producerSession;
+					producerRow.setExecutionContext(NativeScalarPlan.WorkerContext.executionForSource(sources[threads],
+							parentExecution));
+					LmdbNativeEvaluationStrategy producerStrategy = RowState.workerStrategy(it.invocationStrategy,
+							sources[threads], producerSession, producerRow.executionContext());
+					if (producerStrategy != null) {
+						producerRow.setInvocationStrategy(producerStrategy);
+					}
 					if (NativeRowSeeder.seed(producerRow.slots, it.layout, it.base, sources[threads])) {
 						producerRow.recomputeBoundMask();
 						preparedRoot = prepareFloatingRootSample(derived, root, producerRow,
@@ -238,7 +271,8 @@ final class LmdbNativeParallelAggregation {
 		}
 		if (primaryFailure == null && workerPlans != null) {
 			try {
-				results = evaluate(it, plan, workerPlans, root, sources, threads, metrics, preparedRoot, partitions);
+				results = evaluate(it, plan, workerPlans, root, sources, threads, metrics, preparedRoot, partitions,
+						parentSession, parentExecution, producerSession, workerSessions);
 			} catch (RuntimeException | Error problem) {
 				primaryFailure = problem;
 			}
@@ -254,8 +288,15 @@ final class LmdbNativeParallelAggregation {
 					primaryFailure = addCleanupFailure(primaryFailure, closeFailure);
 				}
 			}
+			if (preflightRow != null) {
+				primaryFailure = KernelRuntime.closeResource(preflightRow::closeDecodedInputs, primaryFailure);
+			}
 			primaryFailure = LmdbNativeParallelPipelines.closeWorkerPlans(workerPlans, 0, primaryFailure, cleanup);
 			primaryFailure = LmdbNativeParallelPipelines.closeSources(sources, primaryFailure, cleanup);
+			for (Session workerSession : workerSessions) {
+				primaryFailure = KernelRuntime.closeResource(workerSession, primaryFailure);
+			}
+			primaryFailure = KernelRuntime.closeResource(producerSession, primaryFailure);
 			try {
 				reservation.close();
 			} catch (RuntimeException | Error closeFailure) {
@@ -276,19 +317,19 @@ final class LmdbNativeParallelAggregation {
 			return reject(it, dynamicDecline != null ? dynamicDecline : "worker-plan-unavailable");
 		}
 		metrics.recordParallelRun();
-		metrics.commitToParent();
 		if (partitions != null) {
 			LmdbNativeParallelPipelines.RANGE_PARTITION_RUNS.incrementAndGet();
 			LmdbNativeParallelPipelines.RANGE_PARTITIONS_PLANNED.addAndGet(partitions.length);
 			LmdbNativeParallelPipelines.LAST_RANGE_REJECTION.set(null);
 			if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
-				LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines.parallelStrategyLabel(
+				metrics.deferStrategy(it.explainTarget, LmdbNativeParallelPipelines.parallelStrategyLabel(
 						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, partitions.length));
 			}
 		} else if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
-			LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines
+			metrics.deferStrategy(it.explainTarget, LmdbNativeParallelPipelines
 					.parallelStrategyLabel(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, 0));
 		}
+		metrics.commitToParent();
 		return results;
 	}
 
@@ -301,6 +342,8 @@ final class LmdbNativeParallelAggregation {
 	private static final class AggregateCandidate {
 		final NativeGroupIteration it;
 		final MultiJoinPlan plan;
+		final Session parentSession;
+		final NativeExecutionContext parentExecution;
 		final LmdbNativeAttemptMetrics parentMetrics;
 		final MultiJoinPlan.OrderedPlan derived;
 		final PatternPlan root;
@@ -310,12 +353,16 @@ final class LmdbNativeParallelAggregation {
 		final int threads;
 		final int sourceCount;
 
-		AggregateCandidate(NativeGroupIteration it, MultiJoinPlan plan, LmdbNativeAttemptMetrics parentMetrics,
+		AggregateCandidate(NativeGroupIteration it, MultiJoinPlan plan, Session parentSession,
+				NativeExecutionContext parentExecution,
+				LmdbNativeAttemptMetrics parentMetrics,
 				MultiJoinPlan.OrderedPlan derived, PatternPlan root,
 				long preflightAggregateSlots, LmdbRootScanPartition[] partitions,
 				LmdbNativeParallelPipelines.TaskReservation reservation, int threads, int sourceCount) {
 			this.it = it;
 			this.plan = plan;
+			this.parentSession = parentSession;
+			this.parentExecution = parentExecution;
 			this.parentMetrics = parentMetrics;
 			this.derived = derived;
 			this.root = root;
@@ -329,18 +376,6 @@ final class LmdbNativeParallelAggregation {
 		List<BindingSet> open() {
 			return LmdbNativeParallelAggregation.open(this);
 		}
-	}
-
-	/**
-	 * Explain label of the most recent successful {@link #tryEvaluate} on this thread, consumed by the caller right
-	 * after the call returns. Thread-confined: tryEvaluate runs synchronously on the query thread.
-	 */
-	private static final ThreadLocal<String> LAST_STRATEGY_LABEL = new ThreadLocal<>();
-
-	static String consumeLastStrategyLabel() {
-		String label = LAST_STRATEGY_LABEL.get();
-		LAST_STRATEGY_LABEL.remove();
-		return label != null ? label : LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION;
 	}
 
 	/**
@@ -637,22 +672,12 @@ final class LmdbNativeParallelAggregation {
 		return EncounterOrderFallback.find(primary) != null ? cleanup : addCleanupFailure(primary, cleanup);
 	}
 
-	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan[] workerPlans, PatternPlan root,
-			NativeLmdbQuerySource.ParallelSource[] sources, int threads, LmdbNativeAttemptMetrics metrics,
-			PreparedRootScan preparedRoot) {
-		return evaluate(it, null, workerPlans, root, sources, threads, metrics, preparedRoot, null);
-	}
-
-	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan[] workerPlans, PatternPlan root,
-			NativeLmdbQuerySource.ParallelSource[] sources, int threads, LmdbNativeAttemptMetrics metrics,
-			PreparedRootScan preparedRoot, LmdbRootScanPartition[] plannedPartitions) {
-		return evaluate(it, null, workerPlans, root, sources, threads, metrics, preparedRoot, plannedPartitions);
-	}
-
-	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan templatePlan,
+	private static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan templatePlan,
 			MultiJoinPlan[] workerPlans, PatternPlan root, NativeLmdbQuerySource.ParallelSource[] sources, int threads,
 			LmdbNativeAttemptMetrics metrics, PreparedRootScan preparedRoot,
-			LmdbRootScanPartition[] plannedPartitions) {
+			LmdbRootScanPartition[] plannedPartitions, Session parentSession, NativeExecutionContext parentExecution,
+			Session producerSession,
+			Session[] workerSessions) {
 		int expectedSources = threads + (plannedPartitions != null ? 0 : 1);
 		if (workerPlans == null || workerPlans.length != threads || sources == null
 				|| sources.length != expectedSources) {
@@ -683,10 +708,18 @@ final class LmdbNativeParallelAggregation {
 					try (var replayScope = replayContext.activate();
 							NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
 									.inputScope(it.cancellation)) {
+						Session workerSession = parentSession.worker();
+						workerSessions[worker] = workerSession;
+						NativeExecutionContext workerExecution = NativeScalarPlan.WorkerContext.executionForSource(
+								source,
+								parentExecution);
+						LmdbNativeEvaluationStrategy workerStrategy = RowState.workerStrategy(it.invocationStrategy,
+								source, workerSession, workerExecution);
 						workerPlan = templatePlan == null
 								? workerPlans[worker]
 								: LmdbNativeParallelPipelines.forkWorkerPlan(templatePlan,
-										NativeScalarPlan.WorkerContext.forSource(source, it.evaluationContext));
+										NativeScalarPlan.WorkerContext.forSource(source, it.evaluationContext,
+												workerSession, workerExecution, workerStrategy, it.explainTarget));
 						workerPlans[worker] = workerPlan;
 						handedToWorkerRunner = true;
 						NativeExecutionPhaseEvent.activateInput("scan", it.cancellation);
@@ -694,7 +727,7 @@ final class LmdbNativeParallelAggregation {
 							NativeExecutionPhaseEvent.activateInput("expressions", it.cancellation);
 						}
 						NativeGroupTable result = runWorkerOwned(it, workerPlan, root, source, queue, partitions,
-								failure, workerMetric);
+								failure, workerMetric, workerSession, workerExecution, workerStrategy);
 						if (failure.get() == null) {
 							inputPhases.complete();
 						}
@@ -735,7 +768,8 @@ final class LmdbNativeParallelAggregation {
 		Throwable producerFailure = null;
 		if (submissionFailure == null && partitions == null) {
 			try {
-				produce(it, root, sources[threads], queue, threads, failure, preparedRoot);
+				produce(it, root, sources[threads], queue, threads, failure, preparedRoot, producerSession,
+						parentExecution);
 			} catch (Throwable t) {
 				producerFailure = t;
 				failure.compareAndSet(null, t);
@@ -821,59 +855,101 @@ final class LmdbNativeParallelAggregation {
 		}
 	}
 
-	static void produce(NativeGroupIteration it, PatternPlan root, NativeLmdbQuerySource producerSource,
+	private static void produce(NativeGroupIteration it, PatternPlan root, NativeLmdbQuerySource producerSource,
 			ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue, int workers, AtomicReference<Throwable> failure,
-			PreparedRootScan preparedRoot) throws IOException {
+			PreparedRootScan preparedRoot, Session producerSession, NativeExecutionContext parentExecution)
+			throws IOException {
 		if (preparedRoot != null) {
 			LmdbNativeExchange.produceMorsels(preparedRoot.cursor, preparedRoot.firstMorsel, queue, workers, failure,
 					new AtomicBoolean(), it.cancellation);
 			return;
 		}
 		RowState row = new RowState(producerSource, it.layout, it.base, it.explainTarget, it.cancellation);
-		boolean seeded = NativeRowSeeder.seed(row.slots, it.layout, it.base, producerSource);
-		if (seeded) {
-			row.recomputeBoundMask();
+		row.fusedSession = producerSession;
+		row.setExecutionContext(NativeScalarPlan.WorkerContext.executionForSource(producerSource, parentExecution));
+		LmdbNativeEvaluationStrategy producerStrategy = RowState.workerStrategy(it.invocationStrategy, producerSource,
+				producerSession, row.executionContext());
+		if (producerStrategy != null) {
+			row.setInvocationStrategy(producerStrategy);
 		}
-		LmdbNativeExchange.produceMorsels(root, seeded ? row : null, queue, workers, failure, new AtomicBoolean());
+		Throwable primaryFailure = null;
+		try {
+			boolean seeded = NativeRowSeeder.seed(row.slots, it.layout, it.base, producerSource);
+			if (seeded) {
+				row.recomputeBoundMask();
+			}
+			LmdbNativeExchange.produceMorsels(root, seeded ? row : null, queue, workers, failure, new AtomicBoolean());
+		} catch (IOException | RuntimeException | Error problem) {
+			primaryFailure = problem;
+			throw problem;
+		} finally {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(
+					KernelRuntime.closeResource(row::closeDecodedInputs, primaryFailure), primaryFailure);
+		}
 	}
 
 	static NativeGroupTable runWorker(NativeGroupIteration it, MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived,
 			PatternPlan root, NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
-			AtomicReference<Throwable> failure, LmdbNativeAttemptMetrics metrics) throws IOException {
-		return runWorker(it, plan, derived, root, source, queue, null, failure, metrics);
-	}
-
-	static NativeGroupTable runWorker(NativeGroupIteration it, MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived,
-			PatternPlan root, NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
-			ConcurrentLinkedQueue<LmdbRootScanPartition> partitions, AtomicReference<Throwable> failure,
-			LmdbNativeAttemptMetrics metrics) throws IOException {
+			AtomicReference<Throwable> failure, LmdbNativeAttemptMetrics metrics, Session workerSession,
+			NativeExecutionContext workerExecution)
+			throws IOException {
 		RowState row = new RowState(source, it.layout, it.base, it.explainTarget, it.cancellation);
-		if (!NativeRowSeeder.seed(row.slots, it.layout, it.base, source)) {
+		row.fusedSession = workerSession;
+		row.setExecutionContext(workerExecution);
+		LmdbNativeEvaluationStrategy workerStrategy = RowState.workerStrategy(it.invocationStrategy, source,
+				workerSession, workerExecution);
+		if (workerStrategy != null) {
+			row.setInvocationStrategy(workerStrategy);
+		}
+		AggContext context = null;
+		Throwable primaryFailure = null;
+		try {
+			context = new AggContext(source, it.strictCompare, true, true);
+			return runWorker(it, plan, derived, root, row, queue, null, failure, metrics, context);
+		} catch (IOException | RuntimeException | Error problem) {
+			primaryFailure = problem;
+			throw problem;
+		} finally {
+			Throwable closeFailure = primaryFailure;
+			if (context != null) {
+				AggContext workerContext = context;
+				closeFailure = KernelRuntime.closeResource(workerContext::close, closeFailure);
+			}
+			closeFailure = KernelRuntime.closeResource(row::closeDecodedInputs, closeFailure);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(closeFailure, primaryFailure);
+		}
+	}
+
+	private static NativeGroupTable runWorker(NativeGroupIteration it, MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan derived, PatternPlan root, RowState row,
+			ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
+			ConcurrentLinkedQueue<LmdbRootScanPartition> partitions, AtomicReference<Throwable> failure,
+			LmdbNativeAttemptMetrics metrics, AggContext ctx) throws IOException {
+		if (!NativeRowSeeder.seed(row.slots, it.layout, it.base, row.source)) {
 			// the main thread seeded the identical bindings against the same value store before gating in
 			throw new IllegalStateException("worker seeding diverged from the query thread");
 		}
 		row.recomputeBoundMask();
-		AggContext ctx = new AggContext(source, it.strictCompare, true, true);
-		FactorizedTail tail;
-		if (derived == null) {
-			// the same deterministic selection the consumer ran at propose time: worker forks share the
-			// consumer's pattern children, so the selected root must be the shared morsel root
-			FactorizedTail.Selection selection = FactorizedTail.select(plan, row, it.groupSlots, it.aggregates,
-					metrics);
-			derived = selection.derived;
-			tail = selection.tail;
-			if (derived.order[0] != root) {
-				throw new IllegalStateException("worker physical root diverged from the shared morsel root");
-			}
-		} else {
-			tail = derived.order.length >= 2
-					? FactorizedTail.probe(derived, plan.filters, row.boundMask(), it.groupSlots, it.aggregates,
-							metrics)
-					: null;
-		}
+		FactorizedTail tail = null;
 		NativeGroupTable result = null;
 		Throwable failureOutcome = null;
 		try {
+			if (derived == null) {
+				// the same deterministic selection the consumer ran at propose time: worker forks share the
+				// consumer's pattern children, so the selected root must be the shared morsel root
+				FactorizedTail.Selection selection = FactorizedTail.select(plan, row, it.groupSlots, it.aggregates,
+						metrics);
+				derived = selection.derived;
+				tail = selection.tail;
+				if (derived.order[0] != root) {
+					throw new IllegalStateException("worker physical root diverged from the shared morsel root");
+				}
+			} else {
+				tail = derived.order.length >= 2
+						? FactorizedTail.probe(derived, plan.filters, row.boundMask(), it.groupSlots, it.aggregates,
+								metrics)
+						: null;
+			}
 			int chainLength = tail != null ? derived.order.length - tail.branchCount() : derived.order.length;
 			RowCursor leftmost = partitions != null
 					? new LmdbNativeExchange.PartitionCursor(partitions, root, row, failure, new AtomicBoolean())
@@ -883,11 +959,18 @@ final class LmdbNativeParallelAggregation {
 			NativeGroupTable table = tail != null && tail.groupsByTail()
 					? NativeGroupTable.tailGrouped(it.aggregates, ctx, it.hashDistinctChannels)
 					: NativeGroupTable.createParallel(it.groupSlots, it.aggregates, ctx, it.hashDistinctChannels, true);
-			RowCursor prefix = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
-					? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, chainLength, row, leftmost, prefixBudget)
-					: null;
-			if (prefix == null) {
-				prefix = plan.openChainFrom(derived, leftmost, chainLength, row);
+			RowCursor prefix;
+			try {
+				prefix = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
+						? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, chainLength, row, leftmost,
+								prefixBudget)
+						: null;
+				if (prefix == null) {
+					prefix = plan.openChainFrom(derived, leftmost, chainLength, row);
+				}
+			} catch (IOException | RuntimeException | Error problem) {
+				KernelRuntime.closeCursor(leftmost, problem);
+				throw problem;
 			}
 			try (RowCursor cursor = prefix) {
 				if (tail != null && tail.groupsByTail()) {
@@ -932,15 +1015,32 @@ final class LmdbNativeParallelAggregation {
 	private static NativeGroupTable runWorkerOwned(NativeGroupIteration it, MultiJoinPlan plan, PatternPlan root,
 			NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
 			ConcurrentLinkedQueue<LmdbRootScanPartition> partitions, AtomicReference<Throwable> failure,
-			LmdbNativeAttemptMetrics metrics) throws IOException {
+			LmdbNativeAttemptMetrics metrics, Session workerSession, NativeExecutionContext workerExecution,
+			LmdbNativeEvaluationStrategy workerStrategy)
+			throws IOException {
 		NativeGroupTable result = null;
 		Throwable failureOutcome = null;
+		RowState row = null;
+		AggContext context = null;
 		try {
-			result = runWorker(it, plan, null, root, source, queue, partitions, failure, metrics);
+			row = new RowState(source, it.layout, it.base, it.explainTarget, it.cancellation);
+			row.fusedSession = workerSession;
+			row.setExecutionContext(workerExecution);
+			if (workerStrategy != null) {
+				row.setInvocationStrategy(workerStrategy);
+			}
+			context = new AggContext(source, it.strictCompare, true, true);
+			result = runWorker(it, plan, null, root, row, queue, partitions, failure, metrics, context);
 		} catch (IOException | RuntimeException | Error problem) {
 			failureOutcome = problem;
 		}
 		failureOutcome = LmdbNativeParallelPipelines.closePlanFilters(plan, failureOutcome);
+		if (context != null) {
+			failureOutcome = KernelRuntime.closeResource(context::close, failureOutcome);
+		}
+		if (row != null) {
+			failureOutcome = KernelRuntime.closeResource(row::closeDecodedInputs, failureOutcome);
+		}
 		if (failureOutcome instanceof IOException ioException) {
 			throw ioException;
 		}

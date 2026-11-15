@@ -128,7 +128,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 		}
 		long subject = input.pattern.s.isConstant() ? input.pattern.s.constant : UNKNOWN;
 		long object = input.pattern.o.isConstant() ? input.pattern.o.constant : UNKNOWN;
-		long[] acceptedContexts = input.pattern.contexts.isFixed() ? input.pattern.contexts.ids : null;
+		long[] acceptedContexts = input.pattern.contexts.copyIds();
 		if (input.pattern.c.isConstant()) {
 			if (acceptedContexts != null && !input.pattern.contexts.contains(input.pattern.c.constant)
 					|| input.pattern.namedContextScope && input.pattern.c.constant == NULL_CONTEXT_ID) {

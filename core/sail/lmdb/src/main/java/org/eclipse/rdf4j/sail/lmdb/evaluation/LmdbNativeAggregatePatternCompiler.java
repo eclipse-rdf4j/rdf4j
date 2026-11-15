@@ -72,6 +72,11 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		super(context, strategy, source);
 	}
 
+	LmdbNativeAggregatePatternCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
+			NativeLmdbQuerySource source, PlanValueCatalog.Builder catalog) {
+		super(context, strategy, source, catalog);
+	}
+
 	private NativeLmdbQuerySource.IndexAccessProfile accessProfile() {
 		if (!accessProfileCaptured) {
 			accessProfile = source.indexAccessProfile();
@@ -641,19 +646,42 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (contexts == ContextConstraint.EMPTY) {
 			return null;
 		}
-		Term s = compileTerm(sp.getSubjectVar(), NativePatternField.SUBJECT);
-		Term p = compileTerm(sp.getPredicateVar(), NativePatternField.PREDICATE);
-		Term o = compileTerm(sp.getObjectVar(), NativePatternField.OBJECT);
-		Term c = compileTerm(sp.getContextVar(), NativePatternField.CONTEXT);
+		NativeLmdbQuerySource.IdLookup origin = new NativeLmdbQuerySource.IdLookup();
+		Term s = compileTerm(sp.getSubjectVar(), NativePatternField.SUBJECT, origin);
+		boolean estimateProven = estimateTermProven(sp.getSubjectVar(), origin);
+		long estimateSubject = estimateTermId(sp.getSubjectVar(), origin);
+		Term p = compileTerm(sp.getPredicateVar(), NativePatternField.PREDICATE, origin);
+		estimateProven &= estimateTermProven(sp.getPredicateVar(), origin);
+		long estimatePredicate = estimateTermId(sp.getPredicateVar(), origin);
+		Term o = compileTerm(sp.getObjectVar(), NativePatternField.OBJECT, origin);
+		estimateProven &= estimateTermProven(sp.getObjectVar(), origin);
+		long estimateObject = estimateTermId(sp.getObjectVar(), origin);
+		Term c = compileTerm(sp.getContextVar(), NativePatternField.CONTEXT, origin);
+		estimateProven &= estimateTermProven(sp.getContextVar(), origin);
+		long estimateContext = estimateTermId(sp.getContextVar(), origin);
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
+		NativeLmdbQuerySource.DomainStamp estimateDomain = planValueCatalog.estimateDomain(source);
+		if (estimateProven && estimateDomain != null && LmdbNativeExplain.logicalOrigin(sp) == sp) {
+			planValueCatalog.recordPatternEstimate(sp,
+					new LmdbNativeCostVectors.PatternEstimate(estimateDomain, estimateSubject,
+							estimatePredicate, estimateObject, estimateContext));
+		}
 		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c),
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c), null,
 				algebraEstimate(sp), accessProfile());
+	}
+
+	private static boolean estimateTermProven(Var var, NativeLmdbQuerySource.IdLookup origin) {
+		return var == null || !var.hasValue() || origin.origin() == NativeLmdbQuerySource.IdOrigin.STORED;
+	}
+
+	private static long estimateTermId(Var var, NativeLmdbQuerySource.IdLookup origin) {
+		return var == null || !var.hasValue() ? UNKNOWN : Math.max(UNKNOWN, origin.id());
 	}
 
 	/** A parser-level {@code GRAPH rdf4j:nil} denotes the default graph despite its named-context algebra scope. */
@@ -731,7 +759,8 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 							: 0D;
 				}
 				double estimate = 0D;
-				for (long contextId : contexts.ids) {
+				for (int index = 0; index < contexts.size(); index++) {
+					long contextId = contexts.idAt(index);
 					double sourceEstimate = source.estimate(subj, pred, obj, contextId);
 					if (!Double.isFinite(sourceEstimate)) {
 						return Double.POSITIVE_INFINITY;
@@ -747,11 +776,22 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	}
 
 	SlotPlan compileValues(BindingSetAssignment values) {
+		try {
+			return compileValuesWithLookups(values);
+		} finally {
+			releaseValuesLookups(values);
+		}
+	}
+
+	private SlotPlan compileValuesWithLookups(BindingSetAssignment values) {
 		ArrayList<BindingSet> bindingSets = new ArrayList<>();
 		for (BindingSet bindingSet : values.getBindingSets()) {
 			bindingSets.add(bindingSet);
 		}
+		validateValuesLookups(values, bindingSets);
 		ValuesRow[] rows = new ValuesRow[bindingSets.size()];
+		int idDomains = 0;
+		NativeLmdbQuerySource.IdLookup lookup = new NativeLmdbQuerySource.IdLookup();
 		for (int i = 0; i < bindingSets.size(); i++) {
 			BindingSet bindings = bindingSets.get(i);
 			int[] rowSlots = new int[bindings.size()];
@@ -759,7 +799,18 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			int size = 0;
 			for (Binding binding : bindings) {
 				Value value = binding.getValue();
-				long id = idOf(value, layout.positionMask(binding.getName()));
+				lookupValuesSourceId(values, value, layout.positionMask(binding.getName()), lookup);
+				long id = lookup.id();
+				boolean ownPlanId = false;
+				if ((lookup.origin() == NativeLmdbQuerySource.IdOrigin.PLAN
+						|| lookup.origin() == NativeLmdbQuerySource.IdOrigin.RUNTIME) && termSafeAbsenceProof(value)) {
+					long canonical = planValueCatalog.idOf(value);
+					if (canonical == UNKNOWN) {
+						return null;
+					}
+					id = canonical;
+					ownPlanId = true;
+				}
 				if (id == UNKNOWN || !valueProbeSafeId(id, value)) {
 					// allocated by collectSyntheticValues before compilation started; only variables it
 					// marked may carry synthetic ids (others must keep raw-id semantics and fall back)
@@ -770,15 +821,18 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 						return null;
 					}
 					id = synthetic;
+					ownPlanId = true;
 				}
+				idDomains |= ownPlanId ? ValuesPlan.ID_DOMAIN_OWN_PLAN : valuesSourceIdDomains(lookup.origin());
 				rowSlots[size] = slot(binding.getName());
 				rowValues[size] = id;
 				size++;
 			}
 			rows[i] = new ValuesRow(Arrays.copyOf(rowSlots, size), Arrays.copyOf(rowValues, size));
 		}
+		planValueCatalog.recordValuesRowCount(values, rows.length);
 		return SlotPlan.values(rows,
-				values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L);
+				values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L, idDomains);
 	}
 
 	private record OrderedRangeFilter(String variable, Compare.CompareOp operator, long constant) {

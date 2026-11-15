@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.base.AbstractBNode;
 
@@ -34,6 +35,12 @@ public class SimpleBNode extends AbstractBNode {
 	 * The blank node's identifier.
 	 */
 	private String id;
+
+	/** Metadata-only initialization check that does not expose the blank-node identifier. */
+	@InternalUseOnly
+	public boolean hasInternalSemanticPayload() {
+		return id != null;
+	}
 
 	/*--------------*
 	 * Constructors *

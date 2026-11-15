@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -21,6 +23,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.LongConsumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -32,6 +35,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPeerCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelResultCoordinates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelWorkCounters;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
@@ -82,6 +86,156 @@ final class LmdbNativeKernelExecution {
 	/** Physical row-buffer demand shared by the ordinary row cursor and its quote. */
 	static int rowFillSize(boolean replaySafe) {
 		return replaySafe ? FILL_ROWS : 1;
+	}
+
+	/**
+	 * Retain only outward registers reachable from a source that can provide a real member coordinate. A single
+	 * expanding site cannot replay its own members; an opaque plan producer may itself contain a factor product.
+	 */
+	private static long resultCoordinateColumns(LmdbNativeKernelLowering.Lowered lowered, long demandedSlots) {
+		LmdbNativeKernelIr.Kernel kernel = lowered.kernel;
+		if (demandedSlots == 0L || !kernel.resumable || !(kernel.terminal instanceof LmdbNativeKernelIr.Emit emit)
+				|| emit.mods.orderKeys != null || emit.mods.limit == 0L || emit.mods.limit == 1L
+				|| emit.cols.length != lowered.bindings.columnEngineSlots.length) {
+			return 0L;
+		}
+		long demanded = 0L;
+		for (int i = 0; i < emit.cols.length; i++) {
+			int slot = lowered.bindings.columnEngineSlots[i];
+			if (slot >= 0 && slot < Long.SIZE && (demandedSlots & (1L << slot)) != 0L) {
+				demanded |= 1L << emit.cols[i];
+			}
+		}
+		long origins = coordinateReplaySourceColumns(kernel.pipeline, false);
+		long previous;
+		do {
+			previous = origins;
+			origins = coordinateAliases(kernel.pipeline, origins, true);
+		} while (origins != previous);
+		long tracked = demanded & origins;
+		do {
+			previous = tracked;
+			tracked = coordinateAliases(kernel.pipeline, tracked, false);
+		} while (tracked != previous);
+		return tracked;
+	}
+
+	/** Only sources inside a preceding expansion or alternative can revisit the same original member. */
+	private static long coordinateReplaySourceColumns(List<LmdbNativeKernelIr.Node> nodes, boolean precedingExpansion) {
+		BitSet columns = new BitSet(Long.SIZE);
+		long nested = 0L;
+		boolean earlier = precedingExpansion;
+		for (LmdbNativeKernelIr.Node node : nodes) {
+			if (node instanceof LmdbNativeKernelIr.LeftGroup left) {
+				nested |= coordinateReplaySourceColumns(left.arm, earlier);
+				earlier |= coordinateExpansionDepth(left.arm) > 0;
+			} else if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin lexical) {
+				int leftDepth = coordinateExpansionDepth(lexical.left);
+				nested |= coordinateReplaySourceColumns(lexical.left, earlier);
+				nested |= coordinateReplaySourceColumns(lexical.right, earlier || leftDepth > 0);
+				earlier |= leftDepth > 0 || coordinateExpansionDepth(lexical.right) > 0;
+			} else if (node instanceof LmdbNativeKernelIr.Union union) {
+				boolean alternatives = union.branches.size() > 1;
+				for (List<LmdbNativeKernelIr.Node> branch : union.branches) {
+					nested |= coordinateReplaySourceColumns(branch, earlier || alternatives);
+					alternatives |= coordinateExpansionDepth(branch) > 0;
+				}
+				earlier |= alternatives;
+			} else if (node instanceof LmdbNativeKernelIr.PlanRows) {
+				// A bridge can flatten an independently replayed factor product by itself.
+				node.produced(columns);
+				earlier = true;
+			} else if (earlier && (node instanceof LmdbNativeKernelIr.EnumerateDomain
+					|| node instanceof LmdbNativeKernelIr.Probe || node instanceof LmdbNativeKernelIr.LeftProbe
+					|| node instanceof LmdbNativeKernelIr.ScanQuad)) {
+				node.produced(columns);
+			}
+			if (!(node instanceof LmdbNativeKernelIr.LeftGroup
+					|| node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin
+					|| node instanceof LmdbNativeKernelIr.Union) && coordinateExpansionDepth(List.of(node)) > 0) {
+				earlier = true;
+			}
+		}
+		long[] words = columns.toLongArray();
+		return nested | (words.length == 0 ? 0L : words[0]);
+	}
+
+	private static long coordinateAliases(List<LmdbNativeKernelIr.Node> nodes, long columns, boolean forward) {
+		for (LmdbNativeKernelIr.Node node : nodes) {
+			if (node instanceof LmdbNativeKernelIr.BindAlias alias
+					&& alias.source.kind == LmdbNativeKernelIr.Operand.COL) {
+				int from = forward ? alias.source.index : alias.dstCol;
+				int to = forward ? alias.dstCol : alias.source.index;
+				if ((columns & (1L << from)) != 0L) {
+					columns |= 1L << to;
+				}
+			} else if (node instanceof LmdbNativeKernelIr.LeftGroup left) {
+				columns = coordinateAliases(left.arm, columns, forward);
+			} else if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin lexical) {
+				columns = coordinateAliases(lexical.left, columns, forward);
+				columns = coordinateAliases(lexical.right, columns, forward);
+			} else if (node instanceof LmdbNativeKernelIr.Union union) {
+				for (List<LmdbNativeKernelIr.Node> branch : union.branches) {
+					columns = coordinateAliases(branch, columns, forward);
+				}
+			}
+		}
+		return columns;
+	}
+
+	/** Maximum nested expanding relations on one possible output path, capped at two. */
+	private static int coordinateExpansionDepth(List<LmdbNativeKernelIr.Node> nodes) {
+		int depth = 0;
+		for (LmdbNativeKernelIr.Node node : nodes) {
+			int added = 0;
+			if (node instanceof LmdbNativeKernelIr.PlanRows) {
+				// This one bridge may flatten several independently replayed child factors.
+				return 2;
+			} else if (node instanceof LmdbNativeKernelIr.LeftGroup left) {
+				added = coordinateExpansionDepth(left.arm);
+			} else if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin lexical) {
+				added = coordinateExpansionDepth(lexical.left) + coordinateExpansionDepth(lexical.right);
+			} else if (node instanceof LmdbNativeKernelIr.Union union) {
+				for (List<LmdbNativeKernelIr.Node> branch : union.branches) {
+					added = Math.max(added, coordinateExpansionDepth(branch));
+				}
+			} else if (node instanceof LmdbNativeKernelIr.ProbeClose) {
+				added = 1;
+			} else if (!(node instanceof LmdbNativeKernelIr.BindAlias || node instanceof LmdbNativeKernelIr.BindHook
+					|| node instanceof LmdbNativeKernelIr.EnumerateEntry || node instanceof LmdbNativeKernelIr.Exists
+					|| node instanceof LmdbNativeKernelIr.HashBuild)) {
+				BitSet produced = new BitSet();
+				node.produced(produced);
+				added = produced.isEmpty() ? 0 : 1;
+			}
+			depth += added;
+			if (depth >= 2) {
+				return 2;
+			}
+		}
+		return depth;
+	}
+
+	/**
+	 * The interpreter can retain five grain frames, one enclosing frame, and ordinary fallback frames per scheduled
+	 * site. A row schedule requires its producer plus at least one absorbed scalar node, so four frames per IR node
+	 * cover that worst case; the extra headroom covers lexical frames and empty structural pipelines.
+	 */
+	private static int coordinateFrameCapacity(List<LmdbNativeKernelIr.Node> nodes) {
+		int frames = Math.addExact(Math.multiplyExact(4, nodes.size()), 8);
+		for (LmdbNativeKernelIr.Node node : nodes) {
+			if (node instanceof LmdbNativeKernelIr.LeftGroup left) {
+				frames = Math.addExact(frames, coordinateFrameCapacity(left.arm));
+			} else if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin lexical) {
+				frames = Math.addExact(frames, coordinateFrameCapacity(lexical.left));
+				frames = Math.addExact(frames, coordinateFrameCapacity(lexical.right));
+			} else if (node instanceof LmdbNativeKernelIr.Union union) {
+				for (List<LmdbNativeKernelIr.Node> branch : union.branches) {
+					frames = Math.addExact(frames, coordinateFrameCapacity(branch));
+				}
+			}
+		}
+		return frames;
 	}
 
 	/** Publishes a completed worker-local counter set after its cursors have released any prefetched payload. */
@@ -182,25 +336,23 @@ final class LmdbNativeKernelExecution {
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition, ParallelExecution parallelExecution, KernelTier tier,
 			boolean allowFixedContexts, LmdbNativeParallelPipelines.TaskReservation quotedReservation) {
-		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
-		if (inherited != null) {
-			return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-					false, false, parallelExecution, tier, allowFixedContexts, quotedReservation);
-		}
-		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(
-				System.identityHashCode(arg), Long.getLong("rdf4j.lmdb.native.fused.maxBytes", 8L << 20),
-				row.runtimePlan != null);
-		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
-			List<BindingSet> result = tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
+		LmdbFusedSipFactorizedRuntime.Session previous = row.fusedSession();
+		LmdbFusedSipFactorizedRuntime.PreparationAttempt preparation = row.preparationAttempt();
+		LmdbFusedSipFactorizedRuntime.Session binding = previous.binding();
+		row.fusedSession = binding;
+		Throwable failure = null;
+		try {
+			return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
 					havingCondition,
 					false, false, parallelExecution, tier, allowFixedContexts, quotedReservation);
-			if (result != null) {
-				session.recordMaterializationBoundary(result.size());
-			}
-			return result;
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+			throw problem;
 		} finally {
-			publishFusedTelemetry(row.runtimePlan, session);
-			session.close();
+			row.fusedSession = previous;
+			Throwable retained = KernelRuntime.closeResource(() -> preparation.closeSession(binding), failure);
+			retained = KernelRuntime.closeResource(binding, retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 		}
 	}
 
@@ -912,7 +1064,7 @@ final class LmdbNativeKernelExecution {
 					"no-fusion-opportunity");
 			return null;
 		}
-		return openWithFusedRuntime(arg, row,
+		return openWithFusedRuntime(row,
 				() -> tryOpenRows(arg, row, originalExpr, false, null, null, ParallelExecution.PREFER,
 						KernelTier.AUTO));
 	}
@@ -1006,7 +1158,7 @@ final class LmdbNativeKernelExecution {
 		boolean scanVariables = Boolean.FALSE.equals(wildcardFamily)
 				&& (row.source == null || !row.source.mayHaveWildcardViews());
 		LmdbNativeStrategyProposal<RowCursor> proposal = new LmdbNativeStrategyProposal<>(
-				() -> openWithFusedRuntime(arg, row,
+				() -> openWithFusedRuntime(row,
 						() -> tryOpenRows(arg, row, originalExpr, false, null, null, null, scanVariables,
 								parallelExecution, requestedTier, reservation, wildcardFamily)),
 				work, startup, rows, tag, () -> {
@@ -1122,7 +1274,7 @@ final class LmdbNativeKernelExecution {
 				: LmdbNativeWork.ZERO;
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
 		return new LmdbNativeStrategyProposal<>(
-				() -> openWithFusedRuntime(arg, row,
+				() -> openWithFusedRuntime(row,
 						() -> tryOpenRows(arg, row, originalExpr, false, distinctSlots, null, parallelExecution,
 								requestedTier, reservation)),
 				work, startup, rows, tag, () -> {
@@ -1268,7 +1420,7 @@ final class LmdbNativeKernelExecution {
 			return null;
 		}
 		boolean scanVariables = Boolean.FALSE.equals(wildcardFamily) && !row.source.mayHaveWildcardViews();
-		return openWithFusedRuntime(arg, row, () -> tryOpenRows(arg, row, originalExpr, false, null,
+		return openWithFusedRuntime(row, () -> tryOpenRows(arg, row, originalExpr, false, null,
 				new OrderedMods(orderSlots, orderAscending, limit, offset, strictCompare, wildcardFamily),
 				null, scanVariables, parallelExecution, tier, null));
 	}
@@ -1287,29 +1439,29 @@ final class LmdbNativeKernelExecution {
 		}
 	}
 
-	private static RowCursor openWithFusedRuntime(SlotPlan arg, RowState row, RowCursorFactory factory)
+	private static RowCursor openWithFusedRuntime(RowState row, RowCursorFactory factory)
 			throws IOException {
-		if (LmdbFusedSipFactorizedRuntime.currentOrNull() != null) {
-			// The enclosing native invocation owns one session for all strategies. Do not split telemetry or memory
-			// accounting merely because this particular producer happens to be a generated kernel.
-			return factory.open();
-		}
-		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(
-				System.identityHashCode(arg), row.runtimePlan != null);
+		LmdbFusedSipFactorizedRuntime.Session previous = row.fusedSession();
+		LmdbFusedSipFactorizedRuntime.PreparationAttempt preparation = row.preparationAttempt();
+		LmdbFusedSipFactorizedRuntime.Session binding = previous.binding();
+		row.fusedSession = binding;
 		RowCursor cursor;
-		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
+		try {
 			cursor = factory.open();
 		} catch (IOException | RuntimeException | Error problem) {
-			publishFusedTelemetry(row.runtimePlan, session);
-			session.close();
+			Throwable retained = KernelRuntime.closeResource(() -> preparation.closeSession(binding), problem);
+			retained = KernelRuntime.closeResource(binding, retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, problem);
 			throw problem;
+		} finally {
+			row.fusedSession = previous;
 		}
 		if (cursor == null) {
-			publishFusedTelemetry(row.runtimePlan, session);
-			session.close();
+			Throwable failure = KernelRuntime.closeResource(() -> preparation.closeSession(binding), null);
+			rethrowFailure(KernelRuntime.closeResource(binding, failure));
 			return null;
 		}
-		return new FusedRuntimeRowCursor(cursor, session, row.runtimePlan);
+		return new FusedRuntimeRowCursor(cursor, row, binding, preparation);
 	}
 
 	/**
@@ -1465,6 +1617,7 @@ final class LmdbNativeKernelExecution {
 		JaninoKernel kernel = null;
 		LmdbNativeKernelScanner scanner = null;
 		LmdbNativeKernelHooks hooks = null;
+		KernelResultCoordinates resultCoordinates = null;
 		NativeLmdbQuerySource.NativeAdjacency[] views = null;
 		org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation = null;
 		try {
@@ -1497,9 +1650,11 @@ final class LmdbNativeKernelExecution {
 						scanPredicates, scanVariablePredicates, parallelExecution, requestedTier, quotedReservation,
 						wildcardFamily, true);
 			}
-			final LmdbNativeKernelLowering.Lowered lowered = semantic.withTelemetry(row.runtimePlan == null
+			LmdbNativeKernelLowering.Lowered telemetry = semantic.withTelemetry(row.runtimePlan == null
 					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
 					: LmdbNativeKernelIr.Kernel.TelemetryMode.FULL);
+			final LmdbNativeKernelLowering.Lowered lowered = telemetry.withResultCoordinateColumns(
+					resultCoordinateColumns(telemetry, row.resultCoordinateDemand));
 			final boolean wildcardKernel = lowered.kernel.requirements.wildcardViews > 0;
 			if (wildcardFamily != null && wildcardFamily != wildcardKernel) {
 				// The separately quoted ordinary peer owns scan fallback. A wildcard-view candidate may not silently
@@ -1763,11 +1918,30 @@ final class LmdbNativeKernelExecution {
 			if (hashReservation != null) {
 				kernelContext.hashBuildMemory = new KernelRuntime.HashBuildMemory(hashReservation);
 			}
+			int fillRows = rowFillSize(SlotPlan.encounterOrderReplaySafe(arg));
+			if (lowered.kernel.resultCoordinateColumns != 0L) {
+				LmdbNativeKernelIr.Emit emit = (LmdbNativeKernelIr.Emit) lowered.kernel.terminal;
+				int frameCapacity;
+				try {
+					frameCapacity = coordinateFrameCapacity(lowered.kernel.pipeline);
+				} catch (ArithmeticException tooLarge) {
+					frameCapacity = -1;
+				}
+				resultCoordinates = KernelResultCoordinates.open(
+						row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()),
+						lowered.kernel.columnCount, emit.cols, lowered.bindings.columnEngineSlots,
+						lowered.kernel.resultCoordinateColumns, fillRows, frameCapacity);
+				kernelContext.resultCoordinates = resultCoordinates;
+				if (scanner != null && resultCoordinates != null) {
+					KernelResultCoordinates owner = resultCoordinates;
+					scanner.configureCoordinates(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()),
+							owner::newNamespace, owner::requestRetirement);
+				}
+			}
 			executionStarted = true;
 			LmdbNativeJaninoCodegen.bind(kernel, kernelContext, route);
 			// Preserve the bound kernel's query/private-probe control before publishing a buffered row owner.
 			KernelRuntime.checkCancelled(kernelContext.cancellation);
-			int fillRows = rowFillSize(SlotPlan.encounterOrderReplaySafe(arg));
 			long[] initialBuffer = null;
 			int initialRows = 0;
 			if (hashReservation != null) {
@@ -1795,7 +1969,7 @@ final class LmdbNativeKernelExecution {
 
 			KernelRowCursor cursor = new KernelRowCursor(kernel, probe, scanner, hooks, views, row,
 					lowered.bindings.columnEngineSlots, lowered.bindings.residualFilters, hashReservation, route,
-					fillRows, initialBuffer, initialRows);
+					fillRows, initialBuffer, initialRows, resultCoordinates);
 			// Ownership has moved to the cursor. Null every local so the finally block cannot double-close it.
 			kernel = null;
 			probe = null;
@@ -1803,6 +1977,7 @@ final class LmdbNativeKernelExecution {
 			hooks = null;
 			views = null;
 			hashReservation = null;
+			resultCoordinates = null;
 			return retainedCursor = cursor;
 		} catch (SerialHashBuildRefusal refused) {
 			primaryFailure = refused;
@@ -1879,6 +2054,13 @@ final class LmdbNativeKernelExecution {
 			} catch (RuntimeException | Error problem) {
 				failure = addFailure(failure, problem);
 			}
+			try {
+				if (resultCoordinates != null) {
+					resultCoordinates.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
 			Throwable retainedFailure = addFailure(primaryFailure, failure);
 			if (retainedFailure == null) {
 				try {
@@ -1894,13 +2076,6 @@ final class LmdbNativeKernelExecution {
 			if (primaryFailure == null || retainedFailure != primaryFailure) {
 				rethrowFailure(retainedFailure);
 			}
-		}
-	}
-
-	private static void publishFusedTelemetry(LmdbNativeRuntimePlan.Invocation runtimePlan,
-			LmdbFusedSipFactorizedRuntime.Session session) {
-		if (runtimePlan != null && session != null) {
-			runtimePlan.fusedTelemetry(session.telemetry());
 		}
 	}
 
@@ -2175,29 +2350,68 @@ final class LmdbNativeKernelExecution {
 		}
 	}
 
-	/** Keeps the query-local fused runtime attached for every cursor pull and publishes it exactly once on close. */
-	private static final class FusedRuntimeRowCursor implements RowCursor {
+	/** Keeps the binding's runtime explicit for every cursor pull while its invocation owns publication. */
+	private static final class FusedRuntimeRowCursor implements RowCursor, NativeResultCoordinates {
 		private final RowCursor delegate;
-		private final LmdbFusedSipFactorizedRuntime.Session session;
-		private final LmdbNativeRuntimePlan.Invocation runtimePlan;
-		private long emittedRows;
+		private final NativeResultCoordinates coordinateDelegate;
+		private final RowState row;
+		private final LmdbFusedSipFactorizedRuntime.Session binding;
+		private final LmdbFusedSipFactorizedRuntime.PreparationAttempt preparation;
 		private boolean closed;
 
-		private FusedRuntimeRowCursor(RowCursor delegate, LmdbFusedSipFactorizedRuntime.Session session,
-				LmdbNativeRuntimePlan.Invocation runtimePlan) {
+		private FusedRuntimeRowCursor(RowCursor delegate, RowState row,
+				LmdbFusedSipFactorizedRuntime.Session binding,
+				LmdbFusedSipFactorizedRuntime.PreparationAttempt preparation) {
 			this.delegate = delegate;
-			this.session = session;
-			this.runtimePlan = runtimePlan;
+			this.coordinateDelegate = delegate instanceof NativeResultCoordinates coordinates ? coordinates : null;
+			this.row = row;
+			this.binding = binding;
+			this.preparation = preparation;
 		}
 
 		@Override
 		public boolean next() throws IOException {
-			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
-				boolean hasNext = delegate.next();
-				if (hasNext) {
-					emittedRows++;
-				}
-				return hasNext;
+			LmdbFusedSipFactorizedRuntime.Session previous = row.fusedSession;
+			LmdbFusedSipFactorizedRuntime.PreparationAttempt previousPreparation = row
+					.swapPreparationAttempt(preparation);
+			row.fusedSession = binding;
+			try {
+				return delegate.next();
+			} finally {
+				row.fusedSession = previous;
+				row.swapPreparationAttempt(previousPreparation);
+			}
+		}
+
+		@Override
+		public long coordinateActivation() {
+			return closed || coordinateDelegate == null ? 0L : coordinateDelegate.coordinateActivation();
+		}
+
+		@Override
+		public long takeChangedSlots() {
+			return closed || coordinateDelegate == null ? -1L : coordinateDelegate.takeChangedSlots();
+		}
+
+		@Override
+		public boolean coordinateValid(int slot, long activation) {
+			return !closed && coordinateDelegate != null && coordinateDelegate.coordinateValid(slot, activation);
+		}
+
+		@Override
+		public boolean mayReplay(int slot) {
+			return !closed && coordinateDelegate != null && coordinateDelegate.mayReplay(slot);
+		}
+
+		@Override
+		public boolean resultCoordinate(int slot, long[] coordinate) {
+			return !closed && coordinateDelegate != null && coordinateDelegate.resultCoordinate(slot, coordinate);
+		}
+
+		@Override
+		public void drainRetiredNamespaces(LongConsumer retired) {
+			if (!closed && coordinateDelegate != null) {
+				coordinateDelegate.drainRetiredNamespaces(retired);
 			}
 		}
 
@@ -2208,21 +2422,26 @@ final class LmdbNativeKernelExecution {
 			}
 			closed = true;
 			Throwable failure = null;
-			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
+			LmdbFusedSipFactorizedRuntime.Session previous = row.fusedSession;
+			LmdbFusedSipFactorizedRuntime.PreparationAttempt previousPreparation = row
+					.swapPreparationAttempt(preparation);
+			row.fusedSession = binding;
+			try {
 				delegate.close();
 			} catch (RuntimeException | Error problem) {
 				failure = problem;
 			} finally {
-				session.recordMaterializationBoundary(emittedRows);
-				publishFusedTelemetry(runtimePlan, session);
-				session.close();
+				row.fusedSession = previous;
+				row.swapPreparationAttempt(previousPreparation);
 			}
+			failure = KernelRuntime.closeResource(() -> preparation.closeSession(binding), failure);
+			failure = KernelRuntime.closeResource(binding, failure);
 			rethrowFailure(failure);
 		}
 	}
 
 	/** Translates packed kernel rows into RowState binds and applies residual filters (plan-owned semantics). */
-	private static final class KernelRowCursor implements RowCursor {
+	private static final class KernelRowCursor implements RowCursor, NativeResultCoordinates {
 		private final JaninoKernel kernel;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final LmdbNativeKernelScanner scanner;
@@ -2233,8 +2452,12 @@ final class LmdbNativeKernelExecution {
 		private final List<MaskedFilter> residualFilters;
 		private final long[] buffer;
 		private final int fillRows;
+		private final KernelResultCoordinates coordinates;
+		private final int[] coordinateOutputs;
 		private int bufferRows;
 		private int bufferPos;
+		private int coordinateRow = -1;
+		private long changedCoordinateSlots = -1L;
 		private int activeMark = -1;
 		private boolean workPublished;
 		private boolean closed;
@@ -2247,7 +2470,7 @@ final class LmdbNativeKernelExecution {
 				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters,
 				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation, String route,
-				int fillRows, long[] initialBuffer, int initialRows) {
+				int fillRows, long[] initialBuffer, int initialRows, KernelResultCoordinates coordinates) {
 			this.route = route;
 			this.kernel = kernel;
 			this.probe = probe;
@@ -2259,6 +2482,8 @@ final class LmdbNativeKernelExecution {
 			this.residualFilters = residualFilters;
 			this.hashReservation = hashReservation;
 			this.fillRows = fillRows;
+			this.coordinates = coordinates;
+			this.coordinateOutputs = coordinates == null ? null : new int[Long.SIZE];
 			this.buffer = initialBuffer == null ? new long[Math.max(columnSlots.length, 1) * fillRows] : initialBuffer;
 			this.bufferRows = initialRows;
 		}
@@ -2267,6 +2492,10 @@ final class LmdbNativeKernelExecution {
 		public boolean next() throws IOException {
 			if (closed) {
 				return false;
+			}
+			if (coordinates != null && coordinateRow >= 0) {
+				coordinates.releaseRow(coordinateRow);
+				coordinateRow = -1;
 			}
 			row.cancellation.check();
 			LmdbNativeProbeDeadline.poll(0);
@@ -2290,14 +2519,24 @@ final class LmdbNativeKernelExecution {
 				while (bufferPos < bufferRows) {
 					row.cancellation.poll(bufferPos);
 					LmdbNativeProbeDeadline.poll(bufferPos);
-					int base = bufferPos * columnSlots.length;
-					bufferPos++;
+					int physicalRow = bufferPos++;
+					int base = physicalRow * columnSlots.length;
+					if (coordinates != null && coordinates.enabled()) {
+						changedCoordinateSlots |= coordinates.changedSlots(physicalRow);
+						Arrays.fill(coordinateOutputs, -1);
+					}
 					int mark = row.mark();
 					boolean ok = true;
 					for (int i = 0; i < columnSlots.length; i++) {
 						// NULL (-1) columns come from OPTIONAL null arms: the slot stays unbound.
 						if (buffer[base + i] == LmdbNativeAggregateCompiler.UNKNOWN) {
 							continue;
+						}
+						int slot = columnSlots[i];
+						if (coordinateOutputs != null && slot >= 0 && slot < Long.SIZE
+								&& coordinateOutputs[slot] < 0
+								&& row.slots[slot] == LmdbNativeAggregateCompiler.UNKNOWN) {
+							coordinateOutputs[slot] = i;
 						}
 						if (!row.bind(columnSlots[i], buffer[base + i])) {
 							ok = false;
@@ -2311,10 +2550,51 @@ final class LmdbNativeKernelExecution {
 					}
 					if (ok) {
 						activeMark = mark;
+						coordinateRow = physicalRow;
 						return true;
+					}
+					if (coordinates != null) {
+						coordinates.releaseRow(physicalRow);
 					}
 					row.rollback(mark);
 				}
+			}
+		}
+
+		@Override
+		public long coordinateActivation() {
+			return !closed && coordinateRow >= 0 && coordinates != null && coordinates.enabled() ? 1L : 0L;
+		}
+
+		@Override
+		public long takeChangedSlots() {
+			long changed = changedCoordinateSlots;
+			changedCoordinateSlots = 0L;
+			return changed;
+		}
+
+		@Override
+		public boolean coordinateValid(int slot, long activation) {
+			return activation == 1L && coordinateActivation() == activation && slot >= 0 && slot < Long.SIZE
+					&& coordinateOutputs[slot] >= 0
+					&& coordinates.hasCoordinate(coordinateRow, coordinateOutputs[slot]);
+		}
+
+		@Override
+		public boolean mayReplay(int slot) {
+			return coordinateValid(slot, 1L);
+		}
+
+		@Override
+		public boolean resultCoordinate(int slot, long[] coordinate) {
+			return coordinateValid(slot, 1L)
+					&& coordinates.coordinate(coordinateRow, coordinateOutputs[slot], coordinate);
+		}
+
+		@Override
+		public void drainRetiredNamespaces(LongConsumer retired) {
+			if (coordinates != null) {
+				coordinates.drainRetiredNamespaces(retired);
 			}
 		}
 
@@ -2368,6 +2648,13 @@ final class LmdbNativeKernelExecution {
 			try {
 				if (hashReservation != null) {
 					hashReservation.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			try {
+				if (coordinates != null) {
+					coordinates.close();
 				}
 			} catch (RuntimeException | Error problem) {
 				failure = addFailure(failure, problem);

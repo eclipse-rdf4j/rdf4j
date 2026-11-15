@@ -134,6 +134,75 @@ public class SelectedFactorContractTest {
 	}
 
 	@Test
+	public void resultPositionsMapThroughComposedSelectionsAndRetireSafely() {
+		try (HeapFactorSource source = new HeapFactorSource(this);
+				SelectedFactorSource first = new SelectedFactorSource(0);
+				SelectedFactorSource second = new SelectedFactorSource(0)) {
+			BorrowedFactorBatch root = new BorrowedFactorBatch(source, 2);
+			root.reset(2);
+			root.bindHeap(0, new long[] { 999 }, 0, 1);
+			long[] values = { 10, 20, 30, 40, 50, 60, 70, 80 };
+			root.bindHeap(1, values, 0, values.length);
+			long rootGeneration = root.generation();
+			FactorSelection firstSelection = new FactorSelection(2);
+			firstSelection.add(1, 2);
+			firstSelection.add(5, 3);
+			BorrowedFactorBatch middle = first.select(root, 1, firstSelection);
+			FactorSelection secondSelection = new FactorSelection(2);
+			secondSelection.add(1, 2);
+			secondSelection.add(4, 1);
+			BorrowedFactorBatch result = second.select(middle, 0, secondSelection);
+			try (BorrowedFactorBatch.Cursor cursor = result.cursor(2)) {
+				cursor.bind(0);
+				long[] expectedPositions = { 2L, 5L, 7L };
+				long[] expectedValues = { 30L, 60L, 80L };
+				int index = 0;
+				while (cursor.next()) {
+					eq(expectedPositions[index], cursor.resultPosition());
+					eq(1L, cursor.resultLane());
+					eq(expectedValues[index++], cursor.value());
+				}
+				eq(expectedPositions.length, index);
+				eq(-1L, cursor.resultPosition());
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(2L, cursor.resultPosition());
+				eq(1, cursor.resultLane());
+				long resultGeneration = result.generation();
+				result.bindSelected(0, result.count(0));
+				eq(resultGeneration, result.generation());
+				eq(-1L, cursor.resultPosition());
+				eq(-1, cursor.resultLane());
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(2L, cursor.resultPosition());
+				long middleGeneration = middle.generation();
+				middle.bindSelected(0, middle.count(0));
+				eq(middleGeneration, middle.generation());
+				eq(-1L, cursor.resultPosition());
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(-1L, cursor.resultPosition());
+				root.bindHeap(1, values, 0, values.length);
+				eq(rootGeneration, root.generation());
+				eq(-1L, cursor.resultPosition());
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(-1L, cursor.resultPosition());
+				middle = first.select(root, 1, firstSelection);
+				result = second.select(middle, 0, secondSelection);
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(2L, cursor.resultPosition());
+				eq(1, cursor.resultLane());
+				first.clear();
+				eq(-1L, cursor.resultPosition());
+				eq(-1, cursor.resultLane());
+			}
+		}
+	}
+
+	@Test
 	public void nativeSelectionsEndExactlyAtUnalignedAllocationTail() {
 		Arena arena = Arena.ofConfined();
 		MemorySegment m = arena.allocate(1 + 8 * 19, 1);

@@ -142,7 +142,7 @@ record LmdbNativeWork(double low, double high) {
 			return pattern.rowBounds(row, boundMask);
 		}
 		if (plan instanceof ValuesPlan values) {
-			return new RowBounds(values.producedMask == 0L ? values.rows.length : 0D, values.rows.length);
+			return new RowBounds(values.producedMask == 0L ? values.rowCount() : 0D, values.rowCount());
 		}
 		if (plan instanceof UnionPlan union) {
 			return rowBounds(union.left, row, boundMask).plus(rowBounds(union.right, row, boundMask));
@@ -509,7 +509,7 @@ record LmdbNativeWork(double low, double high) {
 			return planningPattern(pattern, row, boundMask);
 		}
 		if (plan instanceof ValuesPlan values) {
-			return exact(values.rows.length);
+			return exact(values.rowCount());
 		}
 		if (plan instanceof UnionPlan union) {
 			return planning(union.left, row, boundMask).plus(planning(union.right, row, boundMask));

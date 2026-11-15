@@ -108,7 +108,7 @@ final class NativeGraphPlan implements SlotPlan {
 	NativeGraphPlan forWorker(NativeScalarPlan.WorkerContext worker) {
 		Graph copy = graph.clone();
 		LmdbNativeEvaluationStrategy workerStrategy = strategy.forWorker(worker.source(),
-				strategy.copyValuePositions(graph, copy));
+				strategy.copyValuePositions(graph, copy), worker.requireFusedSession());
 		WORKER_BINDINGS.incrementAndGet();
 		return new NativeGraphPlan(copy, structural, workerStrategy, worker.source(), outSlots, outNames,
 				frameInputSlots, frameInputNames, inheritedFrameInputs, lateralFrameInputs);
@@ -121,7 +121,7 @@ final class NativeGraphPlan implements SlotPlan {
 		}
 		NativeExecutionContext execution = synthetic.executionContext();
 		NativeSubqueryPlan delegate = execution.nativeState(this, () -> {
-			QueryEvaluationContext scoped = execution.genericContext(structural, strategy);
+			QueryEvaluationContext scoped = execution.genericInvocationContext(structural, strategy);
 			QueryEvaluationStep selected = GraphQueryEvaluationStep.supply(graph, strategy.graphTripleSource(), scoped,
 					(body, activeGraph) -> {
 						QueryEvaluationStep nativeBody = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(body,

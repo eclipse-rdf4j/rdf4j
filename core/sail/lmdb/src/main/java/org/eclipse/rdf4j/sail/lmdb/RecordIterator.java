@@ -24,6 +24,11 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 @InternalUseOnly
 public interface RecordIterator extends Closeable {
 
+	/** An identity that can report when its underlying generation can no longer be reopened. */
+	interface SourceCoordinateIdentity {
+		boolean retired();
+	}
+
 	/**
 	 * Returns the next record.
 	 *
@@ -49,6 +54,48 @@ public interface RecordIterator extends Closeable {
 			}
 			System.arraycopy(record, 0, buffer, rows * 4, 4);
 			rows++;
+		}
+		return rows;
+	}
+
+	/**
+	 * Whether this open iterator can certify stable source coordinates. This is an opt-in contract: the identity must
+	 * describe the actual immutable source and exact interpretation of its positions, not merely the returned values.
+	 */
+	default boolean hasSourceCoordinates() {
+		return false;
+	}
+
+	/**
+	 * Hash used only to find candidate identities; equality must still be established by
+	 * {@link #matchesSourceCoordinateIdentity(Object)}.
+	 */
+	default int sourceCoordinateHash() {
+		return 0;
+	}
+
+	/** Tests exact equality against an immutable identity previously copied from an iterator of the same kind. */
+	default boolean matchesSourceCoordinateIdentity(Object identity) {
+		return false;
+	}
+
+	/** Copies the current source identity. Called only after optional, non-reclaiming memory admission. */
+	default Object copySourceCoordinateIdentity() {
+		return null;
+	}
+
+	/**
+	 * Fills quads and their source coordinates in parallel. Each coordinate is five longs in the order group, parent,
+	 * position, column, namespace. A non-positive namespace or negative position means unavailable. Implementations
+	 * must decline after an identity-changing operation and must never emit a stale coordinate.
+	 */
+	default int fillWithSourceCoordinates(long[] buffer, long[] coordinates, int maxRows, long group,
+			long namespace) {
+		int rows = fill(buffer, maxRows);
+		for (int row = 0; row < rows; row++) {
+			int at = row * 5;
+			coordinates[at + 2] = -1L;
+			coordinates[at + 4] = 0L;
 		}
 		return rows;
 	}

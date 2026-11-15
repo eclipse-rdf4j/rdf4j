@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -32,11 +35,13 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -44,6 +49,85 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbNativeParallelAdmissionTest {
+
+	@Test
+	void detachedDomainReceiptsFollowExactSourceAndSiblingLifetimes(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setForceSync(false));
+		store.init();
+		try {
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin(IsolationLevels.SNAPSHOT);
+				seed.addStatement(store.getValueFactory().createIRI("urn:receipt:subject"),
+						store.getValueFactory().createIRI("urn:receipt:predicate"),
+						store.getValueFactory().createLiteral("value"));
+				seed.commit();
+			}
+			LmdbSailStore backing = store.getBackingStore();
+			try (SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+				NativeLmdbQuerySource source = assertInstanceOf(NativeLmdbQuerySource.class, dataset);
+				NativeLmdbQuerySource.DomainStamp original = source.detachedDomainStamp();
+				assertNotNull(original);
+				assertSame(Object.class, original.storedIdSpace().getClass());
+				assertSame(Object.class, original.lookupScope().getClass());
+				assertSame(Object.class, original.resultScope().getClass());
+				assertSame(Object.class, original.statementSnapshot().getClass());
+				NativeLmdbQuerySource.ParallelSource[] siblings = source.openParallelSources(2);
+				assertNotNull(siblings);
+				try {
+					assertTrue(original.sameDomain(siblings[0].detachedDomainStamp()));
+					assertTrue(original.sameDomain(siblings[1].detachedDomainStamp()));
+					siblings[0].close();
+					assertThrows(QueryInterruptedException.class, siblings[0]::detachedDomainStamp);
+					dataset.close();
+					assertThrows(QueryInterruptedException.class, source::detachedDomainStamp);
+					assertTrue(original.sameDomain(siblings[1].detachedDomainStamp()),
+							"a live sibling retains the exact paired snapshot after its parent closes");
+				} finally {
+					close(siblings);
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void detachedDomainReceiptRotatesAfterWriterAndFreshReadView(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setForceSync(false));
+		store.init();
+		try {
+			LmdbSailStore backing = store.getBackingStore();
+			NativeLmdbQuerySource.DomainStamp original;
+			try (SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+				NativeLmdbQuerySource source = assertInstanceOf(NativeLmdbQuerySource.class, dataset);
+				original = source.detachedDomainStamp();
+				assertNotNull(original);
+				try (SailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					writer.addStatement(store.getValueFactory().createIRI("urn:receipt:new-subject"),
+							store.getValueFactory().createIRI("urn:receipt:new-predicate"),
+							store.getValueFactory().createLiteral("later"));
+					writer.commit();
+				}
+				NativeLmdbQuerySource.DomainStamp afterWrite = source.detachedDomainStamp();
+				assertNotNull(afterWrite);
+				assertNotSame(original.lookupScope(), afterWrite.lookupScope());
+				assertSame(original.statementSnapshot(), afterWrite.statementSnapshot());
+			}
+			try (SailDataset fresh = backing.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+				NativeLmdbQuerySource.DomainStamp afterRenewal = ((NativeLmdbQuerySource) fresh).detachedDomainStamp();
+				assertNotNull(afterRenewal);
+				assertSame(original.storedIdSpace(), afterRenewal.storedIdSpace());
+				assertNotSame(original.statementSnapshot(), afterRenewal.statementSnapshot());
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
 
 	@ParameterizedTest
 	@EnumSource(NativeGuard.class)

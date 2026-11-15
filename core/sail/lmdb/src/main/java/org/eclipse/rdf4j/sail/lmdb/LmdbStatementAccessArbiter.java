@@ -356,6 +356,45 @@ final class LmdbStatementAccessArbiter {
 		}
 
 		@Override
+		public boolean hasSourceCoordinates() {
+			return delegate != null && delegate.hasSourceCoordinates();
+		}
+
+		@Override
+		public int sourceCoordinateHash() {
+			return delegate == null ? 0 : delegate.sourceCoordinateHash();
+		}
+
+		@Override
+		public boolean matchesSourceCoordinateIdentity(Object identity) {
+			return delegate != null && delegate.matchesSourceCoordinateIdentity(identity);
+		}
+
+		@Override
+		public Object copySourceCoordinateIdentity() {
+			return delegate == null ? null : delegate.copySourceCoordinateIdentity();
+		}
+
+		@Override
+		public int fillWithSourceCoordinates(long[] buffer, long[] coordinates, int maxRows, long group,
+				long namespace) {
+			if (delegate == null) {
+				return 0;
+			}
+			long started = System.nanoTime();
+			try {
+				int filled = delegate.fillWithSourceCoordinates(buffer, coordinates, maxRows, group, namespace);
+				rows += filled;
+				if (filled < maxRows) {
+					exhausted = true;
+				}
+				return filled;
+			} finally {
+				activeNanos += System.nanoTime() - started;
+			}
+		}
+
+		@Override
 		public boolean seekForward(long subj, long pred, long obj, long context) {
 			if (delegate == null) {
 				return false;

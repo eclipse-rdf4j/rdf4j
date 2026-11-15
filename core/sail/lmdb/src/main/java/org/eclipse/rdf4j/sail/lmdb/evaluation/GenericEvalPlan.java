@@ -37,16 +37,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * machinery treats it as an opaque, pinned-in-place operand evaluated by plain nested-loop cursors.
  *
  * <p>
- * Execution model. The generic step is prepared once per evaluation through the row's
- * {@link NativeExecutionContext#genericStep} cache against the evaluation's shared generic context (one NOW/BNODE scope
- * per evaluation, shared with the M-A1a filter bridges). The reuse mode is decided at open time from the effective
- * input: when no slot beyond the externally seeded base bindings is bound, the input is evaluation-constant, so the
- * island evaluates exactly once per evaluation and its solutions are buffered and replayed for every subsequent open
- * (MATERIALIZE_ONCE — this is what makes an independent non-repeatable subtree, e.g. one containing {@code UUID()},
- * produce one value across all joined rows, matching the generic evaluator's materialized replay). A correlated open
- * re-evaluates the subtree with the current mapping per open (REEVALUATE_PER_INPUT — the generic Join contract).
- * MEMOIZE_BY_KEY (input-keyed buffers) exists for forced-mode tests but is never selected by production planning until
- * M-A1c facts justify it.
+ * Execution model. The generic step is prepared against the row's exact invocation, source and producer attempt. That
+ * attempt retains admitted preparations and otherwise uses the prepared step without caching. The evaluation's generic
+ * context still supplies one NOW/BNODE scope shared with the M-A1a filter bridges. The reuse mode is decided at open
+ * time from the effective input: when no slot beyond the externally seeded base bindings is bound, the input is
+ * evaluation-constant, so the island evaluates exactly once per evaluation and its solutions are buffered and replayed
+ * for every subsequent open (MATERIALIZE_ONCE — this is what makes an independent non-repeatable subtree, e.g. one
+ * containing {@code UUID()}, produce one value across all joined rows, matching the generic evaluator's materialized
+ * replay). A correlated open re-evaluates the subtree with the current mapping per open (REEVALUATE_PER_INPUT — the
+ * generic Join contract). MEMOIZE_BY_KEY (input-keyed buffers) exists for forced-mode tests but is never selected by
+ * production planning until M-A1c facts justify it.
  *
  * <p>
  * Write-back: per emitted solution the cursor {@code mark()}s the row, resolves each out binding to an id (store id →
@@ -102,9 +102,12 @@ final class GenericEvalPlan implements SlotPlan {
 	public RowCursor open(RowState row) throws IOException {
 		LmdbNativeAggregateCompiler.ISLAND_OPENS.incrementAndGet();
 		NativeExecutionContext execution = executionContext(row);
+		LmdbFusedSipFactorizedRuntime.Session invocation = row.fusedSession();
 		IslandEvaluationState prepared;
 		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(row.source)) {
-			prepared = execution.genericStep(descriptor, () -> new IslandEvaluationState(prepare(execution)));
+			prepared = row.preparationScope(row.source)
+					.prepare(descriptor,
+							() -> new IslandEvaluationState(prepare(execution, row.source, invocation)));
 		}
 		QueryBindingSet input;
 		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(row.source)) {
@@ -189,16 +192,10 @@ final class GenericEvalPlan implements SlotPlan {
 	}
 
 	private NativeExecutionContext executionContext(RowState row) {
-		if (row.source instanceof SyntheticValueSource) {
-			NativeExecutionContext context = ((SyntheticValueSource) row.source).executionContext();
-			if (context != null) {
-				return context;
-			}
+		if (!(row.source instanceof SyntheticValueSource)) {
+			throw new IllegalStateException("generic island requires a source that can intern computed values");
 		}
-		// The compiling planner forces the SyntheticValueSource carrier for island-bearing plans; reaching this
-		// means an execution path handed the island a raw or compile-scoped source, where per-evaluation state
-		// (reuse buffers, interned ids, the shared query scope) has nowhere to live.
-		throw new IllegalStateException("generic island evaluated without a per-evaluation execution context");
+		return row.executionContext();
 	}
 
 	/**
@@ -218,15 +215,17 @@ final class GenericEvalPlan implements SlotPlan {
 		return false;
 	}
 
-	private QueryEvaluationStep prepare(NativeExecutionContext execution) {
+	private QueryEvaluationStep prepare(NativeExecutionContext execution, NativeLmdbQuerySource source,
+			LmdbFusedSipFactorizedRuntime.Session invocation) {
+		LmdbNativeEvaluationStrategy boundStrategy = strategy.forInvocation(source, invocation, execution);
 		QueryEvaluationContext scoped = execution
-				.genericContext(compileContext, strategy);
+				.genericInvocationContext(compileContext, boundStrategy);
 		// M-A2 nested roots: strategy.precompile lets the native compiler claim the island body where its shape is
 		// supported (e.g. a subquery Projection becomes a nested native row root with its own private slot layout
 		// and value catalog; cross-authority ids are re-imported by value at write-back). Unsupported bodies fall
 		// through to generic preparation inside the same call; the island's write-back contract is identical either
 		// way, and interior recursion keeps claiming fragments exactly as the generic host does.
-		return descriptor.precompile(strategy, scoped);
+		return descriptor.precompile(boundStrategy, scoped);
 	}
 
 	/**
@@ -275,9 +274,9 @@ final class GenericEvalPlan implements SlotPlan {
 	}
 
 	/**
-	 * Per-child materialization state. It is deliberately separate from {@link IslandEvaluationState}: a prepared step
-	 * can be shared by all LATERAL frames in one evaluation, but replay and keyed memo buffers must follow each frame's
-	 * input mapping.
+	 * Per-child materialization state. It is deliberately separate from the attempt-owned
+	 * {@link IslandEvaluationState}: replay and keyed memo buffers follow the frame's input mapping and retain
+	 * completed results, not the prepared step or its invocation.
 	 */
 	static final class IslandMaterializationState {
 		private volatile List<BindingSet> entryBuffer;

@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * Predicate-major descriptors for exact, immutable, context-unrestricted neighbor relations. One lane belongs to one
@@ -46,6 +47,8 @@ public final class BorrowedFactorBatch {
 	private long[][] arrays;
 	private int size;
 	private long generation;
+	private long descriptorVersion;
+	private boolean descriptorVersionExhausted;
 
 	public BorrowedFactorBatch(Source source, int capacity) {
 		this.source = Objects.requireNonNull(source, "source");
@@ -72,6 +75,17 @@ public final class BorrowedFactorBatch {
 
 	public long generation() {
 		return generation;
+	}
+
+	long coordinateDescriptorVersion() {
+		return descriptorVersion;
+	}
+
+	boolean coordinateDescriptorAvailable(int lane, long expectedGeneration, long expectedVersion) {
+		if (expectedGeneration != generation || expectedVersion != descriptorVersion || descriptorVersionExhausted
+				|| lane < 0 || lane >= size)
+			return false;
+		return source.coordinateAvailable(kinds[lane], references[lane], coordinates[lane], counts[lane]);
 	}
 
 	public byte kind(int lane) {
@@ -125,6 +139,15 @@ public final class BorrowedFactorBatch {
 			Arrays.fill(arrays, 0, size, null);
 		size = lanes;
 		generation++;
+		descriptorPublished();
+	}
+
+	private void descriptorPublished() {
+		if (descriptorVersion == Long.MAX_VALUE) {
+			descriptorVersionExhausted = true;
+		} else {
+			descriptorVersion++;
+		}
 	}
 
 	private void ensureCapacity(int required) {
@@ -159,6 +182,7 @@ public final class BorrowedFactorBatch {
 		counts[lane] = count;
 		if (arrays != null)
 			arrays[lane] = null;
+		descriptorPublished();
 	}
 
 	public void bindHeap(int lane, long[] values, int offset, int count) {
@@ -172,6 +196,7 @@ public final class BorrowedFactorBatch {
 		addresses[lane] = 0L;
 		references[lane] = 0L;
 		kinds[lane] = count == 0 ? EMPTY : HEAP;
+		descriptorPublished();
 	}
 
 	/** Package-private: only the selected source can publish this descriptor kind. */
@@ -187,6 +212,7 @@ public final class BorrowedFactorBatch {
 		coordinates[lane] = 0;
 		if (arrays != null)
 			arrays[lane] = null;
+		descriptorPublished();
 	}
 
 	/** Copies positioning information only, never the relation's values. */
@@ -206,6 +232,7 @@ public final class BorrowedFactorBatch {
 			arrays[lane] = from.arrays[fromLane];
 		} else if (arrays != null)
 			arrays[lane] = null;
+		descriptorPublished();
 	}
 
 	public Cursor cursor(int windowSize) {
@@ -264,6 +291,15 @@ public final class BorrowedFactorBatch {
 		protected void validateDescriptor(byte kind, long reference, int coordinate) {
 		}
 
+		final boolean coordinateSourceOpen() {
+			return !closed;
+		}
+
+		/** Side-effect-free optional provenance check; dependent sources override with version checks. */
+		boolean coordinateAvailable(byte kind, long reference, int coordinate, long count) {
+			return !closed && !extraValidation;
+		}
+
 		public abstract Reader openReader();
 
 		protected void release() {
@@ -304,14 +340,18 @@ public final class BorrowedFactorBatch {
 		private final long[] values;
 		private final long[] weights;
 		private long generation;
+		private long descriptorVersion;
 		private int lane;
 		private long end;
 		private long offset;
+		private long position;
+		private long currentPosition = -1L;
 		private int index;
 		private int size;
 		private int windowStart;
 		private boolean closed;
 		private boolean bound;
+		private boolean resultPositioned;
 		private long value;
 		private long weight;
 
@@ -332,9 +372,13 @@ public final class BorrowedFactorBatch {
 			end = batch.count(lane);
 			this.lane = lane;
 			generation = batch.generation;
+			descriptorVersion = batch.descriptorVersion;
 			offset = 0L;
+			position = 0L;
+			currentPosition = -1L;
 			index = size = 0;
 			value = weight = 0L;
+			resultPositioned = false;
 			if (end != 0L)
 				reader.bind(batch, lane);
 			bound = true;
@@ -354,11 +398,15 @@ public final class BorrowedFactorBatch {
 		}
 
 		public boolean next() {
+			resultPositioned = false;
 			checkPosition();
 			if (index == size && !refill())
 				return false;
 			value = values[index];
 			weight = weights[index++];
+			currentPosition = position;
+			position += weight;
+			resultPositioned = true;
 			return true;
 		}
 
@@ -369,13 +417,45 @@ public final class BorrowedFactorBatch {
 		 * losing or repeating a member.
 		 */
 		public int nextWindow() {
+			resultPositioned = false;
 			checkPosition();
 			if (index == size && !refill())
 				return 0;
 			windowStart = index;
 			int count = size - index;
+			currentPosition = position;
+			position = offset;
 			index = size;
+			resultPositioned = count > 0;
 			return count;
+		}
+
+		/** Original-source member coordinate for the current scalar or returned window, or {@code -1}. */
+		@InternalUseOnly
+		public long resultPosition() {
+			if (!hasResultPosition())
+				return -1L;
+			return source instanceof SelectedFactorSource selected ? selected.sourcePosition(currentPosition)
+					: currentPosition;
+		}
+
+		/** Bound descriptor lane for the current scalar or returned window, or {@code -1}. */
+		@InternalUseOnly
+		public int resultLane() {
+			if (!hasResultPosition())
+				return -1;
+			return source instanceof SelectedFactorSource selected ? selected.sourceLane() : lane;
+		}
+
+		/** Bound relation count while positioned, or {@code -1} when unavailable. */
+		@InternalUseOnly
+		public long resultCount() {
+			return hasResultPosition() ? end : -1L;
+		}
+
+		private boolean hasResultPosition() {
+			return !closed && bound && resultPositioned && currentPosition >= 0L
+					&& batch.coordinateDescriptorAvailable(lane, generation, descriptorVersion);
 		}
 
 		public long[] windowValues() {

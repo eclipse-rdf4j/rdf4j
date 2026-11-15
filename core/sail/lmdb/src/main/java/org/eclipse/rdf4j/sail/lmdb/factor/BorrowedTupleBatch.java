@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * Exact borrowed tuple relations. Columns of one tuple are zipped, never independent factors. Descriptors contain
@@ -35,6 +36,8 @@ public final class BorrowedTupleBatch {
 	private long[] counts;
 	private int size;
 	private long generation;
+	private long descriptorVersion;
+	private boolean descriptorVersionExhausted;
 
 	public BorrowedTupleBatch(Source source, int capacity) {
 		this.source = Objects.requireNonNull(source, "source");
@@ -58,6 +61,17 @@ public final class BorrowedTupleBatch {
 
 	public long generation() {
 		return generation;
+	}
+
+	long coordinateDescriptorVersion() {
+		return descriptorVersion;
+	}
+
+	boolean coordinateDescriptorAvailable(int lane, long expectedGeneration, long expectedVersion) {
+		if (expectedGeneration != generation || expectedVersion != descriptorVersion || descriptorVersionExhausted
+				|| lane < 0 || lane >= size)
+			return false;
+		return source.coordinateAvailable(references[lane], counts[lane]);
 	}
 
 	public long reference(int lane) {
@@ -86,6 +100,15 @@ public final class BorrowedTupleBatch {
 		Arrays.fill(counts, 0, Math.max(size, lanes), 0L);
 		size = lanes;
 		generation++;
+		descriptorPublished();
+	}
+
+	private void descriptorPublished() {
+		if (descriptorVersion == Long.MAX_VALUE) {
+			descriptorVersionExhausted = true;
+		} else {
+			descriptorVersion++;
+		}
 	}
 
 	/** Publishes one exact immutable group; reference interpretation is source-specific. */
@@ -97,6 +120,7 @@ public final class BorrowedTupleBatch {
 			source.validate(reference, count);
 		references[lane] = reference;
 		counts[lane] = count;
+		descriptorPublished();
 	}
 
 	/** Copies a descriptor, not payload or reader state. Sources must be identical. */
@@ -107,6 +131,7 @@ public final class BorrowedTupleBatch {
 			throw new IllegalArgumentException("different tuple source");
 		references[lane] = from.references[fromLane];
 		counts[lane] = from.counts[fromLane];
+		descriptorPublished();
 	}
 
 	public Cursor cursor(int window) {
@@ -165,6 +190,15 @@ public final class BorrowedTupleBatch {
 
 		/** Query-specific views override this; physical sources need no extra dependent check. */
 		protected void validateState() {
+		}
+
+		final boolean coordinateSourceOpen() {
+			return !closed;
+		}
+
+		/** Side-effect-free optional provenance check; dependent sources override with version checks. */
+		boolean coordinateAvailable(long reference, long count) {
+			return !closed && !dependentViews;
 		}
 
 		/** Validates a descriptor at publication/bind, not once per value. */
@@ -230,10 +264,10 @@ public final class BorrowedTupleBatch {
 		private long[] currentRows;
 		private int currentOffset;
 		private long currentWeight;
-		private long generation, count, offset, currentPosition;
+		private long generation, descriptorVersion, count, offset, currentPosition, reference;
 		private int lane;
 		private int index, size;
-		private boolean bound, closed;
+		private boolean bound, closed, positioned;
 
 		private Cursor(BorrowedTupleBatch batch, int window) {
 			if (window <= 0)
@@ -253,6 +287,8 @@ public final class BorrowedTupleBatch {
 			checkOpen();
 			batch.checkLane(lane);
 			count = batch.count(lane);
+			reference = batch.reference(lane);
+			descriptorVersion = batch.descriptorVersion;
 			this.lane = lane;
 			currentPosition = 0L;
 			generation = batch.generation;
@@ -262,6 +298,7 @@ public final class BorrowedTupleBatch {
 			currentRows = null;
 			currentWeight = 0L;
 			bound = false;
+			positioned = false;
 			if (count != 0L) {
 				source.validate(batch.references[lane], count);
 				reader.bind(batch.references[lane], count);
@@ -272,6 +309,7 @@ public final class BorrowedTupleBatch {
 
 		public boolean next() {
 			checkBound();
+			positioned = false;
 			if (direct != null)
 				return nextDirect();
 			currentPosition += currentWeight;
@@ -281,6 +319,7 @@ public final class BorrowedTupleBatch {
 			}
 			currentOffset = index * columns;
 			currentWeight = weights[index];
+			positioned = true;
 			return true;
 		}
 
@@ -299,6 +338,7 @@ public final class BorrowedTupleBatch {
 			currentOffset = start;
 			currentWeight = weight;
 			offset += weight;
+			positioned = true;
 			return true;
 		}
 
@@ -349,6 +389,30 @@ public final class BorrowedTupleBatch {
 		public long position() {
 			weight();
 			return direct == null ? currentPosition : offset - currentWeight;
+		}
+
+		/** Original-source member coordinate for the current tuple, or {@code -1} when unavailable. */
+		@InternalUseOnly
+		public long resultPosition() {
+			if (!hasResultPosition())
+				return -1L;
+			if (direct != null)
+				return currentOffset;
+			return source instanceof SelectedTupleSource selected ? selected.sourcePosition(currentPosition)
+					: currentPosition;
+		}
+
+		/** Bound descriptor lane for the current tuple, or {@code -1} when unavailable. */
+		@InternalUseOnly
+		public int resultLane() {
+			if (!hasResultPosition())
+				return -1;
+			return source instanceof SelectedTupleSource selected ? selected.sourceLane() : lane;
+		}
+
+		private boolean hasResultPosition() {
+			return !closed && bound && positioned && currentWeight > 0L
+					&& batch.coordinateDescriptorAvailable(lane, generation, descriptorVersion);
 		}
 
 		/** One provenance check when capturing all current coordinates, not one check per accessor. */
@@ -406,6 +470,7 @@ public final class BorrowedTupleBatch {
 		public void close() {
 			if (!closed) {
 				closed = true;
+				positioned = false;
 				currentRows = null;
 				reader.close();
 			}

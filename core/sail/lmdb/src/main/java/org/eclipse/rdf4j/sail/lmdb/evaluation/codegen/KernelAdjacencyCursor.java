@@ -951,6 +951,49 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		return context;
 	}
 
+	/** Stable identity of the current original run within its immutable adjacency view, or zero when unavailable. */
+	public long sourceRunToken() {
+		if (closed || !rootReady || pages != null) {
+			return 0L;
+		}
+		long token;
+		if (runs instanceof ReusableRunCursor reusable) {
+			token = reusable.sourceRunToken();
+		} else if (runs instanceof SingleRunCursor single) {
+			token = single.sourceRunToken();
+		} else {
+			return 0L;
+		}
+		return token > 0L ? token : 0L;
+	}
+
+	/**
+	 * Original run-relative offset of the first participating source member of the current neighbor fiber, or
+	 * {@code -1} when unproved. A graph restriction can make that member later than the unfiltered fiber start.
+	 */
+	public long sourceFiberPosition() {
+		return fiberReady && sourceRunToken() > 0L ? fiberQuadOffset : -1L;
+	}
+
+	/**
+	 * Original run-relative offset of the current context, or {@code -1} when unproved. Filtered reads retain their raw
+	 * position; a common-context shortcut supplies one only for a single member or a contiguous accepted window.
+	 */
+	public long sourceContextPosition() {
+		if (!contextReady || sourceRunToken() <= 0L) {
+			return -1L;
+		}
+		if (!graphSpanAccess) {
+			return fiberQuadOffset + contextIndex;
+		}
+		if (runFiberCommonContext < 0L) {
+			return contextRawPosition - 1L;
+		}
+		return multiplicity == 1L || fiberRawEnd - fiberQuadOffset == multiplicity
+				? fiberQuadOffset + contextIndex
+				: -1L;
+	}
+
 	/** Returns the number of neighbor values returned by page or run fiber-copy calls. */
 	public long neighborValuesCopied() {
 		ensureOpen();
@@ -1113,6 +1156,10 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			this.size = size;
 		}
 
+		private long sourceRunToken() {
+			return positioned && view instanceof NativeAdjacency adjacency ? adjacency.sourceRunToken(handle) : 0L;
+		}
+
 		@Override
 		public boolean advance() {
 			if (positioned) {
@@ -1242,6 +1289,16 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		private long handle;
 		private long size;
 		private boolean positioned;
+
+		private long sourceRunToken() {
+			if (!positioned) {
+				return 0L;
+			}
+			if (bound != null) {
+				return bound.sourceRunToken();
+			}
+			return view instanceof NativeAdjacency adjacency ? adjacency.sourceRunToken(handle) : 0L;
+		}
 
 		void bind(NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor bound, long root, long size) {
 			this.bound = Objects.requireNonNull(bound, "bound");

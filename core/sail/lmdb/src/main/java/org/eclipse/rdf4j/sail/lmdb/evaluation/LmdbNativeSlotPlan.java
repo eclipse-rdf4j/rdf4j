@@ -599,6 +599,11 @@ interface SlotPlan {
 	static SlotPlan values(ValuesRow[] rows, boolean exactFilterRewrite) {
 		return rows.length == 0 ? EmptyPlan.INSTANCE : new ValuesPlan(rows, exactFilterRewrite);
 	}
+
+	/** IDs were classified while the compiler resolved each cell, before this table was sealed. */
+	static SlotPlan values(ValuesRow[] rows, boolean exactFilterRewrite, int idDomains) {
+		return rows.length == 0 ? EmptyPlan.INSTANCE : new ValuesPlan(rows, exactFilterRewrite, idDomains);
+	}
 }
 
 @Experimental

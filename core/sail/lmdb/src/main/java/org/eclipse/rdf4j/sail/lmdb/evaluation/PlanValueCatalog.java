@@ -17,11 +17,15 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
 /**
@@ -35,14 +39,43 @@ import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 @Experimental
 final class PlanValueCatalog {
 
-	static final PlanValueCatalog EMPTY = new PlanValueCatalog(Map.of(), List.of());
+	static final PlanValueCatalog EMPTY = new PlanValueCatalog(Map.of(), List.of(), true);
 
-	private final Map<RdfTermKey, Long> idsByValue;
-	private final List<Value> valuesInOrder;
+	private record Contents(Map<RdfTermKey, Long> idsByValue, List<Value> valuesInOrder) {
+	}
 
-	private PlanValueCatalog(Map<RdfTermKey, Long> idsByValue, List<Value> valuesInOrder) {
-		this.idsByValue = idsByValue;
-		this.valuesInOrder = valuesInOrder;
+	private volatile Contents contents;
+	/** Present only while the owning thread is preparing one compiled tree. */
+	private volatile Builder preparing;
+	/** A receipt may retain this token, but not this catalog's builder or values. */
+	private final Object detachedIdentity = new Object();
+	private final boolean detachedValues;
+
+	private PlanValueCatalog(Map<RdfTermKey, Long> idsByValue, List<Value> valuesInOrder, boolean detachedValues) {
+		this.contents = new Contents(idsByValue, valuesInOrder);
+		this.detachedValues = detachedValues;
+	}
+
+	private PlanValueCatalog(Builder preparing) {
+		this.preparing = preparing;
+		this.detachedValues = true;
+	}
+
+	/** Only a fully frozen catalog of detached spellings can certify a shared compiled recipe. */
+	Object detachedIdentity() {
+		return detachedValues && contents != null ? detachedIdentity : null;
+	}
+
+	private Contents contents() {
+		Contents frozen = contents;
+		if (frozen != null) {
+			return frozen;
+		}
+		Builder owner = preparing;
+		if (owner == null || owner.owner != Thread.currentThread()) {
+			throw new IllegalStateException("compiled value catalog is not frozen");
+		}
+		return owner.preparingContents;
 	}
 
 	long idOf(Value value) {
@@ -50,26 +83,35 @@ final class PlanValueCatalog {
 	}
 
 	long idOfKey(RdfTermKey key) {
-		Long id = idsByValue.get(key);
+		Long id = contents().idsByValue().get(key);
 		return id != null ? id : UNKNOWN;
 	}
 
 	Value valueOf(long id) {
+		List<Value> valuesInOrder = contents().valuesInOrder();
 		int index = indexOf(id);
 		return index >= 0 && index < valuesInOrder.size() ? valuesInOrder.get(index) : null;
 	}
 
 	boolean contains(long id) {
+		List<Value> valuesInOrder = contents().valuesInOrder();
 		int index = indexOf(id);
 		return index >= 0 && index < valuesInOrder.size();
 	}
 
+	/** A published catalog can prove membership without exposing or decoding its value. */
+	boolean frozenContains(long id) {
+		Contents frozen = contents;
+		int index = indexOf(id);
+		return frozen != null && index >= 0 && index < frozen.valuesInOrder().size();
+	}
+
 	int size() {
-		return valuesInOrder.size();
+		return contents().valuesInOrder().size();
 	}
 
 	boolean isEmpty() {
-		return valuesInOrder.isEmpty();
+		return contents().valuesInOrder().isEmpty();
 	}
 
 	private static int indexOf(long id) {
@@ -80,9 +122,254 @@ final class PlanValueCatalog {
 	static final class Builder {
 		private final Map<RdfTermKey, Long> idsByValue = new HashMap<>();
 		private final List<Value> valuesInOrder = new ArrayList<>();
+		private final Contents preparingContents = new Contents(idsByValue, valuesInOrder);
+		private Thread owner = Thread.currentThread();
+		private final PlanValueCatalog treeCatalog;
+		private final boolean catalogOnly;
+		/* Compilation scratch only: neither algebra nodes nor sources may escape through the frozen catalog. */
+		private IdentityHashMap<BindingSetAssignment, Integer> valuesRowCounts;
+		private IdentityHashMap<StatementPattern, LmdbNativeCostVectors.PatternEstimate> patternEstimates;
+		private IdentityHashMap<BindingSetAssignment, LmdbNativeAggregatePlannerBase.ColdLookupTable> coldLookups;
+		private ArrayList<LmdbQueryMemoryManager.Reservation> estimateReservations;
+		private EstimateScope estimateScope;
+		private LmdbQueryMemoryManager.QueryLedger compilationLedger;
+		private boolean ownsCompilationLedger;
+		private boolean frozen;
+
+		Builder() {
+			this(false);
+		}
+
+		private Builder(boolean compiledTree) {
+			treeCatalog = compiledTree ? new PlanValueCatalog(this) : null;
+			catalogOnly = false;
+		}
+
+		private Builder(PlanValueCatalog catalog) {
+			if (catalog.contents == null) {
+				throw new IllegalStateException("compiled value catalog is not frozen");
+			}
+			treeCatalog = catalog;
+			catalogOnly = true;
+		}
+
+		/** One explicit owner is passed to every lexical compiler in the same compilation. */
+		static Builder compiledTree() {
+			return new Builder(true);
+		}
+
+		/** Runtime fallback can look up the completed artifact, but cannot extend its ID namespace. */
+		static Builder forFrozenCatalog(PlanValueCatalog catalog) {
+			return new Builder(catalog);
+		}
+
+		boolean ownsCompiledTree() {
+			return treeCatalog != null;
+		}
+
+		/** Shares the invocation ledger when present; otherwise owns one temporary tree-compilation ledger. */
+		LmdbQueryMemoryManager.Reservation reserveCompilationScratch(NativeExecutionContext execution, long bytes) {
+			checkPreparing();
+			LmdbQueryMemoryManager.QueryLedger requested = execution == null ? null : execution.memoryLedger();
+			if (compilationLedger == null) {
+				compilationLedger = requested == null ? LmdbNativeHashJoin.queryMemory().openQuery() : requested;
+				ownsCompilationLedger = requested == null;
+			} else if (requested != null && requested != compilationLedger
+					|| requested == null && !ownsCompilationLedger) {
+				return null;
+			}
+			return compilationLedger.tryReserveWithoutReclamation(bytes);
+		}
+
+		LmdbNativeAggregatePlannerBase.ColdLookupTable coldLookups(BindingSetAssignment values) {
+			return coldLookups == null ? null : coldLookups.get(values);
+		}
+
+		void putColdLookups(BindingSetAssignment values, LmdbNativeAggregatePlannerBase.ColdLookupTable table) {
+			if (coldLookups == null) {
+				coldLookups = new IdentityHashMap<>();
+			}
+			coldLookups.put(values, table);
+		}
+
+		void removeColdLookups(BindingSetAssignment values) {
+			coldLookups.remove(values);
+			if (coldLookups.isEmpty()) {
+				coldLookups = null;
+			}
+		}
+
+		/** Limits optional pricing receipts to a lexical preparation whose source domain was already captured. */
+		EstimateScope beginEstimateScope(NativeLmdbQuerySource source, NativeLmdbQuerySource.DomainStamp domain,
+				NativeExecutionContext execution) {
+			checkPreparing();
+			EstimateScope scope = new EstimateScope(this, estimateScope, source, domain, execution);
+			estimateScope = scope;
+			return scope;
+		}
+
+		NativeLmdbQuerySource.DomainStamp estimateDomain(NativeLmdbQuerySource source) {
+			return estimateScope != null && estimateScope.source == source ? estimateScope.domain : null;
+		}
+
+		static final class EstimateScope implements AutoCloseable {
+			private final Builder owner;
+			private final EstimateScope previous;
+			private final NativeLmdbQuerySource source;
+			private final NativeLmdbQuerySource.DomainStamp domain;
+			private final NativeExecutionContext execution;
+			private boolean closed;
+
+			private EstimateScope(Builder owner, EstimateScope previous, NativeLmdbQuerySource source,
+					NativeLmdbQuerySource.DomainStamp domain, NativeExecutionContext execution) {
+				this.owner = owner;
+				this.previous = previous;
+				this.source = source;
+				this.domain = domain;
+				this.execution = execution;
+			}
+
+			@Override
+			public void close() {
+				if (!closed) {
+					if (owner.estimateScope != this) {
+						throw new IllegalStateException("estimate preparation scopes must close in order");
+					}
+					owner.estimateScope = previous;
+					closed = true;
+				}
+			}
+		}
+
+		void recordValuesRowCount(BindingSetAssignment values, int count) {
+			checkPreparing();
+			if (treeCatalog == null || estimateScope == null || estimateScope.domain == null) {
+				return;
+			}
+			if (valuesRowCounts == null) {
+				if (!reserveEstimateScratch()) {
+					return;
+				}
+				valuesRowCounts = new IdentityHashMap<>();
+			} else if (!valuesRowCounts.containsKey(values) && !reserveEstimateScratch()) {
+				return;
+			}
+			if (!valuesRowCounts.containsKey(values)) {
+				valuesRowCounts.put(values, count);
+			} else if (valuesRowCounts.get(values) != null && valuesRowCounts.get(values) != count) {
+				// The same mutable algebra node was observed with different contents: no count is certified.
+				valuesRowCounts.put(values, null);
+			}
+		}
+
+		Integer valuesRowCount(BindingSetAssignment values) {
+			checkPreparing();
+			return valuesRowCounts == null ? null : valuesRowCounts.get(values);
+		}
+
+		void recordPatternEstimate(StatementPattern pattern, LmdbNativeCostVectors.PatternEstimate estimate) {
+			checkPreparing();
+			if (treeCatalog == null || estimate.domain() == null) {
+				return;
+			}
+			if (patternEstimates == null) {
+				if (!reserveEstimateScratch()) {
+					return;
+				}
+				patternEstimates = new IdentityHashMap<>();
+			} else if (!patternEstimates.containsKey(pattern) && !reserveEstimateScratch()) {
+				return;
+			}
+			if (!patternEstimates.containsKey(pattern)) {
+				patternEstimates.put(pattern, estimate);
+			} else {
+				LmdbNativeCostVectors.PatternEstimate previous = patternEstimates.get(pattern);
+				if (previous != null && !previous.sameProof(estimate)) {
+					patternEstimates.put(pattern, null);
+				}
+			}
+		}
+
+		LmdbNativeCostVectors.PatternEstimate patternEstimate(StatementPattern pattern) {
+			checkPreparing();
+			return patternEstimates == null ? null : patternEstimates.get(pattern);
+		}
+
+		private boolean reserveEstimateScratch() {
+			if (estimateScope == null) {
+				return false;
+			}
+			LmdbQueryMemoryManager.Reservation reservation = reserveCompilationScratch(estimateScope.execution, 512L);
+			if (reservation == null) {
+				return false;
+			}
+			try {
+				if (estimateReservations == null) {
+					estimateReservations = new ArrayList<>();
+				}
+				estimateReservations.add(reservation);
+				return true;
+			} catch (RuntimeException | Error failure) {
+				reservation.close();
+				throw failure;
+			}
+		}
+
+		private void clearEstimateScratch() {
+			estimateScope = null;
+			if (coldLookups != null) {
+				for (LmdbNativeAggregatePlannerBase.ColdLookupTable table : coldLookups.values()) {
+					table.close();
+				}
+				coldLookups.clear();
+				coldLookups = null;
+			}
+			if (valuesRowCounts != null) {
+				valuesRowCounts.clear();
+				valuesRowCounts = null;
+			}
+			if (patternEstimates != null) {
+				patternEstimates.clear();
+				patternEstimates = null;
+			}
+			if (estimateReservations != null) {
+				for (LmdbQueryMemoryManager.Reservation reservation : estimateReservations) {
+					reservation.close();
+				}
+				estimateReservations.clear();
+				estimateReservations = null;
+			}
+			if (compilationLedger != null && ownsCompilationLedger) {
+				compilationLedger.close();
+			}
+			compilationLedger = null;
+			ownsCompilationLedger = false;
+		}
+
+		void closeCompilationScratch() {
+			checkPreparing();
+			if (estimateScope != null) {
+				throw new IllegalStateException("cannot close active estimate preparation");
+			}
+			clearEstimateScratch();
+		}
+
+		private void checkPreparing() {
+			if (frozen || owner != Thread.currentThread()) {
+				throw new IllegalStateException("compiled value catalog preparation is closed");
+			}
+		}
 
 		/** Returns the stable synthetic id for the constant, allocating one on first sight of its exact spelling. */
 		long internConstant(Value value) {
+			checkPreparing();
+			if (catalogOnly) {
+				long id = treeCatalog.idOf(value);
+				if (id == UNKNOWN) {
+					throw new MissingCompiledConstant();
+				}
+				return id;
+			}
 			RdfTermKey key = RdfTermKey.of(value);
 			Long existing = idsByValue.get(key);
 			if (existing != null) {
@@ -90,22 +377,76 @@ final class PlanValueCatalog {
 			}
 			long id = SYNTHETIC_VALUE_BASE + valuesInOrder.size();
 			idsByValue.put(key, id);
-			valuesInOrder.add(value);
+			// A compiled tree outlives the lookup source. Detach the spelling already read for the key so a native
+			// Value cannot retain a source/revision or mutate the published catalog. Every use of this ID still shares
+			// the one catalog value object. Standalone builders retain their existing caller-owned-value behavior.
+			valuesInOrder.add(treeCatalog == null ? value : key.toValue());
 			return id;
 		}
 
 		/** Pure lookup: the already-allocated id for the constant, or {@code UNKNOWN} — never allocates. */
 		long idOf(Value value) {
+			checkPreparing();
+			if (catalogOnly) {
+				return treeCatalog.idOf(value);
+			}
 			Long id = idsByValue.get(RdfTermKey.of(value));
 			return id != null ? id : UNKNOWN;
 		}
 
 		boolean isEmpty() {
-			return valuesInOrder.isEmpty();
+			checkPreparing();
+			return catalogOnly ? treeCatalog.isEmpty() : valuesInOrder.isEmpty();
 		}
 
 		PlanValueCatalog build() {
-			return new PlanValueCatalog(new HashMap<>(idsByValue), List.copyOf(valuesInOrder));
+			checkPreparing();
+			return treeCatalog == null ? new PlanValueCatalog(Map.copyOf(idsByValue), List.copyOf(valuesInOrder), false)
+					: treeCatalog;
 		}
+
+		/** Publishes one immutable catalog after all child preparations finish; no mutable owner escapes. */
+		PlanValueCatalog freeze() {
+			if (treeCatalog == null) {
+				PlanValueCatalog result = build();
+				closeCompilationScratch();
+				return result;
+			}
+			checkPreparing();
+			if (catalogOnly) {
+				closeCompilationScratch();
+				return treeCatalog;
+			}
+			Contents frozenContents = new Contents(Map.copyOf(idsByValue), List.copyOf(valuesInOrder));
+			frozen = true;
+			treeCatalog.contents = frozenContents;
+			treeCatalog.preparing = null;
+			owner = null;
+			idsByValue.clear();
+			valuesInOrder.clear();
+			clearEstimateScratch();
+			return treeCatalog;
+		}
+
+		void abort() {
+			if (treeCatalog == null || catalogOnly) {
+				closeCompilationScratch();
+				return;
+			}
+			if (treeCatalog != null && !catalogOnly && !frozen) {
+				checkPreparing();
+				frozen = true;
+				treeCatalog.preparing = null;
+				owner = null;
+				idsByValue.clear();
+				valuesInOrder.clear();
+				clearEstimateScratch();
+			}
+		}
+	}
+
+	/** A later alternative is not certified when it needs a constant absent from the completed tree artifact. */
+	static final class MissingCompiledConstant extends RuntimeException {
+		private static final long serialVersionUID = 1L;
 	}
 }

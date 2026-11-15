@@ -1,0 +1,14 @@
+PREFIX ex: <urn:fanout:>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?patient ?measurement ?reading ?diagnosis ?severity ?drug ?route ?language ?procedure ?author ?department ?status
+WHERE {
+ VALUES ?patient { ex:patient1 }
+ ?patient a ?patientType ; ex:measurement ?measurement .
+ ?measurement a ?measurementType ; ex:reading ?reading .
+ ?reading ex:unit ?unit ; ex:numericValue ?readingValue .
+ OPTIONAL { ?patient ex:diagnosis ?diagnosis . ?diagnosis ex:code ?diagnosisCode ; rdfs:label ?diagnosisLabel . OPTIONAL { ?diagnosis ex:severity ?severity . } }
+ OPTIONAL { ?patient ex:drug ?drug . ?drug ex:code ?drugCode ; rdfs:label ?drugLabel . OPTIONAL { ?drug ex:route ?route . ?route rdfs:label ?routeLabel . OPTIONAL { ?route ex:displayLanguage ?language . } } }
+ OPTIONAL { ?patient ex:procedure ?procedure . ?procedure ex:code ?procedureCode . }
+ OPTIONAL { ?patient ex:author ?author . ?author rdfs:label ?authorName . OPTIONAL { ?author ex:department ?department . ?department rdfs:label ?departmentName . } }
+ OPTIONAL { ?patient ex:status ?status . ?status rdfs:label ?statusLabel . }
+}

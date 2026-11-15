@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -88,6 +87,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	LmdbNativeAggregateFilterCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
 		super(context, strategy, source);
+	}
+
+	LmdbNativeAggregateFilterCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
+			NativeLmdbQuerySource source, PlanValueCatalog.Builder catalog) {
+		super(context, strategy, source, catalog);
 	}
 
 	NativeBooleanFilter compileDirectExists(Exists exists) {
@@ -642,31 +646,19 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	NativeBooleanFilter compileSemanticBoolean(ValueExpr expr) {
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr, strategy);
 		if (!descriptor.shareableAcrossEvaluations()) {
-			// The condition carries query-scope state (NOW/BNODE/volatiles): compile its predicate once per
-			// evaluation through the execution context, so a retained compiled step observes a fresh query scope
-			// each evaluation while all rows of one evaluation share one. Interior steps borrow the surrounding
-			// NativeSubqueryPlan evaluation source rather than freezing the planner context.
 			requiresExecutionContext = true;
-			long readMask = genericReadMask(expr);
-			LmdbNativeEvaluationStrategy compilingStrategy = strategy;
-			QueryEvaluationContext compileContext = context;
-			NativeSlotLayout layoutSnapshot = layout;
-			ValueExpr pinned = descriptor.pinnedExpr();
-			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> {
-				QueryEvaluationContext scoped = executionContext
-						.genericContext(compileContext, compilingStrategy);
-				return compileSemanticValue(compilingStrategy, pinned,
-						new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
-			};
-			Supplier<NativeBindingSetValueEvaluator> sharedFallback = () -> descriptor.prepare(
-					() -> compileSemanticValue(compilingStrategy,
-							pinned, new SlotAwareQueryEvaluationContext(compileContext, layoutSnapshot)));
-			return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, sharedFallback, readMask);
 		}
-		// Preserve both the slot-aware reads and the evaluation source when semantic expressions re-enter native
-		// EXISTS.
-		return new NativeValueOutcomeBooleanFilter(compileSemanticValue(strategy, expr, slotAwareContext()),
-				genericReadMask(expr));
+		LmdbNativeEvaluationStrategy compilingStrategy = strategy;
+		QueryEvaluationContext compileContext = context;
+		NativeSlotLayout layoutSnapshot = layout;
+		ValueExpr pinned = descriptor.pinnedExpr();
+		return new NativeValueOutcomeBooleanFilter(descriptor, (row, executionContext) -> {
+			LmdbNativeEvaluationStrategy bound = compilingStrategy.forInvocation(row.source, row.fusedSession(),
+					row.executionContext());
+			QueryEvaluationContext scoped = executionContext == null ? compileContext
+					: executionContext.genericInvocationContext(compileContext, bound);
+			return compileSemanticValue(bound, pinned, new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
+		}, genericReadMask(expr));
 	}
 
 	/** A pinned condition projection cannot be represented by raw slot reads or fragment-local correlation. */
@@ -677,20 +669,19 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			return nativeProjection;
 		}
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+		if (!descriptor.shareableAcrossEvaluations()) {
+			requiresExecutionContext = true;
+		}
 		LmdbNativeEvaluationStrategy compilingStrategy = strategy;
 		QueryEvaluationContext compileContext = context;
 		ValueExpr pinned = descriptor.pinnedExpr();
-		if (!descriptor.shareableAcrossEvaluations()) {
-			requiresExecutionContext = true;
-			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> compileProjectedValue(
-					compilingStrategy, pinned,
-					executionContext.genericContext(compileContext, compilingStrategy), bindingScope);
-			Supplier<NativeBindingSetValueEvaluator> fallback = () -> descriptor
-					.prepare(() -> compileProjectedValue(compilingStrategy, pinned, compileContext, bindingScope));
-			return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, fallback, -1L);
-		}
-		return new NativeValueOutcomeBooleanFilter(
-				compileProjectedValue(compilingStrategy, pinned, compileContext, bindingScope), -1L);
+		return new NativeValueOutcomeBooleanFilter(descriptor, (row, executionContext) -> {
+			LmdbNativeEvaluationStrategy bound = compilingStrategy.forInvocation(row.source, row.fusedSession(),
+					row.executionContext());
+			QueryEvaluationContext scoped = executionContext == null ? compileContext
+					: executionContext.genericInvocationContext(compileContext, bound);
+			return compileProjectedValue(bound, pinned, scoped, bindingScope);
+		}, -1L);
 	}
 
 	/**
@@ -797,6 +788,43 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				NativeExecutionContext projectedContext = executionContext == null ? null
 						: executionContext.forConditionBindings(bindingScope);
 				return evaluator.evaluate(retain.apply(bindings), projectedContext);
+			}
+
+			@Override
+			public NativeValueOutcome evaluateInInvocation(BindingSet bindings, NativeExecutionContext executionContext,
+					NativeLmdbQuerySource source, LmdbFusedSipFactorizedRuntime.Session invocation) {
+				NativeExecutionContext projectedContext = executionContext == null ? null
+						: source instanceof SyntheticValueSource synthetic
+								? executionContext.forConditionBindings(bindingScope, synthetic)
+								: executionContext.forConditionBindings(bindingScope);
+				NativeLmdbQuerySource projectedSource = projectedContext == null ? source
+						: projectedContext.evaluationSource();
+				return evaluator.evaluateInInvocation(retain.apply(bindings), projectedContext, projectedSource,
+						invocation);
+			}
+
+			@Override
+			public NativeValueOutcome evaluateForRow(BindingSet bindings, RowState row) {
+				return evaluateInPreparation(bindings, row.executionContext(), row.preparationScope(row.source));
+			}
+
+			@Override
+			public NativeValueOutcome evaluateInPreparation(BindingSet bindings,
+					NativeExecutionContext executionContext,
+					LmdbFusedSipFactorizedRuntime.PreparationScope preparation) {
+				NativeExecutionContext projected = executionContext == null ? null
+						: preparation.source() instanceof SyntheticValueSource synthetic
+								? executionContext.forConditionBindings(bindingScope, synthetic)
+								: executionContext.forConditionBindings(bindingScope);
+				NativeLmdbQuerySource source = projected == null ? preparation.source() : projected.evaluationSource();
+				LmdbFusedSipFactorizedRuntime.PreparationScope projectedPreparation = preparation;
+				if (source != preparation.source()) {
+					if (!(preparation.attempt() instanceof LmdbFusedSipFactorizedRuntime.PreparationAttempt attempt)) {
+						throw new IllegalStateException("condition projection requires a preparation attempt");
+					}
+					projectedPreparation = attempt.scope(preparation.session(), source);
+				}
+				return evaluator.evaluateInPreparation(retain.apply(bindings), projected, projectedPreparation);
 			}
 		};
 	}

@@ -67,10 +67,13 @@ final class NativeSpillValueCodec {
 
 	private void write(DataOutput output, Value value, int depth) throws IOException {
 		checkDepth(depth);
-		if (termSource != null && value instanceof LmdbValue term && storeTerm(term)) {
-			output.writeByte(TAG_STORE_TERM);
-			output.writeLong(term.getInternalID());
-			return;
+		if (termSource != null && value instanceof LmdbValue term) {
+			long id = storeTermId(term);
+			if (id != LmdbValue.UNKNOWN_ID) {
+				output.writeByte(TAG_STORE_TERM);
+				output.writeLong(id);
+				return;
+			}
 		}
 		if (value instanceof Literal literal && literal.getCoreDatatype() == CoreDatatype.XSD.INTEGER) {
 			long integer = canonicalLong(literal.getLabel());
@@ -157,16 +160,20 @@ final class NativeSpillValueCodec {
 	}
 
 	/**
-	 * Whether {@code term} is a term of the codec's dictionary source: same value store and the same dictionary
-	 * generation the source resolves IDs against (learned once from a probe lookup, so a foreign or older-generation
-	 * native term keeps its exact lexical spelling).
+	 * Returns the validated stored ID, or UNKNOWN when the association or its semantic witness cannot be trusted.
+	 * Foreign or older-generation terms keep their exact lexical spelling.
 	 */
-	private boolean storeTerm(LmdbValue term) {
-		long id = term.getInternalID();
-		ValueStoreRevision revision = term.getValueStoreRevision();
+	private long storeTermId(LmdbValue term) {
+		long version = term.getSemanticVersion();
+		if (version == LmdbValue.UNKNOWN_ID) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		LmdbValue.InternalIdentity identity = term.getInternalIdentity();
+		long id = identity.id();
+		ValueStoreRevision revision = identity.revision();
 		if (id == LmdbValue.UNKNOWN_ID || revision == null || revision.getValueStore() == null
 				|| revision.getValueStore() != backingIdSpace(termSource)) {
-			return false;
+			return LmdbValue.UNKNOWN_ID;
 		}
 		if (!revisionProbed) {
 			revisionProbed = true;
@@ -176,7 +183,12 @@ final class NativeSpillValueCodec {
 				acceptedRevisionId = resolved.getValueStoreRevision().getRevisionId();
 			}
 		}
-		return acceptedRevisionId != NO_REVISION && revision.getRevisionId() == acceptedRevisionId;
+		if (acceptedRevisionId == NO_REVISION || revision.getRevisionId() != acceptedRevisionId
+				|| term.getSemanticVersion() != version) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		LmdbValue.InternalIdentity current = term.getInternalIdentity();
+		return current.id() == id && current.revision() == revision ? id : LmdbValue.UNKNOWN_ID;
 	}
 
 	/**

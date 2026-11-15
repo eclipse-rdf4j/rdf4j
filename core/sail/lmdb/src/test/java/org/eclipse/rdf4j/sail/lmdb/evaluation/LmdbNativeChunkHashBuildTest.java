@@ -461,6 +461,63 @@ class LmdbNativeChunkHashBuildTest {
 	}
 
 	@Test
+	void tailCoordinatesTrackOdometerChangesAndPrefixRebind() throws Exception {
+		EnumMaterializationSource source = new EnumMaterializationSource(2, Map.of());
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "left", 1, "right", 2), null);
+		layout.freeze(List.of("key", "left", "right"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		ValuesRow[] prefixRows = {
+				new ValuesRow(new int[] { 0 }, new long[] { 100L }),
+				new ValuesRow(new int[] { 0 }, new long[] { 200L })
+		};
+		PatternPlan left = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		PatternPlan right = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE + 1L), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { new ValuesPlan(prefixRows), left, right },
+				new MaskedFilter[0]);
+		LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(plan,
+				plan.derivedFactorizedPlan(row), row, row.boundMask(), new int[] { 0, 1, 2 }, false);
+		assertThat(factorized).isNotNull();
+		assertThat(factorized.flatCount).isEqualTo(1);
+		assertThat(factorized.branches).hasSize(2);
+		assertThat(factorized.branches)
+				.allSatisfy(branch -> assertThat(branch.role).isEqualTo(LmdbNativeFactorizedRows.ROLE_ENUM));
+
+		try (FactorizedRowCursor cursor = factorized.open(row)) {
+			NativeResultCoordinates coordinates = (NativeResultCoordinates) cursor;
+			assertThat(coordinates.takeChangedSlots()).isEqualTo(-1L);
+			assertThat(cursor.next()).isTrue();
+			long firstActivation = coordinates.coordinateActivation();
+			assertThat(firstActivation).isPositive();
+			assertThat(coordinates.takeChangedSlots()).isEqualTo(-1L);
+			assertThat(row.slots[0]).isEqualTo(100L);
+			assertThat(coordinates.mayReplay(2)).isTrue();
+			long[] coordinate = new long[NativeResultCoordinates.WIDTH];
+			assertThat(coordinates.resultCoordinate(2, coordinate)).isTrue();
+			assertThat(coordinate[NativeResultCoordinates.POSITION]).isZero();
+
+			// Skip one inner odometer step; the next sample must include both the changed outer group and reset inner.
+			assertThat(cursor.next()).isTrue();
+			assertThat(coordinates.takeChangedSlots()).isEqualTo(1L << 2);
+			assertThat(cursor.next()).isTrue();
+			assertThat(cursor.next()).isTrue();
+			assertThat(coordinates.takeChangedSlots()).isEqualTo((1L << 1) | (1L << 2));
+			assertThat(cursor.next()).isTrue();
+			assertThat(row.slots[0]).isEqualTo(200L);
+			assertThat(coordinates.coordinateValid(2, firstActivation)).isFalse();
+			assertThat(coordinates.takeChangedSlots()).isEqualTo(-1L);
+			long reboundActivation = coordinates.coordinateActivation();
+			assertThat(reboundActivation).isGreaterThan(firstActivation);
+			assertThat(coordinates.coordinateValid(2, reboundActivation)).isTrue();
+			assertThat(coordinates.resultCoordinate(2, coordinate)).isTrue();
+			assertThat(coordinate[NativeResultCoordinates.POSITION]).isZero();
+		}
+	}
+
+	@Test
 	void orderedFlatEnumRefusalRestartsClassicSort() {
 		String property = "rdf4j.lmdb.orderedFactorizedRows.enabled";
 		String previous = System.getProperty(property);

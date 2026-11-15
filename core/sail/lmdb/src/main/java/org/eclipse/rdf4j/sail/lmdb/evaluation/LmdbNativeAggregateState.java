@@ -182,10 +182,11 @@ final class NativeCustomAggregate {
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> newFunction(
-			NativeExecutionContext executionContext) {
+			NativeExecutionContext executionContext, LmdbFusedSipFactorizedRuntime.PreparationScope preparation) {
 		java.util.function.BiFunction<Integer, org.eclipse.rdf4j.query.BindingSet, org.eclipse.rdf4j.model.Value> evalByIndex = (
 				index, bindings) -> {
-			NativeValueOutcome outcome = argumentEvaluators[index].evaluate(bindings, executionContext);
+			NativeValueOutcome outcome = argumentEvaluators[index]
+					.evaluateInPreparation(bindings, executionContext, preparation);
 			return outcome.isBound() ? outcome.value() : null;
 		};
 		if (nAry) {
@@ -203,12 +204,14 @@ final class NativeCustomAggregate {
 		return seen::add;
 	}
 
-	void process(org.eclipse.rdf4j.query.BindingSet row, java.util.function.Predicate<?> predicate,
+	void process(RowState row, java.util.function.Predicate<?> predicate,
 			org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector collector,
 			AggContext context) {
-		((org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor) context.customFunction(this))
-				.processAggregate(row,
-						(java.util.function.Predicate) predicate, collector);
+		synchronized (context) {
+			((org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor) context.customFunction(this, row))
+					.processAggregate(row.view,
+							(java.util.function.Predicate) predicate, collector);
+		}
 	}
 }
 
@@ -296,6 +299,15 @@ final class AggregateSpec {
 	AggregateSpec withDefinition(Object definition) {
 		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, positionMask,
 				resultDemand, definition);
+	}
+
+	/** Detached built-in aggregate metadata; custom processors need their own invocation-bound recipe. */
+	AggregateSpec compiledSnapshot() {
+		if (custom != null || definition != null && definition.getClass() != Object.class) {
+			return null;
+		}
+		return new AggregateSpec(name, slot, constant, distinct, kind, separator,
+				rowSlots == null ? null : rowSlots.clone(), null, positionMask, resultDemand, definition);
 	}
 
 	static AggregateSpec custom(String name, NativeCustomAggregate custom) {
@@ -427,8 +439,9 @@ final class AggContext {
 	private long valueCacheArrayBytes;
 	private long retainedValueBytes;
 	private boolean valueCacheUnavailable;
+	private boolean closed;
 	/** One custom processor per aggregate evaluation; processors may carry factory-local state between rows. */
-	private IdentityHashMap<NativeCustomAggregate, org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?>> customFunctions;
+	private IdentityHashMap<NativeCustomAggregate, CustomFunction> customFunctions;
 
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare) {
 		this(source, strictCompare, false, false);
@@ -540,13 +553,64 @@ final class AggContext {
 		}
 	}
 
-	org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> customFunction(
-			NativeCustomAggregate aggregate) {
+	synchronized org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> customFunction(
+			NativeCustomAggregate aggregate, RowState row) {
+		if (closed) {
+			throw new IllegalStateException("aggregate context is closed");
+		}
 		if (customFunctions == null) {
 			customFunctions = new IdentityHashMap<>();
 		}
-		return customFunctions.computeIfAbsent(aggregate, ignored -> aggregate.newFunction(
-				source instanceof SyntheticValueSource synthetic ? synthetic.executionContext() : null));
+		CustomFunction function = customFunctions.get(aggregate);
+		if (function != null && !function.matches(row)) {
+			function.close();
+			customFunctions.remove(aggregate);
+			function = null;
+		}
+		if (function == null) {
+			function = new CustomFunction(aggregate, row);
+			customFunctions.put(aggregate, function);
+		}
+		return function.processor;
+	}
+
+	/** A processor retains only its own source/attempt scope and retires it with the aggregate context. */
+	private static final class CustomFunction implements AutoCloseable {
+		final LmdbFusedSipFactorizedRuntime.PreparationAttempt parentAttempt;
+		final LmdbFusedSipFactorizedRuntime.Session session;
+		final NativeLmdbQuerySource source;
+		final LmdbFusedSipFactorizedRuntime.PreparationAttempt attempt;
+		final LmdbFusedSipFactorizedRuntime.PreparationScope scope;
+		final org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> processor;
+
+		CustomFunction(NativeCustomAggregate aggregate, RowState row) {
+			parentAttempt = row.preparationAttempt();
+			session = row.fusedSession();
+			source = row.source;
+			attempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(parentAttempt, this);
+			LmdbFusedSipFactorizedRuntime.PreparationScope created = null;
+			try {
+				created = attempt.scope(session, source);
+				processor = aggregate.newFunction(row.executionContext(), created);
+				scope = created;
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeResource(created, failure);
+				KernelRuntime.closeResource(attempt, failure);
+				throw failure;
+			}
+		}
+
+		boolean matches(RowState row) {
+			return parentAttempt == row.preparationAttempt() && session == row.fusedSession()
+					&& source == row.source;
+		}
+
+		@Override
+		public void close() {
+			Throwable failure = KernelRuntime.closeResource(scope, null);
+			failure = KernelRuntime.closeResource(attempt, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
 	}
 
 	private int valueCacheSlot(long id, byte bankState) {
@@ -604,9 +668,21 @@ final class AggContext {
 	}
 
 	/** Releases optional cache arrays and retained values. Generic contexts have no owner and remain unchanged. */
-	void close() {
+	synchronized void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
 		valueCacheUnavailable = true;
+		Throwable failure = null;
+		if (customFunctions != null) {
+			for (CustomFunction function : customFunctions.values()) {
+				failure = KernelRuntime.closeResource(function, failure);
+			}
+			customFunctions = null;
+		}
 		if (memory == null) {
+			KernelRuntime.rethrowCloseFailure(failure);
 			return;
 		}
 		if (retainedValueBytes > 0L) {
@@ -624,7 +700,7 @@ final class AggContext {
 		valueCacheValues = null;
 		valueCacheStates = null;
 		valueCacheSize = 0;
-		customFunctions = null;
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	/** Conservative owned footprint for immutable public RDF values retained by this context. */
@@ -1049,7 +1125,7 @@ final class AggState {
 			if (ctx.encounterOrderChanging) {
 				throw EncounterOrderFallback.customAggregateOrder();
 			}
-			specs[i].custom.process(row.view, customPredicates[i], customCollectors[i], ctx);
+			specs[i].custom.process(row, customPredicates[i], customCollectors[i], ctx);
 			return;
 		}
 		long value = specs[i].value(row);

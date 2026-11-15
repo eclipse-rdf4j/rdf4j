@@ -47,15 +47,25 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	/** Mutable query state is shared independently of each subtree's immutable structural context. */
 	private static final class QueryScope {
 		final QueryEvaluationContext values;
+		final boolean borrowed;
 		Consumer<Value> registrar;
 		Function<Value, Value> capturer;
 		Literal now;
 		boolean nowRegistered;
 
 		QueryScope(QueryEvaluationContext structural, Function<Value, Value> capturer) {
+			this(structural, capturer, false);
+		}
+
+		QueryScope(QueryEvaluationContext structural, Function<Value, Value> capturer, boolean borrow) {
+			borrowed = borrow;
 			// Every outer evaluation owns fresh allocation state; only nested structural views share it.
-			try (var ignored = structural.getBlankNodeAllocationScope().newEvaluationScope().activate()) {
-				values = new QueryEvaluationContext.Minimal((Dataset) null);
+			if (borrow) {
+				values = structural;
+			} else {
+				try (var ignored = structural.getBlankNodeAllocationScope().newEvaluationScope().activate()) {
+					values = new QueryEvaluationContext.Minimal((Dataset) null);
+				}
 			}
 			this.capturer = capturer;
 		}
@@ -74,8 +84,19 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 		this.queryScope = queryScope;
 	}
 
+	/** Preserves scalar values already captured by callbacks prepared for this exact supplied query context. */
+	static EvaluationScopedQueryEvaluationContext forPreparedScope(QueryEvaluationContext structural) {
+		return new EvaluationScopedQueryEvaluationContext(structural, new QueryScope(structural, null, true));
+	}
+
 	EvaluationScopedQueryEvaluationContext withStructuralContext(QueryEvaluationContext context) {
 		return context == structural ? this : new EvaluationScopedQueryEvaluationContext(context, queryScope);
+	}
+
+	/** The root keeps only query scalar state; an invocation owns its structural view. */
+	EvaluationScopedQueryEvaluationContext detachedQueryScope() {
+		return new EvaluationScopedQueryEvaluationContext(new QueryEvaluationContext.Minimal((Dataset) null),
+				queryScope);
 	}
 
 	static QueryEvaluationContext create(QueryEvaluationContext structural, LmdbNativeEvaluationStrategy strategy) {
@@ -85,7 +106,7 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 
 	void installValueCapturer(Function<Value, Value> capturer) {
 		synchronized (queryScope) {
-			if (queryScope.capturer == null) {
+			if (!queryScope.borrowed && queryScope.capturer == null) {
 				queryScope.capturer = capturer;
 			}
 		}

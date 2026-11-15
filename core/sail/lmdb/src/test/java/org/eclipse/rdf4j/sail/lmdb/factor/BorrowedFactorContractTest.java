@@ -113,6 +113,12 @@ public class BorrowedFactorContractTest {
 				if (!c.next())
 					throw new AssertionError();
 				equal(53, c.value());
+				equal(0L, c.resultPosition());
+				long copyGeneration = copy.generation();
+				copy.copyLaneFrom(0, original, 2);
+				equal(copyGeneration, copy.generation());
+				equal(-1L, c.resultPosition());
+				equal(-1L, c.resultLane());
 				c.bind(1);
 				if (!c.next())
 					throw new AssertionError();
@@ -189,6 +195,108 @@ public class BorrowedFactorContractTest {
 			}
 			equal(1, reads.get());
 			equal(1, binds.get());
+		}
+	}
+
+	@Test
+	public void resultPositionTracksMixedScalarAndWindowConsumptionAcrossLongWeights() {
+		long firstWeight = (long) Integer.MAX_VALUE + 101L;
+		long secondWeight = 7L;
+		long thirdWeight = 11L;
+		long count = firstWeight + secondWeight + thirdWeight;
+		try (BorrowedFactorBatch.Source source = new BorrowedFactorBatch.Source(this) {
+			@Override
+			public BorrowedFactorBatch.Reader openReader() {
+				return new BorrowedFactorBatch.Reader() {
+					@Override
+					public void bind(BorrowedFactorBatch batch, int lane) {
+					}
+
+					@Override
+					public int copyFibers(long offset, int maximum, long[] values, long[] weights) {
+						if (offset == 0L) {
+							int written = Math.min(maximum, 2);
+							values[0] = 31L;
+							weights[0] = firstWeight;
+							if (written > 1) {
+								values[1] = 32L;
+								weights[1] = secondWeight;
+							}
+							return written;
+						}
+						if (offset == firstWeight + secondWeight) {
+							values[0] = 33L;
+							weights[0] = thirdWeight;
+							return 1;
+						}
+						return 0;
+					}
+				};
+			}
+		}) {
+			BorrowedFactorBatch batch = new BorrowedFactorBatch(source, 1);
+			batch.reset(1);
+			batch.bindNative(0, BorrowedFactorBatch.ENCODED_RUN, 8L, 1L, 0, count);
+			try (BorrowedFactorBatch.Cursor cursor = batch.cursor(2)) {
+				equal(-1L, cursor.resultPosition());
+				equal(-1L, cursor.resultLane());
+				equal(-1L, cursor.resultCount());
+				cursor.bind(0);
+				equal(-1L, cursor.resultLane());
+				equal(-1L, cursor.resultCount());
+				if (!cursor.next())
+					throw new AssertionError("missing first factor");
+				equal(0L, cursor.resultPosition());
+				equal(0L, cursor.resultLane());
+				equal(count, cursor.resultCount());
+				equal(firstWeight, cursor.weight());
+				equal(1L, cursor.nextWindow());
+				equal(firstWeight, cursor.resultPosition());
+				equal(0L, cursor.resultLane());
+				equal(count, cursor.resultCount());
+				equal(32L, cursor.windowValues()[cursor.windowStart()]);
+				if (!cursor.next())
+					throw new AssertionError("missing factor after consumed window");
+				equal(firstWeight + secondWeight, cursor.resultPosition());
+				equal(thirdWeight, cursor.weight());
+				if (cursor.next())
+					throw new AssertionError("factor cursor passed its end");
+				equal(-1L, cursor.resultPosition());
+				equal(-1L, cursor.resultLane());
+				equal(-1L, cursor.resultCount());
+
+				cursor.bind(0);
+				if (!cursor.next())
+					throw new AssertionError("missing factor before native descriptor replacement");
+				long nativeGeneration = batch.generation();
+				batch.bindNative(0, BorrowedFactorBatch.ENCODED_RUN, 8L, 1L, 0, count);
+				equal(nativeGeneration, batch.generation());
+				equal(-1L, cursor.resultPosition());
+				equal(-1L, cursor.resultLane());
+				equal(-1L, cursor.resultCount());
+				cursor.bind(0);
+				if (!cursor.next())
+					throw new AssertionError("missing factor before heap descriptor replacement");
+				long heapGeneration = batch.generation();
+				batch.bindHeap(0, new long[] { 34L }, 0, 1);
+				equal(heapGeneration, batch.generation());
+				equal(-1L, cursor.resultPosition());
+				equal(-1L, cursor.resultLane());
+				equal(-1L, cursor.resultCount());
+				batch.reset(1);
+				batch.bindNative(0, BorrowedFactorBatch.ENCODED_RUN, 8L, 1L, 0, count);
+				cursor.bind(0);
+				if (!cursor.next())
+					throw new AssertionError("missing factor before source retirement");
+				source.close();
+				equal(-1L, cursor.resultPosition());
+				equal(-1L, cursor.resultLane());
+				equal(-1L, cursor.resultCount());
+				cursor.close();
+				equal(-1L, cursor.resultPosition());
+				equal(-1L, cursor.resultLane());
+				equal(-1L, cursor.resultCount());
+			}
 		}
 	}
 

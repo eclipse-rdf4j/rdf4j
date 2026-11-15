@@ -104,6 +104,26 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 		return initialized;
 	}
 
+	boolean hasMetadataSemanticPayload() {
+		return initialized && subject != null && predicate != null && object != null;
+	}
+
+	long metadataSemanticVersion() {
+		return semanticVersion;
+	}
+
+	Resource metadataSubject() {
+		return subject;
+	}
+
+	IRI metadataPredicate() {
+		return predicate;
+	}
+
+	Value metadataObject() {
+		return object;
+	}
+
 	@Override
 	public void visitValueChildren(Consumer<Value> visitor) {
 		visitor.accept(subject);
@@ -230,7 +250,7 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 	}
 
 	private void writeObject(ObjectOutputStream output) throws IOException {
-		InternalIdentity captured = identity;
+		InternalIdentity captured = getInternalIdentity();
 		ObjectOutputStream.PutField fields = output.putFields();
 		fields.put("internalID", captured.id());
 		fields.put("revision", captured.revision());

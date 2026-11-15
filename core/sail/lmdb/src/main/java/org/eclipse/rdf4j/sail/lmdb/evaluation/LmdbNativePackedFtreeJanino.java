@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeKernel;
 
@@ -42,6 +43,7 @@ final class LmdbNativePackedFtreeJanino {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
 			return false;
 		}
+		LmdbFusedSipFactorizedRuntime.Session invocation = row.fusedSession();
 		long observedRows = 0L;
 		for (LmdbNativePackedFtree.NodeData data : chunk.data) {
 			observedRows += data.size;
@@ -61,18 +63,31 @@ final class LmdbNativePackedFtreeJanino {
 		chunk.prepareCountArrays(outsideNeeded);
 		PackedFtreeContext packed = chunk.packedContext();
 		packed.needOutsideCounts = outsideNeeded;
-		KernelContext context = new KernelContext(NO_ADJACENCY, NO_LONGS, NO_LONGS, NO_DOMAINS)
-				.withPackedFtree(packed)
-				.withCancellation(
-						LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation));
+		LmdbFusedSipFactorizedRuntime.Session binding;
 		try {
+			binding = invocation.binding();
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(kernel::close, failure), failure);
+			throw failure;
+		}
+		Throwable failure = null;
+		try {
+			KernelContext context = new KernelContext(NO_ADJACENCY, NO_LONGS, NO_LONGS, NO_DOMAINS)
+					.withFusedRuntime(binding.runtime())
+					.withPackedFtree(packed)
+					.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation));
 			LmdbNativeJaninoCodegen.bind(kernel, context, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
 			LmdbNativeJaninoCodegen.fill(kernel, NO_ROWS, 0,
 					LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
 			chunk.totalRows = packed.totalRows;
 			return true;
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+			throw problem;
 		} finally {
-			kernel.close();
+			Throwable retained = KernelRuntime.closeResource(kernel::close, failure);
+			retained = KernelRuntime.closeResource(binding, retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 		}
 	}
 

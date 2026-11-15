@@ -29,6 +29,8 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	private NativeResultCursor selectedResults;
 	private final NativeExecutionContext context;
 	private final NativeExecutionContext.Lease lease;
+	private final NativeInvocationCarrier invocation;
+	private final boolean closeInvocation;
 	private final boolean closeContext;
 	private final boolean closeAggregateContext;
 	private final NativeExecutionPhaseEvent.InputOwner inputPhases;
@@ -69,17 +71,41 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		this.fixedPlan = fixedPlan;
 		this.iteration = iteration;
 		this.context = context;
+		this.invocation = iteration.invocationCarrier();
+		this.closeInvocation = fixedPlan == null || closeAggregateContext;
 		this.closeContext = closeContext;
 		this.closeAggregateContext = closeAggregateContext;
-		this.lease = context == null || !closeContext ? null : context.retainLease();
-		this.inputPhases = fixedPlan == null || closeAggregateContext
-				? NativeExecutionPhaseEvent.inputOwner(cancellation())
-				: null;
+		NativeExecutionContext.Lease acquired = null;
+		NativeExecutionPhaseEvent.InputOwner phases = null;
+		try {
+			acquired = context == null || !closeContext ? null : context.retainLease();
+			phases = fixedPlan == null || closeAggregateContext
+					? NativeExecutionPhaseEvent.inputOwner(cancellation())
+					: null;
+		} catch (RuntimeException | Error failure) {
+			Throwable retained = KernelRuntime.closeResource(phases, failure);
+			retained = KernelRuntime.closeResource(acquired, retained);
+			if (closeInvocation) {
+				retained = KernelRuntime.closeResource(invocation, retained);
+			}
+			if (closeContext) {
+				retained = KernelRuntime.closeResource(context, retained);
+			}
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+			throw failure;
+		}
+		this.lease = acquired;
+		this.inputPhases = phases;
 	}
 
 	@Override
 	public NativeExecutionContext executionContext() {
 		return context;
+	}
+
+	@Override
+	public NativeInvocationCarrier invocationCarrier() {
+		return invocation;
 	}
 
 	@Override
@@ -161,7 +187,28 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 
 	record GroupingPlan(SlotPlan input, AggregateDistinctChannels channels, boolean streaming, String tag) {
 		NativeGroupResultCursor open(NativeGroupIteration iteration, NativeExecutionContext context) {
-			return new NativeGroupResultCursor(null, iteration, context, false, this);
+			GroupingPlan selected = this;
+			if (NativeAggregatePhysicalPlan.hasPhysicalLexicalInput(input)) {
+				NativeInvocationCarrier invocation = iteration.invocationCarrier();
+				RowState authority = new RowState(iteration.source, iteration.layout, iteration.base,
+						iteration.explainTarget, iteration.cancellation);
+				authority.fusedSession = invocation.session();
+				authority.setExecutionContext(invocation.executionContext());
+				authority.bindInvocationStrategy(iteration.invocationStrategy);
+				authority.swapPreparationAttempt(invocation.preparationAttempt());
+				try {
+					SlotPlan rebound = NativeAggregatePhysicalPlan.bindLexicalInputs(input, authority);
+					if (rebound == null) {
+						return null;
+					}
+					if (rebound != input) {
+						selected = new GroupingPlan(rebound, channels, streaming, tag);
+					}
+				} finally {
+					authority.closeDecodedInputs();
+				}
+			}
+			return new NativeGroupResultCursor(null, iteration, context, false, selected);
 		}
 	}
 
@@ -210,6 +257,10 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		}
 		row = new RowState(iteration.source, iteration.layout, iteration.base, iteration.explainTarget,
 				cancellation());
+		row.fusedSession = invocation.session();
+		row.setExecutionContext(invocation.executionContext());
+		row.bindInvocationStrategy(iteration.invocationStrategy);
+		row.swapPreparationAttempt(invocation.preparationAttempt());
 		boolean seeded = iteration.initialize(row);
 		if (owner != null && seeded) {
 			selectedResults = physicalSite(row, false);
@@ -217,6 +268,15 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			return;
 		}
 		GroupingPlan plan = fixedPlan;
+		if (plan != null && NativeAggregatePhysicalPlan.hasPhysicalLexicalInput(plan.input())) {
+			SlotPlan rebound = NativeAggregatePhysicalPlan.bindLexicalInputs(plan.input(), row);
+			if (rebound == null) {
+				throw new IllegalStateException("physical group input was not prepared for its invocation");
+			}
+			if (rebound != plan.input()) {
+				plan = new GroupingPlan(rebound, plan.channels(), plan.streaming(), plan.tag());
+			}
+		}
 		if (plan == null) {
 			plan = seeded ? orderedPlan(iteration, row) : null;
 			if (plan == null) {
@@ -315,12 +375,34 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		SlotPlan quotedInput = NativeAggregatePhysicalPlan.bindLexicalInputs(plan.input(), row);
 		GroupingPlan actual = quotedInput == null ? plan
 				: new GroupingPlan(quotedInput, plan.channels(), plan.streaming(), plan.tag());
-		offers.offer(actual.tag(), () -> quotes.attach(new LmdbNativeStrategyProposal<NativeResultCursor>(
-				() -> actual.open(iteration, executionContext()),
-				actual.input().estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO,
-				iteration.groupSlots.length == 0 && iteration.havingCondition == null ? 1D : Double.NaN,
-				actual.tag(), () -> {
-				}).withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(actual, iteration))));
+		offers.offer(actual.tag(), () -> {
+			NativePhysicalPreparation.Lease lease = NativeAggregatePhysicalPlan.transferPreparation(actual.input());
+			try {
+				return quotes.attach(new LmdbNativeStrategyProposal<NativeResultCursor>(() -> {
+					NativeGroupResultCursor cursor = null;
+					try {
+						cursor = actual.open(iteration, executionContext());
+						if (cursor == null) {
+							KernelRuntime.rethrowCloseFailure(KernelRuntime.closeResource(lease, null));
+						} else if (lease != null) {
+							cursor.ownAlternative(lease);
+						}
+						return cursor;
+					} catch (RuntimeException | Error failure) {
+						Throwable retained = KernelRuntime.closeResource(cursor, failure);
+						retained = KernelRuntime.closeResource(lease, retained);
+						KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+						throw failure;
+					}
+				}, actual.input().estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO,
+						iteration.groupSlots.length == 0 && iteration.havingCondition == null ? 1D : Double.NaN,
+						actual.tag(), () -> KernelRuntime.rethrowCloseFailure(KernelRuntime.closeResource(lease, null)))
+								.withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(actual, iteration)));
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(lease, failure), failure);
+				throw failure;
+			}
+		});
 	}
 
 	private RowCursor openInput(GroupingPlan plan) throws Exception {
@@ -489,6 +571,9 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			}
 			failure = KernelRuntime.closeResource(row::closeDecodedInputs, failure);
 		}
+		if (closeInvocation) {
+			failure = KernelRuntime.closeResource(invocation, failure);
+		}
 		if (inputPhases != null && completed && failure == null) {
 			inputPhases.complete();
 		}
@@ -530,6 +615,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		private final boolean closeContext;
 		private final NativeFilterLease filters = new NativeFilterLease();
 		private final LmdbNativeAttemptMetrics metrics;
+		private final LmdbFusedSipFactorizedRuntime.PreparationAttempt preparation;
 		private final SlotPlan originalArg;
 		private final boolean seeded;
 		private boolean closed, selected;
@@ -545,7 +631,10 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			metrics = LmdbNativeAttemptMetrics.root(parent.explainTarget);
 			NativeGroupIteration accepted = null;
 			RowState acceptedRow = null;
+			LmdbFusedSipFactorizedRuntime.PreparationAttempt attempt = null;
 			try {
+				attempt = new LmdbFusedSipFactorizedRuntime.PreparationAttempt(
+						parent.invocationCarrier().preparationAttempt(), new Object());
 				accepted = new NativeGroupIteration(evaluation, filters.borrow(full.arg), full.layout, full.groupSlots,
 						full.aggregates, full.strictCompare, parent.base, full.prefixPattern, full.prefixRunPlan,
 						full.prefixCountRunRows, full.prefixDistinctRuns, full.prefixRunFilter,
@@ -554,11 +643,21 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 						parent.explainTarget, parent.forcedExecutionStrategy, full.evaluationContext(evaluation));
 				accepted.typeMatrix = full.typeMatrix;
 				accepted.alternatives = full.alternatives;
+				accepted.borrowInvocation(parent.invocationCarrier());
+				accepted.enclosingFused = parent.enclosingFused;
+				accepted.invocationStrategy = full.strategy;
 				acceptedRow = new RowState(evaluation, full.layout, parent.base, parent.explainTarget,
 						accepted.cancellation);
+				acceptedRow.fusedSession = parent.invocationCarrier().session();
+				if (acceptedRow.executionContextOrNull() == null) {
+					acceptedRow.setExecutionContext(parent.invocationCarrier().executionContext());
+				}
+				acceptedRow.bindInvocationStrategy(accepted.invocationStrategy);
+				acceptedRow.swapPreparationAttempt(attempt);
 				seeded = accepted.initialize(acceptedRow);
 				iteration = accepted;
 				row = acceptedRow;
+				preparation = attempt;
 			} catch (RuntimeException | Error failure) {
 				KernelRuntime.closeResource(accepted, failure);
 				if (accepted != null) {
@@ -567,6 +666,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				if (acceptedRow != null) {
 					KernelRuntime.closeResource(acceptedRow::closeDecodedInputs, failure);
 				}
+				KernelRuntime.closeResource(attempt, failure);
 				filters.abort(failure);
 				if (closeContext) {
 					KernelRuntime.closeResource(evaluation.executionContext(), failure);
@@ -675,6 +775,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			Throwable failure = KernelRuntime.closeResource(iteration, null);
 			failure = KernelRuntime.closeResource(iteration.aggContext::close, failure);
 			failure = KernelRuntime.closeResource(row::closeDecodedInputs, failure);
+			failure = KernelRuntime.closeResource(preparation, failure);
 			failure = KernelRuntime.closeResource(selected ? filters::commit : () -> filters.abort(null), failure);
 			failure = KernelRuntime.closeResource(
 					iteration.prefixRunFilter == null ? null : iteration.prefixRunFilter::close,

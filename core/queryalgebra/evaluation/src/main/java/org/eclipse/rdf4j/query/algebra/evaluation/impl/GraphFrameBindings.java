@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
@@ -58,6 +59,21 @@ public final class GraphFrameBindings implements Serializable {
 	public static boolean isSupplied(BindingSet bindings, String parameter) {
 		Value supplied = from(bindings).parameters.get(parameter);
 		return supplied != null && supplied.equals(bindings.getValue(parameter));
+	}
+
+	/** Metadata-only access includes private names that are not visible in the binding set. */
+	public int parameterCount() {
+		return parameters.size();
+	}
+
+	/** Returns the supplied object without comparing or materializing its value. */
+	public Value parameterValue(String parameter) {
+		return parameters.get(parameter);
+	}
+
+	/** Visits immutable provenance entries without exposing their backing map. */
+	public void forEachParameter(BiConsumer<String, Value> visitor) {
+		parameters.forEach(visitor);
 	}
 
 	public GraphFrameBindings merge(GraphFrameBindings other) {

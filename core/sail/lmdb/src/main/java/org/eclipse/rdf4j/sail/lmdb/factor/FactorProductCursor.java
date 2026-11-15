@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * Opens only a requested subset of independent factors. Unopened siblings remain relations. Bounded readers are reused
@@ -45,6 +46,10 @@ public final class FactorProductCursor implements AutoCloseable {
 	private boolean closed;
 	private boolean exactWeights = true;
 	private long bindingWeight;
+	private long coordinateBinding;
+	private long replayable;
+	private boolean coordinateTracking;
+	private long changedCoordinateSlots;
 
 	public FactorProductCursor(int slots, int window) {
 		if (slots < 0 || slots > Long.SIZE || window <= 0)
@@ -73,24 +78,39 @@ public final class FactorProductCursor implements AutoCloseable {
 		this.environment = environment;
 		epoch = environment.epoch();
 		selected = environment.expansionClosure(demandedSlots);
+		if (coordinateBinding >= 0L) {
+			coordinateBinding = coordinateBinding == Long.MAX_VALUE ? -1L : coordinateBinding + 1L;
+		}
+		if (coordinateTracking) {
+			changedCoordinateSlots = -1L;
+		}
+		replayable = 0L;
 		tupleLeaders = 0L;
 		width = 0;
 		exhausted = multiplicity == 0;
+		boolean earlierCanVary = false;
 		for (long rest = environment.groupLeaders(); rest != 0L; rest &= rest - 1L) {
 			int slot = Long.numberOfTrailingZeros(rest);
-			if (environment.count(slot) == 0L)
+			long count = environment.count(slot);
+			if (count == 0L)
 				exhausted = true;
 			if ((selected & (1L << slot)) != 0L) {
+				if (earlierCanVary) {
+					replayable |= environment.groupMask(slot);
+				}
+				earlierCanVary |= count > 1L;
 				order[width++] = slot;
 				if (environment.isTuple(slot)) {
 					ensureTupleState();
 					tupleLeaders |= 1L << slot;
 					long group = environment.groupMask(slot);
-					tupleGroups[slot] = group;
 					for (long members = group; members != 0L; members &= members - 1L) {
 						int member = Long.numberOfTrailingZeros(members);
+						tupleGroups[member] = group;
 						tupleColumns[member] = environment.tupleColumn(member);
 					}
+				} else if (tupleGroups != null) {
+					tupleGroups[slot] = 0L;
 				}
 			}
 		}
@@ -100,6 +120,97 @@ public final class FactorProductCursor implements AutoCloseable {
 
 	public long expandedMask() {
 		return selected;
+	}
+
+	/** Identity of this live relation binding; zero declines optional result coordinates. */
+	@InternalUseOnly
+	public long coordinateActivation() {
+		if (!coordinateBindingCurrent()) {
+			return 0L;
+		}
+		for (int i = 0; i < width; i++) {
+			int slot = order[i];
+			if ((tupleLeaders & (1L << slot)) == 0L) {
+				if (readers[slot] == null || readers[slot].resultLane() < 0) {
+					return 0L;
+				}
+			} else if (tupleReaders[slot] == null || tupleReaders[slot].resultLane() < 0) {
+				return 0L;
+			}
+		}
+		return coordinateBinding;
+	}
+
+	private boolean coordinateBindingCurrent() {
+		return !closed && environment != null && !first && !exhausted && environment.epoch() == epoch
+				&& coordinateBinding > 0L;
+	}
+
+	/** Returns every source slot changed since the previous consumption, including restarted tuple groups. */
+	@InternalUseOnly
+	public long takeChangedSlots() {
+		if (!coordinateTracking) {
+			coordinateTracking = true;
+			return -1L;
+		}
+		long changed = changedCoordinateSlots;
+		changedCoordinateSlots = 0L;
+		return changed;
+	}
+
+	/** Checks the target reader's current descriptor without scanning unrelated factor groups. */
+	@InternalUseOnly
+	public boolean coordinateValid(int slot, long activation) {
+		if (slot < 0 || slot >= values.length || !coordinateBindingCurrent() || coordinateBinding != activation
+				|| (selected & (1L << slot)) == 0L) {
+			return false;
+		}
+		int leader = coordinateLeader(slot);
+		return (tupleLeaders & (1L << leader)) == 0L
+				? readers[leader] != null && readers[leader].resultLane() >= 0
+				: tupleReaders[leader] != null && tupleReaders[leader].resultLane() >= 0;
+	}
+
+	@InternalUseOnly
+	public boolean mayReplay(int slot) {
+		return slot >= 0 && slot < values.length && (replayable & (1L << slot)) != 0L;
+	}
+
+	private int coordinateLeader(int slot) {
+		long group = tupleGroups == null ? 0L : tupleGroups[slot];
+		return group == 0L ? slot : Long.numberOfTrailingZeros(group);
+	}
+
+	/** Writes group, descriptor lane, original member position, and tuple column for a replayable output. */
+	@InternalUseOnly
+	public boolean resultCoordinate(int slot, long[] coordinate) {
+		if (coordinate == null || coordinate.length < 4 || !mayReplay(slot)
+				|| !coordinateValid(slot, coordinateBinding)) {
+			return false;
+		}
+		int leader = coordinateLeader(slot);
+		long position;
+		int lane;
+		int column;
+		if ((tupleLeaders & (1L << leader)) == 0L) {
+			BorrowedFactorBatch.Cursor reader = readers[leader];
+			position = reader == null ? -1L : reader.resultPosition();
+			lane = reader == null ? -1 : reader.resultLane();
+			column = 0;
+		} else {
+			BorrowedTupleBatch.Cursor reader = tupleReaders[leader];
+			position = reader == null ? -1L : reader.resultPosition();
+			lane = reader == null ? -1 : reader.resultLane();
+			column = tupleColumns[slot];
+		}
+		if (position < 0L || lane < 0) {
+			return false;
+		}
+		coordinate[0] = leader;
+		coordinate[1] = lane;
+		coordinate[2] = position;
+		coordinate[3] = column;
+		return coordinateValid(slot, coordinateBinding);
 	}
 
 	public long value(int slot) {
@@ -161,6 +272,7 @@ public final class FactorProductCursor implements AutoCloseable {
 			for (int j = i + 1; j < width; j++)
 				if (!restart(j))
 					throw new IllegalStateException("exact immutable factor changed during replay");
+			markChangedFrom(i);
 			return true;
 		}
 		exhausted = true;
@@ -178,10 +290,20 @@ public final class FactorProductCursor implements AutoCloseable {
 			for (int j = i + 1; j < width; j++)
 				if (!restart(j))
 					throw new IllegalStateException("exact immutable factor changed during replay");
+			markChangedFrom(i);
 			return true;
 		}
 		exhausted = true;
 		return false;
+	}
+
+	private void markChangedFrom(int firstChanged) {
+		if (coordinateTracking) {
+			for (int i = firstChanged; i < width; i++) {
+				int slot = order[i];
+				changedCoordinateSlots |= (tupleLeaders & (1L << slot)) == 0L ? 1L << slot : tupleGroups[slot];
+			}
+		}
 	}
 
 	private void ensureTupleState() {

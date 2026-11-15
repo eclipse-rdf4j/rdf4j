@@ -58,10 +58,59 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 		this.includeAllParentBindings = original.includeAllParentBindings;
 	}
 
+	private NativeBindingSetProjectionStep(QueryEvaluationStep arg, String[] sourceNames, String[] targetNames,
+			boolean includeAllParentBindings) {
+		this.arg = arg;
+		this.sourceNames = sourceNames;
+		this.targetNames = targetNames;
+		this.includeAllParentBindings = includeAllParentBindings;
+	}
+
+	@Override
+	public NativeCompiledResultRecipe compiledRecipe() {
+		NativeCompiledResultRecipe child = arg instanceof NativeCompiledRecipeProvider provider
+				? provider.compiledRecipe()
+				: null;
+		return child == null ? null
+				: new ProjectionRecipe(child, sourceNames.clone(), targetNames.clone(),
+						includeAllParentBindings);
+	}
+
+	private record ProjectionRecipe(NativeCompiledResultRecipe child, String[] sourceNames, String[] targetNames,
+			boolean includeAllParentBindings) implements NativeCompiledResultRecipe {
+		@Override
+		public QueryEvaluationStep bind(NativeResultBinding binding) {
+			if (binding == null || binding.worker() == null || binding.strategy() == null || binding.context() == null
+					|| binding.worker().invocationStrategy() != binding.strategy()
+					|| !binding.strategy().isBoundTo(binding.worker()) || binding.physicalPreparation() == null
+					|| !binding.physicalPreparation().reserveBytes(128L + 16L * sourceNames.length)) {
+				return null;
+			}
+			QueryEvaluationStep bound = child.bind(binding);
+			return bound == null ? null
+					: new NativeBindingSetProjectionStep(bound, sourceNames, targetNames, includeAllParentBindings);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return child.requiresPhysicalResults();
+		}
+
+		@Override
+		public String describe() {
+			return "NativeProjection(arg=" + child.describe() + ")";
+		}
+	}
+
 	@Override
 	public NativePhysicalResultPlan physicalPlan(BindingSet bindings) {
+		return physicalPlan(bindings, null);
+	}
+
+	@Override
+	public NativePhysicalResultPlan physicalPlan(BindingSet bindings, NativePhysicalQuote quote) {
 		NativePhysicalResultPlan child = arg instanceof NativeResultStep nativeStep
-				? nativeStep.physicalPlan(bindings)
+				? nativeStep.physicalPlan(bindings, quote)
 				: null;
 		return child == null ? null : physicalResult(child);
 	}
@@ -91,14 +140,14 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child,
 			NativePhysicalOutputEvidence evidence) {
 		return new NativePhysicalResultPlan(new NativeBindingSetProjectionStep(child.step(), this), child.input(),
-				child.rebindRecipe() == null ? null : (prepared, worker, bindings) -> {
+				child.rebindRecipe() == null ? null : (prepared, worker, bindings, preparation) -> {
 					if (!(prepared instanceof NativeBindingSetProjectionStep actual)
 							|| !Arrays.equals(sourceNames, actual.sourceNames)
 							|| !Arrays.equals(targetNames, actual.targetNames)
 							|| includeAllParentBindings != actual.includeAllParentBindings) {
 						return null;
 					}
-					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, bindings);
+					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, bindings, preparation);
 					return rebound == null ? null : actual.physicalResult(rebound, evidence);
 				}, "PROJECTION[" + child.physicalProperties() + ']', evidence);
 	}

@@ -68,6 +68,7 @@ class LmdbNativeIrKernelParallelTest {
 			LmdbNativeKernelLowering.HASH_JOIN_PROPERTY,
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
+			"rdf4j.lmdb.parallel.maxTasks",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
 			"rdf4j.lmdb.parallel.startupWork",
 			LmdbNativeParallelKernelRows.ENABLED_PROPERTY };
@@ -300,6 +301,80 @@ class LmdbNativeIrKernelParallelTest {
 	}
 
 	@Test
+	void parallelDomainWindowsKeepTheirBindingAcrossInterleavedQueries() {
+		String firstQuery = valuesDomainQuery(0, 48);
+		String secondQuery = valuesDomainQuery(48, 64);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> firstExpected = rows(firstQuery);
+		List<String> secondExpected = rows(secondQuery);
+		assertThat(firstExpected).hasSize(96);
+		assertThat(secondExpected).hasSize(128);
+
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "8");
+		for (boolean interpreted : new boolean[] { false, true }) {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(!interpreted));
+			String strategy = interpreted ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL;
+			long before = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+			List<String> firstActual = new ArrayList<>();
+			List<String> secondActual = new ArrayList<>();
+			try (SailRepositoryConnection firstConnection = repository.getConnection();
+					SailRepositoryConnection secondConnection = repository.getConnection()) {
+				SailTupleQuery first = (SailTupleQuery) firstConnection.prepareTupleQuery(firstQuery);
+				SailTupleQuery second = (SailTupleQuery) secondConnection.prepareTupleQuery(secondQuery);
+				first.setForcedLmdbExecutionStrategy(strategy);
+				second.setForcedLmdbExecutionStrategy(strategy);
+				try (var firstResult = first.evaluate(); var secondResult = second.evaluate()) {
+					boolean firstHasNext = firstResult.hasNext();
+					boolean secondHasNext = secondResult.hasNext();
+					assertThat(firstHasNext).isTrue();
+					assertThat(secondHasNext).isTrue();
+					while (firstHasNext || secondHasNext) {
+						if (firstHasNext) {
+							firstActual.add(describe(firstResult.next()));
+							firstHasNext = firstResult.hasNext();
+						}
+						if (secondHasNext) {
+							secondActual.add(describe(secondResult.next()));
+							secondHasNext = secondResult.hasNext();
+						}
+					}
+				}
+			}
+			assertThat(firstActual).containsExactlyInAnyOrderElementsOf(firstExpected);
+			assertThat(secondActual).containsExactlyInAnyOrderElementsOf(secondExpected);
+			assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isGreaterThanOrEqualTo(before + 2);
+			assertCompleteDomainTelemetry(firstQuery, strategy, 48);
+			assertCompleteDomainTelemetry(secondQuery, strategy, 64);
+		}
+	}
+
+	private static String valuesDomainQuery(int first, int count) {
+		StringBuilder query = new StringBuilder("SELECT ?s ?m ?v WHERE { VALUES ?s { ");
+		for (int i = first; i < first + count; i++) {
+			query.append('<').append(EX).append('s').append(i).append("> ");
+		}
+		return query.append("} ?s <")
+				.append(EX)
+				.append("p> ?m . ?m <")
+				.append(EX)
+				.append("q> ?v }")
+				.toString();
+	}
+
+	private void assertCompleteDomainTelemetry(String query, String strategy, int domainSize) {
+		long before = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(strategy);
+			String telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
+			assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isGreaterThan(before);
+			assertThat(telemetry).contains("label: keyDomain[0]", "cardinalityUpperBound: " + domainSize);
+		}
+	}
+
+	@Test
 	void keysOnlyDistinctRemainsSemanticNativeWithoutLosingParity() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(DISTINCT_BGP_QUERY);
@@ -527,17 +602,20 @@ class LmdbNativeIrKernelParallelTest {
 			}
 			try (var result = preparedQuery.evaluate()) {
 				while (result.hasNext()) {
-					BindingSet bindings = result.next();
-					List<String> parts = new ArrayList<>();
-					for (String name : bindings.getBindingNames()) {
-						parts.add(name + "=" + bindings.getValue(name));
-					}
-					parts.sort(String::compareTo);
-					rows.add(String.join("|", parts));
+					rows.add(describe(result.next()));
 				}
 			}
 		}
 		return rows;
+	}
+
+	private static String describe(BindingSet bindings) {
+		List<String> parts = new ArrayList<>();
+		for (String name : bindings.getBindingNames()) {
+			parts.add(name + "=" + bindings.getValue(name));
+		}
+		parts.sort(String::compareTo);
+		return String.join("|", parts);
 	}
 
 	private String telemetry(String query) {

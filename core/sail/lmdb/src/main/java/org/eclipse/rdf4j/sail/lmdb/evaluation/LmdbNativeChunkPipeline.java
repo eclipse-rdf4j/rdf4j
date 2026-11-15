@@ -229,8 +229,8 @@ final class LmdbNativeChunkPipeline {
 		if ((keyMask & row.boundMask()) != 0L || (keyMask & ~root.producedMask()) != 0L) {
 			return null;
 		}
-		if (root.contexts.isFixed() && root.contexts.ids.length > 1
-				|| pattern.contexts.isFixed() && pattern.contexts.ids.length > 1) {
+		if (root.contexts.isFixed() && root.contexts.size() > 1
+				|| pattern.contexts.isFixed() && pattern.contexts.size() > 1) {
 			return null;
 		}
 		long rootSubj = root.s.lookup(row.slots);
@@ -297,7 +297,7 @@ final class LmdbNativeChunkPipeline {
 				continue;
 			}
 			boolean fixedContext = field == TripleIndex.CONTEXT_IDX && root.contexts.isFixed()
-					&& root.contexts.ids.length == 1;
+					&& root.contexts.size() == 1;
 			if (fixedContext) {
 				continue;
 			}
@@ -328,7 +328,7 @@ final class LmdbNativeChunkPipeline {
 				continue;
 			}
 			boolean fixedContext = field == TripleIndex.CONTEXT_IDX && pattern.contexts.isFixed()
-					&& pattern.contexts.ids.length == 1;
+					&& pattern.contexts.size() == 1;
 			if (fixedContext) {
 				continue;
 			}
@@ -448,7 +448,7 @@ final class LmdbNativeChunkPipeline {
 		// stage's complete range with ALL key slots unbound, so a root row whose value never occurs at one
 		// key position cannot match any build row regardless of the other key slots.
 		String rootIndex = null;
-		if (!(root.contexts.isFixed() && root.contexts.ids.length > 1)) {
+		if (!(root.contexts.isFixed() && root.contexts.size() > 1)) {
 			long rootSubj = root.s.lookup(row.slots);
 			long rootPred = root.p.lookup(row.slots);
 			long rootObj = root.o.lookup(row.slots);

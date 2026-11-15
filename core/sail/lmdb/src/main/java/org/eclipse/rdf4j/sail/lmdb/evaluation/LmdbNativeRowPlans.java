@@ -17,7 +17,9 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -973,9 +975,122 @@ final class MinusCursor implements FactorizedRowCursor {
 	}
 }
 
+/**
+ * Private primitive storage for one exact VALUES sequence. No caller array is retained, and accessors never expose an
+ * array. The same immutable table is used for both execution and a compiled input's identity receipt.
+ */
+@Experimental
+final class ValuesTable {
+	private final int[][] slots;
+	private final long[][] values;
+	private final long producedMask;
+	private final boolean bindsAllSlotsEveryRow;
+	private final boolean compiled;
+	private final int idDomains;
+
+	private ValuesTable(int[][] slots, long[][] values, long producedMask, boolean bindsAllSlotsEveryRow,
+			boolean compiled, int idDomains) {
+		this.slots = slots;
+		this.values = values;
+		this.producedMask = producedMask;
+		this.bindsAllSlotsEveryRow = bindsAllSlotsEveryRow;
+		this.compiled = compiled;
+		this.idDomains = idDomains;
+	}
+
+	static ValuesTable copyOf(ValuesRow[] rows, boolean compiled, int idDomains) {
+		int[][] ownedSlots = new int[rows.length][];
+		long[][] ownedValues = new long[rows.length][];
+		long union = 0L;
+		long intersection = -1L;
+		for (int row = 0; row < rows.length; row++) {
+			ownedSlots[row] = rows[row].slots.clone();
+			ownedValues[row] = rows[row].values.clone();
+			long rowMask = 0L;
+			for (int slot : ownedSlots[row]) {
+				rowMask |= 1L << slot;
+			}
+			union |= rowMask;
+			intersection &= rowMask;
+		}
+		return new ValuesTable(ownedSlots, ownedValues, union, rows.length == 0 || intersection == union,
+				compiled, idDomains);
+	}
+
+	/** Builds a runtime table directly from the current invocation's distinct join-key tuples. */
+	static ValuesTable runtimeFixedSlots(int[] sourceSlots, Collection<? extends List<Long>> tuples) {
+		int[] ownedSlots = sourceSlots.clone();
+		int[][] rowSlots = new int[tuples.size()][];
+		long[][] rowValues = new long[tuples.size()][];
+		int row = 0;
+		for (List<Long> tuple : tuples) {
+			long[] ids = new long[tuple.size()];
+			for (int column = 0; column < ids.length; column++) {
+				ids[column] = tuple.get(column);
+			}
+			rowSlots[row] = ownedSlots;
+			rowValues[row++] = ids;
+		}
+		long mask = 0L;
+		for (int slot : ownedSlots) {
+			mask |= 1L << slot;
+		}
+		return new ValuesTable(rowSlots, rowValues, tuples.isEmpty() ? 0L : mask, true, false,
+				ValuesPlan.ID_DOMAIN_UNKNOWN);
+	}
+
+	int rowCount() {
+		return slots.length;
+	}
+
+	long producedMask() {
+		return producedMask;
+	}
+
+	boolean bindsAllSlotsEveryRow() {
+		return bindsAllSlotsEveryRow;
+	}
+
+	int idDomains() {
+		return idDomains;
+	}
+
+	Object compiledReceipt() {
+		return compiled ? this : null;
+	}
+
+	int rowSize(int row) {
+		return slots[row].length;
+	}
+
+	int slotAt(int row, int column) {
+		return slots[row][column];
+	}
+
+	long valueAt(int row, int column) {
+		return values[row][column];
+	}
+
+	int slotIndex(int row, int slot) {
+		int[] rowSlots = slots[row];
+		for (int index = 0; index < rowSlots.length; index++) {
+			if (rowSlots[index] == slot) {
+				return index;
+			}
+		}
+		return -1;
+	}
+}
+
 @Experimental
 final class ValuesPlan implements SlotPlan {
-	final ValuesRow[] rows;
+	static final int ID_DOMAIN_STORE = 1;
+	static final int ID_DOMAIN_OWN_PLAN = 1 << 1;
+	static final int ID_DOMAIN_SOURCE_PLAN = 1 << 2;
+	static final int ID_DOMAIN_SOURCE_RUNTIME = 1 << 3;
+	static final int ID_DOMAIN_UNKNOWN = 1 << 4;
+
+	private final ValuesTable table;
 	final long producedMask;
 	/**
 	 * True when every row binds every slot of {@link #producedMask}. UNDEF rows make the mask a union, not a guarantee
@@ -985,41 +1100,65 @@ final class ValuesPlan implements SlotPlan {
 	final boolean exactFilterRewrite;
 
 	ValuesPlan(ValuesRow[] rows) {
-		this(rows, false);
+		this(ValuesTable.copyOf(rows, false, ID_DOMAIN_UNKNOWN), false);
 	}
 
 	ValuesPlan(ValuesRow[] rows, boolean exactFilterRewrite) {
-		this.rows = rows;
+		this(rows, exactFilterRewrite, ID_DOMAIN_UNKNOWN);
+	}
+
+	ValuesPlan(ValuesRow[] rows, boolean exactFilterRewrite, int idDomains) {
+		this(ValuesTable.copyOf(rows, true, idDomains), exactFilterRewrite);
+	}
+
+	private ValuesPlan(ValuesTable table, boolean exactFilterRewrite) {
+		this.table = table;
 		this.exactFilterRewrite = exactFilterRewrite;
-		long mask = 0L;
-		for (ValuesRow row : rows) {
-			for (int slot : row.slots) {
-				mask |= 1L << slot;
-			}
-		}
-		this.producedMask = mask;
-		boolean complete = true;
-		for (ValuesRow row : rows) {
-			long rowMask = 0L;
-			for (int slot : row.slots) {
-				rowMask |= 1L << slot;
-			}
-			if (rowMask != mask) {
-				complete = false;
-				break;
-			}
-		}
-		this.bindsAllSlotsEveryRow = complete;
+		this.producedMask = table.producedMask();
+		this.bindsAllSlotsEveryRow = table.bindsAllSlotsEveryRow();
+	}
+
+	static ValuesPlan runtimeFixedSlots(int[] slots, Collection<? extends List<Long>> tuples) {
+		return new ValuesPlan(ValuesTable.runtimeFixedSlots(slots, tuples), false);
+	}
+
+	int rowCount() {
+		return table.rowCount();
+	}
+
+	int rowSize(int row) {
+		return table.rowSize(row);
+	}
+
+	int slotAt(int row, int column) {
+		return table.slotAt(row, column);
+	}
+
+	long valueAt(int row, int column) {
+		return table.valueAt(row, column);
+	}
+
+	int slotIndex(int row, int slot) {
+		return table.slotIndex(row, slot);
+	}
+
+	int idDomains() {
+		return table.idDomains();
+	}
+
+	/** Identity only; this object owns primitive data and never retains an execution or ID authority. */
+	Object compiledReceipt() {
+		return table.compiledReceipt();
 	}
 
 	@Override
 	public RowCursor open(RowState row) {
-		return new ValuesCursor(rows, row, exactFilterRewrite);
+		return new ValuesCursor(table, row, exactFilterRewrite);
 	}
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) {
-		return new ValuesBatchCursor(rows, row, exactFilterRewrite);
+		return new ValuesBatchCursor(table, row, exactFilterRewrite);
 	}
 
 	@Override
@@ -1029,19 +1168,19 @@ final class ValuesPlan implements SlotPlan {
 
 	@Override
 	public double estimate(RowState row) {
-		return rows.length;
+		return rowCount();
 	}
 
 	@Override
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
 		// Materialized in memory at compile time: one row touch each, no index positioning.
-		return LmdbNativeWork.exact(rows.length);
+		return LmdbNativeWork.exact(rowCount());
 	}
 }
 
 @Experimental
 final class ValuesCursor implements RowCursor {
-	final ValuesRow[] rows;
+	final ValuesTable table;
 	final RowState row;
 	final boolean exactFilterRewrite;
 	int index;
@@ -1050,11 +1189,11 @@ final class ValuesCursor implements RowCursor {
 	NativeExpressionDomainPolicy.Input expressionInput;
 
 	ValuesCursor(ValuesRow[] rows, RowState row) {
-		this(rows, row, false);
+		this(ValuesTable.copyOf(rows, false, ValuesPlan.ID_DOMAIN_UNKNOWN), row, false);
 	}
 
-	ValuesCursor(ValuesRow[] rows, RowState row, boolean exactFilterRewrite) {
-		this.rows = rows;
+	ValuesCursor(ValuesTable table, RowState row, boolean exactFilterRewrite) {
+		this.table = table;
 		this.row = row;
 		this.exactFilterRewrite = exactFilterRewrite;
 	}
@@ -1062,14 +1201,14 @@ final class ValuesCursor implements RowCursor {
 	@Override
 	public boolean next() {
 		release();
-		while (index < rows.length) {
+		while (index < table.rowCount()) {
 			LmdbNativeProbeDeadline.poll(++probePollTick);
 			row.cancellation.poll(probePollTick);
-			ValuesRow candidate = rows[index++];
+			int candidate = index++;
 			int mark = row.mark();
 			boolean ok = true;
-			for (int i = 0; i < candidate.slots.length; i++) {
-				if (!row.bindOrCheckTerm(candidate.slots[i], candidate.values[i])) {
+			for (int i = 0; i < table.rowSize(candidate); i++) {
+				if (!row.bindOrCheckTerm(table.slotAt(candidate, i), table.valueAt(candidate, i))) {
 					ok = false;
 					break;
 				}
@@ -1089,7 +1228,7 @@ final class ValuesCursor implements RowCursor {
 	@Override
 	public void close() {
 		release();
-		index = rows.length;
+		index = table.rowCount();
 		if (expressionInput != null) {
 			expressionInput.close();
 		}
@@ -1101,7 +1240,7 @@ final class ValuesCursor implements RowCursor {
 	@Override
 	public NativeExpressionDomainPolicy.Input expressionInput() {
 		if (expressionInput == null) {
-			expressionInput = new NativeExpressionDomainPolicy.Input(rows, row);
+			expressionInput = new NativeExpressionDomainPolicy.Input(table, row);
 		}
 		return expressionInput;
 	}

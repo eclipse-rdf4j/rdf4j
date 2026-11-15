@@ -270,19 +270,15 @@ final class PatternBatchCursor implements BatchCursor {
 /** Direct batch reader for a VALUES table. */
 @Experimental
 final class ValuesBatchCursor implements BatchCursor {
-	final ValuesRow[] rows;
+	final ValuesTable table;
 	final long[] seedSlots;
 	final NativeTermAuthority authority;
 	final ExactValuesRuntimeMetrics exactValuesMetrics;
 	int index;
 	boolean closed;
 
-	ValuesBatchCursor(ValuesRow[] rows, RowState row) {
-		this(rows, row, false);
-	}
-
-	ValuesBatchCursor(ValuesRow[] rows, RowState row, boolean exactFilterRewrite) {
-		this.rows = rows;
+	ValuesBatchCursor(ValuesTable table, RowState row, boolean exactFilterRewrite) {
+		this.table = table;
 		this.seedSlots = Arrays.copyOf(row.slots, row.slots.length);
 		this.authority = row.termAuthority();
 		this.exactValuesMetrics = exactFilterRewrite ? row.exactValuesMetrics : null;
@@ -295,14 +291,14 @@ final class ValuesBatchCursor implements BatchCursor {
 			return 0;
 		}
 		int outputRows = 0;
-		while (index < rows.length && outputRows < batch.capacity) {
-			ValuesRow candidate = rows[index++];
+		while (index < table.rowCount() && outputRows < batch.capacity) {
+			int candidate = index++;
 			batch.copyFromRow(seedSlots, outputRows);
 			boolean accepted = true;
-			for (int i = 0; i < candidate.slots.length; i++) {
-				int slot = candidate.slots[i];
+			for (int i = 0; i < table.rowSize(candidate); i++) {
+				int slot = table.slotAt(candidate, i);
 				long current = batch.get(slot, outputRows);
-				long value = candidate.values[i];
+				long value = table.valueAt(candidate, i);
 				if (current != UNKNOWN && current != value
 						&& (authority == null || !authority.sameRdfTerm(current, value))) {
 					accepted = false;
@@ -316,7 +312,7 @@ final class ValuesBatchCursor implements BatchCursor {
 				outputRows++;
 			}
 		}
-		if (index == rows.length) {
+		if (index == table.rowCount()) {
 			closed = true;
 		}
 		batch.finishRows(outputRows);
@@ -332,7 +328,7 @@ final class ValuesBatchCursor implements BatchCursor {
 	@Override
 	public void close() {
 		closed = true;
-		index = rows.length;
+		index = table.rowCount();
 		if (exactValuesMetrics != null) {
 			exactValuesMetrics.publish();
 		}

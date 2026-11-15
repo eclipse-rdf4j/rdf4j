@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +33,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -199,7 +202,7 @@ class LmdbNativeFilterEvaluationScopeTest {
 
 	@Test
 	void correlatedSubquerySnapshotReencodesGeneratedTermsAndGraphProvenance() throws Exception {
-		SyntheticValueSource source = evaluationSource(false);
+		SyntheticValueSource source = emptyEvaluationSourceWithCertifiedAbsence();
 		NativeSlotLayout layout = scopedLayout();
 		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -240,6 +243,40 @@ class LmdbNativeFilterEvaluationScopeTest {
 			assertThat(observedInputs.get(0).getValue("language")).isEqualTo(languageTagged);
 			assertThat(observedInputs.get(0).getValue("triple")).isEqualTo(triple);
 			assertThat(suppliedGraphs).containsExactly(true);
+		} finally {
+			source.executionContext().close();
+		}
+	}
+
+	@Test
+	void uncertifiableMutableGeneratedEntryMustNotBecomeAnEmptyExistsResult() throws Exception {
+		SyntheticValueSource source = emptyEvaluationSourceWithCertifiedAbsence();
+		NativeSlotLayout layout = singleSlotLayout("x");
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		MutableIri mutable = new MutableIri("urn:mutable:before");
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		row.slots[0] = source.internComputedValue(mutable, layout.positionMask("x"));
+		assertThat(source.synthetic(row.slots[0])).isTrue();
+		mutable.change("urn:mutable:after");
+		row.recomputeBoundMask();
+		Value expected = SimpleValueFactory.getInstance().createIRI("urn:mutable:after");
+		List<Value> received = new ArrayList<>();
+		QueryEvaluationStep step = bindings -> {
+			Value actual = bindings.getValue("x");
+			received.add(actual);
+			return expected.equals(actual) ? singletonResult() : QueryEvaluationStep.EMPTY_ITERATION;
+		};
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(step, new int[0], new String[0], new int[0],
+				new String[0]);
+		try {
+			assertAll(
+					() -> assertThat(new ExistsFilter(subquery).accept(row))
+							.as("an unrepresentable entry does not prove EXISTS is false")
+							.isTrue(),
+					() -> assertThat(new NegatedNativeBooleanFilter(new ExistsFilter(subquery), true).accept(row))
+							.as("an unrepresentable entry does not prove NOT EXISTS is true")
+							.isFalse(),
+					() -> assertThat(received).containsExactly(expected, expected));
 		} finally {
 			source.executionContext().close();
 		}
@@ -638,6 +675,32 @@ class LmdbNativeFilterEvaluationScopeTest {
 
 	private static SyntheticValueSource evaluationSource(boolean match) throws Exception {
 		return compileSource(match).forEvaluation();
+	}
+
+	private static SyntheticValueSource emptyEvaluationSourceWithCertifiedAbsence() throws Exception {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.idOf(any(Value.class))).thenReturn(NativeLmdbQuerySource.UNKNOWN_ID);
+		when(source.idOf(any(Value.class), anyInt())).thenReturn(NativeLmdbQuerySource.UNKNOWN_ID);
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		doAnswer(invocation -> {
+			NativeLmdbQuerySource.IdLookup lookup = invocation.getArgument(2);
+			lookup.set(NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.IdOrigin.ABSENT);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		when(source.nativeValueCodec()).thenReturn(new LmdbNativeValueCodec(mock(ValueStore.class)));
+		return new SyntheticValueSource(source, PlanValueCatalog.EMPTY).forEvaluation();
+	}
+
+	private static final class MutableIri extends SimpleIRI {
+		private static final long serialVersionUID = 1L;
+
+		private MutableIri(String value) {
+			super(value);
+		}
+
+		private void change(String value) {
+			setIRIString(value);
+		}
 	}
 
 	private static RowState row(NativeLmdbQuerySource source) {

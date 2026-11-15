@@ -658,7 +658,8 @@ final class LmdbNativeParallelKernelAggregate {
 			AtomicReference<Throwable> failure = new AtomicReference<>();
 			AtomicBoolean peerStop = new AtomicBoolean();
 			ArrayList<Future<HashMap<LongsKey, long[]>>> futures = new ArrayList<>(workers);
-			LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
+			LmdbFusedSipFactorizedRuntime.Session fusedParent = row.fusedSession();
+			domains.seedFusedDomains(lowered.kernel, fusedParent);
 			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
 			Throwable submissionFailure = null;
 			for (int worker = 0; worker < workers; worker++) {
@@ -669,8 +670,7 @@ final class LmdbNativeParallelKernelAggregate {
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(workerExecutor.submit(() -> {
 						try (var replayScope = replayContext.activate();
-								LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-										.inherit(fusedParent);
+								LmdbFusedSipFactorizedRuntime.Session workerSession = fusedParent.worker();
 								LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline
 										.inherit(probeParent);
 								NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
@@ -680,7 +680,9 @@ final class LmdbNativeParallelKernelAggregate {
 									emitter.cancellation);
 							HashMap<LongsKey, long[]> result = telemetry.runActive(workerIndex,
 									() -> runTypeMatrixWorker(lowered, terminal, domains, emitter,
-											workerSource, workerIndex, initialTask, queues, queryMatrix.predicateIds,
+											workerSource, workerSession, row.executionContext(), workerIndex,
+											initialTask, queues,
+											queryMatrix.predicateIds,
 											kernelFactory,
 											failure,
 											peerStop, telemetry, row.memoryScope, workerMemories[workerIndex]));
@@ -856,13 +858,23 @@ final class LmdbNativeParallelKernelAggregate {
 
 	private static HashMap<LongsKey, long[]> runTypeMatrixWorker(LmdbNativeKernelLowering.Lowered lowered,
 			LmdbNativeKernelIr.TypeMatrixAggregate terminal, LmdbNativeKernelBindings.BoundDomains domains,
-			NativeGroupIteration emitter, NativeLmdbQuerySource source, int worker, TypeMatrixTask initialTask,
+			NativeGroupIteration emitter, NativeLmdbQuerySource source,
+			LmdbFusedSipFactorizedRuntime.Session workerSession, NativeExecutionContext parentExecution,
+			int worker, TypeMatrixTask initialTask,
 			ConcurrentLinkedQueue<TypeMatrixTask>[] queues, long[] predicateIds,
 			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
 			AtomicBoolean peerStop, ParallelTelemetry telemetry, LmdbNativeQueryMemoryScope memoryScope,
 			PartialMemory memory) throws IOException {
 		RowState workerRow = new RowState(source, emitter.layout, emitter.base, emitter.explainTarget,
 				emitter.cancellation);
+		workerRow.fusedSession = workerSession;
+		workerRow.setExecutionContext(NativeScalarPlan.WorkerContext.executionForSource(source,
+				parentExecution));
+		LmdbNativeEvaluationStrategy workerStrategy = RowState.workerStrategy(emitter.invocationStrategy, source,
+				workerSession, workerRow.executionContext());
+		if (workerStrategy != null) {
+			workerRow.setInvocationStrategy(workerStrategy);
+		}
 		workerRow.memoryScope = memoryScope;
 		workerRow.enableDecodedInputAccounting();
 		if (!NativeRowSeeder.seed(workerRow.slots, emitter.layout, emitter.base, source)) {
@@ -1053,28 +1065,39 @@ final class LmdbNativeParallelKernelAggregate {
 			this.input = input;
 			this.row = new RowState(emitter.source, emitter.layout, emitter.base, emitter.explainTarget,
 					emitter.cancellation);
+			row.fusedSession = owner.fusedSession();
+			row.setExecutionContext(owner.executionContext());
+			row.inheritDiagnosticRoot(owner);
+			row.bindInvocationStrategy(owner.invocationStrategyOrNull());
 			row.memoryScope = owner.memoryScope;
-			if (!NativeRowSeeder.seed(row.slots, emitter.layout, emitter.base, emitter.source)) {
-				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("ordered-worker-seed-unavailable");
+			try {
+				if (!NativeRowSeeder.seed(row.slots, emitter.layout, emitter.base, emitter.source)) {
+					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("ordered-worker-seed-unavailable");
+				}
+				row.recomputeBoundMask();
+				groups = new NativeTypedGroupStore(input.groups, input.specs, emitter.aggContext, row, aggregate);
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(
+						KernelRuntime.closeResource(row::closeDecodedInputs, failure), failure);
+				throw failure;
 			}
-			row.recomputeBoundMask();
-			groups = new NativeTypedGroupStore(input.groups, input.specs, emitter.aggContext, row, aggregate);
 		}
 
-		synchronized void add(long[] buffer, int offset, long rootOrdinal, long localOrdinal) {
-			row.cancellation.check();
-			int mark = row.mark();
+		synchronized void add(long[] buffer, int offset, long rootOrdinal, long localOrdinal,
+				RowState workerRow) {
+			workerRow.cancellation.check();
+			int mark = workerRow.mark();
 			try {
 				for (int index = 0; index < input.slots.length; index++) {
 					long id = buffer[offset + index];
 					if (id != UNKNOWN && id != LmdbNativeAggregateCompiler.NULL_CONTEXT_ID
-							&& !row.bindOrCheckTerm(input.slots[index], id)) {
+							&& !workerRow.bindOrCheckTerm(input.slots[index], id)) {
 						throw new QueryEvaluationException("Inconsistent aggregate worker input");
 					}
 				}
-				groups.addOrdered(row, 1L, rootOrdinal, localOrdinal);
+				groups.addOrdered(workerRow, 1L, rootOrdinal, localOrdinal);
 			} finally {
-				row.rollback(mark);
+				workerRow.rollback(mark);
 			}
 		}
 
@@ -1084,7 +1107,9 @@ final class LmdbNativeParallelKernelAggregate {
 
 		@Override
 		public void close() {
-			groups.close();
+			Throwable failure = KernelRuntime.closeResource(groups, null);
+			failure = KernelRuntime.closeResource(row::closeDecodedInputs, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 
@@ -1130,7 +1155,7 @@ final class LmdbNativeParallelKernelAggregate {
 				rootOperator(rootAdjacency, rootDomain, rootWildcard, rootNodeDomainIntersection, rootScan));
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		AtomicBoolean peerStop = new AtomicBoolean();
-		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		LmdbFusedSipFactorizedRuntime.Session fusedParent = row.fusedSession();
 		LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
 		PartialMemory[] workerMemory = null;
 		PartialMemory mergeMemory = null;
@@ -1139,6 +1164,8 @@ final class LmdbNativeParallelKernelAggregate {
 		Throwable primaryFailure = null;
 		List<BindingSet> retainedResults = null;
 		try {
+			// A worker's ordinal window must never become the shared membership domain for its siblings.
+			domains.seedFusedDomains(workerKernel, fusedParent);
 			try {
 				workerMemory = openWorkerMemories(row.memoryScope, threads, workerKernel.stride(),
 						emitter.layout.slotNames().length);
@@ -1167,8 +1194,7 @@ final class LmdbNativeParallelKernelAggregate {
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(workerExecutor.submit(() -> {
 						try (var replayScope = replayContext.activate();
-								LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-										.inherit(fusedParent);
+								LmdbFusedSipFactorizedRuntime.Session workerSession = fusedParent.worker();
 								LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline
 										.inherit(probeParent);
 								NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
@@ -1179,7 +1205,7 @@ final class LmdbNativeParallelKernelAggregate {
 							HashMap<LongsKey, Partial> result = telemetry.runActive(worker, () -> runWorker(lowered,
 									workerAggregate, rootAdjacency,
 									rootDomain, rootWildcard, rootNodeDomainIntersection, rootScan, partitionPlan,
-									totalPartitionUnits, domains, source,
+									totalPartitionUnits, domains, source, workerSession, row.executionContext(),
 									emitter, initialRanges[worker], initialScanPartitions[worker], ranges, scanQueue,
 									kernelFactory, failure, peerStop, worker, telemetry, row.memoryScope, memory,
 									workerKernel.stride(), collector));
@@ -1545,7 +1571,9 @@ final class LmdbNativeParallelKernelAggregate {
 			int rootDomain, int rootWildcard, int rootNodeDomainIntersection, int rootScan,
 			LmdbNativeKernelPartitions.PartitionPlan partitionPlan,
 			long totalPartitionUnits, LmdbNativeKernelBindings.BoundDomains domains,
-			NativeLmdbQuerySource source, NativeGroupIteration emitter,
+			NativeLmdbQuerySource source, LmdbFusedSipFactorizedRuntime.Session workerSession,
+			NativeExecutionContext parentExecution,
+			NativeGroupIteration emitter,
 			long[] initialRange, ScanTask initialScanPartition,
 			Queue<long[]> ranges, Queue<ScanTask> scanQueue, Supplier<JaninoKernel> kernelFactory,
 			AtomicReference<Throwable> failure, AtomicBoolean peerStop, int worker, ParallelTelemetry telemetry,
@@ -1562,6 +1590,14 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 		RowState workerRow = new RowState(source, emitter.layout, emitter.base, emitter.explainTarget,
 				emitter.cancellation);
+		workerRow.fusedSession = workerSession;
+		workerRow.setExecutionContext(NativeScalarPlan.WorkerContext.executionForSource(source,
+				parentExecution));
+		LmdbNativeEvaluationStrategy workerStrategy = RowState.workerStrategy(emitter.invocationStrategy, source,
+				workerSession, workerRow.executionContext());
+		if (workerStrategy != null) {
+			workerRow.setInvocationStrategy(workerStrategy);
+		}
 		workerRow.memoryScope = memoryScope;
 		workerRow.enableDecodedInputAccounting();
 		if (!NativeRowSeeder.seed(workerRow.slots, emitter.layout, emitter.base, source)) {
@@ -1582,7 +1618,8 @@ final class LmdbNativeParallelKernelAggregate {
 		// their release — a fork may lazily acquire native read state, and leaking it wedges the dataset close exactly
 		// like the sequential route's LmdbNativeKernelHooks.closeFilters.
 		NativeScalarPlan.WorkerContext workerContext = NativeScalarPlan.WorkerContext.forSource(source,
-				emitter.evaluationContext);
+				emitter.evaluationContext, workerSession, workerRow.executionContext(), workerStrategy,
+				emitter.explainTarget);
 		NativeWorkerPlanBinder workerPlans = new NativeWorkerPlanBinder(workerContext);
 		LmdbNativeKernelBindings.FilterHook[] forkedHooks = null;
 		LmdbNativeKernelBindings.BindHook[] forkedBinds = null;
@@ -1736,7 +1773,7 @@ final class LmdbNativeParallelKernelAggregate {
 							if (collector != null) {
 								for (int r = 0; r < filled; r++) {
 									cancellationPoll.run();
-									collector.add(buffer, r * stride, rootOrdinal, localOrdinal);
+									collector.add(buffer, r * stride, rootOrdinal, localOrdinal, workerRow);
 									localOrdinal = Math.addExact(localOrdinal, 1L);
 								}
 							} else {
@@ -1816,12 +1853,12 @@ final class LmdbNativeParallelKernelAggregate {
 				closeFailure = addCloseFailure(closeFailure, problem);
 			}
 			try {
-				workerRow.closeDecodedInputs();
+				workerPlans.close();
 			} catch (RuntimeException | Error problem) {
 				closeFailure = addCloseFailure(closeFailure, problem);
 			}
 			try {
-				workerPlans.close();
+				workerRow.closeDecodedInputs();
 			} catch (RuntimeException | Error problem) {
 				closeFailure = addCloseFailure(closeFailure, problem);
 			}

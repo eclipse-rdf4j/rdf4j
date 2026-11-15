@@ -427,7 +427,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 				logSelected(explainTarget, decisionId, label, chosen.id(), retry ? "retry " + mode : mode,
 						ranking.reason());
 				retry = true;
-				startAttemptOnSharedRow();
+				LmdbFusedSipFactorizedRuntime.PreparationAttempt preparation = startAttemptOnSharedRow();
 				long openStarted = advice == null ? 0L : System.nanoTime();
 				T value;
 				try {
@@ -454,6 +454,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 						SelectionObserver listener = selectionObserver;
 						if (listener != null) {
 							listener.selected(explainTarget, label, chosen.id(), record);
+						}
+						if (eager && sharedRow != null) {
+							sharedRow.endPreparationAttempt(preparation);
 						}
 						return new Selection<>(value, chosen.id(), ranking.expectedNanos()[winner], record,
 								observation(chosen, ranking.quotedExpectedNanos()[winner], openStarted));
@@ -487,7 +490,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 			}
 			return null;
 		} catch (IOException | RuntimeException | Error failure) {
-			admitted.releaseAll(failure);
+			Throwable retained = KernelRuntime.closeResource(this::restoreSharedRow, failure);
+			admitted.releaseAll(retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			throw failure;
 		}
 	}
@@ -660,9 +665,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 				+ " (its structural precondition was not met).");
 	}
 
-	private void startAttemptOnSharedRow() {
+	private LmdbFusedSipFactorizedRuntime.PreparationAttempt startAttemptOnSharedRow() {
 		if (sharedRow == null) {
-			return;
+			return null;
 		}
 		if (sharedRowStart == null) {
 			sharedRowStart = sharedRow.attemptStart();
@@ -670,6 +675,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 			sharedRow.restore(sharedRowStart);
 		}
 		sharedRow.startScalarFilterAttempt();
+		return sharedRow.preparationAttempt();
 	}
 
 	private void restoreSharedRow() {

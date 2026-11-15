@@ -159,11 +159,12 @@ final class NativePhysicalOutputEvidence {
 	}
 
 	static boolean sameEntry(BindingSet expected, BindingSet actual) {
-		if (!expected.equals(actual)) {
+		if (expected.getBindingNames().size() != actual.getBindingNames().size()
+				|| GraphFrameBindings.from(expected) != GraphFrameBindings.from(actual)) {
 			return false;
 		}
 		for (String name : expected.getBindingNames()) {
-			if (GraphFrameBindings.isSupplied(expected, name) != GraphFrameBindings.isSupplied(actual, name)) {
+			if (!actual.hasBinding(name) || expected.getValue(name) != actual.getValue(name)) {
 				return false;
 			}
 		}
@@ -197,6 +198,10 @@ final class NativePhysicalOutputEvidence {
 		}
 		NativeCancellationToken cancellation = synthetic.executionContext().cancellation();
 		return cancellation.evaluationId() == receipt.evaluation && cancellation.ownerThreadId() == receipt.owner;
+	}
+
+	int valuesIdDomains() {
+		return receipt.input.valuesIdDomains();
 	}
 
 	boolean sourceFamilyMatches(NativeLmdbQuerySource source) {

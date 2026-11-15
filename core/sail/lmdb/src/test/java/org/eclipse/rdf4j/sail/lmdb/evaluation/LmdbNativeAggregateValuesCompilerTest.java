@@ -12,25 +12,38 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.UNKNOWN_ID;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.impl.SimpleModelExposureForTest;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -55,7 +68,9 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
@@ -71,6 +86,9 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeAggregateValuesCompilerTest {
@@ -97,6 +115,947 @@ class LmdbNativeAggregateValuesCompilerTest {
 	private static final long PLAIN_TRIPLE_TERM_ID = ValueIds.createId(ValueIds.T_TRIPLE, 7L);
 	private static final long NESTED_TRIPLE_TERM_ID = ValueIds.createId(ValueIds.T_TRIPLE, 8L);
 	private static final long LANGUAGE_TRIPLE_TERM_ID = ValueIds.createId(ValueIds.T_TRIPLE, 9L);
+
+	@Test
+	void compiledTreeCatalogPublishesOneDetachedImmutableSnapshot() throws Exception {
+		PlanValueCatalog.Builder owner = PlanValueCatalog.Builder.compiledTree();
+		PlanValueCatalog firstHandle = owner.build();
+		SimpleIRI input = SimpleModelExposureForTest.simpleIRI("urn:test:original");
+		long id = owner.internConstant(input);
+		assertThat(owner.build()).isSameAs(firstHandle);
+		assertThat(firstHandle.valueOf(id)).isEqualTo(input);
+		AtomicReference<Throwable> prematureAccess = new AtomicReference<>();
+		Thread other = new Thread(() -> {
+			try {
+				firstHandle.size();
+			} catch (Throwable failure) {
+				prematureAccess.set(failure);
+			}
+		});
+		other.start();
+		other.join();
+		assertThat(prematureAccess.get()).isInstanceOf(IllegalStateException.class);
+		assertThat(owner.freeze()).isSameAs(firstHandle);
+		Value detached = firstHandle.valueOf(id);
+		SimpleModelExposureForTest.setIriString(input, "urn:test:changed");
+		assertThat(detached.stringValue()).isEqualTo("urn:test:original");
+		assertThat(firstHandle.valueOf(id)).isSameAs(detached);
+		assertThatThrownBy(() -> owner.internConstant(VF.createIRI("urn:test:late")))
+				.isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void compiledDomainReceiptSeparatesRuntimeAndCatalogAuthorities() {
+		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource.DomainStamp stored = new NativeLmdbQuerySource.DomainStamp(new Object(), new Object(),
+				new Object(), new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null);
+		when(store.detachedDomainStamp()).thenReturn(stored);
+		PlanValueCatalog.Builder owner = PlanValueCatalog.Builder.compiledTree();
+		owner.internConstant(VF.createLiteral("one catalog"));
+		PlanValueCatalog catalog = owner.freeze();
+		SyntheticValueSource first = new SyntheticValueSource(store, catalog).forEvaluation();
+		SyntheticValueSource independent = new SyntheticValueSource(store, catalog).forEvaluation();
+		SyntheticValueSource child = null;
+		try {
+			BindingSet empty = EmptyBindingSet.getInstance();
+			first.executionContext().initializeQueryBase(empty);
+			independent.executionContext().initializeQueryBase(empty);
+			child = first.forInvocation(empty);
+			NativeLmdbQuerySource.DomainStamp firstStamp = first.detachedDomainStamp();
+			assertThat(firstStamp).isNotNull();
+			assertThat(firstStamp.sameDomain(child.detachedDomainStamp())).isTrue();
+			assertThat(firstStamp.sameDomain(independent.detachedDomainStamp())).isFalse();
+			assertThat(firstStamp.planCatalog()).isSameAs(catalog.detachedIdentity());
+			assertThat(firstStamp.planCatalog().getClass()).isEqualTo(Object.class);
+			assertThat(firstStamp.runtimeAuthority().getClass()).isEqualTo(Object.class);
+			assertThat(firstStamp.runtimeAuthority()).isNotSameAs(first.executionContext());
+
+			PlanValueCatalog.Builder collisionOwner = PlanValueCatalog.Builder.compiledTree();
+			collisionOwner.internConstant(VF.createLiteral("another catalog"));
+			SyntheticValueSource collision = new SyntheticValueSource(first, collisionOwner.freeze());
+			assertThat(collision.detachedDomainStamp()).isNull();
+			assertThat(new SyntheticValueSource(mock(NativeLmdbQuerySource.class), catalog)
+					.detachedDomainStamp()).isNull();
+		} finally {
+			if (child != null) {
+				child.executionContext().close();
+			}
+			independent.executionContext().close();
+			first.executionContext().close();
+		}
+	}
+
+	@Test
+	void nestedTermAuthorityImportsCollidingPlanIdByValue() {
+		Literal outerTerm = VF.createLiteral("outer authority spelling");
+		Literal innerTerm = VF.createLiteral("inner authority spelling");
+		PlanValueCatalog.Builder outerCatalog = new PlanValueCatalog.Builder();
+		PlanValueCatalog.Builder innerCatalog = new PlanValueCatalog.Builder();
+		long outerId = outerCatalog.internConstant(outerTerm);
+		long innerId = innerCatalog.internConstant(innerTerm);
+		assertThat(outerId).isEqualTo(innerId);
+		SyntheticValueSource outer = new SyntheticValueSource(new SingleStatementSource(), outerCatalog.build())
+				.forEvaluation();
+		SyntheticValueSource inner = new SyntheticValueSource(outer, innerCatalog.build()).forEvaluation();
+		try {
+			long imported = inner.authority().importId(outer.authority(), outerId);
+			assertThat(imported).as("an imported plan ID must not alias an unrelated local constant")
+					.isNotEqualTo(innerId);
+			assertThat(inner.lazyValue(imported)).isEqualTo(outerTerm);
+			assertThat(inner.lazyValue(innerId)).isEqualTo(innerTerm);
+			assertThat(inner.internComputedValue(outerTerm)).isEqualTo(imported);
+			long lookup = inner.idOf(outerTerm);
+			assertThat(lookup == UNKNOWN_ID || outerTerm.equals(inner.lazyValue(lookup))).isTrue();
+		} finally {
+			try {
+				inner.executionContext().close();
+			} finally {
+				outer.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void boundPatternTermKeepsForeignPlanSpellingOnCollision() {
+		assertCompiledBoundTerm(VF.createLiteral("outer pattern spelling"),
+				VF.createLiteral("inner pattern spelling"), NativePatternField.OBJECT, "value");
+	}
+
+	@Test
+	void boundGraphTermKeepsForeignPlanSpellingOnCollision() {
+		assertCompiledBoundTerm(VF.createIRI("urn:test:outer-graph"), VF.createIRI("urn:test:inner-graph"),
+				NativePatternField.CONTEXT, "graph");
+	}
+
+	private void assertCompiledBoundTerm(Value foreign, Value local, NativePatternField field, String bindingName) {
+		PlanValueCatalog.Builder foreignCatalog = new PlanValueCatalog.Builder();
+		long foreignId = foreignCatalog.internConstant(foreign);
+		SyntheticValueSource outer = new SyntheticValueSource(new SingleStatementSource(), foreignCatalog.build())
+				.forEvaluation();
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, outer);
+		assertThat(planner.planValueCatalog.internConstant(local)).isEqualTo(foreignId);
+		Term term = planner.compileTerm(new Var(bindingName, foreign), field);
+		assertThat(term).isNotNull();
+		planner.layout.freeze(planner.slotNames);
+		SyntheticValueSource inner = new SyntheticValueSource(outer, planner.planValueCatalog.build()).forEvaluation();
+		RowState row = new RowState(inner, planner.layout, EmptyBindingSet.getInstance());
+		try {
+			assertThat(NativeRowSeeder.seed(row.slots, planner.layout, row.base, inner)).isTrue();
+			assertThat(row.bind(term.slot, term.constant)).isTrue();
+			assertThat(row.view.getValue(bindingName)).isEqualTo(foreign);
+		} finally {
+			try {
+				row.closeDecodedInputs();
+			} finally {
+				try {
+					inner.executionContext().close();
+				} finally {
+					outer.executionContext().close();
+				}
+			}
+		}
+	}
+
+	@Test
+	void uncertifiedSourceCollisionDeclinesToExactGenericResult() {
+		Literal local = VF.createLiteral("local plan spelling");
+		PlanValueCatalog.Builder localCatalog = new PlanValueCatalog.Builder();
+		long collidingId = localCatalog.internConstant(local);
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(source.idSpace()).thenReturn(source);
+		when(source.hasStatementsInSource()).thenReturn(true);
+		when(source.idOf(any(Value.class))).thenAnswer(call -> {
+			Value value = call.getArgument(0);
+			return SUBJECT.equals(value) ? collidingId : LINK.equals(value) ? LINK_ID : UNKNOWN_ID;
+		});
+		Statement statement = VF.createStatement(SUBJECT, LINK, NAME_1);
+		TripleSource triples = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return new CloseableIteratorIteration<>(List.of(statement).iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+		};
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+				new EvaluationStatistics(), false);
+		StatementPattern pattern = new StatementPattern(new Var("subject", SUBJECT), new Var("predicate", LINK),
+				new Var("object"));
+		Extension extension = new Extension(pattern, new ExtensionElem(new ValueConstant(local), "note"));
+		Projection query = new Projection(extension,
+				new ProjectionElemList(new ProjectionElem("subject"), new ProjectionElem("note")));
+		LmdbNativeAggregateCompiler.CompileOutcome result = LmdbNativeAggregateCompiler.compileRoot(query, context,
+				strategy, source);
+		assertThat(result.isSupported()).as("an uncertified source ID cannot be copied into a local plan catalog")
+				.isFalse();
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(query, context)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isTrue();
+			BindingSet row = rows.next();
+			assertThat(row.getValue("subject")).isEqualTo(SUBJECT);
+			assertThat(row.getValue("note")).isEqualTo(local);
+			assertThat(rows.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	void foreignPlanValuesWithoutBackingAbsenceFallBackBeforeOutput() {
+		assertForeignLookupDeclines(ForeignLookupShape.VALUES, NativeLmdbQuerySource.IdOrigin.PLAN);
+	}
+
+	@Test
+	void foreignRuntimeBindWithoutBackingAbsenceFallsBackBeforeOutput() {
+		assertForeignLookupDeclines(ForeignLookupShape.BIND, NativeLmdbQuerySource.IdOrigin.RUNTIME);
+	}
+
+	@Test
+	void foreignPlanBoundPatternWithoutBackingAbsenceDoesNotPruneMatch() {
+		assertForeignLookupDeclines(ForeignLookupShape.PATTERN, NativeLmdbQuerySource.IdOrigin.PLAN);
+	}
+
+	private enum ForeignLookupShape {
+		VALUES,
+		BIND,
+		PATTERN
+	}
+
+	private void assertForeignLookupDeclines(ForeignLookupShape shape, NativeLmdbQuerySource.IdOrigin origin) {
+		PlanValueCatalog.Builder foreignCatalog = new PlanValueCatalog.Builder();
+		long foreignId = foreignCatalog.internConstant(SUBJECT);
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		Object lookupScope = new Object();
+		Object resultScope = new Object();
+		NativeLmdbQuerySource.DomainStamp domain = new NativeLmdbQuerySource.DomainStamp(new Object(), lookupScope,
+				resultScope, new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, new Object(), new Object());
+		when(source.idSpace()).thenReturn(source);
+		when(source.valueLookupScope()).thenReturn(lookupScope);
+		when(source.resultValueScope()).thenReturn(resultScope);
+		when(source.detachedDomainStamp()).thenReturn(domain);
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		when(source.hasCanonicalIds()).thenReturn(true);
+		when(source.hasStatementsInSource()).thenReturn(true);
+		when(source.idOf(any(Value.class))).thenAnswer(call -> SUBJECT.equals(call.getArgument(0)) ? foreignId
+				: LINK.equals(call.getArgument(0)) ? LINK_ID : UNKNOWN_ID);
+		AtomicInteger foreignLookups = new AtomicInteger();
+		doAnswer(call -> {
+			Value value = call.getArgument(0);
+			NativeLmdbQuerySource.IdLookup lookup = call.getArgument(2);
+			if (SUBJECT.equals(value)) {
+				foreignLookups.incrementAndGet();
+				// This source proves where its returned synthetic number belongs, but does not prove that its
+				// backing dictionary lacks the same value. The semantic triple source below contains that match.
+				lookup.set(foreignId, origin);
+			} else if (LINK.equals(value)) {
+				lookup.set(LINK_ID, NativeLmdbQuerySource.IdOrigin.STORED);
+			} else {
+				lookup.set(UNKNOWN_ID, NativeLmdbQuerySource.IdOrigin.ABSENT);
+			}
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		AtomicInteger statementOpens = new AtomicInteger();
+		AtomicInteger statementCloses = new AtomicInteger();
+		Statement statement = VF.createStatement(SUBJECT, LINK, NAME_1);
+		TripleSource triples = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				statementOpens.incrementAndGet();
+				boolean match = (subject == null || subject.equals(SUBJECT))
+						&& (predicate == null || predicate.equals(LINK))
+						&& (object == null || object.equals(NAME_1));
+				return new CloseableIteratorIteration<Statement>(match ? List.of(statement).iterator()
+						: List.<Statement>of().iterator()) {
+					@Override
+					protected void handleClose() {
+						statementCloses.incrementAndGet();
+					}
+				};
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+		};
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+				new EvaluationStatistics(), false);
+		Var subject = shape == ForeignLookupShape.PATTERN ? new Var("key", SUBJECT) : new Var("key");
+		StatementPattern pattern = new StatementPattern(subject, new Var("predicate", LINK), new Var("found"));
+		TupleExpr body;
+		if (shape == ForeignLookupShape.VALUES) {
+			MapBindingSet binding = new MapBindingSet();
+			binding.addBinding("key", SUBJECT);
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			assignment.setBindingNames(Set.of("key"));
+			assignment.setBindingSets(List.of(binding));
+			body = new Join(assignment, pattern);
+		} else if (shape == ForeignLookupShape.BIND) {
+			body = new Join(new Extension(new SingletonSet(), new ExtensionElem(new ValueConstant(SUBJECT), "key")),
+					pattern);
+		} else {
+			body = pattern;
+		}
+		Projection query = new Projection(body,
+				new ProjectionElemList(new ProjectionElem("key"), new ProjectionElem("found")));
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(query, context,
+				strategy, source);
+		assertThat(foreignLookups).as("the actual planner inspected the foreign synthetic hit").hasPositiveValue();
+		assertThat(outcome.isSupported()).as("a synthetic hit alone cannot prove backing absence").isFalse();
+		assertThat(statementOpens).as("admission never consumes the semantic result").hasValue(0);
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(query, context)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isTrue();
+			BindingSet row = rows.next();
+			assertThat(row.getValue("key")).isEqualTo(SUBJECT);
+			assertThat(row.getValue("found")).isEqualTo(NAME_1);
+			assertThat(rows.hasNext()).isFalse();
+		}
+		assertThat(statementOpens).hasValue(1);
+		assertThat(statementCloses).hasValue(1);
+	}
+
+	@Test
+	void foreignPlanWithCertifiedBackingAbsenceRemainsCompilable() {
+		IRI absent = VF.createIRI("urn:test:certified-foreign-plan");
+		PlanValueCatalog.Builder foreignCatalog = new PlanValueCatalog.Builder();
+		long foreignId = foreignCatalog.internConstant(absent);
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(source.certifiesIdOrigins()).thenReturn(true);
+		when(source.hasStatementsInSource()).thenReturn(true);
+		doAnswer(call -> {
+			NativeLmdbQuerySource.IdLookup lookup = call.getArgument(2);
+			lookup.set(UNKNOWN_ID, NativeLmdbQuerySource.IdOrigin.ABSENT);
+			lookup.setPlanAfterBackingAbsence(foreignId);
+			return null;
+		}).when(source).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		long localId = planner.idOfExtensionConstant(absent, "key");
+		assertThat(localId).isNotEqualTo(UNKNOWN_ID);
+		assertThat(planner.planValueCatalog.build().valueOf(localId)).isEqualTo(absent);
+	}
+
+	@Test
+	void uncertifiedUniformValuesJoinFallsBackBeforeLookup() {
+		MapBindingSet fixed = new MapBindingSet();
+		fixed.addBinding("term", NAME_1);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("term"));
+		values.setBindingSets(List.of(fixed));
+		StatementPattern pattern = new StatementPattern(new Var("subject"), new Var("predicate", LINK),
+				new Var("term"));
+		Join join = new Join(pattern, values);
+		new QueryRoot(join);
+		Statement statement = VF.createStatement(SUBJECT, LINK, NAME_1);
+		TripleSource triples = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return new CloseableIteratorIteration<>(List.of(statement).iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+		};
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy template = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+				new EvaluationStatistics(), false);
+		NativeLmdbQuerySource eligible = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(eligible.idSpace()).thenReturn(eligible);
+		when(eligible.certifiesIdOrigins()).thenReturn(true);
+		when(eligible.valueLookupScope()).thenReturn(new Object());
+		doAnswer(call -> {
+			NativeLmdbQuerySource.IdLookup lookup = call.getArgument(2);
+			lookup.set(NAME_1_ID, NativeLmdbQuerySource.IdOrigin.STORED);
+			return null;
+		}).when(eligible).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		assertThat(NativeUniformValuesJoin.prepare(join, context, template, eligible))
+				.as("the exact join is eligible for the uniform-VALUES preparation path")
+				.isNotNull();
+		NativeLmdbQuerySource uncertifiedLookup = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(uncertifiedLookup.certifiesIdOrigins()).thenReturn(true);
+		when(uncertifiedLookup.valueLookupScope()).thenReturn(new Object());
+		when(uncertifiedLookup.idOf(any(Value.class), anyInt())).thenReturn(NAME_1_ID);
+		assertThat(NativeUniformValuesJoin.prepare(join, context, template, uncertifiedLookup))
+				.as("an individual uncertified lookup cannot use the source's capability promise")
+				.isNull();
+		AtomicBoolean lookupViewRetired = new AtomicBoolean();
+		Object lookupView = new Object();
+		NativeLmdbQuerySource retiring = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(retiring.certifiesIdOrigins()).thenReturn(true);
+		when(retiring.valueLookupScope()).thenAnswer(call -> lookupViewRetired.get() ? null : lookupView);
+		doAnswer(call -> {
+			NativeLmdbQuerySource.IdLookup lookup = call.getArgument(2);
+			lookup.set(NAME_1_ID, NativeLmdbQuerySource.IdOrigin.STORED);
+			lookupViewRetired.set(true);
+			return null;
+		}).when(retiring).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		assertThat(NativeUniformValuesJoin.prepare(join, context, template, retiring))
+				.as("a lookup view retired during preparation cannot authorize a hint")
+				.isNull();
+
+		NativeLmdbQuerySource uncertified = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(uncertified.idSpace()).thenReturn(uncertified);
+		when(uncertified.hasStatementsInSource()).thenReturn(true);
+		when(uncertified.idOf(any(Value.class), anyInt())).thenAnswer(call -> {
+			throw new AssertionError("an uncertified source was looked up during join preparation");
+		});
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(91L, 1 << 20, false);
+		NativeExecutionContext execution = new NativeExecutionContext();
+		execution.initializeQueryBase(EmptyBindingSet.getInstance());
+		try {
+			LmdbNativeEvaluationStrategy strategy = template.forInvocation(uncertified, session, execution);
+			assertThat(strategy.nativeSource()).isSameAs(uncertified);
+			QueryEvaluationStep prepared = strategy.prepare(join, context);
+			try (CloseableIteration<BindingSet> rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(rows.hasNext()).isTrue();
+				BindingSet row = rows.next();
+				assertThat(row.getValue("subject")).isEqualTo(SUBJECT);
+				assertThat(row.getValue("term")).isEqualTo(NAME_1);
+				assertThat(rows.hasNext()).isFalse();
+			}
+		} finally {
+			execution.close();
+			session.close();
+		}
+	}
+
+	@Test
+	void sameDomainColdValuesCompileOnceAndLimitZeroNeverReadsTheTerm() {
+		AtomicBoolean permitLexical = new AtomicBoolean();
+		AtomicInteger resolutions = new AtomicInteger();
+		ValueStoreRevision revision = coldRevision(permitLexical, resolutions);
+		LmdbIRI cold = new LmdbIRI(revision, SUBJECT_ID);
+		AtomicInteger lookups = new AtomicInteger();
+		NativeLmdbQuerySource source = coldSource(cold, revision, lookups, true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		QueryEvaluationStep step = planner.compileRowRoot(coldValuesQuery(cold));
+		assertThat(step).isNotNull();
+		assertThat(cold.isInitialized()).isFalse();
+		assertThat(lookups.get()).as("an empty result needs at most one original lookup").isLessThanOrEqualTo(1);
+		try (CloseableIteration<BindingSet> result = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(result.hasNext()).isFalse();
+		}
+		assertThat(cold.isInitialized()).isFalse();
+		assertThat(lookups.get()).isLessThanOrEqualTo(1);
+		assertThat(resolutions).hasValue(0);
+	}
+
+	@Test
+	void sameDomainColdValuesUseOneLookupForAConsumedRow() {
+		AtomicBoolean permitLexical = new AtomicBoolean();
+		AtomicInteger resolutions = new AtomicInteger();
+		ValueStoreRevision revision = coldRevision(permitLexical, resolutions);
+		LmdbIRI cold = new LmdbIRI(revision, SUBJECT_ID);
+		AtomicInteger lookups = new AtomicInteger();
+		NativeLmdbQuerySource source = coldSource(cold, revision, lookups, true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		QueryEvaluationStep step = planner.compileRowRoot(coldValuesQuery(cold, 1L));
+		assertThat(step).isNotNull();
+		assertThat(lookups).as("the original VALUES lookup is reused during compilation").hasValue(1);
+		try (CloseableIteration<BindingSet> result = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet row = result.next();
+			LmdbIRI returned = assertColdBinding(row, revision);
+			assertThat(result.hasNext()).isFalse();
+			assertThat(resolutions).hasValue(0);
+			permitLexical.set(true);
+			assertThat(returned.stringValue()).isEqualTo("urn:test:cold-native");
+			assertThat(resolutions).hasValue(1);
+		}
+		assertThat(lookups).hasValue(1);
+	}
+
+	@Test
+	void foreignColdValuesPreserveLazinessAndExactResult() {
+		AtomicBoolean permitLexical = new AtomicBoolean();
+		AtomicInteger resolutions = new AtomicInteger();
+		ValueStoreRevision revision = coldRevision(permitLexical, resolutions);
+		LmdbIRI cold = new LmdbIRI(revision, SUBJECT_ID);
+		AtomicInteger lookups = new AtomicInteger();
+		NativeLmdbQuerySource source = coldSource(cold, new Object(), lookups, false);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		for (long limit : new long[] { 0L, 1L }) {
+			Slice query = coldValuesQuery(cold, limit);
+			AtomicReference<QueryEvaluationStep> compiled = new AtomicReference<>();
+			assertThatCode(() -> compiled.set(LmdbNativeAggregateCompiler.tryCompile(query, context, strategy, source)))
+					.doesNotThrowAnyException();
+			QueryEvaluationStep selected = compiled.get() == null ? strategy.precompile(query, context)
+					: compiled.get();
+			try (CloseableIteration<BindingSet> rows = selected.evaluate(EmptyBindingSet.getInstance())) {
+				if (limit == 0L) {
+					assertThat(rows.hasNext()).isFalse();
+				} else {
+					assertThat(rows.hasNext()).isTrue();
+					LmdbIRI returned = assertColdBinding(rows.next(), revision);
+					assertThat(rows.hasNext()).isFalse();
+					assertThat(resolutions).hasValue(0);
+					permitLexical.set(true);
+					assertThat(returned.stringValue()).isEqualTo("urn:test:cold-native");
+					assertThat(resolutions).hasValue(1);
+				}
+			}
+			if (limit == 0L) {
+				assertThat(cold.isInitialized()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void coldValueMutatedDuringCompilationDeclinesWithoutDecoding() {
+		AtomicBoolean permitLexical = new AtomicBoolean();
+		AtomicInteger resolutions = new AtomicInteger();
+		ValueStoreRevision revision = coldRevision(permitLexical, resolutions);
+		LmdbIRI cold = new LmdbIRI(revision, SUBJECT_ID);
+		AtomicInteger lookups = new AtomicInteger();
+		NativeLmdbQuerySource source = coldSource(cold, revision, lookups, true);
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("term", cold);
+		AtomicBoolean changed = new AtomicBoolean();
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("term"));
+		values.setBindingSets((BindingSetAssignment.RepeatableBindingSetSource) () -> {
+			if (lookups.get() > 0 && changed.compareAndSet(false, true)) {
+				cold.setFromInitializedValue(new LmdbIRI(revision, "urn:test:changed-cold-payload"));
+			}
+			return List.<BindingSet>of(row).iterator();
+		});
+		Slice query = new Slice(new Projection(values, new ProjectionElemList(new ProjectionElem("term"))), 0L, 1L);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		assertThat(LmdbNativeAggregateCompiler.tryCompile(query, context, strategy, source))
+				.as("a changed cold payload must invalidate the earlier ID proof")
+				.isNull();
+		assertThat(changed).isTrue();
+		assertThat(resolutions).hasValue(0);
+	}
+
+	private static LmdbIRI assertColdBinding(BindingSet row, ValueStoreRevision revision) {
+		Value value = row.getValue("term");
+		assertThat(value).isInstanceOf(LmdbIRI.class);
+		LmdbIRI nativeValue = (LmdbIRI) value;
+		assertThat(nativeValue.getInternalID()).isEqualTo(SUBJECT_ID);
+		assertThat(nativeValue.getValueStoreRevision()).isSameAs(revision);
+		assertThat(nativeValue.isInitialized()).isFalse();
+		assertThat(row.getValue("term")).isSameAs(value);
+		return nativeValue;
+	}
+
+	private static ValueStoreRevision coldRevision(AtomicBoolean permitLexical, AtomicInteger resolutions) {
+		return new ValueStoreRevision.Default(null) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public boolean resolveValue(long id, LmdbValue value) {
+				if (!permitLexical.get()) {
+					throw new AssertionError("a cold native term must not be initialized before it is requested");
+				}
+				resolutions.incrementAndGet();
+				value.setFromInitializedValue(new LmdbIRI(this, "urn:test:cold-native", id));
+				return true;
+			}
+		};
+	}
+
+	private static Slice coldValuesQuery(Value value) {
+		return coldValuesQuery(value, 0L);
+	}
+
+	private static Slice coldValuesQuery(Value value, long limit) {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("term", value);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("term"));
+		values.setBindingSets(List.of(row));
+		return new Slice(new Projection(values, new ProjectionElemList(new ProjectionElem("term"))), 0L, limit);
+	}
+
+	private static NativeLmdbQuerySource coldSource(LmdbIRI cold, Object idSpace, AtomicInteger lookups,
+			boolean sameDomain) {
+		return new NativeLmdbQuerySource() {
+			@Override
+			public boolean certifiesIdOrigins() {
+				return sameDomain;
+			}
+
+			@Override
+			public long knownStatementId(LmdbValue value) {
+				return sameDomain && value == cold ? cold.getInternalID() : UNKNOWN_ID;
+			}
+
+			@Override
+			public void idOfWithOrigin(Value value, int positionMask, IdLookup result) {
+				long id = idOf(value);
+				result.set(id, sameDomain ? id == UNKNOWN_ID ? IdOrigin.ABSENT : IdOrigin.STORED
+						: IdOrigin.UNCERTIFIED);
+			}
+
+			@Override
+			public long idOf(Value value) {
+				if (value == cold) {
+					lookups.incrementAndGet();
+					return sameDomain ? cold.getInternalID() : UNKNOWN_ID;
+				}
+				return UNKNOWN_ID;
+			}
+
+			@Override
+			public Value lazyValue(long id) {
+				return id == cold.getInternalID() ? cold : null;
+			}
+
+			@Override
+			public Object idSpace() {
+				return idSpace;
+			}
+
+			@Override
+			public RecordIterator statements(long subject, long predicate, long object, long context) {
+				return new SingleRecordIterator(null);
+			}
+
+			@Override
+			public long count(long subject, long predicate, long object, long context) {
+				return 0L;
+			}
+
+			@Override
+			public boolean has(long subject, long predicate, long object, long context) {
+				return false;
+			}
+
+			@Override
+			public double estimate(long subject, long predicate, long object, long context) {
+				return 0D;
+			}
+
+			@Override
+			public boolean hasStatementsInSource() {
+				return true;
+			}
+		};
+	}
+
+	@Test
+	void nestedValuesPreserveDistinctTermsWhenPlanIdsCollide() throws Exception {
+		Literal outerTerm = VF.createLiteral("outer lexical spelling");
+		Literal nestedTerm = VF.createLiteral("nested lexical spelling");
+		PlanValueCatalog.Builder outerCatalog = new PlanValueCatalog.Builder();
+		long outerId = outerCatalog.internConstant(outerTerm);
+		PlanValueCatalog.Builder independentCatalog = new PlanValueCatalog.Builder();
+		assertThat(independentCatalog.internConstant(nestedTerm))
+				.as("independent plan catalogs can assign the same number to different terms")
+				.isEqualTo(outerId);
+		SyntheticValueSource source = new SyntheticValueSource(new SingleStatementSource(), outerCatalog.build())
+				.forEvaluation();
+		BindingSet empty = EmptyBindingSet.getInstance();
+		source.executionContext().initializeQueryBase(empty);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		PlanValueCatalog.Builder tree = PlanValueCatalog.Builder.compiledTree();
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source, tree);
+		planner.islandScopeChanges = true;
+		Projection nested = new Projection(valuesPair("term", outerTerm, nestedTerm),
+				new ProjectionElemList(new ProjectionElem("term")), true);
+		nested.setVariableScopeChange(true);
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(75L, true);
+		RowState row = null;
+		try {
+			assertThat(source.idOf(outerTerm)).isEqualTo(outerId);
+			SlotPlan compiled = planner.compileTuple(nested, false);
+			assertThat(compiled).isInstanceOf(NativeSubqueryPlan.class);
+			assertThat(((NativeSubqueryPlan) compiled).describe()).contains("NativeRows");
+			planner.layout.freeze(planner.slotNames);
+			tree.freeze();
+			row = new RowState(source, planner.layout, empty);
+			row.fusedSession = session;
+			row.setInvocationStrategy(strategy.forInvocation(source, session, source.executionContext()));
+			assertThat(NativeRowSeeder.seed(row.slots, row.layout, empty, source)).isTrue();
+			row.recomputeBoundMask();
+			List<String> labels = new ArrayList<>();
+			try (RowCursor cursor = compiled.open(row)) {
+				while (cursor.next()) {
+					labels.add(((Literal) row.view.getValue("term")).getLabel());
+				}
+			}
+			assertThat(labels).containsExactlyInAnyOrder("outer lexical spelling", "nested lexical spelling");
+		} finally {
+			if (row != null) {
+				row.closeDecodedInputs();
+			}
+			source.executionContext().close();
+			session.close();
+		}
+	}
+
+	@Test
+	void nestedExtensionConstantsPreserveDistinctPlanTerms() throws Exception {
+		Literal outerTerm = VF.createLiteral("outer extension spelling");
+		Literal nestedTerm = VF.createLiteral("nested extension spelling");
+		PlanValueCatalog.Builder outerCatalog = new PlanValueCatalog.Builder();
+		long outerId = outerCatalog.internConstant(outerTerm);
+		PlanValueCatalog.Builder separateCatalog = new PlanValueCatalog.Builder();
+		assertThat(separateCatalog.internConstant(nestedTerm)).isEqualTo(outerId);
+		SyntheticValueSource source = new SyntheticValueSource(new SingleStatementSource(), outerCatalog.build())
+				.forEvaluation();
+		BindingSet empty = EmptyBindingSet.getInstance();
+		source.executionContext().initializeQueryBase(empty);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		PlanValueCatalog.Builder tree = PlanValueCatalog.Builder.compiledTree();
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source, tree);
+		planner.islandScopeChanges = true;
+		TupleExpr terms = new Union(
+				new Extension(new SingletonSet(), new ExtensionElem(new ValueConstant(outerTerm), "term")),
+				new Extension(new SingletonSet(), new ExtensionElem(new ValueConstant(nestedTerm), "term")));
+		Projection nested = new Projection(terms, new ProjectionElemList(new ProjectionElem("term")), true);
+		nested.setVariableScopeChange(true);
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(78L, true);
+		RowState row = null;
+		try {
+			SlotPlan compiled = planner.compileTuple(nested, false);
+			assertThat(compiled).isInstanceOf(NativeSubqueryPlan.class);
+			assertThat(((NativeSubqueryPlan) compiled).describe()).contains("NativeRows");
+			planner.layout.freeze(planner.slotNames);
+			tree.freeze();
+			row = new RowState(source, planner.layout, empty);
+			row.fusedSession = session;
+			row.setInvocationStrategy(strategy.forInvocation(source, session, source.executionContext()));
+			assertThat(NativeRowSeeder.seed(row.slots, row.layout, empty, source)).isTrue();
+			row.recomputeBoundMask();
+			List<String> labels = new ArrayList<>();
+			try (RowCursor cursor = compiled.open(row)) {
+				while (cursor.next()) {
+					labels.add(((Literal) row.view.getValue("term")).getLabel());
+				}
+			}
+			assertThat(labels).containsExactlyInAnyOrder("outer extension spelling", "nested extension spelling");
+		} finally {
+			if (row != null) {
+				row.closeDecodedInputs();
+			}
+			source.executionContext().close();
+			session.close();
+		}
+	}
+
+	@Test
+	void nestedValuesKeepEqualSiblingRuntimeIdsInTheirOwnAuthorities() throws Exception {
+		SingleStatementSource store = new SingleStatementSource();
+		SyntheticValueSource first = SyntheticValueSource.forEvaluation(store);
+		SyntheticValueSource sibling = SyntheticValueSource.forEvaluation(store);
+		BindingSet empty = EmptyBindingSet.getInstance();
+		first.executionContext().initializeQueryBase(empty);
+		sibling.executionContext().initializeQueryBase(empty);
+		Literal firstTerm = VF.createLiteral("first runtime spelling");
+		Literal siblingTerm = VF.createLiteral("sibling runtime spelling");
+		long firstId = first.internComputedValue(firstTerm);
+		long siblingId = sibling.internComputedValue(siblingTerm);
+		assertThat(siblingId).as("independent runtime namespaces can assign the same number").isEqualTo(firstId);
+		assertThat(first.lazyValue(firstId)).isEqualTo(firstTerm);
+		assertThat(sibling.lazyValue(siblingId)).isEqualTo(siblingTerm);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, first);
+		planner.islandScopeChanges = true;
+		int outerSlot = planner.slot("outer");
+		Projection nested = new Projection(values("inner", VF.createLiteral("nested plan spelling")),
+				new ProjectionElemList(new ProjectionElem("inner")), true);
+		nested.setVariableScopeChange(true);
+		LmdbFusedSipFactorizedRuntime.Session firstSession = LmdbFusedSipFactorizedRuntime.create(76L, true);
+		LmdbFusedSipFactorizedRuntime.Session siblingSession = LmdbFusedSipFactorizedRuntime.create(77L, true);
+		LmdbFusedSipFactorizedRuntime.Session worker = siblingSession.worker();
+		RowState firstRow = null;
+		RowState siblingRow = null;
+		try {
+			SlotPlan compiled = planner.compileTuple(nested, false);
+			assertThat(compiled).isInstanceOf(NativeSubqueryPlan.class);
+			planner.layout.freeze(planner.slotNames);
+			firstRow = new RowState(first, planner.layout, empty);
+			firstRow.fusedSession = firstSession;
+			assertThat(NativeRowSeeder.seed(firstRow.slots, firstRow.layout, empty, first)).isTrue();
+			assertThat(firstRow.bind(outerSlot, firstId)).isTrue();
+			siblingRow = new RowState(sibling, planner.layout, empty);
+			siblingRow.fusedSession = worker;
+			assertThat(NativeRowSeeder.seed(siblingRow.slots, siblingRow.layout, empty, sibling)).isTrue();
+			assertThat(siblingRow.bind(outerSlot, siblingId)).isTrue();
+			NativeSubqueryPlan workerPlan = ((NativeSubqueryPlan) compiled).forWorker(
+					NativeScalarPlan.WorkerContext.forSource(sibling, context, worker, sibling.executionContext()));
+			try (RowCursor left = compiled.open(firstRow); RowCursor right = workerPlan.open(siblingRow)) {
+				assertThat(left.next()).isTrue();
+				assertThat(right.next()).isTrue();
+				assertThat(firstRow.view.getValue("outer")).isEqualTo(firstTerm);
+				assertThat(siblingRow.view.getValue("outer")).isEqualTo(siblingTerm);
+				assertThat(((Literal) firstRow.view.getValue("inner")).getLabel()).isEqualTo("nested plan spelling");
+				assertThat(((Literal) siblingRow.view.getValue("inner")).getLabel())
+						.isEqualTo("nested plan spelling");
+				assertThat(left.next()).isFalse();
+				assertThat(right.next()).isFalse();
+			}
+		} finally {
+			if (firstRow != null) {
+				firstRow.closeDecodedInputs();
+			}
+			if (siblingRow != null) {
+				siblingRow.closeDecodedInputs();
+			}
+			first.executionContext().close();
+			sibling.executionContext().close();
+			worker.close();
+			firstSession.close();
+			siblingSession.close();
+		}
+	}
+
+	@Test
+	void largeValuesPhysicalChildBindsWithoutRereadingPreparedRows() throws Exception {
+		List<BindingSet> valuesRows = new ArrayList<>();
+		List<Value> expected = new ArrayList<>();
+		Map<Value, Long> ids = new HashMap<>();
+		Map<Long, Value> terms = new HashMap<>();
+		for (int index = 0; index < 1024; index++) {
+			Value value = VF.createIRI("urn:test:prepared-value:" + index);
+			long id = ValueIds.createId(ValueIds.T_URI, index + 1L);
+			MapBindingSet bindings = new MapBindingSet(1);
+			bindings.addBinding("term", value);
+			valuesRows.add(bindings);
+			expected.add(value);
+			ids.put(value, id);
+			terms.put(id, value);
+		}
+		AtomicBoolean rejectRowReads = new AtomicBoolean();
+		AtomicBoolean rejectLookups = new AtomicBoolean();
+		AtomicInteger rowReads = new AtomicInteger();
+		AtomicInteger lookups = new AtomicInteger();
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("term"));
+		values.setBindingSets((BindingSetAssignment.RepeatableBindingSetSource) () -> {
+			if (rejectRowReads.get()) {
+				throw new AssertionError("prepared VALUES rows were read again");
+			}
+			rowReads.incrementAndGet();
+			return valuesRows.iterator();
+		});
+		Projection boundary = new Projection(values, new ProjectionElemList(new ProjectionElem("term")), true);
+		boundary.setVariableScopeChange(true);
+		NativeLmdbQuerySource.ParallelSource store = mock(NativeLmdbQuerySource.ParallelSource.class,
+				CALLS_REAL_METHODS);
+		when(store.idSpace()).thenReturn(store);
+		when(store.certifiesIdOrigins()).thenReturn(true);
+		when(store.valueLookupScope()).thenReturn(store);
+		when(store.resultValueScope()).thenReturn(store);
+		when(store.snapshotId()).thenReturn(1L);
+		Object storedIds = new Object();
+		Object lookupScope = new Object();
+		Object resultScope = new Object();
+		Object snapshot = new Object();
+		when(store.detachedDomainStamp()).thenReturn(new NativeLmdbQuerySource.DomainStamp(storedIds, lookupScope,
+				resultScope, snapshot, NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null));
+		when(store.idOf(any(Value.class))).thenAnswer(call -> {
+			if (rejectLookups.get()) {
+				throw new AssertionError("dictionary lookup during prepared child admission");
+			}
+			lookups.incrementAndGet();
+			return ids.getOrDefault(call.getArgument(0), UNKNOWN_ID);
+		});
+		doAnswer(call -> {
+			Value value = call.getArgument(0);
+			int mask = call.getArgument(1);
+			NativeLmdbQuerySource.IdLookup result = call.getArgument(2);
+			long id = store.idOf(value, mask);
+			result.set(id, id == UNKNOWN_ID ? NativeLmdbQuerySource.IdOrigin.ABSENT
+					: NativeLmdbQuerySource.IdOrigin.STORED);
+			return null;
+		}).when(store).idOfWithOrigin(any(Value.class), anyInt(), any(NativeLmdbQuerySource.IdLookup.class));
+		when(store.lazyValue(anyLong())).thenAnswer(call -> terms.get(call.getArgument(0)));
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(store);
+		BindingSet empty = EmptyBindingSet.getInstance();
+		source.executionContext().initializeQueryBase(empty);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		PlanValueCatalog.Builder tree = PlanValueCatalog.Builder.compiledTree();
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source, tree);
+		planner.islandScopeChanges = true;
+		LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(63L, 1 << 24, true);
+		RowState row = null;
+		try {
+			SlotPlan compiled = planner.compileTuple(boundary, false);
+			assertThat(compiled).as("the original compilation retains a native lexical child")
+					.isInstanceOf(NativeSubqueryPlan.class);
+			assertThat(rowReads.get()).as("the original compilation reads the VALUES input").isPositive();
+			planner.layout.freeze(planner.slotNames);
+			tree.freeze();
+			row = new RowState(source, planner.layout, empty, boundary);
+			row.fusedSession = root;
+			row.setInvocationStrategy(strategy.forInvocation(source, root, source.executionContext()));
+			assertThat(NativeRowSeeder.seed(row.slots, planner.layout, empty, source)).isTrue();
+			row.recomputeBoundMask();
+			int readsAfterCompilation = rowReads.get();
+			int lookupsAfterCompilation = lookups.get();
+			rejectRowReads.set(true);
+			rejectLookups.set(true);
+			NativeSubqueryPlan original = (NativeSubqueryPlan) compiled;
+			for (int attempt = 0; attempt < 2; attempt++) {
+				assertThat(original.estimateRows(row, row.boundMask())).isEqualTo(1024D);
+				NativeSubqueryPlan quoted = original.withPhysicalPlan(row);
+				assertThat(quoted).as("a compatible physical child remains eligible").isNotNull();
+				try (LmdbFusedSipFactorizedRuntime.Session worker = root.worker()) {
+					LmdbNativeEvaluationStrategy workerStrategy = row.workerStrategy(source, worker,
+							source.executionContext());
+					NativeScalarPlan.WorkerContext workerContext = NativeScalarPlan.WorkerContext.forSource(source,
+							context, worker, source.executionContext(), workerStrategy, boundary);
+					try (NativeWorkerPlanBinder binder = new NativeWorkerPlanBinder(workerContext)) {
+						assertThat(binder.bind(quoted)).isNotNull();
+					}
+				}
+			}
+			assertThat(rowReads.get()).isEqualTo(readsAfterCompilation);
+			assertThat(lookups.get()).isEqualTo(lookupsAfterCompilation);
+			NativeSubqueryPlan accepted = original.withPhysicalPlan(row);
+			assertThat(accepted).isNotNull();
+			rejectLookups.set(false);
+			List<Value> actual = new ArrayList<>();
+			try (RowCursor cursor = accepted.open(row)) {
+				while (cursor.next()) {
+					actual.add(row.view.getValue("term"));
+				}
+			}
+			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(rowReads.get()).isEqualTo(readsAfterCompilation);
+		} finally {
+			if (row != null) {
+				row.closeDecodedInputs();
+			}
+			source.executionContext().close();
+			root.close();
+		}
+	}
 
 	@Test
 	void semanticConditionCompilerPropagatesQueryFatalPreparationErrors() {
@@ -128,9 +1087,10 @@ class LmdbNativeAggregateValuesCompilerTest {
 		SlotPlan numericArm = ((UnionPlan) compiled).left;
 		assertThat(numericArm).isInstanceOf(ValuesPlan.class);
 		ValuesPlan values = (ValuesPlan) numericArm;
-		assertThat(values.rows).hasSize(1);
-		assertThat(values.rows[0].slots).containsExactly(planner.slot("name"));
-		assertThat(values.rows[0].values).containsExactly(INTEGER_ONE_ID);
+		assertThat(values.rowCount()).isEqualTo(1);
+		assertThat(values.rowSize(0)).isEqualTo(1);
+		assertThat(values.slotAt(0, 0)).isEqualTo(planner.slot("name"));
+		assertThat(values.valueAt(0, 0)).isEqualTo(INTEGER_ONE_ID);
 		assertThat(planner.pendingValueGuards)
 				.as("RDF-term VALUES rows must not become value-equality guards")
 				.isEmpty();
@@ -561,6 +1521,17 @@ class LmdbNativeAggregateValuesCompilerTest {
 		return assignment;
 	}
 
+	private static BindingSetAssignment valuesPair(String name, Value first, Value second) {
+		MapBindingSet left = new MapBindingSet(1);
+		left.addBinding(name, first);
+		MapBindingSet right = new MapBindingSet(1);
+		right.addBinding(name, second);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(name));
+		assignment.setBindingSets(List.of(left, right));
+		return assignment;
+	}
+
 	private static BindingSetAssignment unboundValues(String name) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(name));
@@ -634,6 +1605,17 @@ class LmdbNativeAggregateValuesCompilerTest {
 		@Override
 		public long idOf(Value value) {
 			return IDS.getOrDefault(value, UNKNOWN_ID);
+		}
+
+		@Override
+		public void idOfWithOrigin(Value value, int positionMask, IdLookup result) {
+			long id = idOf(value);
+			result.set(id, id == UNKNOWN_ID ? IdOrigin.ABSENT : IdOrigin.STORED);
+		}
+
+		@Override
+		public boolean certifiesIdOrigins() {
+			return true;
 		}
 
 		@Override

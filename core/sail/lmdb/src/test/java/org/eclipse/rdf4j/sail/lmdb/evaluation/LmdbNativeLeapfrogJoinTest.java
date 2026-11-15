@@ -383,6 +383,30 @@ public class LmdbNativeLeapfrogJoinTest {
 	}
 
 	@Test
+	public void parallelLeapfrogEvaluatesWorkerBoundFilters() {
+		String previousMinCandidates = System.getProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY);
+		String previousThreads = System.getProperty(PARALLEL_THREADS_PROPERTY);
+		System.setProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY, "1");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "4");
+		try {
+			openRepository();
+			String filtered = TRIANGLE.replace("}", "  FILTER(STR(?a) != \"" + EX + "a\")\n}");
+			List<String> expected = rowsWithNativeEngine(filtered, false);
+			assertThat(expected).isNotEmpty();
+			long parallelBefore = LmdbNativeLeapfrogJoin.PARALLEL_RUNS.get();
+
+			List<String> actual = rowsWithNativeEngine(filtered, true, WCOJ_STRATEGY);
+
+			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(LmdbNativeLeapfrogJoin.PARALLEL_RUNS.get()).as("parallel leapfrog engaged")
+					.isGreaterThan(parallelBefore);
+		} finally {
+			restore(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY, previousMinCandidates);
+			restore(PARALLEL_THREADS_PROPERTY, previousThreads);
+		}
+	}
+
+	@Test
 	public void fourCycleParallelLeapfrogMatchesSerialResults() {
 		String previousMinCandidates = System.getProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY);
 		String previousThreads = System.getProperty(PARALLEL_THREADS_PROPERTY);

@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.In;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -62,6 +63,17 @@ final class NativeScalarSubqueryValueEvaluator implements NativeBindingSetValueE
 
 	static NativeBindingSetValueEvaluator tryCompile(ValueExpr expression, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context) {
+		NativeScalarSubqueryValueEvaluator admitted = compileBound(expression, strategy, context);
+		if (admitted == null || strategy.enclosingFusedInvocation() != null) {
+			return admitted;
+		}
+		// The admitted step above proves the shape, but it was prepared without an invocation. Retain only a pinned
+		// recipe and bind it again to the actual row/worker owner before evaluating any input.
+		return new InvocationRecipe(GenericSubplanDescriptor.create(expression, strategy), strategy, context);
+	}
+
+	private static NativeScalarSubqueryValueEvaluator compileBound(ValueExpr expression,
+			LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
 		if (!(expression instanceof CompareSubQueryValueOperator operator)) {
 			return null;
 		}
@@ -99,14 +111,21 @@ final class NativeScalarSubqueryValueEvaluator implements NativeBindingSetValueE
 
 	@Override
 	public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
+		return evaluateInInvocation(bindings, executionContext, null, null);
+	}
+
+	@Override
+	public NativeValueOutcome evaluateInInvocation(BindingSet bindings, NativeExecutionContext executionContext,
+			NativeLmdbQuerySource source, LmdbFusedSipFactorizedRuntime.Session invocation) {
 		EVALUATIONS.incrementAndGet();
-		NativeValueOutcome leftOutcome = left.evaluate(bindings, executionContext);
+		NativeValueOutcome leftOutcome = left.evaluateInInvocation(bindings, executionContext, source, invocation);
 		if (!leftOutcome.isBound()) {
 			return NativeValueOutcome.ERROR;
 		}
 		Value leftValue = leftOutcome.value();
 		boolean result = quantifier == Quantifier.ALL;
-		SyntheticValueSource evaluationSource = executionContext == null ? null : executionContext.evaluationSource();
+		NativeLmdbQuerySource evaluationSource = source != null ? source
+				: executionContext == null ? null : executionContext.evaluationSource();
 		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(evaluationSource);
 				CloseableIteration<BindingSet> rows = subquery.evaluate(bindings)) {
 			while (rows.hasNext()) {
@@ -135,5 +154,70 @@ final class NativeScalarSubqueryValueEvaluator implements NativeBindingSetValueE
 			}
 		}
 		return NativeValueOutcome.bound(BooleanLiteral.valueOf(result));
+	}
+
+	/** Immutable semantic recipe; each actual invocation prepares and retains its own executable scalar step. */
+	private static final class InvocationRecipe implements NativeBindingSetValueEvaluator {
+		private final GenericSubplanDescriptor descriptor;
+		private final LmdbNativeEvaluationStrategy strategy;
+		private final QueryEvaluationContext context;
+
+		private InvocationRecipe(GenericSubplanDescriptor descriptor, LmdbNativeEvaluationStrategy strategy,
+				QueryEvaluationContext context) {
+			this.descriptor = descriptor;
+			this.strategy = strategy;
+			this.context = context;
+		}
+
+		@Override
+		public NativeValueOutcome evaluate(BindingSet bindings) {
+			throw new IllegalStateException("native scalar subquery requires an explicit invocation");
+		}
+
+		@Override
+		public NativeValueOutcome evaluateInInvocation(BindingSet bindings, NativeExecutionContext executionContext,
+				NativeLmdbQuerySource source, LmdbFusedSipFactorizedRuntime.Session invocation) {
+			throw new IllegalStateException("native scalar subquery requires an explicit preparation scope");
+		}
+
+		@Override
+		public NativeValueOutcome evaluateForRow(BindingSet bindings, RowState row) {
+			return evaluateInPreparation(bindings, row.executionContext(), row.preparationScope(row.source));
+		}
+
+		@Override
+		public NativeValueOutcome evaluateInPreparation(BindingSet bindings, NativeExecutionContext executionContext,
+				LmdbFusedSipFactorizedRuntime.PreparationScope preparation) {
+			NativeLmdbQuerySource source = preparation.source();
+			LmdbFusedSipFactorizedRuntime.Session invocation = preparation.session();
+			NativeBindingSetValueEvaluator evaluator = preparation.prepare(descriptor, () -> {
+				LmdbNativeEvaluationStrategy bound = strategy.forInvocation(source, invocation, executionContext);
+				QueryEvaluationContext scoped = executionContext == null ? context
+						: executionContext.genericInvocationContext(context, bound);
+				return descriptor.prepare(bound, () -> {
+					ValueExpr pinned = descriptor.pinnedExpr();
+					ValueExpr copy = pinned.clone();
+					NativeGraphFusion.linkLogicalOrigins(pinned, copy);
+					NativeValuePositionAnalysis positions = bound.copyValuePositions(pinned, copy);
+					NativeScalarSubqueryValueEvaluator scalar = bound.withValuePositions(positions,
+							() -> compileBound(copy, bound, scoped));
+					if (scalar != null) {
+						return scalar;
+					}
+					QueryValueEvaluationStep fallback = descriptor.precompileValue(bound, scoped);
+					return bindingsForFallback -> {
+						try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
+								.attachEvaluation(source)) {
+							try {
+								return NativeValueOutcome.bound(fallback.evaluate(bindingsForFallback));
+							} catch (ValueExprEvaluationException failure) {
+								return NativeValueOutcome.ERROR;
+							}
+						}
+					};
+				});
+			});
+			return evaluator.evaluateInPreparation(bindings, executionContext, preparation);
+		}
 	}
 }

@@ -13,12 +13,22 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
+
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Query-owned runtime shared by generated SIP guards, factorized batches and bind-time filter placement.
@@ -33,24 +43,9 @@ final class LmdbFusedSipFactorizedRuntime {
 	private static final int DEFAULT_SLOTS = 16;
 	private static final int MAX_DOMAIN_ID = 1 << 20;
 	private static final long DEFAULT_QUERY_BUDGET = Long.getLong("rdf4j.lmdb.native.fused.maxBytes", 8L << 20);
-	private static final ThreadLocal<Session> CURRENT = new ThreadLocal<>();
 	private static final LmdbRuntimeFilterRelocator RELOCATOR = new LmdbRuntimeFilterRelocator();
-	private static final Session NOOP = Session.noop();
 
 	private LmdbFusedSipFactorizedRuntime() {
-	}
-
-	static Scope enter(long queryKey) {
-		return enter(queryKey, DEFAULT_QUERY_BUDGET, true);
-	}
-
-	static Scope enter(long queryKey, long maximumBytes) {
-		return enter(queryKey, maximumBytes, true);
-	}
-
-	static Scope enter(long queryKey, long maximumBytes, boolean telemetryEnabled) {
-		Session session = create(queryKey, maximumBytes, telemetryEnabled);
-		return new Scope(CURRENT.get(), session, true);
 	}
 
 	static Session create(long queryKey, boolean telemetryEnabled) {
@@ -58,98 +53,129 @@ final class LmdbFusedSipFactorizedRuntime {
 	}
 
 	static Session create(long queryKey, long maximumBytes, boolean telemetryEnabled) {
-		return new Session(queryKey, maximumBytes, telemetryEnabled, null);
-	}
-
-	/** Attaches an existing session to the current thread without taking ownership of it. */
-	static Scope attach(Session session) {
-		return new Scope(CURRENT.get(), session == null ? NOOP : session, false);
-	}
-
-	/** Creates a worker-confined child whose counters and immutable domains are shared with {@code parent}. */
-	static Scope inherit(Session parent) {
-		Session child = parent == null || parent.noop ? NOOP
-				: new Session(parent.queryKey, parent.maximumBytes, parent.shared.telemetryEnabled, parent);
-		return new Scope(CURRENT.get(), child, child != NOOP);
-	}
-
-	static Session currentOrNull() {
-		Session session = CURRENT.get();
-		return session == NOOP ? null : session;
-	}
-
-	static Session current() {
-		Session session = CURRENT.get();
-		return session == null ? NOOP : session;
-	}
-
-	static boolean mayContain(int domainId, long value) {
-		return current().mayContain(domainId, value);
-	}
-
-	static final class Scope implements AutoCloseable {
-		private final Session previous;
-		private final Session session;
-		private final boolean closeSession;
-		private boolean closed;
-
-		Scope(Session previous, Session session, boolean closeSession) {
-			this.previous = previous;
-			this.session = session;
-			this.closeSession = closeSession;
-			CURRENT.set(session);
-		}
-
-		Session session() {
-			return session;
-		}
-
-		@Override
-		public void close() {
-			if (!closed) {
-				closed = true;
-				if (closeSession) {
-					session.close();
-				}
-				if (previous == null) {
-					CURRENT.remove();
-				} else {
-					CURRENT.set(previous);
-				}
-			}
-		}
+		return new Session(queryKey, maximumBytes, telemetryEnabled, null, false, null, null);
 	}
 
 	static final class Session implements AutoCloseable {
 		private final long queryKey;
 		private final long maximumBytes;
 		private final Session parent;
+		/** The lifetime parent may have independent telemetry, but always shares the query budget. */
+		private final Session lifetimeParent;
 		private final Shared shared;
-		private final boolean noop;
+		private final DomainRegistry domains;
+		private final boolean ownsDomains;
+		private final LmdbFusedKernelRuntime runtime;
 		private LmdbFactorizedBatch batch;
+		private long batchClaimedBytes;
 		private LmdbRuntimeFilterRelocator.Schedule schedule;
-		private boolean closed;
+		private volatile boolean closed;
+		private boolean ownerReleased;
+		private int references = 1;
+		private Runnable finalCloseAction;
 
-		private Session(long queryKey, long maximumBytes, boolean telemetryEnabled, Session parent) {
+		private Session(long queryKey, long maximumBytes, boolean telemetryEnabled, Session parent,
+				boolean shareDomains, Budget inheritedBudget, Session lifetimeParent) {
 			this.queryKey = queryKey;
 			this.maximumBytes = Math.max(0, maximumBytes);
 			this.parent = parent;
-			this.noop = false;
-			this.shared = parent == null ? new Shared(this.maximumBytes, telemetryEnabled) : parent.shared;
-			this.schedule = parent == null ? new LmdbRuntimeFilterRelocator.Schedule(DEFAULT_SLOTS) : parent.schedule;
+			this.lifetimeParent = lifetimeParent;
+			this.shared = parent == null ? new Shared(this.maximumBytes, telemetryEnabled, inheritedBudget)
+					: parent.shared;
+			this.ownsDomains = parent == null || !shareDomains;
+			this.domains = ownsDomains ? new DomainRegistry() : parent.domains;
+			this.runtime = new LmdbFusedKernelRuntime(this);
+			this.schedule = ownsDomains ? new LmdbRuntimeFilterRelocator.Schedule(DEFAULT_SLOTS) : parent.schedule;
+			if (ownsDomains) {
+				shared.addDomains(domains);
+			}
 		}
 
-		private Session() {
-			queryKey = 0L;
-			maximumBytes = 0L;
-			parent = null;
-			noop = true;
-			shared = Shared.noop();
-			schedule = new LmdbRuntimeFilterRelocator.Schedule(1);
+		LmdbFusedKernelRuntime runtime() {
+			return runtime;
 		}
 
-		static Session noop() {
-			return new Session();
+		/** A source- and attempt-confined preparation directory with an independently bounded lifetime. */
+		synchronized PreparationScope preparationScope(NativeLmdbQuerySource source, Object attempt) {
+			if (closed) {
+				throw new IllegalStateException("cannot prepare under a closed fused runtime");
+			}
+			return new PreparationScope(this, source, attempt);
+		}
+
+		/** A separately bound kernel shares the query account and telemetry, but never another binding's ordinals. */
+		synchronized Session binding() {
+			if (closed) {
+				throw new IllegalStateException("cannot bind a closed fused runtime");
+			}
+			return child(queryKey, shared.telemetryEnabled, this, false, null);
+		}
+
+		/** A worker shares its binding's immutable domains and query account, but owns its mutable batch. */
+		synchronized Session worker() {
+			if (closed) {
+				throw new IllegalStateException("cannot fork a closed fused runtime");
+			}
+			return child(queryKey, shared.telemetryEnabled, this, true, null);
+		}
+
+		/** A nested invocation has independent telemetry and ordinals, under its enclosing query's byte ceiling. */
+		synchronized Session invocation(long nestedQueryKey, boolean telemetryEnabled) {
+			if (closed) {
+				throw new IllegalStateException("cannot invoke under a closed fused runtime");
+			}
+			return child(nestedQueryKey, telemetryEnabled, null, false, shared.budget);
+		}
+
+		/** The caller holds this monitor; every child keeps its actual parent alive until final release. */
+		private Session child(long key, boolean telemetryEnabled, Session sharedParent, boolean shareDomains,
+				Budget inheritedBudget) {
+			references = Math.incrementExact(references);
+			try {
+				return new Session(key, maximumBytes, telemetryEnabled, sharedParent, shareDomains, inheritedBudget,
+						this);
+			} catch (RuntimeException | Error failure) {
+				references--;
+				throw failure;
+			}
+		}
+
+		/** Retains only this runtime chain; it never retains an execution context or a cached replay owner. */
+		synchronized Lease retain() {
+			if (closed) {
+				throw new IllegalStateException("cannot retain a closed fused runtime");
+			}
+			Lease lease = new Lease(this);
+			references = Math.incrementExact(references);
+			return lease;
+		}
+
+		/** Publishes telemetry after the last child or replay lease drains, before the runtime is cleared. */
+		synchronized void onFinalClose(Runnable action) {
+			if (closed || finalCloseAction != null) {
+				throw new IllegalStateException("fused runtime close action already set or runtime closed");
+			}
+			finalCloseAction = Objects.requireNonNull(action, "action");
+		}
+
+		static final class Lease implements AutoCloseable {
+			private Session session;
+
+			private Lease(Session session) {
+				this.session = session;
+			}
+
+			@Override
+			public void close() {
+				Session active;
+				synchronized (this) {
+					active = session;
+					session = null;
+				}
+				if (active != null) {
+					active.releaseReference();
+				}
+			}
 		}
 
 		long queryKey() {
@@ -157,39 +183,32 @@ final class LmdbFusedSipFactorizedRuntime {
 		}
 
 		boolean telemetryEnabled() {
-			return !noop && shared.telemetryEnabled;
+			return shared.telemetryEnabled;
 		}
 
-		boolean claim(long bytes) {
-			if (noop || bytes <= 0) {
+		synchronized boolean claim(long bytes) {
+			if (closed) {
+				throw new IllegalStateException("cannot claim under a closed fused runtime");
+			}
+			if (bytes <= 0) {
 				return true;
 			}
-			for (;;) {
-				long current = shared.usedBytes.get();
-				long next = current + bytes;
-				if (next < current || next > maximumBytes) {
-					shared.memoryRefusals.increment();
-					return false;
-				}
-				if (shared.usedBytes.compareAndSet(current, next)) {
-					return true;
-				}
-			}
+			return shared.claim(bytes, maximumBytes);
 		}
 
 		/** Query-ledger bytes not currently claimed; advisory because sibling workers may claim concurrently. */
 		long remainingBytes() {
-			return noop ? Long.MAX_VALUE : Math.max(0L, maximumBytes - shared.usedBytes.get());
+			return Math.max(0L, maximumBytes - shared.budget.usedBytes.get());
 		}
 
 		/** Allocation refusals within this query's shared budget, including its child sessions. */
 		long memoryRefusals() {
-			return noop ? 0L : shared.memoryRefusals.sum();
+			return shared.memoryRefusals.sum();
 		}
 
 		void release(long bytes) {
-			if (!noop && bytes > 0) {
-				shared.usedBytes.addAndGet(-bytes);
+			if (bytes > 0) {
+				shared.release(bytes);
 			}
 		}
 
@@ -197,34 +216,33 @@ final class LmdbFusedSipFactorizedRuntime {
 			installDomain(domainId, "domain[" + domainId + "]", "unspecified", domain, 0L, 0L);
 		}
 
+		boolean domainInstalled(int domainId) {
+			return domains.domain(domainId) != null;
+		}
+
 		void installDomain(int domainId, String label, String producer, LmdbNativeSipFilter.Domain domain,
 				long buildNanos, long claimedBytes) {
-			if (noop || domainId < 0 || domainId >= MAX_DOMAIN_ID) {
+			if (domainId < 0 || domainId >= MAX_DOMAIN_ID) {
 				return;
 			}
 			LmdbNativeSipFilter.Domain installed = domain == null ? LmdbNativeSipFilter.ALL : domain;
-			shared.installDomain(domainId, label, producer, installed, buildNanos, claimedBytes);
+			domains.installDomain(domainId, label, producer, installed, buildNanos, claimedBytes);
 		}
 
 		void registerDomainConsumer(int domainId, String consumer) {
-			if (!noop) {
-				DomainStats stats = shared.domain(domainId);
-				if (stats != null && consumer != null && !consumer.isBlank()) {
-					stats.consumers.add(consumer);
-				}
+			DomainStats stats = domains.domain(domainId);
+			if (stats != null && consumer != null && !consumer.isBlank()) {
+				stats.consumers.add(consumer);
 			}
 		}
 
 		LmdbNativeSipFilter.Domain domain(int domainId) {
-			DomainStats stats = noop ? null : shared.domain(domainId);
+			DomainStats stats = domains.domain(domainId);
 			return stats == null ? LmdbNativeSipFilter.ALL : stats.domain;
 		}
 
 		boolean mayContain(int domainId, long value) {
-			if (noop) {
-				return true;
-			}
-			DomainStats stats = shared.domain(domainId);
+			DomainStats stats = domains.domain(domainId);
 			if (stats == null || stats.domain == LmdbNativeSipFilter.ALL) {
 				shared.sipBypasses.increment();
 				return true;
@@ -240,11 +258,11 @@ final class LmdbFusedSipFactorizedRuntime {
 		}
 
 		void recordSipBatch(int domainId, String consumer, long tested, long rejected) {
-			if (noop || tested <= 0) {
+			if (tested <= 0) {
 				return;
 			}
 			long boundedRejected = Math.max(0L, Math.min(tested, rejected));
-			DomainStats stats = shared.domain(domainId);
+			DomainStats stats = domains.domain(domainId);
 			if (stats == null || stats.domain == LmdbNativeSipFilter.ALL) {
 				shared.sipBypasses.add(tested);
 				return;
@@ -261,10 +279,10 @@ final class LmdbFusedSipFactorizedRuntime {
 		}
 
 		void recordDomainDriven(int domainId, String consumer, long rows) {
-			if (noop || rows <= 0) {
+			if (rows <= 0) {
 				return;
 			}
-			DomainStats stats = shared.domain(domainId);
+			DomainStats stats = domains.domain(domainId);
 			if (stats == null || stats.domain == LmdbNativeSipFilter.ALL) {
 				return;
 			}
@@ -282,7 +300,7 @@ final class LmdbFusedSipFactorizedRuntime {
 		 */
 		void recordImplicitSip(String label, String producer, String consumer, String representation, boolean exact,
 				long cardinalityUpperBound, long tested, long rejected, long drivenRows) {
-			if (noop || (tested <= 0 && drivenRows <= 0)) {
+			if (tested <= 0 && drivenRows <= 0) {
 				return;
 			}
 			long boundedTested = Math.max(0L, tested);
@@ -307,10 +325,7 @@ final class LmdbFusedSipFactorizedRuntime {
 		}
 
 		int compactSorted(int domainId, long[] values, int from, int length) {
-			if (noop) {
-				return length;
-			}
-			DomainStats stats = shared.domain(domainId);
+			DomainStats stats = domains.domain(domainId);
 			if (stats == null || stats.domain == LmdbNativeSipFilter.ALL) {
 				shared.sipBypasses.add(length);
 				return length;
@@ -327,14 +342,14 @@ final class LmdbFusedSipFactorizedRuntime {
 		}
 
 		LmdbFactorizedBatch batch(int rootCapacity, int levels) {
-			if (noop) {
-				return new LmdbFactorizedBatch(rootCapacity, levels);
-			}
 			if (batch == null) {
+				long previousClaimed = batchClaimedBytes;
 				try {
-					batch = new LmdbFactorizedBatch(rootCapacity, levels, this::claim);
+					batch = new LmdbFactorizedBatch(rootCapacity, levels, this::claimBatch, this);
 					markFactorizationMode("CSR_BATCH");
 				} catch (LmdbFactorizedBatch.FactorizationRefused refused) {
+					release(batchClaimedBytes - previousClaimed);
+					batchClaimedBytes = previousClaimed;
 					shared.factorizationRefusals.increment();
 					return null;
 				}
@@ -343,15 +358,23 @@ final class LmdbFusedSipFactorizedRuntime {
 			return batch;
 		}
 
+		private boolean claimBatch(long bytes) {
+			if (!claim(bytes)) {
+				return false;
+			}
+			batchClaimedBytes += bytes;
+			return true;
+		}
+
 		void markFactorizationMode(String mode) {
-			if (!noop && mode != null) {
+			if (mode != null) {
 				shared.factorizationModes.add(mode);
 			}
 		}
 
 		/** Counts one kernel bind under {@code "<identity> route=<route>"} so telemetry names what actually ran. */
 		void recordKernelBind(String route, String identity) {
-			if (!noop && route != null && identity != null) {
+			if (route != null && identity != null) {
 				shared.kernelBinds.computeIfAbsent(identity + " route=" + route, ignored -> new LongAdder())
 						.increment();
 			}
@@ -360,9 +383,6 @@ final class LmdbFusedSipFactorizedRuntime {
 		void recordFactorizedLevel(long rootRows, long parentRows, long candidates, long storedLanes,
 				long rejectedBeforeMaterialization, long optionalNullLanes, long flatEquivalentRows,
 				long multiplicityExtra) {
-			if (noop) {
-				return;
-			}
 			shared.factorRootRows.add(Math.max(0, rootRows));
 			shared.factorParentRows.add(Math.max(0, parentRows));
 			shared.factorCandidateRows.add(Math.max(0, candidates));
@@ -374,20 +394,18 @@ final class LmdbFusedSipFactorizedRuntime {
 		}
 
 		void recordMaterializationBoundary(long rows) {
-			if (!noop) {
-				shared.materializationBoundaries.increment();
-				shared.flattenedValues.add(Math.max(0, rows));
-			}
+			shared.materializationBoundaries.increment();
+			shared.flattenedValues.add(Math.max(0, rows));
 		}
 
 		void addFlattenedValues(long count) {
-			if (!noop && count > 0) {
+			if (count > 0) {
 				shared.flattenedValues.add(count);
 			}
 		}
 
 		void addRelocatedFilterTests(long count) {
-			if (!noop && count > 0) {
+			if (count > 0) {
 				shared.relocatedFilterTests.add(count);
 			}
 		}
@@ -398,9 +416,6 @@ final class LmdbFusedSipFactorizedRuntime {
 
 		void recordFilterPlacement(int filterKey, String label, int originalStage, int selectedStage,
 				boolean learned) {
-			if (noop) {
-				return;
-			}
 			FilterStats stats = shared.filters.computeIfAbsent(filterKey,
 					key -> new FilterStats(filterKey, label == null ? "filter#" + filterKey : label));
 			stats.originalStage = originalStage;
@@ -420,7 +435,7 @@ final class LmdbFusedSipFactorizedRuntime {
 
 		void observeFilter(int filterKey, String label, int originalStage, int selectedStage, long tested,
 				long accepted, long elapsedNanos, long downstreamRowsAvoided) {
-			if (noop || tested <= 0 || accepted < 0 || accepted > tested || elapsedNanos < 0) {
+			if (tested <= 0 || accepted < 0 || accepted > tested || elapsedNanos < 0) {
 				return;
 			}
 			FilterStats stats = shared.filters.computeIfAbsent(filterKey,
@@ -440,29 +455,329 @@ final class LmdbFusedSipFactorizedRuntime {
 		}
 
 		Telemetry telemetry() {
-			if (noop) {
-				return Telemetry.EMPTY;
-			}
 			return shared.snapshot(queryKey);
 		}
 
 		@Override
 		public void close() {
-			if (!closed) {
+			synchronized (this) {
+				if (ownerReleased) {
+					return;
+				}
+				ownerReleased = true;
+			}
+			releaseReference();
+		}
+
+		private void releaseReference() {
+			long batchBytes;
+			Runnable action;
+			synchronized (this) {
+				if (references <= 0) {
+					throw new IllegalStateException("fused runtime released more than once");
+				}
+				if (--references != 0) {
+					return;
+				}
 				closed = true;
 				batch = null;
-				if (parent == null && !noop) {
-					shared.clear();
+				batchBytes = batchClaimedBytes;
+				batchClaimedBytes = 0L;
+				action = finalCloseAction;
+				finalCloseAction = null;
+			}
+			Throwable failure = action == null ? null : KernelRuntime.closeResource(action::run, null);
+			failure = KernelRuntime.closeResource(() -> release(batchBytes), failure);
+			if (ownsDomains) {
+				failure = KernelRuntime.closeResource(() -> shared.removeDomains(domains), failure);
+				failure = KernelRuntime.closeResource(domains::clear, failure);
+			}
+			if (parent == null) {
+				failure = KernelRuntime.closeResource(shared::clear, failure);
+			}
+			if (lifetimeParent != null) {
+				failure = KernelRuntime.closeResource(lifetimeParent::releaseReference, failure);
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+	}
+
+	/**
+	 * Prepared callbacks are owned by an active source/attempt, never by a query-long session. The owner closes this
+	 * scope after its cursors and workers finish. Admission bounds the retained directory; when it is refused the
+	 * callback is used without retention. Entries are non-owning recipes or callbacks: their source, session, and any
+	 * active cursor remain owned by the enclosing invocation. A callback that creates a closeable candidate or lease
+	 * must register that resource with its explicit attempt/candidate owner, not rely on this directory's clear.
+	 * Compiled query-plan objects remain ordinary plan allocations.
+	 */
+	static final class PreparationScope implements AutoCloseable {
+		private static final long ENTRY_RESERVATION_BYTES = 256L;
+		private final Session session;
+		private final boolean cacheAllowed;
+		private volatile NativeLmdbQuerySource source;
+		private volatile Object attempt;
+		private IdentityHashMap<Object, Object> entries;
+		private IdentityHashMap<Object, Boolean> initializing;
+		private long reservedBytes;
+		private boolean closed;
+
+		private PreparationScope(Session session, NativeLmdbQuerySource source, Object attempt) {
+			this(session, source, attempt, true, 0L);
+		}
+
+		private PreparationScope(Session session, NativeLmdbQuerySource source, Object attempt,
+				boolean cacheAllowed, long reservation) {
+			this.session = session;
+			this.cacheAllowed = cacheAllowed;
+			this.source = Objects.requireNonNull(source, "source");
+			this.attempt = attempt;
+			this.reservedBytes = reservation;
+		}
+
+		Session session() {
+			return session;
+		}
+
+		NativeLmdbQuerySource source() {
+			return source;
+		}
+
+		Object attempt() {
+			return attempt;
+		}
+
+		@SuppressWarnings("unchecked")
+		synchronized <T> T prepare(Object recipe, Supplier<T> factory) {
+			if (closed) {
+				throw new IllegalStateException("preparation scope is closed");
+			}
+			if (session.closed) {
+				throw new IllegalStateException("preparation scope outlived its fused runtime");
+			}
+			Object cached = entries == null ? null : entries.get(recipe);
+			if (cached != null) {
+				return (T) cached;
+			}
+			if (initializing == null) {
+				initializing = new IdentityHashMap<>();
+			}
+			if (initializing.put(recipe, Boolean.TRUE) != null) {
+				throw new IllegalStateException("recursive native callback preparation");
+			}
+			boolean admitted = false;
+			try {
+				admitted = cacheAllowed && session.claim(ENTRY_RESERVATION_BYTES);
+				T prepared = Objects.requireNonNull(factory.get(), "prepared callback");
+				if (closed || session.closed) {
+					throw new IllegalStateException("preparation owner closed while preparing a callback");
 				}
+				if (admitted) {
+					if (entries == null) {
+						entries = new IdentityHashMap<>();
+					}
+					entries.put(recipe, prepared);
+					reservedBytes += ENTRY_RESERVATION_BYTES;
+				}
+				return prepared;
+			} catch (RuntimeException | Error failure) {
+				if (admitted) {
+					session.release(ENTRY_RESERVATION_BYTES);
+				}
+				throw failure;
+			} finally {
+				initializing.remove(recipe);
+				if (closed && initializing.isEmpty()) {
+					initializing = null;
+				}
+			}
+		}
+
+		@Override
+		public synchronized void close() {
+			if (!closed) {
+				closed = true;
+				if (entries != null) {
+					entries.clear();
+					entries = null;
+				}
+				// A reentrant close can occur from the factory currently holding this monitor. Keep its recursion
+				// markers until the factory unwinds; prepare() rejects publication and returns the in-flight claim.
+				if (initializing != null && initializing.isEmpty()) {
+					initializing = null;
+				}
+				source = null;
+				attempt = null;
+				session.release(reservedBytes);
+				reservedBytes = 0L;
 			}
 		}
 	}
 
+	/** One speculative or accepted producer attempt, independent of whether telemetry is enabled. */
+	static final class PreparationAttempt implements AutoCloseable {
+		private static final long SCOPE_RESERVATION_BYTES = 256L;
+		private final PreparationAttempt parent;
+		private final Object owner;
+		private IdentityHashMap<Session, IdentityHashMap<NativeLmdbQuerySource, PreparationScope>> scopes;
+		private Set<PreparationAttempt> children;
+		private Set<NativePhysicalPreparation> physicalPreparations;
+		private boolean closed;
+
+		PreparationAttempt(PreparationAttempt parent, Object owner) {
+			this.parent = parent;
+			this.owner = Objects.requireNonNull(owner, "owner");
+			if (parent != null) {
+				parent.addChild(this);
+			}
+		}
+
+		private synchronized void addChild(PreparationAttempt child) {
+			if (closed) {
+				throw new IllegalStateException("cannot create a child of a closed preparation attempt");
+			}
+			if (children == null) {
+				children = Collections.newSetFromMap(new IdentityHashMap<>());
+			}
+			children.add(child);
+		}
+
+		private synchronized void removeChild(PreparationAttempt child) {
+			if (children != null) {
+				children.remove(child);
+			}
+		}
+
+		synchronized void registerPhysicalPreparation(NativePhysicalPreparation preparation) {
+			if (closed) {
+				throw new IllegalStateException("cannot register a physical candidate on a closed attempt");
+			}
+			if (physicalPreparations == null) {
+				physicalPreparations = Collections.newSetFromMap(new IdentityHashMap<>());
+			}
+			physicalPreparations.add(preparation);
+		}
+
+		synchronized void unregisterPhysicalPreparation(NativePhysicalPreparation preparation) {
+			if (physicalPreparations != null) {
+				physicalPreparations.remove(preparation);
+			}
+		}
+
+		PreparationAttempt parent() {
+			return parent;
+		}
+
+		boolean ownedBy(Object token) {
+			return owner == token;
+		}
+
+		synchronized PreparationScope scope(Session session, NativeLmdbQuerySource source) {
+			if (closed) {
+				throw new IllegalStateException("preparation attempt is closed");
+			}
+			IdentityHashMap<NativeLmdbQuerySource, PreparationScope> sources = scopes == null ? null
+					: scopes.get(session);
+			PreparationScope existing = sources == null ? null : sources.get(source);
+			if (existing != null) {
+				return existing;
+			}
+			if (!session.claim(SCOPE_RESERVATION_BYTES)) {
+				// Nothing holds the transient directory after its caller returns, so refusal cannot retain a source.
+				return new PreparationScope(session, source, this, false, 0L);
+			}
+			try {
+				PreparationScope created = new PreparationScope(session, source, this, true, SCOPE_RESERVATION_BYTES);
+				if (scopes == null) {
+					scopes = new IdentityHashMap<>();
+				}
+				if (sources == null) {
+					sources = new IdentityHashMap<>();
+					scopes.put(session, sources);
+				}
+				sources.put(source, created);
+				return created;
+			} catch (RuntimeException | Error failure) {
+				session.release(SCOPE_RESERVATION_BYTES);
+				throw failure;
+			}
+		}
+
+		void closeSession(Session session) {
+			IdentityHashMap<NativeLmdbQuerySource, PreparationScope> removed;
+			List<PreparationAttempt> activeChildren;
+			List<NativePhysicalPreparation> physical;
+			synchronized (this) {
+				removed = scopes == null ? null : scopes.remove(session);
+				activeChildren = children == null ? List.of() : List.copyOf(children);
+				physical = physicalPreparations == null ? List.of() : List.copyOf(physicalPreparations);
+			}
+			Throwable failure = null;
+			for (PreparationAttempt child : activeChildren) {
+				failure = KernelRuntime.closeResource(() -> child.closeSession(session), failure);
+			}
+			for (NativePhysicalPreparation candidate : physical) {
+				if (candidate.usesSession(session)) {
+					failure = KernelRuntime.closeResource(candidate, failure);
+				}
+			}
+			if (removed != null) {
+				for (PreparationScope scope : removed.values()) {
+					failure = KernelRuntime.closeResource(scope, failure);
+				}
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+
+		@Override
+		public void close() {
+			IdentityHashMap<Session, IdentityHashMap<NativeLmdbQuerySource, PreparationScope>> removed;
+			List<PreparationAttempt> activeChildren;
+			List<NativePhysicalPreparation> physical;
+			synchronized (this) {
+				if (closed) {
+					return;
+				}
+				closed = true;
+				removed = scopes;
+				scopes = null;
+				activeChildren = children == null ? List.of() : List.copyOf(children);
+				children = null;
+				physical = physicalPreparations == null ? List.of() : List.copyOf(physicalPreparations);
+				physicalPreparations = null;
+			}
+			Throwable failure = null;
+			for (PreparationAttempt child : activeChildren) {
+				failure = KernelRuntime.closeResource(child, failure);
+			}
+			for (NativePhysicalPreparation candidate : physical) {
+				failure = KernelRuntime.closeResource(candidate, failure);
+			}
+			if (removed != null) {
+				for (IdentityHashMap<NativeLmdbQuerySource, PreparationScope> sources : removed.values()) {
+					for (PreparationScope scope : sources.values()) {
+						failure = KernelRuntime.closeResource(scope, failure);
+					}
+				}
+			}
+			if (parent != null) {
+				parent.removeChild(this);
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+	}
+
+	private static final class Budget {
+		private final AtomicLong usedBytes = new AtomicLong();
+	}
+
 	private static final class Shared {
 		private final boolean telemetryEnabled;
+		private final Budget budget;
 		private final AtomicLong usedBytes = new AtomicLong();
+		private boolean closed;
 		private final LongAdder memoryRefusals = new LongAdder();
-		private volatile DomainStats[] domains = new DomainStats[DEFAULT_SLOTS];
+		private final Set<DomainRegistry> activeDomains = ConcurrentHashMap.newKeySet();
+		private final Map<List<?>, DomainTelemetry> completedDomains = new LinkedHashMap<>();
 		private final ConcurrentHashMap<String, DomainStats> implicitDomains = new ConcurrentHashMap<>();
 		private final LongAdder sipTests = new LongAdder();
 		private final LongAdder sipRejects = new LongAdder();
@@ -486,13 +801,106 @@ final class LmdbFusedSipFactorizedRuntime {
 		/** Bind counts per {@code "<kernel identity> route=<route>"}; workers share the query's map. */
 		private final ConcurrentHashMap<String, LongAdder> kernelBinds = new ConcurrentHashMap<>();
 
-		private Shared(long maximumBytes, boolean telemetryEnabled) {
+		private Shared(long maximumBytes, boolean telemetryEnabled, Budget budget) {
 			this.telemetryEnabled = telemetryEnabled;
+			this.budget = budget == null ? new Budget() : budget;
 		}
 
-		private static Shared noop() {
-			return new Shared(0L, false);
+		private synchronized boolean claim(long bytes, long maximumBytes) {
+			if (closed) {
+				throw new IllegalStateException("fused invocation is closed");
+			}
+			for (;;) {
+				long current = budget.usedBytes.get();
+				long next = current + bytes;
+				if (next < current || next > maximumBytes) {
+					memoryRefusals.increment();
+					return false;
+				}
+				if (budget.usedBytes.compareAndSet(current, next)) {
+					usedBytes.addAndGet(bytes);
+					return true;
+				}
+			}
 		}
+
+		private synchronized void release(long bytes) {
+			usedBytes.addAndGet(-bytes);
+			budget.usedBytes.addAndGet(-bytes);
+		}
+
+		private void addDomains(DomainRegistry domains) {
+			activeDomains.add(domains);
+		}
+
+		private synchronized void removeDomains(DomainRegistry domains) {
+			if (activeDomains.remove(domains) && telemetryEnabled) {
+				for (DomainStats stats : domains.snapshot()) {
+					if (stats != null) {
+						mergeDomain(completedDomains, stats.snapshot());
+					}
+				}
+			}
+		}
+
+		private DomainStats implicitDomain(String label, String producer, String representation, boolean exact,
+				long cardinalityUpperBound) {
+			String resolvedLabel = label == null || label.isBlank() ? "implicit-sip" : label;
+			String resolvedProducer = producer == null || producer.isBlank() ? "specialized-operator" : producer;
+			String resolvedRepresentation = representation == null || representation.isBlank()
+					? "SPECIALIZED"
+					: representation;
+			String key = resolvedLabel + '\u0000' + resolvedProducer + '\u0000' + resolvedRepresentation;
+			return implicitDomains.computeIfAbsent(key, ignored -> new DomainStats(
+					-1 - implicitDomains.size(), resolvedLabel, resolvedProducer,
+					LmdbNativeSipFilter.descriptor(resolvedRepresentation, exact, cardinalityUpperBound), 0L, 0L));
+		}
+
+		private synchronized Telemetry snapshot(long queryKey) {
+			Map<List<?>, DomainTelemetry> mergedDomains = new LinkedHashMap<>(completedDomains);
+			for (DomainRegistry registry : activeDomains) {
+				for (DomainStats stats : registry.snapshot()) {
+					if (stats != null) {
+						mergeDomain(mergedDomains, stats.snapshot());
+					}
+				}
+			}
+			ArrayList<DomainTelemetry> domainTelemetry = new ArrayList<>(mergedDomains.values());
+			for (DomainStats stats : implicitDomains.values()) {
+				domainTelemetry.add(stats.snapshot());
+			}
+			domainTelemetry.sort(Comparator.comparingInt(DomainTelemetry::id));
+			ArrayList<FilterTelemetry> filterTelemetry = new ArrayList<>();
+			for (FilterStats stats : filters.values()) {
+				filterTelemetry.add(stats.snapshot());
+			}
+			filterTelemetry.sort(Comparator.comparingInt(FilterTelemetry::id));
+			List<String> modes = factorizationModes.stream().sorted().toList();
+			FactorizationTelemetry factor = new FactorizationTelemetry(modes, factorRootRows.sum(),
+					factorParentRows.sum(), factorCandidateRows.sum(), factorStoredLanes.sum(), factorRejected.sum(),
+					factorOptionalNulls.sum(), factorFlatEquivalent.sum(), factorMultiplicityExtra.sum(),
+					materializationBoundaries.sum(), flattenedValues.sum(), factorizationRefusals.sum());
+			TreeMap<String, Long> binds = new TreeMap<>();
+			kernelBinds.forEach((key, count) -> binds.put(key, count.sum()));
+			return new Telemetry(queryKey, sipTests.sum(), sipRejects.sum(), sipBypasses.sum(),
+					sipDrivenRows.sum(), usedBytes.get(), memoryRefusals.sum(), List.copyOf(domainTelemetry), factor,
+					List.copyOf(filterTelemetry), relocatedFilterTests.sum(), filtersRelocated.sum(),
+					Collections.unmodifiableMap(binds));
+		}
+
+		private synchronized void clear() {
+			closed = true;
+			activeDomains.clear();
+			completedDomains.clear();
+			implicitDomains.clear();
+			filters.clear();
+			factorizationModes.clear();
+			kernelBinds.clear();
+		}
+	}
+
+	private static final class DomainRegistry {
+		private volatile DomainStats[] domains = new DomainStats[DEFAULT_SLOTS];
 
 		private synchronized void installDomain(int domainId, String label, String producer,
 				LmdbNativeSipFilter.Domain domain, long buildNanos, long claimedBytes) {
@@ -522,56 +930,23 @@ final class LmdbFusedSipFactorizedRuntime {
 			return domainId >= 0 && domainId < snapshot.length ? snapshot[domainId] : null;
 		}
 
-		private DomainStats implicitDomain(String label, String producer, String representation, boolean exact,
-				long cardinalityUpperBound) {
-			String resolvedLabel = label == null || label.isBlank() ? "implicit-sip" : label;
-			String resolvedProducer = producer == null || producer.isBlank() ? "specialized-operator" : producer;
-			String resolvedRepresentation = representation == null || representation.isBlank()
-					? "SPECIALIZED"
-					: representation;
-			String key = resolvedLabel + '\u0000' + resolvedProducer + '\u0000' + resolvedRepresentation;
-			return implicitDomains.computeIfAbsent(key, ignored -> new DomainStats(
-					-1 - implicitDomains.size(), resolvedLabel, resolvedProducer,
-					LmdbNativeSipFilter.descriptor(resolvedRepresentation, exact, cardinalityUpperBound), 0L, 0L));
-		}
-
-		private Telemetry snapshot(long queryKey) {
-			ArrayList<DomainTelemetry> domainTelemetry = new ArrayList<>();
-			for (DomainStats stats : domains) {
-				if (stats != null) {
-					domainTelemetry.add(stats.snapshot());
-				}
-			}
-			for (DomainStats stats : implicitDomains.values()) {
-				domainTelemetry.add(stats.snapshot());
-			}
-			domainTelemetry.sort(Comparator.comparingInt(DomainTelemetry::id));
-			ArrayList<FilterTelemetry> filterTelemetry = new ArrayList<>();
-			for (FilterStats stats : filters.values()) {
-				filterTelemetry.add(stats.snapshot());
-			}
-			filterTelemetry.sort(Comparator.comparingInt(FilterTelemetry::id));
-			List<String> modes = factorizationModes.stream().sorted().toList();
-			FactorizationTelemetry factor = new FactorizationTelemetry(modes, factorRootRows.sum(),
-					factorParentRows.sum(), factorCandidateRows.sum(), factorStoredLanes.sum(), factorRejected.sum(),
-					factorOptionalNulls.sum(), factorFlatEquivalent.sum(), factorMultiplicityExtra.sum(),
-					materializationBoundaries.sum(), flattenedValues.sum(), factorizationRefusals.sum());
-			java.util.TreeMap<String, Long> binds = new java.util.TreeMap<>();
-			kernelBinds.forEach((key, count) -> binds.put(key, count.sum()));
-			return new Telemetry(queryKey, sipTests.sum(), sipRejects.sum(), sipBypasses.sum(),
-					sipDrivenRows.sum(), usedBytes.get(), memoryRefusals.sum(), List.copyOf(domainTelemetry), factor,
-					List.copyOf(filterTelemetry), relocatedFilterTests.sum(), filtersRelocated.sum(),
-					java.util.Collections.unmodifiableMap(binds));
+		private DomainStats[] snapshot() {
+			return domains;
 		}
 
 		private synchronized void clear() {
 			domains = new DomainStats[DEFAULT_SLOTS];
-			implicitDomains.clear();
-			usedBytes.set(0L);
-			filters.clear();
-			factorizationModes.clear();
-			kernelBinds.clear();
 		}
+	}
+
+	private static void mergeDomain(Map<List<?>, DomainTelemetry> domains, DomainTelemetry domain) {
+		domains.merge(List.of(domain.id(), domain.label(), domain.producer(), domain.representation(), domain.exact()),
+				domain, (a, b) -> new DomainTelemetry(a.id(), a.label(), a.producer(), a.representation(), a.exact(),
+						Math.max(a.cardinalityUpperBound(), b.cardinalityUpperBound()),
+						a.claimedBytes() + b.claimedBytes(),
+						a.estimatedBytes() + b.estimatedBytes(), a.buildNanos() + b.buildNanos(),
+						Stream.concat(a.consumers().stream(), b.consumers().stream()).distinct().toList(),
+						a.tests() + b.tests(), a.rejects() + b.rejects(), a.drivenRows() + b.drivenRows()));
 	}
 
 	private static final class DomainStats {
@@ -659,11 +1034,11 @@ final class LmdbFusedSipFactorizedRuntime {
 	record Telemetry(long queryKey, long sipTests, long sipRejects, long sipBypasses, long sipDrivenRows,
 			long retainedBytes, long memoryRefusals, List<DomainTelemetry> domains,
 			FactorizationTelemetry factorization, List<FilterTelemetry> filters, long relocatedFilterTests,
-			long filtersRelocated, java.util.Map<String, Long> kernelBinds) {
+			long filtersRelocated, Map<String, Long> kernelBinds) {
 
 		static final Telemetry EMPTY = new Telemetry(0L, 0L, 0L, 0L, 0L, 0L, 0L, List.of(),
 				new FactorizationTelemetry(List.of(), 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L),
-				List.of(), 0L, 0L, java.util.Map.of());
+				List.of(), 0L, 0L, Map.of());
 
 		boolean runtimeSipUsed() {
 			return (sipTests > 0 || sipDrivenRows > 0)

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -30,24 +31,641 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.impl.SimpleModelExposureForTest;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.mockito.stubbing.Answer;
 
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordingFile;
 
 class NativeGroupResultCursorTest {
+	@Test
+	void compiledWrapperRecipeDeclinesWhenCompilationBudgetCannotOwnMetadata() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource.DomainStamp domain = new NativeLmdbQuerySource.DomainStamp(new Object(), new Object(),
+				new Object(), new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null);
+		when(source.detachedDomainStamp()).thenReturn(domain);
+		TripleSource triples = mock(TripleSource.class);
+		when(triples.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+				new EvaluationStatistics(), false);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		NativeRowsStep rows = singletonRows(source, NativeSlotLayout.empty(), strategy, context);
+		Extension extension = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral(7)), "result"));
+		QueryEvaluationStep prepared = NativeBindingSetExtensionStep.tryCreate(rows, extension,
+				new Group(new SingletonSet()), strategy, context);
+		assertNotNull(prepared, "the ordinary wrapper remains available when its optional recipe is refused");
+		PlanValueCatalog.Builder receipts = PlanValueCatalog.Builder.compiledTree();
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager limited = LmdbQueryMemoryManager.createForTesting(1L, 1L);
+		LmdbNativeHashJoin.queryMemoryOverride = limited;
+		try {
+			assertNull(NativeSubqueryPlan.CompiledResultRecipe.capture(prepared, domain, domain, receipts.build(), null,
+					source, receipts), "an unowned wrapper recipe must decline before retaining metadata");
+			assertEquals(0L, limited.usedBytes(), "refusal releases every partial compilation claim");
+		} finally {
+			receipts.abort();
+			LmdbNativeHashJoin.queryMemoryOverride = previous;
+		}
+	}
+
+	@Test
+	void detachedDiagnosticPathResolvesOnlyTheProvenLogicalTree() {
+		SingletonSet target = new SingletonSet();
+		Slice root = new Slice(new Union(new SingletonSet(), target), 0L, 3L);
+		NativeDiagnosticPath path = NativeDiagnosticPath.capture(target);
+		assertNotNull(path);
+		assertSame(target, path.resolve(root));
+		Slice copy = root.clone();
+		assertSame(((Union) copy.getArg()).getRightArg(), path.resolve(copy));
+		((Union) copy.getArg()).setRightArg(new SingletonSet());
+		assertNull(path.resolve(copy), "a replaced same-type subtree has a different identity");
+		Slice unrelated = new Slice(new Union(new SingletonSet(), new SingletonSet()), 0L, 3L);
+		assertNull(path.resolve(unrelated), "equal-looking trees are not the compiled diagnostic owner");
+		Slice rewritten = root.clone();
+		NativeGraphFusion.linkLogicalOrigins(root, rewritten);
+		assertSame(target, path.resolve(rewritten), "a proven physical clone resolves to its logical origin");
+	}
+
+	@Test
+	void physicalEntryWitnessChecksHiddenGraphFrameAndMutation() {
+		SimpleIRI hidden = SimpleModelExposureForTest.simpleIRI("urn:graph:one");
+		QueryBindingSet supplied = new QueryBindingSet();
+		GraphFrameBindings.supply(supplied, "privateGraph", hidden);
+		GraphFrameBindings frames = GraphFrameBindings.from(supplied);
+		QueryBindingSet entry = new QueryBindingSet();
+		entry.setGraphFrameBindings(frames);
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(73L, 4096L, true);
+		long available = session.remainingBytes();
+		NativePhysicalPreparation preparation = NativePhysicalPreparation.tryCreate(session);
+		assertNotNull(preparation);
+		try {
+			NativePhysicalEntryWitness witness = NativePhysicalEntryWitness.capture(entry, preparation);
+			assertNotNull(witness);
+			assertTrue(witness.matches(entry));
+			QueryBindingSet sameFrame = new QueryBindingSet();
+			sameFrame.setGraphFrameBindings(frames);
+			assertTrue(witness.matches(sameFrame), "the same hidden provenance survives a binding-set copy");
+			QueryBindingSet replacement = new QueryBindingSet();
+			GraphFrameBindings.supply(replacement, "privateGraph", hidden);
+			QueryBindingSet replacedFrame = new QueryBindingSet();
+			replacedFrame.setGraphFrameBindings(GraphFrameBindings.from(replacement));
+			assertFalse(witness.matches(replacedFrame), "a different frame cannot replace the quoted provenance");
+			SimpleModelExposureForTest.setIriString(hidden, "urn:graph:two");
+			assertFalse(witness.matches(entry), "hidden referenced values are covered by the mutation witness");
+		} finally {
+			preparation.close();
+			assertEquals(available, session.remainingBytes());
+			session.close();
+		}
+	}
+
+	@Test
+	void physicalEntryWitnessDeclinesUnsupportedValueAndRestoresBudget() {
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(74L, 4096L, true);
+		long available = session.remainingBytes();
+		NativePhysicalPreparation preparation = NativePhysicalPreparation.tryCreate(session);
+		assertNotNull(preparation);
+		try {
+			QueryBindingSet entry = new QueryBindingSet();
+			entry.setBinding("value", SimpleModelExposureForTest.subclassIri("urn:uncertified"));
+			assertNull(NativePhysicalEntryWitness.capture(entry, preparation));
+		} finally {
+			preparation.close();
+			assertEquals(available, session.remainingBytes());
+			session.close();
+		}
+	}
+
+	@Test
+	void mismatchedNestedPhysicalSourceDeclinesBeforeAggregateFallback() throws Exception {
+		NativeLmdbQuerySource quotedStore = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		NativeLmdbQuerySource actualStore = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(quotedStore.idSpace()).thenReturn(quotedStore);
+		when(actualStore.idSpace()).thenReturn(actualStore);
+		when(quotedStore.certifiesIdOrigins()).thenReturn(true);
+		when(actualStore.certifiesIdOrigins()).thenReturn(true);
+		when(quotedStore.detachedDomainStamp()).thenReturn(new NativeLmdbQuerySource.DomainStamp(new Object(),
+				new Object(), new Object(), new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null));
+		when(actualStore.detachedDomainStamp()).thenReturn(new NativeLmdbQuerySource.DomainStamp(new Object(),
+				new Object(), new Object(), new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null));
+		SyntheticValueSource quoted = SyntheticValueSource.forEvaluation(quotedStore);
+		SyntheticValueSource actual = SyntheticValueSource.forEvaluation(actualStore);
+		var bindings = EmptyBindingSet.getInstance();
+		quoted.executionContext().initializeQueryBase(bindings);
+		actual.executionContext().initializeQueryBase(bindings);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
+		layout.freeze(List.of());
+		TripleSource triples = mock(TripleSource.class);
+		when(triples.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+				new EvaluationStatistics(), false);
+		QueryEvaluationContext structural = new QueryEvaluationContext.Minimal((Dataset) null);
+		NativeRowsStep quoteStep = singletonRows(quoted, layout, strategy, structural);
+		AtomicInteger finalized = new AtomicInteger();
+		LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(61L, 1 << 20, true);
+		root.onFinalClose(finalized::incrementAndGet);
+		RowState row = new RowState(actual, layout, bindings);
+		row.fusedSession = root;
+		row.setInvocationStrategy(strategy.forInvocation(actual, root, actual.executionContext()));
+		RowState quotedRow = new RowState(quoted, layout, bindings);
+		quotedRow.fusedSession = root;
+		quotedRow.setInvocationStrategy(strategy.forInvocation(quoted, root, quoted.executionContext()));
+		try {
+			NativePhysicalResultPlan originalQuote = quoteStep.physicalPlan(bindings);
+			assertNotNull(originalQuote);
+			assertNotNull(originalQuote.rebindRecipe());
+			NativeCompiledResultRecipe compiled = quoteStep.compiledRecipe();
+			assertNotNull(compiled);
+			NativeSubqueryPlan.CompiledResultRecipe receipt = new NativeSubqueryPlan.CompiledResultRecipe(compiled,
+					quoted.detachedDomainStamp(), PlanValueCatalog.EMPTY, ignored -> Double.NaN);
+			NativeSubqueryPlan child = new NativeSubqueryPlan(quoteStep, new int[0], new String[0], new int[0],
+					new String[0], new String[0], new String[0], null, structural, null, null,
+					worker -> new NativeSubqueryPlan.BoundExecution(
+							singletonRows(worker.source(), layout,
+									strategy.forInvocation(worker.source(), worker.requireFusedSession()), structural),
+							structural, null),
+					receipt);
+			assertNotNull(child.withPhysicalPlan(quotedRow), "the original source can admit the same child");
+			assertNull(NativeAggregatePhysicalPlan.bindLexicalInputs(child, row),
+					"the quoted store differs from the invocation's store, so its physical child must decline now");
+			NativeGroupIteration group = new NativeGroupIteration(actual, child, layout, new int[0],
+					new AggregateSpec[] { AggregateSpec.star("count") }, false, bindings, null, null, false, null);
+			group.enclosingFused = root;
+			NativeGroupResultCursor.GroupingPlan fallback = NativeGroupResultCursor.tablePlan(group);
+			try (NativeGroupResultCursor cursor = new NativeGroupResultCursor(null, group, actual.executionContext(),
+					false, fallback, true)) {
+				NativeResultRow result = cursor.next();
+				assertNotNull(result);
+				assertEquals(1L, ((Literal) result.toBindingSet().getValue("count")).longValue());
+				assertNull(cursor.next(), "the ordinary nested aggregate emits exactly one complete result");
+			}
+		} finally {
+			quotedRow.closeDecodedInputs();
+			row.closeDecodedInputs();
+			actual.executionContext().close();
+			quoted.executionContext().close();
+			root.close();
+		}
+		assertTrue(actual.executionContext().isClosed());
+		assertEquals(1, finalized.get(), "all child and replay session leases must drain");
+	}
+
+	private static NativeRowsStep singletonRows(NativeLmdbQuerySource source, NativeSlotLayout layout,
+			LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
+		return new NativeRowsStep(source, SlotPlan.singleton(), layout, new int[0], new String[0], false, new int[0],
+				new boolean[0], 0L, -1L, false, strategy, null, context, Set.of(), null, null);
+	}
+
+	@Test
+	void matchingNestedPhysicalChildUsesItsActualGroupInvocation() throws Exception {
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			AtomicReference<LmdbFusedSipFactorizedRuntime.Session> prepared = new AtomicReference<>();
+			NativeSubqueryPlan child = fixture.child(SlotPlan.singleton(), prepared);
+			SlotPlan physical = NativeAggregatePhysicalPlan.bindLexicalInputs(child, fixture.row);
+			assertNotNull(physical, "a matching physical child must remain eligible");
+			NativeGroupIteration group = new NativeGroupIteration(fixture.source, physical, fixture.layout, new int[0],
+					new AggregateSpec[] { AggregateSpec.star("count") }, false, fixture.bindings, null, null, false,
+					null);
+			group.enclosingFused = fixture.root;
+			NativeInvocationCarrier invocation = group.invocationCarrier();
+			assertNotSame(fixture.root, invocation.session());
+			NativeGroupResultCursor.GroupingPlan selected = NativeGroupResultCursor.tablePlan(group);
+			try (NativeGroupResultCursor cursor = new NativeGroupResultCursor(null, group,
+					fixture.source.executionContext(), false, selected, true)) {
+				NativeResultRow result = cursor.next();
+				assertNotNull(result);
+				assertEquals(1L, ((Literal) result.toBindingSet().getValue("count")).longValue());
+				assertNull(cursor.next());
+			}
+			assertSame(invocation.session(), prepared.get(),
+					"the nested child must be prepared for the group's actual invocation, not the quoting session");
+		}
+		assertEquals(1, fixture.finalized.get(), "all accepted child and replay leases must drain");
+	}
+
+	@Test
+	void sameSourceWithDifferentNestedShapeDeclinesAndReleasesPreparation() {
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			NativeSubqueryPlan quoted = (NativeSubqueryPlan) NativeAggregatePhysicalPlan.bindLexicalInputs(
+					fixture.child(SlotPlan.singleton(), new AtomicReference<>()), fixture.row);
+			assertNotNull(quoted);
+			long before = fixture.root.remainingBytes();
+			NativeSubqueryPlan actual = fixture.child(SlotPlan.empty(), new AtomicReference<>());
+			NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(fixture.source,
+					fixture.context, fixture.root, fixture.source.executionContext(),
+					fixture.row.invocationStrategyOrNull(), fixture.row.diagnosticRoot());
+			try (NativePhysicalPreparation preparation = NativePhysicalPreparation.tryCreate(fixture.root)) {
+				assertNotNull(preparation);
+				assertNull(quoted.rebindPhysicalPlan(actual, worker, preparation),
+						"an empty actual child cannot execute a quote for a singleton child");
+			}
+			assertEquals(before, fixture.root.remainingBytes(), "a refused child must release preflight claims");
+		}
+		assertEquals(1, fixture.finalized.get(), "a refused child must not retain the invocation");
+	}
+
+	@Test
+	void refusedPhysicalChildBudgetFallsBackBeforeAnyOutput() throws Exception {
+		PhysicalChildFixture fixture = new PhysicalChildFixture(0L);
+		try (fixture) {
+			NativeSubqueryPlan child = fixture.child(SlotPlan.singleton(), new AtomicReference<>());
+			assertNull(NativeAggregatePhysicalPlan.bindLexicalInputs(child, fixture.row),
+					"a child without a metadata budget must decline before selecting a physical producer");
+			try (RowCursor fallback = child.open(fixture.row)) {
+				assertTrue(fallback.next(), "the ordinary fallback must still emit its complete solution");
+				assertFalse(fallback.next());
+			}
+		}
+		assertEquals(1, fixture.finalized.get(), "refusal and fallback must release the original session");
+	}
+
+	@Test
+	void quotedChildReplayRetainsItsOwnerAfterFirstReaderCloses() {
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			ValuesRow[] rows = { new ValuesRow(new int[0], new long[0]), new ValuesRow(new int[0], new long[0]),
+					new ValuesRow(new int[0], new long[0]) };
+			NativeRowsStep step = new NativeRowsStep(fixture.source, new ValuesPlan(rows, false, 0), fixture.layout,
+					new int[0], new String[0], false, new int[0], new boolean[0], 0L, -1L, false,
+					fixture.strategy, null, fixture.context, Set.of(), null, null);
+			NativeSubqueryPlan child = fixture.compiledChild(step, null, new AtomicReference<>());
+			NativeSubqueryPlan physical = child.withPhysicalPlan(fixture.row);
+			assertNotNull(physical, "the native values child must admit its physical producer");
+			try (NativeResultCursor first = physical.openSolutions(fixture.row)) {
+				assertNotNull(first.next());
+			}
+			fixture.root.close();
+			assertEquals(0, fixture.finalized.get(), "the cached producer still owns its invocation");
+			int count = 0;
+			try (NativeResultCursor replay = physical.openSolutions(fixture.row)) {
+				while (replay.next() != null) {
+					count++;
+				}
+			}
+			assertEquals(3, count, "the later reader sees the prefix and every remaining physical row");
+			fixture.row.closeDecodedInputs();
+			fixture.source.executionContext().close();
+		}
+		assertEquals(1, fixture.finalized.get(), "the final replay release closes the retained invocation");
+	}
+
+	@Test
+	void physicalChildPreflightUsesExplicitNestedForcingPolicy() {
+		SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder.set("SELECT * WHERE {}",
+				Query.QueryType.TUPLE, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			NativeRowsStep quoted = singletonRows(fixture.source, fixture.layout, fixture.strategy, fixture.context);
+			AtomicInteger nestedPreparations = new AtomicInteger();
+			NativeSubqueryPlan.InvocationFactory factory = new NativeSubqueryPlan.InvocationFactory() {
+				@Override
+				public NativeSubqueryPlan.BoundExecution bind(NativeScalarPlan.WorkerContext worker) {
+					throw new AssertionError("physical preflight must request the explicit nested policy");
+				}
+
+				@Override
+				public NativeSubqueryPlan.BoundExecution bindForSubplan(NativeScalarPlan.WorkerContext worker) {
+					assertEquals(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+							fixture.strategy.forcedExecutionStrategyName());
+					LmdbNativeEvaluationStrategy nested = fixture.strategy.forSubplanInvocation(worker.source(),
+							worker.requireFusedSession(), worker.requireExecutionContext(), null);
+					assertNull(nested.forcedExecutionStrategyName());
+					assertFalse(nested.allowsRootUniformValuesHint());
+					nestedPreparations.incrementAndGet();
+					return new NativeSubqueryPlan.BoundExecution(
+							singletonRows(worker.source(), fixture.layout, nested, fixture.context), fixture.context,
+							null);
+				}
+			};
+			NativeCompiledResultRecipe underlying = quoted.compiledRecipe();
+			assertNotNull(underlying);
+			AtomicBoolean observed = new AtomicBoolean();
+			NativeCompiledResultRecipe audited = new NativeCompiledResultRecipe() {
+				@Override
+				public QueryEvaluationStep bind(NativeResultBinding binding) {
+					assertNull(binding.strategy().forcedExecutionStrategyName());
+					assertFalse(binding.strategy().allowsRootUniformValuesHint());
+					if (observed.compareAndSet(false, true)) {
+						nestedPreparations.incrementAndGet();
+					}
+					return underlying.bind(binding);
+				}
+
+				@Override
+				public boolean requiresPhysicalResults() {
+					return underlying.requiresPhysicalResults();
+				}
+
+				@Override
+				public String describe() {
+					return underlying.describe();
+				}
+			};
+			NativeSubqueryPlan.CompiledResultRecipe receipt = new NativeSubqueryPlan.CompiledResultRecipe(audited,
+					fixture.source.detachedDomainStamp(), PlanValueCatalog.EMPTY, ignored -> Double.NaN);
+			NativeSubqueryPlan child = new NativeSubqueryPlan(quoted, new int[0], new String[0], new int[0],
+					new String[0], new String[0], new String[0], null, fixture.context, null, null, factory, receipt);
+			assertNotNull(NativeAggregatePhysicalPlan.bindLexicalInputs(child, fixture.row));
+			assertEquals(1, nestedPreparations.get());
+			assertEquals(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, fixture.strategy.forcedExecutionStrategyName());
+		} finally {
+			SlowQueryContextHolder.restore(previous);
+		}
+		assertEquals(1, fixture.finalized.get());
+	}
+
+	@Test
+	void physicalChildRejectsAChangedSourceSnapshot() {
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			SlotPlan first = NativeAggregatePhysicalPlan.bindLexicalInputs(
+					fixture.child(SlotPlan.singleton(), new AtomicReference<>()), fixture.row);
+			assertNotNull(first);
+			fixture.snapshot.incrementAndGet();
+			assertNull(NativeAggregatePhysicalPlan.bindLexicalInputs(first, fixture.row),
+					"a proof for the earlier source generation cannot be accepted for the new snapshot");
+		}
+		assertEquals(1, fixture.finalized.get());
+	}
+
+	@Test
+	void physicalReceiptRejectsDifferentEntryBindings() {
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			NativeRowsStep quoted = singletonRows(fixture.source, fixture.layout, fixture.strategy, fixture.context);
+			NativePhysicalResultPlan receipt = quoted.physicalPlan(fixture.bindings);
+			assertNotNull(receipt);
+			NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(fixture.source,
+					fixture.context, fixture.root, fixture.source.executionContext());
+			NativeRowsStep actual = singletonRows(fixture.source, fixture.layout,
+					fixture.strategy.forInvocation(fixture.source, fixture.root, fixture.source.executionContext()),
+					fixture.context);
+			assertNotNull(receipt.rebind(actual, worker, fixture.bindings));
+			MapBindingSet different = new MapBindingSet();
+			different.addBinding("other", SimpleValueFactory.getInstance().createLiteral("different"));
+			assertNull(receipt.rebind(actual, worker, different),
+					"the selected physical receipt belongs to its original entry domain");
+		}
+		assertEquals(1, fixture.finalized.get());
+	}
+
+	@Test
+	void preparedPhysicalRowsUseAndCloseTheirExactInvocation() {
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			LmdbNativeEvaluationStrategy bound = fixture.strategy.forInvocation(fixture.source, fixture.root,
+					fixture.source.executionContext());
+			NativeRowsStep step = singletonRows(fixture.source, fixture.layout, bound, fixture.context);
+			NativeInvocationCarrier invocation = NativeInvocationCarrier.open(fixture.source, bound, fixture.bindings,
+					71L, null);
+			try (NativeRowsResultCursor cursor = new NativeRowsResultCursor(step, fixture.source, fixture.bindings,
+					fixture.source.executionContext(), false, invocation)) {
+				assertSame(invocation, cursor.invocationCarrier());
+				assertNotNull(cursor.next());
+				assertNull(cursor.next());
+			}
+			invocation.close();
+			assertThrows(IllegalStateException.class, () -> invocation.session().retain());
+		}
+		assertEquals(1, fixture.finalized.get());
+	}
+
+	@Test
+	void refusedPreparedPhysicalRowsReleaseTheirInvocation() {
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			LmdbNativeEvaluationStrategy bound = fixture.strategy.forInvocation(fixture.source, fixture.root,
+					fixture.source.executionContext());
+			NativeRowsStep step = singletonRows(fixture.source, fixture.layout, bound, fixture.context);
+			NativeInvocationCarrier invocation = NativeInvocationCarrier.open(fixture.source, bound, fixture.bindings,
+					72L, null);
+			SyntheticValueSource other = SyntheticValueSource.forEvaluation(
+					mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS));
+			try {
+				assertThrows(IllegalStateException.class,
+						() -> new NativeRowsResultCursor(step, other, fixture.bindings, other.executionContext(), false,
+								invocation));
+				invocation.close();
+				assertThrows(IllegalStateException.class, () -> invocation.session().retain());
+			} finally {
+				other.executionContext().close();
+			}
+		}
+		assertEquals(1, fixture.finalized.get());
+	}
+
+	@Test
+	void deferredStreamingJobsRejectPhysicalChildBeforePublishingRows() throws Exception {
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			AtomicInteger workerBindings = new AtomicInteger();
+			NativeRowsStep quoted = singletonRows(fixture.source, fixture.layout, fixture.strategy, fixture.context);
+			NativeSubqueryPlan.WorkerFactory workerFactory = worker -> {
+				workerBindings.incrementAndGet();
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("controlled-late-worker-refusal");
+			};
+			NativeSubqueryPlan lexical = fixture.compiledChild(quoted, workerFactory, new AtomicReference<>());
+			SlotPlan physical = NativeAggregatePhysicalPlan.bindLexicalInputs(lexical, fixture.row);
+			assertNotNull(physical);
+			SlotPlan multiJob = SlotPlan.union(SlotPlan.singleton(), physical);
+			assertTrue(NativeWorkerPlanBinder.canBind(multiJob), "non-streaming worker binding remains available");
+			assertTrue(NativeWorkerPlanBinder.canBindDeferredStreamingJobs(
+					SlotPlan.union(SlotPlan.singleton(), lexical)), "ordinary lexical jobs remain available");
+			assertFalse(NativeWorkerPlanBinder.canBindDeferredStreamingJobs(multiJob));
+			assertNull(LmdbNativePackedMorsels.tryRows(multiJob, fixture.row, new int[0], false, null));
+			assertEquals(0, workerBindings.get(), "no later worker may start after an earlier job publishes rows");
+		}
+		assertEquals(1, fixture.finalized.get());
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void generatedKeyActivationBelongsToOpenedPhysicalCandidate() {
+		String previous = System.getProperty(NativeGeneratedKeyPlan.PROPERTY);
+		System.setProperty(NativeGeneratedKeyPlan.PROPERTY, "true");
+		PhysicalChildFixture fixture = new PhysicalChildFixture();
+		try (fixture) {
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+			layout.freeze(List.of("key"));
+			Literal value = SimpleValueFactory.getInstance().createLiteral("a generated key");
+			NativeScalarPlan scalar = NativeScalarPlan.value(new ValueConstant(value), ignored -> -1, false, 0L,
+					false, false);
+			CopyBinding key = CopyBinding.computedValue(0,
+					new LmdbNativeCompiledValue(0L, ignored -> LmdbNativeValueCodec.fromValue(value), scalar), true);
+			SlotPlan input = SlotPlan.extension(SlotPlan.singleton(), new CopyBinding[] { key });
+			NativeGroupStep group = new NativeGroupStep(fixture.source, input, layout, new int[] { 0 },
+					new AggregateSpec[] { AggregateSpec.star("count") }, false, fixture.strategy, new SingletonSet(),
+					fixture.context, Set.of(), null, null, false, false, null, 0L, null, null);
+			assertFalse(group.generatedKeys.isEmpty());
+			long activations = NativeGeneratedKeyPlan.ACTIVATIONS.get();
+			long available = fixture.root.remainingBytes();
+			NativePhysicalResultPlan quote = group.physicalPlan(fixture.bindings);
+			assertNotNull(quote);
+			assertNotNull(quote.rebindRecipe());
+			assertEquals(activations, NativeGeneratedKeyPlan.ACTIVATIONS.get(), "a quote is not an activation");
+			NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(fixture.source,
+					fixture.context, fixture.root, fixture.source.executionContext());
+			NativePhysicalPreparation refused = NativePhysicalPreparation.tryCreate(fixture.root);
+			assertNotNull(refused);
+			MapBindingSet different = new MapBindingSet();
+			different.addBinding("key", value);
+			assertNull(quote.rebind(group, worker, different, refused));
+			refused.close();
+			assertEquals(activations, NativeGeneratedKeyPlan.ACTIVATIONS.get());
+			assertEquals(available, fixture.root.remainingBytes());
+			NativePhysicalPreparation unopened = NativePhysicalPreparation.tryCreate(fixture.root);
+			assertNotNull(unopened);
+			assertNotNull(quote.rebind(group, worker, fixture.bindings, unopened));
+			assertEquals(activations, NativeGeneratedKeyPlan.ACTIVATIONS.get());
+			unopened.close();
+			assertEquals(available, fixture.root.remainingBytes());
+			NativePhysicalPreparation selected = NativePhysicalPreparation.tryCreate(fixture.root);
+			assertNotNull(selected);
+			NativePhysicalResultPlan bound = quote.rebind(group, worker, fixture.bindings, selected);
+			assertNotNull(bound);
+			try (NativeResultCursor cursor = NativeResultSteps.open(bound.step(), fixture.bindings)) {
+				assertEquals(activations + 1L, NativeGeneratedKeyPlan.ACTIVATIONS.get());
+			}
+			selected.close();
+			selected.close();
+			assertEquals(activations + 1L, NativeGeneratedKeyPlan.ACTIVATIONS.get());
+			assertEquals(available, fixture.root.remainingBytes(),
+					"closed candidates release their sessions and claims");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NativeGeneratedKeyPlan.PROPERTY);
+			} else {
+				System.setProperty(NativeGeneratedKeyPlan.PROPERTY, previous);
+			}
+		}
+		assertEquals(1, fixture.finalized.get());
+	}
+
+	private static final class PhysicalChildFixture implements AutoCloseable {
+		final SyntheticValueSource source;
+		final AtomicLong snapshot = new AtomicLong(1L);
+		final NativeSlotLayout layout;
+		final BindingSet bindings = EmptyBindingSet.getInstance();
+		final LmdbNativeEvaluationStrategy strategy;
+		final QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		final LmdbFusedSipFactorizedRuntime.Session root;
+		final AtomicInteger finalized = new AtomicInteger();
+		final RowState row;
+
+		PhysicalChildFixture() {
+			this(1 << 20);
+		}
+
+		PhysicalChildFixture(long maximumBytes) {
+			root = LmdbFusedSipFactorizedRuntime.create(62L, maximumBytes, true);
+			NativeLmdbQuerySource.ParallelSource store = mock(NativeLmdbQuerySource.ParallelSource.class,
+					CALLS_REAL_METHODS);
+			when(store.idSpace()).thenReturn(store);
+			when(store.snapshotId()).thenAnswer(ignored -> snapshot.get());
+			when(store.certifiesIdOrigins()).thenReturn(true);
+			when(store.detachedDomainStamp()).thenReturn(new NativeLmdbQuerySource.DomainStamp(new Object(),
+					new Object(), new Object(), new Object(), NativeLmdbQuerySource.DomainStamp.EXPLICIT, null, null));
+			source = SyntheticValueSource.forEvaluation(store);
+			source.executionContext().initializeQueryBase(bindings);
+			layout = new NativeSlotLayout(Map.of(), null);
+			layout.freeze(List.of());
+			TripleSource triples = mock(TripleSource.class);
+			when(triples.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+			strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L, new EvaluationStatistics(), false);
+			row = new RowState(source, layout, bindings);
+			row.fusedSession = root;
+			row.setInvocationStrategy(strategy.forInvocation(source, root, source.executionContext()));
+			root.onFinalClose(finalized::incrementAndGet);
+		}
+
+		NativeSubqueryPlan child(SlotPlan actualInput,
+				AtomicReference<LmdbFusedSipFactorizedRuntime.Session> prepared) {
+			NativeRowsStep step = new NativeRowsStep(source, actualInput, layout, new int[0], new String[0], false,
+					new int[0], new boolean[0], 0L, -1L, false, strategy, null, context, Set.of(), null, null);
+			return compiledChild(step, null, prepared);
+		}
+
+		NativeSubqueryPlan compiledChild(NativeRowsStep step, NativeSubqueryPlan.WorkerFactory workerFactory,
+				AtomicReference<LmdbFusedSipFactorizedRuntime.Session> prepared) {
+			NativeCompiledResultRecipe underlying = step.compiledRecipe();
+			assertNotNull(underlying);
+			NativeCompiledResultRecipe observed = new NativeCompiledResultRecipe() {
+				@Override
+				public QueryEvaluationStep bind(NativeResultBinding binding) {
+					prepared.set(binding.worker().requireFusedSession());
+					return underlying.bind(binding);
+				}
+
+				@Override
+				public boolean requiresPhysicalResults() {
+					return underlying.requiresPhysicalResults();
+				}
+
+				@Override
+				public String describe() {
+					return underlying.describe();
+				}
+			};
+			NativeSubqueryPlan.CompiledResultRecipe receipt = new NativeSubqueryPlan.CompiledResultRecipe(observed,
+					source.detachedDomainStamp(), PlanValueCatalog.EMPTY, ignored -> Double.NaN);
+			return new NativeSubqueryPlan(step, new int[0], new String[0], new int[0], new String[0], new String[0],
+					new String[0], null, context, workerFactory, null,
+					worker -> new NativeSubqueryPlan.BoundExecution(step, context, null), receipt);
+		}
+
+		@Override
+		public void close() {
+			try {
+				row.closeDecodedInputs();
+			} finally {
+				try {
+					source.executionContext().close();
+				} finally {
+					root.close();
+				}
+			}
+		}
+	}
+
 	@Test
 	void orderedDistinctGroupsPublishBeforeDrainingTheScan() throws Exception {
 		AtomicInteger read = new AtomicInteger();

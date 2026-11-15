@@ -16,12 +16,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
@@ -49,6 +55,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * The root host (M-A1a): every root query the native engine sees must produce a classified plan — a native compile when
@@ -68,6 +76,305 @@ public class LmdbNativeGenericRootHostTest {
 
 	private LmdbStore store;
 	private SailRepository repository;
+
+	@ParameterizedTest(name = "outer carrier={0}, next={1}")
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void closeDuringGenericInvocationKeepsSessionForActiveAdvance(boolean outerCarrier, boolean next)
+			throws Exception {
+		assertActiveInvocationSurvivesClose(outerCarrier, next, false);
+	}
+
+	@ParameterizedTest(name = "outer carrier={0}, next={1}")
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void genericInvocationPreservesCallbackAndCloseFailures(boolean outerCarrier, boolean next) throws Exception {
+		assertActiveInvocationSurvivesClose(outerCarrier, next, true);
+	}
+
+	@ParameterizedTest(name = "outer carrier={0}")
+	@CsvSource({ "false", "true" })
+	void closeDuringGenericRemoveKeepsSessionUntilCallbackFinishes(boolean outerCarrier) throws Exception {
+		NativeExecutionContext execution = new NativeExecutionContext();
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(17L, 1024L, false);
+		AtomicInteger finalCloses = new AtomicInteger();
+		session.onFinalClose(finalCloses::incrementAndGet);
+		LmdbNativeEvaluationStrategy bound = strategy().forInvocation(null, session, execution);
+		BlockingGenericDelegate delegate = new BlockingGenericDelegate(bound, session, null, null);
+		CloseableIteration<BindingSet> helper = GenericRootPlan.ownInvocation(delegate, session);
+		CloseableIteration<BindingSet> host = outerCarrier ? new NativeContextClosingIteration(helper, execution)
+				: helper;
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread consumer = new Thread(() -> {
+			try {
+				host.remove();
+			} catch (Throwable problem) {
+				failure.set(problem);
+			}
+		}, "generic-invocation-remove-test");
+		consumer.start();
+		try {
+			assertThat(delegate.entered.await(10, TimeUnit.SECONDS)).isTrue();
+			host.close();
+			assertThat(delegate.closeCalls).hasValue(1);
+			delegate.resume.countDown();
+			consumer.join(TimeUnit.SECONDS.toMillis(10));
+			assertThat(consumer.isAlive()).isFalse();
+			assertThat(failure.get()).isNull();
+			assertThat(delegate.nestedCompleted).isTrue();
+			assertThat(finalCloses).hasValue(1);
+			assertThat(session.remainingBytes()).isEqualTo(1024L);
+		} finally {
+			delegate.resume.countDown();
+			consumer.join(TimeUnit.SECONDS.toMillis(10));
+			try {
+				host.close();
+			} finally {
+				try {
+					session.close();
+				} finally {
+					execution.close();
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest(name = "outer carrier={0}")
+	@CsvSource({ "false", "true" })
+	void cancellationIsForwardedWhileGenericCallbackRuns(boolean outerCarrier) throws Exception {
+		NativeExecutionContext execution = new NativeExecutionContext();
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(17L, 1024L, false);
+		LmdbNativeEvaluationStrategy bound = strategy().forInvocation(null, session, execution);
+		BlockingGenericDelegate delegate = new BlockingGenericDelegate(bound, session, null, null);
+		CloseableIteration<BindingSet> helper = GenericRootPlan.ownInvocation(delegate, session);
+		CloseableIteration<BindingSet> host = outerCarrier ? new NativeContextClosingIteration(helper, execution)
+				: helper;
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread consumer = new Thread(() -> {
+			try {
+				host.hasNext();
+			} catch (Throwable problem) {
+				failure.set(problem);
+			}
+		}, "generic-invocation-cancellation-test");
+		Thread canceller = new Thread(() -> ((CooperativeCancellation) host).requestCancellation(),
+				"generic-invocation-canceller-test");
+		consumer.start();
+		try {
+			assertThat(delegate.entered.await(10, TimeUnit.SECONDS)).isTrue();
+			canceller.start();
+			assertThat(delegate.cancellationForwarded.await(10, TimeUnit.SECONDS)).isTrue();
+			assertThat(delegate.cancelCalls).hasValue(1);
+			delegate.resume.countDown();
+			consumer.join(TimeUnit.SECONDS.toMillis(10));
+			canceller.join(TimeUnit.SECONDS.toMillis(10));
+			assertThat(consumer.isAlive()).isFalse();
+			assertThat(canceller.isAlive()).isFalse();
+			assertThat(failure.get()).isNull();
+			assertThat(delegate.nestedCompleted).isTrue();
+		} finally {
+			delegate.resume.countDown();
+			consumer.join(TimeUnit.SECONDS.toMillis(10));
+			if (canceller.getState() != Thread.State.NEW) {
+				canceller.join(TimeUnit.SECONDS.toMillis(10));
+			}
+			try {
+				host.close();
+			} finally {
+				try {
+					session.close();
+				} finally {
+					execution.close();
+				}
+			}
+		}
+	}
+
+	@Test
+	void reentrantGenericInvocationCloseReleasesEachOwnerOnce() {
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(17L, false);
+		AtomicReference<CloseableIteration<BindingSet>> owner = new AtomicReference<>();
+		AtomicInteger delegateCloses = new AtomicInteger();
+		AtomicInteger sessionCloses = new AtomicInteger();
+		CloseableIteration<BindingSet> delegate = new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				return false;
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void remove() {
+				throw new IllegalStateException();
+			}
+
+			@Override
+			public void close() {
+				delegateCloses.incrementAndGet();
+				owner.get().close();
+			}
+		};
+		session.onFinalClose(() -> {
+			sessionCloses.incrementAndGet();
+			owner.get().close();
+		});
+		CloseableIteration<BindingSet> helper = GenericRootPlan.ownInvocation(delegate, session);
+		owner.set(helper);
+		helper.close();
+		helper.close();
+		assertThat(delegateCloses).hasValue(1);
+		assertThat(sessionCloses).hasValue(1);
+	}
+
+	private static void assertActiveInvocationSurvivesClose(boolean outerCarrier, boolean next, boolean fail)
+			throws Exception {
+		NativeExecutionContext execution = new NativeExecutionContext();
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(17L, 1024L, false);
+		AtomicInteger finalCloses = new AtomicInteger();
+		session.onFinalClose(finalCloses::incrementAndGet);
+		LmdbNativeEvaluationStrategy bound = strategy().forInvocation(null, session, execution);
+		RuntimeException callbackFailure = fail ? new RuntimeException("callback failure") : null;
+		RuntimeException delegateCloseFailure = fail ? new RuntimeException("delegate close failure") : null;
+		BlockingGenericDelegate delegate = new BlockingGenericDelegate(bound, session, callbackFailure,
+				delegateCloseFailure);
+		CloseableIteration<BindingSet> helper = GenericRootPlan.ownInvocation(delegate, session);
+		CloseableIteration<BindingSet> host = outerCarrier ? new NativeContextClosingIteration(helper, execution)
+				: helper;
+		AtomicReference<Throwable> callbackProblem = new AtomicReference<>();
+		AtomicReference<Throwable> closeProblem = new AtomicReference<>();
+		Thread consumer = new Thread(() -> {
+			try {
+				if (next) {
+					assertThat(host.next()).isSameAs(EmptyBindingSet.getInstance());
+				} else {
+					assertThat(host.hasNext()).isTrue();
+				}
+			} catch (Throwable problem) {
+				callbackProblem.set(problem);
+			}
+		}, "generic-invocation-close-test");
+		consumer.start();
+		try {
+			assertThat(delegate.entered.await(10, TimeUnit.SECONDS)).isTrue();
+			try {
+				host.close();
+			} catch (Throwable problem) {
+				closeProblem.set(problem);
+			}
+			assertThat(closeProblem.get()).isSameAs(delegateCloseFailure);
+			assertThat(delegate.closeCalls).hasValue(1);
+			assertThat(execution.isClosed()).as("an active generic callback retains its query scope").isFalse();
+			delegate.resume.countDown();
+			consumer.join(TimeUnit.SECONDS.toMillis(10));
+			assertThat(consumer.isAlive()).isFalse();
+			assertThat(callbackProblem.get()).isSameAs(callbackFailure);
+			assertThat(delegate.nestedCompleted).as("the callback must open and close its nested invocation").isTrue();
+			assertThat(finalCloses).as("the parent session is retired exactly once").hasValue(1);
+			assertThat(session.remainingBytes()).as("nested claims are released").isEqualTo(1024L);
+			if (!outerCarrier) {
+				execution.close();
+			}
+			assertThat(execution.isClosed()).isTrue();
+		} finally {
+			delegate.resume.countDown();
+			consumer.join(TimeUnit.SECONDS.toMillis(10));
+			try {
+				host.close();
+			} finally {
+				try {
+					session.close();
+				} finally {
+					execution.close();
+				}
+			}
+		}
+	}
+
+	/** A closeable delegate whose close does not interrupt an already entered user callback. */
+	private static final class BlockingGenericDelegate
+			implements CloseableIteration<BindingSet>, CooperativeCancellation {
+		private final LmdbNativeEvaluationStrategy strategy;
+		private final LmdbFusedSipFactorizedRuntime.Session parent;
+		private final RuntimeException callbackFailure;
+		private final RuntimeException closeFailure;
+		private final CountDownLatch entered = new CountDownLatch(1);
+		private final CountDownLatch resume = new CountDownLatch(1);
+		private final CountDownLatch cancellationForwarded = new CountDownLatch(1);
+		private final AtomicInteger closeCalls = new AtomicInteger();
+		private final AtomicInteger cancelCalls = new AtomicInteger();
+		private final AtomicBoolean nestedCompleted = new AtomicBoolean();
+
+		private BlockingGenericDelegate(LmdbNativeEvaluationStrategy strategy,
+				LmdbFusedSipFactorizedRuntime.Session parent, RuntimeException callbackFailure,
+				RuntimeException closeFailure) {
+			this.strategy = strategy;
+			this.parent = parent;
+			this.callbackFailure = callbackFailure;
+			this.closeFailure = closeFailure;
+		}
+
+		@Override
+		public boolean hasNext() {
+			advance();
+			return true;
+		}
+
+		@Override
+		public BindingSet next() {
+			advance();
+			return EmptyBindingSet.getInstance();
+		}
+
+		private void advance() {
+			entered.countDown();
+			try {
+				if (!resume.await(10, TimeUnit.SECONDS)) {
+					throw new AssertionError("callback was not resumed");
+				}
+			} catch (InterruptedException problem) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(problem);
+			}
+			try (LmdbFusedSipFactorizedRuntime.Session child = strategy.newFusedInvocation(18L, false)) {
+				if (!child.claim(128L)) {
+					throw new AssertionError("nested invocation did not share the query budget");
+				}
+				try {
+					if (parent.remainingBytes() != 896L) {
+						throw new AssertionError("nested invocation used a different query budget");
+					}
+				} finally {
+					child.release(128L);
+				}
+			}
+			nestedCompleted.set(true);
+			if (callbackFailure != null) {
+				throw callbackFailure;
+			}
+		}
+
+		@Override
+		public void remove() {
+			advance();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			cancelCalls.incrementAndGet();
+			cancellationForwarded.countDown();
+			return true;
+		}
+
+		@Override
+		public void close() {
+			closeCalls.incrementAndGet();
+			if (closeFailure != null) {
+				throw closeFailure;
+			}
+		}
+	}
 
 	@BeforeEach
 	public void setUp() {

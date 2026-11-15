@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.OwnedPullIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -89,6 +91,9 @@ class LmdbRepositoryValueExposureTest {
 	private static final IRI PREDICATE = VF.createIRI("urn:repository-exposure:predicate");
 	private static final IRI CONTEXT = VF.createIRI("urn:repository-exposure:context");
 	private static final IRI DATATYPE = VF.createIRI("urn:repository-exposure:datatype");
+	private static final IRI OUTER_OWNER_PREDICATE = VF.createIRI("urn:repository-exposure:outer-owner");
+	private static final IRI INNER_OWNER_PREDICATE = VF.createIRI("urn:repository-exposure:inner-owner");
+	private static final IRI RAW_OWNER_PREDICATE = VF.createIRI("urn:repository-exposure:raw-owner");
 	private static final String SELECT = "SELECT ?value WHERE { ?s <" + PREDICATE + "> ?value }";
 	private static final String CONSTRUCT = "CONSTRUCT { ?s <" + PREDICATE + "> ?value } WHERE { ?s <"
 			+ PREDICATE + "> ?value }";
@@ -330,6 +335,272 @@ class LmdbRepositoryValueExposureTest {
 		SAME_CONNECTION,
 		OTHER_CONNECTION,
 		OTHER_STORE
+	}
+
+	@Test
+	void nestedRepositoryExposuresKeepIndependentPullOwnership(@TempDir File directory) {
+		seedPullOwners(directory);
+		LmdbStore store = newStore(directory);
+		store.init();
+		String functionIRI = "urn:repository-exposure:nested-owners:" + UUID.randomUUID();
+		AtomicReference<LmdbStoreConnection> connectionRef = new AtomicReference<>();
+		AtomicReference<Value> innerValue = new AtomicReference<>();
+		AtomicReference<Value> rawValue = new AtomicReference<>();
+		AtomicInteger callbacks = new AtomicInteger();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionIRI;
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				throw new AssertionError("The query callback must receive its TripleSource");
+			}
+
+			@Override
+			public Value evaluate(TripleSource source, Value... args) {
+				assertEquals(0, args.length);
+				callbacks.incrementAndGet();
+				LmdbStoreConnection connection = connectionRef.get();
+				try (CloseableIteration<? extends Statement> raw = connection.getStatements(SUBJECT,
+						INNER_OWNER_PREDICATE, null, false, CONTEXT);
+						CloseableIteration<? extends Statement> exposed = connection.exposeIteration(raw,
+								SailResultValueExtractor.STATEMENTS)) {
+					assertTrue(exposed.hasNext());
+					Value value = exposed.next().getObject();
+					assertDeepReady(value);
+					assertUnpromoted(value);
+					innerValue.set(value);
+					assertFalse(exposed.hasNext());
+				}
+				try (CloseableIteration<? extends Statement> raw = connection.getStatements(SUBJECT,
+						RAW_OWNER_PREDICATE, null, false, CONTEXT)) {
+					assertTrue(raw.hasNext());
+					Value value = raw.next().getObject();
+					assertLazy(value);
+					assertTrue(((LmdbValue) value).isExternallyOwned());
+					rawValue.set(value);
+				}
+				return VF.createLiteral("callback-marker");
+			}
+		};
+		FunctionRegistry.getInstance().add(function);
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
+			connectionRef.set(connection);
+			TupleExpr query = ownerQuery(functionIRI);
+			try (CloseableIteration<? extends BindingSet> raw = connection.evaluate(query, null,
+					EmptyBindingSet.getInstance(), false);
+					CloseableIteration<? extends BindingSet> exposed = connection.exposeIteration(raw,
+							SailResultValueExtractor.BINDING_SETS)) {
+				assertTrue(exposed.hasNext());
+				BindingSet row = exposed.next();
+				assertEquals(VF.createLiteral("outer", VF.createIRI("urn:repository-exposure:outer-type")),
+						row.getValue("value"));
+				assertDeepReady(row.getValue("value"));
+				assertUnpromoted(row.getValue("value"));
+				assertEquals(VF.createLiteral("callback-marker"), row.getValue("returned"));
+				assertDeepReady(row.getValue("returned"));
+				assertFalse(exposed.hasNext());
+			}
+			assertEquals(1, callbacks.get());
+			assertDeepReady(innerValue.get());
+			assertLazy(rawValue.get());
+		} finally {
+			FunctionRegistry.getInstance().remove(function);
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void interleavedRawAndExposedPullsKeepDistinctOwners(@TempDir File directory) {
+		seedPullOwners(directory);
+		LmdbStore store = newStore(directory);
+		store.init();
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection();
+				CloseableIteration<? extends Statement> raw = connection.getStatements(SUBJECT, RAW_OWNER_PREDICATE,
+						null, false, CONTEXT);
+				CloseableIteration<? extends Statement> exposed = connection.exposeIteration(raw,
+						SailResultValueExtractor.STATEMENTS)) {
+			assertTrue(raw.hasNext());
+			Value first = raw.next().getObject();
+			assertLazy(first);
+			assertTrue(((LmdbValue) first).isExternallyOwned());
+
+			assertTrue(raw.hasNext());
+			Value unknownOwner = OwnedPullIteration.next(raw, new Object()).getObject();
+			assertLazy(unknownOwner);
+			assertTrue(((LmdbValue) unknownOwner).isExternallyOwned(),
+					"An unrecognized pull owner must retain the ordinary raw-value protection");
+
+			assertTrue(exposed.hasNext());
+			Value middle = exposed.next().getObject();
+			assertDeepReady(middle);
+			assertUnpromoted(middle);
+
+			assertTrue(raw.hasNext());
+			Value last = raw.next().getObject();
+			assertLazy(last);
+			assertTrue(((LmdbValue) last).isExternallyOwned());
+			assertFalse(raw.hasNext());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void crossedAndClosedOwnersCannotBypassRawProtection(@TempDir File directory) {
+		seedPullOwners(directory);
+		LmdbStore store = newStore(directory);
+		store.init();
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection();
+				CloseableIteration<? extends Statement> raw = connection.getStatements(SUBJECT, RAW_OWNER_PREDICATE,
+						null, false, CONTEXT);
+				CloseableIteration<? extends Statement> exposed = connection.exposeIteration(raw,
+						SailResultValueExtractor.STATEMENTS);
+				CloseableIteration<? extends Statement> otherRaw = connection.getStatements(SUBJECT,
+						INNER_OWNER_PREDICATE, null, false, CONTEXT);
+				RepositoryValueIteration<Statement> otherOwner = new RepositoryValueIteration<>(otherRaw,
+						SailResultValueExtractor.STATEMENTS, (ValueStore) store.getBackingStore().getValueFactory(),
+						null,
+						ignored -> {
+						})) {
+			assertTrue(otherOwner.ownsSourcePull(otherOwner));
+			assertTrue(raw.hasNext());
+			Value crossed = OwnedPullIteration.next(raw, otherOwner).getObject();
+			assertLazy(crossed);
+			assertTrue(((LmdbValue) crossed).isExternallyOwned(), "A different exposure cannot own this pull");
+
+			otherOwner.close();
+			assertFalse(otherOwner.ownsSourcePull(otherOwner), "A closed exposure cannot own a pull");
+			assertTrue(raw.hasNext());
+			Value closed = OwnedPullIteration.next(raw, otherOwner).getObject();
+			assertLazy(closed);
+			assertTrue(((LmdbValue) closed).isExternallyOwned(), "A closed exposure cannot suppress raw protection");
+
+			assertTrue(exposed.hasNext());
+			Value current = exposed.next().getObject();
+			assertDeepReady(current);
+			assertUnpromoted(current);
+			assertTrue(raw.hasNext());
+			Value last = raw.next().getObject();
+			assertLazy(last);
+			assertTrue(((LmdbValue) last).isExternallyOwned());
+			assertFalse(raw.hasNext());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(60)
+	void concurrentRawPullKeepsItsOwnOwnershipDuringRepositoryExposure(@TempDir File directory) throws Exception {
+		seedPullOwners(directory);
+		LmdbStore store = newStore(directory);
+		store.init();
+		String functionIRI = "urn:repository-exposure:parallel-owners:" + UUID.randomUUID();
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionIRI;
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				throw new AssertionError("The query callback must receive its TripleSource");
+			}
+
+			@Override
+			public Value evaluate(TripleSource source, Value... args) {
+				assertEquals(0, args.length);
+				entered.countDown();
+				try {
+					assertTrue(release.await(10, TimeUnit.SECONDS), "The other pull must release this callback");
+				} catch (InterruptedException failure) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(failure);
+				}
+				return VF.createLiteral("callback-marker");
+			}
+		};
+		FunctionRegistry.getInstance().add(function);
+		try (LmdbStoreConnection outer = (LmdbStoreConnection) store.getConnection();
+				LmdbStoreConnection other = (LmdbStoreConnection) store.getConnection();
+				var workers = Executors.newFixedThreadPool(2);
+				CloseableIteration<? extends BindingSet> raw = outer.evaluate(ownerQuery(functionIRI), null,
+						EmptyBindingSet.getInstance(), false);
+				CloseableIteration<? extends BindingSet> exposed = outer.exposeIteration(raw,
+						SailResultValueExtractor.BINDING_SETS)) {
+			var outward = workers.submit(() -> {
+				assertTrue(exposed.hasNext());
+				return exposed.next();
+			});
+			try {
+				assertTrue(entered.await(10, TimeUnit.SECONDS), "The repository pull must enter the query callback");
+				var independent = workers.submit(() -> {
+					try (CloseableIteration<? extends Statement> rows = other.getStatements(SUBJECT,
+							RAW_OWNER_PREDICATE, null, false, CONTEXT)) {
+						assertTrue(rows.hasNext());
+						return rows.next().getObject();
+					}
+				});
+				Value value = independent.get(10, TimeUnit.SECONDS);
+				assertLazy(value);
+				assertTrue(((LmdbValue) value).isExternallyOwned());
+			} finally {
+				release.countDown();
+			}
+			BindingSet row = outward.get(10, TimeUnit.SECONDS);
+			assertEquals(VF.createLiteral("outer", VF.createIRI("urn:repository-exposure:outer-type")),
+					row.getValue("value"));
+			assertDeepReady(row.getValue("value"));
+			assertUnpromoted(row.getValue("value"));
+			assertEquals(VF.createLiteral("callback-marker"), row.getValue("returned"));
+			assertDeepReady(row.getValue("returned"));
+		} finally {
+			release.countDown();
+			FunctionRegistry.getInstance().remove(function);
+			store.shutDown();
+		}
+	}
+
+	private static TupleExpr ownerQuery(String functionIRI) {
+		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?value ?returned WHERE { ?s <" + OUTER_OWNER_PREDICATE + "> ?value . BIND(<"
+						+ functionIRI + ">() AS ?returned) }",
+				null).getTupleExpr();
+	}
+
+	private static void seedPullOwners(File directory) {
+		SailRepository repository = new SailRepository(newStore(directory));
+		repository.init();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(SUBJECT, OUTER_OWNER_PREDICATE,
+					VF.createLiteral("outer", VF.createIRI("urn:repository-exposure:outer-type")), CONTEXT);
+			connection.add(SUBJECT, INNER_OWNER_PREDICATE,
+					VF.createLiteral("inner", VF.createIRI("urn:repository-exposure:inner-type")), CONTEXT);
+			for (int i = 0; i < 4; i++) {
+				connection.add(SUBJECT, RAW_OWNER_PREDICATE,
+						VF.createLiteral("raw-" + i, VF.createIRI("urn:repository-exposure:raw-type:" + i)),
+						CONTEXT);
+			}
+			connection.commit();
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@ParameterizedTest

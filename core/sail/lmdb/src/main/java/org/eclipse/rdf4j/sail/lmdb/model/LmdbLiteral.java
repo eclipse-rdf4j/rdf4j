@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.base.InternedIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
@@ -195,8 +196,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	private boolean stableDatatype() {
-		return datatype == null || datatypeVersion != null
-				|| coreDatatype != null && coreDatatype != CoreDatatype.NONE && datatype == coreDatatype.getIri();
+		return (coreDatatype == null || coreDatatype == CoreDatatype.NONE || coreDatatype instanceof CoreDatatype.XSD
+				|| coreDatatype instanceof CoreDatatype.RDF || coreDatatype instanceof CoreDatatype.GEO)
+				&& (datatype == null || datatypeVersion != null || datatype instanceof InternedIRI);
 	}
 
 	private void checkDatatypeVersion() {
@@ -291,6 +293,21 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		return initialized;
 	}
 
+	boolean hasMetadataSemanticPayload() {
+		return initialized && label != null && datatype != null
+				&& (coreDatatype == null || coreDatatype == CoreDatatype.NONE
+						|| coreDatatype instanceof CoreDatatype.XSD
+						|| coreDatatype instanceof CoreDatatype.RDF || coreDatatype instanceof CoreDatatype.GEO);
+	}
+
+	long metadataSemanticVersion() {
+		return semanticVersion;
+	}
+
+	IRI metadataDatatype() {
+		return datatype;
+	}
+
 	@Override
 	public void visitValueChildren(Consumer<Value> visitor) {
 		visitor.accept(datatype);
@@ -345,7 +362,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		payloadChanged();
 		this.coreDatatype = coreDatatype;
 		datatype = coreDatatype.getIri();
-		datatypeVersion = null;
+		datatypeVersion = ChildVersion.capture(datatype);
 	}
 
 	@Override
@@ -509,7 +526,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	private void writeObject(ObjectOutputStream output) throws IOException {
-		InternalIdentity captured = identity;
+		InternalIdentity captured = getInternalIdentity();
 		ObjectOutputStream.PutField fields = output.putFields();
 		fields.put("internalID", captured.id());
 		fields.put("revision", captured.revision());

@@ -229,6 +229,110 @@ public class BorrowedTupleContractTest {
 	}
 
 	@Test
+	public void resultPositionTracksWeightedLogicalTupleFragments() {
+		try (WeightedTuples source = new WeightedTuples(2,
+				new long[][] { { 11, 110 }, { 22, 220 } }, new long[] { 2, 3 })) {
+			BorrowedTupleBatch original = source.batch();
+			BorrowedTupleBatch copy = new BorrowedTupleBatch(source, 1);
+			copy.reset(1);
+			copy.copyLaneFrom(0, original, 0);
+			try (BorrowedTupleBatch.Cursor cursor = copy.cursor(2)) {
+				eq(-1L, cursor.resultPosition());
+				eq(-1L, cursor.resultLane());
+				cursor.bind(0);
+				eq(-1L, cursor.resultLane());
+				long[] expectedPositions = { 0L, 2L, 4L };
+				int index = 0;
+				while (cursor.next()) {
+					eq(expectedPositions[index++], cursor.resultPosition());
+					eq(0L, cursor.resultLane());
+				}
+				eq(expectedPositions.length, index);
+				eq(-1L, cursor.resultPosition());
+				eq(-1L, cursor.resultLane());
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(0L, cursor.resultPosition());
+				eq(0L, cursor.resultLane());
+				long copyGeneration = copy.generation();
+				copy.bind(0, 0L, source.count);
+				eq(copyGeneration, copy.generation());
+				eq(-1L, cursor.resultPosition());
+				eq(-1L, cursor.resultLane());
+				cursor.bind(0);
+				yes(cursor.next());
+				eq(0L, cursor.resultPosition());
+				copy.copyLaneFrom(0, original, 0);
+				eq(copyGeneration, copy.generation());
+				eq(-1L, cursor.resultPosition());
+				eq(-1L, cursor.resultLane());
+				cursor.close();
+				eq(-1L, cursor.resultPosition());
+				eq(-1L, cursor.resultLane());
+			}
+		}
+	}
+
+	@Test
+	public void changedMaskClosesTupleGroupsAndResetsAcrossRebind() {
+		try (WeightedTuples tuples = new WeightedTuples(2,
+				new long[][] { { 11, 110 }, { 22, 220 } }, new long[] { 2, 1 });
+				WeightedTuples reboundTuples = new WeightedTuples(2,
+						new long[][] { { 33, 330 } }, new long[] { 1 });
+				HeapFactorSource heap = new HeapFactorSource(this);
+				FactorProductCursor product = new FactorProductCursor(4, 1)) {
+			BorrowedFactorBatch outer = new BorrowedFactorBatch(heap, 1);
+			outer.reset(1);
+			outer.bindHeap(0, new long[] { 1, 2 }, 0, 2);
+			BorrowedFactorBatch sibling = new BorrowedFactorBatch(heap, 1);
+			sibling.reset(1);
+			sibling.bindHeap(0, new long[] { 7, 8 }, 0, 2);
+			FactorEnvironment environment = new FactorEnvironment(4);
+			environment.bind(0, outer, 0, 0L);
+			environment.bindTuple(new int[] { 1, 2 }, tuples.batch(), 0, 0L);
+			environment.bind(3, sibling, 0, 0L);
+
+			product.bind(environment, -1L, 1L);
+			eq(-1L, product.takeChangedSlots());
+			yes(product.next());
+			long oldActivation = product.coordinateActivation();
+			long[] firstColumn = new long[4];
+			long[] secondColumn = new long[4];
+			yes(product.mayReplay(1));
+			yes(product.resultCoordinate(1, firstColumn));
+			yes(product.resultCoordinate(2, secondColumn));
+			eq(1L, firstColumn[0]);
+			eq(1L, secondColumn[0]);
+			eq(0L, firstColumn[3]);
+			eq(1L, secondColumn[3]);
+
+			// Leave the sibling-only advance unconsumed, then cross a tuple boundary and restart its sibling.
+			yes(product.next());
+			yes(product.next());
+			eq((1L << 1) | (1L << 2) | (1L << 3), product.takeChangedSlots());
+			yes(product.coordinateValid(1, oldActivation));
+
+			BorrowedFactorBatch reboundOuter = new BorrowedFactorBatch(heap, 1);
+			reboundOuter.reset(1);
+			reboundOuter.bindHeap(0, new long[] { 3 }, 0, 1);
+			BorrowedFactorBatch reboundSibling = new BorrowedFactorBatch(heap, 1);
+			reboundSibling.reset(1);
+			reboundSibling.bindHeap(0, new long[] { 9 }, 0, 1);
+			FactorEnvironment rebound = new FactorEnvironment(4);
+			rebound.bind(0, reboundOuter, 0, 0L);
+			rebound.bindTuple(new int[] { 1, 2 }, reboundTuples.batch(), 0, 0L);
+			rebound.bind(3, reboundSibling, 0, 0L);
+			product.bind(rebound, -1L, 1L);
+			yes(!product.coordinateValid(1, oldActivation));
+			eq(-1L, product.takeChangedSlots());
+			yes(product.next());
+			long reboundActivation = product.coordinateActivation();
+			yes(reboundActivation != oldActivation);
+			yes(product.coordinateValid(1, reboundActivation));
+		}
+	}
+
+	@Test
 	public void emptyTupleAnnihilatesBeforeOverflow() {
 		try (WeightedTuples source = new WeightedTuples(2, new long[0][2], new long[0]);
 				HeapFactorSource heap = new HeapFactorSource(this)) {

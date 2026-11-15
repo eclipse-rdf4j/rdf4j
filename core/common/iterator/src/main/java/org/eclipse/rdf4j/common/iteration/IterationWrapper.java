@@ -61,13 +61,18 @@ public class IterationWrapper<E> extends AbstractCloseableIteration<E> implement
 	 */
 	@Override
 	public boolean hasNext() {
+		return delegatedHasNext(null);
+	}
+
+	/** Performs this wrapper's normal checks while forwarding an explicitly supplied pull owner. */
+	protected final boolean delegatedHasNext(Object owner) {
 		if (isClosed()) {
 			return false;
 		} else if (Thread.currentThread().isInterrupted()) {
 			close();
 			return false;
 		}
-		boolean result = wrappedIter.hasNext();
+		boolean result = OwnedPullIteration.hasNext(wrappedIter, owner);
 		if (!result) {
 			close();
 		}
@@ -81,6 +86,11 @@ public class IterationWrapper<E> extends AbstractCloseableIteration<E> implement
 	 */
 	@Override
 	public E next() {
+		return delegatedNext(null);
+	}
+
+	/** Performs this wrapper's normal checks while forwarding an explicitly supplied pull owner. */
+	protected final E delegatedNext(Object owner) {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		} else if (Thread.currentThread().isInterrupted()) {
@@ -88,7 +98,7 @@ public class IterationWrapper<E> extends AbstractCloseableIteration<E> implement
 			throw new NoSuchElementException("The iteration has been interrupted.");
 		}
 		try {
-			return wrappedIter.next();
+			return OwnedPullIteration.next(wrappedIter, owner);
 		} catch (NoSuchElementException e) {
 			close();
 			throw e;

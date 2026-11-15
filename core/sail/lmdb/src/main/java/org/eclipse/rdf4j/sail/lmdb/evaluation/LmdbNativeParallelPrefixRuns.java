@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Parallel partitioned execution of prefix-run group plans. The scan is tiled into more ranges than workers
@@ -126,31 +127,43 @@ final class LmdbNativeParallelPrefixRuns {
 				}
 				List<Future<?>> futures = new ArrayList<>(workers);
 				AtomicReference<Throwable> failure = new AtomicReference<>();
+				Throwable submissionFailure = null;
 				for (int w = 0; w < workers; w++) {
 					NativeLmdbQuerySource workerSource = sources[w];
-					var replayContext = NativeExecutionContext.captureWorkerContext();
-					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try (var replayScope = replayContext.activate()) {
-							Integer range;
-							// abort check: once any worker failed (or the query thread was interrupted while
-							// draining), remaining ranges are abandoned instead of scanned to completion
-							while (failure.get() == null && (range = queue.poll()) != null) {
-								long[] lo = range == 0 ? null : splits[range - 1];
-								long[] hi = range == splits.length ? null : splits[range];
-								rangeResults[range] = collectRange(it, workerSource, subj, pred, obj, context, lo,
-										hi, row.runtimePlan);
+					try {
+						var replayContext = NativeExecutionContext.captureWorkerContext();
+						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+							try (var replayScope = replayContext.activate()) {
+								Integer range;
+								// Stop assigning ranges after a worker or submission has failed.
+								while (failure.get() == null && (range = queue.poll()) != null) {
+									long[] lo = range == 0 ? null : splits[range - 1];
+									long[] hi = range == splits.length ? null : splits[range];
+									rangeResults[range] = collectRange(it, workerSource, subj, pred, obj, context, lo,
+											hi, row.runtimePlan);
+								}
+								return null;
+							} catch (Throwable t) {
+								failure.compareAndSet(null, t);
+								throw t;
 							}
-							return null;
-						} catch (Throwable t) {
-							failure.compareAndSet(null, t);
-							throw t;
-						}
-					}));
+						}));
+					} catch (RuntimeException | Error problem) {
+						submissionFailure = problem;
+						failure.compareAndSet(null, problem);
+						break;
+					}
 				}
 				// Every future must be terminal before the finally below closes the shared worker sources
 				// (gap-analysis S1): a worker still iterating a cursor while its LMDB read transaction is
 				// reset/pooled is native undefined behaviour. This mirrors the kernel-aggregate drain.
 				Throwable firstProblem = awaitWorkersBeforeClose(futures, failure);
+				if (submissionFailure != null) {
+					if (firstProblem != null && firstProblem != submissionFailure) {
+						submissionFailure.addSuppressed(firstProblem);
+					}
+					firstProblem = submissionFailure;
+				}
 				if (firstProblem != null) {
 					if (firstProblem instanceof Error) {
 						throw (Error) firstProblem;
@@ -161,15 +174,31 @@ final class LmdbNativeParallelPrefixRuns {
 					throw new QueryEvaluationException(firstProblem);
 				}
 				RowState filterRow = null;
-				if (it.prefixRunFilter != null) {
-					filterRow = new RowState(it.source, it.layout, it.base, it.explainTarget, it.cancellation);
-					if (!LmdbNativeAggregateCompiler.initializeRow(filterRow, it.base, it.source, it.layout)) {
-						return List.of();
+				Throwable filterFailure = null;
+				try {
+					if (it.prefixRunFilter != null) {
+						filterRow = new RowState(it.source, it.layout, it.base, it.explainTarget, it.cancellation);
+						filterRow.fusedSession = row.fusedSession();
+						filterRow.setExecutionContext(row.executionContext());
+						filterRow.inheritDiagnosticRoot(row);
+						filterRow.bindInvocationStrategy(row.invocationStrategyOrNull());
+						if (!LmdbNativeAggregateCompiler.initializeRow(filterRow, it.base, it.source, it.layout)) {
+							return List.of();
+						}
+					}
+					List<BindingSet> results = mergeAndMaterialize(it, filterRow, rangeResults);
+					PARALLEL_RUNS.incrementAndGet();
+					return results;
+				} catch (RuntimeException | Error problem) {
+					filterFailure = problem;
+					throw problem;
+				} finally {
+					if (filterRow != null) {
+						KernelRuntime.rethrowCloseFailureIfNotPrimary(
+								KernelRuntime.closeResource(filterRow::closeDecodedInputs, filterFailure),
+								filterFailure);
 					}
 				}
-				List<BindingSet> results = mergeAndMaterialize(it, filterRow, rangeResults);
-				PARALLEL_RUNS.incrementAndGet();
-				return results;
 			} finally {
 				closeAll(sources);
 			}

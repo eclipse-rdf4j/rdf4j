@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * LMDB-local bridge used by the native query compilers. This internal interface lets the root LMDB store integrate with
@@ -58,6 +59,141 @@ public interface NativeLmdbQuerySource {
 		return idOf(value);
 	}
 
+	/** Provenance accompanies the lookup; a numeric ID alone cannot distinguish independent synthetic spaces. */
+	enum IdOrigin {
+		ABSENT,
+		STORED,
+		PLAN,
+		RUNTIME,
+		UNCERTIFIED
+	}
+
+	/** Reusable compiler scratch; it never owns the source or a value. */
+	final class IdLookup {
+		private long id = UNKNOWN_ID;
+		private IdOrigin origin = IdOrigin.UNCERTIFIED;
+		private boolean backingAbsenceCertified;
+
+		public long id() {
+			return id;
+		}
+
+		public IdOrigin origin() {
+			return origin;
+		}
+
+		/** Whether this same lookup proved the term absent from the backing statement dictionary. */
+		public boolean backingAbsenceCertified() {
+			return backingAbsenceCertified;
+		}
+
+		public void set(long id, IdOrigin origin) {
+			if (origin == null || origin == IdOrigin.ABSENT && id != UNKNOWN_ID
+					|| origin != IdOrigin.ABSENT && origin != IdOrigin.UNCERTIFIED && id == UNKNOWN_ID) {
+				throw new IllegalArgumentException("native ID origin does not match its lookup result");
+			}
+			this.id = id;
+			this.origin = origin;
+			this.backingAbsenceCertified = origin == IdOrigin.ABSENT;
+		}
+
+		/** A local synthetic hit may preserve the backing absence proved by the delegated lookup. */
+		public void setPlanAfterBackingAbsence(long id) {
+			set(id, IdOrigin.PLAN);
+			backingAbsenceCertified = true;
+		}
+	}
+
+	/** Custom sources opt in to provenance; the default preserves their lookup without certifying its origin. */
+	default void idOfWithOrigin(Value value, int positionMask, IdLookup result) throws QueryEvaluationException {
+		long id = idOf(value, positionMask);
+		result.set(id, IdOrigin.UNCERTIFIED);
+	}
+
+	/**
+	 * True only if every successful lookup certifies its ID origin or absence, including values seen after admission.
+	 * Unknown/custom sources decline native compilation before any rows are published.
+	 */
+	default boolean certifiesIdOrigins() {
+		return false;
+	}
+
+	/** Metadata-only proof of a cold native value's statement ID, or UNKNOWN when the source cannot certify it. */
+	default long knownStatementId(LmdbValue value) {
+		return UNKNOWN_ID;
+	}
+
+	/**
+	 * Detached identity-only proof for a compiled physical recipe. None of the identity tokens may own a source,
+	 * snapshot, transaction, term authority, runtime table, callback, or their enclosing objects. The actual source
+	 * remains responsible for its own lifetime, and callers must recheck this receipt before and after preparation and
+	 * immediately before opening the prepared input. A changed or null receipt declines reuse.
+	 *
+	 * A null plan/runtime identity means that the source certifies the respective ID space is absent; an unknown space
+	 * must instead decline the entire receipt. The statement mask describes the exact built-in explicit/inferred source
+	 * set. It cannot be combined when two inputs overlap, because concatenating identical sources can change
+	 * multiplicity.
+	 */
+	record DomainStamp(Object storedIdSpace, Object lookupScope, Object resultScope, Object statementSnapshot,
+			int statementMask, Object planCatalog, Object runtimeAuthority) {
+		public static final int EXPLICIT = 1;
+		public static final int INFERRED = 2;
+
+		public DomainStamp {
+			Objects.requireNonNull(storedIdSpace);
+			Objects.requireNonNull(lookupScope);
+			Objects.requireNonNull(resultScope);
+			Objects.requireNonNull(statementSnapshot);
+			if (statementMask == 0 || (statementMask & ~(EXPLICIT | INFERRED)) != 0) {
+				throw new IllegalArgumentException("invalid native statement source mask");
+			}
+		}
+
+		public boolean sameDomain(DomainStamp other) {
+			return sameAuthority(other) && statementMask == other.statementMask;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof DomainStamp stamp && sameDomain(stamp);
+		}
+
+		@Override
+		public int hashCode() {
+			int hash = System.identityHashCode(storedIdSpace);
+			hash = 31 * hash + System.identityHashCode(lookupScope);
+			hash = 31 * hash + System.identityHashCode(resultScope);
+			hash = 31 * hash + System.identityHashCode(statementSnapshot);
+			hash = 31 * hash + statementMask;
+			hash = 31 * hash + System.identityHashCode(planCatalog);
+			return 31 * hash + System.identityHashCode(runtimeAuthority);
+		}
+
+		public boolean sameAuthority(DomainStamp other) {
+			return sameBackingView(other) && planCatalog == other.planCatalog
+					&& runtimeAuthority == other.runtimeAuthority;
+		}
+
+		public boolean sameBackingView(DomainStamp other) {
+			return other != null && storedIdSpace == other.storedIdSpace && lookupScope == other.lookupScope
+					&& resultScope == other.resultScope && statementSnapshot == other.statementSnapshot;
+		}
+
+		public DomainStamp combineDisjoint(DomainStamp other) {
+			return sameAuthority(other) && (statementMask & other.statementMask) == 0
+					? new DomainStamp(storedIdSpace, lookupScope, resultScope, statementSnapshot,
+							statementMask | other.statementMask, planCatalog, runtimeAuthority)
+					: null;
+		}
+	}
+
+	/**
+	 * Custom sources decline unless they can certify detached identities and validate their live source on each call.
+	 */
+	default DomainStamp detachedDomainStamp() {
+		return null;
+	}
+
 	/**
 	 * Optional dictionary-lookup cache token. Identical non-null tokens certify the same visible value-to-id mapping,
 	 * including absence. Changed mappings must change the token; null declines caching. Never substitute idSpace(),
@@ -77,6 +213,17 @@ public interface NativeLmdbQuerySource {
 	}
 
 	Value lazyValue(long id) throws QueryEvaluationException;
+
+	/**
+	 * Optional identity of the current ID-to-value view. Equal non-null identities certify that a given ID continues to
+	 * denote the same RDF term in this source. A source whose result lookup can change independently of its dictionary
+	 * view must decline. Result caches compare this identity before and after a lookup and remain confined to one
+	 * source evaluation. This is a separate contract from {@link #valueLookupScope()}, which concerns value-to-ID
+	 * lookups.
+	 */
+	default Object resultValueScope() {
+		return null;
+	}
 
 	/** Materializes a value using the complete static position mask of its lexical binding. */
 	default Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
@@ -1142,6 +1289,14 @@ public interface NativeLmdbQuerySource {
 		/** This view cannot answer for the key; the caller must use the store path. */
 		long NOT_COVERED = -2L;
 
+		/**
+		 * Stable positive identity for a run and its raw-offset interpretation within this exact immutable view, or
+		 * zero when that cannot be guaranteed. This token is not a value ID and must not be compared across views.
+		 */
+		default long sourceRunToken(long runHandle) {
+			return 0L;
+		}
+
 		static KeyRunCursor boundedKeyRunCursor(KeyRunCursor delegate, long fromOrdinal, long toOrdinal) {
 			return new KeyRunCursor() {
 				@Override
@@ -1803,6 +1958,11 @@ public interface NativeLmdbQuerySource {
 		@Experimental
 		interface BoundRunCursor extends AutoCloseable {
 
+			/** Stable identity of the currently bound original run within its immutable view, or zero to decline. */
+			default long sourceRunToken() {
+				return 0L;
+			}
+
 			/** Exports stable, exact context-unrestricted relation coordinates, not this cursor's mutable state. */
 			default boolean borrow(BorrowedFactorBatch target, int lane) {
 				return false;
@@ -2086,6 +2246,11 @@ public interface NativeLmdbQuerySource {
 			NativeAdjacency adjacency = this;
 			return new BoundRunCursor() {
 				private long handle;
+
+				@Override
+				public long sourceRunToken() {
+					return handle > 0L ? adjacency.sourceRunToken(handle) : 0L;
+				}
 
 				@Override
 				public long neighborInContextSpan(long offset) {

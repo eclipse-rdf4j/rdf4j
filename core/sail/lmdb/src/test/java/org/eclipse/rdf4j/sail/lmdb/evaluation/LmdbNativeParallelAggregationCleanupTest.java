@@ -1482,10 +1482,14 @@ class LmdbNativeParallelAggregationCleanupTest {
 		queue.add(new LmdbNativeExchange.Morsel(new long[] { 1L, 7L, 8L, 0L }, 1));
 		queue.add(LmdbNativeExchange.Morsel.POISON);
 
-		assertThatThrownBy(() -> LmdbNativeParallelAggregation.runWorker(iteration, plan, derived, root, source,
-				queue, new AtomicReference<>(), LmdbNativeAttemptMetrics.direct()))
-						.isSameAs(workerFailure)
-						.satisfies(problem -> assertThat(problem.getSuppressed()).containsExactly(closeFailure));
+		try (NativeExecutionContext execution = new NativeExecutionContext();
+				LmdbFusedSipFactorizedRuntime.Session invocation = LmdbFusedSipFactorizedRuntime.create(1L, false);
+				LmdbFusedSipFactorizedRuntime.Session session = invocation.worker()) {
+			assertThatThrownBy(() -> LmdbNativeParallelAggregation.runWorker(iteration, plan, derived, root, source,
+					queue, new AtomicReference<>(), LmdbNativeAttemptMetrics.direct(), session, execution))
+							.isSameAs(workerFailure)
+							.satisfies(problem -> assertThat(problem.getSuppressed()).containsExactly(closeFailure));
+		}
 		assertThat(source.probeCloseCalls).isOne();
 	}
 

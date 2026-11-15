@@ -31,17 +31,24 @@ final class NativeResultSteps {
 			return nativeStep.evaluateNative(bindings);
 		}
 		CloseableIteration<BindingSet> delegate = step.evaluate(bindings);
-		NativeExecutionContext context = NativeExecutionContextCarrier.contextOf(delegate);
+		NativeInvocationCarrier invocation = NativeExecutionContextCarrier.invocationOf(delegate);
+		NativeExecutionContext context = invocation == null ? NativeExecutionContextCarrier.contextOf(delegate)
+				: invocation.executionContext();
+		NativeInvocationCarrier.Lease invocationLease = invocation == null ? null : invocation.retain();
+		NativeExecutionContext.Lease contextLease = invocation == null ? NativeExecutionContextCarrier.retain(delegate)
+				: null;
+		NativeInvocationOperations operations = new NativeInvocationOperations(invocationLease, contextLease);
 		return new NativeResultCursor() {
 			private final NativeCancellationToken cancellation = new NativeCancellationToken(
 					context == null ? null : context.cancellation());
-			private boolean closed;
+			private volatile boolean closed;
 
 			@Override
 			public NativeResultRow next() {
-				if (closed) {
+				if (!operations.enter()) {
 					return null;
 				}
+				Throwable primaryFailure = null;
 				try {
 					cancellation.check();
 					if (!delegate.hasNext()) {
@@ -53,8 +60,11 @@ final class NativeResultSteps {
 					cancellation.check();
 					return row;
 				} catch (Throwable failure) {
+					primaryFailure = failure;
 					NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
 					throw new AssertionError("unreachable");
+				} finally {
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(operations.leave(primaryFailure), primaryFailure);
 				}
 			}
 
@@ -69,6 +79,11 @@ final class NativeResultSteps {
 			}
 
 			@Override
+			public NativeInvocationCarrier invocationCarrier() {
+				return invocation;
+			}
+
+			@Override
 			public boolean requestCancellation() {
 				cancellation.requestCancellation();
 				if (delegate instanceof CooperativeCancellation cooperative) {
@@ -79,24 +94,41 @@ final class NativeResultSteps {
 
 			@Override
 			public void close() {
-				if (!closed) {
+				if (operations.beginClose()) {
 					closed = true;
-					delegate.close();
+					Throwable failure = KernelRuntime.closeResource(delegate, null);
+					KernelRuntime.rethrowCloseFailure(operations.delegateClosed(failure));
 				}
 			}
 		};
 	}
 
 	static NativeResultCursor map(NativeResultCursor delegate, Function<NativeResultRow, NativeResultRow> mapper) {
+		NativeInvocationCarrier invocation = delegate.invocationCarrier();
+		NativeInvocationCarrier.Lease invocationLease = invocation == null ? null : invocation.retain();
+		NativeExecutionContext.Lease contextLease = invocation == null ? NativeExecutionContextCarrier.retain(delegate)
+				: null;
+		NativeInvocationOperations operations = new NativeInvocationOperations(invocationLease, contextLease);
 		return new NativeResultCursor() {
 			@Override
 			public NativeResultRow next() {
+				if (!operations.enter()) {
+					return null;
+				}
+				Throwable primaryFailure = null;
 				try {
 					NativeResultRow row = delegate.next();
-					return row == null ? null : mapper.apply(row);
+					if (row == null) {
+						close();
+						return null;
+					}
+					return mapper.apply(row);
 				} catch (Throwable failure) {
+					primaryFailure = failure;
 					NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
 					throw new AssertionError("unreachable");
+				} finally {
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(operations.leave(primaryFailure), primaryFailure);
 				}
 			}
 
@@ -107,7 +139,12 @@ final class NativeResultSteps {
 
 			@Override
 			public NativeExecutionContext executionContext() {
-				return delegate.executionContext();
+				return invocation == null ? delegate.executionContext() : invocation.executionContext();
+			}
+
+			@Override
+			public NativeInvocationCarrier invocationCarrier() {
+				return invocation;
 			}
 
 			@Override
@@ -117,7 +154,10 @@ final class NativeResultSteps {
 
 			@Override
 			public void close() {
-				delegate.close();
+				if (operations.beginClose()) {
+					Throwable failure = KernelRuntime.closeResource(delegate, null);
+					KernelRuntime.rethrowCloseFailure(operations.delegateClosed(failure));
+				}
 			}
 		};
 	}
@@ -129,18 +169,27 @@ final class NativeResultSteps {
 	private static final class RdfIteration
 			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
 		private final NativeResultCursor cursor;
+		private final NativeInvocationCarrier invocation;
+		private final NativeInvocationOperations operations;
 		private NativeResultRow next;
-		private boolean closed;
+		private volatile boolean closed;
 
 		private RdfIteration(NativeResultCursor cursor) {
 			this.cursor = cursor;
+			this.invocation = cursor.invocationCarrier();
+			NativeInvocationCarrier.Lease invocationLease = invocation == null ? null : invocation.retain();
+			NativeExecutionContext.Lease contextLease = invocation == null
+					? NativeExecutionContextCarrier.retain(cursor)
+					: null;
+			this.operations = new NativeInvocationOperations(invocationLease, contextLease);
 		}
 
 		@Override
 		public boolean hasNext() {
-			if (closed) {
+			if (!operations.enter()) {
 				return false;
 			}
+			Throwable primaryFailure = null;
 			try {
 				if (next == null) {
 					next = cursor.next();
@@ -150,23 +199,37 @@ final class NativeResultSteps {
 				}
 				return next != null;
 			} catch (Throwable failure) {
+				primaryFailure = failure;
 				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
 				throw new AssertionError("unreachable");
+			} finally {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(operations.leave(primaryFailure), primaryFailure);
 			}
 		}
 
 		@Override
 		public BindingSet next() {
-			if (!hasNext()) {
+			if (!operations.enter()) {
 				throw new NoSuchElementException();
 			}
+			Throwable primaryFailure = null;
 			try {
-				BindingSet bindings = next.toBindingSet();
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				NativeResultRow row = next;
+				if (row == null) {
+					throw new NoSuchElementException();
+				}
+				BindingSet bindings = row.toBindingSet();
 				next = null;
 				return bindings;
 			} catch (Throwable failure) {
+				primaryFailure = failure;
 				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
 				throw new AssertionError("unreachable");
+			} finally {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(operations.leave(primaryFailure), primaryFailure);
 			}
 		}
 
@@ -182,15 +245,21 @@ final class NativeResultSteps {
 
 		@Override
 		public NativeExecutionContext executionContext() {
-			return cursor.executionContext();
+			return invocation == null ? cursor.executionContext() : invocation.executionContext();
+		}
+
+		@Override
+		public NativeInvocationCarrier invocationCarrier() {
+			return invocation;
 		}
 
 		@Override
 		public void close() {
-			if (!closed) {
+			if (operations.beginClose()) {
 				closed = true;
 				next = null;
-				cursor.close();
+				Throwable failure = KernelRuntime.closeResource(cursor, null);
+				KernelRuntime.rethrowCloseFailure(operations.delegateClosed(failure));
 			}
 		}
 	}
