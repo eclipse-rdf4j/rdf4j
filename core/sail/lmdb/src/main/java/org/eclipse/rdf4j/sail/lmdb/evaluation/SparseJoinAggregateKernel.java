@@ -55,12 +55,227 @@ final class SparseJoinAggregateKernel {
 		void accept(long left, long right, long count);
 	}
 
+	@FunctionalInterface
+	interface EndpointFilter {
+		boolean accepts(long left, long right);
+	}
+
 	/** Work counters describe this invocation, including preparation; they are not elapsed-time estimates. */
 	record Statistics(long rightRows, long rightFibers, long rightEndpoints, long leftRows, long leftFibers,
 			long multiplyAdds, long prunedRows, long prunedProducts, long outputGroups) {
 	}
 
 	private SparseJoinAggregateKernel() {
+	}
+
+	/** Independent readers over one left/shared fiber and its retained right row. */
+	static NativeFactorProjections projections(WeightedRows left, WeightedRows right, int[][] columns, boolean[] exact,
+			int[] origins, long[] constants, int leftSlot, int rightSlot, int sharedSlot,
+			EndpointFilter filter, MemoryAccount memory, KernelCancellation cancellation) {
+		ProjectionCursor cursor = new ProjectionCursor(left, right, columns, exact, origins, constants, leftSlot,
+				rightSlot,
+				sharedSlot, filter, memory, cancellation);
+		try {
+			cursor.initialize();
+			return cursor;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(cursor, failure), failure);
+			throw failure;
+		}
+	}
+
+	static boolean projectionUses(int[] columns, int[] origins, int slot) {
+		for (int column : columns) {
+			if (origins[column] == slot) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static long projectionValue(int slot, int[] origins, long[] constants, int leftSlot, int rightSlot,
+			int sharedSlot, long left, long right, long shared) {
+		int origin = origins[slot];
+		if (origin == leftSlot) {
+			return left;
+		}
+		if (origin == rightSlot) {
+			return right;
+		}
+		if (origin == sharedSlot) {
+			return shared;
+		}
+		if (origin == -2) {
+			return constants[slot];
+		}
+		if (origin == -3) {
+			return LmdbNativeAggregateCompiler.UNKNOWN;
+		}
+		throw new IllegalStateException("Unavailable sparse projection slot: " + slot);
+	}
+
+	private static final class ProjectionCursor implements NativeFactorProjections {
+		private final WeightedRows left, right;
+		private final int[][] columns;
+		private final boolean[] exact;
+		private final int[] origins;
+		private final long[] constants;
+		private final int leftSlot, rightSlot, sharedSlot;
+		private final EndpointFilter filter;
+		private final Workspace workspace;
+		private LongIntMap sharedRows, endpoints;
+		private RightMatrix matrix;
+		private long[] neighbors, weights;
+		private int[] positions, needsRight;
+		private int batchSize, batchPosition, row, currentPosition, currentProjection;
+		private long leftId, sharedId, leftWeight, rightId, previousShared;
+		private boolean hasLeft, hasPrevious, closed;
+
+		ProjectionCursor(WeightedRows left, WeightedRows right, int[][] columns, boolean[] exact, int[] origins,
+				long[] constants,
+				int leftSlot, int rightSlot, int sharedSlot, EndpointFilter filter, MemoryAccount memory,
+				KernelCancellation cancellation) {
+			this.left = left;
+			this.right = right;
+			this.columns = columns;
+			this.exact = exact;
+			this.origins = origins;
+			this.constants = constants;
+			this.leftSlot = leftSlot;
+			this.rightSlot = rightSlot;
+			this.sharedSlot = sharedSlot;
+			this.filter = filter;
+			this.workspace = new Workspace(memory, cancellation);
+		}
+
+		void initialize() {
+			workspace.check();
+			workspace.reserve(512L);
+			positions = workspace.ints(columns.length);
+			needsRight = workspace.ints(columns.length);
+			for (int i = 0; i < columns.length; i++) {
+				needsRight[i] = projectionUses(columns[i], origins, rightSlot) ? 1 : 0;
+			}
+			hasLeft = left.nextRow();
+			if (!hasLeft) {
+				return;
+			}
+			sharedRows = new LongIntMap(16, null, workspace, workspace::check);
+			endpoints = new LongIntMap(16, null, workspace, workspace::check);
+			neighbors = workspace.longs(BATCH_SIZE);
+			weights = workspace.longs(BATCH_SIZE);
+			matrix = new RightMatrix(workspace, sharedRows, endpoints, 1L);
+			matrix.read(right, neighbors, weights);
+		}
+
+		@Override
+		public boolean nextBatch() {
+			while (hasLeft && matrix.size != 0) {
+				workspace.poll();
+				if (batchPosition == batchSize) {
+					batchSize = read(left, neighbors, weights);
+					batchPosition = 0;
+					if (batchSize == 0) {
+						hasLeft = left.nextRow();
+						hasPrevious = false;
+						continue;
+					}
+				}
+				long shared = neighbors[batchPosition];
+				long weight = positive(weights[batchPosition++]);
+				if (hasPrevious && Long.compareUnsigned(previousShared, shared) > 0) {
+					throw new IllegalArgumentException("sparse adjacency neighbors must be unsigned ordered");
+				}
+				previousShared = shared;
+				hasPrevious = true;
+				int selected = sharedRows.get(shared);
+				if (selected < 0 || matrix.offsets[selected] == matrix.offsets[selected + 1]) {
+					continue;
+				}
+				row = selected;
+				leftId = left.key();
+				sharedId = shared;
+				leftWeight = weight;
+				java.util.Arrays.fill(positions, matrix.offsets[row]);
+				return true;
+			}
+			workspace.check();
+			return false;
+		}
+
+		@Override
+		public boolean next(int projection) {
+			int position = positions[projection];
+			if (position < 0) {
+				return false;
+			}
+			int end = matrix.offsets[row + 1];
+			while (position < end) {
+				workspace.poll();
+				long candidate = endpoints.keyAt(matrix.columns[position]);
+				int selected = position++;
+				if (filter == null || filter.accepts(leftId, candidate)) {
+					positions[projection] = needsRight[projection] == 0 ? -1 : position;
+					currentPosition = selected;
+					currentProjection = projection;
+					rightId = candidate;
+					return true;
+				}
+			}
+			positions[projection] = -1;
+			return false;
+		}
+
+		@Override
+		public long value(int slot) {
+			return projectionValue(slot, origins, constants, leftSlot, rightSlot, sharedSlot, leftId, rightId,
+					sharedId);
+		}
+
+		@Override
+		public long multiplicity() {
+			return multiplicity(false);
+		}
+
+		@Override
+		public long numericMultiplicity() {
+			return multiplicity(true);
+		}
+
+		private long multiplicity(boolean deferOverflow) {
+			if (!exact[currentProjection]) {
+				return 1L;
+			}
+			long rightWeight = 0L;
+			if (needsRight[currentProjection] != 0) {
+				rightWeight = matrix.weights == null ? 1L : matrix.weights[currentPosition];
+			} else {
+				for (int i = matrix.offsets[row]; i < matrix.offsets[row + 1]; i++) {
+					workspace.poll();
+					long candidate = endpoints.keyAt(matrix.columns[i]);
+					if (filter == null || filter.accepts(leftId, candidate)) {
+						long contribution = matrix.weights == null ? 1L : matrix.weights[i];
+						rightWeight = deferOverflow
+								? NativeFactorProjections.addNumericWeight(rightWeight, contribution)
+								: FactorizedTail.addCounts(rightWeight, contribution);
+					}
+				}
+			}
+			return deferOverflow ? NativeFactorProjections.multiplyNumericWeights(leftWeight, rightWeight)
+					: FactorizedTail.multiplyCounts(leftWeight, rightWeight);
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = KernelRuntime.closeResource(endpoints, null);
+			failure = KernelRuntime.closeResource(sharedRows, failure);
+			failure = KernelRuntime.closeResource(workspace, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
 	}
 
 	/**

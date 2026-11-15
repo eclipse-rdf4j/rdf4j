@@ -175,14 +175,21 @@ final class NativeGroupTable implements AutoCloseable {
 		if (!NativeTypedGroupStore.supports(aggregates)) {
 			throw new IllegalArgumentException("Ordered prefix has no bounded reducer encoding");
 		}
-		boolean counts = groups.length <= 64 && aggregates.length <= 64
-				&& AggregateSpec.allCounts(aggregates) && !AggregateSpec.anyFullRowDistinct(aggregates)
-				&& row.keyAuthority() != null && row.keyAuthority().supportsCanonicalTermKeys();
+		NativeTermAuthority authority = row.keyAuthority();
+		boolean counts = boundedPrefixUsesCounts(groups.length, aggregates.length, AggregateSpec.allCounts(aggregates),
+				AggregateSpec.anyFullRowDistinct(aggregates),
+				authority != null && authority.supportsCanonicalTermKeys());
 		NativeGroupTable table = new NativeGroupTable(groups, aggregates, context,
 				AggregateDistinctChannels.allHash(aggregates), Mode.TUPLE_STATES, false, true);
 		table.boundedAllowed = counts;
 		table.typedAllowed = !counts;
 		return table;
+	}
+
+	/** The count-store decision is shared with receipts that must price the same bounded prefix storage. */
+	static boolean boundedPrefixUsesCounts(int groupCount, int aggregateCount, boolean allCounts,
+			boolean fullRowDistinct, boolean canonicalKeys) {
+		return groupCount <= 64 && aggregateCount <= 64 && allCounts && !fullRowDistinct && canonicalKeys;
 	}
 
 	/** Worker-owned states must merge before finalization; direct-add spill tables use a different protocol. */
@@ -448,8 +455,16 @@ final class NativeGroupTable implements AutoCloseable {
 	 * aggregate consumers are updated. Pure COUNT retains the bounded/spill-capable store and dense columns.
 	 */
 	void addProjected(RowState row, long weight, int[] indices, int[] membershipChannels) {
-		if (weight <= 0L)
+		if (weight <= 0L && weight != NativeFactorProjections.UNAVAILABLE_WEIGHT)
 			throw new IllegalArgumentException("Nonpositive marginal contribution");
+		if (weight == NativeFactorProjections.UNAVAILABLE_WEIGHT) {
+			for (int index : indices) {
+				AggregateSpec spec = aggregates[index];
+				if (spec.kind == AggKind.COUNT && !spec.distinct && spec.hasInput(row)) {
+					throw FactorizedTail.countOverflow();
+				}
+			}
+		}
 		if (prepareTyped(row)) {
 			typedGroups.add(row, weight, indices);
 			return;

@@ -16,9 +16,14 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.Label;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LocalName;
+import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.Str;
@@ -83,7 +88,8 @@ final class NativeScalarCosts {
 					operators++;
 				}
 				boolean lexical = node instanceof Str || node instanceof FunctionCall || node instanceof Regex
-						|| node instanceof IRIFunction;
+						|| node instanceof IRIFunction || node instanceof Datatype || node instanceof Lang
+						|| node instanceof Label || node instanceof LocalName || node instanceof Namespace;
 				if (lexical) {
 					// The AST supplies dispatch counts, not string lengths, normalization passes, or arbitrary
 					// extension-function work. Keep those costs unbounded instead of inventing a character price.

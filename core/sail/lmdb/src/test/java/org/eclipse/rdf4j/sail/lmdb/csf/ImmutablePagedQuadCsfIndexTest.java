@@ -20,11 +20,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
+@Isolated("The allocation assertion reads process-global adaptive-memory counters")
 class ImmutablePagedQuadCsfIndexTest {
 	private static final String SHARD_TARGET_PAGES_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.directAdjacency.csfShardTargetPages";
 
@@ -52,6 +55,214 @@ class ImmutablePagedQuadCsfIndexTest {
 			assertThat(pages.neighborAt(0, 0)).isEqualTo(id(ValueIds.T_URI, 101));
 			assertThat(pages.neighborContextCount(0, 0)).isEqualTo(2);
 			assertThat(pages.advance()).isFalse();
+		}
+	}
+
+	@Test
+	void pageCursorCopyRetainsSameTargetAndEmptyRangeBehavior() {
+		long neighbor = id(1, 101);
+		long[] neighbors = { neighbor, neighbor, neighbor };
+		long[] contexts = { id(1, 201), id(1, 202), id(1, 203) };
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 77), neighbors, contexts)))) {
+			ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+			assertThat(pages.advance()).isTrue();
+			long[] shared = { -7, -8, -9 };
+			assertThat(pages.copyRootQuads(0, 0, 0, shared, shared)).isZero();
+			assertThat(shared).containsExactly(-7, -8, -9);
+			assertThat(pages.copyRootQuads(0, contexts.length, 4, shared, shared)).isZero();
+			assertThat(shared).containsExactly(-7, -8, -9);
+			assertThatThrownBy(() -> pages.copyRootQuads(0, contexts.length + 1, 1, shared, shared))
+					.isInstanceOf(IllegalArgumentException.class);
+			assertThat(shared).containsExactly(-7, -8, -9);
+			assertThat(pages.copyRootQuads(0, 0, contexts.length, shared, shared)).isEqualTo(contexts.length);
+			assertThat(shared).containsExactly(contexts);
+		}
+	}
+
+	@Test
+	void pageCursorSequentialQuadCopiesAvoidAdaptiveNeighborPrefixes() {
+		boolean foundUnindexedPage = false;
+		for (int count = 1_030; count <= 2_048 && !foundUnindexedPage; count++) {
+			long[] neighbors = new long[count];
+			long[] contexts = new long[count];
+			for (int i = 0; i < count; i++) {
+				neighbors[i] = id(1, 1_000_000L + (long) i * i);
+			}
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+					List.of(new Row(id(1, 77), neighbors, contexts)))) {
+				ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+				assertThat(pages.advance()).isTrue();
+				assertThat(pages.rootQuadCount(0)).isEqualTo(count);
+				int descriptor = UnsafeAccess.getIntLE(pages.nativeAddress()
+						+ CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
+				if (CompactCsfPageAccelerators.prefixStrideShift(descriptor,
+						CompactCsfPageAccelerators.NEIGHBOR_PREFIX_CODE_SHIFT) >= 0) {
+					continue;
+				}
+
+				foundUnindexedPage = true;
+				long promotionsBefore = CsfAdaptiveMemory.promotions();
+				long refusalsBefore = CsfAdaptiveMemory.refusals();
+				long[] neighborBatch = new long[256];
+				long[] contextBatch = new long[256];
+				int windows = 0;
+				for (int from = 0; from < count; from += neighborBatch.length) {
+					int expected = Math.min(neighborBatch.length, count - from);
+					assertThat(pages.copyRootQuads(0, from, neighborBatch.length, neighborBatch, contextBatch))
+							.isEqualTo(expected);
+					assertThat(Arrays.copyOf(neighborBatch, expected))
+							.containsExactly(Arrays.copyOfRange(neighbors, from, from + expected));
+					assertThat(Arrays.copyOf(contextBatch, expected))
+							.containsExactly(Arrays.copyOfRange(contexts, from, from + expected));
+					windows++;
+				}
+				assertThat(windows).as("the real unindexed page must exercise progressive nonempty ranges")
+						.isGreaterThan(4);
+
+				assertThat(pages.copyRootQuads(0, 800, 64, neighborBatch, null)).isEqualTo(64);
+				assertThat(Arrays.copyOf(neighborBatch, 64)).containsExactly(Arrays.copyOfRange(neighbors, 800, 864));
+				assertThat(pages.copyRootQuads(0, 400, 64, null, contextBatch)).isEqualTo(64);
+				assertThat(Arrays.copyOf(contextBatch, 64)).containsExactly(Arrays.copyOfRange(contexts, 400, 464));
+				assertThat(pages.copyRootQuads(0, 700, 64, neighborBatch, contextBatch)).isEqualTo(64);
+				assertThat(Arrays.copyOf(neighborBatch, 64)).containsExactly(Arrays.copyOfRange(neighbors, 700, 764));
+				assertThat(Arrays.copyOf(contextBatch, 64)).containsExactly(Arrays.copyOfRange(contexts, 700, 764));
+
+				long promotions = CsfAdaptiveMemory.promotions() - promotionsBefore;
+				long refusals = CsfAdaptiveMemory.refusals() - refusalsBefore;
+				assertThat(promotions + refusals)
+						.as("unindexed encoder page; progressive windows=%d; legacy adaptive promotions=%d refusals=%d",
+								windows, promotions, refusals)
+						.isZero();
+			}
+		}
+		assertThat(foundUnindexedPage).as("the production encoder must emit an unindexed neighbor page").isTrue();
+	}
+
+	@Test
+	void pageCursorCancellationBetweenQuadBatchesCanRetry() {
+		int fibers = 700;
+		int quads = fibers * 2;
+		long[] neighbors = new long[quads];
+		long[] contexts = new long[quads];
+		for (int fiber = 0; fiber < fibers; fiber++) {
+			long neighbor = id(1, 1_000_000L + fiber);
+			neighbors[2 * fiber] = neighbors[2 * fiber + 1] = neighbor;
+			contexts[2 * fiber] = 0L;
+			contexts[2 * fiber + 1] = id(1, 10L);
+		}
+		AtomicBoolean armed = new AtomicBoolean();
+		AtomicInteger polls = new AtomicInteger();
+		IllegalStateException cancellation = new IllegalStateException("injected page-copy cancellation");
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 77), neighbors, contexts)))) {
+			ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor(() -> {
+				if (armed.get() && polls.incrementAndGet() == 2) {
+					throw cancellation;
+				}
+			});
+			assertThat(pages.advance()).isTrue();
+			int pageQuads = Math.toIntExact(pages.rootQuadCount(0));
+			assertThat(pageQuads).isEqualTo(quads);
+			long[] firstNeighbors = new long[256];
+			long[] firstContexts = new long[256];
+			assertThat(pages.copyRootQuads(0, 0, 256, firstNeighbors, firstContexts)).isEqualTo(256);
+			assertThat(firstNeighbors).containsExactly(Arrays.copyOfRange(neighbors, 0, 256));
+			assertThat(firstContexts).containsExactly(Arrays.copyOfRange(contexts, 0, 256));
+
+			armed.set(true);
+			long[] cancelledNeighbors = new long[quads - 256];
+			long[] cancelledContexts = new long[quads - 256];
+			assertThatThrownBy(() -> pages.copyRootQuads(0, 256, quads - 256,
+					cancelledNeighbors, cancelledContexts)).isSameAs(cancellation);
+			assertThat(polls).hasValue(2);
+
+			armed.set(false);
+			long[] retryNeighbors = new long[quads - 256];
+			long[] retryContexts = new long[quads - 256];
+			assertThat(pages.copyRootQuads(0, 256, quads - 256, retryNeighbors, retryContexts))
+					.isEqualTo(quads - 256);
+			assertThat(retryNeighbors).containsExactly(Arrays.copyOfRange(neighbors, 256, quads));
+			assertThat(retryContexts).containsExactly(Arrays.copyOfRange(contexts, 256, quads));
+		}
+	}
+
+	@Test
+	void pageCursorCopiesRemainExactAcrossRowsExtentsAndBackwardWindows() {
+		int hotQuads = 80_000;
+		long hotRoot = id(1, 1);
+		long[] hotNeighbors = new long[hotQuads];
+		long[] hotContexts = new long[hotQuads];
+		for (int fiber = 0; fiber < hotQuads / 2; fiber++) {
+			long neighbor = id(1, 1_000_000L + fiber);
+			hotNeighbors[2 * fiber] = hotNeighbors[2 * fiber + 1] = neighbor;
+			hotContexts[2 * fiber] = 0L;
+			hotContexts[2 * fiber + 1] = id(1, 10L);
+		}
+		long secondRoot = id(1, 2);
+		long[] secondNeighbors = { id(1, 5_000_001L), id(1, 5_000_002L) };
+		long[] secondContexts = { 0L, id(1, 11L) };
+		long thirdRoot = id(1, 3);
+		long[] thirdNeighbors = { id(1, 5_000_003L) };
+		long[] thirdContexts = { id(1, 12L) };
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, List.of(
+				new Row(hotRoot, hotNeighbors, hotContexts),
+				new Row(secondRoot, secondNeighbors, secondContexts),
+				new Row(thirdRoot, thirdNeighbors, thirdContexts)))) {
+			ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+			assertThat(index.pageCount()).isGreaterThan(1);
+			int hotOffset = 0;
+			while (pages.advance()) {
+				for (int row = 0; row < pages.roots(); row++) {
+					long root = pages.rootAt(row);
+					int rowQuads = Math.toIntExact(pages.rootQuadCount(row));
+					long[] expectedNeighbors;
+					long[] expectedContexts;
+					int expectedOffset;
+					if (root == hotRoot) {
+						expectedNeighbors = hotNeighbors;
+						expectedContexts = hotContexts;
+						expectedOffset = hotOffset;
+						hotOffset += rowQuads;
+					} else if (root == secondRoot) {
+						expectedNeighbors = secondNeighbors;
+						expectedContexts = secondContexts;
+						expectedOffset = 0;
+					} else {
+						assertThat(root).isEqualTo(thirdRoot);
+						expectedNeighbors = thirdNeighbors;
+						expectedContexts = thirdContexts;
+						expectedOffset = 0;
+					}
+
+					for (int from = 0; from < rowQuads; from += 256) {
+						int expected = Math.min(256, rowQuads - from);
+						long[] neighborBatch = new long[expected];
+						long[] contextBatch = new long[expected];
+						assertThat(pages.copyRootQuads(row, from, expected, neighborBatch, contextBatch))
+								.isEqualTo(expected);
+						assertThat(neighborBatch).containsExactly(Arrays.copyOfRange(expectedNeighbors,
+								expectedOffset + from, expectedOffset + from + expected));
+						assertThat(contextBatch).containsExactly(Arrays.copyOfRange(expectedContexts,
+								expectedOffset + from, expectedOffset + from + expected));
+					}
+
+					int probeFrom = Math.max(0, rowQuads - Math.min(32, rowQuads));
+					int probeLength = Math.min(32, rowQuads - probeFrom);
+					if (probeLength > 0) {
+						long[] neighborProbe = new long[probeLength];
+						long[] contextProbe = new long[probeLength];
+						assertThat(pages.copyRootQuads(row, probeFrom, probeLength, neighborProbe, null))
+								.isEqualTo(probeLength);
+						assertThat(neighborProbe).containsExactly(Arrays.copyOfRange(expectedNeighbors,
+								expectedOffset + probeFrom, expectedOffset + probeFrom + probeLength));
+						assertThat(pages.copyRootQuads(row, 0, probeLength, null, contextProbe)).isEqualTo(probeLength);
+						assertThat(contextProbe).containsExactly(Arrays.copyOfRange(expectedContexts,
+								expectedOffset, expectedOffset + probeLength));
+					}
+				}
+			}
+			assertThat(hotOffset).isEqualTo(hotQuads);
 		}
 	}
 
@@ -525,6 +736,39 @@ class ImmutablePagedQuadCsfIndexTest {
 			index.resolve(reference, cursor);
 			assertThat(cursor.edgeCount()).isEqualTo(3);
 			assertThat(cursor.neighborAt(2)).isEqualTo(id(1, 21));
+		}
+	}
+
+	@Test
+	void rootBoundsIncludeContinuationOnlyShardsWithoutOpeningRows() {
+		long row = id(1, 21);
+		try (ImmutablePagedQuadCsfIndex index = buildFragments(0, 0, List.of(
+				List.of(new Row(row, new long[] { id(1, 100) }, new long[] { 0 })),
+				List.of(new Row(row, new long[] { id(1, 101) }, new long[] { 0 })),
+				List.of(new Row(row + 128L, new long[] { id(1, 102) }, new long[] { 0 }))),
+				new boolean[] { false, true, false })) {
+			ImmutablePagedQuadCsfIndex.KeyDomain keys = index.keyDomain(0, 0);
+			assertThat(keys.keyCount()).isEqualTo(2L);
+			AtomicInteger polls = new AtomicInteger();
+			var bounds = keys.rootBounds(polls::incrementAndGet);
+			assertThat(bounds).isNotNull();
+			assertThat(bounds.pages()).isEqualTo(index.pageCount()).isGreaterThanOrEqualTo(3L);
+			assertThat(bounds.shardDescriptors())
+					.as("root-bound metadata reports the exact continuation and terminal shard count")
+					.isEqualTo(3);
+			assertThat(bounds.firstRoot()).isEqualTo(row);
+			assertThat(bounds.lastRoot()).isEqualTo(row + 128L);
+			assertThat(polls.get()).isGreaterThanOrEqualTo(4);
+			AtomicInteger cancellationPolls = new AtomicInteger();
+			IllegalStateException cancelled = new IllegalStateException("injected shard-descriptor cancellation");
+			assertThatThrownBy(() -> keys.rootBounds(() -> {
+				if (cancellationPolls.incrementAndGet() == 3) {
+					throw cancelled;
+				}
+			})).isSameAs(cancelled);
+			var empty = index.keyDomain(0, 1).rootBounds(() -> {
+			});
+			assertThat(empty).isEqualTo(new ImmutablePagedQuadCsfIndex.KeyDomain.RootBounds(0L, 0L, 0L, 0));
 		}
 	}
 

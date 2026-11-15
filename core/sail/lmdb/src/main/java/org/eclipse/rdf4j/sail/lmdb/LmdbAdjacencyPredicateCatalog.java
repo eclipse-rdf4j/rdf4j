@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
+import java.util.Objects;
 
 /**
  * Immutable base predicate dictionary (plan 27): raw predicate ID to dense ordinal, ordinals assigned in unsigned
@@ -98,6 +99,10 @@ final class LmdbAdjacencyPredicateCatalog {
 		return size;
 	}
 
+	int segmentCount() {
+		return segments.length;
+	}
+
 	/**
 	 * The dense ordinal for a raw predicate ID, or {@code -1} when absent from the base.
 	 */
@@ -109,6 +114,19 @@ final class LmdbAdjacencyPredicateCatalog {
 			}
 		}
 		return -1;
+	}
+
+	/** Cancellation-aware ordinal lookup, or {@code -1} when no matching predicate is present. */
+	long ordinalForRaw(long rawPredicateId, Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+		for (Segment segment : segments) {
+			cancellationPoll.run();
+			long ordinal = segment.ordinalForRaw(rawPredicateId);
+			if (ordinal >= 0L) {
+				return ordinal;
+			}
+		}
+		return -1L;
 	}
 
 	long rawForOrdinal(long ordinal) {

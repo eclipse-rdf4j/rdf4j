@@ -1555,38 +1555,27 @@ final class PackedLongVector {
 
 	/** Adds {@code length} logical lanes from one packed block to {@code sum}. */
 	private static long sumNativeBlock(long blockAddress, int fromLane, int length, long sum) {
+		// An empty delta range must not scan a prefix: lane count includes the base, whereas the payload has count-1
+		// deltas.
+		if (length == 0) {
+			return sum;
+		}
 		int header = UnsafeAccess.getIntLE(blockAddress);
-		int mode = header & MODE_MASK;
-		int type = header >>> TYPE_SHIFT & 0x3f;
 		int width = header >>> Byte.SIZE & 0xff;
 		long base = UnsafeAccess.getLongLE(blockAddress + 4);
-		long payload = blockAddress + BLOCK_HEADER_BYTES;
-		boolean typed = (mode & MODE_FOR_TYPED_PAYLOAD) != 0;
-
-		if ((mode & MODE_DELTA_RAW) != 0) {
-			if (width == 0) {
-				long decoded = typed ? restoreTypedId(base, type) : base;
-				return sum + decoded * length;
-			}
-			long logical = base + sumPacked(payload, fromLane, width);
-			int end = fromLane + length;
-			for (int lane = fromLane; lane < end; lane++) {
-				sum += typed ? restoreTypedId(logical, type) : logical;
-				if (lane + 1 < end) {
-					logical += readBits(payload, lane * width, width);
-				}
-			}
-			return sum;
-		}
-
+		boolean typed = (header & MODE_FOR_TYPED_PAYLOAD) != 0;
+		int type = header >>> TYPE_SHIFT & 0x3f;
 		if (width == 0) {
-			long value = typed ? restoreTypedId(base, type) : base;
-			for (int i = 0; i < length; i++) {
-				sum += value;
-			}
-			return sum;
+			return sum + (typed ? restoreTypedId(base, type) : base) * length;
 		}
-		if (width == Long.SIZE) {
+		long payload = blockAddress + BLOCK_HEADER_BYTES;
+		long total;
+		if ((header & MODE_DELTA_RAW) != 0) {
+			// Earlier deltas occur in every selected lane; subsequent deltas have weights length-1 down to 1.
+			total = (base + PackedLongVectorSums.sum(payload, 0, fromLane, width)) * length
+					+ PackedLongVectorSums.weighted(payload, fromLane, length - 1, width);
+		} else if (width == Long.SIZE) {
+			// Keep the simple contiguous reduction: measurements favored it over explicit unrolling.
 			long source = payload + ((long) fromLane << 3);
 			long end = source + ((long) length << 3);
 			if (typed) {
@@ -1599,27 +1588,11 @@ final class PackedLongVector {
 				}
 			}
 			return sum;
+		} else {
+			total = base * length + PackedLongVectorSums.sum(payload, fromLane, length, width);
 		}
-
-		long mask = -1L >>> -width;
-		long bitPosition = (long) fromLane * width;
-		long wordAddress = payload + ((bitPosition >>> 6) << 3);
-		long word = UnsafeAccess.getLongLE(wordAddress);
-		int shift = (int) bitPosition & 63;
-		for (int i = 0; i < length; i++) {
-			int advanced = shift + width;
-			long residual = word >>> shift;
-			if (advanced >= Long.SIZE) {
-				wordAddress += Long.BYTES;
-				word = UnsafeAccess.getLongLE(wordAddress);
-				residual |= word << (Long.SIZE - shift);
-				advanced -= Long.SIZE;
-			}
-			long decoded = base + (residual & mask);
-			sum += typed ? restoreTypedId(decoded, type) : decoded;
-			shift = advanced;
-		}
-		return sum;
+		// The tag occupies bits cleared by <<7, so OR is addition. Reconstruction commutes with wrapped summation.
+		return sum + (typed ? (total << 7) + ((long) type << 1) * length : total);
 	}
 
 	private static long sumArrayBlock(byte[] encoded, int blockAt, int count, long sum) {
@@ -1772,21 +1745,36 @@ final class PackedLongVector {
 
 	private static void unpackForTyped(long payload, int valueCount, int fromLane, int length, int width, long base,
 			int type, long[] target, int targetOffset) {
+		// The six type bits occupy the low seven bits, below every shifted residual. Hoist their restoration and
+		// the base shift out of the loop; addition is equivalent even when the unshifted payload would overflow.
+		long typedBase = restoreTypedId(base, type);
 		if (width == 0) {
-			Arrays.fill(target, targetOffset, targetOffset + length, restoreTypedId(base, type));
+			Arrays.fill(target, targetOffset, targetOffset + length, typedBase);
 			return;
 		}
 		if (width == Long.SIZE) {
 			long address = payload + ((long) fromLane << 3);
 			int end = targetOffset + length;
 			for (int output = targetOffset; output < end; output++, address += Long.BYTES) {
-				target[output] = restoreTypedId(base + UnsafeAccess.getLongLE(address), type);
+				target[output] = typedBase + (UnsafeAccess.getLongLE(address) << 7);
 			}
 			return;
 		}
+		if (length >= 64) {
+			PackedLongVectorTyped.bulk(payload, fromLane, length, width, typedBase, target, targetOffset);
+			return;
+		}
 
-		long mask = -1L >>> -width;
+		// Small unaligned ranges do not amortize a width dispatch and alignment prefix. Retain the rolling-word
+		// decoder for them, with the residual mask already in the restored ID's bit positions.
+		long mask = (-1L >>> -width) << 7;
 		long bitPosition = (long) fromLane * width;
+		if (length == 1) {
+			// Only 57 residual bits survive the typed shift, so one containing-byte load always suffices.
+			target[targetOffset] = typedBase
+					+ ((UnsafeAccess.getLongLE(payload + (bitPosition >>> 3)) << (7 - ((int) bitPosition & 7))) & mask);
+			return;
+		}
 		long wordAddress = payload + ((bitPosition >>> 6) << 3);
 		long word = UnsafeAccess.getLongLE(wordAddress);
 		int shift = (int) bitPosition & 63;
@@ -1800,7 +1788,7 @@ final class PackedLongVector {
 				residual |= word << (Long.SIZE - shift);
 				advanced -= Long.SIZE;
 			}
-			target[output] = restoreTypedId(base + (residual & mask), type);
+			target[output] = typedBase + ((residual << 7) & mask);
 			shift = advanced;
 		}
 	}

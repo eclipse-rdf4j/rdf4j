@@ -213,7 +213,15 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 
 	@Override
 	public NativeResultCursor evaluateNative(BindingSet bindings) {
-		NativeResultCursor delegate = NativeResultSteps.open(arg, bindings);
+		return extend(NativeResultSteps.open(arg, bindings));
+	}
+
+	@Override
+	public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+		return extend(NativeResultSteps.openRelation(arg, bindings));
+	}
+
+	private NativeResultCursor extend(NativeResultCursor delegate) {
 		return NativeResultSteps.map(delegate, source -> {
 			Map<String, Integer> indices = new LinkedHashMap<>();
 			for (int index = 0; index < source.schema().size(); index++) {

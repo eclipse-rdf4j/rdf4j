@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -198,6 +200,7 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision());
 				NativeLmdbQuerySource.NativeAdjacency adjacency = store.adjacency(view, PREDICATE, true, true)) {
+			assertCancellationAwareRootWindow(adjacency);
 			if (refuse) {
 				assertThat(CsfAdaptiveMemoryTestAccess.refusals()).isGreaterThan(refusalsBefore);
 				assertThat(adjacency).isInstanceOf(LmdbDirectNativeAdjacency.class);
@@ -224,5 +227,33 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 				assertThat(multiplicities).containsExactly(1L);
 			}
 		}
+	}
+
+	private static void assertCancellationAwareRootWindow(NativeLmdbQuerySource.NativeAdjacency adjacency) {
+		int from = 250;
+		long first = FIRST_SUBJECT + ((long) from << 7);
+		AtomicInteger polls = new AtomicInteger();
+		assertThat(adjacency.lowerBoundKeyOrdinal(first, polls::incrementAndGet)).isEqualTo(from);
+		assertThat(polls).hasPositiveValue();
+		long[] roots = new long[4];
+		long[] counts = new long[4];
+		try (var cursor = adjacency.openKeyRunCursor(from, from + roots.length, polls::incrementAndGet)) {
+			assertThat(cursor).isNotNull();
+			assertThat(cursor.fillRootCounts(roots, 0, counts, 0, roots.length)).isEqualTo(roots.length);
+			assertThat(roots).containsExactly(first, first + 128L, first + 256L, first + 384L);
+			assertThat(counts).containsExactly(1L, 1L, 1L, 1L);
+			assertThat(cursor.fillRootCounts(roots, 0, counts, 0, roots.length)).isZero();
+		}
+		IllegalStateException cancelled = new IllegalStateException("injected root positioning cancellation");
+		AtomicInteger cancellationPolls = new AtomicInteger();
+		Runnable cancellation = () -> {
+			if (cancellationPolls.incrementAndGet() == 2) {
+				throw cancelled;
+			}
+		};
+		assertThatThrownBy(() -> adjacency.lowerBoundKeyOrdinal(first, cancellation)).isSameAs(cancelled);
+		cancellationPolls.set(0);
+		assertThatThrownBy(() -> adjacency.openKeyRunCursor(from, from + roots.length, cancellation))
+				.isSameAs(cancelled);
 	}
 }

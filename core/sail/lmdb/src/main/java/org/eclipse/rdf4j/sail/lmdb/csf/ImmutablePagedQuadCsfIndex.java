@@ -447,6 +447,11 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	private long localReferenceAtOrdinal(int partition, long ordinal, OrdinalCursor cursor) {
+		return localReferenceAtOrdinal(partition, ordinal, cursor, null);
+	}
+
+	private long localReferenceAtOrdinal(int partition, long ordinal, OrdinalCursor cursor,
+			Runnable cancellationPoll) {
 		long rows = partitionRowCounts[partition];
 		if (ordinal < 0 || ordinal >= rows) {
 			throw new IllegalArgumentException("row ordinal out of range: " + ordinal + " of " + rows);
@@ -461,6 +466,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		int high = end - 1;
 		int shardIndex = -1;
 		while (low <= high) {
+			CompactCsfPageReader.poll(cancellationPoll);
 			int mid = low + high >>> 1;
 			if (shardFirstRowOrdinals[mid] <= ordinal) {
 				shardIndex = mid;
@@ -470,6 +476,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 		}
 		while (shardIndex >= start && shards[shardIndex].rowCount() == 0) {
+			CompactCsfPageReader.poll(cancellationPoll);
 			shardIndex--;
 		}
 		if (shardIndex < start) {
@@ -481,6 +488,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		high = shard.pageCount() - 1;
 		int page = -1;
 		while (low <= high) {
+			CompactCsfPageReader.poll(cancellationPoll);
 			int mid = low + high >>> 1;
 			if (shard.pageFirstRowOrdinal(mid) <= localOrdinal) {
 				page = mid;
@@ -490,6 +498,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 		}
 		while (page >= 0 && shard.pageUniqueRows(page) == 0) {
+			CompactCsfPageReader.poll(cancellationPoll);
 			page--;
 		}
 		if (page < 0) {
@@ -4408,6 +4417,46 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return owner.partitionRowCounts[partition];
 		}
 
+		/** Exact physical-page count, unsigned endpoint roots, and shard-descriptor count. */
+		public record RootBounds(long pages, long firstRoot, long lastRoot, int shardDescriptors) {
+		}
+
+		/**
+		 * Returns descriptor-only bounds without opening a page or key producer. A continuation-only shard still names
+		 * its genuine root in its endpoint metadata; an inconsistent or empty descriptor declines with null.
+		 */
+		public RootBounds rootBounds(Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+			int start = owner.partitionShardStarts[partition];
+			int end = start + owner.partitionShardCounts[partition];
+			if (keyCount() == 0L) {
+				return start == end ? new RootBounds(0L, 0L, 0L, 0) : null;
+			}
+			if (start == end) {
+				return null;
+			}
+			long pages = 0L;
+			long first = 0L;
+			long previousLast = 0L;
+			for (int index = start; index < end; index++) {
+				cancellationPoll.run();
+				CsfShard shard = owner.shards[index];
+				int shardPages = shard.pageCount();
+				long shardFirst = shard.firstRow();
+				long shardLast = shard.lastRow();
+				if (shardPages <= 0 || Long.compareUnsigned(shardFirst, shardLast) > 0
+						|| index != start && Long.compareUnsigned(previousLast, shardFirst) > 0) {
+					return null;
+				}
+				if (index == start) {
+					first = shardFirst;
+				}
+				pages = Math.addExact(pages, shardPages);
+				previousLast = shardLast;
+			}
+			return new RootBounds(pages, first, previousLast, end - start);
+		}
+
 		/**
 		 * Returns a forward-only cursor over this partition's row coordinates. Unlike {@link #keyAt(long)}, the cursor
 		 * keeps its shard and page position, so a full domain walk does not repeat two binary searches per key.
@@ -4436,9 +4485,26 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return new KeyCursor(owner, partition, true, fromOrdinal, toOrdinal);
 		}
 
+		/** Opens a directly positioned cursor with cancellation active throughout ordinal positioning. */
+		public KeyCursor cursor(long fromOrdinal, long toOrdinal, Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+			long count = keyCount();
+			if (fromOrdinal < 0 || toOrdinal < fromOrdinal || toOrdinal > count) {
+				throw new IllegalArgumentException(
+						"invalid key cursor window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
+			}
+			return new KeyCursor(owner, partition, true, fromOrdinal, toOrdinal, cancellationPoll);
+		}
+
 		/** Traverses every physical page, including continuation pages, in this immutable partition. */
 		public PageCursor pageCursor() {
 			return new PageCursor(owner, partition, 0L, pageCount());
+		}
+
+		/** Opens a full page cursor while polling during shard-count and cursor setup. */
+		public PageCursor pageCursor(Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+			return new PageCursor(owner, partition, 0L, pageCount(cancellationPoll), cancellationPoll);
 		}
 
 		public long pageCount() {
@@ -4446,6 +4512,19 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			int end = start + owner.partitionShardCounts[partition];
 			long pages = 0L;
 			for (int shard = start; shard < end; shard++) {
+				pages = Math.addExact(pages, owner.shards[shard].pageCount());
+			}
+			return pages;
+		}
+
+		/** Counts shard pages without an uncancellable traversal of the partition directory. */
+		public long pageCount(Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+			int start = owner.partitionShardStarts[partition];
+			int end = start + owner.partitionShardCounts[partition];
+			long pages = 0L;
+			for (int shard = start; shard < end; shard++) {
+				cancellationPoll.run();
 				pages = Math.addExact(pages, owner.shards[shard].pageCount());
 			}
 			return pages;
@@ -4462,6 +4541,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		public long keyAt(long ordinal) {
+			return keyAt(ordinal, null);
+		}
+
+		private long keyAt(long ordinal, Runnable cancellationPoll) {
 			long count = keyCount();
 			if (ordinal < 0 || ordinal >= count) {
 				throw new IllegalArgumentException("key ordinal out of range: " + ordinal + " of " + count);
@@ -4472,6 +4555,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			int high = end - 1;
 			int candidate = -1;
 			while (low <= high) {
+				CompactCsfPageReader.poll(cancellationPoll);
 				int mid = (low + high) >>> 1;
 				if (owner.shardFirstRowOrdinals[mid] <= ordinal) {
 					candidate = mid;
@@ -4481,6 +4565,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				}
 			}
 			while (candidate >= start && owner.shards[candidate].rowCount() == 0) {
+				CompactCsfPageReader.poll(cancellationPoll);
 				candidate--;
 			}
 			if (candidate < start) {
@@ -4492,6 +4577,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			int pageHigh = shard.pageCount() - 1;
 			int page = -1;
 			while (pageLow <= pageHigh) {
+				CompactCsfPageReader.poll(cancellationPoll);
 				int mid = (pageLow + pageHigh) >>> 1;
 				if (shard.pageFirstRowOrdinal(mid) <= localOrdinal) {
 					page = mid;
@@ -4501,6 +4587,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				}
 			}
 			while (page >= 0 && shard.pageUniqueRows(page) == 0) {
+				CompactCsfPageReader.poll(cancellationPoll);
 				page--;
 			}
 			if (page < 0) {
@@ -4511,15 +4598,27 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (localRow < 0 || localRow >= shard.pageUniqueRows(page)) {
 				throw new IllegalStateException("row ordinal is outside its directory page");
 			}
+			CompactCsfPageReader.poll(cancellationPoll);
 			return shard.rowAt(page, localRow);
 		}
 
 		public long lowerBoundOrdinal(long key) {
+			return lowerBoundOrdinalImpl(key, null);
+		}
+
+		/** Finds the unsigned lower bound while polling each physical directory and continuation traversal. */
+		public long lowerBoundOrdinal(long key, Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+			return lowerBoundOrdinalImpl(key, cancellationPoll);
+		}
+
+		private long lowerBoundOrdinalImpl(long key, Runnable cancellationPoll) {
 			long low = 0;
 			long high = keyCount();
 			while (low < high) {
+				CompactCsfPageReader.poll(cancellationPoll);
 				long mid = (low + high) >>> 1;
-				if (Long.compareUnsigned(keyAt(mid), key) < 0) {
+				if (Long.compareUnsigned(keyAt(mid, cancellationPoll), key) < 0) {
 					low = mid + 1;
 				} else {
 					high = mid;
@@ -4550,6 +4649,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	@Experimental
 	public static final class PageCursor extends CompactCsfPageReader {
 		private final ImmutablePagedQuadCsfIndex owner;
+		private final Runnable cancellationPoll;
 		private final int shardEnd;
 		private long pagesRemaining;
 		private int shardIndex;
@@ -4557,13 +4657,24 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private boolean ready;
 		private long[] countContexts;
 		private long headerAddress;
+		private ColumnCopyState neighborCopy;
+		private ColumnCopyState contextCopy;
 
 		private PageCursor(ImmutablePagedQuadCsfIndex owner, int partition, long fromPage, long toPage) {
+			this(owner, partition, fromPage, toPage, null);
+		}
+
+		private PageCursor(ImmutablePagedQuadCsfIndex owner, int partition, long fromPage, long toPage,
+				Runnable cancellationPoll) {
 			this.owner = owner;
+			this.cancellationPoll = cancellationPoll;
 			this.shardIndex = owner.partitionShardStarts[partition];
 			this.shardEnd = shardIndex + owner.partitionShardCounts[partition];
 			long skip = fromPage;
 			while (shardIndex < shardEnd) {
+				if (cancellationPoll != null) {
+					cancellationPoll.run();
+				}
 				int shardPages = owner.shards[shardIndex].pageCount();
 				if (skip < shardPages) {
 					localPage = Math.toIntExact(skip);
@@ -4578,9 +4689,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		public boolean advance() {
 			ready = false;
 			while (pagesRemaining > 0L && shardIndex < shardEnd) {
+				if (cancellationPoll != null) {
+					cancellationPoll.run();
+				}
 				CsfShard shard = owner.shards[shardIndex];
 				if (localPage < shard.pageCount()) {
-					headerAddress = shard.validatedPageAddress(localPage++);
+					headerAddress = shard.validatedPageAddress(localPage);
+					localPage++;
+					invalidatePageColumnCopies();
 					pagesRemaining--;
 					ready = true;
 					return true;
@@ -4669,7 +4785,68 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		/** Copies page-local pairs; continuation pages are visited separately by this cursor. */
 		public int copyRootQuads(int rowIndex, int fromQuad, int length, long[] neighbors, long[] contexts) {
 			ensurePayloadBound();
-			return copyRow(rowIndex, fromQuad, length, neighbors, 0, contexts, 0);
+			int rowQuads = rowQuadCount(rowIndex);
+			if (fromQuad < 0 || fromQuad > rowQuads || length < 0) {
+				throw new IllegalArgumentException("invalid row copy range");
+			}
+			int copied = Math.min(length, rowQuads - fromQuad);
+			if (neighbors != null && neighbors.length < copied) {
+				throw new IllegalArgumentException("neighbor target range out of bounds");
+			}
+			if (contexts != null && contexts.length < copied) {
+				throw new IllegalArgumentException("context target range out of bounds");
+			}
+			if (copied == 0) {
+				return 0;
+			}
+			if (neighbors != null) {
+				copyRootColumn(rowIndex, fromQuad, copied, neighbors, false);
+			}
+			if (contexts != null) {
+				copyRootColumn(rowIndex, fromQuad, copied, contexts, true);
+			}
+			return copied;
+		}
+
+		private void copyRootColumn(int rowIndex, int fromQuad, int length, long[] target, boolean contexts) {
+			ColumnCopyState state = contexts ? contextCopy : neighborCopy;
+			if (state == null) {
+				state = new ColumnCopyState();
+				if (contexts) {
+					contextCopy = state;
+				} else {
+					neighborCopy = state;
+				}
+			}
+			int pageId = localPage - 1;
+			if (state.pageId != pageId || state.row != rowIndex || fromQuad < state.ordinal) {
+				poll(cancellationPoll);
+				initializeColumnCopy(state, pageId, 0L, rowIndex, contexts, cancellationPoll);
+			}
+			while (state.ordinal < fromQuad) {
+				poll(cancellationPoll);
+				int skip = Math.min(256, fromQuad - state.ordinal);
+				copySequentialColumn(state, skip, contexts, null, 0);
+			}
+			int output = 0;
+			while (output < length) {
+				poll(cancellationPoll);
+				int take = Math.min(256, length - output);
+				copySequentialColumn(state, take, contexts, target, output);
+				output += take;
+			}
+		}
+
+		private void invalidatePageColumnCopies() {
+			invalidatePageColumnCopy(neighborCopy);
+			invalidatePageColumnCopy(contextCopy);
+		}
+
+		private static void invalidatePageColumnCopy(ColumnCopyState state) {
+			if (state != null) {
+				state.pageId = CompactCsfPageFormat.NO_PAGE;
+				state.prefixPageId = CompactCsfPageFormat.NO_PAGE;
+			}
 		}
 
 		/** Copies page-local root IDs and exact physical quad counts in one bounded metadata batch. */
@@ -4817,7 +4994,13 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 		private KeyCursor(ImmutablePagedQuadCsfIndex owner, int partition, boolean includeEdgeCount,
 				long fromOrdinal, long toOrdinal) {
+			this(owner, partition, includeEdgeCount, fromOrdinal, toOrdinal, null);
+		}
+
+		private KeyCursor(ImmutablePagedQuadCsfIndex owner, int partition, boolean includeEdgeCount,
+				long fromOrdinal, long toOrdinal, Runnable cancellationPoll) {
 			this.owner = owner;
+			this.cancellationPoll = cancellationPoll;
 			int shardStart = owner.partitionShardStarts[partition];
 			this.shardIndex = shardStart;
 			this.shardEnd = shardStart + owner.partitionShardCounts[partition];
@@ -4832,8 +5015,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (fromOrdinal == toOrdinal) {
 				this.shardIndex = shardEnd;
 			} else if (fromOrdinal != 0) {
-				long reference = owner.localReferenceAtOrdinal(partition, fromOrdinal, new OrdinalCursor());
+				long reference = owner.localReferenceAtOrdinal(partition, fromOrdinal, new OrdinalCursor(),
+						cancellationPoll);
 				int pageId = unpackPageId(reference);
+				poll(cancellationPoll);
 				this.shardIndex = owner.shardForPage(pageId);
 				this.localPage = pageId - owner.shardFirstPageIds[shardIndex];
 				this.localRow = unpackLocalRow(reference);

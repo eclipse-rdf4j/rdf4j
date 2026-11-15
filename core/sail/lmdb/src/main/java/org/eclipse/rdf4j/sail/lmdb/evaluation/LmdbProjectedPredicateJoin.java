@@ -35,6 +35,256 @@ final class LmdbProjectedPredicateJoin {
 	private LmdbProjectedPredicateJoin() {
 	}
 
+	/** Opens one shared-key sweep with independent projections over its current pair of predicate fibers. */
+	static NativeFactorProjections projections(NativeLmdbQuerySource source, boolean leftBySubject,
+			boolean rightBySubject, long[] leftContexts, long[] rightContexts, boolean leftNamed, boolean rightNamed,
+			boolean leftPresence, boolean rightPresence, int[][] columns, boolean[] exact, int[] origins,
+			long[] constants,
+			int leftSlot, int rightSlot, int sharedSlot, SparseJoinAggregateKernel.EndpointFilter filter,
+			LmdbQueryMemoryManager.QueryLedger ledger, KernelCancellation cancellation) throws IOException {
+		ProjectionCursor cursor = new ProjectionCursor(source, leftBySubject, rightBySubject, leftContexts,
+				rightContexts,
+				leftNamed, rightNamed, leftPresence, rightPresence, columns, exact, origins, constants, leftSlot,
+				rightSlot,
+				sharedSlot, filter, ledger, cancellation);
+		try {
+			if (!cursor.initialize()) {
+				cursor.close();
+				return null;
+			}
+			return cursor;
+		} catch (IOException | RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(cursor, failure), failure);
+			throw failure;
+		}
+	}
+
+	private static final class ProjectionCursor implements NativeFactorProjections {
+		private final NativeLmdbQuerySource source;
+		private final boolean leftBySubject, rightBySubject, leftNamed, rightNamed, leftPresence, rightPresence;
+		private final boolean sharedSweep, reused;
+		private final long[] leftContexts, rightContexts, constants;
+		private final int[][] columns;
+		private final boolean[] exact;
+		private final int[] origins;
+		private final int leftSlot, rightSlot, sharedSlot;
+		private final SparseJoinAggregateKernel.EndpointFilter filter;
+		private final LmdbQueryMemoryManager.QueryLedger ledger;
+		private final KernelCancellation cancellation;
+		private KernelRuntime.AggregateMemory memory;
+		private NativeProbe probe;
+		private PredicateSweep left, right;
+		private RowBuffer leftRow, rightRow;
+		private long[] contexts;
+		private int[] leftPositions, rightPositions, useLeft, useRight;
+		private boolean started, haveLeft, haveRight, closed;
+		private boolean leftTotalKnown, rightTotalKnown;
+		private int selectedLeft, selectedRight, selectedProjection, ticks;
+		private long key, leftTotal, rightTotal;
+
+		ProjectionCursor(NativeLmdbQuerySource source, boolean leftBySubject, boolean rightBySubject,
+				long[] leftContexts, long[] rightContexts, boolean leftNamed, boolean rightNamed,
+				boolean leftPresence, boolean rightPresence, int[][] columns, boolean[] exact, int[] origins,
+				long[] constants,
+				int leftSlot, int rightSlot, int sharedSlot, SparseJoinAggregateKernel.EndpointFilter filter,
+				LmdbQueryMemoryManager.QueryLedger ledger, KernelCancellation cancellation) {
+			this.source = source;
+			this.leftBySubject = leftBySubject;
+			this.rightBySubject = rightBySubject;
+			this.leftContexts = leftContexts;
+			this.rightContexts = rightContexts;
+			this.leftNamed = leftNamed;
+			this.rightNamed = rightNamed;
+			this.leftPresence = leftPresence;
+			this.rightPresence = rightPresence;
+			this.sharedSweep = leftBySubject == rightBySubject;
+			this.reused = sharedSweep && leftNamed == rightNamed && leftPresence == rightPresence
+					&& Arrays.equals(leftContexts, rightContexts);
+			this.columns = columns;
+			this.exact = exact;
+			this.origins = origins;
+			this.constants = constants;
+			this.leftSlot = leftSlot;
+			this.rightSlot = rightSlot;
+			this.sharedSlot = sharedSlot;
+			this.filter = filter;
+			this.ledger = ledger;
+			this.cancellation = cancellation;
+		}
+
+		boolean initialize() throws IOException {
+			memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+			probe = source.newProbe();
+			KernelRuntime.checkCancelled(cancellation);
+			memory.reserve(4L * (16L + Integer.BYTES * (long) columns.length));
+			leftPositions = new int[columns.length];
+			rightPositions = new int[columns.length];
+			useLeft = new int[columns.length];
+			useRight = new int[columns.length];
+			for (int p = 0; p < columns.length; p++) {
+				useLeft[p] = filter != null || SparseJoinAggregateKernel.projectionUses(columns[p], origins, leftSlot)
+						? 1
+						: 0;
+				useRight[p] = filter != null || SparseJoinAggregateKernel.projectionUses(columns[p], origins, rightSlot)
+						? 1
+						: 0;
+			}
+			leftRow = new RowBuffer(memory);
+			rightRow = reused ? leftRow : new RowBuffer(memory);
+			if (leftContexts != null || rightContexts != null || leftNamed || rightNamed) {
+				memory.reserve(16L + Long.BYTES * BATCH);
+				contexts = new long[BATCH];
+			}
+			left = PredicateSweep.open(probe, leftBySubject, memory, cancellation);
+			right = sharedSweep ? null : PredicateSweep.open(probe, rightBySubject, memory, cancellation);
+			return left != null && (sharedSweep || right != null);
+		}
+
+		@Override
+		public boolean nextBatch() {
+			if (!started) {
+				started = true;
+				haveLeft = left.advance();
+				haveRight = sharedSweep || right.advance();
+			} else {
+				advanceBoth();
+			}
+			while (haveLeft && haveRight) {
+				KernelRuntime.checkCancelled(cancellation);
+				if (!sharedSweep) {
+					int order = Long.compareUnsigned(left.key(), right.key());
+					if (order < 0) {
+						haveLeft = left.advance();
+						continue;
+					}
+					if (order > 0) {
+						haveRight = right.advance();
+						continue;
+					}
+				}
+				key = left.key();
+				readRow(left, leftContexts, leftNamed, leftPresence, contexts, leftRow, cancellation);
+				if (!reused) {
+					readRow(sharedSweep ? left : right, rightContexts, rightNamed, rightPresence, contexts,
+							rightRow, cancellation);
+				}
+				if (leftRow.size != 0 && rightRow.size != 0) {
+					Arrays.fill(leftPositions, 0);
+					Arrays.fill(rightPositions, 0);
+					leftTotalKnown = false;
+					rightTotalKnown = false;
+					return true;
+				}
+				advanceBoth();
+			}
+			return false;
+		}
+
+		private void advanceBoth() {
+			haveLeft = left.advance();
+			if (!sharedSweep) {
+				haveRight = right.advance();
+			}
+		}
+
+		@Override
+		public boolean next(int projection) {
+			int leftLimit = useLeft[projection] != 0 ? leftRow.size : 1;
+			int rightLimit = useRight[projection] != 0 ? rightRow.size : 1;
+			while (leftPositions[projection] < leftLimit) {
+				while (rightPositions[projection] < rightLimit) {
+					if ((++ticks & 1023) == 0) {
+						KernelRuntime.checkCancelled(cancellation);
+					}
+					int l = leftPositions[projection];
+					int r = rightPositions[projection]++;
+					if (filter == null || filter.accepts(leftRow.predicates[l], rightRow.predicates[r])) {
+						selectedLeft = l;
+						selectedRight = r;
+						selectedProjection = projection;
+						return true;
+					}
+				}
+				leftPositions[projection]++;
+				rightPositions[projection] = 0;
+			}
+			return false;
+		}
+
+		@Override
+		public long value(int slot) {
+			return SparseJoinAggregateKernel.projectionValue(slot, origins, constants, leftSlot, rightSlot, sharedSlot,
+					leftRow.predicates[selectedLeft], rightRow.predicates[selectedRight], key);
+		}
+
+		@Override
+		public long multiplicity() {
+			return multiplicity(false);
+		}
+
+		@Override
+		public long numericMultiplicity() {
+			return multiplicity(true);
+		}
+
+		private long multiplicity(boolean deferOverflow) {
+			if (!exact[selectedProjection]) {
+				return 1L;
+			}
+			long l = useLeft[selectedProjection] != 0 ? leftRow.weights[selectedLeft] : leftTotal(deferOverflow);
+			long r = useRight[selectedProjection] != 0 ? rightRow.weights[selectedRight] : rightTotal(deferOverflow);
+			return deferOverflow ? NativeFactorProjections.multiplyNumericWeights(l, r)
+					: FactorizedTail.multiplyCounts(l, r);
+		}
+
+		private long leftTotal(boolean deferOverflow) {
+			if (!leftTotalKnown) {
+				leftTotal = rightTotalKnown && reused ? rightTotal : total(leftRow, deferOverflow);
+				leftTotalKnown = true;
+			}
+			if (!deferOverflow && leftTotal == NativeFactorProjections.UNAVAILABLE_WEIGHT) {
+				throw FactorizedTail.countOverflow();
+			}
+			return leftTotal;
+		}
+
+		private long rightTotal(boolean deferOverflow) {
+			if (!rightTotalKnown) {
+				rightTotal = leftTotalKnown && reused ? leftTotal : total(rightRow, deferOverflow);
+				rightTotalKnown = true;
+			}
+			if (!deferOverflow && rightTotal == NativeFactorProjections.UNAVAILABLE_WEIGHT) {
+				throw FactorizedTail.countOverflow();
+			}
+			return rightTotal;
+		}
+
+		private long total(RowBuffer row, boolean deferOverflow) {
+			long result = 0L;
+			for (int i = 0; i < row.size; i++) {
+				if ((++ticks & 1023) == 0) {
+					KernelRuntime.checkCancelled(cancellation);
+				}
+				result = deferOverflow ? NativeFactorProjections.addNumericWeight(result, row.weights[i])
+						: FactorizedTail.addCounts(result, row.weights[i]);
+			}
+			return result;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = KernelRuntime.closeResource(right, null);
+			failure = KernelRuntime.closeResource(left, failure);
+			failure = KernelRuntime.closeResource(probe, failure);
+			failure = KernelRuntime.closeResource(memory, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+	}
+
 	/** Returns null before publication when any required snapshot capability cannot cover an input. */
 	static Statistics multiply(NativeLmdbQuerySource source, boolean leftBySubject, boolean rightBySubject,
 			long[] leftContexts, long[] rightContexts, boolean leftNamed, boolean rightNamed,

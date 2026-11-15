@@ -420,6 +420,27 @@ class NativeStructuralAggregateCancellationTest {
 	}
 
 	@Test
+	void parallelRefusalOutranksPeerCancellationButNotQueryOrDeadline() {
+		NativeCancellationToken query = new NativeCancellationToken();
+		NativeCancellationToken workers = new NativeCancellationToken(query);
+		workers.requestCancellation();
+		KernelQueryCancelledException peer = assertThrows(KernelQueryCancelledException.class, workers::check);
+		var refusal = new LmdbNativeKernelPartitions.ParallelKernelDecline("retained root view is unavailable");
+		Throwable retained = NativeStructuralWorkers.drain(List.of(CompletableFuture.failedFuture(refusal)),
+				null, workers, peer);
+		assertThat(retained).as("a peer stop does not hide the initiating source refusal").isSameAs(refusal);
+		retained = NativeStructuralWorkers.drain(List.of(CompletableFuture.failedFuture(
+				LmdbNativeProbeDeadlineExceeded.INSTANCE)), null, workers, refusal);
+		assertThat(retained).as("an attempt deadline takes precedence over a clean refusal")
+				.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+		query.requestCancellation();
+		KernelQueryCancelledException cancelledQuery = assertThrows(KernelQueryCancelledException.class, query::check);
+		retained = NativeStructuralWorkers.drain(List.of(CompletableFuture.failedFuture(cancelledQuery)),
+				null, workers, refusal);
+		assertThat(retained).as("query cancellation takes precedence over a clean refusal").isSameAs(cancelledQuery);
+	}
+
+	@Test
 	void unattributedWorkerInterruptionRemainsVisibleAfterProbeDeadline() {
 		NativeCancellationToken workers = new NativeCancellationToken();
 		KernelQueryCancelledException unexpected = new KernelQueryCancelledException(workers, null);

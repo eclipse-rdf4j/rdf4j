@@ -35,7 +35,8 @@ final class LmdbNativeSelector {
 	 * run is estimated to land in. Only the proven interval can eliminate a candidate.
 	 */
 	record Ranking(int winner, LmdbNativeWork[] nanos, double[] expectedNanos, double[] quotedExpectedNanos,
-			String[] eliminatedBy, String reason, LmdbNativeWork[] estimated) {
+			String[] eliminatedBy, String reason, LmdbNativeWork[] estimated, boolean[] priceable,
+			boolean[] structurallyEligible) {
 	}
 
 	private LmdbNativeSelector() {
@@ -86,13 +87,12 @@ final class LmdbNativeSelector {
 		int[] candidateWorkers = new int[n];
 		String[] eliminatedBy = new String[n];
 		LmdbNativeWork[] estimated = new LmdbNativeWork[n];
+		boolean[] priceable = new boolean[n];
 		if (n == 0) {
 			return new Ranking(-1, nanos, expected, quotedExpected, eliminatedBy,
-					"No strategy was admitted at this decision point", estimated);
+					"No strategy was admitted at this decision point", estimated, priceable, new boolean[0]);
 		}
-		boolean[] hasPrice = new boolean[n];
 		boolean ordinary = false;
-		boolean anyPriced = false;
 		for (int i = 0; i < n; i++) {
 			LmdbNativeCandidate<T> candidate = candidates.get(i);
 			LmdbNativeCostVector vector = candidate.quote()
@@ -108,24 +108,24 @@ final class LmdbNativeSelector {
 			// Unknown output cardinality must not erase a known execution-work quote. Materialization still
 			// keeps the total ceiling unbounded, so that quote cannot establish interval dominance.
 			// Otherwise an expectation above the floor is an estimate; a floor alone is not a price.
-			hasPrice[i] = executionBounded(vector) || nanos[i].known() || expected[i] > nanos[i].low();
-			if (advice != null) {
+			priceable[i] = candidate.missingPhysicalWork() == null
+					&& (executionBounded(vector) || nanos[i].known() || expected[i] > nanos[i].low());
+			if (priceable[i] && advice != null) {
 				LmdbNativeAdvisoryLearner.Narrowed narrowed = advice.narrow(candidate.id(), candidate.quote(), nanos[i],
 						expected[i]);
 				nanos[i] = narrowed.nanos();
 				expected[i] = narrowed.expectedNanos();
 			}
-			estimated[i] = estimatedInterval(expected[i], nanos[i], candidate.quote().inputSpread());
+			estimated[i] = priceable[i] ? estimatedInterval(expected[i], nanos[i], candidate.quote().inputSpread())
+					: nanos[i];
+			if (!priceable[i]) {
+				expected[i] = Double.NaN;
+			}
 			ordinary |= !candidates.get(i).lastResort();
-			anyPriced |= !candidates.get(i).lastResort() && hasPrice[i];
 		}
 		for (int i = 0; i < n; i++) {
 			if (ordinary && candidates.get(i).lastResort()) {
 				eliminatedBy[i] = "Last resort: considered only when no ordinary candidate is admitted";
-			} else if (anyPriced && !hasPrice[i]) {
-				// A quote with neither a ceiling nor an estimate has only its floor, and a floor is not a price. It
-				// competes only when no candidate could price itself at all.
-				eliminatedBy[i] = "Unpriced: quotes neither a ceiling nor an estimate while priced candidates exist";
 			}
 		}
 		// Structural edges are evaluated simultaneously. A dominated admitted strategy still establishes its own
@@ -150,18 +150,34 @@ final class LmdbNativeSelector {
 				}
 			}
 		}
+		// Keep the capability/structural frontier separate from price-only exclusions. A runtime tier retry may
+		// prefer an admitted sibling regardless of price, but cannot override a genuine structural elimination.
+		for (int i = 0; i < n; i++) {
+			structurallyEligible[i] = eliminatedBy[i] == null;
+		}
+		boolean anyPriced = false;
+		for (int i = 0; i < n; i++) {
+			anyPriced |= eliminatedBy[i] == null && priceable[i];
+		}
+		if (anyPriced) {
+			for (int i = 0; i < n; i++) {
+				if (eliminatedBy[i] == null && !priceable[i]) {
+					eliminatedBy[i] = "Unpriced: complete work is unavailable while a priced candidate exists";
+				}
+			}
+		}
 		// parallel cut: a multi-threaded candidate must cut the best serial candidate's expected price by the share
 		// its worker count demands (30 % on four workers, 50 % on eight), or the serial candidate keeps the cores
 		double serialBest = Double.POSITIVE_INFINITY;
 		for (int i = 0; i < n; i++) {
-			if (eliminatedBy[i] == null && hasPrice[i] && candidateWorkers[i] == 0) {
+			if (eliminatedBy[i] == null && priceable[i] && candidateWorkers[i] == 0) {
 				serialBest = Math.min(serialBest, expected[i]);
 			}
 		}
 		if (Double.isFinite(serialBest)) {
 			for (int i = 0; i < n; i++) {
 				double fraction = LmdbNativeStaticPrior.requiredParallelFraction(candidateWorkers[i]);
-				if (eliminatedBy[i] == null && candidateWorkers[i] > 0
+				if (eliminatedBy[i] == null && priceable[i] && candidateWorkers[i] > 0
 						&& expected[i] > fraction * serialBest) {
 					eliminatedBy[i] = String.format(
 							"Parallel: expected %.0f ns is %.0f %% of the best serial price (%.0f ns), above the %.0f %% cut required on %d workers",
@@ -172,11 +188,11 @@ final class LmdbNativeSelector {
 		}
 		// interval dominance: a rival whose whole price lies below this candidate's whole price
 		for (int i = 0; i < n; i++) {
-			if (eliminatedBy[i] != null) {
+			if (eliminatedBy[i] != null || !priceable[i]) {
 				continue;
 			}
 			for (int j = 0; j < n; j++) {
-				if (j == i || eliminatedBy[j] != null && !eliminatedBy[j].startsWith("Priced")) {
+				if (j == i || !priceable[j] || eliminatedBy[j] != null && !eliminatedBy[j].startsWith("Priced")) {
 					continue;
 				}
 				if (nanos[j].beats(nanos[i])) {
@@ -193,13 +209,15 @@ final class LmdbNativeSelector {
 				continue;
 			}
 			eligible++;
-			if (winner < 0 || expected[i] < expected[winner]) {
+			if (winner < 0 || priceable[i] && expected[i] < expected[winner]) {
 				winner = i;
 			}
 		}
 		String reason;
 		if (winner < 0) {
 			reason = "No candidate survived elimination";
+		} else if (!priceable[winner]) {
+			reason = "Unpriced fallback: first structurally eligible candidate in registry order";
 		} else if (eligible == 1 && n == 1) {
 			reason = "Only admitted candidate";
 		} else if (eligible == 1) {
@@ -208,7 +226,8 @@ final class LmdbNativeSelector {
 			reason = String.format("Lowest expected price (%.0f ns) among %d eligible candidates",
 					expected[winner], eligible);
 		}
-		return new Ranking(winner, nanos, expected, quotedExpected, eliminatedBy, reason, estimated);
+		return new Ranking(winner, nanos, expected, quotedExpected, eliminatedBy, reason, estimated, priceable,
+				structurallyEligible);
 	}
 
 	/** Output uncertainty does not remove the price supplied by bounded producer work. */

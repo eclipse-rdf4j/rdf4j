@@ -323,7 +323,8 @@ final class NativeAggregateCostQuotes {
 							LmdbNativeCostVector.upperAdd(LmdbNativeCostVector.upperMultiply(2D, maximumSortHigh),
 									upperSortComparisons(description.highRows))));
 		} else if (retainedGroups && !streaming
-				&& (actual == null || actual.retention() != NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE)) {
+				&& (actual == null || actual.retention() != NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE)
+				&& (actual == null || actual.producer() == null || !actual.producer().retentionWorkIncluded())) {
 			double retainedRows = producerWork != null && Double.isFinite(producerWork.retainedRows())
 					? Math.min(rows, producerWork.retainedRows())
 					: rows;
@@ -378,7 +379,8 @@ final class NativeAggregateCostQuotes {
 			evidence = evidence.withMissingProof(legacy.workEvidence().missingProof());
 		}
 		if (actual != null && actual.retention() == null) {
-			evidence = evidence.withMissingProof("The selected recipe has unknown reducer/storage work");
+			evidence = evidence
+					.withMissingProof("The selected recipe has unknown producer/transport or reducer/storage work");
 		}
 		if (fullConcat && description.highRows > 0D) {
 			// Decoding the shared inputs is already represented above. Constructing the additional concatenated

@@ -33,6 +33,26 @@ import org.junit.jupiter.api.Test;
 class SparseJoinAggregateKernelTest {
 
 	@Test
+	void projectionPresenceNeverObservesAnOverflowingWeight() throws Exception {
+		TrackingMemory memory = new TrackingMemory(Long.MAX_VALUE);
+		int[][] columns = { { 0, 1 }, { 0 } };
+		boolean[] exact = { false, true };
+		try (NativeFactorProjections input = SparseJoinAggregateKernel.projections(
+				new Rows(List.of(row(1, 10, Long.MAX_VALUE))), new Rows(List.of(row(10, 20, 2))), columns, exact,
+				new int[] { 0, 1, 2 }, new long[3], 0, 1, 2, null, memory, null)) {
+			assertTrue(input.nextBatch());
+			assertTrue(input.next(0));
+			assertEquals(1L, input.value(0));
+			assertEquals(20L, input.value(1));
+			assertEquals(1L, input.multiplicity(), "presence must not multiply an unobserved bag weight");
+			assertTrue(input.next(1));
+			assertThrows(QueryEvaluationException.class, input::multiplicity,
+					"an exact count must still report its overflowing weight");
+		}
+		assertEquals(0L, memory.used);
+	}
+
+	@Test
 	void weightedProductEmitsOnlyPresentGroupsAndPrunesBySafeRowBounds() {
 		List<Row> left = List.of(row(1, 10, 2, 11, 1), row(2, 11, 3), row(3, 90, 1));
 		List<Row> right = List.of(row(10, 20, 3, 21, 1), row(11, 20, 2, 22, 4), row(12, 20, 1));

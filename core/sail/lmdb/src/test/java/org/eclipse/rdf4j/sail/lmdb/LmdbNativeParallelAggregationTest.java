@@ -55,8 +55,8 @@ import org.junit.jupiter.api.io.TempDir;
  * under test must be requested. A forced parallel attempt that discovers floating-point or representative ties still
  * falls back through {@code EncounterOrderFallback} to the sequential path, which is exactly the contract those cases
  * assert. Only the selection cases ({@link #singlePatternPlainCountDefaultsToExactIndexedCardinality},
- * {@link #smallDistinctStarKeepsTheSequentialPathBelowParallelStartupCost}, {@link #defaultThresholdGatesSmallStores})
- * stay unforced.
+ * {@link #smallDistinctStarSelectsPricedFactorizedTailAndReturnsParallelGrant},
+ * {@link #defaultThresholdGatesSmallStores}) stay unforced.
  */
 public class LmdbNativeParallelAggregationTest {
 
@@ -348,33 +348,40 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	/**
-	 * Selection case (unforced). Measured selection on this 500-statement star (2026-11-03): the sequential path is
-	 * priced at tens of microseconds, the factorized tail at about 2.4 ms and the parallel sink at its 2 ms startup
-	 * cost, so neither specialist may run and the losing parallel proposal must still hand back its worker grant.
+	 * Selection case (unforced): AUTO selects the priceable serial factorized tail. The ordinary nestedLoop proposal
+	 * remains unpriced because this composite input's physical grain is not proved; the losing parallel proposal must
+	 * still return its full worker grant.
 	 */
 	@Test
-	public void smallDistinctStarKeepsTheSequentialPathBelowParallelStartupCost() {
+	public void smallDistinctStarSelectsPricedFactorizedTailAndReturnsParallelGrant() {
 		String previousStartup = System.setProperty(PARALLEL_STARTUP_WORK_FLAG,
 				Double.toString(LmdbNativeWork.PARALLEL_STARTUP_COST));
 		String previousTail = System.setProperty(FACTORIZED_TAIL_FLAG, "true");
 		try {
 			String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
 			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-			long factorizedBefore = FactorizedTail.ENGAGED.get();
 
 			GenericPlanNode plan = explain(query);
 
-			assertThat(findMetric(plan, "nativeExecutionPath")).isEqualTo("aggState");
-			assertThat(findMetric(plan, "nativeStrategyProposalCosts"))
+			assertThat(findMetric(plan, "nativeExecutionPath"))
+					.as("AUTO chooses the concrete serial chunk-pipeline factorized-tail route")
+					.isEqualTo("factorizedTail(prefix=chunkPipeline, branches=1)");
+			assertThat(findMetric(plan, "nativeDecisionOutcome")).startsWith("winner=factorizedTail");
+			String proposalCosts = findMetric(plan, "nativeStrategyProposalCosts");
+			assertThat(proposalCosts)
 					.contains("factorizedTail=")
 					.contains("parallelAggregation=")
-					.contains("nestedLoop=");
+					.contains("nestedLoop=unpriced")
+					.doesNotContain("factorizedTail=unpriced");
+			String groupDecision = findMetric(plan, "nativeDecision.GROUP.0");
+			assertThat(groupDecision)
+					.as("the actual GROUP decision records the priceable winner and ordinary missing-work proof")
+					.contains("winner=factorizedTail")
+					.contains("nestedLoop unpriced")
+					.contains("Composite input physical grain is not proved");
 			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
-					.as("parallel startup must not run when a sequential proposal is cheaper")
+					.as("parallel startup must not run when the serial factorized tail wins")
 					.isEqualTo(parallelBefore);
-			assertThat(FactorizedTail.ENGAGED.get())
-					.as("the factorized tail is priced above the sequential path on this fixture")
-					.isEqualTo(factorizedBefore);
 			try (LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
 					.tryReserveTasks(false, 4)) {
 				assertThat(reservation)
@@ -382,6 +389,24 @@ public class LmdbNativeParallelAggregationTest {
 						.isNotNull();
 				assertThat(reservation.grantedWorkers()).isEqualTo(4);
 			}
+
+			long factorizedBeforeAutomaticEvaluation = FactorizedTail.ENGAGED.get();
+			List<String> automaticRows = rows(query);
+			assertThat(FactorizedTail.ENGAGED.get())
+					.as("the unforced query actually executes the selected factorized tail")
+					.isGreaterThan(factorizedBeforeAutomaticEvaluation);
+			assertThat(automaticRows).as("AUTO returns the complete nonempty BindingSet bag").isNotEmpty();
+			List<String> nativeDisabledRows = rowsWithProperty(NATIVE_FLAG, "false", query);
+			assertThat(automaticRows).as("AUTO matches native-disabled complete bindings")
+					.containsExactlyElementsOf(nativeDisabledRows);
+
+			List<String> forcedNestedLoopRows = rows(query, "nestedLoop");
+			assertThat(forcedNestedLoopRows).as("forced nestedLoop returns the complete nonempty BindingSet bag")
+					.isNotEmpty()
+					.containsExactlyElementsOf(nativeDisabledRows);
+			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+					.as("AUTO and forced serial checks never execute the parallel producer")
+					.isEqualTo(parallelBefore);
 		} finally {
 			restoreProperty(FACTORIZED_TAIL_FLAG, previousTail);
 			restoreProperty(PARALLEL_STARTUP_WORK_FLAG, previousStartup);

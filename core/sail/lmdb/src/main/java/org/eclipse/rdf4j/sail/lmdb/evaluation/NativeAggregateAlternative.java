@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -25,6 +27,18 @@ interface NativeAggregateAlternative extends QueryEvaluationStep {
 	/** Optional exact recipe whose quote and opener describe the same bound evaluation. */
 	default Prepared prepare(RowState row) throws IOException {
 		return null;
+	}
+
+	/** An aggregate may expose multiple exact recipes from one evaluation-scoped preparation. */
+	interface WithVariants extends NativeAggregateAlternative {
+		List<Variant> prepareVariants(RowState row, String primaryTag, String forcing) throws IOException;
+	}
+
+	record Variant(String tag, Prepared prepared) {
+		public Variant {
+			Objects.requireNonNull(tag, "tag");
+			Objects.requireNonNull(prepared, "prepared");
+		}
 	}
 
 	interface Prepared extends NativeAggregatePhysicalPlan.Producer {

@@ -12,47 +12,73 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.SparseJoinAggregateTestFixture;
 import org.eclipse.rdf4j.sail.lmdb.csf.CsfPageTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,6 +110,1209 @@ class SparseJoinAggregateAdapterTest {
 			System.setProperty(LmdbSparseJoinAggregatePlan.ENABLED_PROPERTY, previousEnabled);
 		}
 		assertEquals(0L, manager.usedBytes());
+	}
+
+	@Test
+	void nonNumericMarginalsDoNotObserveOverflowingOutsideWeight() throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try (Fixture fixture = new Fixture()) {
+			fixture.useOverflowingProduct();
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			AggregateSpec[] specs = { AggregateSpec.slot("sum", 2, false, AggKind.SUM),
+					AggregateSpec.slot("avg", 2, false, AggKind.AVG) };
+			int[] groups = { 0 };
+			NativeGroupIteration owner = new NativeGroupIteration(source, fixture.owner.arg, fixture.owner.layout,
+					groups, specs, false, EmptyBindingSet.getInstance(), null, null, false, null);
+			RowState row = new RowState(source, fixture.owner.layout, EmptyBindingSet.getInstance());
+			try {
+				assertTrue(owner.initialize(row));
+				LmdbSparseJoinAggregatePlan plan = LmdbSparseJoinAggregatePlan.tryCreate(fixture.owner.arg,
+						groups, specs, null);
+				assertNotNull(plan);
+				List<BindingSet> result = plan.evaluate(owner, row);
+				assertNotNull(result);
+				try {
+					assertEquals(1, result.size());
+					assertFalse(result.get(0).hasBinding("sum"));
+					assertFalse(result.get(0).hasBinding("avg"));
+				} finally {
+					if (result instanceof AutoCloseable closeable) {
+						closeable.close();
+					}
+				}
+			} finally {
+				owner.close();
+				row.closeDecodedInputs();
+				row.memoryScope.close();
+				source.executionContext().close();
+			}
+		} finally {
+			if (previousBytes == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBytes);
+			}
+		}
+	}
+
+	@Test
+	void poisonedMarginalReducersIgnoreOverflowingNumericFibersForEveryGroupShapeAndOrder() throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try {
+			AggregateSpec[] specs = { AggregateSpec.slot("sum", 2, false, AggKind.SUM),
+					AggregateSpec.slot("avg", 2, false, AggKind.AVG),
+					AggregateSpec.slot("distinctB", 2, true, AggKind.COUNT) };
+			assertAll("poisoned reducers must not observe independent fiber overflow",
+					() -> assertPoisonedFiberResults(specs, new int[] { 0 }, true),
+					() -> assertPoisonedFiberResults(specs, new int[] { 0 }, false),
+					() -> assertPoisonedFiberResults(specs, new int[0], true),
+					() -> assertPoisonedFiberResults(specs, new int[0], false));
+		} finally {
+			restoreNativeCountGroupStoreLimit(previousBytes);
+		}
+	}
+
+	@Test
+	void poisonedAverageDefersCumulativeWeightOverflowUntilNonNumericFiber() throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try {
+			AggregateSpec[] specs = { AggregateSpec.slot("sum", 2, false, AggKind.SUM),
+					AggregateSpec.slot("avg", 2, false, AggKind.AVG),
+					AggregateSpec.slot("distinctB", 2, true, AggKind.COUNT) };
+			long[] leftKeys = { 1L, 2L };
+			long[][] leftNeighbors = { { 10L, 11L, 12L }, { 13L } };
+			long[][] leftWeights = { { Long.MAX_VALUE - 1L, 1L, 1L }, { 1L } };
+			long[] rightKeys = { 10L, 11L, 12L, 13L };
+			long[][] rightNeighbors = { { 102L }, { 103L }, { 101L }, { 104L } };
+			long[][] rightWeights = { { 1L }, { 2L }, { 1L }, { 1L } };
+			assertWeightedMarginals(new int[] { 0 }, specs, leftKeys, leftNeighbors, leftWeights, rightKeys,
+					rightNeighbors, rightWeights,
+					results -> assertGroupedPoisonedResults(results, 3L));
+		} finally {
+			restoreNativeCountGroupStoreLimit(previousBytes);
+		}
+	}
+
+	@Test
+	void countStarStillReportsFixedPlaneMultiplicityOverflow() throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try {
+			AggregateSpec[] specs = { AggregateSpec.star("count") };
+			long[] leftKeys = { 1L };
+			long[][] leftNeighbors = { { 10L } };
+			long[][] leftWeights = { { Long.MAX_VALUE - 1L } };
+			long[] rightKeys = { 10L };
+			long[][] rightNeighbors = { { 101L } };
+			long[][] rightWeights = { { 2L } };
+			assertWeightedMarginals(new int[] { 0 }, specs, leftKeys, leftNeighbors, leftWeights, rightKeys,
+					rightNeighbors, rightWeights, (owner, row, opener) -> {
+						QueryEvaluationException overflow = assertThrows(QueryEvaluationException.class,
+								() -> LmdbNativePackedAlgebraAggregate.collectMarginals(row, new int[] { 0 }, specs,
+										owner,
+										opener));
+						assertTrue(overflow.getMessage().contains("COUNT overflow in factorized aggregation"),
+								overflow.getMessage());
+					});
+		} finally {
+			restoreNativeCountGroupStoreLimit(previousBytes);
+		}
+	}
+
+	@Test
+	void malformedNumericMarginalsDeclineBeforeOverflowingMultiplicity() throws Exception {
+		assertAll("malformed numeric SUM/AVG values must request encounter-order fallback before COUNT overflow",
+				() -> assertMalformedNumericMarginalDeclines(XSD.INTEGER),
+				() -> assertMalformedNumericMarginalDeclines(XSD.DECIMAL));
+	}
+
+	@Test
+	void projectedPredicateMalformedNumericMarginalsDeclineBeforeOverflowingMultiplicity() throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			WildcardAdjacency catalog = mock(WildcardAdjacency.class);
+			when(catalog.predicateCount()).thenReturn(2);
+			when(catalog.predicateAt(0)).thenReturn(11L);
+			when(catalog.predicateAt(1)).thenReturn(101L);
+			when(fixture.probe.boundedPredicateSweep(false)).thenReturn(catalog);
+			NativeAdjacency.KeyRunCursor leftCursor = projectedPredicateRun(10L, Long.MAX_VALUE);
+			NativeAdjacency.KeyRunCursor rightCursor = projectedPredicateRun(10L, 2L);
+			when(fixture.probe.adjacency(11L, false)).thenReturn(fixture.left);
+			when(fixture.probe.adjacency(101L, false)).thenReturn(fixture.right);
+			when(fixture.left.orderedKeyRunsWithBoundedOpen()).thenReturn(true);
+			when(fixture.right.orderedKeyRunsWithBoundedOpen()).thenReturn(true);
+			when(fixture.left.openKeyRunCursor()).thenReturn(leftCursor);
+			when(fixture.right.openKeyRunCursor()).thenReturn(rightCursor);
+			doReturn(SimpleValueFactory.getInstance().createLiteral("not-a-number", XSD.INTEGER))
+					.when(fixture.source)
+					.lazyValue(eq(10L), anyInt());
+
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			int[] groups = { 0 };
+			AggregateSpec[] specs = { AggregateSpec.slot("sum", 1, false, AggKind.SUM),
+					AggregateSpec.slot("avg", 1, false, AggKind.AVG) };
+			NativeGroupIteration owner = new NativeGroupIteration(source, fixture.owner.arg, fixture.owner.layout,
+					groups, specs, false, EmptyBindingSet.getInstance(), null, null, false, null);
+			RowState row = new RowState(source, fixture.owner.layout, EmptyBindingSet.getInstance());
+			try {
+				assertTrue(owner.initialize(row));
+				long ledgerBefore = owner.resultLedger().usedBytes();
+				RuntimeException observed = assertThrows(RuntimeException.class,
+						() -> LmdbNativePackedAlgebraAggregate.collectMarginals(row, groups, specs, owner,
+								(producer, columns, exact) -> LmdbProjectedPredicateJoin.projections(fixture.source,
+										false,
+										false, null, null, false, false, false, false, columns, exact,
+										new int[] { 0, 1, 2 }, new long[3], 0, 2, 1, null, owner.resultLedger(),
+										KernelCancellation.forOrdinaryExecution(null, null, null))));
+				assertEquals(ledgerBefore, owner.resultLedger().usedBytes());
+				verify(catalog).close();
+				verify(leftCursor).close();
+				verify(rightCursor).close();
+				verify(fixture.left).close();
+				verify(fixture.right).close();
+				verify(fixture.probe).close();
+				assertInstanceOf(EncounterOrderFallback.class, observed);
+			} finally {
+				owner.close();
+				row.closeDecodedInputs();
+				row.memoryScope.close();
+				source.executionContext().close();
+			}
+		} finally {
+			restoreNativeCountGroupStoreLimit(previousBytes);
+		}
+	}
+
+	@Test
+	void ordinaryEvaluatorDistinguishesMalformedLiteralOrderFromNonnumericPoison() {
+		String property = "rdf4j.lmdb.nativeQueryEngine.enabled";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "false");
+		SailRepository repository = new SailRepository(new MemoryStore());
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				for (var datatype : List.of(XSD.INTEGER, XSD.DECIMAL)) {
+					String malformed = "\"not-a-number\"^^<" + datatype.stringValue() + ">";
+					String ordinaryFirst = "SELECT (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) WHERE { VALUES ?v { "
+							+ malformed + " } }";
+					assertThrows(QueryEvaluationException.class,
+							() -> QueryResults.asList(connection.prepareTupleQuery(ordinaryFirst).evaluate()),
+							"ordinary SUM/AVG should expose a malformed numeric value when it is first");
+
+					String poisonedFirst = "SELECT (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) WHERE { VALUES ?v { "
+							+ "<urn:poison> " + malformed + " } }";
+					List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(poisonedFirst).evaluate());
+					assertEquals(1, rows.size());
+					assertFalse(rows.get(0).hasBinding("sum"));
+					assertFalse(rows.get(0).hasBinding("avg"));
+				}
+			}
+		} finally {
+			repository.shutDown();
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	void marginalProjectionScansPastOverflowToSurfaceFilterFailure() throws Exception {
+		AggregateSpec[] specs = { AggregateSpec.slot("sum", 0, false, AggKind.SUM) };
+		long[] leftKeys = { 1L };
+		long[][] leftNeighbors = { { 10L } };
+		long[][] leftWeights = { { 1L } };
+		long[] rightKeys = { 10L };
+		long[][] rightNeighbors = { { 101L, 102L, 103L } };
+		long[][] rightWeights = { { Long.MAX_VALUE - 1L, 2L, 1L } };
+		IllegalStateException filterFailure = new IllegalStateException("filter inspected final endpoint");
+		SparseJoinAggregateKernel.EndpointFilter filter = (left, right) -> {
+			if (right == 103L) {
+				throw filterFailure;
+			}
+			return true;
+		};
+		assertWeightedMarginals(new int[0], specs, leftKeys, leftNeighbors, leftWeights, rightKeys, rightNeighbors,
+				rightWeights, filter, (owner, row, opener) -> {
+					assertSame(filterFailure, assertThrows(IllegalStateException.class,
+							() -> LmdbNativePackedAlgebraAggregate.collectMarginals(row, new int[0], specs, owner,
+									opener)));
+				});
+	}
+
+	private static void restoreNativeCountGroupStoreLimit(String previousBytes) {
+		if (previousBytes == null) {
+			System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		} else {
+			System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBytes);
+		}
+	}
+
+	private void assertMalformedNumericMarginalDeclines(IRI datatype) throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try (Fixture fixture = new Fixture()) {
+			fixture.useOverflowingProduct();
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			doReturn(SimpleValueFactory.getInstance().createLiteral("not-a-number", datatype))
+					.when(fixture.source)
+					.lazyValue(eq(101L), anyInt());
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			AggregateSpec[] specs = { AggregateSpec.slot("sum", 2, false, AggKind.SUM),
+					AggregateSpec.slot("avg", 2, false, AggKind.AVG) };
+			int[] groups = { 0 };
+			NativeGroupIteration owner = new NativeGroupIteration(source, fixture.owner.arg, fixture.owner.layout,
+					groups, specs, false, EmptyBindingSet.getInstance(), null, null, false, null);
+			RowState row = new RowState(source, fixture.owner.layout, EmptyBindingSet.getInstance());
+			try {
+				assertTrue(owner.initialize(row));
+				LmdbSparseJoinAggregatePlan plan = LmdbSparseJoinAggregatePlan.tryCreate(fixture.owner.arg, groups,
+						specs, null);
+				assertNotNull(plan);
+				EncounterOrderFallback fallback = assertThrows(EncounterOrderFallback.class,
+						() -> plan.evaluate(owner, row));
+				assertEquals("NUMERIC_INPUT_VALIDATION", fallback.reason.name());
+			} finally {
+				owner.close();
+				row.closeDecodedInputs();
+				row.memoryScope.close();
+				source.executionContext().close();
+			}
+		} finally {
+			restoreNativeCountGroupStoreLimit(previousBytes);
+		}
+	}
+
+	private static NativeAdjacency.KeyRunCursor projectedPredicateRun(long key, long weight) {
+		NativeAdjacency.KeyRunCursor cursor = mock(NativeAdjacency.KeyRunCursor.class);
+		when(cursor.advance()).thenReturn(true, false);
+		when(cursor.key()).thenReturn(key);
+		when(cursor.runSize()).thenReturn(weight);
+		return cursor;
+	}
+
+	private void assertPoisonedFiberResults(AggregateSpec[] specs, int[] groups, boolean numericFirst)
+			throws Exception {
+		long numericShared = numericFirst ? 10L : 11L;
+		long[] leftKeys = { 1L, 2L };
+		long[][] leftNeighbors = { { 10L, 11L }, { 12L } };
+		long[][] leftWeights = { { numericShared == 10L ? Long.MAX_VALUE - 1L : 1L,
+				numericShared == 11L ? Long.MAX_VALUE - 1L : 1L }, { 1L } };
+		long[] rightKeys = { 10L, 11L, 12L };
+		long[][] rightNeighbors = { { 10L == numericShared ? 102L : 101L },
+				{ 11L == numericShared ? 102L : 101L }, { 104L } };
+		long[][] rightWeights = { { 10L == numericShared ? 2L : 1L }, { 11L == numericShared ? 2L : 1L }, { 1L } };
+		assertWeightedMarginals(groups, specs, leftKeys, leftNeighbors, leftWeights, rightKeys, rightNeighbors,
+				rightWeights, results -> {
+					if (groups.length == 0) {
+						assertEquals(1, results.size());
+						BindingSet row = results.get(0);
+						assertFalse(row.hasBinding("a"));
+						assertFalse(row.hasBinding("sum"));
+						assertFalse(row.hasBinding("avg"));
+						assertEquals(3L, ((Literal) row.getValue("distinctB")).longValue());
+					} else {
+						assertGroupedPoisonedResults(results, 2L);
+					}
+				});
+	}
+
+	private void assertGroupedPoisonedResults(List<BindingSet> results, long poisonedDistinctCount) {
+		var vf = SimpleValueFactory.getInstance();
+		Map<Value, BindingSet> groups = new HashMap<>();
+		for (BindingSet result : results) {
+			assertTrue(groups.put(result.getValue("a"), result) == null, "each group must appear once");
+		}
+		assertEquals(Set.of(vf.createIRI("urn:adapter:1"), vf.createIRI("urn:adapter:2")), groups.keySet());
+		BindingSet poisoned = groups.get(vf.createIRI("urn:adapter:1"));
+		assertFalse(poisoned.hasBinding("sum"));
+		assertFalse(poisoned.hasBinding("avg"));
+		assertEquals(poisonedDistinctCount, ((Literal) poisoned.getValue("distinctB")).longValue());
+		BindingSet unaffected = groups.get(vf.createIRI("urn:adapter:2"));
+		assertEquals(7.0D, ((Literal) unaffected.getValue("sum")).doubleValue());
+		assertEquals(7.0D, ((Literal) unaffected.getValue("avg")).doubleValue());
+		assertEquals(1L, ((Literal) unaffected.getValue("distinctB")).longValue());
+	}
+
+	private void assertWeightedMarginals(int[] groups, AggregateSpec[] specs, long[] leftKeys,
+			long[][] leftNeighbors, long[][] leftWeights, long[] rightKeys, long[][] rightNeighbors,
+			long[][] rightWeights,
+			Consumer<List<BindingSet>> assertion) throws Exception {
+		assertWeightedMarginals(groups, specs, leftKeys, leftNeighbors, leftWeights, rightKeys, rightNeighbors,
+				rightWeights, (owner, row, opener) -> {
+					List<BindingSet> results = LmdbNativePackedAlgebraAggregate.collectMarginals(row, groups, specs,
+							owner,
+							opener);
+					assertNotNull(results);
+					try {
+						assertion.accept(results);
+					} finally {
+						if (results instanceof AutoCloseable closeable) {
+							closeable.close();
+						}
+					}
+				});
+	}
+
+	private void assertWeightedMarginals(int[] groups, AggregateSpec[] specs, long[] leftKeys,
+			long[][] leftNeighbors, long[][] leftWeights, long[] rightKeys, long[][] rightNeighbors,
+			long[][] rightWeights,
+			WeightedMarginalCheck check) throws Exception {
+		assertWeightedMarginals(groups, specs, leftKeys, leftNeighbors, leftWeights, rightKeys, rightNeighbors,
+				rightWeights, null, check);
+	}
+
+	private void assertWeightedMarginals(int[] groups, AggregateSpec[] specs, long[] leftKeys,
+			long[][] leftNeighbors, long[][] leftWeights, long[] rightKeys, long[][] rightNeighbors,
+			long[][] rightWeights,
+			SparseJoinAggregateKernel.EndpointFilter filter, WeightedMarginalCheck check) throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			var vf = SimpleValueFactory.getInstance();
+			if (filter != null) {
+				doReturn(vf.createLiteral("1", XSD.INTEGER)).when(fixture.source).lazyValue(eq(1L), anyInt());
+			}
+			doReturn(vf.createIRI("urn:adapter:poison")).when(fixture.source).lazyValue(eq(101L), anyInt());
+			doReturn(vf.createLiteral("1", XSD.INTEGER)).when(fixture.source).lazyValue(eq(102L), anyInt());
+			doReturn(vf.createLiteral("2", XSD.INTEGER)).when(fixture.source).lazyValue(eq(103L), anyInt());
+			doReturn(vf.createLiteral("7", XSD.INTEGER)).when(fixture.source).lazyValue(eq(104L), anyInt());
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			NativeGroupIteration owner = new NativeGroupIteration(source, fixture.owner.arg, fixture.owner.layout,
+					groups, specs, false, EmptyBindingSet.getInstance(), null, null, false, null);
+			RowState row = new RowState(source, fixture.owner.layout, EmptyBindingSet.getInstance());
+			ArrayWeightedRows left = new ArrayWeightedRows(leftKeys, leftNeighbors, leftWeights);
+			ArrayWeightedRows right = new ArrayWeightedRows(rightKeys, rightNeighbors, rightWeights);
+			AtomicInteger opened = new AtomicInteger();
+			AtomicInteger closed = new AtomicInteger();
+			try {
+				assertTrue(owner.initialize(row));
+				try (left;
+						right;
+						KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory
+								.forLedger(owner.resultLedger())) {
+					LmdbNativePackedAlgebraAggregate.ProjectionOpener opener = (producer, columns, exact) -> {
+						opened.incrementAndGet();
+						NativeFactorProjections projection = SparseJoinAggregateKernel.projections(left, right, columns,
+								exact, new int[] { 0, 1, 2 }, new long[3], 0, 2, 1, filter, memory,
+								KernelCancellation.forOrdinaryExecution(null, null, null));
+						return new NativeFactorProjections() {
+							@Override
+							public boolean nextBatch() throws IOException {
+								return projection.nextBatch();
+							}
+
+							@Override
+							public boolean next(int projectionIndex) throws IOException {
+								return projection.next(projectionIndex);
+							}
+
+							@Override
+							public long value(int slot) {
+								return projection.value(slot);
+							}
+
+							@Override
+							public long multiplicity() {
+								return projection.multiplicity();
+							}
+
+							@Override
+							public long numericMultiplicity() {
+								return projection.numericMultiplicity();
+							}
+
+							@Override
+							public void close() {
+								try {
+									projection.close();
+								} finally {
+									closed.incrementAndGet();
+								}
+							}
+						};
+					};
+					try {
+						check.run(owner, row, opener);
+					} finally {
+						assertEquals(1, opened.get(), "marginal collection must open one projection cursor");
+						assertEquals(1, closed.get(), "marginal collection must close its projection cursor");
+					}
+				} finally {
+					assertTrue(left.closed, "left weighted rows must close");
+					assertTrue(right.closed, "right weighted rows must close");
+				}
+			} finally {
+				owner.close();
+				row.closeDecodedInputs();
+				row.memoryScope.close();
+				source.executionContext().close();
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface WeightedMarginalCheck {
+		void run(NativeGroupIteration owner, RowState row, LmdbNativePackedAlgebraAggregate.ProjectionOpener opener)
+				throws Exception;
+	}
+
+	@Test
+	void mixedDistinctRetainsInvariantEntrySlotOrItsUnboundState() throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try {
+			for (boolean bound : new boolean[] { false, true }) {
+				try (Fixture fixture = new Fixture()) {
+					when(fixture.source.idSpace()).thenReturn(fixture.source);
+					var outside = SimpleValueFactory.getInstance().createIRI("urn:adapter:outside");
+					when(fixture.source.idOf(any(), anyInt())).thenReturn(777L);
+					when(fixture.source.lazyValue(777L, 0)).thenReturn(outside);
+					SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+					NativeSlotLayout layout = new NativeSlotLayout(Map.of("a", 0, "j", 1, "b", 2, "outside", 3), null);
+					layout.freeze(List.of("a", "j", "b", "outside"));
+					QueryBindingSet base = new QueryBindingSet();
+					if (bound) {
+						base.addBinding("outside", outside);
+					}
+					AggregateSpec[] aggregates = { AggregateSpec.star("count"),
+							AggregateSpec.starDistinct("rows", new int[] { 0, 1, 2, 3 }) };
+					NativeGroupIteration owner = new NativeGroupIteration(source, fixture.owner.arg, layout,
+							new int[] { 3 },
+							aggregates, false, base, null, null, false, null);
+					RowState row = new RowState(source, layout, base);
+					try {
+						assertTrue(owner.initialize(row));
+						LmdbSparseJoinAggregatePlan plan = LmdbSparseJoinAggregatePlan.tryCreate(fixture.owner.arg,
+								new int[] { 3 }, aggregates, null);
+						assertNotNull(plan);
+						List<BindingSet> output = plan.evaluate(owner, row);
+						assertNotNull(output);
+						try {
+							assertEquals(1, output.size());
+							BindingSet result = output.get(0);
+							assertEquals(4L, ((Literal) result.getValue("count")).longValue());
+							assertEquals(4L, ((Literal) result.getValue("rows")).longValue());
+							assertEquals(bound ? outside : null, result.getValue("outside"));
+						} finally {
+							if (output instanceof AutoCloseable closeable) {
+								closeable.close();
+							}
+						}
+					} finally {
+						owner.close();
+						row.closeDecodedInputs();
+						source.executionContext().close();
+					}
+				}
+			}
+		} finally {
+			if (previousBytes == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBytes);
+			}
+		}
+	}
+
+	@Test
+	void sparsePhysicalRecipeTransfersItsGroupedOutput() throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			when(fixture.source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			when(fixture.source.indexName(any(), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			try {
+				LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+				when(strategy.forcedExecutionStrategyName())
+						.thenReturn(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
+				when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+				NativeGroupStep step = new NativeGroupStep(source, fixture.owner.arg, fixture.owner.layout,
+						fixture.owner.groupSlots, fixture.owner.aggregates, false, strategy, null, null, Set.of(),
+						null, null, false, false, null, 0L, null, null);
+				BindingSet input = EmptyBindingSet.getInstance();
+				NativePhysicalResultPlan recipe = step.physicalPlan(input);
+				assertNotNull(recipe, "the sparse grouped result must be selectable as a physical child");
+				assertTrue(Double.isFinite(recipe.input().rows()), "the expected group count must be finite");
+				assertEquals(Double.POSITIVE_INFINITY, recipe.input().highRows(),
+						"an unknown child ceiling must remain unknown");
+				assertFalse(recipe.input().workEvidence().isComplete(),
+						"an unknown input grain must not acquire a complete work proof");
+				assertNotNull(recipe.outputEvidence(), "the selected child needs an authoritative output receipt");
+				assertNotNull(recipe.outputEvidence().column("a"));
+				assertNotNull(recipe.outputEvidence().column("b"));
+				assertNotNull(recipe.outputEvidence().column("count"));
+				assertTrue(recipe.physicalProperties().contains(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE),
+						() -> "the selected receipt must describe the sparse recipe: " + recipe.physicalProperties());
+				assertNotNull(recipe.rebindRecipe(), "a selected worker-capable input needs a worker recipe");
+				NativeLmdbQuerySource unrelated = mock(NativeLmdbQuerySource.class);
+				assertNull(recipe.rebind(step, new NativeScalarPlan.WorkerContext(unrelated, null, null), input),
+						"a receipt must never import its source IDs into an unrelated worker");
+				Set<String> groups = new HashSet<>();
+				try (NativeResultCursor results = NativeResultSteps.open(recipe.step(), input)) {
+					for (NativeResultRow result; (result = results.next()) != null;) {
+						BindingSet row = result.toBindingSet();
+						assertEquals(1L, ((Literal) row.getValue("count")).longValue());
+						assertTrue(
+								groups.add(row.getValue("a").stringValue() + " / " + row.getValue("b").stringValue()),
+								"the physical result must not duplicate a group");
+					}
+				}
+				assertEquals(Set.of("urn:adapter:1 / urn:adapter:101", "urn:adapter:1 / urn:adapter:102",
+						"urn:adapter:2 / urn:adapter:101", "urn:adapter:2 / urn:adapter:102"), groups);
+			} finally {
+				source.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void sparsePhysicalRecipeRebindsToMatchingWorkerAuthority() throws Exception {
+		checkSparseWorkerAuthority(false);
+	}
+
+	@Test
+	void sparsePhysicalRecipeRejectsDifferentPreparedAuthority() throws Exception {
+		checkSparseWorkerAuthority(true);
+	}
+
+	private void checkSparseWorkerAuthority(boolean differentPreparedAuthority) throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			when(fixture.source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			when(fixture.source.indexName(any(), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			ParallelSource first = mock(ParallelSource.class, delegatesTo(fixture.source));
+			ParallelSource second = mock(ParallelSource.class, delegatesTo(fixture.source));
+			for (ParallelSource sibling : List.of(first, second)) {
+				doReturn(fixture.source).when(sibling).idSpace();
+				doReturn(42L).when(sibling).snapshotId();
+				doNothing().when(sibling).close();
+			}
+			when(fixture.source.openParallelSources(2)).thenReturn(new ParallelSource[] { first, second });
+			SyntheticValueSource parent = SyntheticValueSource.forEvaluation(fixture.source);
+			ParallelSource[] siblings = parent.openParallelSources(2);
+			assertNotNull(siblings);
+			SyntheticValueSource foreign = SyntheticValueSource.forEvaluation(siblings[1]);
+			try {
+				assertNotSame(siblings[1].idSpace(), foreign.idSpace());
+				LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+				when(strategy.forcedExecutionStrategyName())
+						.thenReturn(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
+				when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+				BindingSet input = EmptyBindingSet.getInstance();
+				NativeGroupStep coordinator = workerGroup(fixture, siblings[0], strategy);
+				NativePhysicalResultPlan recipe = coordinator.physicalPlan(input);
+				assertNotNull(recipe);
+				assertNotNull(recipe.rebindRecipe());
+				assertTrue(recipe.outputEvidence().sourceFamilyMatches(foreign));
+				assertTrue(recipe.outputEvidence().sparseWorkerSourceMatches(siblings[1]));
+				assertFalse(recipe.outputEvidence().sparseWorkerSourceMatches(foreign));
+				try (var workers = Executors.newSingleThreadExecutor()) {
+					Set<String> groups = workers.submit(() -> {
+						NativeLmdbQuerySource actualSource = differentPreparedAuthority ? foreign : siblings[1];
+						NativeGroupStep actual = workerGroup(fixture, actualSource, strategy);
+						NativePhysicalResultPlan rebound = recipe.rebind(actual,
+								NativeScalarPlan.WorkerContext.forSource(siblings[1], null), input);
+						if (differentPreparedAuthority) {
+							assertNull(rebound, "prepared IDs must use the receipt's complete authority");
+							return Set.<String>of();
+						}
+						assertNotNull(rebound, "a sibling with the same complete authority must be rebindable");
+						assertEquals(recipe.physicalProperties(), rebound.physicalProperties());
+						assertTrue(recipe.outputEvidence().sameReceipt(rebound.outputEvidence()));
+						Set<String> result = new HashSet<>();
+						try (NativeResultCursor cursor = NativeResultSteps.open(rebound.step(), input)) {
+							for (NativeResultRow next; (next = cursor.next()) != null;) {
+								BindingSet row = next.toBindingSet();
+								assertEquals(1L, ((Literal) row.getValue("count")).longValue());
+								assertTrue(result.add(row.getValue("a").stringValue() + " / "
+										+ row.getValue("b").stringValue()));
+							}
+						}
+						return result;
+					}).get();
+					if (!differentPreparedAuthority) {
+						assertEquals(Set.of("urn:adapter:1 / urn:adapter:101", "urn:adapter:1 / urn:adapter:102",
+								"urn:adapter:2 / urn:adapter:101", "urn:adapter:2 / urn:adapter:102"), groups);
+					}
+				}
+			} finally {
+				foreign.executionContext().close();
+				siblings[1].close();
+				siblings[0].close();
+				parent.executionContext().close();
+			}
+		}
+	}
+
+	private static NativeGroupStep workerGroup(Fixture fixture, NativeLmdbQuerySource source,
+			LmdbNativeEvaluationStrategy strategy) {
+		return new NativeGroupStep(source, fixture.owner.arg, fixture.owner.layout, fixture.owner.groupSlots,
+				fixture.owner.aggregates, false, strategy, null, null, Set.of(), null, null, false, false, null, 0L,
+				null, null);
+	}
+
+	@Test
+	void retainedSparseRefusalUsesOnlyItsFixedTableFallback() throws Exception {
+		checkRetainedSparseRefusal(false, false);
+	}
+
+	@Test
+	void retainedPartialSparseAllocationRefusalReleasesItsReplayBeforeFallback() throws Exception {
+		checkRetainedSparseRefusal(true, false);
+	}
+
+	@Test
+	void retainedMixedDistinctRefusalReleasesPartialMembershipBeforeFallback() throws Exception {
+		checkRetainedSparseRefusal(true, true);
+	}
+
+	@Test
+	void retainedSparseInjectedEncounterOrderSignalUsesFixedFallback() throws Exception {
+		checkRetainedSparseRefusal(true, false, true);
+	}
+
+	@Test
+	void retainedFloatingSumUsesOriginalOrderFallback() throws Exception {
+		checkRetainedNumericFallback(true, false, false, false);
+	}
+
+	@Test
+	void retainedMalformedNumericFallbackPreservesEncounterOrderSemantics() throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try {
+			assertAll("retained malformed numeric fallback must preserve ordinary encounter-order semantics",
+					() -> checkRetainedMalformedNumericFallback(false),
+					() -> checkRetainedMalformedNumericFallback(true));
+		} finally {
+			restoreNativeCountGroupStoreLimit(previousBytes);
+		}
+	}
+
+	private void checkRetainedMalformedNumericFallback(boolean malformedFirst) throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			when(fixture.source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			when(fixture.source.indexName(any(), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.source)
+							.statements(anyLong(), anyLong(), anyLong(), anyLong(),
+									(NativeLmdbQuerySource.AdjacencyAccessObserver) any());
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.probe)
+							.open(anyLong(), anyLong(), anyLong(), anyLong(), any());
+			AtomicInteger encounterOrderScans = new AtomicInteger();
+			doAnswer(call -> {
+				encounterOrderScans.incrementAndGet();
+				return fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+						call.getArgument(3), malformedFirst);
+			}).when(fixture.source)
+					.statementsInEncounterOrder(anyLong(), anyLong(), anyLong(), anyLong(),
+							(NativeLmdbQuerySource.AdjacencyAccessObserver) any());
+
+			var vf = SimpleValueFactory.getInstance();
+			doReturn(vf.createIRI("urn:adapter:ordinary-first"))
+					.when(fixture.source)
+					.lazyValue(eq(101L), anyInt());
+			doReturn(vf.createLiteral("not-a-number", XSD.INTEGER))
+					.when(fixture.source)
+					.lazyValue(eq(102L), anyInt());
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			try {
+				LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+				when(strategy.forcedExecutionStrategyName())
+						.thenReturn(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE
+								+ "," + LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+				when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+				SingletonSet telemetry = new SingletonSet();
+				telemetry.setExecutionSummaryEnabled(true);
+				int[] groups = { 0 };
+				AggregateSpec[] specs = { AggregateSpec.star("count"),
+						AggregateSpec.slot("sum", 2, false, AggKind.SUM),
+						AggregateSpec.slot("avg", 2, false, AggKind.AVG) };
+				NativeGroupStep step = new NativeGroupStep(source, fixture.owner.arg, fixture.owner.layout,
+						groups, specs, false, strategy, telemetry, null, Set.of(), null, null, false, false, null,
+						0L, null, null);
+				BindingSet input = EmptyBindingSet.getInstance();
+				NativePhysicalResultPlan recipe = step.physicalPlan(input);
+				assertNotNull(recipe);
+				assertTrue(recipe.physicalProperties().contains(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE),
+						recipe.physicalProperties());
+				assertTrue(recipe.physicalProperties().contains("FIXED_FALLBACK="), recipe.physicalProperties());
+				long ledgerBefore = fixture.ledger.usedBytes();
+				long memoryBefore = manager.usedBytes();
+
+				if (malformedFirst) {
+					assertThrows(QueryEvaluationException.class, () -> {
+						try (NativeResultCursor results = NativeResultSteps.open(recipe.step(), input)) {
+							while (results.next() != null) {
+								// Consume the retained result until the malformed first value is evaluated.
+							}
+						}
+					});
+				} else {
+					Set<Value> observedGroups = new HashSet<>();
+					try (NativeResultCursor results = NativeResultSteps.open(recipe.step(), input)) {
+						for (NativeResultRow result; (result = results.next()) != null;) {
+							BindingSet row = result.toBindingSet();
+							assertTrue(observedGroups.add(row.getValue("a")), "each group must appear once");
+							assertEquals(2L, ((Literal) row.getValue("count")).longValue());
+							assertFalse(row.hasBinding("sum"));
+							assertFalse(row.hasBinding("avg"));
+						}
+					}
+					assertEquals(Set.of(vf.createIRI("urn:adapter:1"), vf.createIRI("urn:adapter:2")), observedGroups);
+					assertTrue(LmdbNativeExplain.hasExecutionPath(telemetry,
+							LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(sparseFallback)"));
+				}
+
+				assertTrue(encounterOrderScans.get() > 0, "the retained plan must reopen in encounter order");
+				assertEquals(1, fixture.leftRows.closes);
+				assertEquals(1, fixture.rightRows.closes);
+				assertEquals(ledgerBefore, fixture.ledger.usedBytes(), "both paths must release result-ledger claims");
+				assertEquals(memoryBefore, manager.usedBytes(), "both paths must release query memory claims");
+				System.out.println("SPARSE_MALFORMED_RETAINED first=" + (malformedFirst ? "malformed" : "iri")
+						+ " encounterScans=" + encounterOrderScans.get() + " fallback="
+						+ LmdbNativeExplain.hasExecutionPath(telemetry,
+								LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(sparseFallback)"));
+			} finally {
+				source.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void retainedEqualExtremaKeepOriginalRepresentative() throws Exception {
+		checkRetainedNumericFallback(false, false, false, false);
+	}
+
+	@Test
+	void retainedNumericFallbackDoesNotHideCleanupFailure() throws Exception {
+		checkRetainedNumericFallback(true, true, false, false);
+	}
+
+	@Test
+	void retainedNumericFallbackHonorsQueryCancellation() throws Exception {
+		checkRetainedNumericFallback(true, false, true, false);
+	}
+
+	@Test
+	void strictRetainedFloatingSparseDeclinesRatherThanLeakingControlSignal() throws Exception {
+		checkRetainedNumericFallback(true, false, false, true);
+	}
+
+	@Test
+	void retainedFloatingSumFixedTableProducesExpectedGroups() throws Exception {
+		checkRetainedNumericFixedTable(true);
+	}
+
+	@Test
+	void retainedEqualExtremaFixedTableProducesExpectedGroups() throws Exception {
+		checkRetainedNumericFixedTable(false);
+	}
+
+	private void checkRetainedNumericFallback(boolean floating, boolean cleanupFailure, boolean cancel, boolean strict)
+			throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			when(fixture.source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			when(fixture.source.indexName(any(), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.source)
+							.statements(anyLong(), anyLong(), anyLong(), anyLong(),
+									(NativeLmdbQuerySource.AdjacencyAccessObserver) any());
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.probe)
+							.open(anyLong(), anyLong(), anyLong(), anyLong(), any());
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.source)
+							.statementsInEncounterOrder(anyLong(), anyLong(), anyLong(), anyLong(),
+									(NativeLmdbQuerySource.AdjacencyAccessObserver) any());
+			var vf = SimpleValueFactory.getInstance();
+			Value first = floating ? vf.createLiteral(1.0D) : vf.createLiteral("01", XSD.INTEGER);
+			Value second = floating ? vf.createLiteral(2.0D) : vf.createLiteral("1", XSD.INTEGER);
+			doReturn(first).when(fixture.source).lazyValue(eq(101L), anyInt());
+			doReturn(second).when(fixture.source).lazyValue(eq(102L), anyInt());
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			try {
+				if (cancel) {
+					doAnswer(call -> {
+						source.executionContext().cancellation().requestCancellation();
+						return first;
+					}).when(fixture.source).lazyValue(eq(101L), anyInt());
+				}
+				LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+				when(strategy.forcedExecutionStrategyName())
+						.thenReturn(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE
+								+ (strict ? "" : "," + LmdbNativeAttemptMetrics.PATH_NESTED_LOOP));
+				when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+				SingletonSet telemetry = new SingletonSet();
+				telemetry.setExecutionSummaryEnabled(true);
+				AggregateSpec[] specs = floating
+						? new AggregateSpec[] { AggregateSpec.star("count"),
+								AggregateSpec.slot("sum", 2, false, AggKind.SUM) }
+						: new AggregateSpec[] { AggregateSpec.star("count"),
+								AggregateSpec.slot("minimum", 2, false, AggKind.MIN),
+								AggregateSpec.slot("maximum", 2, false, AggKind.MAX) };
+				NativeGroupStep step = new NativeGroupStep(source, fixture.owner.arg, fixture.owner.layout,
+						new int[] { 0 }, specs, false, strategy, telemetry, null, Set.of(),
+						null, null, false, false, null, 0L, null, null);
+				BindingSet input = EmptyBindingSet.getInstance();
+				NativePhysicalResultPlan recipe = step.physicalPlan(input);
+				assertNotNull(recipe);
+				assertTrue(recipe.physicalProperties().contains(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE),
+						recipe.physicalProperties());
+				if (!strict) {
+					assertTrue(recipe.physicalProperties().contains("FIXED_FALLBACK="), recipe.physicalProperties());
+				}
+				long before = manager.usedBytes();
+				if (cleanupFailure) {
+					IllegalStateException expected = new IllegalStateException("numeric sparse cleanup failed");
+					doThrow(expected).when(fixture.right).close();
+					assertSame(expected, assertThrows(IllegalStateException.class,
+							() -> NativeResultSteps.open(recipe.step(), input)));
+					assertFalse(LmdbNativeExplain.hasExecutionPath(telemetry,
+							LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(sparseFallback)"));
+				} else if (cancel) {
+					assertThrows(KernelQueryCancelledException.class,
+							() -> NativeResultSteps.open(recipe.step(), input));
+					assertFalse(LmdbNativeExplain.hasExecutionPath(telemetry,
+							LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(sparseFallback)"));
+				} else if (strict) {
+					QueryEvaluationException refused = assertThrows(QueryEvaluationException.class,
+							() -> NativeResultSteps.open(recipe.step(), input));
+					assertTrue(refused.getMessage().contains("sparse") && refused.getMessage().contains("order"),
+							refused.getMessage());
+				} else {
+					Set<Value> groups = new HashSet<>();
+					try (NativeResultCursor results = NativeResultSteps.open(recipe.step(), input)) {
+						for (NativeResultRow result; (result = results.next()) != null;) {
+							BindingSet row = result.toBindingSet();
+							assertTrue(groups.add(row.getValue("a")));
+							assertEquals(2L, ((Literal) row.getValue("count")).longValue());
+							if (floating) {
+								assertEquals(3.0D, ((Literal) row.getValue("sum")).doubleValue());
+							} else {
+								assertEquals(first, row.getValue("minimum"));
+								assertEquals(first, row.getValue("maximum"));
+							}
+						}
+					}
+					assertEquals(Set.of(vf.createIRI("urn:adapter:1"), vf.createIRI("urn:adapter:2")), groups);
+					assertTrue(LmdbNativeExplain.hasExecutionPath(telemetry,
+							LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(sparseFallback)"));
+				}
+				assertEquals(before, manager.usedBytes(), "failed or consumed attempts release their ledger claims");
+			} finally {
+				source.executionContext().close();
+			}
+		} finally {
+			if (previousBytes == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBytes);
+			}
+		}
+	}
+
+	private void checkRetainedNumericFixedTable(boolean floating) throws Exception {
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			when(fixture.source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			when(fixture.source.indexName(any(), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.source)
+							.statements(anyLong(), anyLong(), anyLong(), anyLong(),
+									(NativeLmdbQuerySource.AdjacencyAccessObserver) any());
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.probe)
+							.open(anyLong(), anyLong(), anyLong(), anyLong(), any());
+			AtomicInteger encounterOrderScans = new AtomicInteger();
+			doAnswer(call -> {
+				encounterOrderScans.incrementAndGet();
+				return fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+						call.getArgument(3));
+			}).when(fixture.source)
+					.statementsInEncounterOrder(anyLong(), anyLong(), anyLong(), anyLong(),
+							(NativeLmdbQuerySource.AdjacencyAccessObserver) any());
+			var vf = SimpleValueFactory.getInstance();
+			Value first = floating ? vf.createLiteral(1.0D) : vf.createLiteral("01", XSD.INTEGER);
+			Value second = floating ? vf.createLiteral(2.0D) : vf.createLiteral("1", XSD.INTEGER);
+			doReturn(first).when(fixture.source).lazyValue(eq(101L), anyInt());
+			doReturn(second).when(fixture.source).lazyValue(eq(102L), anyInt());
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			try {
+				LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+				when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+				when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+				SingletonSet telemetry = new SingletonSet();
+				telemetry.setExecutionSummaryEnabled(true);
+				AggregateSpec[] specs = floating
+						? new AggregateSpec[] { AggregateSpec.star("count"),
+								AggregateSpec.slot("sum", 2, false, AggKind.SUM) }
+						: new AggregateSpec[] { AggregateSpec.star("count"),
+								AggregateSpec.slot("minimum", 2, false, AggKind.MIN),
+								AggregateSpec.slot("maximum", 2, false, AggKind.MAX) };
+				NativeGroupStep step = new NativeGroupStep(source, fixture.owner.arg, fixture.owner.layout,
+						new int[] { 0 }, specs, false, strategy, telemetry, null, Set.of(),
+						null, null, false, false, null, 0L, null, null);
+				BindingSet input = EmptyBindingSet.getInstance();
+				NativePhysicalResultPlan recipe = step.physicalPlan(input);
+				assertNotNull(recipe, "the fixed-table candidate must be independently selectable");
+				assertTrue(recipe.physicalProperties().contains(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP),
+						recipe.physicalProperties());
+				assertFalse(recipe.physicalProperties().contains(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE),
+						recipe.physicalProperties());
+				long before = manager.usedBytes();
+				Set<Value> groups = new HashSet<>();
+				try (NativeResultCursor results = NativeResultSteps.open(recipe.step(), input)) {
+					for (NativeResultRow result; (result = results.next()) != null;) {
+						BindingSet row = result.toBindingSet();
+						assertTrue(groups.add(row.getValue("a")));
+						assertEquals(2L, ((Literal) row.getValue("count")).longValue());
+						if (floating) {
+							assertEquals(3.0D, ((Literal) row.getValue("sum")).doubleValue());
+						} else {
+							assertEquals(first, row.getValue("minimum"));
+							assertEquals(first, row.getValue("maximum"));
+						}
+					}
+				}
+				assertEquals(Set.of(vf.createIRI("urn:adapter:1"), vf.createIRI("urn:adapter:2")), groups);
+				assertTrue(LmdbNativeExplain.hasExecutionPath(telemetry, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP));
+				assertFalse(LmdbNativeExplain.hasExecutionPath(telemetry,
+						LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE));
+				assertTrue(encounterOrderScans.get() > 0, "the fixed table must use the encounter-order source stub");
+				assertEquals(before, manager.usedBytes(), "the fixed table must release its ledger claims");
+			} finally {
+				source.executionContext().close();
+			}
+		} finally {
+			if (previousBytes == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBytes);
+			}
+		}
+	}
+
+	private void checkRetainedSparseRefusal(boolean afterPrivateOutput, boolean mixed) throws Exception {
+		checkRetainedSparseRefusal(afterPrivateOutput, mixed, false);
+	}
+
+	private void checkRetainedSparseRefusal(boolean afterPrivateOutput, boolean mixed, boolean encounterOrder)
+			throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			when(fixture.source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			when(fixture.source.indexName(any(), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.source)
+							.statements(anyLong(), anyLong(), anyLong(), anyLong(),
+									(NativeLmdbQuerySource.AdjacencyAccessObserver) any());
+			doAnswer(call -> fixtureRecords(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+					call.getArgument(3))).when(fixture.probe)
+							.open(anyLong(), anyLong(), anyLong(), anyLong(), any());
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			try {
+				LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+				when(strategy.forcedExecutionStrategyName()).thenReturn(
+						LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE + ","
+								+ LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+				when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+				SingletonSet telemetry = new SingletonSet();
+				telemetry.setExecutionSummaryEnabled(true);
+				AggregateSpec[] aggregates = mixed ? new AggregateSpec[] {
+						AggregateSpec.star("count"), AggregateSpec.slot("shared", 1, true, AggKind.COUNT) }
+						: fixture.owner.aggregates;
+				NativeGroupStep step = new NativeGroupStep(source, fixture.owner.arg, fixture.owner.layout,
+						fixture.owner.groupSlots, aggregates, false, strategy, telemetry, null, Set.of(),
+						null, null, false, false, null, 0L, null, null);
+				BindingSet input = EmptyBindingSet.getInstance();
+				NativePhysicalResultPlan recipe = step.physicalPlan(input);
+				assertNotNull(recipe);
+				assertTrue(recipe.physicalProperties().contains("FIXED_FALLBACK="), recipe.physicalProperties());
+				long before = manager.usedBytes();
+				if (afterPrivateOutput) {
+					fixture.leftRows.failureOnSecond = encounterOrder ? EncounterOrderFallback.floatingSumOrAvg()
+							: new KernelRuntime.AllocationDeniedException();
+				} else {
+					System.setProperty(LmdbSparseJoinAggregatePlan.ENABLED_PROPERTY, "false");
+				}
+				Set<String> groups = new HashSet<>();
+				try (NativeResultCursor results = NativeResultSteps.open(recipe.step(), input)) {
+					for (NativeResultRow result; (result = results.next()) != null;) {
+						BindingSet row = result.toBindingSet();
+						assertEquals(1L, ((Literal) row.getValue("count")).longValue());
+						if (mixed) {
+							assertEquals(1L, ((Literal) row.getValue("shared")).longValue());
+						}
+						assertTrue(
+								groups.add(row.getValue("a").stringValue() + " / " + row.getValue("b").stringValue()),
+								"the fallback must not duplicate a group");
+					}
+				}
+				assertEquals(Set.of("urn:adapter:1 / urn:adapter:101", "urn:adapter:1 / urn:adapter:102",
+						"urn:adapter:2 / urn:adapter:101", "urn:adapter:2 / urn:adapter:102"), groups);
+				assertTrue(LmdbNativeExplain.hasExecutionPath(telemetry,
+						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(sparseFallback)"));
+				assertFalse(LmdbNativeExplain.hasExecutionPath(telemetry,
+						LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE));
+				assertFalse(source.executionContext().cancellation().isCancellationRequested(),
+						"a declined child must not cancel the enclosing query");
+				assertEquals(before, manager.usedBytes(),
+						"the failed sparse arm and result reader must release memory");
+				if (afterPrivateOutput) {
+					if (mixed) {
+						assertTrue(fixture.leftRows.copied > 0, "sparse must consume a complete fiber before refusal");
+					} else {
+						assertTrue(fixture.decodedOutput.get() >= 4,
+								"sparse must have produced private rows before refusal");
+					}
+				}
+			} finally {
+				System.setProperty(LmdbSparseJoinAggregatePlan.ENABLED_PROPERTY, "true");
+				source.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void retainedSparseCancellationPropagatesWithoutFallback() throws Exception {
+		checkRetainedSparseFailure(false, false);
+	}
+
+	@Test
+	void retainedSparseCleanupFailurePropagatesWithoutFallback() throws Exception {
+		checkRetainedSparseFailure(true, false);
+	}
+
+	@Test
+	void retainedMixedDistinctCancellationPropagatesWithoutFallback() throws Exception {
+		checkRetainedSparseFailure(false, true);
+	}
+
+	@Test
+	void retainedMixedDistinctCleanupFailurePropagatesWithoutFallback() throws Exception {
+		checkRetainedSparseFailure(true, true);
+	}
+
+	private void checkRetainedSparseFailure(boolean failCleanup, boolean mixed) throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			when(fixture.source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			when(fixture.source.indexName(any(), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			try {
+				LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+				when(strategy.forcedExecutionStrategyName()).thenReturn(
+						LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE + ","
+								+ LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+				when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+				SingletonSet telemetry = new SingletonSet();
+				telemetry.setExecutionSummaryEnabled(true);
+				AggregateSpec[] aggregates = mixed ? new AggregateSpec[] {
+						AggregateSpec.star("count"), AggregateSpec.slot("shared", 1, true, AggKind.COUNT) }
+						: fixture.owner.aggregates;
+				NativeGroupStep step = new NativeGroupStep(source, fixture.owner.arg, fixture.owner.layout,
+						fixture.owner.groupSlots, aggregates, false, strategy, telemetry, null, Set.of(),
+						null, null, false, false, null, 0L, null, null);
+				BindingSet input = EmptyBindingSet.getInstance();
+				NativePhysicalResultPlan recipe = step.physicalPlan(input);
+				assertNotNull(recipe);
+				assertTrue(recipe.physicalProperties().contains("FIXED_FALLBACK="), recipe.physicalProperties());
+				RuntimeException expected = failCleanup ? new IllegalStateException("sparse cleanup failed")
+						: KernelQueryCancelledException.INSTANCE;
+				fixture.leftRows.failureOnSecond = failCleanup ? new KernelRuntime.AllocationDeniedException()
+						: expected;
+				if (failCleanup) {
+					doThrow(expected).when(fixture.right).close();
+				}
+				long before = manager.usedBytes();
+				RuntimeException actual = assertThrows(RuntimeException.class,
+						() -> NativeResultSteps.open(recipe.step(), input));
+				assertSame(expected, actual);
+				assertTrue(mixed ? fixture.leftRows.copied > 0 : fixture.decodedOutput.get() >= 4,
+						"failure must occur after private work exists");
+				assertFalse(LmdbNativeExplain.hasExecutionPath(telemetry,
+						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(sparseFallback)"));
+				assertEquals(before, manager.usedBytes(), "failed sparse state must release its ledger claims");
+			} finally {
+				source.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void livePhysicalGroupDispatchOpensSparseProducer() throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			when(fixture.source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			when(fixture.source.indexName(any(), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("");
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			SingletonSet telemetry = new SingletonSet();
+			telemetry.setExecutionSummaryEnabled(true);
+			try {
+				NativeGroupStep step = new NativeGroupStep(source, fixture.owner.arg, fixture.owner.layout,
+						fixture.owner.groupSlots, fixture.owner.aggregates, false, null, telemetry, null, Set.of(),
+						null, null, false, false, null, 0L, null, null);
+				NativeGroupIteration iteration = new NativeGroupIteration(source, fixture.owner.arg,
+						fixture.owner.layout, fixture.owner.groupSlots, fixture.owner.aggregates, false,
+						EmptyBindingSet.getInstance(), null, null, false, false, null, null, 0L, null, null,
+						null, telemetry, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
+				try (NativeGroupResultCursor results = new NativeGroupResultCursor(step, iteration,
+						source.executionContext(), false)) {
+					int rows = 0;
+					while (results.next() != null) {
+						rows++;
+					}
+					assertEquals(4, rows);
+					assertTrue(LmdbNativeExplain.hasExecutionPath(telemetry,
+							LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE));
+				} finally {
+					iteration.close();
+				}
+			} finally {
+				source.executionContext().close();
+			}
+		}
+	}
+
+	private static RecordIterator fixtureRecords(long subject, long predicate, long object, long context) {
+		return fixtureRecords(subject, predicate, object, context, false);
+	}
+
+	private static RecordIterator fixtureRecords(long subject, long predicate, long object, long context,
+			boolean reverse) {
+		long[][] quads = { { 1L, 20L, 10L, NULL_CONTEXT_ID }, { 2L, 20L, 10L, NULL_CONTEXT_ID },
+				{ 10L, 21L, 101L, NULL_CONTEXT_ID }, { 10L, 21L, 102L, NULL_CONTEXT_ID } };
+		long[] requested = { subject, predicate, object, context };
+		return new RecordIterator() {
+			private int next;
+
+			@Override
+			public long[] next() {
+				while (next < quads.length) {
+					int index = reverse ? quads.length - 1 - next : next;
+					long[] quad = quads[index];
+					next++;
+					boolean matches = true;
+					for (int i = 0; i < requested.length; i++) {
+						matches &= requested[i] == UNKNOWN || requested[i] == quad[i];
+					}
+					if (matches) {
+						return quad;
+					}
+				}
+				return null;
+			}
+
+			@Override
+			public void close() {
+			}
+		};
 	}
 
 	@Test
@@ -699,6 +1928,46 @@ class SparseJoinAggregateAdapterTest {
 			assertEquals(1, fixture.rightRows.closes);
 			verify(fixture.left).close();
 			verify(fixture.probe).close();
+		}
+	}
+
+	private static final class ArrayWeightedRows implements SparseJoinAggregateKernel.WeightedRows, AutoCloseable {
+		private final long[] keys;
+		private final long[][] neighbors;
+		private final long[][] weights;
+		private int row = -1;
+		private int offset;
+		boolean closed;
+
+		ArrayWeightedRows(long[] keys, long[][] neighbors, long[][] weights) {
+			this.keys = keys;
+			this.neighbors = neighbors;
+			this.weights = weights;
+		}
+
+		@Override
+		public boolean nextRow() {
+			offset = 0;
+			return ++row < keys.length;
+		}
+
+		@Override
+		public long key() {
+			return keys[row];
+		}
+
+		@Override
+		public int read(long[] batchNeighbors, long[] batchWeights) {
+			int count = Math.min(batchNeighbors.length, neighbors[row].length - offset);
+			System.arraycopy(neighbors[row], offset, batchNeighbors, 0, count);
+			System.arraycopy(weights[row], offset, batchWeights, 0, count);
+			offset += count;
+			return count;
+		}
+
+		@Override
+		public void close() {
+			closed = true;
 		}
 	}
 

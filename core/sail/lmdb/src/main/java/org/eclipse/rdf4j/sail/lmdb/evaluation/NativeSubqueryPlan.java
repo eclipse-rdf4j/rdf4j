@@ -509,7 +509,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		NativeLmdbQuerySource source = row.source;
 		NativeCancellationToken cancellation = row.cancellation;
 		NativeResultCursor delegate = inLexicalScope(source, cancellation,
-				() -> NativeResultSteps.open(prepared, bodyInput));
+				() -> NativeResultSteps.openRelation(prepared, bodyInput));
 		NativeResultCursor scoped = new NativeResultCursor() {
 			@Override
 			public NativeResultRow next() {
@@ -550,7 +550,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 				}
 			}
 		};
-		return new NativeLazyResultReplay(outNames, owner, cancellation, scoped);
+		return new NativeLazyResultReplay(outNames, owner, cancellation, scoped, source);
 	}
 
 	private QueryEvaluationStep preparedStep(RowState row) {

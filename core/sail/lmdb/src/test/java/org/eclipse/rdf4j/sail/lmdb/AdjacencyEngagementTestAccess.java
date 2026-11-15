@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 
@@ -82,6 +83,23 @@ public final class AdjacencyEngagementTestAccess {
 		return adjacency == null ? 0L : adjacency.snapshotMetrics().nodePredicateJavaBytes;
 	}
 
+	/** Store-account bytes currently held by root, presence and datatype synopsis structures. */
+	public static long nodeDomainSynopsisBytes(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		return adjacency == null ? 0L
+				: adjacency.memoryAccount().chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.DOMAIN_SYNOPSIS);
+	}
+
+	/** Captures the actual store account so tests can observe final release after the store itself closes. */
+	public static LongSupplier adjacencyChargedBytes(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		if (adjacency == null) {
+			throw new IllegalStateException("direct adjacency is not available");
+		}
+		LmdbAdjacencyMemoryAccount account = adjacency.memoryAccount();
+		return account::totalChargedBytes;
+	}
+
 	/**
 	 * How often a bound-node/unbound-predicate access fell back to the disk trees because the node-predicate projection
 	 * could not serve it. This is the counter that distinguishes "the projection answered this shape" from "the shape
@@ -136,6 +154,41 @@ public final class AdjacencyEngagementTestAccess {
 	public static String publicationDiagnostics(LmdbStore store) {
 		LmdbDirectAdjacencyStore adjacency = adjacency(store);
 		return adjacency == null ? "adjacency-absent" : adjacency.publicationDiagnostics();
+	}
+
+	/** Immutable counts describing the current published base and its unapplied or applied delta history. */
+	public record PublicationDomain(long epoch, boolean fullBase, long baseRevision, long appliedRevision,
+			long horizonRevision, int pendingTables, int overlayGenerations, int summaryLevels) {
+	}
+
+	/** Test diagnostics only; no view, root cursor or producer is opened. */
+	public static PublicationDomain publicationDomain(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		if (adjacency == null) {
+			return null;
+		}
+		LmdbAdjacencyPublishedState state = adjacency.publishedStateForTest();
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		return new PublicationDomain(state.epoch(), state.base() != null && state.base().coverage().isFull(),
+				state.baseRevision(), state.appliedRevision(), state.horizonRevision(), state.pending().length,
+				overlays == null ? 0 : overlays.generationCount(), state.planeStatistics().summaryLevelCount());
+	}
+
+	/** Publishes the sealed head on a paused applier, stopping before any later compaction publication. */
+	public static void stepPausedApplierThroughHead(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		if (adjacency == null) {
+			throw new IllegalStateException("direct adjacency is not available");
+		}
+		LmdbAdjacencyPublishedState initial = adjacency.publishedStateForTest();
+		long target = initial.horizonRevision();
+		if (target <= initial.appliedRevision() || initial.pending().length == 0) {
+			throw new IllegalStateException("the paused applier has no sealed pending head");
+		}
+		ApplierStepping.stepUntil(adjacency, () -> {
+			LmdbAdjacencyPublishedState current = adjacency.publishedStateForTest();
+			return current.appliedRevision() == target && current.pending().length == 0;
+		}, "the paused applier publishes the sealed head");
 	}
 
 	/**

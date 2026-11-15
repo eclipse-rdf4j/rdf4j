@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -66,6 +67,60 @@ final class LmdbNativeOffers<T> extends LmdbNativeCandidateOffers<T> {
 	/** Offers a proposal under the strategy id it will carry, so a decline is reported under that id. */
 	LmdbNativeOffers<T> offer(String id, LmdbNativeCandidateOffers.Proposer<T> proposer) {
 		strategies.add(strategy(id == null ? "offer#" + (++anonymous) : id, proposer, false));
+		return this;
+	}
+
+	@Override
+	LmdbNativeCandidateOffers<T> offerVariants(VariantsProposer<T> proposer) {
+		String id = "offer#" + (++anonymous);
+		strategies.add(new LmdbNativeStrategy<>() {
+			@Override
+			public String id() {
+				return id;
+			}
+
+			@Override
+			public LmdbNativeDecisionPoint point() {
+				return point;
+			}
+
+			@Override
+			public LmdbNativeAdmission<T> admit(Void context) throws IOException {
+				List<LmdbNativeStrategyProposal<T>> proposals = proposer.propose();
+				if (proposals == null || proposals.isEmpty()) {
+					return LmdbNativeAdmission.declined("Not applicable for this plan shape");
+				}
+				List<LmdbNativeCandidate<T>> converted = null;
+				LmdbNativeStrategyProposal<T> current = null;
+				int next = 0;
+				try {
+					converted = new ArrayList<>(proposals.size());
+					while (next < proposals.size()) {
+						current = Objects.requireNonNull(proposals.get(next++));
+						if (attach != null) {
+							current = Objects.requireNonNull(attach.apply(current));
+						}
+						converted.add(LmdbNativeStrategyProposal.candidate(current, fallbackEstimate)
+								.withInputSpread(inputSpread));
+						current = null;
+					}
+					return LmdbNativeAdmission.of(converted);
+				} catch (RuntimeException | Error failure) {
+					Throwable retained = failure;
+					if (converted != null) {
+						for (LmdbNativeCandidate<T> candidate : converted) {
+							retained = KernelRuntime.closeResource((AutoCloseable) candidate.release()::run, retained);
+						}
+					}
+					retained = KernelRuntime.closeResource(current, retained);
+					for (; next < proposals.size(); next++) {
+						retained = KernelRuntime.closeResource(proposals.get(next), retained);
+					}
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+					throw failure;
+				}
+			}
+		});
 		return this;
 	}
 

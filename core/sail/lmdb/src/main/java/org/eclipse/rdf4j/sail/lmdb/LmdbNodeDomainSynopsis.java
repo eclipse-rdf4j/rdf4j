@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Exact compressed union of every fixed-predicate root domain in one immutable SOC/OSC plane.
@@ -43,6 +44,8 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 	private static final int MAX_SPAN_TO_CARDINALITY = 16;
 	private static final int LITERAL_HEADER_BATCH_SIZE = 8192;
 	private static final int OBJECT_HEADER_BYTES = 16;
+	private static final Runnable NO_CANCELLATION = () -> {
+	};
 	private static volatile String lastBuildDiagnostic = "not attempted";
 
 	private final long[] firstOrdinals;
@@ -55,7 +58,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 	private final byte[] encodedDoubleMultiplicities;
 	private final long cardinality;
 	private final Charge charge;
-	private DatatypeSummary datatypeSummary;
+	private volatile DatatypeSummary datatypeSummary;
 	private boolean datatypeSummaryRefused;
 
 	private LmdbNodeDomainSynopsis(long[] firstOrdinals, int[] spans, int[] cardinalities, long[][] densePresence,
@@ -75,13 +78,20 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 
 	static LmdbNodeDomainSynopsis build(LmdbInMemoryAdjacencyIndex base, int plane,
 			LmdbAdjacencyMemoryAccount account, long maximumBytes) {
+		return build(base, plane, account, maximumBytes, NO_CANCELLATION);
+	}
+
+	static LmdbNodeDomainSynopsis build(LmdbInMemoryAdjacencyIndex base, int plane,
+			LmdbAdjacencyMemoryAccount account, long maximumBytes, Runnable cancellationPoll) {
 		Objects.requireNonNull(base, "base");
 		Objects.requireNonNull(account, "account");
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll");
 		if (plane < 0 || plane >= ImmutablePagedQuadCsfIndex.PLANE_COUNT || maximumBytes <= 0L) {
 			return null;
 		}
 		try {
-			Statistics statistics = collectStatistics(base, plane);
+			cancellationPoll.run();
+			Statistics statistics = collectStatistics(base, plane, cancellationPoll);
 			Layout layout = Layout.select(statistics, maximumBytes);
 			if (layout == null) {
 				return null;
@@ -91,16 +101,45 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 				return null;
 			}
 			try {
+				cancellationPoll.run();
 				LmdbNodeDomainSynopsis synopsis = layout.allocate(charge);
-				synopsis.fill(base, plane);
+				synopsis.fill(base, plane, cancellationPoll);
 				return synopsis;
 			} catch (RuntimeException | Error failure) {
-				charge.close();
-				throw failure;
+				throw closeAfterFailure(charge, failure);
 			}
-		} catch (ArithmeticException refused) {
+		} catch (SynopsisArithmeticRefusal refused) {
 			return null;
 		}
+	}
+
+	/** Conservative transient bytes for the bounded source-owned cold builder, before opening any producer. */
+	static long coldWorkspaceBytes(int predicates, long roots) {
+		if (predicates < 0 || roots < 0L || roots > Integer.MAX_VALUE) {
+			return -1L;
+		}
+		try {
+			// With 16-byte headers and 8-byte references, the fixed term covers the three 8192-long header batches,
+			// 64-slot statistics/layout arrays, cursor/lookup state and source probe. At most one P-way merge is live;
+			// 4096 per plane covers its key domain, cursor, optional extent reader and heap entry. The 256 per root
+			// covers a boxed datatype key, accumulator and hash/tree node, old and new hash tables during growth,
+			// temporary lookup boxes and the ordered-ID array. There can be at most one datatype per root.
+			return Math.addExact(262_144L,
+					Math.addExact(Math.multiplyExact(4_096L, predicates), Math.multiplyExact(256L, roots)));
+		} catch (ArithmeticException unavailable) {
+			return -1L;
+		}
+	}
+
+	static RuntimeException closeAfterFailure(AutoCloseable resource, Throwable failure) {
+		Throwable retained = KernelRuntime.closeResource(resource, failure);
+		if (retained instanceof RuntimeException runtime) {
+			return runtime;
+		}
+		if (retained instanceof Error error) {
+			throw error;
+		}
+		return new IllegalStateException("synopsis cleanup failed", retained);
 	}
 
 	static String lastBuildDiagnostic() {
@@ -138,7 +177,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 
 	@Override
 	public RootCursor cursor() {
-		return new Cursor();
+		return new Cursor(NO_CANCELLATION);
 	}
 
 	@Override
@@ -185,26 +224,52 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		charge.close();
 	}
 
+	/** Nonblocking peek; the containing base lease owns the returned summary. */
+	DatatypeSummary cachedDatatypeSummary() {
+		return datatypeSummary;
+	}
+
 	/**
 	 * Lazily groups the retained root multiplicities by literal datatype. The temporary hash table is proportional to
 	 * datatype count, never root or statement count; the retained result is four primitive lanes per datatype.
 	 */
-	synchronized NativeLmdbQuerySource.DatatypeSummary datatypeSummary(LiteralDatatypeLookup lookup,
+	// The owning base's synopsis-build lock serializes this method with every other synopsis builder.
+	NativeLmdbQuerySource.DatatypeSummary datatypeSummary(LiteralDatatypeLookup lookup,
 			NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer, LmdbAdjacencyMemoryAccount account,
 			long maximumBytes) throws IOException {
+		return datatypeSummary(lookup, observer, account, maximumBytes, NO_CANCELLATION, true);
+	}
+
+	NativeLmdbQuerySource.DatatypeSummary datatypeSummary(LiteralDatatypeLookup lookup,
+			NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer, LmdbAdjacencyMemoryAccount account,
+			long maximumBytes, Runnable cancellationPoll) throws IOException {
+		return datatypeSummary(lookup, observer, account, maximumBytes, cancellationPoll, false);
+	}
+
+	private NativeLmdbQuerySource.DatatypeSummary datatypeSummary(LiteralDatatypeLookup lookup,
+			NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer, LmdbAdjacencyMemoryAccount account,
+			long maximumBytes, Runnable cancellationPoll, boolean memoizeRefusal) throws IOException {
+		cancellationPoll.run();
 		if (datatypeSummary != null) {
 			return datatypeSummary;
 		}
 		if (datatypeSummaryRefused || maximumBytes <= 0L) {
 			return null;
 		}
-		DatatypeSummary built = DatatypeSummary.build(this, lookup, observer, account, maximumBytes);
+		DatatypeSummary built = DatatypeSummary.build(this, lookup, observer, account, maximumBytes, cancellationPoll);
 		if (built == null) {
-			datatypeSummaryRefused = true;
+			if (memoizeRefusal) {
+				datatypeSummaryRefused = true;
+			}
 			return null;
 		}
-		datatypeSummary = built;
-		return built;
+		try {
+			cancellationPoll.run();
+			datatypeSummary = built;
+			return built;
+		} catch (RuntimeException | Error failure) {
+			throw closeAfterFailure(built, failure);
+		}
 	}
 
 	@FunctionalInterface
@@ -213,13 +278,15 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		int lookup(long[] ids, int offset, int length, long[] target, int targetOffset) throws IOException;
 	}
 
-	private void fill(LmdbInMemoryAdjacencyIndex base, int plane) {
+	private void fill(LmdbInMemoryAdjacencyIndex base, int plane, Runnable cancellationPoll) {
+		cancellationPoll.run();
 		int[] positions = new int[TYPE_SLOTS];
 		int[] multiplicityOffsets = new int[TYPE_SLOTS];
 		int doublePosition = 0;
 		int doubleMultiplicityOffset = 0;
-		RootMerge roots = new RootMerge(base, plane);
+		RootMerge roots = new RootMerge(base, plane, cancellationPoll);
 		while (roots.advance()) {
+			cancellationPoll.run();
 			long rootId = roots.rootId();
 			long multiplicity = roots.quadMultiplicity();
 			if (ValueIds.isDouble(rootId)) {
@@ -253,13 +320,28 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		}
 	}
 
-	private static Statistics collectStatistics(LmdbInMemoryAdjacencyIndex base, int plane) {
+	private static Statistics collectStatistics(LmdbInMemoryAdjacencyIndex base, int plane, Runnable cancellationPoll) {
+		cancellationPoll.run();
 		Statistics statistics = new Statistics();
-		RootMerge roots = new RootMerge(base, plane);
+		RootMerge roots = new RootMerge(base, plane, cancellationPoll);
 		while (roots.advance()) {
-			statistics.observe(roots.rootId(), roots.quadMultiplicity());
+			cancellationPoll.run();
+			try {
+				statistics.observe(roots.rootId(), roots.quadMultiplicity());
+			} catch (ArithmeticException overflow) {
+				throw new SynopsisArithmeticRefusal(overflow);
+			}
 		}
 		return statistics;
+	}
+
+	/** Only arithmetic in the builder's own checked counters is an admission refusal. */
+	private static final class SynopsisArithmeticRefusal extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		private SynopsisArithmeticRefusal(ArithmeticException cause) {
+			super(cause);
+		}
 	}
 
 	private static long valueOrdinal(long id) {
@@ -327,7 +409,41 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		return Math.addExact(bytes, 7L) & ~7L;
 	}
 
+	/** Unsigned datatype-ID order; the callback also bounds interruption latency during ordering. */
+	static void sortUnsignedDatatypeIds(long[] values, Runnable cancellationPoll) {
+		cancellationPoll.run();
+		for (int root = (values.length >>> 1) - 1; root >= 0; root--) {
+			cancellationPoll.run();
+			siftUnsignedDatatypeId(values, root, values.length, cancellationPoll);
+		}
+		for (int end = values.length - 1; end > 0; end--) {
+			cancellationPoll.run();
+			long maximum = values[0];
+			values[0] = values[end];
+			values[end] = maximum;
+			siftUnsignedDatatypeId(values, 0, end, cancellationPoll);
+		}
+	}
+
+	private static void siftUnsignedDatatypeId(long[] values, int root, int size, Runnable cancellationPoll) {
+		while (root < size / 2) {
+			cancellationPoll.run();
+			int child = root * 2 + 1;
+			if (child + 1 < size && Long.compareUnsigned(values[child], values[child + 1]) < 0) {
+				child++;
+			}
+			if (Long.compareUnsigned(values[root], values[child]) >= 0) {
+				return;
+			}
+			long value = values[root];
+			values[root] = values[child];
+			values[child] = value;
+			root = child;
+		}
+	}
+
 	private final class Cursor implements RootCursor {
+		private final Runnable cancellationPoll;
 		private int type;
 		private int position;
 		private int multiplicityOffset;
@@ -336,11 +452,19 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		private long rootId;
 		private long multiplicity;
 
+		private Cursor(Runnable cancellationPoll) {
+			this.cancellationPoll = cancellationPoll;
+		}
+
 		@Override
 		public boolean next() {
+			cancellationPoll.run();
 			while (type < TYPE_SLOTS) {
 				if (spans[type] != 0) {
 					while (position < spans[type]) {
+						if ((position & 255) == 0) {
+							cancellationPoll.run();
+						}
 						int densePosition = position++;
 						if (bitIsSet(densePresence[type], densePosition)) {
 							rootId = ValueIds.createId(type, firstOrdinals[type] + densePosition);
@@ -434,7 +558,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		}
 	}
 
-	private static final class DatatypeSummary implements NativeLmdbQuerySource.DatatypeSummary, AutoCloseable {
+	static final class DatatypeSummary implements NativeLmdbQuerySource.DatatypeSummary, AutoCloseable {
 		private static final byte INLINE = 0;
 		private static final byte REFERENCED = 1;
 
@@ -443,6 +567,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		private final long[] multiplicities;
 		private final byte[] kinds;
 		private final Charge charge;
+		private final Object authority = new Object();
 
 		private DatatypeSummary(long[] representativeIds, long[] datatypeIds, long[] multiplicities, byte[] kinds,
 				Charge charge) {
@@ -453,9 +578,18 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 			this.charge = charge;
 		}
 
+		int groupCount() {
+			return multiplicities.length;
+		}
+
+		Object authority() {
+			return authority;
+		}
+
 		static DatatypeSummary build(LmdbNodeDomainSynopsis roots, LiteralDatatypeLookup lookup,
 				NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer, LmdbAdjacencyMemoryAccount account,
-				long maximumBytes) throws IOException {
+				long maximumBytes, Runnable cancellationPoll) throws IOException {
+			cancellationPoll.run();
 			long[] inlineMultiplicities = new long[TYPE_SLOTS];
 			long[] inlineRepresentatives = new long[TYPE_SLOTS];
 			long[] coreReferenceMultiplicities = new long[TYPE_SLOTS];
@@ -467,8 +601,9 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 			long[] literalMultiplicities = new long[LITERAL_HEADER_BATCH_SIZE];
 			long[] literalDatatypeIds = new long[LITERAL_HEADER_BATCH_SIZE];
 			int literalCount = 0;
-			RootCursor cursor = roots.cursor();
+			RootCursor cursor = roots.new Cursor(cancellationPoll);
 			while (cursor.next()) {
+				cancellationPoll.run();
 				long id = cursor.rootId();
 				long multiplicity = cursor.quadMultiplicity();
 				if (ValueIds.isDouble(id)) {
@@ -492,7 +627,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 					literalCount++;
 					if (literalCount == literalIds.length) {
 						if (!collectReferenced(lookup, observer, referenced, literalIds, literalMultiplicities,
-								literalDatatypeIds, literalCount)) {
+								literalDatatypeIds, literalCount, cancellationPoll)) {
 							return null;
 						}
 						literalCount = 0;
@@ -511,7 +646,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 				}
 			}
 			if (literalCount != 0 && !collectReferenced(lookup, observer, referenced, literalIds,
-					literalMultiplicities, literalDatatypeIds, literalCount)) {
+					literalMultiplicities, literalDatatypeIds, literalCount, cancellationPoll)) {
 				return null;
 			}
 
@@ -523,7 +658,8 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 				groupCount += multiplicity == 0L ? 0 : 1;
 			}
 			groupCount = Math.addExact(groupCount, referenced.size());
-			long modeledBytes = align8(OBJECT_HEADER_BYTES + 5L * Long.BYTES);
+			// Include the summary's authority reference and its separate identity token.
+			long modeledBytes = align8(OBJECT_HEADER_BYTES + 6L * Long.BYTES) + OBJECT_HEADER_BYTES;
 			modeledBytes = Math.addExact(modeledBytes, arrayBytes(groupCount, Long.BYTES) * 3L);
 			modeledBytes = Math.addExact(modeledBytes, arrayBytes(groupCount, Byte.BYTES));
 			if (modeledBytes > maximumBytes) {
@@ -534,6 +670,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 				return null;
 			}
 			try {
+				cancellationPoll.run();
 				long[] representatives = new long[groupCount];
 				long[] datatypeIds = new long[groupCount];
 				long[] multiplicities = new long[groupCount];
@@ -563,10 +700,12 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 				long[] referencedIds = new long[referenced.size()];
 				int referencedPosition = 0;
 				for (long datatypeId : referenced.keySet()) {
+					cancellationPoll.run();
 					referencedIds[referencedPosition++] = datatypeId;
 				}
-				sortUnsigned(referencedIds);
+				sortUnsignedDatatypeIds(referencedIds, cancellationPoll);
 				for (long datatypeId : referencedIds) {
+					cancellationPoll.run();
 					ReferencedAccumulator accumulator = referenced.get(datatypeId);
 					representatives[position] = accumulator.representativeId;
 					datatypeIds[position] = datatypeId;
@@ -579,15 +718,15 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 				}
 				return new DatatypeSummary(representatives, datatypeIds, multiplicities, kinds, charge);
 			} catch (RuntimeException | Error failure) {
-				charge.close();
-				throw failure;
+				throw closeAfterFailure(charge, failure);
 			}
 		}
 
 		private static boolean collectReferenced(LiteralDatatypeLookup lookup,
 				NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer,
 				Map<Long, ReferencedAccumulator> referenced, long[] literalIds, long[] literalMultiplicities,
-				long[] datatypeIds, int length) throws IOException {
+				long[] datatypeIds, int length, Runnable cancellationPoll) throws IOException {
+			cancellationPoll.run();
 			if (lookup.lookup(literalIds, 0, length, datatypeIds, 0) != length) {
 				return false;
 			}
@@ -600,6 +739,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 				observer.literalHeaderBatch(uniform);
 			}
 			for (int i = 0; i < length; i++) {
+				cancellationPoll.run();
 				long datatypeId = datatypeIds[i];
 				if (datatypeId == NativeLmdbQuerySource.UNKNOWN_ID) {
 					return false;
@@ -612,18 +752,6 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 				accumulator.multiplicity = Math.addExact(accumulator.multiplicity, literalMultiplicities[i]);
 			}
 			return true;
-		}
-
-		private static void sortUnsigned(long[] values) {
-			for (int i = 1; i < values.length; i++) {
-				long value = values[i];
-				int position = i;
-				while (position > 0 && Long.compareUnsigned(values[position - 1], value) > 0) {
-					values[position] = values[position - 1];
-					position--;
-				}
-				values[position] = value;
-			}
 		}
 
 		@Override
@@ -804,18 +932,24 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		private static final Comparator<PlaneCursor> UNSIGNED_KEY_ORDER = (left, right) -> Long
 				.compareUnsigned(left.key(), right.key());
 		private final PriorityQueue<PlaneCursor> heap;
+		private final Runnable cancellationPoll;
 		private long rootId;
 		private long quadMultiplicity;
 
-		RootMerge(LmdbInMemoryAdjacencyIndex base, int plane) {
+		RootMerge(LmdbInMemoryAdjacencyIndex base, int plane, Runnable cancellationPoll) {
+			this.cancellationPoll = cancellationPoll;
+			cancellationPoll.run();
 			int predicates = Math.toIntExact(base.predicateCatalog().size());
 			heap = new PriorityQueue<>(Math.max(1, predicates), UNSIGNED_KEY_ORDER);
 			for (int predicate = 0; predicate < predicates; predicate++) {
+				cancellationPoll.run();
 				ImmutablePagedQuadCsfIndex.KeyDomain domain = base.keyDomain(predicate, plane);
 				if (domain == null || domain.keyCount() == 0L) {
 					continue;
 				}
-				PlaneCursor cursor = new PlaneCursor(domain.cursor());
+				ImmutablePagedQuadCsfIndex.KeyCursor keyCursor = domain.cursor();
+				keyCursor.cancellationPoll(cancellationPoll);
+				PlaneCursor cursor = new PlaneCursor(keyCursor);
 				if (cursor.advance()) {
 					heap.add(cursor);
 				}
@@ -823,6 +957,7 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 		}
 
 		boolean advance() {
+			cancellationPoll.run();
 			if (heap.isEmpty()) {
 				return false;
 			}
@@ -830,7 +965,11 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 			quadMultiplicity = 0L;
 			do {
 				PlaneCursor cursor = heap.remove();
-				quadMultiplicity = Math.addExact(quadMultiplicity, cursor.edgeCount());
+				try {
+					quadMultiplicity = Math.addExact(quadMultiplicity, cursor.edgeCount());
+				} catch (ArithmeticException overflow) {
+					throw new SynopsisArithmeticRefusal(overflow);
+				}
 				if (cursor.advance()) {
 					heap.add(cursor);
 				}

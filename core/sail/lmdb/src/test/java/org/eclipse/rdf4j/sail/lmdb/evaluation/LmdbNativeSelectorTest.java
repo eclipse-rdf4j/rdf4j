@@ -143,6 +143,115 @@ class LmdbNativeSelectorTest {
 	}
 
 	@Test
+	void partialPhysicalWorkDoesNotCompeteAsACompletePrice() {
+		LmdbNativeCandidate<String> partial = partialCandidate("partial", 1D);
+		LmdbNativeCandidate<String> complete = candidate("complete", 100D, 200D, 300D);
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(List.of(partial, complete), PRIOR, -1D);
+		assertThat(ranking.winner()).isEqualTo(1);
+		assertThat(ranking.eliminatedBy()[0]).startsWith("Unpriced");
+		assertThat(ranking.nanos()[0].known()).isFalse();
+	}
+
+	@Test
+	void partialSerialWorkCannotSuppressACompleteParallelCandidate() {
+		LmdbNativeCandidate<String> partial = partialCandidate("partial", 1D);
+		LmdbNativeCandidate<String> parallel = candidate("irAggregateParallel", 100D, 200D, 300D);
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(List.of(partial, parallel), PRIOR, -1D, 4);
+		assertThat(ranking.winner()).isEqualTo(1);
+		assertThat(ranking.eliminatedBy()[0]).startsWith("Unpriced");
+		assertThat(ranking.eliminatedBy()[1]).isNull();
+	}
+
+	@Test
+	void structuralDominanceStillAppliesWhenDominatorHasPartialWork() {
+		LmdbNativeCandidate<String> partial = partialCandidate("specialist", 1D)
+				.dominating(Set.of("ordinary"));
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(
+				List.of(candidate("ordinary", 100D, 200D, 300D), partial), PRIOR, -1D);
+		assertThat(ranking.winner()).isEqualTo(1);
+		assertThat(ranking.eliminatedBy()[0]).isEqualTo("Structurally dominated by specialist");
+		assertThat(ranking.reason()).containsIgnoringCase("unpriced");
+	}
+
+	@Test
+	void completeExecutionWithUnboundedOutputRemainsPriceable() {
+		LmdbNativeCostVector work = LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1D)
+				.plus(LmdbNativeCostVector.bounds(Feature.OUTPUT_MATERIALIZATION, 0D, 1D,
+						Double.POSITIVE_INFINITY));
+		NativePhysicalWorkQuote physical = NativePhysicalWorkQuote.of(LmdbNativeCostVector.zero(), work, 1D,
+				NativePhysicalWorkEvidence.complete());
+		LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(() -> "complete",
+				LmdbNativeWork.UNKNOWN, "complete", () -> {
+				});
+		proposal.withPhysicalQuote(physical);
+		LmdbNativeCandidate<String> complete = LmdbNativeStrategyProposal.candidate(proposal, LmdbNativeWork.UNKNOWN);
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(
+				List.of(partialCandidate("partial", 1D), complete), PRIOR, -1D);
+		assertThat(ranking.winner()).isEqualTo(1);
+		assertThat(ranking.nanos()[1].known()).isFalse();
+		assertThat(ranking.eliminatedBy()[1]).isNull();
+	}
+
+	@Test
+	void mappedPartialAndExplicitCostOverrideRetainMissingWorkProof() {
+		LmdbNativeCostVector work = LmdbNativeCostVector.bounds(Feature.GENERATED_ROW, 0D, 1D, 1D);
+		NativePhysicalWorkQuote partial = NativePhysicalWorkQuote.of(LmdbNativeCostVector.zero(), work, 1D,
+				NativePhysicalWorkEvidence.incomplete("missing reducer work"));
+		LmdbNativeStrategyProposal<String> original = new LmdbNativeStrategyProposal<>(() -> "partial",
+				LmdbNativeWork.UNKNOWN, "partial", () -> {
+				});
+		original.withCostQuote(LmdbNativeCostQuote.streaming(work, 1D));
+		original.withIncompletePhysicalWork(partial, "missing reducer work");
+		LmdbNativeStrategyProposal<String> mapped = original.map(value -> value, "mappedPartial");
+		LmdbNativeCandidate<String> adapted = LmdbNativeStrategyProposal.candidate(mapped, LmdbNativeWork.UNKNOWN)
+				.withInputSpread(LmdbNativeRowSpread.EXACT)
+				.dominating(Set.of("unrelated"));
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(
+				List.of(adapted, candidate("complete", 100D, 200D, 300D)), PRIOR, -1D);
+		assertThat(ranking.winner()).isEqualTo(1);
+		assertThat(ranking.eliminatedBy()[0]).startsWith("Unpriced");
+		adapted.release().run();
+	}
+
+	@Test
+	void allPartialCandidatesStillHaveASelectableFallback() {
+		LmdbNativeCandidate<String> first = partialCandidate("first", 2D);
+		LmdbNativeCandidate<String> second = partialCandidate("second", 1D);
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(List.of(first, second), PRIOR, -1D);
+		assertThat(ranking.winner()).isZero();
+		assertThat(ranking.eliminatedBy()).containsOnlyNulls();
+		assertThat(ranking.nanos()[ranking.winner()].known()).isFalse();
+		assertThat(ranking.reason()).containsIgnoringCase("unpriced");
+	}
+
+	@Test
+	void advisoryRatiosDoNotMakePartialPhysicalWorkComplete() {
+		LmdbNativeCandidate<String> partial = partialCandidate("partial", 1D);
+		LmdbNativeCandidate<String> complete = candidate("complete", 100D, 200D, 300D);
+		LmdbNativeAdvisoryLearner learner = new LmdbNativeAdvisoryLearner(null);
+		LmdbNativeAdvisoryLearner.Scope scope = learner.scope(1L, LmdbNativeAccessFacts.Source.LMDB, 0);
+		double quoted = LmdbNativeSelector.rank(List.of(partial), PRIOR, -1D).quotedExpectedNanos()[0];
+		for (int i = 0; i < 32; i++) {
+			learner.observe(scope.key(partial.id(), partial.quote()), quoted, quoted / 2D);
+		}
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(List.of(partial, complete), PRIOR, -1D,
+				false, scope);
+		assertThat(ranking.winner()).isEqualTo(1);
+		assertThat(ranking.eliminatedBy()[0]).startsWith("Unpriced");
+	}
+
+	private static LmdbNativeCandidate<String> partialCandidate(String id, double rows) {
+		LmdbNativeCostVector work = LmdbNativeCostVector.bounds(Feature.GENERATED_ROW, 0D, rows, rows);
+		NativePhysicalWorkQuote partial = NativePhysicalWorkQuote.of(LmdbNativeCostVector.zero(), work, 1D,
+				NativePhysicalWorkEvidence.incomplete("test input has no reducer or output proof"));
+		LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(() -> id,
+				LmdbNativeWork.UNKNOWN, id, () -> {
+				});
+		proposal.withIncompletePhysicalWork(partial, "test input has no reducer or output proof");
+		return LmdbNativeStrategyProposal.candidate(proposal, LmdbNativeWork.UNKNOWN);
+	}
+
+	@Test
 	void aParallelCandidateNeedsAThirtyPercentCutOnFourWorkers() {
 		List<LmdbNativeCandidate<String>> notEnough = List.of(
 				candidate("irKernel", 100_000_000, 100_000_000, 100_000_000),

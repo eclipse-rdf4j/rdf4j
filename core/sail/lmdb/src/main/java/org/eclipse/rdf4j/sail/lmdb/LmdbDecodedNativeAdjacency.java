@@ -73,8 +73,18 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor(Runnable cancellationPoll) {
+		return new LmdbDirectNativeAdjacency.DirectPageCursor(keys.pageCursor(cancellationPoll));
+	}
+
+	@Override
 	public long pageCount() {
 		return keys.pageCount();
+	}
+
+	@Override
+	public long pageCount(Runnable cancellationPoll) {
+		return keys.pageCount(cancellationPoll);
 	}
 
 	@Override
@@ -215,6 +225,11 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	@Override
+	public long lowerBoundKeyOrdinal(long key, Runnable cancellationPoll) {
+		return keys.lowerBoundOrdinal(key, cancellationPoll);
+	}
+
+	@Override
 	public boolean orderedKeyRunsWithBoundedOpen() {
 		return true;
 	}
@@ -232,6 +247,18 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 					"invalid decoded key-run window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
 		}
 		return new DecodedKeyRunCursor(keys.cursor(fromOrdinal, toOrdinal), fromOrdinal);
+	}
+
+	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal,
+			Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+		long count = keys.keyCount();
+		if (fromOrdinal < 0 || toOrdinal < fromOrdinal || toOrdinal > count) {
+			throw new IllegalArgumentException(
+					"invalid decoded key-run window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
+		}
+		return new DecodedKeyRunCursor(keys.cursor(fromOrdinal, toOrdinal, cancellationPoll), fromOrdinal);
 	}
 
 	private ImmutablePagedQuadCsfIndex.RowCursor row(long runHandle) {

@@ -12,6 +12,9 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -20,25 +23,35 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigInteger;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
@@ -56,6 +69,732 @@ import jdk.jfr.consumer.RecordingFile;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeCensusCancellationTest {
+	@Test
+	void preparedCensusChargesItsCompleteReductionBeforeOutput() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.create(true, true, false)) {
+			assertThat(fixture.prepared.blocksBeforeOutput())
+					.as("the census collects every contribution before exposing its first result")
+					.isTrue();
+		}
+	}
+
+	@Test
+	void preparedGlobalDistinctUsesCompleteCanonicalMetadataReceipt() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.create(true, true, false)) {
+			NativeAggregatePhysicalPlan.Work quote = fixture.prepared.quote(fixture.row);
+			assertThat(quote).as("all-selected canonical DISTINCT domains need a complete prepared receipt")
+					.isNotNull();
+			assertThat(quote.input().workEvidence().isComplete()).isTrue();
+			assertThat(quote.input().decoded()).as("both RDF DISTINCT domains come from exact metadata")
+					.isZero();
+			LmdbNativeCostVector operations = quote.input().operations().plus(quote.extra());
+			assertThat(operations.expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.as("P=1 and E=1 require at least 2P+2E+E+2 work across both traversals")
+					.isGreaterThanOrEqualTo(7D);
+			assertThat(operations.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.as("the scanned-work ceiling must include catalog, metadata, and page contributions")
+					.isGreaterThanOrEqualTo(7D);
+			verify(fixture.quoteProbe).nodePredicates(true);
+			verify(fixture.quoteProbe).nodePredicates(false);
+			verify(fixture.quoteSubjectProjection).nodeCount();
+			verify(fixture.quoteObjectProjection).nodeCount();
+		}
+	}
+
+	@Test
+	void censusReceiptRefusesBeforeProbeWhenLedgerIsFullAndRetriesSameRow() throws Exception {
+		LmdbQueryMemoryManager previousManager = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.createWithoutPreparedReceipt()) {
+			LmdbQueryMemoryManager.QueryLedger ledger = fixture.row.memoryScope.ledger(memory);
+			try (LmdbQueryMemoryManager.Reservation saturation = ledger.reserve(memory.perQueryMaxBytes(), null)) {
+				assertThat(saturation).as("the test owns the entire query ledger before quote preflight").isNotNull();
+				NativeAggregateAlternative.Prepared refused = fixture.alternative.prepare(fixture.row);
+				verify(fixture.dictionary, never()).newProbe();
+				assertThat(refused == null ? null : refused.quote(fixture.row))
+						.as("a full query ledger leaves the candidate unpriced before source probing")
+						.isNull();
+			}
+			assertThat(ledger.usedBytes()).as("releasing the competing owner restores this query's admission").isZero();
+			NativeAggregateAlternative.Prepared retry = fixture.alternative.prepare(fixture.row);
+			assertThat(retry).as("the same prepared RowState may retry after capacity returns").isNotNull();
+			assertThat(retry.quote(fixture.row)).as("the retried source quote is complete").isNotNull();
+			verify(fixture.dictionary, times(1)).newProbe();
+			assertThat(ledger.usedBytes()).as("completed source preflight releases temporary ledger work").isZero();
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = previousManager;
+		}
+	}
+
+	@Test
+	void censusRetainsPageCloseFailureWhenActiveDeadlineTripsDuringRootAcceptance() throws Exception {
+		LmdbQueryMemoryManager previousManager = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.create(true, true, false)) {
+			var deadline = LmdbNativeProbeDeadline.trippableOnly();
+			var closeFailure = new IllegalStateException("injected census page cursor close failure");
+			AtomicBoolean firstRootVisited = new AtomicBoolean();
+			doAnswer(call -> {
+				firstRootVisited.set(true);
+				deadline.trip();
+				return ValueIds.createId(ValueIds.T_URI, 10L);
+			}).when(fixture.executionReductionPages).firstRow();
+			doAnswer(call -> {
+				throw closeFailure;
+			}).when(fixture.executionReductionPages).close();
+			Throwable observed;
+			try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+				observed = Assertions.assertThrows(RuntimeException.class,
+						() -> fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation));
+			}
+			assertThat(firstRootVisited).as("the active reducer crossed its real prepared root callback").isTrue();
+			assertThat(deadline.tripped()).as("the callback tripped the active attempt deadline").isTrue();
+			assertThat(observed)
+					.as("a real cursor cleanup failure remains primary when the suppression-disabled deadline also fires")
+					.isSameAs(closeFailure);
+			assertThat(closeFailure.getSuppressed())
+					.as("the close failure retains the original deadline signal")
+					.contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			verify(fixture.executionReductionPages, times(1)).close();
+			verify(fixture.executionView, times(1)).close();
+			verify(fixture.executionProbe, times(1)).close();
+			assertThat(memory.usedBytes()).as("deadline and cleanup unwinding release the query ledger").isZero();
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = previousManager;
+		}
+	}
+
+	@Test
+	void nonDistinctWideIntegerSumQuoteHasUnboundedScalarUpperBound() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.createWithWideIntegerSum()) {
+			NativeAggregatePhysicalPlan.Work quote = fixture.prepared.quote(fixture.row);
+			assertThat(quote).as("the complete global scalar SUM quote is available").isNotNull();
+			LmdbNativeCostVector operations = quote.input().operations().plus(quote.extra());
+			assertThat(operations.high(LmdbNativeCostVector.Feature.INTERPRETED_ROW))
+					.as("interning and arithmetic on a variable-width integer have no finite latency ceiling")
+					.isInfinite();
+		}
+	}
+
+	@Test
+	void nonDistinctGlobalSumQuoteIncludesCatalogHeaderAndContributionFloor() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.createWithWideIntegerSum()) {
+			NativeAggregatePhysicalPlan.Work quote = fixture.prepared.quote(fixture.row);
+			assertThat(quote).as("the global non-DISTINCT SUM quote is available").isNotNull();
+			LmdbNativeCostVector operations = quote.input().operations().plus(quote.extra());
+			assertThat(operations.expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.as("P=1 and E=1 require 2P+2E+E=5 scanned operations")
+					.isGreaterThanOrEqualTo(5D);
+			assertThat(operations.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.as("the scanned-work ceiling includes both page traversals and one contribution")
+					.isGreaterThanOrEqualTo(5D);
+		}
+	}
+
+	@Test
+	void preparedDistinctReceiptDeclinesBeforeReducerWhenProjectionDisappears() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.create(true, false, false)) {
+			assertThat(fixture.prepared.quote(fixture.row))
+					.as("the quote pass has both complete canonical metadata projections")
+					.isNotNull();
+			CloseableIteration<BindingSet> result = fixture.prepared.evaluate(
+					EmptyBindingSet.getInstance(), fixture.row.cancellation);
+			if (result != null) {
+				result.close();
+			}
+			assertThat(result).as("a vanished subject/object projection invalidates the prepared receipt").isNull();
+			CensusReceiptFixture.assertNoReducerPageAccess(fixture);
+		}
+	}
+
+	@Test
+	void preparedDistinctReceiptDeclinesBeforeReducerWhenPageCoverageChanges() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.create(true, true, true)) {
+			assertThat(fixture.prepared.quote(fixture.row))
+					.as("the quote pass sees complete all-selected page coverage")
+					.isNotNull();
+			CloseableIteration<BindingSet> result = fixture.prepared.evaluate(
+					EmptyBindingSet.getInstance(), fixture.row.cancellation);
+			if (result != null) {
+				result.close();
+			}
+			assertThat(result).as("changed page coverage invalidates the prepared metadata receipt").isNull();
+			CensusReceiptFixture.assertNoReducerPageAccess(fixture);
+		}
+	}
+
+	@Test
+	void preparedReceiptStopsAfterFirstCoveragePageExceedsQuotedTotal() throws Exception {
+		CensusReceiptFixture.assertChangedExecutionPageGeometry();
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.createWithChangedExecutionPageTotal()) {
+			assertThat(fixture.prepared.quote(fixture.row)).isNotNull();
+			assertThat(fixture.executionObjectDomainCount)
+					.as("the fresh snapshot contains three object IDs rather than the quoted two")
+					.isEqualTo(3L);
+			CloseableIteration<BindingSet> result = fixture.prepared.evaluate(
+					EmptyBindingSet.getInstance(), fixture.row.cancellation);
+			if (result != null) {
+				result.close();
+			}
+			assertThat(result).as("an oversized first coverage page invalidates the prepared receipt").isNull();
+			assertThat(fixture.executionPageOpenCalls).hasValue(1);
+			verify(fixture.executionCoveragePages, times(1)).advance();
+			verify(fixture.executionReductionPages, never()).advance();
+			verify(fixture.executionObjectProjection, never()).nodeCount();
+			CensusReceiptFixture.assertNoReducerPageAccess(fixture);
+		}
+	}
+
+	@Test
+	void noncanonicalGlobalDistinctDoesNotClaimMetadataReceipt() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.create(false, true, false)) {
+			assertThat(fixture.prepared.quote(fixture.row))
+					.as("noncanonical term IDs cannot stand in for RDF DISTINCT identity")
+					.isNull();
+			verify(fixture.quoteProbe, never()).nodePredicates(anyBoolean());
+		}
+	}
+
+	@Test
+	void preparedGlobalDistinctQuoteUsesTypedEventsForMoreThan64CountChannels() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.createCountOnly(true, true, false, 65)) {
+			NativeAggregatePhysicalPlan.Work quote = fixture.prepared.quote(fixture.row);
+			assertThat(quote).as("the complete canonical metadata receipt remains priceable").isNotNull();
+			assertThat(quote.input().workEvidence().isComplete()).isTrue();
+			assertThat(quote.input().decoded()).isZero();
+			assertThat(fixture.prepared.retention())
+					.as("the real >64-channel bounded reducer uses typed events")
+					.isEqualTo(
+							NativeAggregatePhysicalPlan.Retention.BOUNDED_EVENTS);
+			assertThat(quote.extra().high(LmdbNativeCostVector.Feature.SORT_N_LOG2_N))
+					.as("the typed-event receipt includes its external sort ceiling")
+					.isPositive();
+			verify(fixture.quoteProbe).nodePredicates(true);
+			verify(fixture.quoteProbe).nodePredicates(false);
+		}
+	}
+
+	@Test
+	void preparedGlobalDistinctDeclinesWhenFreshCountStoreAuthorityIsUnavailable() throws Exception {
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.createCountOnly(true, true, false, 1)) {
+			assertThat(fixture.prepared.quote(fixture.row))
+					.as("the quote has a complete canonical metadata receipt")
+					.isNotNull();
+			fixture.authorityUnavailable.set(true);
+			CloseableIteration<BindingSet> result = fixture.prepared.evaluate(
+					EmptyBindingSet.getInstance(), fixture.row.cancellation);
+			if (result != null) {
+				result.close();
+			}
+			assertThat(fixture.unavailableAuthorityResponses).as(
+					"the fresh invocation authority must observe the unavailable canonical backing before source checks")
+					.hasValue(1);
+			assertThat(result).as("an unavailable receipt reducer authority declines before collection").isNull();
+			CensusReceiptFixture.assertNoReducerPageAccess(fixture);
+		}
+	}
+
+	@Test
+	void overflowingPageQuadTotalProducesUnavailablePreparedReceiptBeforeExecution() throws Exception {
+		CensusReceiptFixture.assertOverflowingPageGeometry();
+		try (CensusReceiptFixture fixture = CensusReceiptFixture.createWithOverflowingPageCounts()) {
+			NativeAggregateAlternative.Prepared prepared = Assertions.assertDoesNotThrow(
+					() -> fixture.alternative.prepare(fixture.row),
+					"overflow in an exact census page total must make the receipt unavailable, not throw during prepare");
+			assertThat(prepared.estimateWork()).isEqualTo(LmdbNativeWork.UNKNOWN);
+			assertThat(prepared.quote(fixture.row)).as("overflow leaves the exact physical quote unavailable")
+					.isNull();
+			assertThat(prepared.retention()).isNull();
+			CloseableIteration<BindingSet> result = prepared.evaluate(
+					EmptyBindingSet.getInstance(), fixture.row.cancellation);
+			if (result != null) {
+				result.close();
+			}
+			assertThat(result).as("an unavailable exact opener declines without starting execution").isNull();
+			verify(fixture.dictionary, times(1)).newProbe();
+			verify(fixture.executionProbe, never()).wildcardAdjacency(true);
+			verify(fixture.executionView, never()).openPageCursor();
+			verify(fixture.quoteProbe).close();
+			verify(fixture.quotePages).close();
+		}
+	}
+
+	private static final class CensusReceiptFixture implements AutoCloseable {
+		private record ReceiptPage(long[] rows, long[][] neighbors, long[] rowQuads,
+				long[][] fiberContexts, boolean commonContext, long context) {
+			private ReceiptPage {
+				if (rows.length != neighbors.length || rows.length != rowQuads.length
+						|| rows.length != fiberContexts.length) {
+					throw new IllegalArgumentException("page row metadata lengths differ");
+				}
+				long pageQuads = 0L;
+				for (int row = 0; row < rows.length; row++) {
+					if (neighbors[row].length != fiberContexts[row].length) {
+						throw new IllegalArgumentException("page fiber metadata lengths differ");
+					}
+					long contexts = 0L;
+					for (long contextCount : fiberContexts[row]) {
+						if (contextCount <= 0L) {
+							throw new IllegalArgumentException("page fibers require positive context counts");
+						}
+						contexts = Math.addExact(contexts, contextCount);
+					}
+					if (contexts != rowQuads[row]) {
+						throw new IllegalArgumentException("page row quad count differs from its fibers");
+					}
+					pageQuads = Math.addExact(pageQuads, rowQuads[row]);
+				}
+				if (pageQuads <= 0L) {
+					throw new IllegalArgumentException("pages require positive quad counts");
+				}
+			}
+
+			int fiberCount() {
+				int count = 0;
+				for (long[] row : neighbors) {
+					count = Math.addExact(count, row.length);
+				}
+				return count;
+			}
+
+			long quadCount() {
+				long count = 0L;
+				for (long rowQuads : rowQuads) {
+					count = Math.addExact(count, rowQuads);
+				}
+				return count;
+			}
+		}
+
+		private enum Scenario {
+			STANDARD,
+			OVERFLOWING_PAGE_TOTAL,
+			CHANGED_EXECUTION_PAGE_TOTAL,
+			WIDE_INTEGER_SUM
+		}
+
+		private final NativeLmdbQuerySource dictionary;
+		private final SyntheticValueSource source;
+		private final RowState row;
+		private final NativeAggregateAlternative alternative;
+		private final NativeAggregateAlternative.Prepared prepared;
+		private final NativeProbe quoteProbe;
+		private final NativeProbe executionProbe;
+		private final AdjacencyPageCursor quotePages;
+		private final NativeLmdbQuerySource.NodePredicates quoteSubjectProjection;
+		private final NativeLmdbQuerySource.NodePredicates quoteObjectProjection;
+		private final NativeLmdbQuerySource.NodePredicates executionObjectProjection;
+		private final long executionObjectDomainCount;
+		private final NativeAdjacency executionView;
+		private final AdjacencyPageCursor executionCoveragePages;
+		private final AdjacencyPageCursor executionReductionPages;
+		private final AtomicInteger executionPageOpenCalls;
+		private final AtomicBoolean authorityUnavailable;
+		private final AtomicInteger unavailableAuthorityResponses;
+
+		private CensusReceiptFixture(NativeLmdbQuerySource dictionary, SyntheticValueSource source, RowState row,
+				NativeAggregateAlternative alternative, NativeAggregateAlternative.Prepared prepared,
+				NativeProbe quoteProbe, NativeProbe executionProbe, AdjacencyPageCursor quotePages,
+				NativeLmdbQuerySource.NodePredicates quoteSubjectProjection,
+				NativeLmdbQuerySource.NodePredicates quoteObjectProjection,
+				NativeLmdbQuerySource.NodePredicates executionObjectProjection, long executionObjectDomainCount,
+				NativeAdjacency executionView,
+				AdjacencyPageCursor executionCoveragePages, AdjacencyPageCursor executionReductionPages,
+				AtomicInteger executionPageOpenCalls, AtomicBoolean authorityUnavailable,
+				AtomicInteger unavailableAuthorityResponses) {
+			this.dictionary = dictionary;
+			this.source = source;
+			this.row = row;
+			this.alternative = alternative;
+			this.prepared = prepared;
+			this.quoteProbe = quoteProbe;
+			this.executionProbe = executionProbe;
+			this.quotePages = quotePages;
+			this.quoteSubjectProjection = quoteSubjectProjection;
+			this.quoteObjectProjection = quoteObjectProjection;
+			this.executionObjectProjection = executionObjectProjection;
+			this.executionObjectDomainCount = executionObjectDomainCount;
+			this.executionView = executionView;
+			this.executionCoveragePages = executionCoveragePages;
+			this.executionReductionPages = executionReductionPages;
+			this.executionPageOpenCalls = executionPageOpenCalls;
+			this.authorityUnavailable = authorityUnavailable;
+			this.unavailableAuthorityResponses = unavailableAuthorityResponses;
+		}
+
+		static CensusReceiptFixture create(boolean canonical, boolean executionProjections, boolean changedCoverage)
+				throws Exception {
+			return create(canonical, executionProjections, changedCoverage, -1);
+		}
+
+		static CensusReceiptFixture createWithoutPreparedReceipt() throws Exception {
+			return create(true, true, false, -1, Scenario.STANDARD, false);
+		}
+
+		static CensusReceiptFixture createCountOnly(boolean canonical, boolean executionProjections,
+				boolean changedCoverage, int countStarChannels) throws Exception {
+			return create(canonical, executionProjections, changedCoverage, countStarChannels, Scenario.STANDARD,
+					true);
+		}
+
+		static CensusReceiptFixture createWithOverflowingPageCounts() throws Exception {
+			return create(true, true, false, -1, Scenario.OVERFLOWING_PAGE_TOTAL, false);
+		}
+
+		static CensusReceiptFixture createWithChangedExecutionPageTotal() throws Exception {
+			return create(true, true, false, -1, Scenario.CHANGED_EXECUTION_PAGE_TOTAL, true);
+		}
+
+		static CensusReceiptFixture createWithWideIntegerSum() throws Exception {
+			return create(true, true, false, -1, Scenario.WIDE_INTEGER_SUM, true);
+		}
+
+		private static CensusReceiptFixture create(boolean canonical, boolean executionProjections,
+				boolean changedCoverage, int countStarChannels) throws Exception {
+			return create(canonical, executionProjections, changedCoverage, countStarChannels, Scenario.STANDARD,
+					true);
+		}
+
+		private static CensusReceiptFixture create(boolean canonical, boolean executionProjections,
+				boolean changedCoverage, int countStarChannels, Scenario scenario,
+				boolean prepareDuringFixtureCreation) throws Exception {
+			var dictionary = mock(NativeLmdbQuerySource.class);
+			when(dictionary.idSpace()).thenReturn(dictionary);
+			AtomicBoolean authorityUnavailable = new AtomicBoolean();
+			AtomicInteger unavailableAuthorityResponses = new AtomicInteger();
+			when(dictionary.hasCanonicalIds()).thenAnswer(call -> {
+				if (authorityUnavailable.getAndSet(false)) {
+					unavailableAuthorityResponses.incrementAndGet();
+					return false;
+				}
+				return canonical;
+			});
+			var quoteProbe = mock(NativeProbe.class);
+			var executionProbe = mock(NativeProbe.class);
+			var quoteWildcard = mock(WildcardAdjacency.class);
+			var executionWildcard = mock(WildcardAdjacency.class);
+			var quoteView = mock(NativeAdjacency.class);
+			var executionView = mock(NativeAdjacency.class);
+			var quotePages = mock(AdjacencyPageCursor.class);
+			var executionCoveragePages = mock(AdjacencyPageCursor.class);
+			var executionReductionPages = mock(AdjacencyPageCursor.class);
+			var quoteSubjectProjection = mock(NativeLmdbQuerySource.NodePredicates.class);
+			var quoteObjectProjection = mock(NativeLmdbQuerySource.NodePredicates.class);
+			var executionSubjectProjection = mock(NativeLmdbQuerySource.NodePredicates.class);
+			var executionObjectProjection = mock(NativeLmdbQuerySource.NodePredicates.class);
+			long predicate = ValueIds.createId(ValueIds.T_URI, 1);
+			long namedContext = ValueIds.createId(ValueIds.T_URI, 2);
+			long mixedContext = ValueIds.createId(ValueIds.T_URI, 3);
+			long firstRow = ValueIds.createId(ValueIds.T_URI, 10);
+			long secondRow = ValueIds.createId(ValueIds.T_URI, 11);
+			long firstNeighbor = ValueIds.createId(ValueIds.T_URI, 12);
+			long secondNeighbor = ValueIds.createId(ValueIds.T_URI, 13);
+			when(dictionary.newProbe()).thenReturn(quoteProbe, executionProbe);
+			boolean quotedCommonContext = scenario != Scenario.OVERFLOWING_PAGE_TOTAL;
+			stubReceiptProbe(quoteProbe, quoteWildcard, quoteView, quotePages, predicate, namedContext,
+					quotedCommonContext,
+					firstRow, secondRow, firstNeighbor, secondNeighbor);
+			if (scenario == Scenario.OVERFLOWING_PAGE_TOTAL) {
+				stubReceiptPages(quotePages, overflowingPageFacts(firstRow, secondRow));
+			} else if (scenario == Scenario.CHANGED_EXECUTION_PAGE_TOTAL) {
+				stubReceiptPages(quotePages, quotedCommonPageFacts(firstRow, secondRow, namedContext));
+			}
+			long executionContext = changedCoverage ? mixedContext : namedContext;
+			stubReceiptProbe(executionProbe, executionWildcard, executionView, executionCoveragePages, predicate,
+					executionContext, !changedCoverage, firstRow, secondRow, firstNeighbor, secondNeighbor);
+			if (scenario == Scenario.CHANGED_EXECUTION_PAGE_TOTAL) {
+				stubReceiptPages(executionCoveragePages,
+						changedExecutionPageFacts(firstRow, secondRow, namedContext));
+			}
+			stubReceiptPage(executionReductionPages, executionContext, !changedCoverage,
+					firstRow, secondRow, firstNeighbor, secondNeighbor);
+			AtomicInteger executionPageOpenCalls = new AtomicInteger();
+			when(executionView.openPageCursor()).thenAnswer(call -> executionPageOpenCalls.getAndIncrement() == 0
+					? executionCoveragePages
+					: executionReductionPages);
+			when(quoteProbe.nodePredicates(true)).thenReturn(quoteSubjectProjection);
+			when(quoteProbe.nodePredicates(false)).thenReturn(quoteObjectProjection);
+			long quotedObjectDomainCount = scenario == Scenario.OVERFLOWING_PAGE_TOTAL ? 256L : 2L;
+			long executionObjectDomainCount = scenario == Scenario.OVERFLOWING_PAGE_TOTAL ? 256L
+					: scenario == Scenario.CHANGED_EXECUTION_PAGE_TOTAL ? 3L : 2L;
+			when(quoteSubjectProjection.nodeCount()).thenReturn(2L);
+			when(quoteObjectProjection.nodeCount()).thenReturn(quotedObjectDomainCount);
+			when(executionProbe.nodePredicates(anyBoolean())).thenAnswer(call -> {
+				if (!executionProjections) {
+					return null;
+				}
+				return (boolean) call.getArgument(0) ? executionSubjectProjection : executionObjectProjection;
+			});
+			when(executionSubjectProjection.nodeCount()).thenReturn(2L);
+			when(executionObjectProjection.nodeCount()).thenReturn(executionObjectDomainCount);
+			doAnswer(call -> {
+				quoteView.close();
+				return null;
+			}).when(quoteProbe).close();
+			doAnswer(call -> {
+				executionView.close();
+				return null;
+			}).when(executionProbe).close();
+
+			boolean countOnly = countStarChannels >= 0;
+			boolean wideIntegerSum = scenario == Scenario.WIDE_INTEGER_SUM;
+			StatementPattern inputPattern = countOnly
+					? new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+							Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g"))
+					: new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+							Var.of("s"), Var.of("p"), Var.of("o"));
+			var group = new Group(inputPattern);
+			if (!wideIntegerSum) {
+				group.addGroupElement(new GroupElem("subjects", new Count(Var.of("s"), true)));
+				group.addGroupElement(new GroupElem("objects", new Count(Var.of("o"), true)));
+			}
+			if (countOnly) {
+				group.addGroupElement(new GroupElem("predicates", new Count(Var.of("p"), true)));
+				group.addGroupElement(new GroupElem("graphs", new Count(Var.of("g"), true)));
+				for (int index = 0; index < countStarChannels; index++) {
+					group.addGroupElement(new GroupElem("rows" + index, new Count(null)));
+				}
+			} else {
+				BigInteger sumLiteral = wideIntegerSum ? BigInteger.ONE.shiftLeft(4096) : BigInteger.ONE;
+				group.addGroupElement(new GroupElem("rows", new Sum(new ValueConstant(
+						SimpleValueFactory.getInstance().createLiteral(sumLiteral)))));
+			}
+			var strategy = mock(LmdbNativeEvaluationStrategy.class);
+			var candidate = LmdbNativeCensusAggregate.tryCreate(group, dictionary, strategy,
+					new QueryEvaluationContext.Minimal((Dataset) null), group,
+					pattern -> ContextConstraint.UNRESTRICTED);
+			assertThat(candidate).as("the real census alternative must admit the configured channels").isNotNull();
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(dictionary);
+			NativeSlotLayout layout = countOnly
+					? new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null)
+					: new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2), null);
+			layout.freeze(countOnly ? List.of("s", "p", "o", "g") : List.of("s", "p", "o"));
+			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			assertThat(NativeRowSeeder.seed(row.slots, layout, row.base, source)).isTrue();
+			row.recomputeBoundMask();
+			NativeAggregateAlternative alternative = (NativeAggregateAlternative) candidate;
+			NativeAggregateAlternative.Prepared prepared = null;
+			if (prepareDuringFixtureCreation) {
+				prepared = alternative.prepare(row);
+				assertThat(prepared).as("the actual prepare API must bind the quote to this RowState").isNotNull();
+			}
+			return new CensusReceiptFixture(dictionary, source, row, alternative, prepared,
+					quoteProbe, executionProbe, quotePages, quoteSubjectProjection,
+					quoteObjectProjection, executionObjectProjection, executionObjectDomainCount,
+					executionView, executionCoveragePages, executionReductionPages,
+					executionPageOpenCalls, authorityUnavailable, unavailableAuthorityResponses);
+		}
+
+		private static void stubReceiptProbe(NativeProbe probe, WildcardAdjacency wildcard, NativeAdjacency view,
+				AdjacencyPageCursor pages, long predicate, long context, boolean common,
+				long firstRow, long secondRow, long firstNeighbor, long secondNeighbor) throws Exception {
+			when(probe.wildcardAdjacency(true)).thenReturn(wildcard);
+			when(wildcard.predicateCount()).thenReturn(1);
+			when(wildcard.predicateAt(0)).thenReturn(predicate);
+			when(wildcard.keyCount()).thenReturn(2L);
+			when(probe.adjacency(predicate, true)).thenReturn(view);
+			when(view.openPageCursor()).thenReturn(pages);
+			stubReceiptPage(pages, context, common, firstRow, secondRow, firstNeighbor, secondNeighbor);
+		}
+
+		private static void stubReceiptPage(AdjacencyPageCursor pages, long context, boolean common,
+				long firstRow, long secondRow, long firstNeighbor, long secondNeighbor) throws Exception {
+			when(pages.advance()).thenReturn(true, false);
+			when(pages.hasCommonContext()).thenReturn(common);
+			when(pages.commonContext()).thenReturn(context);
+			when(pages.rowCount()).thenReturn(2);
+			when(pages.fiberCount()).thenReturn(2);
+			when(pages.quadCount()).thenReturn(2L);
+			when(pages.firstRow()).thenReturn(firstRow);
+			when(pages.firstNeighbor()).thenReturn(firstNeighbor);
+			when(pages.rowAt(0)).thenReturn(firstRow);
+			when(pages.rowAt(1)).thenReturn(secondRow);
+			when(pages.rowQuadCount(0)).thenReturn(1L);
+			when(pages.rowQuadCount(1)).thenReturn(1L);
+			when(pages.rowFiberCount(0)).thenReturn(1);
+			when(pages.rowFiberCount(1)).thenReturn(1);
+			when(pages.neighborAt(0, 0)).thenReturn(firstNeighbor);
+			when(pages.neighborAt(1, 0)).thenReturn(secondNeighbor);
+			when(pages.uniformRowTermKind()).thenReturn(true);
+			when(pages.uniformNeighborTermKind()).thenReturn(true);
+		}
+
+		private static void stubReceiptPages(AdjacencyPageCursor pages, List<ReceiptPage> pageFacts) {
+			AtomicInteger pageIndex = new AtomicInteger(-1);
+			doAnswer(call -> pageIndex.incrementAndGet() < pageFacts.size()).when(pages).advance();
+			when(pages.rowCount()).thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).rows().length);
+			when(pages.fiberCount()).thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).fiberCount());
+			when(pages.quadCount()).thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).quadCount());
+			when(pages.firstRow()).thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).rows()[0]);
+			when(pages.firstNeighbor())
+					.thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).neighbors()[0][0]);
+			when(pages.hasCommonContext())
+					.thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).commonContext());
+			when(pages.commonContext()).thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).context());
+			when(pages.rowAt(anyInt()))
+					.thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).rows()[call.getArgument(0)]);
+			when(pages.rowQuadCount(anyInt()))
+					.thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex).rowQuads()[call.getArgument(0)]);
+			when(pages.rowFiberCount(anyInt())).thenAnswer(
+					call -> currentReceiptPage(pageFacts, pageIndex).neighbors()[call.getArgument(0)].length);
+			when(pages.neighborAt(anyInt(), anyInt())).thenAnswer(call -> currentReceiptPage(pageFacts, pageIndex)
+					.neighbors()[call.getArgument(0)][call.getArgument(1)]);
+			when(pages.fiberContextCount(anyInt(), anyInt())).thenAnswer(call -> currentReceiptPage(pageFacts,
+					pageIndex).fiberContexts()[call.getArgument(0)][call.getArgument(1)]);
+			when(pages.uniformRowTermKind()).thenReturn(true);
+			when(pages.uniformNeighborTermKind()).thenReturn(true);
+		}
+
+		private static ReceiptPage currentReceiptPage(List<ReceiptPage> pageFacts, AtomicInteger pageIndex) {
+			return pageFacts.get(pageIndex.get());
+		}
+
+		private static List<ReceiptPage> overflowingPageFacts(long firstRow, long secondRow) {
+			int fibersPerRow = 128;
+			long rowQuads = (Long.MAX_VALUE - 1L) / 2L;
+			long[][] neighbors = new long[2][fibersPerRow];
+			for (int fiber = 0; fiber < fibersPerRow; fiber++) {
+				neighbors[0][fiber] = ValueIds.createId(ValueIds.T_URI, 1_128L + fiber);
+				neighbors[1][fiber] = ValueIds.createId(ValueIds.T_URI, 1_000L + fiber);
+			}
+			long[][] fiberContexts = { positiveParts(rowQuads, fibersPerRow),
+					positiveParts(rowQuads, fibersPerRow) };
+			return List.of(
+					new ReceiptPage(new long[] { firstRow, secondRow }, neighbors,
+							new long[] { rowQuads, rowQuads }, fiberContexts, false, -1L),
+					new ReceiptPage(new long[] { secondRow },
+							new long[][] { { ValueIds.createId(ValueIds.T_URI, 1_128L) } }, new long[] { 2L },
+							new long[][] { { 2L } }, false, -1L));
+		}
+
+		private static long[] positiveParts(long total, int parts) {
+			long quotient = total / parts;
+			long remainder = total % parts;
+			long[] result = new long[parts];
+			for (int index = 0; index < parts; index++) {
+				result[index] = quotient + (index < remainder ? 1L : 0L);
+			}
+			return result;
+		}
+
+		private static void assertOverflowingPageGeometry() {
+			long firstRow = ValueIds.createId(ValueIds.T_URI, 10L);
+			long secondRow = ValueIds.createId(ValueIds.T_URI, 11L);
+			List<ReceiptPage> pages = overflowingPageFacts(firstRow, secondRow);
+			ReceiptPage first = pages.get(0);
+			ReceiptPage second = pages.get(1);
+			assertThat(first.rows().length).isEqualTo(2);
+			assertThat(first.fiberCount()).isEqualTo(256);
+			assertThat(first.quadCount()).isEqualTo(Long.MAX_VALUE - 1L);
+			assertThat(second.rows().length).isEqualTo(1);
+			assertThat(second.fiberCount()).isEqualTo(1);
+			assertThat(second.quadCount()).isEqualTo(2L);
+			assertThat(first.commonContext()).isFalse();
+			assertThat(second.commonContext()).isFalse();
+			assertThat(first.rows()[1]).isEqualTo(second.rows()[0]);
+			assertThat(first.neighbors()[1][127]).isLessThan(second.neighbors()[0][0]);
+			assertThat(Long.MAX_VALUE - first.quadCount()).isLessThan(second.quadCount());
+
+			Set<Long> subjects = new HashSet<>();
+			Set<Long> objects = new HashSet<>();
+			long maxContextsPerFiber = 0L;
+			for (ReceiptPage page : pages) {
+				for (int row = 0; row < page.rows().length; row++) {
+					subjects.add(page.rows()[row]);
+					for (int fiber = 0; fiber < page.neighbors()[row].length; fiber++) {
+						objects.add(page.neighbors()[row][fiber]);
+						maxContextsPerFiber = Math.max(maxContextsPerFiber,
+								page.fiberContexts()[row][fiber]);
+					}
+				}
+			}
+			assertThat(subjects).hasSize(2);
+			assertThat(objects).hasSize(256);
+			BigInteger contextIdDomain = BigInteger.ONE.shiftLeft(56);
+			assertThat(maxContextsPerFiber).isLessThanOrEqualTo(contextIdDomain.longValueExact());
+			BigInteger distinctQuadDomain = BigInteger.valueOf(subjects.size())
+					.multiply(BigInteger.valueOf(objects.size()))
+					.multiply(contextIdDomain);
+			assertThat(distinctQuadDomain).isGreaterThan(BigInteger.valueOf(Long.MAX_VALUE));
+		}
+
+		private static List<ReceiptPage> quotedCommonPageFacts(long firstRow, long secondRow, long context) {
+			return List.of(
+					new ReceiptPage(new long[] { firstRow },
+							new long[][] { { ValueIds.createId(ValueIds.T_URI, 1_000L) } }, new long[] { 1L },
+							new long[][] { { 1L } }, true, context),
+					new ReceiptPage(new long[] { secondRow },
+							new long[][] { { ValueIds.createId(ValueIds.T_URI, 1_001L) } }, new long[] { 1L },
+							new long[][] { { 1L } }, true, context));
+		}
+
+		private static List<ReceiptPage> changedExecutionPageFacts(long firstRow, long secondRow, long context) {
+			return List.of(
+					new ReceiptPage(new long[] { firstRow }, new long[][] { {
+							ValueIds.createId(ValueIds.T_URI, 1_000L), ValueIds.createId(ValueIds.T_URI, 1_001L),
+							ValueIds.createId(ValueIds.T_URI, 1_002L) } }, new long[] { 3L },
+							new long[][] { { 1L, 1L, 1L } }, true, context),
+					new ReceiptPage(new long[] { secondRow },
+							new long[][] { { ValueIds.createId(ValueIds.T_URI, 1_002L) } }, new long[] { 1L },
+							new long[][] { { 1L } }, true, context));
+		}
+
+		private static void assertChangedExecutionPageGeometry() {
+			long firstRow = ValueIds.createId(ValueIds.T_URI, 10L);
+			long secondRow = ValueIds.createId(ValueIds.T_URI, 11L);
+			long context = ValueIds.createId(ValueIds.T_URI, 2L);
+			List<ReceiptPage> quoted = quotedCommonPageFacts(firstRow, secondRow, context);
+			List<ReceiptPage> execution = changedExecutionPageFacts(firstRow, secondRow, context);
+			long quotedTotal = quoted.stream().mapToLong(ReceiptPage::quadCount).sum();
+			assertThat(quoted).allSatisfy(page -> {
+				assertThat(page.commonContext()).isTrue();
+				assertThat(page.quadCount()).isEqualTo(1L);
+			});
+			assertThat(quotedTotal).isEqualTo(2L);
+			assertThat(execution.get(0).quadCount()).isGreaterThan(quotedTotal);
+			assertThat(execution.stream().mapToLong(ReceiptPage::quadCount).sum()).isEqualTo(4L);
+			Set<Long> objects = new HashSet<>();
+			for (ReceiptPage page : execution) {
+				for (long[] rowNeighbors : page.neighbors()) {
+					for (long neighbor : rowNeighbors) {
+						objects.add(neighbor);
+					}
+				}
+			}
+			assertThat(objects).hasSize(3);
+		}
+
+		private static void assertNoReducerPageAccess(CensusReceiptFixture fixture) {
+			assertThat(fixture.executionPageOpenCalls.get())
+					.as("invalidating a prepared receipt must stop before opening a second reduction cursor")
+					.isLessThan(2);
+			for (AdjacencyPageCursor pages : List.of(fixture.executionCoveragePages,
+					fixture.executionReductionPages)) {
+				verify(pages, never()).firstRow();
+				verify(pages, never()).firstNeighbor();
+				verify(pages, never()).rowAt(anyInt());
+				verify(pages, never()).neighborAt(anyInt(), anyInt());
+				verify(pages, never()).rowQuadCount(anyInt());
+				verify(pages, never()).rowFiberCount(anyInt());
+				verify(pages, never()).fiberContextCount(anyInt(), anyInt());
+				verify(pages, never()).copyRootCounts(anyInt(), anyInt(), any(long[].class), anyInt(),
+						any(long[].class), anyInt());
+				verify(pages, never()).copyRowQuads(anyInt(), anyInt(), anyInt(), any(long[].class),
+						any(long[].class));
+				verify(pages, never()).copyRowFibers(anyInt(), anyInt(), anyInt(), any(long[].class), anyInt(),
+						any(long[].class), anyInt());
+			}
+			verify(fixture.executionReductionPages, never()).advance();
+		}
+
+		@Override
+		public void close() {
+			source.executionContext().close();
+		}
+	}
+
 	@Test
 	void groupedAlternativeRetainsItsActiveGroupCancellationOwner() throws Exception {
 		var entered = new CountDownLatch(1);

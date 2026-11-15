@@ -13,10 +13,14 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -24,11 +28,138 @@ import java.math.BigInteger;
 import java.util.LinkedHashMap;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeMarginalAggregateStateTest {
+	@Test
+	void mergingUnavailableNumericWeightsPreservesCheckedFailureInEitherOrder() {
+		NativeLmdbQuerySource source = source();
+		AggContext context = new AggContext(source, true, true);
+		AggregateSpec[] specs = { AggregateSpec.slot("sum", 0, false, AggKind.SUM),
+				AggregateSpec.slot("avg", 0, false, AggKind.AVG) };
+		try {
+			for (boolean unavailableFirst : new boolean[] { false, true }) {
+				AggState finite = state(specs, context);
+				AggState unavailable = state(specs, context);
+				addProjectedPair(finite, 1L, 1L);
+				addProjectedPair(unavailable, 1L, NativeFactorProjections.UNAVAILABLE_WEIGHT);
+
+				AggState merged = unavailableFirst ? unavailable : finite;
+				merged.mergeFrom(unavailableFirst ? finite : unavailable);
+				assertThrows(QueryEvaluationException.class, merged::checkProjectedNumericWeights,
+						"the unavailable marker must survive either partial-state merge order");
+			}
+		} finally {
+			context.close();
+		}
+	}
+
+	@Test
+	void cumulativeAverageWeightOverflowDefersUntilSameReducerTypeErrorIsKnown() {
+		NativeLmdbQuerySource source = sourceWithIriPoison();
+		AggContext context = new AggContext(source, true, true);
+		AggregateSpec[] specs = { AggregateSpec.slot("avg", 0, false, AggKind.AVG) };
+		try {
+			assertAll("the same-reducer type error makes AVG count overflow unobservable",
+					() -> assertAveragePoisonMergeOrder(specs, context, false),
+					() -> assertAveragePoisonMergeOrder(specs, context, true),
+					() -> assertAverageOverflowWithoutPoison(specs, context));
+		} finally {
+			context.close();
+		}
+	}
+
+	@Test
+	void countOverflowAndInvalidProjectedWeightsRemainChecked() {
+		NativeLmdbQuerySource source = sourceWithIriPoison();
+		AggContext context = new AggContext(source, true, true);
+		try {
+			assertAll("invalid weights and independent COUNT overflow remain checked",
+					() -> {
+						AggregateSpec[] countSpecs = { AggregateSpec.star("count") };
+						AggState largeCount = state(countSpecs, context);
+						AggState extraCount = state(countSpecs, context);
+						largeCount.addExternal(0, UNKNOWN, Long.MAX_VALUE - 1L);
+						extraCount.addExternal(0, UNKNOWN, 2L);
+						QueryEvaluationException countOverflow = assertThrows(QueryEvaluationException.class,
+								() -> largeCount.mergeFrom(extraCount));
+						assertTrue(countOverflow.getMessage().contains("COUNT overflow in factorized aggregation"),
+								countOverflow.getMessage());
+					},
+					() -> {
+						AggregateSpec[] avgSpecs = { AggregateSpec.slot("avg", 0, false, AggKind.AVG) };
+						AggState poisoned = state(avgSpecs, context);
+						RowState row = row(source);
+						try {
+							row.slots[0] = 99L;
+							poisoned.addProjected(row, 1L, new int[] { 0 }, new int[0]);
+							assertTrue(poisoned.typeErrors[0]);
+							assertThrows(IllegalArgumentException.class,
+									() -> poisoned.addExternalProjected(0, 1L, -2L),
+									"a prior reducer type error must not hide an invalid weight");
+						} finally {
+							row.closeDecodedInputs();
+							row.memoryScope.close();
+						}
+					},
+					() -> assertThrows(IllegalArgumentException.class,
+							() -> NativeFactorProjections.addNumericWeight(
+									NativeFactorProjections.UNAVAILABLE_WEIGHT, -2L)),
+					() -> assertThrows(IllegalArgumentException.class,
+							() -> NativeFactorProjections.addNumericWeight(-2L,
+									NativeFactorProjections.UNAVAILABLE_WEIGHT)),
+					() -> assertThrows(IllegalArgumentException.class,
+							() -> NativeFactorProjections.multiplyNumericWeights(
+									NativeFactorProjections.UNAVAILABLE_WEIGHT, 0L)),
+					() -> assertThrows(IllegalArgumentException.class,
+							() -> NativeFactorProjections.multiplyNumericWeights(0L,
+									NativeFactorProjections.UNAVAILABLE_WEIGHT)));
+		} finally {
+			context.close();
+		}
+	}
+
+	private static void assertAveragePoisonMergeOrder(AggregateSpec[] specs, AggContext context, boolean poisonFirst) {
+		AggState combined = state(specs, context);
+		AggState finite = state(specs, context);
+		AggState poisoned = state(specs, context);
+		combined.addExternalProjected(0, 1L, Long.MAX_VALUE - 1L);
+		finite.addExternalProjected(0, 1L, 2L);
+		poisoned.addExternalProjected(0, 99L, 1L);
+
+		if (poisonFirst) {
+			combined.mergeFrom(poisoned);
+			assertDoesNotThrow(() -> combined.mergeFrom(finite));
+		} else {
+			assertDoesNotThrow(() -> combined.mergeFrom(finite));
+			combined.mergeFrom(poisoned);
+		}
+		assertTrue(combined.typeErrors[0]);
+		assertDoesNotThrow(combined::checkProjectedNumericWeights);
+	}
+
+	private static void assertAverageOverflowWithoutPoison(AggregateSpec[] specs, AggContext context) {
+		AggState combined = state(specs, context);
+		AggState finite = state(specs, context);
+		combined.addExternalProjected(0, 1L, Long.MAX_VALUE - 1L);
+		finite.addExternalProjected(0, 1L, 2L);
+		assertDoesNotThrow(() -> combined.mergeFrom(finite));
+		assertThrows(QueryEvaluationException.class, combined::checkProjectedNumericWeights);
+	}
+
+	private static void addProjectedPair(AggState state, long value, long weight) {
+		state.addExternalProjected(0, value, weight);
+		state.addExternalProjected(1, value, weight);
+	}
+
+	private static AggState state(AggregateSpec[] specs, AggContext context) {
+		return new AggState(specs, 4, context, AggregateDistinctChannels.allHash(specs));
+	}
+
 	@Test
 	void sharedDistinctArgumentUpdatesEveryConsumerExactlyOnce() {
 		NativeLmdbQuerySource source = source();
@@ -91,6 +222,14 @@ class LmdbNativeMarginalAggregateStateTest {
 		when(source.idSpace()).thenReturn(source);
 		when(source.lazyValue(anyLong(), eq(ValuePosition.NONE)))
 				.thenAnswer(call -> AggContext.integerLiteral(call.getArgument(0)));
+		return source;
+	}
+
+	private static NativeLmdbQuerySource sourceWithIriPoison() {
+		NativeLmdbQuerySource source = source();
+		doReturn(SimpleValueFactory.getInstance().createIRI("urn:marginal:poison"))
+				.when(source)
+				.lazyValue(eq(99L), eq(ValuePosition.NONE));
 		return source;
 	}
 

@@ -30,6 +30,7 @@ final class NativeStructuralCounts implements AutoCloseable {
 	private static final int CHANNELS_PER_STORE = 64;
 	private final NativeExecutionContext owner, values;
 	private final NativeCancellationToken cancellation;
+	private final LmdbQueryMemoryManager.QueryLedger ledger;
 	private final KernelRuntime.AggregateMemory memory;
 	private NativeCountGroupStore[] stores = new NativeCountGroupStore[0];
 	private final boolean integerKeys, ownsOwner;
@@ -58,6 +59,15 @@ final class NativeStructuralCounts implements AutoCloseable {
 					: context.memoryLedger());
 		}
 
+		private RootWorkspace(LmdbQueryMemoryManager.QueryLedger ledger) {
+			standalone = null;
+			memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		}
+
+		void reserveProviderBytes(long bytes) {
+			memory.reserve(bytes);
+		}
+
 		@Override
 		public void close() {
 			Throwable failure = KernelRuntime.closeResource(memory, null);
@@ -70,25 +80,34 @@ final class NativeStructuralCounts implements AutoCloseable {
 
 	static RootWorkspace rootWorkspace(NativeLmdbQuerySource source, NativeCancellationToken cancellation)
 			throws IOException {
+		return rootWorkspace(source, cancellation, -1);
+	}
+
+	/** A prepared recipe reserves its known plane bound; its opener validates the fresh catalog separately. */
+	static RootWorkspace rootWorkspace(NativeLmdbQuerySource source, NativeCancellationToken cancellation,
+			int expectedPlanes) throws IOException {
 		RootWorkspace workspace = new RootWorkspace(source);
 		try {
 			workspace.memory.reserve(1024L);
-			int planes;
-			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
-				NativeLmdbQuerySource.WildcardAdjacency selected = probe.wildcardAdjacency(true);
-				if (selected == null) {
-					selected = probe.wildcardAdjacency(false);
-				}
-				try (NativeLmdbQuerySource.WildcardAdjacency catalog = selected) {
-					cancellation.check();
-					if (catalog == null || (planes = catalog.predicateCount()) < 0) {
-						workspace.close();
-						return null;
+			int planes = expectedPlanes;
+			if (planes < 0) {
+				try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+					NativeLmdbQuerySource.WildcardAdjacency selected = probe.wildcardAdjacency(true);
+					if (selected == null) {
+						selected = probe.wildcardAdjacency(false);
+					}
+					try (NativeLmdbQuerySource.WildcardAdjacency catalog = selected) {
+						cancellation.check();
+						if (catalog == null || (planes = catalog.predicateCount()) < 0) {
+							workspace.close();
+							return null;
+						}
 					}
 				}
 			}
-			// Includes copied catalog/heap/index arrays, plane wrappers and two 64-long cursor windows per plane.
-			workspace.memory.reserve(Math.multiplyExact(4096L, planes));
+			// Reserve both actual root windows, including their array headers, and locally owned catalog,
+			// heap, plane and cursor wrappers. Source-owned view/cursor allocations require their own proof.
+			reserveLocalPlanes(workspace, planes);
 			return workspace;
 		} catch (IOException | RuntimeException | Error failure) {
 			KernelRuntime.closeResource(workspace, failure);
@@ -96,10 +115,57 @@ final class NativeStructuralCounts implements AutoCloseable {
 		}
 	}
 
+	/** A prepared row owns its workspace even when the bound source is a raw facade. */
+	static RootWorkspace rootWorkspace(RowState row, int planes) {
+		if (planes < 0) {
+			throw new IllegalArgumentException("negative root plane count");
+		}
+		RootWorkspace workspace = new RootWorkspace(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		try {
+			workspace.memory.reserve(1024L);
+			reserveLocalPlanes(workspace, planes);
+			return workspace;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(workspace, failure), failure);
+			throw failure;
+		}
+	}
+
+	private static void reserveLocalPlanes(RootWorkspace workspace, int planes) {
+		workspace.memory.reserve(rootPlaneBytes(planes));
+	}
+
+	/** Modeled local merge windows and wrappers, including the fixed workspace owner. */
+	static long rootWorkspaceBytes(int planes) {
+		return Math.addExact(1024L, rootPlaneBytes(planes));
+	}
+
+	private static long rootPlaneBytes(int planes) {
+		if (planes < 0) {
+			throw new IllegalArgumentException("negative root plane count");
+		}
+		long rootWindows = 2L * (16L + (long) LmdbAdjacencyRootDomainCursor.ROOT_WINDOW_SIZE * Long.BYTES);
+		long localPlaneBytes = Math.addExact(rootWindows, 512L);
+		return Math.multiplyExact(localPlaneBytes, planes);
+	}
+
 	NativeStructuralCounts(NativeLmdbQuerySource source, NativeCancellationToken cancellation, int channels,
 			boolean integerKeys) {
+		this(source, cancellation, channels, integerKeys, null);
+	}
+
+	NativeStructuralCounts(NativeLmdbQuerySource source, NativeCancellationToken cancellation, int channels,
+			boolean integerKeys, LmdbQueryMemoryManager.QueryLedger borrowedLedger) {
+		this(source, cancellation, channels, integerKeys, borrowedLedger, -1L);
+	}
+
+	NativeStructuralCounts(NativeLmdbQuerySource source, NativeCancellationToken cancellation, int channels,
+			boolean integerKeys, LmdbQueryMemoryManager.QueryLedger borrowedLedger, long countStoreBytes) {
 		if (channels < 1) {
 			throw new IllegalArgumentException("A structural count needs at least one output channel");
+		}
+		if (borrowedLedger != null && !integerKeys) {
+			throw new IllegalArgumentException("A borrowed structural ledger requires integer keys");
 		}
 		SyntheticValueSource evaluation = source instanceof SyntheticValueSource synthetic
 				&& synthetic.executionContext() != null ? synthetic : SyntheticValueSource.forEvaluation(source);
@@ -109,7 +175,7 @@ final class NativeStructuralCounts implements AutoCloseable {
 		this.cancellation = new NativeCancellationToken(cancellation);
 		this.channels = channels;
 		this.integerKeys = integerKeys;
-		LmdbQueryMemoryManager.QueryLedger ledger = owner.memoryLedger();
+		ledger = borrowedLedger == null ? owner.memoryLedger() : borrowedLedger;
 		memory = KernelRuntime.AggregateMemory.forLedger(ledger);
 		int count = Math.toIntExact((channels + (long) CHANNELS_PER_STORE - 1L) / CHANNELS_PER_STORE);
 		try {
@@ -118,10 +184,12 @@ final class NativeStructuralCounts implements AutoCloseable {
 			read = new long[1 + Math.min(channels, CHANNELS_PER_STORE)];
 			for (int index = 0; index < count; index++) {
 				int width = Math.min(CHANNELS_PER_STORE, channels - index * CHANNELS_PER_STORE);
-				stores[index] = new NativeCountGroupStore(1, new boolean[width], key -> key,
-						LmdbNativeProbeDeadline.currentKernelCancellation(this.cancellation,
-								null),
-						ledger);
+				stores[index] = countStoreBytes < 0L
+						? new NativeCountGroupStore(1, new boolean[width], key -> key,
+								LmdbNativeProbeDeadline.currentKernelCancellation(this.cancellation, null), ledger)
+						: new NativeCountGroupStore(1, new boolean[width], key -> key,
+								LmdbNativeProbeDeadline.currentKernelCancellation(this.cancellation, null), ledger,
+								countStoreBytes);
 			}
 		} catch (Throwable failure) {
 			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
@@ -130,7 +198,7 @@ final class NativeStructuralCounts implements AutoCloseable {
 	}
 
 	LmdbQueryMemoryManager.QueryLedger ledger() {
-		return owner.memoryLedger();
+		return ledger;
 	}
 
 	NativeExecutionContext executionContext() {

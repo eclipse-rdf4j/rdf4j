@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
@@ -45,6 +46,7 @@ final class EncounterOrderFallback extends RuntimeException {
 
 	enum Reason {
 		FLOATING_SUM_OR_AVG,
+		NUMERIC_INPUT_VALIDATION,
 		DISTINCT_TERM_EXTREMA_TIE,
 		GROUP_CONCAT_ORDER,
 		CUSTOM_AGGREGATE_ORDER
@@ -59,6 +61,10 @@ final class EncounterOrderFallback extends RuntimeException {
 
 	static EncounterOrderFallback floatingSumOrAvg() {
 		return new EncounterOrderFallback(Reason.FLOATING_SUM_OR_AVG);
+	}
+
+	static EncounterOrderFallback numericInputValidation() {
+		return new EncounterOrderFallback(Reason.NUMERIC_INPUT_VALIDATION);
 	}
 
 	static EncounterOrderFallback distinctTermExtremaTie() {
@@ -718,6 +724,8 @@ final class AggState {
 	long[] extremeIds;
 	/** SUM/AVG poisoned by a type error: the aggregate binding is omitted. */
 	boolean[] typeErrors;
+	/** Unrepresentable projected numeric contributions, resolved only after this group's error state is final. */
+	boolean[] unavailableNumericWeights;
 	/** GROUP_CONCAT running concatenations; null per spec until its first value. */
 	StringBuilder[] concats;
 	NativeBoundedConcat[] externalConcats;
@@ -891,6 +899,24 @@ final class AggState {
 		}
 	}
 
+	/** Reduces a projected event after membership sorting, preserving an unavailable numeric weight. */
+	void addExternalProjected(int index, long value, long weight) {
+		try {
+			AggregateSpec spec = specs[index];
+			if (weight <= 0L && (weight != NativeFactorProjections.UNAVAILABLE_WEIGHT || spec.distinct
+					|| spec.kind != AggKind.SUM && spec.kind != AggKind.AVG)) {
+				throw new IllegalArgumentException("Invalid projected reducer contribution");
+			}
+			if (!spec.distinct && (spec.kind == AggKind.SUM || spec.kind == AggKind.AVG)) {
+				addProjectedNumeric(index, value, weight);
+			} else {
+				addExternalValue(index, value, weight);
+			}
+		} finally {
+			releaseDecodedValues();
+		}
+	}
+
 	private void addExternalValue(int index, long value, long weight) {
 		if (weight <= 0L || specs[index].custom != null) {
 			throw new IllegalArgumentException("Invalid external reducer contribution");
@@ -990,7 +1016,7 @@ final class AggState {
 	 * The caller has already tested existence and supplies exact weight only when an eligible consumer observes it.
 	 */
 	void addProjected(RowState row, long weight, int[] indices, int[] membershipChannels) {
-		if (weight <= 0L)
+		if (weight <= 0L && weight != NativeFactorProjections.UNAVAILABLE_WEIGHT)
 			throw new IllegalArgumentException("Nonpositive marginal contribution");
 		for (int channel : membershipChannels)
 			prepareDistinctChannel(channel, row);
@@ -1003,8 +1029,58 @@ final class AggState {
 				continue;
 			if (spec.distinct)
 				addOne(i, row);
+			else if (spec.kind == AggKind.SUM || spec.kind == AggKind.AVG)
+				addProjectedNumeric(i, spec.value(row), weight);
+			else if (!spec.reducer.weightSensitive)
+				addWeighted(i, spec.value(row), 1L);
+			else if (weight == NativeFactorProjections.UNAVAILABLE_WEIGHT)
+				throw FactorizedTail.countOverflow();
 			else
 				addWeighted(i, spec.value(row), weight);
+		}
+	}
+
+	private void addProjectedNumeric(int index, long id, long weight) {
+		if (weight <= 0L && weight != NativeFactorProjections.UNAVAILABLE_WEIGHT) {
+			throw new IllegalArgumentException("Invalid projected numeric weight");
+		}
+		if (typeErrors[index]) {
+			return;
+		}
+		AggregateSpec spec = specs[index];
+		if (!observesWeight(spec, ctx, id)) {
+			// A nonnumeric value poisons this reducer regardless of the independent factor's weight.
+			addWeighted(index, id, 1L);
+			return;
+		}
+		if (weight == NativeFactorProjections.UNAVAILABLE_WEIGHT
+				|| unavailableNumericWeights != null && unavailableNumericWeights[index]
+				|| spec.kind == AggKind.AVG && weight > Long.MAX_VALUE - avgCounts[index]) {
+			markUnavailableNumericWeight(index);
+			return;
+		}
+		addWeighted(index, id, weight);
+	}
+
+	private void markUnavailableNumericWeight(int index) {
+		if (unavailableNumericWeights == null) {
+			unavailableNumericWeights = new boolean[specs.length];
+		}
+		unavailableNumericWeights[index] = true;
+	}
+
+	private boolean hasUnavailableNumericWeight(int index) {
+		return unavailableNumericWeights != null && unavailableNumericWeights[index];
+	}
+
+	/** Only a type error on the same reducer makes its otherwise unrepresentable weight unobservable. */
+	void checkProjectedNumericWeights() {
+		if (unavailableNumericWeights != null) {
+			for (int i = 0; i < unavailableNumericWeights.length; i++) {
+				if (unavailableNumericWeights[i] && !typeErrors[i]) {
+					throw FactorizedTail.countOverflow();
+				}
+			}
 		}
 	}
 
@@ -1262,6 +1338,27 @@ final class AggState {
 		}
 	}
 
+	/** Validate with the ordinary arithmetic operation before a reordered projection can observe its weight. */
+	static void validateProjectedNumeric(AggregateSpec spec, AggContext context, long id) {
+		if ((spec.kind != AggKind.SUM && spec.kind != AggKind.AVG) || id == UNKNOWN || id == NULL_CONTEXT_ID) {
+			return;
+		}
+		Value value = context.value(id, spec.positionMask);
+		if (!(value instanceof Literal literal)) {
+			return;
+		}
+		CoreDatatype.XSD type = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		if (type == null || !type.isNumericDatatype()) {
+			return;
+		}
+		context.preserveFloatingEncounterOrder(literal);
+		try {
+			MathUtil.compute(AggContext.INTEGER_ZERO, literal, MathExpr.MathOp.PLUS);
+		} catch (ValueExprEvaluationException malformed) {
+			throw EncounterOrderFallback.numericInputValidation();
+		}
+	}
+
 	/** Type errors and presence-only reducers do not observe an independent sibling's Cartesian-product weight. */
 	static boolean observesWeight(AggregateSpec spec, AggContext context, long id) {
 		if (!spec.reducer.weightSensitive || !spec.isWildcardCount() && (id == UNKNOWN || id == NULL_CONTEXT_ID)) {
@@ -1400,6 +1497,7 @@ final class AggState {
 				setSumValue(i, MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS));
 			} else {
 				typeErrors[i] = true;
+				return;
 			}
 			avgCounts[i] = FactorizedTail.addCounts(avgCounts[i], weight);
 		} else {
@@ -1559,13 +1657,24 @@ final class AggState {
 			case SUM:
 				if (!deferredDistinctValueAggregate(i)) {
 					mergeSum(i, other);
+					if (other.hasUnavailableNumericWeight(i)) {
+						markUnavailableNumericWeight(i);
+					}
 				}
 				break;
 			case AVG:
 				if (!deferredDistinctValueAggregate(i)) {
 					mergeSum(i, other);
-					if (avgCounts != null && other.avgCounts != null) {
-						avgCounts[i] = FactorizedTail.addCounts(avgCounts[i], other.avgCounts[i]);
+					if (other.hasUnavailableNumericWeight(i)) {
+						markUnavailableNumericWeight(i);
+					}
+					if (!typeErrors[i] && avgCounts != null && other.avgCounts != null
+							&& !hasUnavailableNumericWeight(i)) {
+						if (other.avgCounts[i] > Long.MAX_VALUE - avgCounts[i]) {
+							markUnavailableNumericWeight(i);
+						} else {
+							avgCounts[i] += other.avgCounts[i];
+						}
 					}
 				}
 				break;

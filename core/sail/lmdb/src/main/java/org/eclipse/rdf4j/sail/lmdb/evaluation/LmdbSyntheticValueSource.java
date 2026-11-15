@@ -189,6 +189,46 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		return forInvocation(source, policy, bindings);
 	}
 
+	/**
+	 * Whether the attached source and any active invocation are owned by the exact query scope retained by a prepared
+	 * row. A raw source has no scope of its own, so it is eligible only while an already-active matching invocation
+	 * identifies that raw delegate.
+	 */
+	static boolean hasMatchingMemoryScope(NativeLmdbQuerySource source, LmdbNativeQueryMemoryScope expectedScope) {
+		if (source == null || expectedScope == null) {
+			return false;
+		}
+		SyntheticValueSource active = ACTIVE_EVALUATION.get();
+		if (active != null && (active.context == null || active.context.memoryScope() != expectedScope)) {
+			return false;
+		}
+		if (source instanceof SyntheticValueSource synthetic) {
+			return synthetic.context != null && synthetic.context.memoryScope() == expectedScope;
+		}
+		return active != null && active.delegate == source && active.context != null
+				&& active.context.memoryScope() == expectedScope;
+	}
+
+	/**
+	 * Creates an invocation only when its source and parent preserve a prepared row's query scope. A failed post-check
+	 * closes the private child; the caller's root context and scope remain owned by the caller.
+	 */
+	static SyntheticValueSource forInvocation(NativeLmdbQuerySource source, BindingSet bindings,
+			LmdbNativeQueryMemoryScope expectedScope) {
+		if (!hasMatchingMemoryScope(source, expectedScope)) {
+			return null;
+		}
+		SyntheticValueSource invocation = forInvocation(source, bindings);
+		if (invocation == null || invocation.context == null
+				|| invocation.context.memoryScope() != expectedScope) {
+			if (invocation != null && invocation.context != null) {
+				invocation.context.close();
+			}
+			return null;
+		}
+		return invocation;
+	}
+
 	/** Activate once, before evaluation: no first-batch guesses, property changes or mutable plan flags. */
 	SyntheticValueSource forInvocation(NativeGeneratedKeyPlan proof, NativeSlotLayout layout, BindingSet bindings) {
 		SyntheticValueSource result = forInvocation(bindings);
@@ -420,6 +460,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public Value lazyValue(long id) throws QueryEvaluationException {
 		return lazyValue(id, 0);
+	}
+
+	@Override
+	public DictionaryLease retainDictionaryLease() throws IOException {
+		return delegate.retainDictionaryLease();
 	}
 
 	@Override
@@ -686,6 +731,38 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			}
 
 			@Override
+			public DatatypeSummary cachedDatatypeSummary(CachedDatatypeSummaryReceipt receipt) throws IOException {
+				return inner.cachedDatatypeSummary(receipt);
+			}
+
+			@Override
+			public DatatypeSummary coldDatatypeSummary(ColdDatatypeSummaryReceipt receipt, Runnable cancellationPoll,
+					DatatypeSummaryBuildObserver observer) throws IOException {
+				return inner.coldDatatypeSummary(receipt, cancellationPoll, observer);
+			}
+
+			@Override
+			public WildcardAdjacency datatypePageSweep(DatatypePageWorkspace receipt) throws IOException {
+				return inner.datatypePageSweep(receipt);
+			}
+
+			@Override
+			public WildcardAdjacency censusPageSweep(CensusPageSweepReceipt receipt, Runnable cancellationPoll)
+					throws IOException {
+				return inner.censusPageSweep(receipt, cancellationPoll);
+			}
+
+			@Override
+			public NativeAdjacency censusAdjacency(long predicate, boolean bySubject, Runnable cancellationPoll)
+					throws IOException {
+				if (synthetic(predicate)) {
+					cancellationPoll.run();
+					return null;
+				}
+				return inner.censusAdjacency(predicate, bySubject, cancellationPoll);
+			}
+
+			@Override
 			public NodePredicates nodePredicates(boolean bySubject) throws IOException {
 				return inner.nodePredicates(bySubject);
 			}
@@ -778,6 +855,77 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public PredicateProjectionStatistics predicateProjectionStatistics(boolean bySubject, Runnable cancellationPoll) {
 		return delegate.predicateProjectionStatistics(bySubject, cancellationPoll);
+	}
+
+	@Override
+	public RootCountWorkspace rootCountWorkspace(boolean bySubject) {
+		return delegate.rootCountWorkspace(bySubject);
+	}
+
+	@Override
+	public ParallelRootCountReceipt parallelRootCountReceipt(boolean bySubject, Runnable cancellationPoll) {
+		return delegate.parallelRootCountReceipt(bySubject, cancellationPoll);
+	}
+
+	@Override
+	public RootCountWorker[] openParallelRootCountWorkers(ParallelRootCountReceipt receipt, int count,
+			Runnable cancellationPoll) throws IOException {
+		return delegate.openParallelRootCountWorkers(receipt, count, cancellationPoll);
+	}
+
+	@Override
+	public CachedDatatypeSummaryReceipt cachedDatatypeSummaryReceipt(boolean bySubject) {
+		CachedDatatypeSummaryReceipt receipt = delegate.cachedDatatypeSummaryReceipt(bySubject);
+		// Each carrier adds a forwarding probe and a replacement receipt under the modeled object layout.
+		long forwardingBytes = 32L + 48L;
+		if (receipt == null || receipt.workspaceBytes() > Long.MAX_VALUE - forwardingBytes) {
+			return null;
+		}
+		return new CachedDatatypeSummaryReceipt(receipt.baseAuthority(), receipt.bySubject(), receipt.explicit(),
+				receipt.groups(), receipt.workspaceBytes() + forwardingBytes);
+	}
+
+	@Override
+	public ColdDatatypeSummaryReceipt coldDatatypeSummaryReceipt(boolean bySubject, Runnable cancellationPoll) {
+		ColdDatatypeSummaryReceipt receipt = delegate.coldDatatypeSummaryReceipt(bySubject, cancellationPoll);
+		// The forwarding probe and replacement receipt are both live under the source's runtime reservation.
+		long forwardingBytes = 32L + 72L;
+		if (receipt == null || receipt.workspaceBytes() > Long.MAX_VALUE - forwardingBytes) {
+			return null;
+		}
+		return new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), receipt.planeAuthority(), receipt.bySubject(),
+				receipt.explicit(), receipt.predicates(), receipt.roots(), receipt.quads(), receipt.pages(),
+				receipt.workspaceBytes() + forwardingBytes);
+	}
+
+	@Override
+	public DatatypePageWorkspace datatypePageWorkspace(boolean bySubject) {
+		DatatypePageWorkspace receipt = delegate.datatypePageWorkspace(bySubject);
+		// The carrier allocates one forwarding probe and one replacement workspace receipt.
+		long forwardingBytes = 32L + 40L;
+		if (receipt == null || receipt.workspaceBytes() > Long.MAX_VALUE - forwardingBytes) {
+			return null;
+		}
+		return new DatatypePageWorkspace(receipt.viewAuthority(), receipt.bySubject(), receipt.explicit(),
+				receipt.workspaceBytes() + forwardingBytes);
+	}
+
+	@Override
+	public CensusPageSweepReceipt censusPageSweepReceipt(boolean bySubject, boolean needSubjectNodes,
+			boolean needObjectNodes, Runnable cancellationPoll) throws IOException {
+		CensusPageSweepReceipt receipt = delegate.censusPageSweepReceipt(bySubject, needSubjectNodes,
+				needObjectNodes, cancellationPoll);
+		long forwardingBytes = 32L + 128L;
+		if (receipt == null || receipt.fixedWorkspaceBytes() > Long.MAX_VALUE - forwardingBytes) {
+			return null;
+		}
+		return new CensusPageSweepReceipt(receipt.viewAuthority(), receipt.planeAuthority(), receipt.bySubject(),
+				receipt.explicit(), receipt.canonicalIds(), receipt.predicates(), receipt.nonemptyPredicates(),
+				receipt.predicateSegments(), receipt.shardDescriptors(), receipt.roots(), receipt.quads(),
+				receipt.pages(),
+				receipt.shardTransitionsUpperBound(), receipt.subjectNodes(), receipt.objectNodes(),
+				receipt.defaultContextQuads(), receipt.fixedWorkspaceBytes() + forwardingBytes,
+				receipt.planeWorkspaceBytes());
 	}
 
 	@Override

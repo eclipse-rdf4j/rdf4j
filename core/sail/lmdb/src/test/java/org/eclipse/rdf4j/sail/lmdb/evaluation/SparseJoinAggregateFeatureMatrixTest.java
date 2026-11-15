@@ -73,6 +73,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -104,16 +105,16 @@ class SparseJoinAggregateFeatureMatrixTest {
 			new Aggregate("count-shared", "COUNT(?j)", true),
 			new Aggregate("count-endpoint", "COUNT(?a)", true),
 			new Aggregate("count-constant", "COUNT(1)", true),
-			new Aggregate("count-distinct-star", "COUNT(DISTINCT *)", false),
-			new Aggregate("count-distinct-shared", "COUNT(DISTINCT ?j)", false),
-			new Aggregate("sum", "SUM(1)", false),
-			new Aggregate("sum-distinct", "SUM(DISTINCT 1)", false),
-			new Aggregate("avg", "AVG(1)", false),
-			new Aggregate("avg-distinct", "AVG(DISTINCT 1)", false),
-			new Aggregate("min", "MIN(?a)", false),
-			new Aggregate("min-distinct", "MIN(DISTINCT ?a)", false),
-			new Aggregate("max", "MAX(?a)", false),
-			new Aggregate("max-distinct", "MAX(DISTINCT ?a)", false),
+			new Aggregate("count-distinct-star", "COUNT(DISTINCT *)", false, true),
+			new Aggregate("count-distinct-shared", "COUNT(DISTINCT ?j)", true),
+			new Aggregate("sum", "SUM(1)", true),
+			new Aggregate("sum-distinct", "SUM(DISTINCT 1)", true),
+			new Aggregate("avg", "AVG(1)", true),
+			new Aggregate("avg-distinct", "AVG(DISTINCT 1)", true),
+			new Aggregate("min", "MIN(?a)", true),
+			new Aggregate("min-distinct", "MIN(DISTINCT ?a)", true),
+			new Aggregate("max", "MAX(?a)", true),
+			new Aggregate("max-distinct", "MAX(DISTINCT ?a)", true),
 			new Aggregate("sample", "SAMPLE(?a)", false),
 			new Aggregate("sample-distinct", "SAMPLE(DISTINCT ?a)", false),
 			new Aggregate("group-concat", "GROUP_CONCAT(STR(?a))", false),
@@ -154,6 +155,558 @@ class SparseJoinAggregateFeatureMatrixTest {
 	}
 
 	@Test
+	void fixedMixedDistinct(@TempDir Path directory) {
+		checkMixedDistinct(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedMixedDistinct(@TempDir Path directory) {
+		checkMixedDistinct(directory, Shape.PREDICATE);
+	}
+
+	@Test
+	void fixedMixedDistinctAcrossContexts(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory, Shape.FIXED, true)) {
+			String query = Shape.FIXED.query("(COUNT(*) AS ?count) (COUNT(DISTINCT ?j) AS ?shared)", "", "");
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertFalse(expected.isEmpty(), query);
+			assertTrue(
+					expected.keySet()
+							.stream()
+							.anyMatch(row -> ((Literal) row.get("count")).longValue() > ((Literal) row.get("shared"))
+									.longValue()),
+					() -> "Fixture must retain duplicate contexts while deduplicating shared terms: " + expected);
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertEquals(expected, fixture.rows(query, true, true), query);
+			Observation observation = fixture.explain(query, true);
+			assertTrue(observation.sparse(), () -> "FIXED did not execute sparse aggregation: " + observation);
+			assertTrue(observation.plans().stream().anyMatch(plan -> plan.contains(Shape.FIXED.planMarker)),
+					() -> "FIXED: " + observation);
+		}
+	}
+
+	private static void checkMixedDistinct(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape)) {
+			String query = shape.query("(COUNT(*) AS ?count) (COUNT(DISTINCT ?j) AS ?shared) "
+					+ "(COUNT(DISTINCT ?a) AS ?endpoint)", "", "");
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertFalse(expected.isEmpty(), query);
+			assertTrue(
+					expected.keySet()
+							.stream()
+							.anyMatch(row -> ((Literal) row.get("count")).longValue() > ((Literal) row.get("endpoint"))
+									.longValue()),
+					() -> "Fixture must distinguish bag count from endpoint presence: " + expected);
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertEquals(expected, fixture.rows(query, true, true), query);
+			Observation observation = fixture.explain(query, true);
+			assertTrue(observation.sparse(), () -> shape + " did not execute sparse aggregation: " + observation);
+			assertTrue(observation.plans().stream().anyMatch(plan -> plan.contains(shape.planMarker)),
+					() -> shape + ": " + observation);
+		}
+	}
+
+	@Test
+	void fixedMixedNumericAndDistinctReducers(@TempDir Path directory) {
+		checkMixedNumericAndDistinctReducers(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedMixedNumericAndDistinctReducers(@TempDir Path directory) {
+		checkMixedNumericAndDistinctReducers(directory, Shape.PREDICATE);
+	}
+
+	private static void checkMixedNumericAndDistinctReducers(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape, true)) {
+			String query = PREFIX + "SELECT ?a (COUNT(*) AS ?count) (COUNT(DISTINCT ?j) AS ?shared) "
+					+ "(SUM(1) AS ?sum) (SUM(DISTINCT 1) AS ?sumDistinct) (AVG(1) AS ?average) "
+					+ "(MIN(?b) AS ?minimum) (MAX(?b) AS ?maximum) WHERE { " + shape.patterns + " } GROUP BY ?a";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertFalse(expected.isEmpty(), query);
+			for (Map<String, Value> result : expected.keySet()) {
+				assertEquals(((Literal) result.get("count")).longValue(), ((Literal) result.get("sum")).longValue());
+				assertEquals(1L, ((Literal) result.get("sumDistinct")).longValue());
+			}
+			assertEquals(expected, fixture.rows(query, true, true), query);
+			assertTrue(fixture.explain(query, true).sparse(), shape + " must execute the mixed marginal channels");
+		}
+	}
+
+	@Test
+	void fixedMixedDistinctConstantsAndAliases(@TempDir Path directory) {
+		checkMixedDistinctConstantsAndAliases(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedMixedDistinctConstantsAndAliases(@TempDir Path directory) {
+		checkMixedDistinctConstantsAndAliases(directory, Shape.PREDICATE);
+	}
+
+	private static void checkMixedDistinctConstantsAndAliases(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape)) {
+			String query = shape.query("(COUNT(*) AS ?count) (COUNT(DISTINCT 1) AS ?one) "
+					+ "(COUNT(DISTINCT ?alias) AS ?shared) (COUNT(DISTINCT ?j) AS ?again)",
+					"BIND(?j AS ?alias)", "");
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertFalse(expected.isEmpty());
+			for (Map<String, Value> result : expected.keySet()) {
+				assertEquals(1L, ((Literal) result.get("one")).longValue());
+				assertEquals(result.get("shared"), result.get("again"));
+			}
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertEquals(expected, fixture.rows(query, true, true), query);
+			assertTrue(fixture.explain(query, true).sparse(), shape.toString());
+		}
+	}
+
+	@Test
+	void fixedOneKeyMixedDistinct(@TempDir Path directory) {
+		checkReducedKeyMixedDistinct(directory, Shape.FIXED, false);
+	}
+
+	@Test
+	void projectedOneKeyMixedDistinct(@TempDir Path directory) {
+		checkReducedKeyMixedDistinct(directory, Shape.PREDICATE, false);
+	}
+
+	@Test
+	void sharedKeyGroupsRetainMixedDistinctChannels(@TempDir Path directory) {
+		for (Shape shape : Shape.values()) {
+			try (Fixture fixture = new Fixture(directory.resolve(shape.name()), shape, shape == Shape.FIXED)) {
+				String query = PREFIX + "SELECT ?a ?j (COUNT(*) AS ?count) "
+						+ "(COUNT(DISTINCT ?j) AS ?shared) (COUNT(DISTINCT ?b) AS ?endpoints) WHERE { "
+						+ shape.patterns + " } GROUP BY ?a ?j";
+				Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+				assertFalse(expected.isEmpty(), query);
+				for (Map<String, Value> result : expected.keySet()) {
+					assertEquals(1L, ((Literal) result.get("shared")).longValue());
+					assertTrue(((Literal) result.get("count")).longValue() >= ((Literal) result.get("endpoints"))
+							.longValue());
+				}
+				assertEquals(expected, fixture.rows(query, true, false), query);
+				assertEquals(expected, fixture.rows(query, true, true), query);
+				assertTrue(fixture.explain(query, true).sparse(), shape.toString());
+			}
+		}
+	}
+
+	@Test
+	void fixedGlobalMixedDistinct(@TempDir Path directory) {
+		checkReducedKeyMixedDistinct(directory, Shape.FIXED, true);
+	}
+
+	@Test
+	void projectedGlobalMixedDistinct(@TempDir Path directory) {
+		checkReducedKeyMixedDistinct(directory, Shape.PREDICATE, true);
+	}
+
+	@Test
+	void fixedEmptyGlobalMixedDistinct(@TempDir Path directory) {
+		checkEmptyGlobalMixedDistinct(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedEmptyGlobalMixedDistinct(@TempDir Path directory) {
+		checkEmptyGlobalMixedDistinct(directory, Shape.PREDICATE);
+	}
+
+	private static void checkEmptyGlobalMixedDistinct(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape)) {
+			String query = PREFIX + "SELECT (COUNT(*) AS ?count) (COUNT(DISTINCT ?j) AS ?shared) WHERE { "
+					+ shape.patterns + " FILTER(STR(?a) = 'urn:sparse-matrix:no-match') }";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertEquals(1, expected.size(), "a global aggregate must retain the empty group");
+			Map<String, Value> row = expected.keySet().iterator().next();
+			assertEquals(0L, ((Literal) row.get("count")).longValue());
+			assertEquals(0L, ((Literal) row.get("shared")).longValue());
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertEquals(expected, fixture.rows(query, true, true), query);
+			assertTrue(fixture.explain(query, true).sparse(), "the empty global aggregate must execute sparse");
+		}
+	}
+
+	private static void checkReducedKeyMixedDistinct(Path directory, Shape shape, boolean global) {
+		try (Fixture fixture = new Fixture(directory, shape, shape == Shape.FIXED)) {
+			String groups = global ? "" : "?a ";
+			String query = PREFIX + "SELECT " + groups + "(COUNT(*) AS ?count) "
+					+ "(COUNT(DISTINCT ?j) AS ?shared) (COUNT(DISTINCT ?a) AS ?endpoint) WHERE { "
+					+ shape.patterns + " } " + (global ? "" : "GROUP BY ?a");
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertFalse(expected.isEmpty(), query);
+			assertTrue(
+					expected.keySet()
+							.stream()
+							.anyMatch(row -> ((Literal) row.get("count")).longValue() > ((Literal) row.get("shared"))
+									.longValue()),
+					() -> "Bag count must differ from the shared-term membership count: " + expected);
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertEquals(expected, fixture.rows(query, true, true), query);
+			Observation observation = fixture.explain(query, true);
+			assertTrue(observation.sparse(), () -> shape + ": " + observation);
+			assertTrue(observation.plans().stream().anyMatch(plan -> plan.contains(shape.planMarker)),
+					() -> shape + ": " + observation);
+		}
+	}
+
+	@Test
+	void fixedFullMappingDistinctSharesTheInput(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory, Shape.FIXED, true)) {
+			String query = Shape.FIXED.query("(COUNT(*) AS ?count) (COUNT(DISTINCT *) AS ?rows) "
+					+ "(COUNT(DISTINCT ?j) AS ?shared)", "", "");
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertTrue(
+					expected.keySet()
+							.stream()
+							.anyMatch(row -> ((Literal) row.get("count")).longValue() > ((Literal) row.get("rows"))
+									.longValue()),
+					() -> "Named contexts must create duplicate visible mappings: " + expected);
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertEquals(expected, fixture.rows(query, true, true), query);
+			assertTrue(fixture.explain(query, true).sparse(), "the retained full mapping must use sparse input");
+		}
+	}
+
+	@Test
+	void projectedFullMappingDistinctKeepsHiddenPayload(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory, Shape.PREDICATE)) {
+			String query = Shape.PREDICATE.query("(COUNT(*) AS ?count) (COUNT(DISTINCT *) AS ?rows)", "", "");
+			checkCase(fixture, Shape.PREDICATE, new Case("full-mapping-hidden-payload", query,
+					Expectation.NO_SPARSE));
+		}
+	}
+
+	@Test
+	void fixedInvariantEntryGroupPreservesBoundAndUnboundSlots(@TempDir Path directory) {
+		checkInvariantEntryGroup(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedInvariantEntryGroupPreservesBoundAndUnboundSlots(@TempDir Path directory) {
+		checkInvariantEntryGroup(directory, Shape.PREDICATE);
+	}
+
+	private static void checkInvariantEntryGroup(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape)) {
+			String distinct = shape == Shape.FIXED ? "COUNT(DISTINCT *)" : "COUNT(DISTINCT ?j)";
+			String query = PREFIX + "SELECT ?outside (COUNT(*) AS ?count) (" + distinct + " AS ?distinct) WHERE { "
+					+ shape.patterns + " } GROUP BY ?outside";
+			Value outside = SimpleValueFactory.getInstance().createIRI("urn:sparse-matrix:outside");
+			for (Map<String, Value> bindings : List.of(Map.<String, Value>of(), Map.of("outside", outside))) {
+				Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, null, bindings);
+				assertEquals(1, expected.size(), "all input rows share the invariant entry group");
+				Map<String, Value> result = expected.keySet().iterator().next();
+				assertNull(result.get("outside"), "an unrelated API binding is not introduced into the input mapping");
+				assertEquals(expected, fixture.rows(query, true, null, bindings), query);
+				assertEquals(expected, fixture.rows(query, true, STRATEGY, bindings), query);
+				assertTrue(fixture.explain(query, STRATEGY, bindings).sparse(), shape + ": " + bindings);
+			}
+		}
+	}
+
+	@Test
+	void fixedMixedDistinctWithSmallMembershipArena(@TempDir Path directory) {
+		checkMixedDistinctWithSmallMembershipArena(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedMixedDistinctWithSmallMembershipArena(@TempDir Path directory) {
+		checkMixedDistinctWithSmallMembershipArena(directory, Shape.PREDICATE);
+	}
+
+	private static void checkMixedDistinctWithSmallMembershipArena(Path directory, Shape shape) {
+		String property = NativeCountGroupStore.MAX_BYTES_PROPERTY;
+		String previous = System.setProperty(property, "4096");
+		LmdbQueryMemoryManager previousManager = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(64L << 20, 64L << 20);
+		LmdbNativeHashJoin.queryMemoryOverride = manager;
+		try {
+			try (Fixture fixture = new Fixture(directory, shape, false, true)) {
+				String query = shape.query("(COUNT(*) AS ?count) (COUNT(DISTINCT ?j) AS ?shared)", "", "");
+				Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+				assertEquals(1024, expected.size(), "the dense input must exceed the 4 KiB membership arena");
+				for (Map<String, Value> result : expected.keySet()) {
+					assertEquals(64L, ((Literal) result.get("shared")).longValue());
+				}
+				assertEquals(expected, fixture.rows(query, true, true), query);
+				assertTrue(fixture.explain(query, true).sparse(), shape.toString());
+			}
+			assertEquals(0L, manager.usedBytes(), "the group store and sparse cursors must release the ledger");
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = previousManager;
+			restoreProperty(property, previous);
+		}
+	}
+
+	@Test
+	void adjacencyGroupsPredicateAndDirectionalRoot(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory, Shape.PREDICATE, false, true)) {
+			String strategy = LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE;
+			for (boolean outgoing : new boolean[] { true, false }) {
+				for (boolean predicateFirst : new boolean[] { true, false }) {
+					String pattern = outgoing ? "?node ?p ?value" : "?value ?p ?node";
+					String groups = predicateFirst ? "?p ?node" : "?node ?p";
+					String query = PREFIX + "SELECT ?p ?node (COUNT(*) AS ?count) "
+							+ "(COUNT(DISTINCT ?value) AS ?values) WHERE { GRAPH ?g { " + pattern + " } } GROUP BY "
+							+ groups;
+					Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, (String) null);
+					assertEquals(outgoing ? 2048 : 32, expected.size());
+					for (Map<String, Value> result : expected.keySet()) {
+						assertEquals(outgoing ? 2L : 128L, ((Literal) result.get("count")).longValue());
+						assertEquals(outgoing ? 1L : 64L, ((Literal) result.get("values")).longValue());
+					}
+					assertEquals(expected, fixture.rows(query, true, (String) null), query);
+					assertEquals(expected, fixture.rows(query, true, strategy), query);
+					Observation observation = fixture.explain(query, strategy);
+					assertTrue(observation.paths().contains(strategy), () -> query + ": " + observation);
+				}
+			}
+		}
+	}
+
+	@Test
+	void adjacencyAliasGroupKeepsPreboundInputSemantics(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory, Shape.PREDICATE, false, true)) {
+			String query = PREFIX + "SELECT ?p ?node ?alias (COUNT(*) AS ?count) "
+					+ "(COUNT(DISTINCT ?value) AS ?values) WHERE { GRAPH ?g { ?node ?p ?value } "
+					+ "BIND(?node AS ?alias) } GROUP BY ?alias ?p ?node";
+			var vf = SimpleValueFactory.getInstance();
+			for (Map<String, Value> bindings : List.of(Map.<String, Value>of(),
+					Map.<String, Value>of("alias", vf.createIRI("urn:sparse-matrix:dense-j0")),
+					Map.<String, Value>of("alias", vf.createIRI("urn:sparse-matrix:absent")))) {
+				Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, null, bindings);
+				assertEquals(expected, fixture.rows(query, true, null, bindings), bindings.toString());
+				if (bindings.isEmpty()) {
+					assertEquals(2048, expected.size());
+					String strategy = LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE;
+					assertEquals(expected, fixture.rows(query, true, strategy, bindings));
+					assertTrue(fixture.explain(query, strategy, bindings).paths().contains(strategy));
+				}
+			}
+		}
+	}
+
+	@Test
+	void nestedUnionUsesBothDirectionalAdjacencyGroupsAutomatically(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory, Shape.PREDICATE, false, true)) {
+			String query = PREFIX + "SELECT ?direction ?p (SUM(?n) AS ?total) WHERE { "
+					+ "{ { SELECT ?p ?node (COUNT(DISTINCT ?value) AS ?n) WHERE { "
+					+ "GRAPH ?g { ?node ?p ?value } } GROUP BY ?p ?node } BIND('forward' AS ?direction) } UNION "
+					+ "{ { SELECT ?p ?node (COUNT(DISTINCT ?value) AS ?n) WHERE { "
+					+ "GRAPH ?g { ?value ?p ?node } } GROUP BY ?node ?p } BIND('inverse' AS ?direction) } "
+					+ "} GROUP BY ?direction ?p";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertEquals(64, expected.size());
+			for (Map<String, Value> result : expected.keySet()) {
+				assertEquals(64L, ((Literal) result.get("total")).longValue());
+			}
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertEquals(2, fixture.executedPhysicalGroupCount(query,
+					LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE),
+					() -> "both inner groups must select adjacency through GROUP_PHYSICAL: "
+							+ fixture.groupDiagnostics(query, null));
+		}
+	}
+
+	@Test
+	void fixedNestedGroup(@TempDir Path directory) {
+		checkNestedGroup(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedNestedGroup(@TempDir Path directory) {
+		checkNestedGroup(directory, Shape.PREDICATE);
+	}
+
+	@Test
+	void fixedDenseNestedPhysicalTransfer(@TempDir Path directory) {
+		checkDenseNestedPhysicalTransfer(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedDenseNestedPhysicalTransfer(@TempDir Path directory) {
+		checkDenseNestedPhysicalTransfer(directory, Shape.PREDICATE);
+	}
+
+	@Test
+	void fixedDenseNestedMixedAutomaticRouteWitness(@TempDir Path directory) {
+		checkDenseNestedMixedAutomaticRouteWitness(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedDenseNestedMixedAutomaticRouteWitness(@TempDir Path directory) {
+		checkDenseNestedMixedAutomaticRouteWitness(directory, Shape.PREDICATE);
+	}
+
+	@Test
+	void fixedDenseNestedTopKPhysicalTransfer(@TempDir Path directory) {
+		checkDenseNestedTopKPhysicalTransfer(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedDenseNestedTopKPhysicalTransfer(@TempDir Path directory) {
+		checkDenseNestedTopKPhysicalTransfer(directory, Shape.PREDICATE);
+	}
+
+	@Test
+	void fixedDenseNestedHavingPhysicalTransfer(@TempDir Path directory) {
+		checkDenseNestedHavingPhysicalTransfer(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedDenseNestedHavingPhysicalTransfer(@TempDir Path directory) {
+		checkDenseNestedHavingPhysicalTransfer(directory, Shape.PREDICATE);
+	}
+
+	@Test
+	void fixedDenseNestedDistinctPhysicalTransfer(@TempDir Path directory) {
+		checkDenseNestedDistinctPhysicalTransfer(directory, Shape.FIXED);
+	}
+
+	@Test
+	void projectedDenseNestedDistinctPhysicalTransfer(@TempDir Path directory) {
+		checkDenseNestedDistinctPhysicalTransfer(directory, Shape.PREDICATE);
+	}
+
+	private static void checkDenseNestedMixedAutomaticRouteWitness(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape, false, true)) {
+			String patterns = shape == Shape.FIXED ? shape.patterns
+					: "{ SELECT DISTINCT ?j ?a WHERE { GRAPH ?g1 { ?j ?a ?left } } } "
+							+ "{ SELECT DISTINCT ?j ?b WHERE { GRAPH ?g2 { ?j ?b ?right } } }";
+			String query = PREFIX + "SELECT ?a (SUM(?count) AS ?total) (SUM(?shared) AS ?distinctTotal) WHERE { "
+					+ "{ SELECT ?a ?b (COUNT(*) AS ?count) (COUNT(DISTINCT ?j) AS ?shared) WHERE { "
+					+ patterns + " } GROUP BY ?a ?b } } GROUP BY ?a";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertEquals(32, expected.size(), shape + ": dense fixture must produce all binding rows");
+			Map<Map<String, Value>, Integer> automatic = fixture.rows(query, true, false);
+			assertEquals(expected, automatic, shape + ": complete RDF binding bags differ for " + query);
+
+			boolean sameNodeSparse = fixture.executedSparsePhysicalGroup(query, shape.planMarker);
+			String diagnostics = fixture.groupDiagnostics(query, null);
+			System.out.println("SPARSE_MIXED_AUTO shape=" + shape + " rows=" + automatic.size()
+					+ " sameNodeSparse=" + sameNodeSparse);
+			System.out.println("SPARSE_MIXED_AUTO_DIAGNOSTICS shape=" + shape + "\n" + diagnostics);
+		}
+	}
+
+	private static void checkDenseNestedTopKPhysicalTransfer(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape, false, true)) {
+			String patterns = shape == Shape.FIXED ? shape.patterns
+					: "{ SELECT DISTINCT ?j ?a WHERE { GRAPH ?g1 { ?j ?a ?left } } } "
+							+ "{ SELECT DISTINCT ?j ?b WHERE { GRAPH ?g2 { ?j ?b ?right } } }";
+			String query = PREFIX + "SELECT ?a (SUM(?n) AS ?total) WHERE { "
+					+ "{ SELECT ?a ?b (COUNT(*) AS ?n) WHERE { " + patterns
+					+ " } GROUP BY ?a ?b ORDER BY ?a ?b LIMIT 17 OFFSET 3 } } GROUP BY ?a";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertFalse(expected.isEmpty(), query);
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertTrue(fixture.executedSparsePhysicalGroup(query, shape.planMarker),
+					() -> shape + " wrapped inner group did not select and execute sparse through GROUP_PHYSICAL: "
+							+ fixture.groupDiagnostics(query, null));
+		}
+	}
+
+	private static void checkDenseNestedHavingPhysicalTransfer(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape, false, true)) {
+			String patterns = shape == Shape.FIXED ? shape.patterns
+					: "{ SELECT DISTINCT ?j ?a WHERE { GRAPH ?g1 { ?j ?a ?left } } } "
+							+ "{ SELECT DISTINCT ?j ?b WHERE { GRAPH ?g2 { ?j ?b ?right } } }";
+			String query = PREFIX + "SELECT ?a (SUM(?adjusted) AS ?total) WHERE { "
+					+ "{ SELECT ?a ?b (COUNT(*) + 1 AS ?adjusted) WHERE { " + patterns
+					+ " } GROUP BY ?a ?b HAVING (COUNT(*) > 0) } FILTER(?adjusted > 0) } GROUP BY ?a";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertEquals(32, expected.size(), query);
+			for (Map<String, Value> result : expected.keySet()) {
+				assertEquals(2080L, ((Literal) result.get("total")).longValue());
+			}
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertTrue(fixture.executedSparsePhysicalGroup(query, shape.planMarker),
+					() -> shape + " HAVING inner group did not select and execute sparse through GROUP_PHYSICAL: "
+							+ fixture.groupDiagnostics(query, null));
+		}
+	}
+
+	private static void checkDenseNestedDistinctPhysicalTransfer(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape, false, true)) {
+			String patterns = shape == Shape.FIXED ? shape.patterns
+					: "{ SELECT DISTINCT ?j ?a WHERE { GRAPH ?g1 { ?j ?a ?left } } } "
+							+ "{ SELECT DISTINCT ?j ?b WHERE { GRAPH ?g2 { ?j ?b ?right } } }";
+			String query = PREFIX + "SELECT ?a (SUM(?n) AS ?total) WHERE { "
+					+ "{ SELECT DISTINCT ?a (COUNT(*) AS ?n) WHERE { " + patterns
+					+ " } GROUP BY ?a ?b } } GROUP BY ?a";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertEquals(32, expected.size(), query);
+			for (Map<String, Value> result : expected.keySet()) {
+				assertEquals(64L, ((Literal) result.get("total")).longValue());
+			}
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			assertTrue(fixture.executedSparsePhysicalGroup(query, shape.planMarker),
+					() -> shape + " DISTINCT inner group did not select and execute sparse through GROUP_PHYSICAL: "
+							+ fixture.groupDiagnostics(query, null));
+		}
+	}
+
+	@Test
+	void nestedModifierKeepsConsumedLexicalSummarySemantics(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory, Shape.FIXED)) {
+			String query = PREFIX + "SELECT (SUM(?length) AS ?total) WHERE { "
+					+ "{ SELECT ?a (STRLEN(GROUP_CONCAT(STR(?b); SEPARATOR='|')) AS ?length) WHERE { "
+					+ Shape.FIXED.patterns + " } GROUP BY ?a ORDER BY ?a LIMIT 2 OFFSET 0 } }";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertEquals(1, expected.size(), query);
+			assertEquals(expected, fixture.rows(query, true, false), query);
+		}
+	}
+
+	private static void checkDenseNestedPhysicalTransfer(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape, false, true)) {
+			String patterns = shape == Shape.FIXED ? shape.patterns
+					: "{ SELECT DISTINCT ?j ?a WHERE { GRAPH ?g1 { ?j ?a ?left } } } "
+							+ "{ SELECT DISTINCT ?j ?b WHERE { GRAPH ?g2 { ?j ?b ?right } } }";
+			String query = PREFIX + "SELECT ?a (SUM(?n) AS ?total) WHERE { "
+					+ "{ SELECT ?a ?b (COUNT(*) AS ?n) WHERE { " + patterns + " } GROUP BY ?a ?b } "
+					+ "} GROUP BY ?a";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertEquals(32, expected.size(), "the dense fixture must contain every left endpoint");
+			for (Map.Entry<Map<String, Value>, Integer> entry : expected.entrySet()) {
+				assertEquals(1, entry.getValue(), "each endpoint group must occur once");
+				assertEquals(2048L, ((Literal) entry.getKey().get("total")).longValue());
+			}
+			assertEquals(expected, fixture.rows(query, true, false), query);
+			String diagnostics = fixture.groupDiagnostics(query, null);
+			System.out.println("SPARSE_NESTED_PHYSICAL_DIAGNOSTICS shape=" + shape + "\n" + diagnostics);
+			assertTrue(fixture.executedSparsePhysicalGroup(query, shape.planMarker),
+					() -> shape + " inner group did not select and execute sparse through GROUP_PHYSICAL: "
+							+ diagnostics);
+		}
+	}
+
+	@Test
+	void projectedDenseRawNestedParity(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory, Shape.PREDICATE, false, true)) {
+			String query = PREFIX + "SELECT ?a (SUM(?n) AS ?total) WHERE { "
+					+ "{ SELECT ?a ?b (COUNT(*) AS ?n) WHERE { " + Shape.PREDICATE.patterns
+					+ " } GROUP BY ?a ?b } } GROUP BY ?a";
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, false);
+			assertEquals(32, expected.size());
+			assertEquals(expected, fixture.rows(query, true, false), query);
+		}
+	}
+
+	private static void checkNestedGroup(Path directory, Shape shape) {
+		try (Fixture fixture = new Fixture(directory, shape)) {
+			String query = PREFIX + "SELECT ?a (SUM(?n) AS ?total) WHERE { "
+					+ "{ SELECT ?a ?b (COUNT(*) AS ?n) WHERE { " + shape.patterns + " } GROUP BY ?a ?b } "
+					+ "} GROUP BY ?a";
+			String preference = STRATEGY + "," + LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
+			Map<Map<String, Value>, Integer> expected = fixture.rows(query, false, (String) null);
+			assertFalse(expected.isEmpty(), query);
+			assertEquals(expected, fixture.rows(query, true, (String) null), query);
+			assertEquals(expected, fixture.rows(query, true, preference), query);
+			// Lexical children do not inherit this preference. Dense tests above assert the actual physical route.
+		}
+	}
+
+	@Test
 	void everyOrderedAggregatePairKeepsItsRouteAndBag(@TempDir Path directory) {
 		for (Shape shape : Shape.values()) {
 			int eligible = 0;
@@ -173,7 +726,7 @@ class SparseJoinAggregateFeatureMatrixTest {
 						if (automatic.sparse()) {
 							automaticSparse++;
 						}
-						if (left.eligible && right.eligible) {
+						if (left.eligible(shape) && right.eligible(shape)) {
 							eligible++;
 							assertEquals(expected, fixture.rows(query, true, true), label);
 							Observation forced = fixture.explain(query, true);
@@ -214,7 +767,7 @@ class SparseJoinAggregateFeatureMatrixTest {
 						new Case("count-alias-chain", shape.query("(COUNT(?alias2) AS ?n)",
 								"BIND(?j AS ?alias1) BIND(?alias1 AS ?alias2)", ""), Expectation.SPARSE),
 						new Case("count-distinct-constant", shape.query("(COUNT(DISTINCT 1) AS ?n)", "", ""),
-								Expectation.NO_SPARSE),
+								Expectation.SPARSE),
 						new Case("count-unbound", shape.query("(COUNT(?missing) AS ?n)", "", ""),
 								Expectation.NO_SPARSE),
 						new Case("count-error", shape.query("(COUNT(1 / 0) AS ?n)", "", ""),
@@ -226,16 +779,16 @@ class SparseJoinAggregateFeatureMatrixTest {
 								Expectation.OBSERVE),
 						new Case("count-folded-bind", shape.query("(COUNT(?v) AS ?n)", "BIND((1 + 1) AS ?v)", ""),
 								Expectation.OBSERVE),
-						new Case("unsupported-first", shape.query("(SUM(1) AS ?n1) (COUNT(*) AS ?n2) "
-								+ "(COUNT(?j) AS ?n3)", "", ""), Expectation.NO_SPARSE),
-						new Case("unsupported-middle", shape.query("(COUNT(*) AS ?n1) (SUM(1) AS ?n2) "
-								+ "(COUNT(?j) AS ?n3)", "", ""), Expectation.NO_SPARSE),
-						new Case("unsupported-last", shape.query("(COUNT(*) AS ?n1) (COUNT(?j) AS ?n2) "
-								+ "(SUM(1) AS ?n3)", "", ""), Expectation.NO_SPARSE),
+						new Case("numeric-first", shape.query("(SUM(1) AS ?n1) (COUNT(*) AS ?n2) "
+								+ "(COUNT(?j) AS ?n3)", "", ""), Expectation.SPARSE),
+						new Case("numeric-middle", shape.query("(COUNT(*) AS ?n1) (SUM(1) AS ?n2) "
+								+ "(COUNT(?j) AS ?n3)", "", ""), Expectation.SPARSE),
+						new Case("numeric-last", shape.query("(COUNT(*) AS ?n1) (COUNT(?j) AS ?n2) "
+								+ "(SUM(1) AS ?n3)", "", ""), Expectation.SPARSE),
 						new Case("having-anonymous-count", shape.query("(COUNT(*) AS ?n)", "",
 								"HAVING (COUNT(?j) >= 1)"), Expectation.SPARSE),
 						new Case("having-anonymous-sum", shape.query("(COUNT(*) AS ?n)", "",
-								"HAVING (SUM(1) >= 1)"), Expectation.NO_SPARSE),
+								"HAVING (SUM(1) >= 1)"), Expectation.SPARSE),
 						new Case("having-function", shape.query("(COUNT(*) AS ?n)", "",
 								"HAVING (STR(COUNT(*)) != '0')"), Expectation.OBSERVE),
 						new Case("post-group-select", shape.query("(STR(COUNT(*)) AS ?n)", "", ""),
@@ -420,6 +973,41 @@ class SparseJoinAggregateFeatureMatrixTest {
 								+ nested + " } }", Expectation.OBSERVE),
 						new Case("outer-aggregate", PREFIX + "SELECT ?a (SUM(?n) AS ?total) WHERE { " + nested
 								+ " } GROUP BY ?a", Expectation.OBSERVE));
+				for (Case test : cases) {
+					checkCase(fixture, shape, test);
+				}
+			}
+		}
+	}
+
+	@Test
+	void mixedDistinctComposesWithNestedAndConditionalInputs(@TempDir Path directory) {
+		for (Shape shape : Shape.values()) {
+			try (Fixture fixture = new Fixture(directory.resolve(shape.name()), shape, true)) {
+				String reducers = "(COUNT(*) AS ?n) (COUNT(DISTINCT ?j) AS ?d)";
+				String nested = "{ SELECT ?a ?b " + reducers + " WHERE { " + shape.patterns
+						+ " } GROUP BY ?a ?b }";
+				List<Case> cases = List.of(
+						new Case("mixed-input-union", PREFIX + "SELECT ?a ?b " + reducers + " WHERE { { "
+								+ shape.patterns + " } UNION { " + shape.patterns + " } } GROUP BY ?a ?b",
+								Expectation.OBSERVE),
+						new Case("mixed-input-optional", shape.query(reducers,
+								"OPTIONAL { ?j ex:missing ?extra }", ""), Expectation.OBSERVE),
+						new Case("mixed-input-minus", shape.query(reducers,
+								"MINUS { ?j ex:missing ?extra }", ""), Expectation.OBSERVE),
+						new Case("mixed-input-exists", shape.query(reducers,
+								"FILTER EXISTS { ?j ?probe ?value }", ""), Expectation.OBSERVE),
+						new Case("mixed-input-not-exists", shape.query(reducers,
+								"FILTER NOT EXISTS { ?j ex:missing ?extra }", ""), Expectation.OBSERVE),
+						new Case("mixed-graph", PREFIX + "SELECT ?a ?b " + reducers + " WHERE { GRAPH ?g { "
+								+ shape.patterns + " } } GROUP BY ?a ?b", Expectation.OBSERVE),
+						new Case("mixed-nested-optional", PREFIX + "SELECT ?a ?b ?n ?d WHERE { " + nested
+								+ " OPTIONAL { ?a ex:missing ?extra } }", Expectation.OBSERVE),
+						new Case("mixed-nested-union", PREFIX + "SELECT ?a ?b ?n ?d WHERE { { " + nested
+								+ " } UNION { " + nested + " } }", Expectation.OBSERVE),
+						new Case("mixed-nested-aggregate", PREFIX
+								+ "SELECT ?a (SUM(?n) AS ?total) (SUM(?d) AS ?distinctTotal) WHERE { "
+								+ nested + " } GROUP BY ?a", Expectation.OBSERVE));
 				for (Case test : cases) {
 					checkCase(fixture, shape, test);
 				}
@@ -1153,7 +1741,14 @@ class SparseJoinAggregateFeatureMatrixTest {
 		}
 	}
 
-	private record Aggregate(String name, String expression, boolean eligible) {
+	private record Aggregate(String name, String expression, boolean eligible, boolean fixedOnly) {
+		Aggregate(String name, String expression, boolean eligible) {
+			this(name, expression, eligible, false);
+		}
+
+		boolean eligible(Shape shape) {
+			return eligible || fixedOnly && shape == Shape.FIXED;
+		}
 	}
 
 	private enum Expectation {
@@ -1271,6 +1866,14 @@ class SparseJoinAggregateFeatureMatrixTest {
 		private final SailRepository repository;
 
 		Fixture(Path directory, Shape shape) {
+			this(directory, shape, false);
+		}
+
+		Fixture(Path directory, Shape shape, boolean repeatedContexts) {
+			this(directory, shape, repeatedContexts, false);
+		}
+
+		Fixture(Path directory, Shape shape, boolean repeatedContexts, boolean dense) {
 			LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig()
 					.setNativeEvaluationEnabled(true)
 					.setDirectAdjacencyEnabled(true)
@@ -1287,13 +1890,37 @@ class SparseJoinAggregateFeatureMatrixTest {
 				var j1 = vf.createIRI("urn:sparse-matrix:j1");
 				var j2 = vf.createIRI("urn:sparse-matrix:j2");
 				connection.begin();
-				if (shape == Shape.FIXED) {
+				if (dense) {
+					for (int key = 0; key < 64; key++) {
+						var join = vf.createIRI("urn:sparse-matrix:dense-j" + key);
+						for (int endpoint = 0; endpoint < 32; endpoint++) {
+							if (shape == Shape.FIXED) {
+								connection.add(vf.createIRI("urn:sparse-matrix:dense-a" + endpoint), p, join);
+								connection.add(join, q, vf.createIRI("urn:sparse-matrix:dense-b" + endpoint));
+							} else {
+								var predicate = vf.createIRI("urn:sparse-matrix:dense-p" + endpoint);
+								var object = vf.createIRI("urn:sparse-matrix:dense-object");
+								connection.add(join, predicate, object);
+								connection.add(join, predicate, object, vf.createIRI("urn:sparse-matrix:dense-g1"),
+										vf.createIRI("urn:sparse-matrix:dense-g2"));
+							}
+						}
+					}
+				} else if (shape == Shape.FIXED) {
 					connection.add(vf.createIRI("urn:sparse-matrix:a1"), p, j1);
 					connection.add(vf.createIRI("urn:sparse-matrix:a1"), p, j2);
 					connection.add(vf.createIRI("urn:sparse-matrix:a2"), p, j2);
 					connection.add(j1, q, vf.createIRI("urn:sparse-matrix:b1"));
 					connection.add(j1, q, vf.createIRI("urn:sparse-matrix:b2"));
 					connection.add(j2, q, vf.createIRI("urn:sparse-matrix:b1"));
+					if (repeatedContexts) {
+						var a = vf.createIRI("urn:sparse-matrix:a1");
+						var b = vf.createIRI("urn:sparse-matrix:b1");
+						var g1 = vf.createIRI("urn:sparse-matrix:g1");
+						var g2 = vf.createIRI("urn:sparse-matrix:g2");
+						connection.add(a, p, j1, g1, g2);
+						connection.add(j1, q, b, g1, g2);
+					}
 				} else {
 					connection.add(j1, p, vf.createIRI("urn:sparse-matrix:x1"));
 					connection.add(j1, p, vf.createIRI("urn:sparse-matrix:x2"));
@@ -1301,6 +1928,13 @@ class SparseJoinAggregateFeatureMatrixTest {
 					connection.add(j2, p, vf.createIRI("urn:sparse-matrix:x1"));
 					connection.add(j2, q, vf.createIRI("urn:sparse-matrix:x1"));
 					connection.add(j2, r, vf.createIRI("urn:sparse-matrix:x1"));
+					if (repeatedContexts) {
+						var value = vf.createIRI("urn:sparse-matrix:x1");
+						var g1 = vf.createIRI("urn:sparse-matrix:g1");
+						var g2 = vf.createIRI("urn:sparse-matrix:g2");
+						connection.add(j1, p, value, g1, g2);
+						connection.add(j1, q, value, g1, g2);
+					}
 				}
 				connection.commit();
 			}
@@ -1308,9 +1942,19 @@ class SparseJoinAggregateFeatureMatrixTest {
 		}
 
 		Map<Map<String, Value>, Integer> rows(String query, boolean nativeEnabled, boolean forced) {
+			return rows(query, nativeEnabled, forced ? STRATEGY : null);
+		}
+
+		Map<Map<String, Value>, Integer> rows(String query, boolean nativeEnabled, String forced) {
+			return rows(query, nativeEnabled, forced, Map.of());
+		}
+
+		Map<Map<String, Value>, Integer> rows(String query, boolean nativeEnabled, String forced,
+				Map<String, Value> bindings) {
 			String previous = System.setProperty(NATIVE_PROPERTY, Boolean.toString(nativeEnabled));
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				SailTupleQuery prepared = prepare(connection, query, forced);
+				bindings.forEach(prepared::setBinding);
 				Map<Map<String, Value>, Integer> bag = new HashMap<>();
 				try (var result = prepared.evaluate()) {
 					while (result.hasNext()) {
@@ -1327,8 +1971,18 @@ class SparseJoinAggregateFeatureMatrixTest {
 		}
 
 		Observation explain(String query, boolean forced) {
+			return explain(query, forced ? STRATEGY : null);
+		}
+
+		Observation explain(String query, String forced) {
+			return explain(query, forced, Map.of());
+		}
+
+		Observation explain(String query, String forced, Map<String, Value> bindings) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				GenericPlanNode plan = prepare(connection, query, forced).explain(Explanation.Level.Telemetry)
+				SailTupleQuery prepared = prepare(connection, query, forced);
+				bindings.forEach(prepared::setBinding);
+				GenericPlanNode plan = prepared.explain(Explanation.Level.Telemetry)
 						.toGenericPlanNode();
 				Set<String> paths = new LinkedHashSet<>();
 				Set<String> plans = new LinkedHashSet<>();
@@ -1337,11 +1991,103 @@ class SparseJoinAggregateFeatureMatrixTest {
 			}
 		}
 
+		boolean executedSparsePhysicalGroup(String query, String marker) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				GenericPlanNode plan = prepare(connection, query, (String) null).explain(Explanation.Level.Telemetry)
+						.toGenericPlanNode();
+				return containsSparsePhysicalGroup(plan, marker);
+			}
+		}
+
+		int executedPhysicalGroupCount(String query, String strategy) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				GenericPlanNode plan = prepare(connection, query, (String) null).explain(Explanation.Level.Telemetry)
+						.toGenericPlanNode();
+				return countPhysicalGroups(plan, strategy);
+			}
+		}
+
+		private static int countPhysicalGroups(GenericPlanNode node, String strategy) {
+			String path = node.getStringMetricActual("nativeExecutionPath");
+			Map<String, String> metrics = node.getStringMetricsActual();
+			int count = path != null && (" | " + path + " | ").contains(" | " + strategy + " | ")
+					&& metrics != null
+					&& metrics.entrySet()
+							.stream()
+							.anyMatch(entry -> entry.getKey().startsWith("nativeDecision.GROUP_PHYSICAL.")
+									&& entry.getValue().contains("winner=" + strategy)) ? 1 : 0;
+			if (node.getPlans() != null) {
+				for (GenericPlanNode child : node.getPlans()) {
+					count += countPhysicalGroups(child, strategy);
+				}
+			}
+			return count;
+		}
+
+		private static boolean containsSparsePhysicalGroup(GenericPlanNode node, String marker) {
+			String path = node.getStringMetricActual("nativeExecutionPath");
+			String plan = node.getStringMetricActual("sparseJoinAggregatePlan");
+			Map<String, String> metrics = node.getStringMetricsActual();
+			if (path != null && (" | " + path + " | ").contains(" | " + STRATEGY + " | ")
+					&& plan != null && plan.contains(marker) && metrics != null
+					&& metrics.entrySet()
+							.stream()
+							.anyMatch(entry -> entry.getKey().startsWith("nativeDecision.GROUP_PHYSICAL.")
+									&& entry.getValue().contains("winner=" + STRATEGY))) {
+				return true;
+			}
+			if (node.getPlans() != null) {
+				for (GenericPlanNode child : node.getPlans()) {
+					if (containsSparsePhysicalGroup(child, marker)) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		String groupDiagnostics(String query, String forced) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				GenericPlanNode plan = prepare(connection, query, forced).explain(Explanation.Level.Telemetry)
+						.toGenericPlanNode();
+				StringBuilder diagnostics = new StringBuilder();
+				collectGroupDiagnostics(plan, diagnostics);
+				return diagnostics.toString();
+			}
+		}
+
+		private static void collectGroupDiagnostics(GenericPlanNode node, StringBuilder diagnostics) {
+			Map<String, String> metrics = node.getStringMetricsActual();
+			if (node.getType() != null && node.getType().contains("Group") || metrics != null
+					&& metrics.keySet().stream().anyMatch(key -> key.startsWith("nativeDecision.GROUP"))) {
+				diagnostics.append("node=").append(node.getType());
+				if (metrics != null) {
+					metrics.forEach((key, value) -> {
+						if (key.startsWith("nativeDecision.GROUP") || key.equals("nativeExecutionPath")
+								|| key.equals("nativeAggregateCostQuotesEstimated")
+								|| key.equals("sparseJoinAggregatePlan") || key.contains("Physical")) {
+							diagnostics.append("\n  ").append(key).append('=').append(value);
+						}
+					});
+				}
+				diagnostics.append('\n');
+			}
+			if (node.getPlans() != null) {
+				for (GenericPlanNode child : node.getPlans()) {
+					collectGroupDiagnostics(child, diagnostics);
+				}
+			}
+		}
+
 		private static SailTupleQuery prepare(SailRepositoryConnection connection, String query, boolean forced) {
+			return prepare(connection, query, forced ? STRATEGY : null);
+		}
+
+		private static SailTupleQuery prepare(SailRepositoryConnection connection, String query, String forced) {
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
 			prepared.setLmdbResultCacheRequested(false);
-			if (forced) {
-				prepared.setForcedLmdbExecutionStrategy(STRATEGY);
+			if (forced != null) {
+				prepared.setForcedLmdbExecutionStrategy(forced);
 			}
 			return prepared;
 		}

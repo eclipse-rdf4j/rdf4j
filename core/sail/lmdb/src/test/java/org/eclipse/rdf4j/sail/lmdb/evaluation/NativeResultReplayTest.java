@@ -23,6 +23,9 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
@@ -34,10 +37,14 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.GeneratedBNode;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -53,6 +60,179 @@ import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordingFile;
 
 class NativeResultReplayTest {
+	@Test
+	void residentReplayDoesNotRetainADictionary() throws Exception {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeExecutionContext context = new NativeExecutionContext();
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		NativeResultRow.Schema schema = new NativeResultRow.Schema("term");
+		try (var ledger = memory.openQuery();
+				context;
+				NativeResultReplay replay = new NativeResultReplay(schema, context, context.cancellation(), ledger,
+						16L << 10).resolvingStoreTermsWith(source)) {
+			replay.append(new NativeResultRow(schema, new NativeResultCell[] {
+					NativeResultCell.term(SimpleValueFactory.getInstance().createIRI("urn:resident")) }));
+			replay.finish();
+			assertFalse(replay.spilled());
+			try (NativeResultCursor reader = replay.cursor()) {
+				assertEquals("urn:resident", reader.next().cell("term").value().stringValue());
+				assertNull(reader.next());
+			}
+			verify(source, never()).retainDictionaryLease();
+		}
+		assertEquals(0L, memory.usedBytes());
+	}
+
+	@Test
+	void failedSpillClosesTheRetainedDictionaryAndLedger() throws Exception {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource.DictionaryLease dictionary = mock(NativeLmdbQuerySource.DictionaryLease.class);
+		when(source.retainDictionaryLease()).thenReturn(dictionary);
+		NativeExecutionContext context = new NativeExecutionContext();
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		NativeResultRow.Schema schema = new NativeResultRow.Schema("term");
+		try (var ledger = memory.openQuery();
+				context;
+				NativeResultReplay replay = new NativeResultReplay(schema, context, context.cancellation(), ledger,
+						16L << 10).resolvingStoreTermsWith(source)) {
+			for (int i = 0; i < 64; i++) {
+				Value filler = SimpleValueFactory.getInstance().createIRI("urn:filler:" + i + "x".repeat(512));
+				replay.append(new NativeResultRow(schema, new NativeResultCell[] { NativeResultCell.term(filler) }));
+			}
+			assertTrue(replay.spilled());
+			IRI bad = mock(IRI.class);
+			IllegalStateException failure = new IllegalStateException("failed while writing a spilled term");
+			when(bad.getType()).thenReturn(Value.Type.IRI);
+			when(bad.stringValue()).thenThrow(failure);
+			assertSame(failure, assertThrows(IllegalStateException.class, () -> replay.append(
+					new NativeResultRow(schema, new NativeResultCell[] { NativeResultCell.term(bad) }))));
+			verify(dictionary, times(1)).close();
+			assertEquals(0L, memory.usedBytes());
+		}
+	}
+
+	@Test
+	void relationDemandDoesNotReplayAnEffectfulKnownMaskFilter() {
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		NativeLmdbQuerySource delegate = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(delegate.idSpace()).thenReturn(delegate);
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(delegate);
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(
+				LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE + "," + LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		AtomicInteger calls = new AtomicInteger();
+		NativeBooleanFilter effectful = row -> {
+			calls.incrementAndGet();
+			return true;
+		};
+		SlotPlan input = new FilterPlan(SlotPlan.values(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) }),
+				effectful, 0L);
+		assertTrue(SlotPlan.encounterOrderReplaySafe(input), "the known placement mask alone currently admits replay");
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("input", 0), null);
+		layout.freeze(List.of("input"));
+		NativeGroupStep step = new NativeGroupStep(source, input, layout, new int[0],
+				new AggregateSpec[] { AggregateSpec.star("count") }, false, strategy, null, null,
+				Set.of(), null, null, false, false, null, 0L, null, null);
+		AtomicInteger emitted = new AtomicInteger();
+		MapBindingSet privateRow = new MapBindingSet();
+		privateRow.addBinding("count", SimpleValueFactory.getInstance().createLiteral(999L));
+		step.alternatives = List.of(new NativeGroupStep.Alternative(bindings -> new CloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				if (emitted.get() != 0) {
+					throw new KernelRuntime.AllocationDeniedException();
+				}
+				return true;
+			}
+
+			@Override
+			public BindingSet next() {
+				effectful.accept(null);
+				emitted.incrementAndGet();
+				return privateRow;
+			}
+
+			@Override
+			public void close() {
+			}
+		}, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE));
+		try {
+			assertThrows(QueryEvaluationException.class, () -> {
+				try (NativeResultCursor results = step.evaluateNativeRelation(EmptyBindingSet.getInstance())) {
+					while (results.next() != null) {
+						// The candidate must either fail before publication or finish through a safe fallback.
+					}
+				}
+			}, () -> "private rows=" + emitted.get() + ", callback invocations=" + calls.get());
+			assertEquals(1, calls.get(), "an effectful input callback must not run again after private refusal");
+		} finally {
+			source.executionContext().close();
+			LmdbNativeHashJoin.queryMemoryOverride = previous;
+		}
+		assertEquals(0L, memory.usedBytes());
+	}
+
+	@Test
+	void relationDemandRetriesAfterPrivateBudgetRefusal() {
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		NativeLmdbQuerySource delegate = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		when(delegate.idSpace()).thenReturn(delegate);
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(delegate);
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(
+				LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE + "," + LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("input", 0), null);
+		layout.freeze(List.of("input"));
+		NativeGroupStep step = new NativeGroupStep(source,
+				SlotPlan.values(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) }), layout,
+				new int[0], new AggregateSpec[] { AggregateSpec.star("count") }, false, strategy, null, null,
+				Set.of(), null, null, false, false, null, 0L, null, null);
+		AtomicInteger emitted = new AtomicInteger();
+		AtomicInteger closed = new AtomicInteger();
+		MapBindingSet privateRow = new MapBindingSet();
+		privateRow.addBinding("count", SimpleValueFactory.getInstance().createLiteral(999L));
+		step.alternatives = List.of(new NativeGroupStep.Alternative(bindings -> new CloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				if (emitted.get() != 0) {
+					throw new KernelRuntime.AllocationDeniedException();
+				}
+				return true;
+			}
+
+			@Override
+			public BindingSet next() {
+				emitted.incrementAndGet();
+				return privateRow;
+			}
+
+			@Override
+			public void close() {
+				closed.incrementAndGet();
+			}
+		}, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE));
+		try {
+			try (NativeResultCursor results = step.evaluateNativeRelation(EmptyBindingSet.getInstance())) {
+				NativeResultRow result = results.next();
+				assertEquals("1", result.toBindingSet().getValue("count").stringValue());
+				assertNull(results.next());
+			}
+			assertEquals(1, emitted.get(), "the first candidate must produce private work before refusal");
+			assertEquals(1, closed.get(), "the refused candidate must close before the fallback");
+			assertFalse(source.executionContext().cancellation().isCancellationRequested());
+		} finally {
+			source.executionContext().close();
+			LmdbNativeHashJoin.queryMemoryOverride = previous;
+		}
+		assertEquals(0L, memory.usedBytes());
+	}
+
 	@Test
 	void smallResidentReplayDoesNotReserveSpillWorkspace() {
 		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(5_000L, 5_000L);

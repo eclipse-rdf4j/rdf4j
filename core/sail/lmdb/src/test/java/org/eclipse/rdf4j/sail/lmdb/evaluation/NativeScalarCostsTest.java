@@ -20,10 +20,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Label;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LocalName;
+import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -155,6 +162,32 @@ class NativeScalarCostsTest {
 		assertThat(work.expected(Feature.DECODED_ROW)).isEqualTo(1D);
 		assertThat(work.low(Feature.INTERPRETED_ROW)).isZero();
 		assertThat(work.high(Feature.INTERPRETED_ROW)).isInfinite();
+	}
+
+	@Test
+	void valueInspectingScalarsAccountForDecodedTermsAndVariableWidth() {
+		List<ValueExpr> expressions = List.of(new Datatype(new Var("a")), new Lang(new Var("a")),
+				new Label(new Var("a")), new LocalName(new Var("a")), new Namespace(new Var("a")));
+		for (ValueExpr expression : expressions) {
+			LmdbNativeCostVector work = NativeScalarCosts.additionalCopies(new CopyBinding[] { copy(expression) });
+			assertThat(work.expected(Feature.DECODED_ROW)).as("decoded input of %s", expression).isEqualTo(1D);
+			assertThat(work.high(Feature.INTERPRETED_ROW)).as("variable-width work of %s", expression).isInfinite();
+		}
+		ValueExpr repeated = new FunctionCall(FN.CONCAT.stringValue(), new Lang(new Var("a")),
+				new Str(new Var("a")));
+		LmdbNativeCostVector shared = NativeScalarCosts.additionalCopies(new CopyBinding[] { copy(repeated) });
+		assertThat(shared.expected(Feature.DECODED_ROW)).as("one slot can share a decoded value").isEqualTo(1D);
+		ValueExpr constant = new Datatype(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("text")));
+		assertThat(NativeScalarCosts.additionalCopies(new CopyBinding[] { copy(constant) })
+				.expected(Feature.DECODED_ROW)).as("constant operands have no decoded input slot").isZero();
+		assertThat(NativeScalarCosts.additionalCopies(new CopyBinding[] { CopyBinding.slot(1, 0) })
+				.expected(Feature.DECODED_ROW)).as("ID aliases do not decode their input").isZero();
+		RowState row = row(new StatsSource(100L));
+		LmdbNativeCostVector datatype = NativeScalarCosts.additionalCopies(
+				new CopyBinding[] { copy(new Datatype(new Var("a"))) });
+		assertThat(NativeScalarCosts.forInput(datatype, EmptyPlan.INSTANCE, row, 0L).isZero())
+				.as("empty input executes no value decoding")
+				.isTrue();
 	}
 
 	@Test

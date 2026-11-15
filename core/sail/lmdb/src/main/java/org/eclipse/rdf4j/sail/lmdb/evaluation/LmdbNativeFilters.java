@@ -28,7 +28,9 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -39,7 +41,9 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 
 @Experimental
 interface NativeBooleanFilter {
@@ -1325,6 +1329,9 @@ final class ValueSetFilter implements NativeBooleanFilter {
 	final long[] accepted;
 	final Value[] queryValues;
 	final boolean checkBound;
+	/** Homogeneous inline-date constants use their semantic date keys; other domains keep the value evaluator. */
+	private final int[] dateKeys;
+	private final long dateTimezone;
 	/** Worker-confined fallback for raw worker sources that do not carry a NativeExecutionContext. */
 	final State workerState;
 
@@ -1347,6 +1354,49 @@ final class ValueSetFilter implements NativeBooleanFilter {
 		this.queryValues = queryValues;
 		this.checkBound = checkBound;
 		this.workerState = workerConfined ? new State(accepted.length) : null;
+		this.dateKeys = inlineDateKeys(accepted, queryValues);
+		this.dateTimezone = dateKeys == null ? -1L : KernelRuntime.dateSortKey(accepted[0]) >>> 32;
+	}
+
+	private static int[] inlineDateKeys(long[] accepted, Value[] queryValues) {
+		if (accepted.length == 0 || accepted[0] < 0L
+				|| queryValues != null && queryValues.length != accepted.length) {
+			return null;
+		}
+		long first = KernelRuntime.dateSortKey(accepted[0]);
+		if (first == KernelRuntime.SORT_KEY_ESCAPE) {
+			return null;
+		}
+		long timezone = first >>> 32;
+		for (int i = 1; i < accepted.length; i++) {
+			if (accepted[i] < 0L) {
+				return null;
+			}
+			long key = KernelRuntime.dateSortKey(accepted[i]);
+			if (key == KernelRuntime.SORT_KEY_ESCAPE || key >>> 32 != timezone) {
+				return null;
+			}
+		}
+		int[] keys = new int[accepted.length];
+		for (int i = 0; i < accepted.length; i++) {
+			long key = KernelRuntime.dateSortKey(accepted[i]);
+			if (queryValues != null) {
+				// Explicit query values remain authoritative even for a source with a different id authority.
+				if (!(queryValues[i] instanceof Literal literal)
+						|| literal.getCoreDatatype() != CoreDatatype.XSD.DATE) {
+					return null;
+				}
+				try {
+					if (KernelRuntime.dateSortKey(Values.packLiteral(literal)) != key) {
+						return null;
+					}
+				} catch (RuntimeException ignored) {
+					return null;
+				}
+			}
+			keys[i] = (int) key;
+		}
+		return keys;
 	}
 
 	@Override
@@ -1390,6 +1440,18 @@ final class ValueSetFilter implements NativeBooleanFilter {
 	private boolean acceptId(long id, NativeLmdbQuerySource source, int positionMask) {
 		if (checkBound && id == UNKNOWN) {
 			return false;
+		}
+		// Synthetic ids may have date-shaped tag bits; real inline dates have a nonnegative 56-bit payload.
+		if (dateKeys != null && id >= 0L) {
+			long key = KernelRuntime.dateSortKey(id);
+			if (key != KernelRuntime.SORT_KEY_ESCAPE && key >>> 32 == dateTimezone) {
+				for (int candidate : dateKeys) {
+					if ((int) key == candidate) {
+						return true;
+					}
+				}
+				return false;
+			}
 		}
 		for (long candidate : accepted) {
 			if (candidate == id && safeResourceId(candidate)) {

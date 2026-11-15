@@ -13,29 +13,84 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.assertj.core.api.SoftAssertions;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.Datatype;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CachedDatatypeSummaryReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ColdDatatypeSummaryReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.DatatypePageWorkspace;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.DatatypeSummary;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodeDomainSynopsis;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,6 +109,7 @@ public class LmdbDatatypeHistogramTest {
 	private static final String EX = "http://example.com/";
 	private static final String SYNOPSIS_PROPERTY = "rdf4j.lmdb.directAdjacency.synopsis.enabled";
 	private static final String NATIVE_ENGINE_PROPERTY = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String SCAN_AGGREGATES_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 
 	private static final String DATATYPE_HISTOGRAM = "SELECT ?datatype (COUNT(*) AS ?literals) WHERE {\n"
 			+ "  ?s ?p ?o .\n"
@@ -75,6 +131,7 @@ public class LmdbDatatypeHistogramTest {
 		captureProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
 		captureProperty(SYNOPSIS_PROPERTY);
 		captureProperty(NATIVE_ENGINE_PROPERTY);
+		captureProperty(SCAN_AGGREGATES_PROPERTY);
 	}
 
 	@AfterEach
@@ -101,6 +158,14 @@ public class LmdbDatatypeHistogramTest {
 			}
 		});
 		previousProperties.clear();
+	}
+
+	private static void restoreProperty(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
+		}
 	}
 
 	@Test
@@ -137,6 +202,3507 @@ public class LmdbDatatypeHistogramTest {
 		long before = LmdbNativeDatatypeHistogram.RUNS.get();
 		assertThat(histogram(DATATYPE_HISTOGRAM)).isEqualTo(expected);
 		assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void preparedWarmDatatypeSummaryQuotesAndExecutesPhysicalGroups() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		Map<String, Long> expected = openMixedRepository(2000);
+		LmdbStore store = (LmdbStore) repository.getSail();
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			AtomicInteger rootSynopsisGetterCalls = new AtomicInteger();
+			AtomicInteger datatypeSummaryGetterCalls = new AtomicInteger();
+			AtomicInteger summaryCursorOpens = new AtomicInteger();
+			SyntheticValueSource source = recordingProbeSource(actualSource, rootSynopsisGetterCalls,
+					datatypeSummaryGetterCalls, summaryCursorOpens);
+			NativeExecutionContext evaluation = source.executionContext();
+			try {
+				long rootDomainEntries;
+				Set<IRI> physicalDatatypeTerms = new HashSet<>();
+				Set<IRI> summarizedDatatypeTerms = new HashSet<>();
+				long summarizedGroups = 0L;
+				try (NativeProbe warmProbe = source.newProbe()) {
+					NodeDomainSynopsis roots = warmProbe.nodeDomainSynopsis(false);
+					assertThat(roots).as("the explicit object-side snapshot exposes its complete root domain")
+							.isNotNull();
+					rootDomainEntries = roots.cardinality();
+					long observedRoots = 0L;
+					NodeDomainSynopsis.RootCursor rootCursor = roots.cursor();
+					while (rootCursor.next()) {
+						Value value = source.lazyValue(rootCursor.rootId(), 1 << TripleIndex.OBJ_IDX);
+						assertThat(value).as("every physical object root resolves through the same evaluation source")
+								.isNotNull();
+						if (value instanceof Literal literal) {
+							physicalDatatypeTerms.add(literal.getDatatype());
+						}
+						observedRoots++;
+					}
+					assertThat(observedRoots).as("R counts every physical object-domain entry")
+							.isEqualTo(rootDomainEntries);
+
+					DatatypeSummary summary = warmProbe.nodeDomainDatatypeSummary(false, uniform -> {
+					});
+					assertThat(summary).as("the distinct object datatype summary is retained by the compacted source")
+							.isNotNull();
+					DatatypeSummary.GroupCursor groupCursor = summary.cursor();
+					while (groupCursor.next()) {
+						Value representative = source.lazyValue(groupCursor.representativeId(),
+								1 << TripleIndex.OBJ_IDX);
+						assertThat(representative).isInstanceOf(Literal.class);
+						summarizedDatatypeTerms.add(((Literal) representative).getDatatype());
+						summarizedGroups++;
+					}
+				}
+
+				NativeLmdbQuerySource.PredicateProjectionStatistics statistics = source
+						.predicateProjectionStatistics(false, () -> {
+						});
+				assertThat(statistics).as("the same explicit object snapshot exposes exact P/R/Q facts")
+						.isNotNull();
+				assertThat(statistics.quads())
+						.isEqualTo(expected.values().stream().mapToLong(Long::longValue).sum() + 2L);
+				assertThat(statistics.predicates()).isEqualTo(1L);
+				assertThat(statistics.incidences()).isEqualTo(rootDomainEntries);
+				assertThat(statistics.largestRootDomain()).isEqualTo(rootDomainEntries);
+				assertThat(summarizedDatatypeTerms).containsExactlyInAnyOrderElementsOf(physicalDatatypeTerms);
+				assertThat(summarizedGroups)
+						.as("G summary contribution groups can exceed H distinct RDF datatype terms")
+						.isGreaterThan((long) summarizedDatatypeTerms.size());
+				assertThat(summarizedGroups).as("the G summary groups are fewer than the R physical root entries")
+						.isLessThan(rootDomainEntries);
+				CachedDatatypeSummaryReceipt actualReceipt = actualSource.cachedDatatypeSummaryReceipt(false);
+				assertThat(actualReceipt)
+						.as("the real compacted source issues a receipt for its retained object summary")
+						.isNotNull();
+				assertThat(actualReceipt.bySubject()).isFalse();
+				assertThat(actualReceipt.explicit()).isTrue();
+				assertThat(actualReceipt.groups()).isEqualTo(summarizedGroups);
+				assertThat(actualReceipt.workspaceBytes()).isPositive();
+				AtomicInteger cachedSummaryCursorOpens = new AtomicInteger();
+				try (NativeProbe cachedProbe = recordingCachedSummaryProbe(actualSource, cachedSummaryCursorOpens)) {
+					List<CachedDatatypeSummaryReceipt> forgedReceipts = List.of(
+							new CachedDatatypeSummaryReceipt(new Object(), actualReceipt.bySubject(),
+									actualReceipt.explicit(), actualReceipt.groups(), actualReceipt.workspaceBytes()),
+							new CachedDatatypeSummaryReceipt(actualReceipt.baseAuthority(), actualReceipt.bySubject(),
+									actualReceipt.explicit(), actualReceipt.groups() + 1L,
+									actualReceipt.workspaceBytes()),
+							new CachedDatatypeSummaryReceipt(actualReceipt.baseAuthority(), !actualReceipt.bySubject(),
+									actualReceipt.explicit(), actualReceipt.groups(), actualReceipt.workspaceBytes()),
+							new CachedDatatypeSummaryReceipt(actualReceipt.baseAuthority(), actualReceipt.bySubject(),
+									!actualReceipt.explicit(), actualReceipt.groups(), actualReceipt.workspaceBytes()));
+					for (CachedDatatypeSummaryReceipt forged : forgedReceipts) {
+						assertThat(cachedProbe.cachedDatatypeSummary(forged))
+								.as("cached-only lookup refuses a changed authority, G, direction or explicitness")
+								.isNull();
+						assertThat(cachedSummaryCursorOpens)
+								.as("receipt rejection happens before any cached summary cursor is created")
+								.hasValue(0);
+					}
+					DatatypeSummary cachedSummary = cachedProbe.cachedDatatypeSummary(actualReceipt);
+					assertThat(cachedSummary).as("the actual unchanged receipt opens its already-retained summary")
+							.isNotNull();
+					assertThat(cachedSummaryCursorOpens)
+							.as("the cached-only getter returns a summary without traversing its groups")
+							.hasValue(0);
+					long cachedGroups = 0L;
+					DatatypeSummary.GroupCursor cachedCursor = cachedSummary.cursor();
+					while (cachedCursor.next()) {
+						cachedGroups++;
+					}
+					assertThat(cachedGroups).isEqualTo(summarizedGroups);
+					assertThat(cachedSummaryCursorOpens).hasValue(1);
+				}
+
+				LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeDatatypeHistogram histogram = datatypeHistogram(source, dataset, plan);
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long summaryRunsBefore = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+				int synopsisCallsBeforePrepare = rootSynopsisGetterCalls.get();
+				int summaryCursorOpensBeforePrepare = summaryCursorOpens.get();
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).as("the real exact datatype-histogram recipe is prepared").isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(rootSynopsisGetterCalls.get())
+						.as("warm quote preparation does not enumerate the R root synopsis")
+						.isEqualTo(synopsisCallsBeforePrepare);
+				assertThat(summaryCursorOpens.get())
+						.as("warm quote preparation does not enumerate the retained G summary cursor")
+						.isEqualTo(summaryCursorOpensBeforePrepare);
+				assertThat(quote).as("the already-warm datatype summary has a complete physical quote")
+						.isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				assertThat(quote.input().rows())
+						.as("the quote's exact input row count is G summary contribution groups")
+						.isEqualTo((double) summarizedGroups);
+				LmdbNativeCostVector operations = quote.input().operations().plus(quote.extra());
+				assertThat(operations.expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+						.as("the physical contribution quote covers all G summary contribution groups")
+						.isGreaterThanOrEqualTo((double) summarizedGroups);
+				assertThat(operations.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+						.as("the scanned-work ceiling covers all G summary contribution groups")
+						.isGreaterThanOrEqualTo((double) summarizedGroups);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isEqualTo(summaryRunsBefore);
+
+				List<BindingSet> nativeRows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).as("the retained-summary receipt opens its exact producer").isNotNull();
+					while (result.hasNext()) {
+						nativeRows.add(result.next());
+					}
+				}
+				Map<String, Long> actualCounts = new HashMap<>();
+				for (BindingSet bindings : nativeRows) {
+					actualCounts.put(bindings.getValue("datatype").stringValue(),
+							((Literal) bindings.getValue("literals")).longValue());
+				}
+				assertThat(actualCounts).isEqualTo(expected);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isGreaterThan(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isGreaterThan(summaryRunsBefore);
+				assertThat(ledger.usedBytes()).as("closing the result releases the query ledger")
+						.isEqualTo(ledgerBefore);
+
+				String previousNative = System.getProperty(NATIVE_ENGINE_PROPERTY);
+				List<BindingSet> referenceRows;
+				try {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						referenceRows = QueryResults
+								.asList(connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					restoreProperty(NATIVE_ENGINE_PROPERTY, previousNative);
+				}
+				assertThat(nativeRows).as("the complete RDF BindingSet multiset matches ordinary evaluation")
+						.containsExactlyInAnyOrderElementsOf(referenceRows);
+			} finally {
+				evaluation.close();
+			}
+			assertThat(evaluation.isClosed()).as("the evaluation-scoped source closes with its ledger").isTrue();
+		}
+	}
+
+	@Test
+	public void preparedReceiptDeclinesWhenEqualValuedAuthorityIdentityChanges() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			CachedDatatypeSummaryReceipt retained = fixture.state.currentReceipt.get();
+			CachedDatatypeSummaryReceipt replacement = new CachedDatatypeSummaryReceipt(
+					new EqualOpaqueAuthority("retained-object-domain"), retained.bySubject(), retained.explicit(),
+					retained.groups(), retained.workspaceBytes());
+			assertThat(replacement.baseAuthority()).as("the replacement token has equal value but different identity")
+					.isEqualTo(retained.baseAuthority())
+					.isNotSameAs(retained.baseAuthority());
+			assertThat(replacement).as("record equality alone would accept the changed authority")
+					.isEqualTo(retained);
+
+			fixture.state.currentReceipt.set(replacement);
+			assertReceiptDeclinesWithoutPhysicalFallback(fixture,
+					"an equal-valued authority token from another retained base must be rejected by identity");
+		}
+	}
+
+	@Test
+	public void preparedReceiptDeclinesWhenAuthorityDisappearsBeforeOpen() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			fixture.state.currentReceipt.set(null);
+			assertReceiptDeclinesWithoutPhysicalFallback(fixture,
+					"a cached summary receipt that disappears after quote cannot be opened");
+		}
+	}
+
+	@Test
+	public void preparedReceiptDeclinesWhenSameAuthorityMetadataChangesBeforeOpen() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			CachedDatatypeSummaryReceipt retained = fixture.state.currentReceipt.get();
+			List<CachedDatatypeSummaryReceipt> changedReceipts = List.of(
+					new CachedDatatypeSummaryReceipt(retained.baseAuthority(), retained.bySubject(),
+							retained.explicit(),
+							retained.groups() + 1L, retained.workspaceBytes()),
+					new CachedDatatypeSummaryReceipt(retained.baseAuthority(), !retained.bySubject(),
+							retained.explicit(),
+							retained.groups(), retained.workspaceBytes()),
+					new CachedDatatypeSummaryReceipt(retained.baseAuthority(), retained.bySubject(),
+							!retained.explicit(),
+							retained.groups(), retained.workspaceBytes()));
+			for (CachedDatatypeSummaryReceipt changed : changedReceipts) {
+				assertThat(changed.baseAuthority()).isSameAs(retained.baseAuthority());
+				fixture.state.currentReceipt.set(changed);
+				assertReceiptDeclinesWithoutPhysicalFallback(fixture,
+						"same-authority receipt changes to direction, explicitness or physical G must decline");
+			}
+		}
+	}
+
+	@Test
+	public void preparedReceiptDeclinesWhenCachedOnlyGetterReturnsNull() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			fixture.state.cachedSummaryAvailable.set(false);
+			int afterManualCachedOnlyLookup = assertReceiptDeclinesWithoutPhysicalFallback(fixture,
+					"a missing cached-only result cannot trigger a synopsis, page or prefix fallback");
+			assertThat(fixture.state.cachedSummaryGetterCalls.get())
+					.as("prepared.evaluate performs its own cached-only lookup after the manual refusal check")
+					.isGreaterThan(afterManualCachedOnlyLookup);
+		}
+	}
+
+	@Test
+	public void preparedReceiptCanRetryAfterSynopsisPolicyIsRestored() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			String previousSynopsis = System.getProperty(SYNOPSIS_PROPERTY);
+			try {
+				System.setProperty(SYNOPSIS_PROPERTY, "false");
+				assertReceiptDeclinesWithoutPhysicalFallback(fixture,
+						"a prepared receipt cannot outlive the synopsis policy that admitted it");
+				System.setProperty(SYNOPSIS_PROPERTY, "true");
+				long runsBeforeRetry = LmdbNativeDatatypeHistogram.RUNS.get();
+				List<BindingSet> actualRows = new ArrayList<>();
+				try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+					assertThat(result).as("the same prepared recipe is usable after its policy is restored")
+							.isNotNull();
+					while (result.hasNext()) {
+						actualRows.add(result.next());
+					}
+				}
+				assertThat(datatypeCounts(actualRows)).isEqualTo(fixture.expected);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isGreaterThan(runsBeforeRetry);
+				assertThat(fixture.ledger.usedBytes()).as("closing the retained result releases its query ledger")
+						.isEqualTo(fixture.ledgerBeforePrepare);
+
+				String previousNative = System.getProperty(NATIVE_ENGINE_PROPERTY);
+				List<BindingSet> referenceRows;
+				try {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						referenceRows = QueryResults.asList(
+								connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					restoreProperty(NATIVE_ENGINE_PROPERTY, previousNative);
+				}
+				assertThat(actualRows).as("the restored recipe matches the complete ordinary RDF binding bag")
+						.containsExactlyInAnyOrderElementsOf(referenceRows);
+			} finally {
+				restoreProperty(SYNOPSIS_PROPERTY, previousSynopsis);
+			}
+		}
+	}
+
+	@Test
+	public void preparedReceiptReservesWorkspaceBeforeRuntimeRevalidation() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			fixture.state.captureRuntimeReceiptLedger.set(true);
+			List<BindingSet> rows = new ArrayList<>();
+			try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+				assertThat(result).as("the unchanged cached receipt opens its physical summary").isNotNull();
+				while (result.hasNext()) {
+					rows.add(result.next());
+				}
+			}
+			assertThat(fixture.state.runtimeReceiptLookups.get())
+					.as("execution revalidates its source receipt on the bound evaluation")
+					.isPositive();
+			assertThat(fixture.state.runtimeReceiptLedgerBytes.get())
+					.as("the real query ledger reserves the receipt's probe workspace before revalidation")
+					.isGreaterThanOrEqualTo(fixture.preparedReceipt.workspaceBytes());
+			assertThat(datatypeCounts(rows)).isEqualTo(fixture.expected);
+			assertThat(fixture.ledger.usedBytes()).as("result close releases source and reducer workspace")
+					.isEqualTo(fixture.ledgerBeforePrepare);
+		}
+	}
+
+	@Test
+	public void preparedWarmDatatypeSummaryKeepsLegacyUpperUnboundedBesideTypedQuote() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			LmdbNativeWork legacyEstimate = fixture.prepared.estimateWork();
+			assertThat(legacyEstimate.high()).as("datatype resolution may process arbitrary-width RDF terms")
+					.isInfinite();
+			assertThat(legacyEstimate.known()).as("the legacy scalar estimate cannot bound that work")
+					.isFalse();
+
+			LmdbNativeCostVector typedOperations = fixture.quote.input().operations().plus(fixture.quote.extra());
+			assertThat(fixture.quote.input().workEvidence().isComplete())
+					.as("the same prepared GROUP alternative retains a complete physical quote")
+					.isTrue();
+			assertThat(fixture.quote.input().rows()).as("typed quote input is exact physical summary G")
+					.isEqualTo((double) fixture.summarizedGroups);
+			assertThat(Double.isFinite(typedOperations.expected(LmdbNativeCostVector.Feature.INTERPRETED_ROW)))
+					.as("typed physical work keeps a finite expected resolution cost")
+					.isTrue();
+			assertThat(Double.isFinite(typedOperations.high(LmdbNativeCostVector.Feature.SCANNED_ROW)))
+					.as("typed quote retains a finite scanned-row ceiling")
+					.isTrue();
+		}
+	}
+
+	@Test
+	public void preparedCachedSummaryCursorFailureAfterFirstGroupClosesWithoutRetry() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			fixture.state.acceptedSummaryGroups.set(0);
+			fixture.state.summaryCursorFailureAfterGroups.set(1);
+			IllegalStateException cursorFailure = new IllegalStateException("summary cursor failed after one group");
+			fixture.state.summaryCursorFailure.set(cursorFailure);
+			Map<String, Long> metricsBefore = datatypeHistogramMetrics();
+			int probesOpenedBefore = fixture.state.probesOpened.get();
+			int probesClosedBefore = fixture.state.probesClosed.get();
+			int prefixRunsBefore = fixture.state.prefixRunCalls.get();
+			long ledgerBefore = fixture.ledger.usedBytes();
+			RuntimeException observed;
+			try {
+				observed = evaluateExpectingRuntimeFailure(fixture);
+			} finally {
+				fixture.state.summaryCursorFailureAfterGroups.set(-1);
+				fixture.state.summaryCursorFailure.set(null);
+			}
+
+			assertThat(observed).as("the cursor error remains the primary evaluation failure")
+					.isSameAs(cursorFailure);
+			assertThat(fixture.state.acceptedSummaryGroups.get())
+					.as("failure occurs only after one real summary group was accepted")
+					.isEqualTo(1);
+			assertThat(datatypeHistogramMetrics()).as("a partial collection is not published as a histogram run")
+					.isEqualTo(metricsBefore);
+			assertThat(fixture.state.prefixRunCalls.get())
+					.as("a retained-recipe failure never retries through prefix runs")
+					.isEqualTo(prefixRunsBefore);
+			assertThat(fixture.state.probesOpened.get() - probesOpenedBefore)
+					.as("the acquired execution probe is closed after cursor failure")
+					.isEqualTo(fixture.state.probesClosed.get() - probesClosedBefore);
+			assertThat(fixture.ledger.usedBytes()).as("cursor failure releases the source workspace and reducer state")
+					.isEqualTo(ledgerBefore);
+		}
+	}
+
+	@Test
+	public void preparedCachedSummaryRetainsProbeCloseFailureDuringDeadline() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			fixture.state.acceptedSummaryGroups.set(0);
+			fixture.state.summaryCursorFailureAfterGroups.set(1);
+			fixture.state.summaryCursorFailure.set(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			fixture.state.deadlineOnSummaryFailure.set(deadline);
+			IOException closeFailure = new IOException("warm summary probe close after deadline");
+			fixture.state.probeCloseFailure.set(closeFailure);
+			Map<String, Long> metricsBefore = datatypeHistogramMetrics();
+			int probesOpenedBefore = fixture.state.probesOpened.get();
+			int probesClosedBefore = fixture.state.probesClosed.get();
+			int prefixBefore = fixture.state.prefixRunCalls.get();
+			long ledgerBefore = fixture.ledger.usedBytes();
+			Throwable observed;
+			try {
+				try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+					observed = catchThrowable(() -> fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+							fixture.row.cancellation));
+				}
+			} finally {
+				fixture.state.summaryCursorFailureAfterGroups.set(-1);
+				fixture.state.summaryCursorFailure.set(null);
+				fixture.state.deadlineOnSummaryFailure.set(null);
+				fixture.state.probeCloseFailure.set(null);
+			}
+			assertThat(fixture.state.acceptedSummaryGroups).hasValue(1);
+			assertThat(deadline.tripped()).isTrue();
+			assertThat(observed).isInstanceOf(QueryEvaluationException.class).hasCause(closeFailure);
+			assertThat(closeFailure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			assertThat(datatypeHistogramMetrics()).isEqualTo(metricsBefore);
+			assertThat(fixture.state.prefixRunCalls).hasValue(prefixBefore);
+			assertThat(fixture.state.probesOpened.get() - probesOpenedBefore)
+					.isEqualTo(fixture.state.probesClosed.get() - probesClosedBefore);
+			assertThat(fixture.ledger.usedBytes()).isEqualTo(ledgerBefore);
+			List<BindingSet> rows = new ArrayList<>();
+			try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+				assertThat(result).isNotNull();
+				while (result.hasNext()) {
+					rows.add(result.next());
+				}
+			}
+			assertThat(datatypeCounts(rows)).isEqualTo(fixture.expected);
+			assertThat(fixture.ledger.usedBytes()).isEqualTo(ledgerBefore);
+		}
+	}
+
+	@Test
+	public void preparedCachedSummaryObservesDeadlineAtEndOfGroups() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			fixture.state.acceptedSummaryGroups.set(0);
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			fixture.state.deadlineOnSummaryFailure.set(deadline);
+			fixture.state.endSummaryAfterDeadline.set(true);
+			long ledgerBefore = fixture.ledger.usedBytes();
+			long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+			long summaryBefore = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+			int prefixBefore = fixture.state.prefixRunCalls.get();
+			Throwable observed;
+			try {
+				try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+					observed = catchThrowable(() -> {
+						try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+								fixture.row.cancellation)) {
+							// Opening a result is enough to publish the completed private histogram.
+						}
+					});
+				}
+			} finally {
+				fixture.state.deadlineOnSummaryFailure.set(null);
+				fixture.state.endSummaryAfterDeadline.set(false);
+			}
+			assertThat(fixture.state.acceptedSummaryGroups).hasValue(Math.toIntExact(fixture.summarizedGroups));
+			assertThat(deadline.tripped()).isTrue();
+			assertThat(observed).as("an attempt deadline is observed before a summary is published")
+					.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			assertThat(LmdbNativeDatatypeHistogram.RUNS).hasValue(runsBefore);
+			assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS).hasValue(summaryBefore);
+			assertThat(fixture.state.prefixRunCalls).hasValue(prefixBefore);
+			assertThat(fixture.ledger.usedBytes()).isEqualTo(ledgerBefore);
+			List<BindingSet> rows = new ArrayList<>();
+			try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+				assertThat(result).isNotNull();
+				while (result.hasNext()) {
+					rows.add(result.next());
+				}
+			}
+			assertThat(datatypeCounts(rows)).isEqualTo(fixture.expected);
+			assertThat(fixture.ledger.usedBytes()).isEqualTo(ledgerBefore);
+		}
+	}
+
+	@Test
+	public void legacyDatatypeSummaryRetainsProbeCloseFailureDuringDeadline() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.state.currentReceipt.set(null);
+			doAnswer(call -> null).when(fixture.source).coldDatatypeSummaryReceipt(eq(false), any(Runnable.class));
+			doAnswer(call -> null).when(fixture.source).datatypePageWorkspace(eq(false));
+			NativeAggregateAlternative.Prepared legacy = datatypeHistogram(fixture.source, fixture.dataset,
+					unrestrictedObjectPlan(fixture.source)).prepare(fixture.row);
+			assertThat(legacy).isNotNull();
+			assertThat(legacy.quote(fixture.row)).as("the real legacy recipe remains unpriced").isNull();
+			fixture.state.acceptedSummaryGroups.set(0);
+			fixture.state.summaryCursorFailureAfterGroups.set(1);
+			fixture.state.summaryCursorFailure.set(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			fixture.state.deadlineOnSummaryFailure.set(deadline);
+			IOException closeFailure = new IOException("legacy summary probe close after deadline");
+			fixture.state.probeCloseFailure.set(closeFailure);
+			Map<String, Long> metricsBefore = datatypeHistogramMetrics();
+			int gettersBefore = fixture.state.datatypeSummaryGetterCalls.get();
+			int probesBefore = fixture.state.probesOpened.get();
+			int closesBefore = fixture.state.probesClosed.get();
+			int prefixBefore = fixture.state.prefixRunCalls.get();
+			long ledgerBefore = fixture.ledger.usedBytes();
+			Throwable observed;
+			try {
+				try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+					observed = catchThrowable(() -> legacy.evaluate(EmptyBindingSet.getInstance(),
+							fixture.row.cancellation));
+				}
+			} finally {
+				fixture.state.summaryCursorFailureAfterGroups.set(-1);
+				fixture.state.summaryCursorFailure.set(null);
+				fixture.state.deadlineOnSummaryFailure.set(null);
+				fixture.state.probeCloseFailure.set(null);
+			}
+			assertThat(fixture.state.datatypeSummaryGetterCalls.get()).isGreaterThan(gettersBefore);
+			assertThat(fixture.state.acceptedSummaryGroups).hasValue(1);
+			assertThat(deadline.tripped()).isTrue();
+			assertThat(observed).isInstanceOf(QueryEvaluationException.class).hasCause(closeFailure);
+			assertThat(closeFailure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			assertThat(datatypeHistogramMetrics()).isEqualTo(metricsBefore);
+			assertThat(fixture.state.prefixRunCalls).hasValue(prefixBefore);
+			assertThat(fixture.state.probesOpened.get() - probesBefore)
+					.isEqualTo(fixture.state.probesClosed.get() - closesBefore);
+			assertThat(fixture.ledger.usedBytes()).isEqualTo(ledgerBefore);
+			List<BindingSet> rows = new ArrayList<>();
+			try (var result = legacy.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+				assertThat(result).isNotNull();
+				while (result.hasNext()) {
+					rows.add(result.next());
+				}
+			}
+			assertThat(datatypeCounts(rows)).isEqualTo(fixture.expected);
+			assertThat(fixture.ledger.usedBytes()).isEqualTo(ledgerBefore);
+		}
+	}
+
+	@Test
+	public void preparedCachedSummaryProbeCloseFailurePropagatesAfterCollection() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			fixture.state.acceptedSummaryGroups.set(0);
+			IOException closeFailure = new IOException("probe close failed after summary collection");
+			fixture.state.probeCloseFailure.set(closeFailure);
+			Map<String, Long> metricsBefore = datatypeHistogramMetrics();
+			int probesOpenedBefore = fixture.state.probesOpened.get();
+			int probesClosedBefore = fixture.state.probesClosed.get();
+			int prefixRunsBefore = fixture.state.prefixRunCalls.get();
+			long ledgerBefore = fixture.ledger.usedBytes();
+			try {
+				RuntimeException observed = evaluateExpectingRuntimeFailure(fixture);
+
+				assertThat(observed).as("a probe close failure after private collection is observable")
+						.isNotNull();
+				assertThat(observed.getCause()).as("the actual close failure remains the cause")
+						.isSameAs(closeFailure);
+				assertThat(fixture.state.acceptedSummaryGroups.get())
+						.as("the private summary was fully collected before probe close")
+						.isEqualTo((int) fixture.summarizedGroups);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get())
+						.as("failed cleanup prevents a public histogram result")
+						.isEqualTo(metricsBefore.get("runs"));
+				assertThat(fixture.state.prefixRunCalls.get())
+						.as("cleanup failure never triggers a prefix fallback")
+						.isEqualTo(prefixRunsBefore);
+				assertThat(fixture.state.probesOpened.get() - probesOpenedBefore)
+						.as("the failed-close execution probe still receives its close attempt")
+						.isEqualTo(fixture.state.probesClosed.get() - probesClosedBefore);
+				assertThat(fixture.ledger.usedBytes())
+						.as("close failure releases source workspace and private reducer state")
+						.isEqualTo(ledgerBefore);
+			} finally {
+				fixture.state.probeCloseFailure.set(null);
+			}
+		}
+	}
+
+	@Test
+	public void preparedCachedSummaryGetterFailureKeepsPrimaryAndSuppressesCloseFailure() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+			fixture.assertCompleteQuote();
+			IOException getterFailure = new IOException("cached summary getter failed");
+			IOException closeFailure = new IOException("probe close also failed");
+			fixture.state.cachedSummaryFailure.set(getterFailure);
+			fixture.state.probeCloseFailure.set(closeFailure);
+			Map<String, Long> metricsBefore = datatypeHistogramMetrics();
+			int probesOpenedBefore = fixture.state.probesOpened.get();
+			int probesClosedBefore = fixture.state.probesClosed.get();
+			int cursorsOpenedBefore = fixture.state.summaryCursorOpens.get();
+			int prefixRunsBefore = fixture.state.prefixRunCalls.get();
+			long ledgerBefore = fixture.ledger.usedBytes();
+			try {
+				RuntimeException observed = evaluateExpectingRuntimeFailure(fixture);
+
+				assertThat(observed).as("the cached-getter error propagates as an evaluation failure")
+						.isNotNull();
+				assertThat(observed.getCause()).as("the getter IOException remains the primary cause")
+						.isSameAs(getterFailure);
+				assertThat(getterFailure.getSuppressed()).as("probe cleanup failure is retained as suppressed")
+						.containsExactly(closeFailure);
+				assertThat(fixture.state.summaryCursorOpens.get())
+						.as("a failed cached-only getter opens no summary cursor")
+						.isEqualTo(cursorsOpenedBefore);
+				assertThat(datatypeHistogramMetrics()).as("getter failure does not publish producer work")
+						.isEqualTo(metricsBefore);
+				assertThat(fixture.state.prefixRunCalls.get()).as("getter failure never falls back to prefix runs")
+						.isEqualTo(prefixRunsBefore);
+				assertThat(fixture.state.probesOpened.get() - probesOpenedBefore)
+						.as("the probe is closed after getter and cleanup failures")
+						.isEqualTo(fixture.state.probesClosed.get() - probesClosedBefore);
+				assertThat(fixture.ledger.usedBytes()).as("both failures release query-owned reservations")
+						.isEqualTo(ledgerBefore);
+			} finally {
+				fixture.state.cachedSummaryFailure.set(null);
+				fixture.state.probeCloseFailure.set(null);
+			}
+		}
+	}
+
+	@Test
+	public void preparedCachedSummaryBudgetRefusalPrecedesReceiptRevalidationAndProbeOpen() throws Exception {
+		LmdbQueryMemoryManager priorMemory = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbNativeHashJoin.queryMemoryOverride = LmdbQueryMemoryManager.createForTesting(8192L, 8192L);
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "true");
+			try (WarmDatatypeReceiptFixture fixture = prepareWarmDatatypeReceiptFixture()) {
+				fixture.assertCompleteQuote();
+				long ledgerBefore = fixture.ledger.usedBytes();
+				long remainingBytes = fixture.ledger.maxBytes() - ledgerBefore;
+				assertThat(remainingBytes).isGreaterThanOrEqualTo(fixture.preparedReceipt.workspaceBytes());
+				try (LmdbQueryMemoryManager.Reservation pressure = fixture.ledger.reserve(remainingBytes, null)) {
+					assertThat(pressure).as("the control reservation fills this query's actual ledger").isNotNull();
+					long saturatedLedger = fixture.ledger.usedBytes();
+					int runtimeLookupsBefore = fixture.state.runtimeReceiptLookups.get();
+					int probesOpenedBefore = fixture.state.probesOpened.get();
+					int cachedGetterCallsBefore = fixture.state.cachedSummaryGetterCalls.get();
+					int prefixRunsBefore = fixture.state.prefixRunCalls.get();
+					Map<String, Long> metricsBefore = datatypeHistogramMetrics();
+					fixture.state.captureRuntimeReceiptLedger.set(true);
+
+					var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation);
+					if (result != null) {
+						result.close();
+					}
+
+					assertThat(result).as("workspace refusal cleanly declines the exact prepared recipe").isNull();
+					assertThat(fixture.state.runtimeReceiptLookups.get())
+							.as("admission refusal occurs before runtime source receipt revalidation")
+							.isEqualTo(runtimeLookupsBefore);
+					assertThat(fixture.state.probesOpened.get())
+							.as("admission refusal allocates no execution probe")
+							.isEqualTo(probesOpenedBefore);
+					assertThat(fixture.state.cachedSummaryGetterCalls.get())
+							.as("admission refusal performs no cached-summary lookup")
+							.isEqualTo(cachedGetterCallsBefore);
+					assertThat(fixture.state.prefixRunCalls.get())
+							.as("exact receipt refusal never retries through prefix runs")
+							.isEqualTo(prefixRunsBefore);
+					assertThat(datatypeHistogramMetrics()).as("workspace refusal opens no histogram producer")
+							.isEqualTo(metricsBefore);
+					assertThat(fixture.ledger.usedBytes()).as("only the test pressure reservation remains live")
+							.isEqualTo(saturatedLedger);
+				}
+				assertThat(fixture.ledger.usedBytes())
+						.as("releasing budget pressure restores the pre-test query ledger")
+						.isEqualTo(ledgerBefore);
+			}
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = priorMemory;
+		}
+	}
+
+	@Test
+	public void automaticWarmDatatypeSummaryUsesPricedHistogramOnPublicGroup() throws Exception {
+		String previousNative = System.getProperty(NATIVE_ENGINE_PROPERTY);
+		String previousSynopsis = System.getProperty(SYNOPSIS_PROPERTY);
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "true");
+			Map<String, Long> expected = openMixedRepository(2000);
+			LmdbStore actualStore = (LmdbStore) repository.getSail();
+			try (SailDataset warmDataset = NativeQuerySourceAccess.openExplicitDataset(actualStore)) {
+				NativeLmdbQuerySource warmSource = (NativeLmdbQuerySource) warmDataset;
+				assertThat(warmSource.hasCanonicalIds())
+						.as("the public route witness uses the real compacted canonical dictionary")
+						.isTrue();
+				long warmedGroups = 0L;
+				try (NativeProbe warmProbe = warmSource.newProbe()) {
+					DatatypeSummary summary = warmProbe.nodeDomainDatatypeSummary(false, uniform -> {
+					});
+					assertThat(summary).as("the pinned object-side source builds the retained datatype summary")
+							.isNotNull();
+					DatatypeSummary.GroupCursor groups = summary.cursor();
+					while (groups.next()) {
+						warmedGroups++;
+					}
+				}
+				CachedDatatypeSummaryReceipt receipt = warmSource.cachedDatatypeSummaryReceipt(false);
+				assertThat(receipt).as("the same pinned base exposes the warmed source-owned receipt").isNotNull();
+				assertThat(receipt.groups()).as("the receipt retains the exact physical summary group count G")
+						.isEqualTo(warmedGroups);
+
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long summaryRunsBefore = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+				List<LmdbNativeDecisionRecord> groupDecisions = new ArrayList<>();
+				List<String> selected = new ArrayList<>();
+				LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+					if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("datatype"))
+							&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+						groupDecisions.add(record);
+						selected.add(id);
+					}
+				});
+				List<BindingSet> automaticRows;
+				try {
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						automaticRows = QueryResults.asList(
+								connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					LmdbNativeDispatchLoop.observeSelections(null);
+				}
+
+				assertThat(groupDecisions).as("the observer records the successful same-GROUP dispatch").hasSize(1);
+				LmdbNativeDecisionRecord decision = groupDecisions.getFirst();
+				assertThat(decision.point()).isEqualTo(LmdbNativeDecisionPoint.GROUP);
+				assertThat(decision.mode()).as("this witness uses normal automatic selection").isEqualTo("normal");
+				LmdbNativeDecisionRecord.Entry histogram = decision.entries()
+						.stream()
+						.filter(entry -> entry.id().equals("datatypeHistogram"))
+						.findFirst()
+						.orElseThrow();
+				assertThat(histogram.admitted())
+						.as("the unforced datatype histogram is admitted: %s", decision.describe("GROUP"))
+						.isTrue();
+				assertThat(histogram.priceable())
+						.as("the same GROUP decision has a complete, comparable histogram quote: %s",
+								decision.describe("GROUP"))
+						.isTrue();
+				assertThat(histogram.missingPhysicalWork()).as("the typed physical quote has no missing proof")
+						.isNull();
+				assertThat(histogram.features()).as("the priced decision retains its physical feature vector")
+						.isNotNull();
+				assertThat(histogram.features().expected(LmdbNativeCostVector.Feature.DECODED_ROW))
+						.as("the same decision prices the exact G summary contribution input")
+						.isEqualTo((double) receipt.groups());
+				assertThat(decision.winnerId()).as("the winner recorded on the same GROUP decision")
+						.isEqualTo("datatypeHistogram");
+				assertThat(selected).as("the actual successful, unforced GROUP route: %s", decision.describe("GROUP"))
+						.containsExactly("datatypeHistogram");
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isGreaterThan(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isGreaterThan(summaryRunsBefore);
+				assertThat(automaticRows).as("the public query returns a nonempty complete RDF binding bag")
+						.isNotEmpty();
+				assertThat(datatypeCounts(automaticRows)).as("the public result matches the exact fixture counts")
+						.isEqualTo(expected);
+
+				List<BindingSet> ordinaryRows;
+				try {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						ordinaryRows = QueryResults.asList(
+								connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					restoreProperty(NATIVE_ENGINE_PROPERTY, "true");
+				}
+				assertThat(ordinaryRows).as("the native-disabled reference is also a complete nonempty bag")
+						.isNotEmpty();
+				assertThat(automaticRows).as("the actual automatic result matches every ordinary RDF binding")
+						.containsExactlyInAnyOrderElementsOf(ordinaryRows);
+			}
+		} finally {
+			LmdbNativeDispatchLoop.observeSelections(null);
+			restoreProperty(NATIVE_ENGINE_PROPERTY, previousNative);
+			restoreProperty(SYNOPSIS_PROPERTY, previousSynopsis);
+		}
+	}
+
+	@Test
+	public void automaticLargeWarmDatatypeSummaryDoesNotAddGenericGroupSort() throws Exception {
+		String previousNative = System.getProperty(NATIVE_ENGINE_PROPERTY);
+		String previousSynopsis = System.getProperty(SYNOPSIS_PROPERTY);
+		String previousCountStoreBytes = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "true");
+			System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "4096");
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+					.setDirectAdjacencyEnabled(true)
+					.setBulkOperationSize(0)
+					.setInlineLiterals(false);
+			config.setExperimentalQueryOptimizations(true);
+			store = new LmdbStore(dataDir, config);
+			repository = new SailRepository(store);
+			Map<String, Long> expected = new HashMap<>();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				ValueFactory valueFactory = connection.getValueFactory();
+				IRI predicate = valueFactory.createIRI(EX, "custom-datatype-sort");
+				for (int index = 0; index < 300; index++) {
+					IRI datatype = valueFactory.createIRI("urn:rdf4j:sort-bound:datatype:" + index);
+					Literal literal = valueFactory.createLiteral("custom literal " + index, datatype);
+					connection.add(valueFactory.createIRI(EX, "custom-datatype-subject:" + index), predicate,
+							literal);
+					expected.put(datatype.stringValue(), 1L);
+				}
+			}
+			assertThat(expected.size()).isGreaterThanOrEqualTo(300);
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+					.as("the distinct custom datatypes are compacted into a canonical adjacency base")
+					.isTrue();
+
+			try (SailDataset warmDataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) warmDataset;
+				assertThat(actualSource.hasCanonicalIds()).isTrue();
+				long warmedGroups = 0L;
+				try (NativeProbe probe = actualSource.newProbe()) {
+					DatatypeSummary summary = probe.nodeDomainDatatypeSummary(false, uniform -> {
+					});
+					assertThat(summary).as("the compacted object plane supplies the warmed physical summary")
+							.isNotNull();
+					DatatypeSummary.GroupCursor groups = summary.cursor();
+					while (groups.next()) {
+						warmedGroups++;
+					}
+				}
+				CachedDatatypeSummaryReceipt receipt = actualSource.cachedDatatypeSummaryReceipt(false);
+				assertThat(receipt).as("the warmed store supplies a source-owned physical receipt").isNotNull();
+				assertThat(receipt.groups()).isEqualTo(warmedGroups);
+				assertThat(warmedGroups).as("the fixture includes at least 300 physical datatype groups G")
+						.isGreaterThanOrEqualTo(300L);
+
+				SyntheticValueSource source = SyntheticValueSource.forEvaluation(actualSource);
+				NativeExecutionContext evaluation = source.executionContext();
+				double producerSortWork;
+				try {
+					LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+					RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+					LmdbNativeDatatypeHistogram producer = datatypeHistogram(source, warmDataset, plan);
+					long runsBeforeQuote = LmdbNativeDatatypeHistogram.RUNS.get();
+					NativeAggregateAlternative.Prepared prepared = producer.prepare(row);
+					assertThat(prepared).as("the directly prepared cached datatype producer exists").isNotNull();
+					NativeAggregatePhysicalPlan.Work producerQuote = prepared.quote(row);
+					assertThat(producerQuote).as("the producer carries a complete typed quote").isNotNull();
+					assertThat(producerQuote.input().workEvidence().isComplete()).isTrue();
+					assertThat(producerQuote.input().rows()).isEqualTo((double) receipt.groups());
+					producerSortWork = producerQuote.extra()
+							.expected(LmdbNativeCostVector.Feature.SORT_N_LOG2_N);
+					assertThat(producerSortWork)
+							.as("the cached count producer quotes its two external-sort pipelines")
+							.isPositive();
+					assertThat(LmdbNativeDatatypeHistogram.RUNS.get())
+							.as("preparing and quoting does not run the producer")
+							.isEqualTo(runsBeforeQuote);
+				} finally {
+					evaluation.close();
+				}
+
+				long runsBeforeAuto = LmdbNativeDatatypeHistogram.RUNS.get();
+				long summaryRunsBeforeAuto = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+				List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
+				List<String> selected = new ArrayList<>();
+				LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+					if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("datatype"))
+							&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+						decisions.add(record);
+						selected.add(id);
+					}
+				});
+				List<BindingSet> automaticRows;
+				try {
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						automaticRows = QueryResults.asList(
+								connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					LmdbNativeDispatchLoop.observeSelections(null);
+				}
+
+				assertThat(decisions).as("the observer captures the successful same-GROUP dispatch").hasSize(1);
+				LmdbNativeDecisionRecord decision = decisions.getFirst();
+				assertThat(decision.mode()).as("this witness uses normal automatic selection").isEqualTo("normal");
+				LmdbNativeDecisionRecord.Entry histogram = decision.entries()
+						.stream()
+						.filter(entry -> entry.id().equals("datatypeHistogram"))
+						.findFirst()
+						.orElseThrow();
+				assertThat(histogram.admitted()).as("the warm summary candidate is admitted on this GROUP")
+						.isTrue();
+				assertThat(histogram.priceable())
+						.as("the exact GROUP decision has a complete comparable quote: %s", decision.describe("GROUP"))
+						.isTrue();
+				assertThat(histogram.missingPhysicalWork()).isNull();
+				assertThat(histogram.features()).isNotNull();
+				assertThat(histogram.features().expected(LmdbNativeCostVector.Feature.SORT_N_LOG2_N))
+						.as("the GROUP candidate must charge only the two cached producer sort pipelines: %s",
+								decision.describe("GROUP"))
+						.isEqualTo(producerSortWork);
+				assertThat(selected).as("the actual successful unforced GROUP route: %s", decision.describe("GROUP"))
+						.containsExactly(decision.winnerId());
+				if (decision.winnerId().equals("datatypeHistogram")) {
+					assertThat(LmdbNativeDatatypeHistogram.RUNS.get())
+							.as("selecting the histogram executes its producer")
+							.isGreaterThan(runsBeforeAuto);
+					assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+							.as("selecting the histogram consumes its retained summary")
+							.isGreaterThan(summaryRunsBeforeAuto);
+				} else {
+					assertThat(LmdbNativeDatatypeHistogram.RUNS.get())
+							.as("a different actual winner does not execute the histogram producer")
+							.isEqualTo(runsBeforeAuto);
+					assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+							.as("a different actual winner does not consume the retained summary")
+							.isEqualTo(summaryRunsBeforeAuto);
+				}
+				assertThat(automaticRows).as("the public datatype query produces nonempty literal groups").isNotEmpty();
+				assertThat(datatypeCounts(automaticRows)).isEqualTo(expected);
+
+				List<BindingSet> ordinaryRows;
+				try {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						ordinaryRows = QueryResults.asList(
+								connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					restoreProperty(NATIVE_ENGINE_PROPERTY, "true");
+				}
+				assertThat(ordinaryRows).isNotEmpty();
+				assertThat(automaticRows).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+				System.out.println("DATATYPE_SORT_BOUND groups=" + receipt.groups()
+						+ " producerSort=" + producerSortWork
+						+ " groupSort=" + histogram.features().expected(LmdbNativeCostVector.Feature.SORT_N_LOG2_N)
+						+ " winner=" + decision.winnerId()
+						+ " rows=" + automaticRows.size()
+						+ " bagParity=PASS");
+			}
+		} finally {
+			LmdbNativeDispatchLoop.observeSelections(null);
+			restoreProperty(NATIVE_ENGINE_PROPERTY, previousNative);
+			restoreProperty(SYNOPSIS_PROPERTY, previousSynopsis);
+			restoreProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousCountStoreBytes);
+		}
+	}
+
+	@Test
+	public void coldDatatypeSummaryQuotesBeforeBuildingAndRetainsFullBag() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		Map<String, Long> expected = openMixedRepository(2000);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			AtomicInteger rootGetters = new AtomicInteger();
+			AtomicInteger summaryGetters = new AtomicInteger();
+			AtomicInteger summaryCursors = new AtomicInteger();
+			SyntheticValueSource source = recordingProbeSource(actualSource, rootGetters, summaryGetters,
+					summaryCursors);
+			NativeExecutionContext evaluation = source.executionContext();
+			try {
+				var statistics = source.predicateProjectionStatistics(false, () -> {
+				});
+				assertThat(statistics).isNotNull();
+				assertThat(statistics.incidences()).isPositive();
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false)).isNull();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long summariesBefore = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+				NativeAggregateAlternative.Prepared prepared = datatypeHistogram(source, dataset,
+						unrestrictedObjectPlan(source)).prepare(row);
+				assertThat(prepared).isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(rootGetters).as("preparation never builds the cold root synopsis").hasValue(0);
+				assertThat(summaryGetters).as("preparation never builds the cold datatype summary").hasValue(0);
+				assertThat(summaryCursors).as("preparation never enumerates summary groups").hasValue(0);
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false))
+						.as("preparation leaves the physical summary cold")
+						.isNull();
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				assertThat(quote).as("the owned cold summary has a complete physical work receipt").isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				assertThat(
+						quote.input().operations().plus(quote.extra()).high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+								.as("the ceiling includes both physical root merge passes")
+								.isGreaterThanOrEqualTo(2D * statistics.incidences());
+
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).as("the unchanged cold receipt opens its exact summary producer").isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(rows).isNotEmpty();
+				assertThat(datatypeCounts(rows)).isEqualTo(expected);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isGreaterThan(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isGreaterThan(summariesBefore);
+				assertThat(ledger.usedBytes()).as("closing the cold result releases query memory")
+						.isEqualTo(ledgerBefore);
+
+				List<BindingSet> ordinaryRows;
+				try {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						ordinaryRows = QueryResults.asList(connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+				}
+				assertThat(rows).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+			} finally {
+				evaluation.close();
+			}
+		}
+	}
+
+	@Test
+	public void coldDatatypeSummaryDoesNotWaitForLegacyBuilderAndCanRetry() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		Map<String, Long> expected = openOrdinaryReferencedRepository(256, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+				SailDataset legacyDataset = NativeQuerySourceAccess.openExplicitDataset(store);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource legacySource = (NativeLmdbQuerySource) legacyDataset;
+			AtomicInteger rootGetters = new AtomicInteger();
+			AtomicInteger summaryGetters = new AtomicInteger();
+			AtomicInteger summaryCursors = new AtomicInteger();
+			SyntheticValueSource source = recordingProbeSource(actualSource, rootGetters, summaryGetters,
+					summaryCursors);
+			NativeExecutionContext evaluation = source.executionContext();
+			CountDownLatch builderEntered = new CountDownLatch(1);
+			CountDownLatch releaseBuilder = new CountDownLatch(1);
+			Future<Boolean> builder = executor.submit(() -> {
+				try (NativeProbe probe = legacySource.newProbe()) {
+					return probe.nodeDomainDatatypeSummary(false, uniform -> {
+						builderEntered.countDown();
+						try {
+							releaseBuilder.await();
+						} catch (InterruptedException failure) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError("legacy builder was interrupted", failure);
+						}
+					}) != null;
+				}
+			});
+			try {
+				assertThat(builderEntered.await(10, TimeUnit.SECONDS))
+						.as("the real legacy builder reaches ordinary literal header work")
+						.isTrue();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long summariesBefore = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false)).isNull();
+				LmdbNativeDatatypeHistogram histogram = datatypeHistogram(source, dataset,
+						unrestrictedObjectPlan(source));
+				Future<NativeAggregateAlternative.Prepared> preparation = executor.submit(() -> histogram.prepare(row));
+				NativeAggregateAlternative.Prepared prepared = preparation.get(10, TimeUnit.SECONDS);
+				assertThat(prepared).isNotNull();
+				assertThat(prepared.quote(row))
+						.as("the cold receipt is available without waiting for the legacy builder")
+						.isNotNull();
+				assertThat(rootGetters).hasValue(0);
+				assertThat(summaryGetters).hasValue(0);
+				assertThat(summaryCursors).hasValue(0);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				Future<Boolean> refusal = executor.submit(() -> {
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						return result == null;
+					}
+				});
+				assertThat(refusal.get(10, TimeUnit.SECONDS))
+						.as("an owned opener immediately declines the busy legacy builder")
+						.isTrue();
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isEqualTo(summariesBefore);
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false)).isNull();
+				assertThat(ledger.usedBytes()).as("busy refusal releases the query workspace").isEqualTo(ledgerBefore);
+				releaseBuilder.countDown();
+				assertThat(builder.get(10, TimeUnit.SECONDS)).isTrue();
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false))
+						.as("both dataset leases see the same completed base summary")
+						.isNotNull();
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).as("the same receipt may retry after transient contention").isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(rows).isNotEmpty();
+				assertThat(datatypeCounts(rows)).isEqualTo(expected);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				List<BindingSet> ordinaryRows;
+				try {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						ordinaryRows = QueryResults.asList(connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+				}
+				assertThat(rows).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+			} finally {
+				releaseBuilder.countDown();
+				try {
+					assertThat(builder.get(10, TimeUnit.SECONDS)).isTrue();
+					assertThat(actualSource.cachedDatatypeSummaryReceipt(false))
+							.as("both source leases pin the same base even in the pre-fix red")
+							.isNotNull();
+				} finally {
+					evaluation.close();
+				}
+			}
+		}
+	}
+
+	@Test
+	public void coldDatatypeBuilderObservesActiveAttemptDeadline() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		Map<String, Long> expected = openOrdinaryReferencedRepository(256, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+			NativeExecutionContext evaluation = source.executionContext();
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			AtomicBoolean armed = new AtomicBoolean(true);
+			AtomicInteger physicalPolls = new AtomicInteger();
+			doAnswer(sourceCall -> {
+				NativeProbe realProbe = (NativeProbe) sourceCall.callRealMethod();
+				NativeProbe observedProbe = spy(realProbe);
+				doAnswer(probeCall -> {
+					ColdDatatypeSummaryReceipt receipt = probeCall.getArgument(0);
+					Runnable actualPoll = probeCall.getArgument(1);
+					NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer = probeCall.getArgument(2);
+					return realProbe.coldDatatypeSummary(receipt, () -> {
+						if (armed.get() && physicalPolls.incrementAndGet() == 128) {
+							deadline.trip();
+							actualPoll.run();
+							throw new AssertionError("the active attempt deadline was not observed in the builder");
+						}
+						actualPoll.run();
+					}, observer);
+				}).when(observedProbe).coldDatatypeSummary(any(), any(), any());
+				return observedProbe;
+			}).when(source).newProbe();
+			try {
+				ColdDatatypeSummaryReceipt receipt = source.coldDatatypeSummaryReceipt(false, () -> {
+				});
+				assertThat(receipt).isNotNull();
+				assertThat(receipt.predicates()).isEqualTo(1);
+				assertThat(receipt.roots()).isEqualTo(256L);
+				assertThat(7L + 3L * receipt.predicates() + receipt.pages())
+						.as("the trip threshold exceeds all receipt and root-merge setup polls")
+						.isLessThan(128L);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				NativeAggregateAlternative.Prepared prepared = datatypeHistogram(source, dataset,
+						unrestrictedObjectPlan(source)).prepare(row);
+				assertThat(prepared.quote(row)).isNotNull();
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+					assertThatThrownBy(() -> {
+						try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							if (result != null) {
+								while (result.hasNext()) {
+									result.next();
+								}
+							}
+						}
+					}).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				}
+				assertThat(physicalPolls).hasValue(128);
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false))
+						.as("a deadline during construction cannot publish a partial summary")
+						.isNull();
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(ledger.usedBytes()).as("deadline cleanup releases the cold workspace")
+						.isEqualTo(ledgerBefore);
+				armed.set(false);
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).as("a later attempt may retry after the transient deadline").isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(datatypeCounts(rows)).isEqualTo(expected);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				evaluation.close();
+			}
+		}
+	}
+
+	@Test
+	public void coldDatatypeDeadlinePreservesProbeCloseFailure() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		Map<String, Long> expected = openOrdinaryReferencedRepository(256, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+			NativeExecutionContext evaluation = source.executionContext();
+			AtomicBoolean inject = new AtomicBoolean(true);
+			AtomicInteger physicalPolls = new AtomicInteger();
+			IOException closeFailure = new IOException("injected cold probe close failure");
+			doAnswer(sourceCall -> {
+				NativeProbe realProbe = (NativeProbe) sourceCall.callRealMethod();
+				NativeProbe observedProbe = spy(realProbe);
+				doAnswer(probeCall -> {
+					ColdDatatypeSummaryReceipt receipt = probeCall.getArgument(0);
+					Runnable actualPoll = probeCall.getArgument(1);
+					NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer = probeCall.getArgument(2);
+					return realProbe.coldDatatypeSummary(receipt, () -> {
+						if (inject.get() && physicalPolls.incrementAndGet() == 128) {
+							throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+						}
+						actualPoll.run();
+					}, observer);
+				}).when(observedProbe).coldDatatypeSummary(any(), any(), any());
+				doAnswer(closeCall -> {
+					realProbe.close();
+					if (inject.get()) {
+						throw closeFailure;
+					}
+					return null;
+				}).when(observedProbe).close();
+				return observedProbe;
+			}).when(source).newProbe();
+			try {
+				ColdDatatypeSummaryReceipt receipt = source.coldDatatypeSummaryReceipt(false, () -> {
+				});
+				assertThat(receipt).isNotNull();
+				assertThat(receipt.predicates()).isEqualTo(1);
+				assertThat(7L + 3L * receipt.predicates() + receipt.pages()).isLessThan(128L);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				NativeAggregateAlternative.Prepared prepared = datatypeHistogram(source, dataset,
+						unrestrictedObjectPlan(source)).prepare(row);
+				assertThat(prepared.quote(row)).isNotNull();
+				Throwable failure = catchThrowable(() -> {
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						if (result != null) {
+							while (result.hasNext()) {
+								result.next();
+							}
+						}
+					}
+				});
+				assertThat(physicalPolls).hasValue(128);
+				assertThat(failure).as("the real close error must not be lost behind the deadline singleton")
+						.isInstanceOf(QueryEvaluationException.class);
+				assertThat(failure.getCause()).isSameAs(closeFailure);
+				assertThat(closeFailure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false)).isNull();
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				inject.set(false);
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(datatypeCounts(rows)).isEqualTo(expected);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				evaluation.close();
+			}
+		}
+	}
+
+	@Test
+	public void coldDatatypeBudgetAndPolicyRefusalPrecedeBuildAndCanRetry() throws Exception {
+		LmdbQueryMemoryManager priorMemory = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbNativeHashJoin.queryMemoryOverride = LmdbQueryMemoryManager.createForTesting(2L << 20, 2L << 20);
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "true");
+			System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+			Map<String, Long> expected = openOrdinaryReferencedRepository(256, false);
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+				SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+				NativeExecutionContext evaluation = source.executionContext();
+				AtomicInteger probes = new AtomicInteger();
+				AtomicLong ledgerAtProbe = new AtomicLong();
+				AtomicReference<LmdbQueryMemoryManager.QueryLedger> ledgerRef = new AtomicReference<>();
+				doAnswer(call -> {
+					probes.incrementAndGet();
+					ledgerAtProbe.set(ledgerRef.get().usedBytes());
+					return call.callRealMethod();
+				}).when(source).newProbe();
+				try {
+					ColdDatatypeSummaryReceipt receipt = source.coldDatatypeSummaryReceipt(false, () -> {
+					});
+					assertThat(receipt).isNotNull();
+					RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+					var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+					ledgerRef.set(ledger);
+					long ledgerBefore = ledger.usedBytes();
+					long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+					NativeAggregateAlternative.Prepared prepared = datatypeHistogram(source, dataset,
+							unrestrictedObjectPlan(source)).prepare(row);
+					assertThat(prepared.quote(row)).isNotNull();
+					assertThat(probes).as("cold preparation opens no probe").hasValue(0);
+					for (String property : List.of(SYNOPSIS_PROPERTY, SCAN_AGGREGATES_PROPERTY)) {
+						System.setProperty(property, "false");
+						try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							assertThat(result).as("changed source policy refuses the frozen cold recipe").isNull();
+						} finally {
+							System.setProperty(property, "true");
+						}
+						assertThat(actualSource.cachedDatatypeSummaryReceipt(false)).isNull();
+						assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+					}
+					int probesBeforePressure = probes.get();
+					long remaining = ledger.maxBytes() - ledger.usedBytes();
+					assertThat(remaining).isGreaterThanOrEqualTo(receipt.workspaceBytes());
+					try (LmdbQueryMemoryManager.Reservation pressure = ledger.reserve(remaining, null)) {
+						assertThat(pressure).isNotNull();
+						long saturated = ledger.usedBytes();
+						try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							assertThat(result).as("query budget refusal declines before the source probe").isNull();
+						}
+						assertThat(probes).hasValue(probesBeforePressure);
+						assertThat(ledger.usedBytes()).isEqualTo(saturated);
+					}
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+					assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+					assertThat(actualSource.cachedDatatypeSummaryReceipt(false)).isNull();
+					List<BindingSet> rows = new ArrayList<>();
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						assertThat(result).as("the same receipt retries after policy and budget recovery").isNotNull();
+						while (result.hasNext()) {
+							rows.add(result.next());
+						}
+					}
+					assertThat(ledgerAtProbe.get()).as("the builder workspace is reserved before opening a probe")
+							.isGreaterThanOrEqualTo(ledgerBefore + receipt.workspaceBytes());
+					assertThat(datatypeCounts(rows)).isEqualTo(expected);
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+					List<BindingSet> ordinaryRows;
+					try {
+						System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+						try (SailRepositoryConnection connection = repository.getConnection()) {
+							ordinaryRows = QueryResults
+									.asList(connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+						}
+					} finally {
+						System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+					}
+					assertThat(rows).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+				} finally {
+					evaluation.close();
+				}
+			}
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = priorMemory;
+		}
+	}
+
+	@Test
+	public void coldDatatypeRawGetterRejectsForgedReceiptBeforeBuilding() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		openOrdinaryReferencedRepository(256, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(actualSource);
+			NativeExecutionContext evaluation = source.executionContext();
+			try {
+				ColdDatatypeSummaryReceipt receipt = actualSource.coldDatatypeSummaryReceipt(false, () -> {
+				});
+				assertThat(receipt).isNotNull();
+				assertThat(receipt.roots()).isEqualTo(256L);
+				assertThat(receipt.pages()).isPositive().isLessThan(receipt.quads());
+				List<ColdDatatypeSummaryReceipt> forged = List.of(
+						new ColdDatatypeSummaryReceipt(new Object(), receipt.planeAuthority(), receipt.bySubject(),
+								receipt.explicit(), receipt.predicates(), receipt.roots(), receipt.quads(),
+								receipt.pages(),
+								receipt.workspaceBytes()),
+						new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), new Object(), receipt.bySubject(),
+								receipt.explicit(), receipt.predicates(), receipt.roots(), receipt.quads(),
+								receipt.pages(),
+								receipt.workspaceBytes()),
+						new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), receipt.planeAuthority(),
+								!receipt.bySubject(),
+								receipt.explicit(), receipt.predicates(), receipt.roots(), receipt.quads(),
+								receipt.pages(),
+								receipt.workspaceBytes()),
+						new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), receipt.planeAuthority(),
+								receipt.bySubject(),
+								!receipt.explicit(), receipt.predicates(), receipt.roots(), receipt.quads(),
+								receipt.pages(),
+								receipt.workspaceBytes()),
+						new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), receipt.planeAuthority(),
+								receipt.bySubject(),
+								receipt.explicit(), receipt.predicates() + 1, receipt.roots(), receipt.quads(),
+								receipt.pages(),
+								receipt.workspaceBytes()),
+						new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), receipt.planeAuthority(),
+								receipt.bySubject(),
+								receipt.explicit(), receipt.predicates(), receipt.roots() - 1L, receipt.quads(),
+								receipt.pages(),
+								receipt.workspaceBytes()),
+						new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), receipt.planeAuthority(),
+								receipt.bySubject(),
+								receipt.explicit(), receipt.predicates(), receipt.roots(), receipt.quads() + 1L,
+								receipt.pages(),
+								receipt.workspaceBytes()),
+						new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), receipt.planeAuthority(),
+								receipt.bySubject(),
+								receipt.explicit(), receipt.predicates(), receipt.roots(), receipt.quads(),
+								receipt.pages() + 1L,
+								receipt.workspaceBytes()),
+						new ColdDatatypeSummaryReceipt(receipt.viewAuthority(), receipt.planeAuthority(),
+								receipt.bySubject(),
+								receipt.explicit(), receipt.predicates(), receipt.roots(), receipt.quads(),
+								receipt.pages(),
+								receipt.workspaceBytes() - 1L));
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				AtomicInteger headerBatches = new AtomicInteger();
+				try (LmdbQueryMemoryManager.Reservation workspace = ledger.reserve(receipt.workspaceBytes(), null);
+						NativeProbe probe = actualSource.newProbe()) {
+					assertThat(workspace).isNotNull();
+					for (ColdDatatypeSummaryReceipt invalid : forged) {
+						assertThat(probe.coldDatatypeSummary(invalid, () -> {
+						}, uniform -> headerBatches.incrementAndGet()))
+								.as("changed view, plane, flags, P/R/Q/B or workspace must refuse")
+								.isNull();
+						assertThat(actualSource.cachedDatatypeSummaryReceipt(false)).isNull();
+						assertThat(headerBatches).hasValue(0);
+					}
+					DatatypeSummary summary = probe.coldDatatypeSummary(receipt, () -> {
+					}, uniform -> headerBatches.incrementAndGet());
+					assertThat(summary).as("the unchanged receipt builds the real source summary").isNotNull();
+					DatatypeSummary.GroupCursor groups = summary.cursor();
+					int count = 0;
+					while (groups.next()) {
+						count++;
+					}
+					assertThat(count).isEqualTo(2);
+					assertThat(headerBatches.get()).isPositive();
+				}
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				evaluation.close();
+			}
+		}
+	}
+
+	@Test
+	public void coldCoreSynopsisCancellationAfterAllocationReleasesAndRetries() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		Map<String, Long> expected = openMixedRepository(2000);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+			NativeExecutionContext evaluation = source.executionContext();
+			AtomicBoolean armed = new AtomicBoolean(true);
+			AtomicReference<NativeCancellationToken> owner = new AtomicReference<>();
+			AtomicLong routingBytes = new AtomicLong(-1L);
+			AtomicLong privateBytes = new AtomicLong();
+			AtomicInteger privatePolls = new AtomicInteger();
+			doAnswer(sourceCall -> {
+				NativeProbe realProbe = (NativeProbe) sourceCall.callRealMethod();
+				NativeProbe observedProbe = spy(realProbe);
+				doAnswer(probeCall -> {
+					ColdDatatypeSummaryReceipt receipt = probeCall.getArgument(0);
+					Runnable actualPoll = probeCall.getArgument(1);
+					NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer = probeCall.getArgument(2);
+					return realProbe.coldDatatypeSummary(receipt, () -> {
+						long bytes = AdjacencyEngagementTestAccess.nodeDomainSynopsisBytes(store);
+						if (armed.get() && bytes > 0L) {
+							routingBytes.compareAndSet(-1L, bytes);
+							if (bytes > routingBytes.get() && privatePolls.incrementAndGet() == 2) {
+								privateBytes.set(bytes);
+								owner.get().requestCancellation();
+							}
+						}
+						actualPoll.run();
+					}, observer);
+				}).when(observedProbe).coldDatatypeSummary(any(), any(), any());
+				return observedProbe;
+			}).when(source).newProbe();
+			try {
+				assertThat(AdjacencyEngagementTestAccess.nodeDomainSynopsisBytes(store))
+						.as("the core-literal fixture starts without a retained root synopsis")
+						.isZero();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				owner.set(row.cancellation);
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long headersBefore = LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get();
+				LmdbNativeDatatypeHistogram histogram = datatypeHistogram(source, dataset,
+						unrestrictedObjectPlan(source));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared.quote(row)).isNotNull();
+				Throwable failure = catchThrowable(() -> {
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						if (result != null) {
+							while (result.hasNext()) {
+								result.next();
+							}
+						}
+					}
+				});
+				assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
+				assertThat(row.cancellation.owns((KernelQueryCancelledException) failure)).isTrue();
+				assertThat(privatePolls).hasValue(2);
+				assertThat(privateBytes.get()).as("cancellation occurs after private root allocation")
+						.isGreaterThan(routingBytes.get());
+				assertThat(AdjacencyEngagementTestAccess.nodeDomainSynopsisBytes(store))
+						.as("the private root charge is released while its routing array remains")
+						.isEqualTo(routingBytes.get());
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false)).isNull();
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+
+				armed.set(false);
+				RowState retryRow = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				NativeAggregateAlternative.Prepared retry = histogram.prepare(retryRow);
+				assertThat(retry.quote(retryRow)).isNotNull();
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = retry.evaluate(EmptyBindingSet.getInstance(), retryRow.cancellation)) {
+					assertThat(result).as("a new evaluation attempt can build after transient cancellation")
+							.isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(datatypeCounts(rows)).isEqualTo(expected);
+				assertThat(LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get())
+						.as("this retry uses core datatype tags, without legacy literal-header batches")
+						.isEqualTo(headersBefore);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				evaluation.close();
+			}
+		}
+	}
+
+	@Test
+	public void coldDatatypeProbeCloseFailureAfterCollectionReleasesPrivateResult() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		Map<String, Long> expected = openOrdinaryReferencedRepository(256, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+			NativeExecutionContext evaluation = source.executionContext();
+			AtomicBoolean inject = new AtomicBoolean(true);
+			AtomicInteger collectedGroups = new AtomicInteger();
+			IOException closeFailure = new IOException("injected probe close after cold collection");
+			doAnswer(sourceCall -> {
+				NativeProbe realProbe = (NativeProbe) sourceCall.callRealMethod();
+				NativeProbe observedProbe = spy(realProbe);
+				doAnswer(probeCall -> {
+					ColdDatatypeSummaryReceipt receipt = probeCall.getArgument(0);
+					Runnable poll = probeCall.getArgument(1);
+					NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer = probeCall.getArgument(2);
+					DatatypeSummary summary = realProbe.coldDatatypeSummary(receipt, poll, observer);
+					if (summary == null) {
+						return null;
+					}
+					DatatypeSummary observedSummary = spy(summary);
+					doAnswer(cursorCall -> {
+						DatatypeSummary.GroupCursor realCursor = (DatatypeSummary.GroupCursor) cursorCall
+								.callRealMethod();
+						DatatypeSummary.GroupCursor observedCursor = spy(realCursor);
+						doAnswer(nextCall -> {
+							boolean hasNext = (boolean) nextCall.callRealMethod();
+							if (hasNext) {
+								collectedGroups.incrementAndGet();
+							}
+							return hasNext;
+						}).when(observedCursor).next();
+						return observedCursor;
+					}).when(observedSummary).cursor();
+					return observedSummary;
+				}).when(observedProbe).coldDatatypeSummary(any(), any(), any());
+				doAnswer(closeCall -> {
+					realProbe.close();
+					if (inject.get()) {
+						throw closeFailure;
+					}
+					return null;
+				}).when(observedProbe).close();
+				return observedProbe;
+			}).when(source).newProbe();
+			try {
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				NativeAggregateAlternative.Prepared prepared = datatypeHistogram(source, dataset,
+						unrestrictedObjectPlan(source)).prepare(row);
+				assertThat(prepared.quote(row)).isNotNull();
+				Throwable failure = catchThrowable(() -> {
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						if (result != null) {
+							while (result.hasNext()) {
+								result.next();
+							}
+						}
+					}
+				});
+				assertThat(failure).isInstanceOf(QueryEvaluationException.class);
+				assertThat(failure.getCause()).isSameAs(closeFailure);
+				assertThat(collectedGroups).as("the real summary was collected before probe close").hasValue(2);
+				assertThat(actualSource.cachedDatatypeSummaryReceipt(false))
+						.as("the completed source cache remains valid after private-result cleanup")
+						.isNotNull();
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get())
+						.as("a close failure prevents publication of the private histogram")
+						.isEqualTo(runsBefore);
+				assertThat(ledger.usedBytes()).as("probe failure releases the workspace and collected table")
+						.isEqualTo(ledgerBefore);
+				inject.set(false);
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(datatypeCounts(rows)).isEqualTo(expected);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				evaluation.close();
+			}
+		}
+	}
+
+	@Test
+	public void coldOrdinaryDatatypePrepareDoesNotBuildSynopsis() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		Map<String, Long> expected = openOrdinaryReferencedRepository(12_000, false);
+		LmdbStore store = (LmdbStore) repository.getSail();
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			AtomicInteger rootSynopsisGetterCalls = new AtomicInteger();
+			AtomicInteger datatypeSummaryGetterCalls = new AtomicInteger();
+			AtomicInteger summaryCursorOpens = new AtomicInteger();
+			SyntheticValueSource source = recordingProbeSource(actualSource, rootSynopsisGetterCalls,
+					datatypeSummaryGetterCalls, summaryCursorOpens);
+			NativeExecutionContext evaluation = source.executionContext();
+			try {
+				NativeLmdbQuerySource.PredicateProjectionStatistics statistics = source
+						.predicateProjectionStatistics(false, () -> {
+						});
+				assertThat(statistics).as("the compacted custom-reference store exposes exact object P/R/Q facts")
+						.isNotNull();
+				assertThat(statistics.quads()).isEqualTo(12_000L);
+				assertThat(statistics.predicates()).isEqualTo(1L);
+				assertThat(statistics.incidences()).isEqualTo(12_000L);
+				assertThat(statistics.largestRootDomain()).isEqualTo(12_000L);
+
+				LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeDatatypeHistogram histogram = datatypeHistogram(source, dataset, plan);
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long summaryRunsBefore = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+				int synopsisCallsBeforePrepare = rootSynopsisGetterCalls.get();
+				int summaryCallsBeforePrepare = datatypeSummaryGetterCalls.get();
+				int summaryCursorOpensBeforePrepare = summaryCursorOpens.get();
+				assertThat(synopsisCallsBeforePrepare).as("no synopsis getter has run before cold preparation")
+						.isZero();
+				assertThat(summaryCallsBeforePrepare).as("no datatype-summary getter has run before cold preparation")
+						.isZero();
+				assertThat(summaryCursorOpensBeforePrepare).as("no summary cursor has run before cold preparation")
+						.isZero();
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).as("the ordinary custom-datatype recipe remains executable").isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(quote).as("cold summary work has a complete source-owned receipt").isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				assertThat(rootSynopsisGetterCalls.get())
+						.as("cold prepare and quote do not call the root-synopsis building getter")
+						.isEqualTo(synopsisCallsBeforePrepare);
+				assertThat(datatypeSummaryGetterCalls.get())
+						.as("cold prepare and quote do not call the datatype-summary building getter")
+						.isEqualTo(summaryCallsBeforePrepare);
+				assertThat(summaryCursorOpens.get())
+						.as("cold prepare and quote do not enumerate any datatype-summary cursor")
+						.isEqualTo(summaryCursorOpensBeforePrepare);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isEqualTo(summaryRunsBefore);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+
+				AtomicInteger headerBatches = new AtomicInteger();
+				AtomicInteger mixedHeaderBatches = new AtomicInteger();
+				long summaryGroups = 0L;
+				Set<IRI> datatypes = new HashSet<>();
+				Map<String, Long> summaryCounts = new HashMap<>();
+				try (NativeProbe summaryProbe = source.newProbe()) {
+					DatatypeSummary summary = summaryProbe.nodeDomainDatatypeSummary(false, uniform -> {
+						headerBatches.incrementAndGet();
+						if (!uniform) {
+							mixedHeaderBatches.incrementAndGet();
+						}
+					});
+					assertThat(summary).as("an explicit cold summary request builds the synopsis").isNotNull();
+					assertThat(datatypeSummaryGetterCalls.get())
+							.as("the explicit request calls the real datatype-summary getter")
+							.isEqualTo(summaryCallsBeforePrepare + 1);
+					DatatypeSummary.GroupCursor groups = summary.cursor();
+					while (groups.next()) {
+						assertThat(groups.referenced()).as("the custom datatype fixture uses ordinary literal headers")
+								.isTrue();
+						Value representative = source.lazyValue(groups.representativeId(), 1 << TripleIndex.OBJ_IDX);
+						assertThat(representative).isInstanceOf(Literal.class);
+						Literal literal = (Literal) representative;
+						datatypes.add(literal.getDatatype());
+						summaryCounts.put(literal.getDatatype().stringValue(), groups.quadMultiplicity());
+						summaryGroups++;
+					}
+				}
+				assertThat(summaryCursorOpens.get())
+						.as("the explicit request opens a real cursor over the built summary")
+						.isEqualTo(summaryCursorOpensBeforePrepare + 1);
+				assertThat(headerBatches.get()).as("the explicit request actually built via legacy header batches")
+						.isGreaterThan(0);
+				assertThat(mixedHeaderBatches.get())
+						.as("the alternating datatype pages require mixed header resolution")
+						.isGreaterThan(0);
+				assertThat(summaryGroups).isEqualTo(2L);
+				assertThat(summaryCounts).isEqualTo(expected);
+				assertThat(datatypes.stream().map(IRI::stringValue).toList())
+						.containsExactlyInAnyOrder("urn:header-batch:datatype:alpha", "urn:header-batch:datatype:beta");
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isEqualTo(summaryRunsBefore);
+				assertThat(ledger.usedBytes()).as("the explicit summary probe leaves no query ledger reservation")
+						.isEqualTo(ledgerBefore);
+			} finally {
+				evaluation.close();
+			}
+			assertThat(evaluation.isClosed()).isTrue();
+		}
+	}
+
+	@Test
+	public void preparedSynopsisDisabledOrdinaryReferencesUseQuotedPages() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		Map<String, Long> expected = openOrdinaryReferencedRepository(12_000, false);
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = actualSource
+					.predicateProjectionStatistics(false, () -> {
+					});
+			assertThat(statistics).as("the pinned compacted source exposes exact object-plane facts").isNotNull();
+			assertThat(statistics.predicates()).isEqualTo(1L);
+			assertThat(statistics.quads()).isEqualTo(12_000L);
+			assertThat(statistics.incidences()).isEqualTo(12_000L);
+			assertThat(statistics.largestRootDomain()).isEqualTo(12_000L);
+
+			long predicate = actualSource.idOf(repository.getValueFactory().createIRI(EX, "referenced-p"));
+			long pageRootVisits = 0L;
+			long observedPages = 0L;
+			try (NativeProbe observationProbe = actualSource.newProbe();
+					NativeAdjacency adjacency = observationProbe.adjacency(predicate, false)) {
+				assertThat(adjacency).as("the same pinned snapshot exposes the actual object-side page view")
+						.isNotNull();
+				long expectedPages = adjacency.pageCount();
+				assertThat(expectedPages).as("the compacted plane has physical page metadata").isPositive();
+				try (AdjacencyPageCursor pages = adjacency.openPageCursor()) {
+					assertThat(pages).as("the snapshot exposes physical page traversal").isNotNull();
+					while (pages.advance()) {
+						assertThat(pages.rowCount()).as("each observed page has physical root rows").isPositive();
+						assertThat(pages.uniformRowTermKind()).as("the fixture contains literal roots on every page")
+								.isTrue();
+						assertThat(pages.uniformRowLiteralDatatype())
+								.as("alternating custom datatypes keep every page on the mixed-header path")
+								.isFalse();
+						pageRootVisits = Math.addExact(pageRootVisits, pages.rowCount());
+						observedPages++;
+					}
+				}
+				assertThat(observedPages).as("the independent traversal observes the complete page directory")
+						.isEqualTo(expectedPages);
+			}
+			assertThat(pageRootVisits)
+					.as("T is measured directly from this explicit snapshot before preparation or quote")
+					.isEqualTo(statistics.incidences());
+
+			PageProducerEvidence evidence = new PageProducerEvidence();
+			SyntheticValueSource source = recordingPageProducerSource(actualSource, evidence);
+			NativeExecutionContext evaluation = source.executionContext();
+			try {
+				LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeDatatypeHistogram histogram = datatypeHistogram(source, dataset, plan);
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long pagesBefore = LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get();
+				long decodedRootsBefore = LmdbNativeDatatypeHistogram.PAGE_ROOT_IDS_DECODED.get();
+				long headersBefore = LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get();
+				long summaryRunsBefore = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+				int synopsisGettersBefore = evidence.synopsisGetters.get();
+				int summaryGettersBefore = evidence.summaryGetters.get();
+				int rootCursorsBefore = evidence.rootCursorOpens.get();
+				int pageCursorsBefore = evidence.pageCursorOpens.get();
+				int keyCursorsBefore = evidence.keyCursorOpens.get();
+				int statementProducersBefore = evidence.statementProducerOpens.get();
+				int prefixProducersBefore = evidence.prefixProducerOpens.get();
+				int literalHeadersBefore = evidence.literalHeaderReads.get();
+
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).as("the real ordinary-reference histogram recipe is prepared").isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(evidence.synopsisGetters.get())
+						.as("page quote preparation does not invoke a building root-synopsis getter")
+						.isEqualTo(synopsisGettersBefore);
+				assertThat(evidence.summaryGetters.get())
+						.as("page quote preparation does not invoke a building datatype-summary getter")
+						.isEqualTo(summaryGettersBefore);
+				assertThat(evidence.rootCursorOpens.get())
+						.as("page quote preparation opens no all-roots producer cursor")
+						.isEqualTo(rootCursorsBefore);
+				assertThat(evidence.pageCursorOpens.get())
+						.as("page quote preparation does not open its eventual page producer")
+						.isEqualTo(pageCursorsBefore);
+				assertThat(evidence.keyCursorOpens.get())
+						.as("page quote preparation opens no key-run producer")
+						.isEqualTo(keyCursorsBefore);
+				assertThat(evidence.statementProducerOpens.get())
+						.as("page quote preparation opens no statement producer")
+						.isEqualTo(statementProducersBefore);
+				assertThat(evidence.prefixProducerOpens.get())
+						.as("page quote preparation opens no prefix-run fallback")
+						.isEqualTo(prefixProducersBefore);
+				assertThat(evidence.literalHeaderReads.get())
+						.as("page quote preparation reads no ordinary literal headers")
+						.isEqualTo(literalHeadersBefore);
+				assertThat(quote).as("the synopsis-disabled page recipe has a complete physical quote").isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				assertThat(quote.input()
+						.operations()
+						.plus(quote.extra())
+						.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+								.as("the scanned-work ceiling covers independently observed page-local root visits T=%s",
+										pageRootVisits)
+								.isGreaterThanOrEqualTo((double) pageRootVisits);
+				assertThat(ledger.usedBytes()).as("quoting the page recipe leaves no ledger reservation")
+						.isEqualTo(ledgerBefore);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get()).isEqualTo(pagesBefore);
+				assertThat(LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get()).isEqualTo(headersBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isEqualTo(summaryRunsBefore);
+
+				List<BindingSet> nativeRows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).as("the exact page-only receipt opens its retained producer").isNotNull();
+					while (result.hasNext()) {
+						nativeRows.add(result.next());
+					}
+				}
+				assertThat(nativeRows).as("the page producer returns nonempty datatype groups").isNotEmpty();
+				assertThat(datatypeCounts(nativeRows)).isEqualTo(expected);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isGreaterThan(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get()).isGreaterThan(pagesBefore);
+				assertThat(LmdbNativeDatatypeHistogram.PAGE_ROOT_IDS_DECODED.get() - decodedRootsBefore)
+						.as("the retained producer visits the same T page-local roots")
+						.isEqualTo(pageRootVisits);
+				assertThat(LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get()).isGreaterThan(headersBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isEqualTo(summaryRunsBefore);
+				assertThat(evidence.pageCursorOpens.get()).isGreaterThan(pageCursorsBefore);
+				assertThat(evidence.keyCursorOpens.get()).isEqualTo(keyCursorsBefore);
+				assertThat(evidence.rootCursorOpens.get()).isEqualTo(rootCursorsBefore);
+				assertThat(evidence.statementProducerOpens.get()).isEqualTo(statementProducersBefore);
+				assertThat(evidence.prefixProducerOpens.get()).isEqualTo(prefixProducersBefore);
+				assertThat(evidence.literalHeaderReads.get()).isGreaterThan(literalHeadersBefore);
+				assertThat(evidence.synopsisGetters.get()).isEqualTo(synopsisGettersBefore);
+				assertThat(evidence.summaryGetters.get()).isEqualTo(summaryGettersBefore);
+				assertThat(ledger.usedBytes()).as("closing the page result releases its query ledger workspace")
+						.isEqualTo(ledgerBefore);
+
+				List<BindingSet> referenceRows;
+				try {
+					System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						referenceRows = QueryResults
+								.asList(connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+					}
+				} finally {
+					restoreProperty(NATIVE_ENGINE_PROPERTY, "true");
+				}
+				assertThat(referenceRows).isNotEmpty();
+				assertThat(nativeRows).as("the complete RDF BindingSet multiset matches native-disabled evaluation")
+						.containsExactlyInAnyOrderElementsOf(referenceRows);
+			} finally {
+				evaluation.close();
+			}
+			assertThat(evaluation.isClosed()).isTrue();
+		}
+	}
+
+	@Test
+	public void automaticSynopsisDisabledOrdinaryReferencesCapturesPricedPageDecision() throws Exception {
+		String previousNative = System.getProperty(NATIVE_ENGINE_PROPERTY);
+		String previousSynopsis = System.getProperty(SYNOPSIS_PROPERTY);
+		String previousScan = System.getProperty(SCAN_AGGREGATES_PROPERTY);
+		String previousParallelThreshold = System
+				.getProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "false");
+			System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+					Long.toString(Long.MAX_VALUE));
+			Map<String, Long> expected = openOrdinaryReferencedRepository(12_000, false);
+			long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+			long pagesBefore = LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get();
+			long headerBatchesBefore = LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get();
+			long summaryRunsBefore = LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get();
+			List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
+			List<LmdbNativeDecisionRecord> attempts = new ArrayList<>();
+			List<String> selected = new ArrayList<>();
+			LmdbNativeDispatchLoop.observeDecisions((record, label) -> {
+				if (record.point() == LmdbNativeDecisionPoint.GROUP) {
+					attempts.add(record);
+				}
+			});
+			LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+				if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("datatype"))
+						&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+					decisions.add(record);
+					selected.add(id);
+				}
+			});
+			List<BindingSet> automaticRows;
+			try {
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					automaticRows = QueryResults.asList(
+							connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+				}
+			} finally {
+				LmdbNativeDispatchLoop.observeSelections(null);
+				LmdbNativeDispatchLoop.observeDecisions(null);
+			}
+
+			assertThat(decisions).as("the observer captures the successful same-GROUP dispatch").hasSize(1);
+			LmdbNativeDecisionRecord decision = decisions.getFirst();
+			List<String> candidateQuotes = decision.entries()
+					.stream()
+					.map(entry -> entry.id() + " nanos=" + entry.nanos()
+							+ " expected=" + entry.expectedNanos()
+							+ " quoted=" + entry.quotedExpectedNanos()
+							+ " eliminatedBy=" + entry.eliminatedBy()
+							+ " missing=" + entry.missingPhysicalWork()
+							+ " features=" + entry.features())
+					.toList();
+			System.out.println("DATATYPE_PAGE_AUTO_OBSERVED mode=" + decision.mode()
+					+ " winner=" + decision.winnerId()
+					+ " actualSelected=" + selected
+					+ " rows=" + automaticRows.size()
+					+ "\n" + decision.describe("GROUP")
+					+ "\ncandidateQuotes=" + candidateQuotes);
+			assertThat(automaticRows).as("the unforced public query returns nonempty datatype groups").isNotEmpty();
+			assertThat(datatypeCounts(automaticRows)).isEqualTo(expected);
+			List<BindingSet> ordinaryRows;
+			try {
+				System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					ordinaryRows = QueryResults.asList(connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+				}
+			} finally {
+				restoreProperty(NATIVE_ENGINE_PROPERTY, previousNative);
+			}
+			assertThat(ordinaryRows).isNotEmpty();
+			assertThat(automaticRows).as("the full RDF BindingSet multiset matches native-disabled evaluation")
+					.containsExactlyInAnyOrderElementsOf(ordinaryRows);
+			System.out.println("DATATYPE_PAGE_AUTO_BAG_PARITY=PASS rows=" + automaticRows.size());
+			assertThat(attempts).as("the initial GROUP decision records both candidate tiers").isNotEmpty();
+			List<LmdbNativeDecisionRecord.Entry> bridgeTiers = attempts.getFirst()
+					.entries()
+					.stream()
+					.filter(entry -> entry.id().equals("irAggregate") || entry.id().equals("irAggregateInterpreted"))
+					.filter(LmdbNativeDecisionRecord.Entry::admitted)
+					.toList();
+			assertThat(bridgeTiers).extracting(LmdbNativeDecisionRecord.Entry::id)
+					.containsExactlyInAnyOrder("irAggregate", "irAggregateInterpreted");
+			for (LmdbNativeDecisionRecord.Entry tier : bridgeTiers) {
+				if (tier.missingPhysicalWork() != null) {
+					assertThat(tier.priceable()).as("unproved bridge work is not automatically priceable").isFalse();
+				} else {
+					assertThat(tier.features()).as("a complete bridge quote carries its work vector").isNotNull();
+					assertThat(tier.features().high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+							.as("the bridge traverses stored input rows: %s", tier.id())
+							.isPositive();
+					assertThat(tier.features().high(LmdbNativeCostVector.Feature.DECODED_ROW))
+							.as("DATATYPE decodes its input: %s", tier.id())
+							.isPositive();
+					assertThat(tier.features().high(LmdbNativeCostVector.Feature.GROUP_UPDATE))
+							.as("the bridge updates its aggregate groups: %s", tier.id())
+							.isPositive();
+					assertThat(tier.features().high(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION))
+							.as("the bridge materializes its RDF result groups: %s", tier.id())
+							.isPositive();
+				}
+			}
+
+			assertThat(decision.point()).isEqualTo(LmdbNativeDecisionPoint.GROUP);
+			assertThat(decision.mode()).as("this witness captures an unforced AUTO or its interpreted retry")
+					.isIn("normal", "retry interpreted sibling");
+			LmdbNativeDecisionRecord.Entry histogram = decision.entries()
+					.stream()
+					.filter(entry -> entry.id().equals("datatypeHistogram"))
+					.findFirst()
+					.orElseThrow();
+			assertThat(histogram.admitted())
+					.as("the synopsis-disabled page candidate is admitted: %s", decision.describe("GROUP"))
+					.isTrue();
+			assertThat(histogram.priceable())
+					.as("the same GROUP decision carries a complete page quote: %s", decision.describe("GROUP"))
+					.isTrue();
+			assertThat(histogram.missingPhysicalWork()).as("the page quote has no missing physical proof").isNull();
+			assertThat(histogram.features()).as("the priced page candidate retains its complete feature vector")
+					.isNotNull();
+			assertThat(selected).as("the observer reports the successful actual opener")
+					.containsExactly(decision.winnerId());
+
+			if (decision.winnerId().equals("datatypeHistogram")) {
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).as("the selected histogram actually ran")
+						.isGreaterThan(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get())
+						.as("the selected page receipt traversed physical pages")
+						.isGreaterThan(pagesBefore);
+				assertThat(LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get())
+						.as("the selected page recipe batched ordinary custom datatype headers")
+						.isGreaterThan(headerBatchesBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.as("the synopsis-disabled page recipe does not consume a retained summary")
+						.isEqualTo(summaryRunsBefore);
+			} else {
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get()).isEqualTo(pagesBefore);
+				assertThat(LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get())
+						.isEqualTo(headerBatchesBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get())
+						.isEqualTo(summaryRunsBefore);
+			}
+
+		} finally {
+			LmdbNativeDispatchLoop.observeSelections(null);
+			LmdbNativeDispatchLoop.observeDecisions(null);
+			restoreProperty(NATIVE_ENGINE_PROPERTY, previousNative);
+			restoreProperty(SYNOPSIS_PROPERTY, previousSynopsis);
+			restoreProperty(SCAN_AGGREGATES_PROPERTY, previousScan);
+			restoreProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, previousParallelThreshold);
+		}
+	}
+
+	@Test
+	public void synopsisDisabledPageQuoteUsesResidentCountStoreCapacity() throws Exception {
+		String previousNative = System.getProperty(NATIVE_ENGINE_PROPERTY);
+		String previousSynopsis = System.getProperty(SYNOPSIS_PROPERTY);
+		String previousParallelThreshold = System
+				.getProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		String previousCountStoreBytes = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		long countStoreBudget = 64L << 20;
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "false");
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+					Long.toString(Long.MAX_VALUE));
+			System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, Long.toString(countStoreBudget));
+			openOrdinaryReferencedRepository(12_000, false);
+
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+				try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+					NativeAggregatePhysicalPlan.Work quote = fixture.prepared.quote(fixture.row);
+					assertThat(quote).as("the compacted 12,000-reference page receipt has a complete quote")
+							.isNotNull();
+					assertThat(quote.input().workEvidence().isComplete()).isTrue();
+					long maximumGroups = Math.round(quote.input().rows());
+					assertThat(quote.input().rows()).isEqualTo((double) maximumGroups);
+					assertThat(maximumGroups).as("the same receipt supplies the 12,000-group store capacity ceiling")
+							.isEqualTo(12_000L);
+					assertThat(NativeCountGroupStore.configuredMaxBytes()).isEqualTo(countStoreBudget);
+
+					long ledgerBefore = fixture.ledger.usedBytes();
+					long storedGroups = 0L;
+					try (NativeCountGroupStore counts = new NativeCountGroupStore(1, new boolean[] { false },
+							value -> value, null, fixture.ledger)) {
+						for (long groupId = 1L; groupId <= maximumGroups; groupId++) {
+							counts.addSingleCount(groupId, groupId, 1L);
+						}
+						assertThat(counts.inputRows()).isEqualTo(maximumGroups);
+						assertThat(fixture.ledger.usedBytes())
+								.as("the 64 MiB unary store reserves against the real query ledger")
+								.isGreaterThan(ledgerBefore);
+						counts.finish();
+						assertThat(counts.spilledRecords())
+								.as("all distinct groups fit at the explicitly configured 64 MiB budget")
+								.isZero();
+						long[] output = new long[2];
+						while (counts.next(output)) {
+							storedGroups++;
+						}
+						assertThat(storedGroups).isEqualTo(maximumGroups);
+					}
+					assertThat(fixture.ledger.usedBytes())
+							.as("draining and closing the resident store restores the shared query ledger")
+							.isEqualTo(ledgerBefore);
+
+					LmdbNativeCostVector composed = quote.input().operations().plus(quote.extra());
+					double expectedSort = composed.expected(LmdbNativeCostVector.Feature.SORT_N_LOG2_N);
+					double sortHigh = composed.high(LmdbNativeCostVector.Feature.SORT_N_LOG2_N);
+					System.out.println("DATATYPE_PAGE_CAPACITY ceiling=" + maximumGroups
+							+ " storedGroups=" + storedGroups + " spills=0 budget=" + countStoreBudget
+							+ " sortExpected=" + expectedSort + " sortHigh=" + sortHigh);
+					assertThat(sortHigh)
+							.as("the quote retains positive sort allowance for possible shared-ledger pressure")
+							.isPositive();
+					assertThat(expectedSort)
+							.as("the no-pressure quote uses the resident unary count store at ceiling=%s budget=%s",
+									maximumGroups, countStoreBudget)
+							.isZero();
+				}
+			}
+		} finally {
+			restoreProperty(NATIVE_ENGINE_PROPERTY, previousNative);
+			restoreProperty(SYNOPSIS_PROPERTY, previousSynopsis);
+			restoreProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, previousParallelThreshold);
+			restoreProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousCountStoreBytes);
+		}
+	}
+
+	@Test
+	public void synopsisDisabledNonfitPageQuoteDoesNotDoubleChargeSpillFinalRead() throws Exception {
+		String previousCountStoreBytes = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		long countStoreBudget = 4096L;
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "false");
+			System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+					Long.toString(Long.MAX_VALUE));
+			System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, Long.toString(countStoreBudget));
+			Map<String, Long> expectedDatatypes = openOrdinaryReferencedRepository(128, false);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				ValueFactory valueFactory = connection.getValueFactory();
+				IRI predicate = valueFactory.createIRI(EX, "referenced-p");
+				connection.begin();
+				for (int index = 0; index < 128; index++) {
+					IRI datatype = valueFactory.createIRI("urn:spill-quote:datatype:" + index);
+					Literal literal = valueFactory.createLiteral("spill-quote literal " + index, datatype);
+					connection.add(valueFactory.createIRI(EX, "spill-quote-subject-" + index), predicate, literal);
+					expectedDatatypes.merge(datatype.stringValue(), 1L, Long::sum);
+				}
+				connection.commit();
+			}
+			assertThat(expectedDatatypes).as("the source fixture has two shared plus 128 distinct datatype groups")
+					.hasSize(130);
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+					.as("the new custom datatype values are included in the compacted page snapshot")
+					.isTrue();
+
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+				NativeLmdbQuerySource.PredicateProjectionStatistics statistics = actualSource
+						.predicateProjectionStatistics(false, () -> {
+						});
+				assertThat(statistics).as("the pinned compacted source supplies P/R/Q").isNotNull();
+				long predicates = statistics.predicates();
+				long roots = statistics.incidences();
+				long quads = statistics.quads();
+				assertThat(predicates).isEqualTo(1L);
+				assertThat(roots).isEqualTo(256L);
+				assertThat(quads).isEqualTo(256L);
+
+				DatatypePageWorkspace workspace = actualSource.datatypePageWorkspace(false);
+				assertThat(workspace).as("the same snapshot certifies its page workspace").isNotNull();
+				long pages = 0L;
+				long observedRoots = 0L;
+				long observedQuads = 0L;
+				long pageRootVisits = 0L;
+				try (NativeProbe probe = actualSource.newProbe();
+						WildcardAdjacency catalog = probe.datatypePageSweep(workspace)) {
+					assertThat(catalog).as("the snapshot opens its page catalog").isNotNull();
+					assertThat((long) catalog.predicateCount()).isEqualTo(predicates);
+					for (int index = 0; index < catalog.predicateCount(); index++) {
+						catalog.bind(index);
+						long planeRoots = catalog.keyCount();
+						long planeQuads = catalog.quadCount();
+						long planePages = catalog.pageCount();
+						assertThat(planeRoots).isPositive();
+						assertThat(planeQuads).isGreaterThanOrEqualTo(planeRoots);
+						assertThat(planePages).isPositive();
+						observedRoots = Math.addExact(observedRoots, planeRoots);
+						observedQuads = Math.addExact(observedQuads, planeQuads);
+						pages = Math.addExact(pages, planePages);
+						long observedPlanePages = 0L;
+						try (AdjacencyPageCursor pageCursor = catalog.openPageCursor()) {
+							assertThat(pageCursor).as("each physical plane exposes its page cursor").isNotNull();
+							while (pageCursor.advance()) {
+								assertThat(pageCursor.rowCount()).isPositive();
+								pageRootVisits = Math.addExact(pageRootVisits, pageCursor.rowCount());
+								observedPlanePages++;
+							}
+						}
+						assertThat(observedPlanePages).isEqualTo(planePages);
+					}
+				}
+				assertThat(observedRoots).isEqualTo(roots);
+				assertThat(observedQuads).isEqualTo(quads);
+				assertThat(pages).isPositive();
+				long maximumVisits = Math.min(quads, Math.addExact(roots, pages));
+				assertThat(pageRootVisits)
+						.as("T is measured from the same source snapshot and reaches its quote ceiling")
+						.isEqualTo(maximumVisits);
+
+				try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+					assertThat(NativeCountGroupStore.nominalUnaryGroupsFit(expectedDatatypes.size(), countStoreBudget))
+							.as("the 130 observed datatype groups do not nominally fit the 4 KiB count-store budget")
+							.isFalse();
+					assertThat(NativeCountGroupStore.nominalUnaryGroupsFit(maximumVisits, countStoreBudget))
+							.as("the source-derived T ceiling also requires spill-capable pricing")
+							.isFalse();
+					long ledgerBeforeStore = fixture.ledger.usedBytes();
+					long spilledRecords;
+					try (NativeCountGroupStore counts = new NativeCountGroupStore(1, new boolean[] { false },
+							value -> value, null, fixture.ledger)) {
+						for (long groupId = 1L; groupId <= expectedDatatypes.size(); groupId++) {
+							counts.addSingleCount(groupId, groupId, 1L);
+						}
+						counts.finish();
+						spilledRecords = counts.spilledRecords();
+						assertThat(spilledRecords)
+								.as("the actual 130-group unary store spills under the quoted 4 KiB budget")
+								.isPositive();
+					}
+					assertThat(fixture.ledger.usedBytes())
+							.as("closing the real spill-capable count store releases its query-ledger reservation")
+							.isEqualTo(ledgerBeforeStore);
+
+					NativeAggregatePhysicalPlan.Work quote = fixture.prepared.quote(fixture.row);
+					assertThat(quote).as("the synopsis-disabled page receipt remains completely quoted").isNotNull();
+					assertThat(quote.input().workEvidence().isComplete()).isTrue();
+					assertThat(quote.input().rows()).isEqualTo((double) maximumVisits);
+					LmdbNativeCostVector composed = quote.input().operations().plus(quote.extra());
+					long levels = maximumVisits <= 1L ? 0L
+							: Long.SIZE - Long.numberOfLeadingZeros(maximumVisits - 1L);
+					long pageAndCatalogWork = Math.addExact(
+							Math.addExact(Math.multiplyExact(2L, predicates), Math.multiplyExact(4L, pages)),
+							maximumVisits);
+					long twoPipelineSpillEnvelope = Math.multiplyExact(
+							Math.multiplyExact(4L, maximumVisits), Math.addExact(1L, levels));
+					long expectedScannedCeiling = Math.addExact(pageAndCatalogWork, twoPipelineSpillEnvelope);
+					double expectedScanned = composed.expected(LmdbNativeCostVector.Feature.SCANNED_ROW);
+					System.out.println("DATATYPE_PAGE_NONFIT_SPILL P=" + predicates + " B=" + pages + " T="
+							+ maximumVisits + " groups=" + expectedDatatypes.size() + " spilledRecords="
+							+ spilledRecords
+							+ " budget=" + countStoreBudget + " expectedScanned=" + expectedScanned
+							+ " onceEnvelope=" + expectedScannedCeiling
+							+ " highScanned=" + composed.high(LmdbNativeCostVector.Feature.SCANNED_ROW)
+							+ " sortExpected=" + composed.expected(LmdbNativeCostVector.Feature.SORT_N_LOG2_N)
+							+ " sortHigh=" + composed.high(LmdbNativeCostVector.Feature.SORT_N_LOG2_N));
+					assertThat(expectedScanned)
+							.as("P=%s B=%s T=%s: spill expected SCANNED must include page/catalog work and the two-pipeline envelope without charging T twice",
+									predicates, pages, maximumVisits)
+							.isGreaterThanOrEqualTo((double) pageAndCatalogWork)
+							.isLessThanOrEqualTo((double) expectedScannedCeiling);
+					assertThat(composed.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+							.as("the spill quote retains a positive SCANNED ceiling")
+							.isPositive();
+					assertThat(composed.expected(LmdbNativeCostVector.Feature.SORT_N_LOG2_N))
+							.as("the nonfit count-store quote retains positive expected sort work")
+							.isPositive();
+					assertThat(composed.high(LmdbNativeCostVector.Feature.SORT_N_LOG2_N))
+							.as("the spill quote retains a positive sort ceiling")
+							.isPositive();
+				}
+			}
+		} finally {
+			restoreProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousCountStoreBytes);
+		}
+	}
+
+	@Test
+	public void pageReceiptDeclinesWhenCountStoreBudgetChangesBeforeOpen() throws Exception {
+		String previousNative = System.getProperty(NATIVE_ENGINE_PROPERTY);
+		String previousSynopsis = System.getProperty(SYNOPSIS_PROPERTY);
+		String previousParallelThreshold = System
+				.getProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		String previousCountStoreBytes = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		long quoteBudget = 64L << 20;
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "false");
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+					Long.toString(Long.MAX_VALUE));
+			System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, Long.toString(quoteBudget));
+			openOrdinaryReferencedRepository(12_000, false);
+
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+				try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+					NativeAggregatePhysicalPlan.Work quote = fixture.prepared.quote(fixture.row);
+					assertThat(quote).as("the recipe is prepared and quoted at the 64 MiB budget").isNotNull();
+					assertThat(quote.input().workEvidence().isComplete()).isTrue();
+					PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+					System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "4096");
+					try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+							fixture.row.cancellation)) {
+						assertThat(fixture.evidence.pageCursorOpens.get())
+								.as("a changed count-store budget declines before page producer work")
+								.isEqualTo(before.pageCursorOpens());
+						assertThat(result).as("the frozen page recipe declines after its budget changes").isNull();
+					}
+					assertPageDeclineReleasedResources(fixture, before);
+					assertPageCursorNotOpened(fixture, before);
+				}
+			}
+		} finally {
+			restoreProperty(NATIVE_ENGINE_PROPERTY, previousNative);
+			restoreProperty(SYNOPSIS_PROPERTY, previousSynopsis);
+			restoreProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, previousParallelThreshold);
+			restoreProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousCountStoreBytes);
+		}
+	}
+
+	@Test
+	public void preparedSmallPageQuoteCoversCatalogDirectoryAndResidentMarkerWork() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		Map<String, Long> expectedDatatypes = openOrdinaryReferencedRepository(8, false);
+		assertThat(expectedDatatypes.values().stream().mapToLong(Long::longValue).sum()).isEqualTo(8L);
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = actualSource
+					.predicateProjectionStatistics(false, () -> {
+					});
+			assertThat(statistics).as("the compacted object snapshot supplies physical P/R/Q facts").isNotNull();
+			long predicates = statistics.predicates();
+			long roots = statistics.incidences();
+			long quads = statistics.quads();
+			assertThat(predicates).isPositive();
+			assertThat(roots).isPositive();
+			assertThat(quads).isPositive();
+
+			DatatypePageWorkspace workspace = actualSource.datatypePageWorkspace(false);
+			assertThat(workspace).as("the pinned snapshot certifies its page workspace").isNotNull();
+			long pages = 0L;
+			long shards = 0L;
+			long pageRootVisits = 0L;
+			long observedRoots = 0L;
+			long observedQuads = 0L;
+			try (NativeProbe probe = actualSource.newProbe();
+					WildcardAdjacency catalog = probe.datatypePageSweep(workspace)) {
+				assertThat(catalog).as("the same snapshot opens its certified page catalog").isNotNull();
+				assertThat((long) catalog.predicateCount()).isEqualTo(predicates);
+				for (int predicateOrdinal = 0; predicateOrdinal < catalog.predicateCount(); predicateOrdinal++) {
+					catalog.bind(predicateOrdinal);
+					long planeRoots = catalog.keyCount();
+					long planeQuads = catalog.quadCount();
+					AtomicLong pageCountPolls = new AtomicLong();
+					long planePages = catalog.pageCount(pageCountPolls::incrementAndGet);
+					long planeShards = pageCountPolls.get() - 1L;
+					assertThat(planeRoots).isPositive();
+					assertThat(planeQuads).isGreaterThanOrEqualTo(planeRoots);
+					assertThat(planePages).isPositive();
+					assertThat(planeShards).as("pageCount polls once at entry and once per actual shard").isPositive();
+					observedRoots = Math.addExact(observedRoots, planeRoots);
+					observedQuads = Math.addExact(observedQuads, planeQuads);
+					pages = Math.addExact(pages, planePages);
+					shards = Math.addExact(shards, planeShards);
+					long observedPlanePages = 0L;
+					try (AdjacencyPageCursor cursor = catalog.openPageCursor(() -> {
+					})) {
+						assertThat(cursor).as("the certified plane exposes page traversal").isNotNull();
+						while (cursor.advance()) {
+							assertThat(cursor.rowCount()).isPositive();
+							pageRootVisits = Math.addExact(pageRootVisits, cursor.rowCount());
+							observedPlanePages++;
+						}
+					}
+					assertThat(observedPlanePages).isEqualTo(planePages);
+				}
+			}
+			assertThat(observedRoots).as("catalog R matches the pinned source statistics").isEqualTo(roots);
+			assertThat(observedQuads).as("catalog Q matches the pinned source statistics").isEqualTo(quads);
+			assertThat(pages).as("B comes from this snapshot's actual page metadata").isPositive();
+			assertThat(shards).as("S comes from pageCount callback polls minus entry polls").isPositive();
+			assertThat(pageRootVisits).as("T comes from this snapshot's physical page headers").isPositive();
+			long maximumVisits = Math.min(quads, Math.addExact(roots, pages));
+			assertThat(pageRootVisits).as("the one-predicate fixture reaches the source-derived visit ceiling")
+					.isEqualTo(maximumVisits);
+			assertThat(maximumVisits).as("this quote uses the real resident count-store regime")
+					.isLessThanOrEqualTo(NativeCountGroupStore.INITIAL_ARENA_RECORDS);
+
+			PageProducerEvidence evidence = new PageProducerEvidence();
+			SyntheticValueSource source = recordingPageProducerSource(actualSource, evidence);
+			NativeExecutionContext evaluation = source.executionContext();
+			try {
+				LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeDatatypeHistogram histogram = datatypeHistogram(source, dataset, plan);
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long pagesBefore = LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get();
+				int pageCursorsBefore = evidence.pageCursorOpens.get();
+				int keyCursorsBefore = evidence.keyCursorOpens.get();
+				int rootCursorsBefore = evidence.rootCursorOpens.get();
+				int statementProducersBefore = evidence.statementProducerOpens.get();
+				int prefixProducersBefore = evidence.prefixProducerOpens.get();
+
+				var prepared = histogram.prepare(row);
+				assertThat(prepared).as("the real compacted page recipe is prepared").isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(quote).as("the page-only receipt has a complete physical quote").isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				assertThat(evidence.pageCursorOpens.get())
+						.as("quote preparation opens no page producer")
+						.isEqualTo(pageCursorsBefore);
+				assertThat(evidence.keyCursorOpens.get()).isEqualTo(keyCursorsBefore);
+				assertThat(evidence.rootCursorOpens.get()).isEqualTo(rootCursorsBefore);
+				assertThat(evidence.statementProducerOpens.get()).isEqualTo(statementProducersBefore);
+				assertThat(evidence.prefixProducerOpens.get()).isEqualTo(prefixProducersBefore);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get()).isEqualTo(pagesBefore);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+
+				long expectedScannedFloor = Math.addExact(
+						Math.addExact(Math.addExact(Math.multiplyExact(2L, predicates), Math.multiplyExact(3L, shards)),
+								pages),
+						Math.addExact(pageRootVisits, pageRootVisits));
+				long highScannedFloor = Math.addExact(expectedScannedFloor, 1L);
+				LmdbNativeCostVector composed = quote.input().operations().plus(quote.extra());
+				SoftAssertions softly = new SoftAssertions();
+				softly.assertThat(composed.expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+						.as("expected work covers 2P catalog visits + 3S shard traversals + B page headers + T contribution and T resident markers; P=%s S=%s B=%s T=%s",
+								predicates, shards, pages, pageRootVisits)
+						.isGreaterThanOrEqualTo((double) expectedScannedFloor);
+				softly.assertThat(composed.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+						.as("the high ceiling also covers one fetched header beyond B; required=%s", highScannedFloor)
+						.isGreaterThanOrEqualTo((double) highScannedFloor);
+				softly.assertAll();
+			} finally {
+				evaluation.close();
+			}
+			assertThat(evaluation.isClosed()).isTrue();
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptDeclinesWhenAuthorityConfigOrCatalogCountsChange() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+				PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+				fixture.evidence.workspaceUnavailable = true;
+				var unavailable = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation);
+				assertThat(unavailable).as("an unknown current workspace refuses the frozen page recipe").isNull();
+				assertPageDeclineReleasedResources(fixture, before);
+				assertPageCursorNotOpened(fixture, before);
+				fixture.evidence.workspaceUnavailable = false;
+
+				before = snapshotPageAttempt(fixture);
+				fixture.evidence.workspaceOverride = new DatatypePageWorkspace(new Object(),
+						fixture.workspace.bySubject(), fixture.workspace.explicit(),
+						fixture.workspace.workspaceBytes());
+				var changedAuthority = fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+						fixture.row.cancellation);
+				assertThat(changedAuthority).as("a changed view-authority token refuses before opening a probe")
+						.isNull();
+				assertPageDeclineReleasedResources(fixture, before);
+				assertPageCursorNotOpened(fixture, before);
+				fixture.evidence.workspaceOverride = null;
+
+				String synopsisBefore = System.getProperty(SYNOPSIS_PROPERTY);
+				try {
+					System.setProperty(SYNOPSIS_PROPERTY, "true");
+					before = snapshotPageAttempt(fixture);
+					var changedConfiguration = fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+							fixture.row.cancellation);
+					assertThat(changedConfiguration)
+							.as("a synopsis-enabled execution view refuses the synopsis-disabled page receipt")
+							.isNull();
+					assertPageDeclineReleasedResources(fixture, before);
+					assertPageCursorNotOpened(fixture, before);
+				} finally {
+					restoreProperty(SYNOPSIS_PROPERTY, synopsisBefore);
+				}
+
+				for (PageCatalogDrift drift : PageCatalogDrift.values()) {
+					if (drift == PageCatalogDrift.NONE) {
+						continue;
+					}
+					fixture.evidence.catalogDrift = drift;
+					before = snapshotPageAttempt(fixture);
+					var changedCatalog = fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+							fixture.row.cancellation);
+					assertThat(changedCatalog).as("changed %s metadata refuses before a page cursor opens", drift)
+							.isNull();
+					assertPageDeclineReleasedResources(fixture, before);
+					assertPageCursorNotOpened(fixture, before);
+				}
+			}
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptDeclinesAfterAcceptedPagesWhenTotalsOrLaterCursorChange() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.add(vf.createIRI(EX, "secondary-page-subject"), vf.createIRI(EX, "secondary-page-predicate"),
+					vf.createLiteral("secondary page literal", vf.createIRI("urn:page-lifecycle:datatype")));
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = actualSource
+					.predicateProjectionStatistics(false, () -> {
+					});
+			assertThat(statistics).isNotNull();
+			assertThat(statistics.predicates()).isEqualTo(2L);
+			long missingCursorPredicate = actualSource.idOf(repository.getValueFactory()
+					.createIRI(EX, "secondary-page-predicate"));
+			assertThat(Long.compareUnsigned(actualSource.idOf(repository.getValueFactory()
+					.createIRI(EX, "referenced-p")), missingCursorPredicate)).isNegative();
+			try (NativeProbe probe = actualSource.newProbe();
+					WildcardAdjacency catalog = probe.datatypePageSweep(actualSource.datatypePageWorkspace(false))) {
+				assertThat(catalog).isNotNull();
+				catalog.bind(0);
+				assertThat(catalog.pageCount()).as("the first real plane spans multiple pages").isGreaterThan(1L);
+			}
+
+			try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+				fixture.evidence.stopAfterAcceptedPages = 1;
+				PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+				var missingTotals = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation);
+				assertThat(missingTotals).as("a source that ends after accepted pages declines its frozen total")
+						.isNull();
+				assertThat(fixture.evidence.acceptedPages.get())
+						.as("the under-count is detected after actual page rows entered the private collector")
+						.isGreaterThan(0);
+				assertPageDeclineReleasedResources(fixture, before);
+
+				fixture.evidence.stopAfterAcceptedPages = -1;
+				fixture.evidence.unavailablePagePredicateId = missingCursorPredicate;
+				before = snapshotPageAttempt(fixture);
+				var missingLaterCursor = fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+						fixture.row.cancellation);
+				assertThat(missingLaterCursor).as("a later plane without a page cursor declines the page receipt")
+						.isNull();
+				assertThat(fixture.evidence.acceptedPages.get())
+						.as("the first plane was privately collected before the second cursor refused")
+						.isGreaterThan(1);
+				assertThat(fixture.evidence.nullPageCursorResults).hasValue(1);
+				assertThat(fixture.evidence.pageCursorOpens.get() - before.pageCursorOpens())
+						.as("one cursor opens and the later plane's cursor refuses")
+						.isEqualTo(2);
+				assertThat(fixture.evidence.pageCursorsClosed.get() - before.pageCursorsClosed())
+						.as("the already opened first-plane cursor closes")
+						.isEqualTo(1);
+				assertPageDeclineReleasedResources(fixture, before);
+			}
+		}
+	}
+
+	@Test
+	public void pageReceiptAdmissionObservesDeadlineDuringProjectionStatistics() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			PageProducerEvidence evidence = new PageProducerEvidence();
+			SyntheticValueSource source = recordingPageProducerSource((NativeLmdbQuerySource) dataset, evidence);
+			try (NativeExecutionContext evaluation = source.executionContext()) {
+				LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+				evidence.deadlineInStatistics = deadline;
+				Throwable observed;
+				try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+					observed = catchThrowable(() -> datatypeHistogram(source, dataset, plan).prepare(row));
+				}
+				assertThat(evidence.deadlineTripped).as("the real source reached projection metadata").isTrue();
+				assertThat(observed).as("the metadata callback observes the active attempt deadline")
+						.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertThat(evidence.deadlineObserved).isTrue();
+				assertThat(evidence.pageCursorOpens).hasValue(0);
+				assertThat(evidence.rootCursorOpens).hasValue(0);
+				assertThat(evidence.prefixProducerOpens).hasValue(0);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			}
+		}
+	}
+
+	@Test
+	public void pageReceiptAdmissionRetainsCloseFailuresDuringDeadline() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			PageProducerEvidence evidence = new PageProducerEvidence();
+			SyntheticValueSource source = recordingPageProducerSource((NativeLmdbQuerySource) dataset, evidence);
+			try (NativeExecutionContext evaluation = source.executionContext()) {
+				LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+				RuntimeException catalogFailure = new IllegalStateException("catalog close during page admission");
+				RuntimeException probeFailure = new IllegalStateException("probe close during page admission");
+				evidence.deadlineInPageCount = deadline;
+				evidence.injectDeadlineDirectly = true;
+				evidence.catalogCloseFailure = catalogFailure;
+				evidence.probeCloseFailure = probeFailure;
+				Throwable observed;
+				try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+					observed = catchThrowable(() -> datatypeHistogram(source, dataset, plan).prepare(row));
+				}
+				assertThat(evidence.deadlineTripped).isTrue();
+				assertThat(observed).as("admission preserves real cleanup after the deadline").isSameAs(catalogFailure);
+				assertThat(catalogFailure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE,
+						probeFailure);
+				assertThat(evidence.probesOpened).hasValue(1);
+				assertThat(evidence.probesClosed).hasValue(1);
+				assertThat(evidence.catalogsOpened).hasValue(1);
+				assertThat(evidence.catalogsClosed).hasValue(1);
+				assertThat(evidence.pageCursorOpens).hasValue(0);
+				assertThat(evidence.rootCursorOpens).hasValue(0);
+				assertThat(evidence.prefixProducerOpens).hasValue(0);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			}
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptObservesDeadlineDuringPageCount() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+				PageReceiptFixture fixture = preparePageReceipt(dataset, (NativeLmdbQuerySource) dataset)) {
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			fixture.evidence.deadlineInPageCount = deadline;
+			PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+			Throwable observed;
+			try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+				observed = catchThrowable(() -> fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+						fixture.row.cancellation));
+			}
+			assertThat(fixture.evidence.deadlineTripped).as("a nonempty catalog plane reached page-count setup")
+					.isTrue();
+			assertThat(observed).as("the page-count callback observes the active attempt deadline")
+					.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			assertThat(fixture.evidence.deadlineObserved).isTrue();
+			assertPageDeclineReleasedResources(fixture, before);
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptObservesDeadlineDuringPhysicalAdvance() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
+			try (NativeProbe probe = actual.newProbe();
+					WildcardAdjacency catalog = probe.datatypePageSweep(actual.datatypePageWorkspace(false))) {
+				assertThat(catalog).isNotNull();
+				catalog.bind(0);
+				assertThat(catalog.pageCount()).as("the real plane has another page after the first").isGreaterThan(1L);
+			}
+			try (PageReceiptFixture fixture = preparePageReceipt(dataset, actual)) {
+				LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+				fixture.evidence.deadlineAfterAcceptedPage = deadline;
+				PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+				Throwable observed;
+				try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+					observed = catchThrowable(() -> fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+							fixture.row.cancellation));
+				}
+				assertThat(fixture.evidence.acceptedPages).as("a real page was accepted before the deadline")
+						.hasValue(1);
+				assertThat(fixture.evidence.deadlineTripped).isTrue();
+				assertThat(observed).as("the next physical page advance observes the attempt deadline")
+						.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertThat(fixture.evidence.deadlineObserved).isTrue();
+				assertPageDeclineReleasedResources(fixture, before);
+			}
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptRetainsCleanupFailuresDuringDeadline() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+				PageReceiptFixture fixture = preparePageReceipt(dataset, (NativeLmdbQuerySource) dataset)) {
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			RuntimeException pageFailure = new IllegalStateException("page close after deadline");
+			RuntimeException catalogFailure = new IllegalStateException("catalog close after deadline");
+			RuntimeException probeFailure = new IllegalStateException("probe close after deadline");
+			fixture.evidence.deadlineAfterAcceptedPage = deadline;
+			fixture.evidence.injectDeadlineDirectly = true;
+			fixture.evidence.pageCursorCloseFailure = pageFailure;
+			fixture.evidence.catalogCloseFailure = catalogFailure;
+			fixture.evidence.probeCloseFailure = probeFailure;
+			PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+			Throwable observed;
+			try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+				observed = catchThrowable(() -> fixture.prepared.evaluate(EmptyBindingSet.getInstance(),
+						fixture.row.cancellation));
+			}
+			assertThat(fixture.evidence.acceptedPages).hasValue(1);
+			assertThat(fixture.evidence.deadlineTripped).isTrue();
+			assertThat(observed).as("real cleanup is not hidden by the suppression-disabled deadline")
+					.isSameAs(pageFailure);
+			assertThat(pageFailure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE,
+					catalogFailure, probeFailure);
+			assertPageDeclineReleasedResources(fixture, before);
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptPropagatesCancellationAfterAcceptedPage() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+				fixture.evidence.cancelAfterAcceptedPage = fixture.row.cancellation;
+				PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+				KernelQueryCancelledException observed = null;
+				try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+					if (result != null) {
+						while (result.hasNext()) {
+							result.next();
+						}
+					}
+				} catch (KernelQueryCancelledException failure) {
+					observed = failure;
+				}
+				assertThat(observed).as("page traversal propagates cancellation requested by the first accepted page")
+						.isNotNull();
+				assertThat(fixture.row.cancellation.owns(observed)).isTrue();
+				assertThat(fixture.evidence.acceptedPages).as("cancellation is requested during actual page fill")
+						.hasValue(1);
+				assertThat(fixture.evidence.cancellationRequested).isTrue();
+				assertPageDeclineReleasedResources(fixture, before);
+			}
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptClosesPrivateStateWhenCatalogOrProbeCloseFails() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+				RuntimeException catalogFailure = new IllegalStateException("catalog close after collection");
+				fixture.evidence.catalogCloseFailure = catalogFailure;
+				PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+				RuntimeException catalogObserved = evaluatePageReceiptFailure(fixture);
+				assertThat(catalogObserved).as("post-collection catalog cleanup remains the primary failure")
+						.isSameAs(catalogFailure);
+				assertPageCollectedButUnpublished(fixture, before);
+
+				fixture.evidence.catalogCloseFailure = null;
+				RuntimeException probeFailure = new IllegalStateException("probe close after collection");
+				fixture.evidence.probeCloseFailure = probeFailure;
+				before = snapshotPageAttempt(fixture);
+				RuntimeException probeObserved = evaluatePageReceiptFailure(fixture);
+				assertThat(probeObserved).as("post-collection probe cleanup failure propagates").isSameAs(probeFailure);
+				assertPageCollectedButUnpublished(fixture, before);
+
+				fixture.evidence.probeCloseFailure = null;
+				fixture.evidence.unavailablePagePredicateId = actualSource.idOf(repository.getValueFactory()
+						.createIRI(EX, "referenced-p"));
+				fixture.evidence.catalogCloseFailure = new IllegalArgumentException("catalog close after refusal");
+				before = snapshotPageAttempt(fixture);
+				RuntimeException refusalCleanup = evaluatePageReceiptFailure(fixture);
+				assertThat(refusalCleanup).as("cleanup failure on a clean refusal is not converted into null")
+						.isSameAs(fixture.evidence.catalogCloseFailure);
+				assertPageDeclineReleasedResources(fixture, before);
+			}
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptPreservesSourceIOExceptionAndSuppressedProbeCloseFailure() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+				IOException sourceFailure = new IOException("page source IO failure");
+				RuntimeException closeFailure = new IllegalStateException("probe close after source IO");
+				fixture.evidence.pageSweepFailure = sourceFailure;
+				fixture.evidence.probeCloseFailure = closeFailure;
+				PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+				QueryEvaluationException observed = null;
+				try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+					if (result != null) {
+						while (result.hasNext()) {
+							result.next();
+						}
+					}
+				} catch (QueryEvaluationException failure) {
+					observed = failure;
+				}
+				assertThat(observed).as("source IO remains the page receipt's execution failure").isNotNull();
+				assertThat(observed.getCause()).isSameAs(sourceFailure);
+				assertThat(sourceFailure.getSuppressed()).contains(closeFailure);
+				assertPageDeclineReleasedResources(fixture, before);
+			}
+		}
+	}
+
+	@Test
+	public void parallelLegacyDatatypePrefixRetainsCursorCloseFailureDuringDeadline() throws Exception {
+		String threadsBefore = System.getProperty("rdf4j.lmdb.parallel.threads");
+		String tasksBefore = System.getProperty("rdf4j.lmdb.parallel.maxTasks");
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			System.setProperty(SYNOPSIS_PROPERTY, "false");
+			System.setProperty(SCAN_AGGREGATES_PROPERTY, "false");
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+			System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+			System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
+			Map<String, Long> expected = openOrdinaryReferencedRepository(12_000, false);
+			List<BindingSet> referenceRows;
+			try {
+				System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					referenceRows = QueryResults.asList(connection.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+				}
+			} finally {
+				System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			}
+			assertThat(referenceRows).isNotEmpty();
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) dataset));
+				try (NativeExecutionContext evaluation = source.executionContext()) {
+					long predicate = source.idOf(repository.getValueFactory().createIRI(EX, "referenced-p"));
+					LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.OBJ_IDX }, UNKNOWN, predicate,
+							UNKNOWN, UNKNOWN);
+					assertThat(plan).isNotNull();
+					assertThat(plan.usesAdjacency()).as("the real split uses the ordinary prefix index").isFalse();
+					long[][] splits = source.prefixRunSplitValues(plan, UNKNOWN, predicate, UNKNOWN, UNKNOWN,
+							2 * LmdbNativeParallelPrefixRuns.RANGES_PER_WORKER, plan.prefixLength());
+					assertThat(splits).as("the real bound-prefix planner provides worker ranges").isNotEmpty();
+					RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+					var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+					NativeAggregateAlternative.Prepared legacy = datatypeHistogram(source, dataset, plan, predicate)
+							.prepare(row);
+					assertThat(legacy).isNotNull();
+					assertThat(legacy.quote(row)).isNull();
+					AtomicBoolean inject = new AtomicBoolean(true);
+					AtomicBoolean selected = new AtomicBoolean();
+					AtomicInteger acceptedRoots = new AtomicInteger();
+					AtomicInteger workersOpened = new AtomicInteger();
+					AtomicInteger workersClosed = new AtomicInteger();
+					AtomicInteger cursorsOpened = new AtomicInteger();
+					AtomicInteger cursorsClosed = new AtomicInteger();
+					AtomicInteger selectedClosed = new AtomicInteger();
+					AtomicInteger parentPrefixOpens = new AtomicInteger();
+					LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+					RuntimeException closeFailure = new IllegalStateException("parallel prefix close after deadline");
+					doAnswer(call -> {
+						parentPrefixOpens.incrementAndGet();
+						return call.callRealMethod();
+					}).when(source)
+							.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(),
+									anyBoolean());
+					doAnswer(call -> {
+						ParallelSource[] workers = (ParallelSource[]) call.callRealMethod();
+						if (workers == null) {
+							return null;
+						}
+						workersOpened.addAndGet(workers.length);
+						for (int index = 0; index < workers.length; index++) {
+							ParallelSource worker = spy(workers[index]);
+							doAnswer(open -> {
+								LmdbPrefixRunCursor real = (LmdbPrefixRunCursor) open.callRealMethod();
+								if (real == null) {
+									return null;
+								}
+								cursorsOpened.incrementAndGet();
+								AtomicBoolean chosen = new AtomicBoolean();
+								LmdbPrefixRunCursor cursor = spy(real);
+								doAnswer(next -> {
+									if (chosen.get() && inject.get()) {
+										deadline.trip();
+										throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+									}
+									boolean advanced = (boolean) next.callRealMethod();
+									if (advanced && inject.get() && selected.compareAndSet(false, true)) {
+										chosen.set(true);
+										acceptedRoots.incrementAndGet();
+									}
+									return advanced;
+								}).when(cursor).next();
+								doAnswer(close -> {
+									Object result = close.callRealMethod();
+									cursorsClosed.incrementAndGet();
+									if (chosen.get() && inject.get()) {
+										selectedClosed.incrementAndGet();
+										throw closeFailure;
+									}
+									return result;
+								}).when(cursor).close();
+								return cursor;
+							}).when(worker)
+									.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(),
+											anyLong(), anyBoolean());
+							doAnswer(close -> {
+								Object result = close.callRealMethod();
+								workersClosed.incrementAndGet();
+								return result;
+							}).when(worker).close();
+							workers[index] = worker;
+						}
+						return workers;
+					}).when(source).openParallelSources(anyInt());
+					long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+					long parallelBefore = LmdbNativeDatatypeHistogram.PARALLEL_RUNS.get();
+					long ledgerBefore = ledger.usedBytes();
+					Throwable observed = catchThrowable(() -> {
+						try (var result = legacy.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							if (result != null) {
+								while (result.hasNext()) {
+									result.next();
+								}
+							}
+						}
+					});
+					assertThat(workersOpened).hasValue(2);
+					assertThat(acceptedRoots).hasValue(1);
+					assertThat(deadline.tripped()).isTrue();
+					assertThat(selectedClosed).hasValue(1);
+					assertThat(containsFailure(observed, closeFailure))
+							.as("the selected worker's real cursor cleanup remains visible")
+							.isTrue();
+					assertThat(closeFailure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+					assertThat(cursorsClosed).hasValue(cursorsOpened.get());
+					assertThat(workersClosed).hasValue(workersOpened.get());
+					assertThat(parentPrefixOpens).hasValue(0);
+					assertThat(LmdbNativeDatatypeHistogram.RUNS).hasValue(runsBefore);
+					assertThat(LmdbNativeDatatypeHistogram.PARALLEL_RUNS).hasValue(parallelBefore);
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+					try (var restored = LmdbNativeParallelPipelines.tryReserveTasks(false, 2)) {
+						assertThat(restored).isNotNull();
+						assertThat(restored.grantedWorkers()).isEqualTo(2);
+					}
+					inject.set(false);
+					List<BindingSet> rows = new ArrayList<>();
+					try (var result = legacy.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						assertThat(result).isNotNull();
+						while (result.hasNext()) {
+							rows.add(result.next());
+						}
+					}
+					assertThat(rows).containsExactlyInAnyOrderElementsOf(referenceRows);
+					assertThat(datatypeCounts(rows)).isEqualTo(expected);
+					assertThat(cursorsClosed).hasValue(cursorsOpened.get());
+					assertThat(workersClosed).hasValue(workersOpened.get());
+					assertThat(parentPrefixOpens).hasValue(0);
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				}
+			}
+		} finally {
+			restoreProperty("rdf4j.lmdb.parallel.threads", threadsBefore);
+			restoreProperty("rdf4j.lmdb.parallel.maxTasks", tasksBefore);
+		}
+	}
+
+	@Test
+	public void legacyDatatypePrefixRetainsCursorCloseFailureDuringDeadline() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		Map<String, Long> expected = openMixedRepository(2_000);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) dataset));
+			try (NativeExecutionContext evaluation = source.executionContext()) {
+				long predicate = source.idOf(repository.getValueFactory().createIRI(EX, "p"));
+				assertThat(predicate).isPositive();
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.OBJ_IDX }, UNKNOWN, predicate,
+						UNKNOWN, UNKNOWN);
+				assertThat(plan).as("the real predicate-bound source supports object prefix runs").isNotNull();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				NativeAggregateAlternative.Prepared legacy = datatypeHistogram(source, dataset, plan, predicate)
+						.prepare(row);
+				assertThat(legacy).isNotNull();
+				assertThat(legacy.quote(row)).as("the predicate-bound legacy recipe remains unpriced").isNull();
+				AtomicInteger acceptedRoots = new AtomicInteger();
+				AtomicInteger cursorsOpened = new AtomicInteger();
+				AtomicInteger cursorsClosed = new AtomicInteger();
+				AtomicBoolean inject = new AtomicBoolean(true);
+				LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+				RuntimeException closeFailure = new IllegalStateException("legacy prefix cursor close after deadline");
+				doAnswer(open -> {
+					LmdbPrefixRunCursor real = (LmdbPrefixRunCursor) open.callRealMethod();
+					assertThat(real).isNotNull();
+					cursorsOpened.incrementAndGet();
+					LmdbPrefixRunCursor cursor = spy(real);
+					doAnswer(next -> {
+						if (inject.get() && acceptedRoots.get() == 1) {
+							deadline.trip();
+							LmdbNativeProbeDeadline.poll(0);
+						}
+						boolean advanced = (boolean) next.callRealMethod();
+						if (advanced) {
+							acceptedRoots.incrementAndGet();
+						}
+						return advanced;
+					}).when(cursor).next();
+					doAnswer(close -> {
+						close.callRealMethod();
+						cursorsClosed.incrementAndGet();
+						if (inject.get()) {
+							throw closeFailure;
+						}
+						return null;
+					}).when(cursor).close();
+					return cursor;
+				}).when(source)
+						.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(),
+								anyBoolean());
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				long parallelBefore = LmdbNativeDatatypeHistogram.PARALLEL_RUNS.get();
+				long ledgerBefore = ledger.usedBytes();
+				Throwable observed;
+				try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+					observed = catchThrowable(() -> {
+						try (var result = legacy.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							if (result != null) {
+								while (result.hasNext()) {
+									result.next();
+								}
+							}
+						}
+					});
+				}
+				assertThat(acceptedRoots).as("one real prefix root precedes the deadline").hasValue(1);
+				assertThat(deadline.tripped()).isTrue();
+				assertThat(cursorsOpened).hasValue(1);
+				assertThat(cursorsClosed).hasValue(1);
+				assertThat(observed).as("the real prefix close failure survives the deadline").isSameAs(closeFailure);
+				assertThat(closeFailure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertThat(LmdbNativeDatatypeHistogram.RUNS).hasValue(runsBefore);
+				assertThat(LmdbNativeDatatypeHistogram.PARALLEL_RUNS).hasValue(parallelBefore);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				inject.set(false);
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = legacy.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(datatypeCounts(rows)).isEqualTo(expected);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			}
+		}
+	}
+
+	@Test
+	public void legacyDatatypePageRetainsCleanupFailuresDuringDeadline() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		Map<String, Long> expected = openOrdinaryReferencedRepository(12_000, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			PageProducerEvidence evidence = new PageProducerEvidence();
+			evidence.workspaceUnavailable = true;
+			SyntheticValueSource source = recordingPageProducerSource((NativeLmdbQuerySource) dataset, evidence);
+			doAnswer(call -> null).when(source).cachedDatatypeSummaryReceipt(eq(false));
+			doAnswer(call -> null).when(source).coldDatatypeSummaryReceipt(eq(false), any(Runnable.class));
+			try (NativeExecutionContext evaluation = source.executionContext()) {
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				NativeAggregateAlternative.Prepared legacy = datatypeHistogram(source, dataset,
+						unrestrictedObjectPlan(source)).prepare(row);
+				assertThat(legacy).isNotNull();
+				assertThat(legacy.quote(row)).as("the real legacy recipe remains unpriced").isNull();
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
+				int probesBefore = evidence.probesOpened.get();
+				int closesBefore = evidence.probesClosed.get();
+				int planesBefore = evidence.planesOpened.get();
+				int planesClosedBefore = evidence.planesClosed.get();
+				int pagesBefore = evidence.pageCursorOpens.get();
+				int pagesClosedBefore = evidence.pageCursorsClosed.get();
+				int prefixBefore = evidence.prefixProducerOpens.get();
+				LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+				RuntimeException pageFailure = new IllegalStateException("legacy page close after deadline");
+				RuntimeException planeFailure = new IllegalStateException("legacy plane close after deadline");
+				RuntimeException probeFailure = new IllegalStateException("legacy probe close after deadline");
+				evidence.deadlineAfterAcceptedPage = deadline;
+				evidence.injectDeadlineDirectly = true;
+				evidence.closeFailuresAfterAcceptedPage = true;
+				evidence.pageCursorCloseFailure = pageFailure;
+				evidence.planeCloseFailure = planeFailure;
+				evidence.probeCloseFailure = probeFailure;
+				Throwable observed;
+				try {
+					try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+						observed = catchThrowable(
+								() -> legacy.evaluate(EmptyBindingSet.getInstance(), row.cancellation));
+					}
+				} finally {
+					evidence.deadlineAfterAcceptedPage = null;
+					evidence.closeFailuresAfterAcceptedPage = false;
+					evidence.pageCursorCloseFailure = null;
+					evidence.planeCloseFailure = null;
+					evidence.probeCloseFailure = null;
+				}
+				assertThat(evidence.acceptedPages).hasValue(1);
+				assertThat(evidence.deadlineTripped).isTrue();
+				assertThat(observed).as("legacy page cleanup survives the suppression-disabled deadline")
+						.isSameAs(pageFailure);
+				assertThat(pageFailure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE,
+						planeFailure, probeFailure);
+				assertThat(evidence.pageCursorOpens.get() - pagesBefore)
+						.isEqualTo(evidence.pageCursorsClosed.get() - pagesClosedBefore);
+				assertThat(evidence.planesOpened.get() - planesBefore)
+						.isEqualTo(evidence.planesClosed.get() - planesClosedBefore);
+				assertThat(evidence.probesOpened.get() - probesBefore)
+						.isEqualTo(evidence.probesClosed.get() - closesBefore);
+				assertThat(evidence.prefixOpensAtFirstAcceptedPage)
+						.as("the legacy page recipe opens exactly one predicate-catalog scan")
+						.hasValue(prefixBefore + 1);
+				assertThat(evidence.prefixProducerOpens)
+						.as("the failed page recipe never retries through prefix runs")
+						.hasValue(evidence.prefixOpensAtFirstAcceptedPage.get());
+				assertThat(LmdbNativeDatatypeHistogram.RUNS).hasValue(runsBefore);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = legacy.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(datatypeCounts(rows)).isEqualTo(expected);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			}
+		}
+	}
+
+	@Test
+	public void preparedPageReceiptRefusesWorkspaceBeforeRuntimeLookupOrProbe() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		openOrdinaryReferencedRepository(12_000, false);
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			try (PageReceiptFixture fixture = preparePageReceipt(dataset, actualSource)) {
+				long free = fixture.ledger.maxBytes() - fixture.ledger.usedBytes();
+				assertThat(free).isGreaterThan(fixture.workspace.workspaceBytes());
+				var saturation = fixture.ledger.reserve(free - fixture.workspace.workspaceBytes() + 1L, null);
+				assertThat(saturation).as("the real query ledger can reserve all but one required workspace byte")
+						.isNotNull();
+				try {
+					PageAttemptSnapshot before = snapshotPageAttempt(fixture);
+					var refused = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation);
+					assertThat(refused).as("workspace exhaustion declines before runtime receipt or probe setup")
+							.isNull();
+					assertPageDeclineReleasedResources(fixture, before);
+					assertThat(fixture.evidence.workspaceLookups.get()).isEqualTo(before.workspaceLookups());
+					assertThat(fixture.evidence.probesOpened.get()).isEqualTo(before.probesOpened());
+				} finally {
+					saturation.close();
+				}
+				assertThat(fixture.ledger.usedBytes()).isEqualTo(fixture.ledgerBeforePrepare);
+			}
+		}
+	}
+
+	@Test
+	public void objectPageSetupPollsAndPropagatesCancellation() throws Exception {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(SCAN_AGGREGATES_PROPERTY, "true");
+		openOrdinaryReferencedRepository(12_000, false);
+
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(actualSource);
+			NativeExecutionContext evaluation = source.executionContext();
+			try {
+				NativeLmdbQuerySource.PredicateProjectionStatistics statistics = source
+						.predicateProjectionStatistics(false, () -> {
+						});
+				assertThat(statistics).as("the explicit compacted object plane has real source-owned facts")
+						.isNotNull();
+				assertThat(statistics.predicates()).isEqualTo(1L);
+				assertThat(statistics.quads()).isEqualTo(12_000L);
+
+				long predicate = source.idOf(repository.getValueFactory().createIRI(EX, "referenced-p"));
+				RuntimeException expectedPageCountCancellation = new IllegalStateException("page-count cancelled");
+				RuntimeException expectedPageOpenCancellation = new IllegalStateException("page-open cancelled");
+				RuntimeException expectedPageAdvanceCancellation = new IllegalStateException("page-advance cancelled");
+				RuntimeException observedPageCountFailure = null;
+				RuntimeException observedPageOpenFailure = null;
+				RuntimeException observedPageAdvanceFailure = null;
+				AdjacencyPageCursor returnedAfterPageOpenCancellation = null;
+				long pageCountAfterCancellation = Long.MIN_VALUE;
+				AtomicInteger pageCountCancellationPolls = new AtomicInteger();
+				AtomicInteger pageOpenCancellationPolls = new AtomicInteger();
+				AtomicInteger successfulPageCountPolls = new AtomicInteger();
+				AtomicInteger successfulPageOpenPolls = new AtomicInteger();
+				AtomicInteger pageAdvanceCancellationPolls = new AtomicInteger();
+				AtomicBoolean cancelPageAdvance = new AtomicBoolean();
+				long successfulPageCount = Long.MIN_VALUE;
+				boolean successfulCursorAdvanced = false;
+				boolean successfulCursorReturned = false;
+				int successfulCursorRows = 0;
+				boolean advanceAfterAcceptedPageReturned = false;
+				long noArgumentPageCount = Long.MIN_VALUE;
+				boolean noArgumentCursorReturned = false;
+				boolean noArgumentCursorAdvanced = false;
+				int noArgumentCursorRows = 0;
+				RuntimeException cancellationCursorCloseFailure = null;
+
+				try (NativeProbe probe = source.newProbe();
+						WildcardAdjacency catalog = probe.boundedPredicateSweep(false)) {
+					assertThat(catalog).as("the real explicit probe exposes its bounded object-plane catalog")
+							.isNotNull();
+					assertThat(catalog.predicateCount()).isEqualTo(1);
+					assertThat(catalog.predicateAt(0)).isEqualTo(predicate);
+					catalog.bind(0);
+					assertThat(catalog.boundPredicateOrdinal()).isEqualTo(0);
+					assertThat(catalog.keyCount()).as("the bound real plane contains object roots").isPositive();
+
+					try {
+						pageCountAfterCancellation = catalog.pageCount(() -> {
+							pageCountCancellationPolls.incrementAndGet();
+							throw expectedPageCountCancellation;
+						});
+					} catch (RuntimeException failure) {
+						observedPageCountFailure = failure;
+					}
+					try {
+						returnedAfterPageOpenCancellation = catalog.openPageCursor(() -> {
+							pageOpenCancellationPolls.incrementAndGet();
+							throw expectedPageOpenCancellation;
+						});
+					} catch (RuntimeException failure) {
+						observedPageOpenFailure = failure;
+					}
+					if (returnedAfterPageOpenCancellation != null) {
+						try {
+							returnedAfterPageOpenCancellation.close();
+						} catch (RuntimeException failure) {
+							cancellationCursorCloseFailure = failure;
+						}
+					}
+
+					successfulPageCount = catalog.pageCount(() -> {
+						successfulPageCountPolls.incrementAndGet();
+					});
+					noArgumentPageCount = catalog.pageCount();
+					try (AdjacencyPageCursor cursor = catalog.openPageCursor()) {
+						noArgumentCursorReturned = cursor != null;
+						if (cursor != null) {
+							noArgumentCursorAdvanced = cursor.advance();
+							if (noArgumentCursorAdvanced) {
+								noArgumentCursorRows = cursor.rowCount();
+							}
+						}
+					}
+					try (AdjacencyPageCursor cursor = catalog.openPageCursor(() -> {
+						successfulPageOpenPolls.incrementAndGet();
+						if (cancelPageAdvance.get()) {
+							pageAdvanceCancellationPolls.incrementAndGet();
+							throw expectedPageAdvanceCancellation;
+						}
+					})) {
+						successfulCursorReturned = cursor != null;
+						if (cursor != null) {
+							successfulCursorAdvanced = cursor.advance();
+							if (successfulCursorAdvanced) {
+								successfulCursorRows = cursor.rowCount();
+								cancelPageAdvance.set(true);
+								try {
+									advanceAfterAcceptedPageReturned = cursor.advance();
+								} catch (RuntimeException failure) {
+									observedPageAdvanceFailure = failure;
+								}
+							}
+						}
+					}
+				}
+
+				SoftAssertions softly = new SoftAssertions();
+				softly.assertThat(observedPageCountFailure)
+						.as("pageCount(callback) invokes and propagates the caller's cancellation")
+						.isSameAs(expectedPageCountCancellation);
+				softly.assertThat(pageCountCancellationPolls)
+						.as("page-count cancellation is observed during setup")
+						.hasValue(1);
+				softly.assertThat(pageCountAfterCancellation)
+						.as("a cancelled page-count setup does not return a count")
+						.isEqualTo(Long.MIN_VALUE);
+				softly.assertThat(observedPageOpenFailure)
+						.as("openPageCursor(callback) invokes and propagates the caller's cancellation")
+						.isSameAs(expectedPageOpenCancellation);
+				softly.assertThat(pageOpenCancellationPolls)
+						.as("page-open cancellation is observed during setup")
+						.hasValue(1);
+				softly.assertThat(returnedAfterPageOpenCancellation)
+						.as("a cancelled page-cursor setup returns no cursor")
+						.isNull();
+				softly.assertThat(cancellationCursorCloseFailure)
+						.as("cleanup of any unexpectedly returned cancelled cursor succeeds")
+						.isNull();
+				softly.assertThat(successfulPageCount)
+						.as("a non-cancelling page-count poll returns a positive page count")
+						.isPositive();
+				softly.assertThat(successfulPageCount)
+						.as("the real fixture has a later page to cancel")
+						.isGreaterThan(1L);
+				softly.assertThat(successfulPageCountPolls.get())
+						.as("the successful page-count setup also polls its caller")
+						.isPositive();
+				softly.assertThat(noArgumentPageCount)
+						.as("the no-argument page-count path remains usable")
+						.isPositive();
+				softly.assertThat(noArgumentCursorReturned)
+						.as("the no-argument page-open path returns a cursor")
+						.isTrue();
+				softly.assertThat(noArgumentCursorAdvanced).as("the no-argument cursor advances").isTrue();
+				softly.assertThat(noArgumentCursorRows).as("the no-argument cursor exposes a page").isPositive();
+				softly.assertThat(successfulCursorReturned)
+						.as("a non-cancelling page-open poll returns a usable cursor")
+						.isTrue();
+				softly.assertThat(successfulCursorAdvanced).isTrue();
+				softly.assertThat(successfulCursorRows).isPositive();
+				softly.assertThat(observedPageAdvanceFailure)
+						.as("cancellation after one accepted page propagates from the next advance")
+						.isSameAs(expectedPageAdvanceCancellation);
+				softly.assertThat(pageAdvanceCancellationPolls)
+						.as("the next physical page advance polls the caller")
+						.hasValue(1);
+				softly.assertThat(advanceAfterAcceptedPageReturned)
+						.as("the cancelled next advance does not return a page")
+						.isFalse();
+				softly.assertThat(successfulPageOpenPolls.get())
+						.as("the successful page-cursor setup polls its caller")
+						.isPositive();
+				softly.assertAll();
+			} finally {
+				evaluation.close();
+			}
+			assertThat(evaluation.isClosed()).isTrue();
+		}
+	}
+
+	@Test
+	public void ordinaryDatatypeAndLanguageExpressionsDecodeOneStoredValue() throws Exception {
+		openOrdinaryReferencedRepository(2, false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			ValueFactory values = repository.getValueFactory();
+			IRI datatype = values.createIRI("urn:header-batch:datatype:alpha");
+			long literal = source.idOf(values.createLiteral("ordinary referenced literal 0", datatype));
+			assertThat(ValueIds.getIdType(literal)).as("the input uses an ordinary stored literal ID")
+					.isEqualTo(ValueIds.T_LITERAL);
+			LmdbNativeValueCodec codec = source.nativeValueCodec();
+			assertThat(codec).isNotNull();
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
+			layout.freeze(List.of("value"));
+			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			row.slots[0] = literal;
+			LmdbNativeScalarExpressionCompiler compiler = new LmdbNativeScalarExpressionCompiler(source, codec,
+					name -> 0, 1L);
+			try {
+				long before = LmdbNativeValueCodec.ZERO_COPY_READS.get();
+				assertThat(compiler.compileValue(new Datatype(new Var("value"))).evaluator.eval(row).label())
+						.isEqualTo(datatype.stringValue());
+				long afterDatatype = LmdbNativeValueCodec.ZERO_COPY_READS.get();
+				assertThat(afterDatatype).as("the first DATATYPE evaluation reads the stored literal payload")
+						.isGreaterThan(before);
+				assertThat(compiler.compileValue(new Lang(new Var("value"))).evaluator.eval(row).label()).isEmpty();
+				assertThat(LmdbNativeValueCodec.ZERO_COPY_READS.get())
+						.as("the unchanged slot reuses its decoded value for LANG")
+						.isEqualTo(afterDatatype);
+			} finally {
+				row.closeDecodedInputs();
+				row.memoryScope.close();
+			}
+		}
 	}
 
 	@Test
@@ -186,16 +3752,31 @@ public class LmdbDatatypeHistogramTest {
 	public void telemetryReportsPageHeaderAndPayloadOptimizationChoices() {
 		System.setProperty(SYNOPSIS_PROPERTY, "false");
 		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
-		openMixedRepository(0);
+		Map<String, Long> expected = openMixedRepository(0);
+
+		List<BindingSet> ordinaryRows;
+		try {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				ordinaryRows = QueryResults.asList(conn.prepareTupleQuery(DATATYPE_HISTOGRAM).evaluate());
+			}
+		} finally {
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		}
 
 		String telemetry;
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			telemetry = conn.prepareTupleQuery(DATATYPE_HISTOGRAM)
-					.explain(Explanation.Level.Telemetry)
-					.toString();
+			SailTupleQuery query = (SailTupleQuery) conn.prepareTupleQuery(DATATYPE_HISTOGRAM);
+			query.setForcedLmdbExecutionStrategy("datatypeHistogram");
+			List<BindingSet> rows = QueryResults.asList(query.evaluate());
+			assertThat(rows).isNotEmpty();
+			assertThat(datatypeCounts(rows)).isEqualTo(expected);
+			assertThat(rows).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+			telemetry = query.explain(Explanation.Level.Telemetry).toString();
 		}
 
 		assertThat(telemetry)
+				.contains("winner=datatypeHistogram")
 				.contains("nativeExecutionPath=datatypeHistogram")
 				.contains("nativeAdjacencyOptimizationSummary=grain=PLANE;directions=OSC;pageHeaders=USED")
 				.contains("nativeAdjacencyPagesVisitedActual=")
@@ -248,6 +3829,970 @@ public class LmdbDatatypeHistogramTest {
 		}
 
 		assertThat(histogram(DATATYPE_HISTOGRAM)).isEqualTo(expected);
+	}
+
+	private WarmDatatypeReceiptFixture prepareWarmDatatypeReceiptFixture() throws Exception {
+		Map<String, Long> expected = openMixedRepository(2000);
+		SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+		assertThat(actualSource.hasCanonicalIds())
+				.as("the receipt fixture is backed by the real canonical compacted dictionary")
+				.isTrue();
+
+		CachedSummaryReceiptState state = new CachedSummaryReceiptState();
+		SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+		doAnswer(call -> {
+			state.receiptLookups.incrementAndGet();
+			if (state.captureRuntimeReceiptLedger.get()) {
+				LmdbQueryMemoryManager.QueryLedger ledger = state.ledger.get();
+				state.runtimeReceiptLedgerBytes.set(ledger == null ? -1L : ledger.usedBytes());
+				state.runtimeReceiptLookups.incrementAndGet();
+			}
+			CachedDatatypeSummaryReceipt receipt = state.currentReceipt.get();
+			return receipt != null && receipt.bySubject() == call.getArgument(0, Boolean.class) ? receipt : null;
+		}).when(source).cachedDatatypeSummaryReceipt(anyBoolean());
+		doAnswer(call -> {
+			state.probesOpened.incrementAndGet();
+			NativeProbe probe = spy((NativeProbe) call.callRealMethod());
+			doAnswer(probeCall -> {
+				state.rootSynopsisGetterCalls.incrementAndGet();
+				NodeDomainSynopsis synopsis = (NodeDomainSynopsis) probeCall.callRealMethod();
+				if (synopsis == null) {
+					return null;
+				}
+				NodeDomainSynopsis recordingSynopsis = spy(synopsis);
+				doAnswer(cursorCall -> {
+					state.rootCursorOpens.incrementAndGet();
+					return cursorCall.callRealMethod();
+				}).when(recordingSynopsis).cursor();
+				return recordingSynopsis;
+			}).when(probe).nodeDomainSynopsis(anyBoolean());
+			doAnswer(probeCall -> {
+				state.datatypeSummaryGetterCalls.incrementAndGet();
+				DatatypeSummary summary = (DatatypeSummary) probeCall.callRealMethod();
+				return summary == null ? null : recordingDatatypeSummary(summary, state);
+			}).when(probe).nodeDomainDatatypeSummary(anyBoolean(), any());
+			doAnswer(probeCall -> {
+				state.cachedSummaryGetterCalls.incrementAndGet();
+				IOException failure = state.cachedSummaryFailure.get();
+				if (failure != null) {
+					throw failure;
+				}
+				CachedDatatypeSummaryReceipt requested = probeCall.getArgument(0);
+				if (!state.cachedSummaryAvailable.get()
+						|| !"true".equals(System.getProperty(SYNOPSIS_PROPERTY))
+						|| !sameReceiptByIdentity(requested, state.currentReceipt.get())) {
+					return null;
+				}
+				return state.warmSummary.get();
+			}).when(probe).cachedDatatypeSummary(any());
+			doAnswer(close -> {
+				state.probesClosed.incrementAndGet();
+				Object result = close.callRealMethod();
+				IOException failure = state.probeCloseFailure.get();
+				if (failure != null) {
+					throw failure;
+				}
+				return result;
+			}).when(probe).close();
+			return probe;
+		}).when(source).newProbe();
+		doAnswer(call -> {
+			state.prefixRunCalls.incrementAndGet();
+			return call.callRealMethod();
+		}).when(source).prefixRuns(any(), anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean(), any());
+
+		NativeExecutionContext evaluation = source.executionContext();
+		NativeProbe warmProbe = null;
+		boolean transferred = false;
+		try {
+			warmProbe = source.newProbe();
+			NodeDomainSynopsis roots = warmProbe.nodeDomainSynopsis(false);
+			assertThat(roots).as("the explicit native snapshot supplies the real object-domain synopsis")
+					.isNotNull();
+			long rootDomainEntries = roots.cardinality();
+			long observedRoots = 0L;
+			Set<IRI> physicalDatatypeTerms = new HashSet<>();
+			NodeDomainSynopsis.RootCursor rootCursor = roots.cursor();
+			while (rootCursor.next()) {
+				Value rootValue = source.lazyValue(rootCursor.rootId(), 1 << TripleIndex.OBJ_IDX);
+				assertThat(rootValue)
+						.as("every summary root resolves through the same evaluation-scoped source")
+						.isNotNull();
+				if (rootValue instanceof Literal literal) {
+					physicalDatatypeTerms.add(literal.getDatatype());
+				}
+				observedRoots++;
+			}
+			assertThat(observedRoots).isEqualTo(rootDomainEntries);
+
+			DatatypeSummary summary = warmProbe.nodeDomainDatatypeSummary(false, uniform -> {
+			});
+			assertThat(summary).as("the physical datatype-group summary is already retained").isNotNull();
+			Set<IRI> summarizedDatatypeTerms = new HashSet<>();
+			long summarizedGroups = 0L;
+			DatatypeSummary.GroupCursor groupCursor = summary.cursor();
+			while (groupCursor.next()) {
+				Value representative = source.lazyValue(groupCursor.representativeId(), 1 << TripleIndex.OBJ_IDX);
+				assertThat(representative).isInstanceOf(Literal.class);
+				summarizedDatatypeTerms.add(((Literal) representative).getDatatype());
+				summarizedGroups++;
+			}
+			assertThat(summarizedDatatypeTerms).containsExactlyInAnyOrderElementsOf(physicalDatatypeTerms);
+			assertThat(summarizedGroups).as("G summary entries can exceed H RDF datatype terms")
+					.isGreaterThan((long) summarizedDatatypeTerms.size());
+			assertThat(summarizedGroups).as("G summary entries remain fewer than R object roots")
+					.isLessThan(rootDomainEntries);
+
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = source.predicateProjectionStatistics(false,
+					() -> {
+					});
+			assertThat(statistics).isNotNull();
+			assertThat(statistics.quads())
+					.isEqualTo(expected.values().stream().mapToLong(Long::longValue).sum() + 2L);
+			assertThat(statistics.predicates()).isEqualTo(1L);
+			assertThat(statistics.incidences()).isEqualTo(rootDomainEntries);
+			assertThat(statistics.largestRootDomain()).isEqualTo(rootDomainEntries);
+			state.warmSummary.set(summary);
+			state.currentReceipt
+					.set(new CachedDatatypeSummaryReceipt(new EqualOpaqueAuthority("retained-object-domain"),
+							false, true, summarizedGroups, 4096L));
+
+			LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+			RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+			var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			state.ledger.set(ledger);
+			long ledgerBeforePrepare = ledger.usedBytes();
+			LmdbNativeDatatypeHistogram histogram = datatypeHistogram(source, dataset, plan);
+			NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+			assertThat(prepared).as("the real histogram recipe is prepared against the retained source")
+					.isNotNull();
+			NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+			WarmDatatypeReceiptFixture fixture = new WarmDatatypeReceiptFixture(dataset, evaluation, warmProbe,
+					actualSource, source, state, row, ledger, ledgerBeforePrepare, prepared, quote, expected,
+					summarizedGroups);
+			transferred = true;
+			return fixture;
+		} finally {
+			if (!transferred) {
+				try {
+					if (warmProbe != null) {
+						warmProbe.close();
+					}
+				} finally {
+					try {
+						evaluation.close();
+					} finally {
+						dataset.close();
+					}
+				}
+			}
+		}
+	}
+
+	private static DatatypeSummary recordingDatatypeSummary(DatatypeSummary summary,
+			CachedSummaryReceiptState state) {
+		DatatypeSummary recordingSummary = spy(summary);
+		doAnswer(call -> {
+			state.summaryCursorOpens.incrementAndGet();
+			DatatypeSummary.GroupCursor cursor = (DatatypeSummary.GroupCursor) call.callRealMethod();
+			return new DatatypeSummary.GroupCursor() {
+				@Override
+				public boolean next() {
+					int failAfter = state.summaryCursorFailureAfterGroups.get();
+					if (failAfter >= 0 && state.acceptedSummaryGroups.get() >= failAfter) {
+						RuntimeException failure = state.summaryCursorFailure.get();
+						if (failure != null) {
+							LmdbNativeProbeDeadline deadline = state.deadlineOnSummaryFailure.get();
+							if (deadline != null) {
+								deadline.trip();
+							}
+							throw failure;
+						}
+					}
+					boolean next = cursor.next();
+					if (next) {
+						state.acceptedSummaryGroups.incrementAndGet();
+					} else if (state.endSummaryAfterDeadline.get()) {
+						state.deadlineOnSummaryFailure.get().trip();
+					}
+					return next;
+				}
+
+				@Override
+				public long representativeId() {
+					return cursor.representativeId();
+				}
+
+				@Override
+				public long datatypeId() {
+					return cursor.datatypeId();
+				}
+
+				@Override
+				public boolean referenced() {
+					return cursor.referenced();
+				}
+
+				@Override
+				public long quadMultiplicity() {
+					return cursor.quadMultiplicity();
+				}
+			};
+		}).when(recordingSummary).cursor();
+		return recordingSummary;
+	}
+
+	private static RuntimeException evaluateExpectingRuntimeFailure(WarmDatatypeReceiptFixture fixture) {
+		try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+			if (result != null) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		} catch (RuntimeException failure) {
+			return failure;
+		}
+		return null;
+	}
+
+	private static boolean sameReceiptByIdentity(CachedDatatypeSummaryReceipt left,
+			CachedDatatypeSummaryReceipt right) {
+		return left != null && right != null && left.baseAuthority() == right.baseAuthority()
+				&& left.bySubject() == right.bySubject() && left.explicit() == right.explicit()
+				&& left.groups() == right.groups() && left.workspaceBytes() == right.workspaceBytes();
+	}
+
+	private static Map<String, Long> datatypeCounts(List<BindingSet> rows) {
+		Map<String, Long> counts = new HashMap<>();
+		for (BindingSet row : rows) {
+			counts.put(row.getValue("datatype").stringValue(), ((Literal) row.getValue("literals")).longValue());
+		}
+		return counts;
+	}
+
+	private static boolean containsFailure(Throwable failure, Throwable target) {
+		List<Throwable> pending = new ArrayList<>();
+		Set<Throwable> visited = new HashSet<>();
+		if (failure != null) {
+			pending.add(failure);
+		}
+		for (int index = 0; index < pending.size(); index++) {
+			Throwable current = pending.get(index);
+			if (current == target) {
+				return true;
+			}
+			if (visited.add(current)) {
+				if (current.getCause() != null) {
+					pending.add(current.getCause());
+				}
+				pending.addAll(List.of(current.getSuppressed()));
+			}
+		}
+		return false;
+	}
+
+	private static Map<String, Long> datatypeHistogramMetrics() {
+		Map<String, Long> metrics = new TreeMap<>();
+		metrics.put("runs", LmdbNativeDatatypeHistogram.RUNS.get());
+		metrics.put("parallelRuns", LmdbNativeDatatypeHistogram.PARALLEL_RUNS.get());
+		metrics.put("domainRuns", LmdbNativeDatatypeHistogram.ADJACENCY_DOMAIN_RUNS.get());
+		metrics.put("planeRoots", LmdbNativeDatatypeHistogram.ADJACENCY_PLANE_ROOTS.get());
+		metrics.put("pages", LmdbNativeDatatypeHistogram.ADJACENCY_PAGES.get());
+		metrics.put("summaryRuns", LmdbNativeDatatypeHistogram.ADJACENCY_DATATYPE_SUMMARY_RUNS.get());
+		metrics.put("pageFastPath", LmdbNativeDatatypeHistogram.PAGE_LITERAL_DATATYPE_FAST_PATHS.get());
+		metrics.put("pageRootDecode", LmdbNativeDatatypeHistogram.PAGE_ROOT_IDS_DECODED.get());
+		metrics.put("bulkHeaders", LmdbNativeDatatypeHistogram.BULK_LITERAL_HEADER_BATCHES.get());
+		metrics.put("scalarHeaders", LmdbNativeDatatypeHistogram.SCALAR_LITERAL_HEADER_LOOKUPS.get());
+		metrics.put("uniformHeaders", LmdbNativeDatatypeHistogram.UNIFORM_LITERAL_DATATYPE_BATCHES.get());
+		return metrics;
+	}
+
+	private static final class CachedSummaryReceiptState {
+		private final AtomicReference<CachedDatatypeSummaryReceipt> currentReceipt = new AtomicReference<>();
+		private final AtomicReference<DatatypeSummary> warmSummary = new AtomicReference<>();
+		private final AtomicReference<LmdbQueryMemoryManager.QueryLedger> ledger = new AtomicReference<>();
+		private final AtomicBoolean cachedSummaryAvailable = new AtomicBoolean(true);
+		private final AtomicBoolean captureRuntimeReceiptLedger = new AtomicBoolean(false);
+		private final AtomicBoolean endSummaryAfterDeadline = new AtomicBoolean(false);
+		private final AtomicReference<IOException> cachedSummaryFailure = new AtomicReference<>();
+		private final AtomicReference<IOException> probeCloseFailure = new AtomicReference<>();
+		private final AtomicReference<RuntimeException> summaryCursorFailure = new AtomicReference<>();
+		private final AtomicReference<LmdbNativeProbeDeadline> deadlineOnSummaryFailure = new AtomicReference<>();
+		private final AtomicInteger summaryCursorFailureAfterGroups = new AtomicInteger(-1);
+		private final AtomicInteger acceptedSummaryGroups = new AtomicInteger();
+		private final AtomicInteger receiptLookups = new AtomicInteger();
+		private final AtomicInteger runtimeReceiptLookups = new AtomicInteger();
+		private final AtomicLong runtimeReceiptLedgerBytes = new AtomicLong(-1L);
+		private final AtomicInteger cachedSummaryGetterCalls = new AtomicInteger();
+		private final AtomicInteger rootSynopsisGetterCalls = new AtomicInteger();
+		private final AtomicInteger datatypeSummaryGetterCalls = new AtomicInteger();
+		private final AtomicInteger rootCursorOpens = new AtomicInteger();
+		private final AtomicInteger summaryCursorOpens = new AtomicInteger();
+		private final AtomicInteger prefixRunCalls = new AtomicInteger();
+		private final AtomicInteger probesOpened = new AtomicInteger();
+		private final AtomicInteger probesClosed = new AtomicInteger();
+	}
+
+	private record EqualOpaqueAuthority(String value) {
+	}
+
+	private static final class WarmDatatypeReceiptFixture implements AutoCloseable {
+		private final SailDataset dataset;
+		private final NativeExecutionContext evaluation;
+		private final NativeProbe warmProbe;
+		private final NativeLmdbQuerySource actualSource;
+		private final SyntheticValueSource source;
+		private final CachedSummaryReceiptState state;
+		private final RowState row;
+		private final LmdbQueryMemoryManager.QueryLedger ledger;
+		private final long ledgerBeforePrepare;
+		private final NativeAggregateAlternative.Prepared prepared;
+		private final NativeAggregatePhysicalPlan.Work quote;
+		private final CachedDatatypeSummaryReceipt preparedReceipt;
+		private final Map<String, Long> expected;
+		private final long summarizedGroups;
+
+		private WarmDatatypeReceiptFixture(SailDataset dataset, NativeExecutionContext evaluation,
+				NativeProbe warmProbe, NativeLmdbQuerySource actualSource, SyntheticValueSource source,
+				CachedSummaryReceiptState state, RowState row, LmdbQueryMemoryManager.QueryLedger ledger,
+				long ledgerBeforePrepare, NativeAggregateAlternative.Prepared prepared,
+				NativeAggregatePhysicalPlan.Work quote, Map<String, Long> expected, long summarizedGroups) {
+			this.dataset = dataset;
+			this.evaluation = evaluation;
+			this.warmProbe = warmProbe;
+			this.actualSource = actualSource;
+			this.source = source;
+			this.state = state;
+			this.row = row;
+			this.ledger = ledger;
+			this.ledgerBeforePrepare = ledgerBeforePrepare;
+			this.prepared = prepared;
+			this.quote = quote;
+			this.preparedReceipt = state.currentReceipt.get();
+			this.expected = expected;
+			this.summarizedGroups = summarizedGroups;
+		}
+
+		private void assertCompleteQuote() {
+			assertThat(actualSource.hasCanonicalIds()).isTrue();
+			assertThat(state.currentReceipt.get()).as("the source contract offers a retained summary receipt")
+					.isNotNull();
+			assertThat(quote).as("the cached summary recipe has a complete physical quote").isNotNull();
+			assertThat(state.receiptLookups.get())
+					.as("prepare consults the source-owned receipt without opening it")
+					.isGreaterThan(0);
+			assertThat(quote.input().workEvidence().isComplete()).isTrue();
+			assertThat(quote.input().rows()).as("the quote counts exact physical summary groups G")
+					.isEqualTo((double) summarizedGroups);
+			LmdbNativeCostVector operations = quote.input().operations().plus(quote.extra());
+			assertThat(operations.expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.isGreaterThanOrEqualTo((double) summarizedGroups);
+			assertThat(operations.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.isGreaterThanOrEqualTo((double) summarizedGroups);
+		}
+
+		@Override
+		public void close() throws Exception {
+			try {
+				warmProbe.close();
+			} finally {
+				try {
+					evaluation.close();
+				} finally {
+					dataset.close();
+				}
+			}
+		}
+	}
+
+	private static int assertReceiptDeclinesWithoutPhysicalFallback(WarmDatatypeReceiptFixture fixture,
+			String reason) throws Exception {
+		Map<String, Long> producerMetrics = datatypeHistogramMetrics();
+		int cachedGetterCalls = fixture.state.cachedSummaryGetterCalls.get();
+		int synopsisGetters = fixture.state.rootSynopsisGetterCalls.get();
+		int summaryGetters = fixture.state.datatypeSummaryGetterCalls.get();
+		int rootCursors = fixture.state.rootCursorOpens.get();
+		int summaryCursors = fixture.state.summaryCursorOpens.get();
+		int prefixRuns = fixture.state.prefixRunCalls.get();
+		int probesOpened = fixture.state.probesOpened.get();
+		int probesClosed = fixture.state.probesClosed.get();
+		long ledgerBefore = fixture.ledger.usedBytes();
+		try (NativeProbe probe = fixture.source.newProbe()) {
+			assertThat(probe.cachedDatatypeSummary(fixture.preparedReceipt))
+					.as("a mismatched, disappeared or unavailable receipt is rejected without building caches")
+					.isNull();
+		}
+		assertThat(fixture.state.cachedSummaryGetterCalls.get()).isEqualTo(cachedGetterCalls + 1);
+		int callsAfterManualLookup = fixture.state.cachedSummaryGetterCalls.get();
+		var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation);
+		if (result != null) {
+			result.close();
+		}
+		assertThat(result).as(reason).isNull();
+		assertThat(fixture.state.rootSynopsisGetterCalls.get()).as("refusal never rebuilds the root synopsis")
+				.isEqualTo(synopsisGetters);
+		assertThat(fixture.state.datatypeSummaryGetterCalls.get()).as("refusal never calls the building summary getter")
+				.isEqualTo(summaryGetters);
+		assertThat(fixture.state.rootCursorOpens.get()).as("refusal opens no root cursor")
+				.isEqualTo(rootCursors);
+		assertThat(fixture.state.summaryCursorOpens.get()).as("refusal opens no cached or building summary cursor")
+				.isEqualTo(summaryCursors);
+		assertThat(fixture.state.prefixRunCalls.get()).as("refusal never falls back to prefix runs")
+				.isEqualTo(prefixRuns);
+		assertThat(datatypeHistogramMetrics()).as("refusal does not execute any histogram producer")
+				.isEqualTo(producerMetrics);
+		assertThat(fixture.state.probesOpened.get() - probesOpened)
+				.as("every probe acquired during refusal is closed")
+				.isEqualTo(fixture.state.probesClosed.get() - probesClosed);
+		assertThat(fixture.ledger.usedBytes()).as("refusal releases its query ledger reservation")
+				.isEqualTo(ledgerBefore);
+		return callsAfterManualLookup;
+	}
+
+	private static SyntheticValueSource recordingProbeSource(NativeLmdbQuerySource delegate,
+			AtomicInteger rootSynopsisGetterCalls, AtomicInteger datatypeSummaryGetterCalls,
+			AtomicInteger summaryCursorOpens) {
+		SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(delegate));
+		doAnswer(sourceCall -> {
+			NativeProbe probe = spy((NativeProbe) sourceCall.callRealMethod());
+			doAnswer(probeCall -> {
+				rootSynopsisGetterCalls.incrementAndGet();
+				return probeCall.callRealMethod();
+			}).when(probe).nodeDomainSynopsis(anyBoolean());
+			doAnswer(probeCall -> {
+				datatypeSummaryGetterCalls.incrementAndGet();
+				DatatypeSummary summary = (DatatypeSummary) probeCall.callRealMethod();
+				if (summary == null) {
+					return null;
+				}
+				DatatypeSummary recordingSummary = spy(summary);
+				doAnswer(cursorCall -> {
+					summaryCursorOpens.incrementAndGet();
+					return cursorCall.callRealMethod();
+				}).when(recordingSummary).cursor();
+				return recordingSummary;
+			}).when(probe).nodeDomainDatatypeSummary(anyBoolean(), any());
+			doAnswer(probeCall -> {
+				DatatypeSummary summary = (DatatypeSummary) probeCall.callRealMethod();
+				return summary == null ? null : recordingDatatypeSummary(summary, summaryCursorOpens);
+			}).when(probe).cachedDatatypeSummary(any());
+			return probe;
+		}).when(source).newProbe();
+		return source;
+	}
+
+	private static SyntheticValueSource recordingPageProducerSource(NativeLmdbQuerySource delegate,
+			PageProducerEvidence evidence) throws IOException {
+		SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(delegate));
+		doAnswer(sourceCall -> {
+			evidence.probesOpened.incrementAndGet();
+			return recordingPageProducerProbe((NativeProbe) sourceCall.callRealMethod(), evidence);
+		}).when(source).newProbe();
+		doAnswer(call -> {
+			evidence.workspaceLookups.incrementAndGet();
+			if (evidence.workspaceUnavailable) {
+				return null;
+			}
+			if (evidence.workspaceOverride != null) {
+				return evidence.workspaceOverride;
+			}
+			return call.callRealMethod();
+		}).when(source).datatypePageWorkspace(anyBoolean());
+		doAnswer(call -> {
+			if (evidence.deadlineInStatistics != null) {
+				triggerPageDeadline(evidence.deadlineInStatistics, call.getArgument(1), evidence);
+			}
+			return call.callRealMethod();
+		}).when(source).predicateProjectionStatistics(eq(false), any(Runnable.class));
+		doAnswer(call -> {
+			evidence.literalHeaderReads.incrementAndGet();
+			return call.callRealMethod();
+		}).when(source).literalDatatypeId(anyLong());
+		doAnswer(call -> {
+			evidence.literalHeaderReads.addAndGet((Integer) call.getArgument(2));
+			return call.callRealMethod();
+		}).when(source).literalDatatypeIds(any(long[].class), anyInt(), anyInt(), any(long[].class), anyInt());
+		doAnswer(call -> {
+			evidence.prefixProducerOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(source)
+				.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(),
+						anyBoolean());
+		return source;
+	}
+
+	private static NativeProbe recordingPageProducerProbe(NativeProbe delegate, PageProducerEvidence evidence)
+			throws IOException {
+		NativeProbe probe = spy(delegate);
+		doAnswer(call -> {
+			evidence.probesClosed.incrementAndGet();
+			Object result = call.callRealMethod();
+			if (evidence.probeCloseFailure != null
+					&& (!evidence.closeFailuresAfterAcceptedPage || evidence.acceptedPages.get() > 0)) {
+				throw evidence.probeCloseFailure;
+			}
+			return result;
+		}).when(probe).close();
+		doAnswer(call -> {
+			evidence.statementProducerOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(probe).open(anyLong(), anyLong(), anyLong(), anyLong());
+		doAnswer(call -> {
+			evidence.synopsisGetters.incrementAndGet();
+			NodeDomainSynopsis synopsis = (NodeDomainSynopsis) call.callRealMethod();
+			return synopsis == null ? null : recordingRootSynopsis(synopsis, evidence);
+		}).when(probe).nodeDomainSynopsis(anyBoolean());
+		doAnswer(call -> {
+			evidence.summaryGetters.incrementAndGet();
+			return call.callRealMethod();
+		}).when(probe).nodeDomainDatatypeSummary(anyBoolean(), any());
+		doAnswer(call -> {
+			NativeAdjacency adjacency = (NativeAdjacency) call.callRealMethod();
+			return adjacency == null ? null : recordingPageProducerAdjacency(adjacency, evidence);
+		}).when(probe).adjacency(anyLong(), anyBoolean());
+		doAnswer(call -> {
+			WildcardAdjacency adjacency = (WildcardAdjacency) call.callRealMethod();
+			return adjacency == null ? null : recordingPageProducerCatalog(adjacency, evidence);
+		}).when(probe).wildcardAdjacency(anyBoolean());
+		doAnswer(call -> {
+			WildcardAdjacency adjacency = (WildcardAdjacency) call.callRealMethod();
+			return adjacency == null ? null : recordingPageProducerCatalog(adjacency, evidence);
+		}).when(probe).boundedPredicateSweep(anyBoolean());
+		doAnswer(call -> {
+			evidence.pageSweepCalls.incrementAndGet();
+			if (evidence.pageSweepFailure != null) {
+				throw evidence.pageSweepFailure;
+			}
+			WildcardAdjacency adjacency = (WildcardAdjacency) call.callRealMethod();
+			return adjacency == null ? null : recordingPageProducerCatalog(adjacency, evidence);
+		}).when(probe).datatypePageSweep(any());
+		return probe;
+	}
+
+	private static NodeDomainSynopsis recordingRootSynopsis(NodeDomainSynopsis delegate,
+			PageProducerEvidence evidence) {
+		NodeDomainSynopsis synopsis = spy(delegate);
+		doAnswer(call -> {
+			evidence.rootCursorOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(synopsis).cursor();
+		return synopsis;
+	}
+
+	private static NativeAdjacency recordingPageProducerAdjacency(NativeAdjacency delegate,
+			PageProducerEvidence evidence) {
+		evidence.planesOpened.incrementAndGet();
+		NativeAdjacency adjacency = spy(delegate);
+		doAnswer(call -> {
+			evidence.planesClosed.incrementAndGet();
+			Object result = call.callRealMethod();
+			if (evidence.planeCloseFailure != null
+					&& (!evidence.closeFailuresAfterAcceptedPage || evidence.acceptedPages.get() > 0)) {
+				throw evidence.planeCloseFailure;
+			}
+			return result;
+		}).when(adjacency).close();
+		doAnswer(call -> {
+			evidence.pageCursorOpens.incrementAndGet();
+			return recordingPageProducerCursor((AdjacencyPageCursor) call.callRealMethod(), evidence);
+		}).when(adjacency).openPageCursor();
+		doAnswer(call -> {
+			evidence.pageCursorOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(adjacency).openPageCursor(any(Runnable.class));
+		doAnswer(call -> {
+			evidence.pageCursorOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(adjacency).openPageCursor(anyLong(), anyLong());
+		doAnswer(call -> {
+			evidence.keyCursorOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(adjacency).openKeyRunCursor();
+		doAnswer(call -> {
+			evidence.keyCursorOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(adjacency).openKeyRunCursor(anyLong(), anyLong());
+		doAnswer(call -> {
+			evidence.pageCountCalls.incrementAndGet();
+			return call.callRealMethod();
+		}).when(adjacency).pageCount(any(Runnable.class));
+		return adjacency;
+	}
+
+	private static WildcardAdjacency recordingPageProducerCatalog(WildcardAdjacency delegate,
+			PageProducerEvidence evidence) {
+		evidence.catalogsOpened.incrementAndGet();
+		WildcardAdjacency adjacency = spy(delegate);
+		doAnswer(call -> {
+			evidence.catalogsClosed.incrementAndGet();
+			Object result = call.callRealMethod();
+			if (evidence.catalogCloseFailure != null) {
+				throw evidence.catalogCloseFailure;
+			}
+			return result;
+		}).when(adjacency).close();
+		doAnswer(call -> {
+			int predicates = (int) call.callRealMethod();
+			return evidence.catalogDrift == PageCatalogDrift.PREDICATE_COUNT ? Math.addExact(predicates, 1)
+					: predicates;
+		}).when(adjacency).predicateCount();
+		doAnswer(call -> {
+			long roots = (long) call.callRealMethod();
+			return evidence.catalogDrift == PageCatalogDrift.ROOT_COUNT ? Math.subtractExact(roots, 1L) : roots;
+		}).when(adjacency).keyCount();
+		doAnswer(call -> {
+			long quads = (long) call.callRealMethod();
+			return evidence.catalogDrift == PageCatalogDrift.QUAD_COUNT ? Math.addExact(quads, 1L) : quads;
+		}).when(adjacency).quadCount();
+		doAnswer(call -> {
+			evidence.pageCursorOpens.incrementAndGet();
+			return recordingPageProducerCursor((AdjacencyPageCursor) call.callRealMethod(), evidence);
+		}).when(adjacency).openPageCursor();
+		doAnswer(call -> {
+			evidence.pageCursorOpens.incrementAndGet();
+			int ordinal = adjacency.boundPredicateOrdinal();
+			Long unavailablePredicate = evidence.unavailablePagePredicateId;
+			if (unavailablePredicate != null && adjacency.predicateAt(ordinal) == unavailablePredicate) {
+				evidence.nullPageCursorResults.incrementAndGet();
+				return null;
+			}
+			return recordingPageProducerCursor((AdjacencyPageCursor) call.callRealMethod(), evidence);
+		}).when(adjacency).openPageCursor(any(Runnable.class));
+		doAnswer(call -> {
+			evidence.pageCursorOpens.incrementAndGet();
+			return recordingPageProducerCursor((AdjacencyPageCursor) call.callRealMethod(), evidence);
+		}).when(adjacency).openPageCursor(anyLong(), anyLong());
+		doAnswer(call -> {
+			evidence.keyCursorOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(adjacency).openKeyRunCursor();
+		doAnswer(call -> {
+			evidence.keyCursorOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(adjacency).openKeyRunCursor(anyLong(), anyLong());
+		doAnswer(call -> {
+			evidence.pageCountCalls.incrementAndGet();
+			if (evidence.deadlineInPageCount != null) {
+				triggerPageDeadline(evidence.deadlineInPageCount, call.getArgument(0), evidence);
+			}
+			long pages = (long) call.callRealMethod();
+			return evidence.catalogDrift == PageCatalogDrift.PAGE_COUNT ? Math.addExact(pages, 1L) : pages;
+		}).when(adjacency).pageCount(any(Runnable.class));
+		return adjacency;
+	}
+
+	private static AdjacencyPageCursor recordingPageProducerCursor(AdjacencyPageCursor delegate,
+			PageProducerEvidence evidence) {
+		if (delegate == null) {
+			return null;
+		}
+		AdjacencyPageCursor cursor = spy(delegate);
+		AtomicInteger acceptedOnCursor = new AtomicInteger();
+		doAnswer(call -> {
+			LmdbNativeProbeDeadline deadline = evidence.deadlineAfterAcceptedPage;
+			if (deadline != null && acceptedOnCursor.get() > 0 && evidence.deadlineTripped.compareAndSet(false, true)) {
+				deadline.trip();
+				if (evidence.injectDeadlineDirectly) {
+					LmdbNativeProbeDeadline.poll(0);
+				}
+				try {
+					call.callRealMethod();
+					throw new AssertionError("physical page advance ignored the active attempt deadline");
+				} catch (LmdbNativeProbeDeadlineExceeded failure) {
+					evidence.deadlineObserved.set(true);
+					throw failure;
+				}
+			}
+			if (evidence.stopAfterAcceptedPages >= 0
+					&& acceptedOnCursor.get() >= evidence.stopAfterAcceptedPages) {
+				return false;
+			}
+			boolean advanced = (boolean) call.callRealMethod();
+			if (advanced) {
+				acceptedOnCursor.incrementAndGet();
+				if (evidence.acceptedPages.incrementAndGet() == 1) {
+					evidence.prefixOpensAtFirstAcceptedPage.set(evidence.prefixProducerOpens.get());
+				}
+				NativeCancellationToken cancellation = evidence.cancelAfterAcceptedPage;
+				if (cancellation != null && evidence.cancellationRequested.compareAndSet(false, true)) {
+					cancellation.requestCancellation();
+				}
+			}
+			return advanced;
+		}).when(cursor).advance();
+		doAnswer(call -> {
+			evidence.pageCursorsClosed.incrementAndGet();
+			Object result = call.callRealMethod();
+			if (evidence.pageCursorCloseFailure != null) {
+				throw evidence.pageCursorCloseFailure;
+			}
+			return result;
+		}).when(cursor).close();
+		return cursor;
+	}
+
+	private static void triggerPageDeadline(LmdbNativeProbeDeadline deadline, Runnable callback,
+			PageProducerEvidence evidence) {
+		evidence.deadlineTripped.set(true);
+		deadline.trip();
+		if (evidence.injectDeadlineDirectly) {
+			LmdbNativeProbeDeadline.poll(0);
+		}
+		try {
+			callback.run();
+		} catch (LmdbNativeProbeDeadlineExceeded failure) {
+			evidence.deadlineObserved.set(true);
+			throw failure;
+		}
+		throw new AssertionError("page source callback ignored the active attempt deadline");
+	}
+
+	private static final class PageProducerEvidence {
+		private final AtomicInteger planesOpened = new AtomicInteger();
+		private final AtomicInteger planesClosed = new AtomicInteger();
+		private final AtomicInteger synopsisGetters = new AtomicInteger();
+		private final AtomicInteger summaryGetters = new AtomicInteger();
+		private final AtomicInteger rootCursorOpens = new AtomicInteger();
+		private final AtomicInteger pageCursorOpens = new AtomicInteger();
+		private final AtomicInteger pageCursorsClosed = new AtomicInteger();
+		private final AtomicInteger pageCountCalls = new AtomicInteger();
+		private final AtomicInteger keyCursorOpens = new AtomicInteger();
+		private final AtomicInteger statementProducerOpens = new AtomicInteger();
+		private final AtomicInteger prefixProducerOpens = new AtomicInteger();
+		private final AtomicInteger literalHeaderReads = new AtomicInteger();
+		private final AtomicInteger workspaceLookups = new AtomicInteger();
+		private final AtomicInteger probesOpened = new AtomicInteger();
+		private final AtomicInteger probesClosed = new AtomicInteger();
+		private final AtomicInteger catalogsOpened = new AtomicInteger();
+		private final AtomicInteger catalogsClosed = new AtomicInteger();
+		private final AtomicInteger pageSweepCalls = new AtomicInteger();
+		private final AtomicInteger nullPageCursorResults = new AtomicInteger();
+		private final AtomicInteger acceptedPages = new AtomicInteger();
+		private final AtomicInteger prefixOpensAtFirstAcceptedPage = new AtomicInteger(-1);
+		private final AtomicBoolean cancellationRequested = new AtomicBoolean();
+		private final AtomicBoolean deadlineTripped = new AtomicBoolean();
+		private final AtomicBoolean deadlineObserved = new AtomicBoolean();
+		private volatile int stopAfterAcceptedPages = -1;
+		private volatile NativeCancellationToken cancelAfterAcceptedPage;
+		private volatile LmdbNativeProbeDeadline deadlineInStatistics;
+		private volatile LmdbNativeProbeDeadline deadlineInPageCount;
+		private volatile LmdbNativeProbeDeadline deadlineAfterAcceptedPage;
+		private volatile boolean injectDeadlineDirectly;
+		private volatile boolean closeFailuresAfterAcceptedPage;
+		private volatile boolean workspaceUnavailable;
+		private volatile DatatypePageWorkspace workspaceOverride;
+		private volatile PageCatalogDrift catalogDrift = PageCatalogDrift.NONE;
+		private volatile Long unavailablePagePredicateId;
+		private volatile IOException pageSweepFailure;
+		private volatile RuntimeException probeCloseFailure;
+		private volatile RuntimeException catalogCloseFailure;
+		private volatile RuntimeException pageCursorCloseFailure;
+		private volatile RuntimeException planeCloseFailure;
+	}
+
+	private enum PageCatalogDrift {
+		NONE,
+		PREDICATE_COUNT,
+		ROOT_COUNT,
+		QUAD_COUNT,
+		PAGE_COUNT
+	}
+
+	private record PageAttemptSnapshot(long runs, long domainRuns, long ledgerBytes, int probesOpened, int probesClosed,
+			int catalogsOpened, int catalogsClosed, int pageCursorOpens, int pageCursorsClosed,
+			int nullPageCursorResults,
+			int keyCursorOpens, int rootCursorOpens, int statementProducerOpens, int prefixProducerOpens,
+			int workspaceLookups) {
+	}
+
+	private final class PageReceiptFixture implements AutoCloseable {
+		private final NativeExecutionContext evaluation;
+		private final PageProducerEvidence evidence;
+		private final RowState row;
+		private final LmdbQueryMemoryManager.QueryLedger ledger;
+		private final long ledgerBeforePrepare;
+		private final DatatypePageWorkspace workspace;
+		private final NativeAggregateAlternative.Prepared prepared;
+
+		private PageReceiptFixture(NativeExecutionContext evaluation, PageProducerEvidence evidence, RowState row,
+				LmdbQueryMemoryManager.QueryLedger ledger, long ledgerBeforePrepare, DatatypePageWorkspace workspace,
+				NativeAggregateAlternative.Prepared prepared) {
+			this.evaluation = evaluation;
+			this.evidence = evidence;
+			this.row = row;
+			this.ledger = ledger;
+			this.ledgerBeforePrepare = ledgerBeforePrepare;
+			this.workspace = workspace;
+			this.prepared = prepared;
+		}
+
+		@Override
+		public void close() {
+			evaluation.close();
+		}
+	}
+
+	private PageReceiptFixture preparePageReceipt(SailDataset dataset, NativeLmdbQuerySource actualSource)
+			throws IOException {
+		PageProducerEvidence evidence = new PageProducerEvidence();
+		SyntheticValueSource source = recordingPageProducerSource(actualSource, evidence);
+		NativeExecutionContext evaluation = source.executionContext();
+		try {
+			LmdbPrefixRunPlan plan = unrestrictedObjectPlan(source);
+			RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+			LmdbQueryMemoryManager.QueryLedger ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			long ledgerBeforePrepare = ledger.usedBytes();
+			DatatypePageWorkspace workspace = actualSource.datatypePageWorkspace(false);
+			assertThat(workspace).as("the real compacted view supplies its page workspace").isNotNull();
+			NativeAggregateAlternative.Prepared prepared = datatypeHistogram(source, dataset, plan).prepare(row);
+			assertThat(prepared).as("the source prepares the exact page recipe").isNotNull();
+			NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+			assertThat(quote).as("the execution test begins from a complete page receipt").isNotNull();
+			assertThat(quote.input().workEvidence().isComplete()).isTrue();
+			assertThat(ledger.usedBytes()).as("preparing the page receipt releases temporary workspace")
+					.isEqualTo(ledgerBeforePrepare);
+			return new PageReceiptFixture(evaluation, evidence, row, ledger, ledgerBeforePrepare, workspace, prepared);
+		} catch (IOException | RuntimeException | Error failure) {
+			evaluation.close();
+			throw failure;
+		}
+	}
+
+	private static PageAttemptSnapshot snapshotPageAttempt(PageReceiptFixture fixture) {
+		PageProducerEvidence evidence = fixture.evidence;
+		return new PageAttemptSnapshot(LmdbNativeDatatypeHistogram.RUNS.get(),
+				LmdbNativeDatatypeHistogram.ADJACENCY_DOMAIN_RUNS.get(), fixture.ledger.usedBytes(),
+				evidence.probesOpened.get(), evidence.probesClosed.get(), evidence.catalogsOpened.get(),
+				evidence.catalogsClosed.get(), evidence.pageCursorOpens.get(), evidence.pageCursorsClosed.get(),
+				evidence.nullPageCursorResults.get(), evidence.keyCursorOpens.get(), evidence.rootCursorOpens.get(),
+				evidence.statementProducerOpens.get(), evidence.prefixProducerOpens.get(),
+				evidence.workspaceLookups.get());
+	}
+
+	private static void assertPageDeclineReleasedResources(PageReceiptFixture fixture, PageAttemptSnapshot before) {
+		PageProducerEvidence evidence = fixture.evidence;
+		assertThat(LmdbNativeDatatypeHistogram.RUNS.get())
+				.as("a declined page recipe publishes no histogram")
+				.isEqualTo(before.runs());
+		assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DOMAIN_RUNS.get())
+				.as("a declined page recipe publishes no completed root-domain merge")
+				.isEqualTo(before.domainRuns());
+		assertThat(fixture.ledger.usedBytes()).as("page refusal restores the shared query ledger")
+				.isEqualTo(before.ledgerBytes());
+		assertThat(evidence.probesOpened.get() - before.probesOpened())
+				.as("each acquired page probe is closed")
+				.isEqualTo(evidence.probesClosed.get() - before.probesClosed());
+		assertThat(evidence.catalogsOpened.get() - before.catalogsOpened())
+				.as("each acquired page catalog is explicitly closed")
+				.isEqualTo(evidence.catalogsClosed.get() - before.catalogsClosed());
+		assertThat(evidence.pageCursorOpens.get() - before.pageCursorOpens())
+				.as("each opened page cursor closes; deliberately refused cursors return null")
+				.isEqualTo(evidence.pageCursorsClosed.get() - before.pageCursorsClosed()
+						+ evidence.nullPageCursorResults.get() - before.nullPageCursorResults());
+		assertThat(evidence.keyCursorOpens.get()).as("page refusal never retries through key runs")
+				.isEqualTo(before.keyCursorOpens());
+		assertThat(evidence.rootCursorOpens.get()).as("page refusal never retries through the root synopsis")
+				.isEqualTo(before.rootCursorOpens());
+		assertThat(evidence.statementProducerOpens.get()).as("page refusal never opens a statement producer")
+				.isEqualTo(before.statementProducerOpens());
+		assertThat(evidence.prefixProducerOpens.get()).as("page refusal never retries through prefix runs")
+				.isEqualTo(before.prefixProducerOpens());
+	}
+
+	private static void assertPageCollectedButUnpublished(PageReceiptFixture fixture, PageAttemptSnapshot before) {
+		assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).as("cleanup failure prevents normal result publication")
+				.isEqualTo(before.runs());
+		assertThat(LmdbNativeDatatypeHistogram.ADJACENCY_DOMAIN_RUNS.get())
+				.as("the page rows completed before cleanup failed")
+				.isEqualTo(before.domainRuns() + 1L);
+		assertPageResourcesBalanced(fixture, before);
+	}
+
+	private static void assertPageCursorNotOpened(PageReceiptFixture fixture, PageAttemptSnapshot before) {
+		assertThat(fixture.evidence.pageCursorOpens.get())
+				.as("a stale receipt declines before page producer work")
+				.isEqualTo(before.pageCursorOpens());
+	}
+
+	private static void assertPageResourcesBalanced(PageReceiptFixture fixture, PageAttemptSnapshot before) {
+		PageProducerEvidence evidence = fixture.evidence;
+		assertThat(fixture.ledger.usedBytes()).as("page lifecycle cleanup restores the query ledger")
+				.isEqualTo(before.ledgerBytes());
+		assertThat(evidence.probesOpened.get() - before.probesOpened())
+				.as("all acquired page probes close")
+				.isEqualTo(evidence.probesClosed.get() - before.probesClosed());
+		assertThat(evidence.catalogsOpened.get() - before.catalogsOpened())
+				.as("all acquired page catalogs close")
+				.isEqualTo(evidence.catalogsClosed.get() - before.catalogsClosed());
+		assertThat(evidence.pageCursorOpens.get() - before.pageCursorOpens())
+				.as("all opened page cursors close")
+				.isEqualTo(evidence.pageCursorsClosed.get() - before.pageCursorsClosed()
+						+ evidence.nullPageCursorResults.get() - before.nullPageCursorResults());
+		assertThat(evidence.keyCursorOpens.get()).isEqualTo(before.keyCursorOpens());
+		assertThat(evidence.rootCursorOpens.get()).isEqualTo(before.rootCursorOpens());
+		assertThat(evidence.prefixProducerOpens.get()).isEqualTo(before.prefixProducerOpens());
+	}
+
+	private static RuntimeException evaluatePageReceiptFailure(PageReceiptFixture fixture) {
+		try (var result = fixture.prepared.evaluate(EmptyBindingSet.getInstance(), fixture.row.cancellation)) {
+			if (result != null) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		} catch (RuntimeException failure) {
+			return failure;
+		}
+		return null;
+	}
+
+	private static NativeProbe recordingCachedSummaryProbe(NativeLmdbQuerySource source,
+			AtomicInteger summaryCursorOpens) throws Exception {
+		NativeProbe probe = spy(source.newProbe());
+		doAnswer(probeCall -> {
+			DatatypeSummary summary = (DatatypeSummary) probeCall.callRealMethod();
+			return summary == null ? null : recordingDatatypeSummary(summary, summaryCursorOpens);
+		}).when(probe).cachedDatatypeSummary(any());
+		return probe;
+	}
+
+	private static DatatypeSummary recordingDatatypeSummary(DatatypeSummary summary,
+			AtomicInteger summaryCursorOpens) {
+		DatatypeSummary recordingSummary = spy(summary);
+		doAnswer(cursorCall -> {
+			summaryCursorOpens.incrementAndGet();
+			return cursorCall.callRealMethod();
+		}).when(recordingSummary).cursor();
+		return recordingSummary;
+	}
+
+	private static LmdbPrefixRunPlan unrestrictedObjectPlan(NativeLmdbQuerySource source) {
+		LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.OBJ_IDX }, UNKNOWN, UNKNOWN, UNKNOWN,
+				UNKNOWN);
+		assertThat(plan).as("the explicit snapshot supplies a real object-prefix plan").isNotNull();
+		assertThat(plan.prefixFields()).containsExactly(TripleIndex.OBJ_IDX);
+		assertThat(plan.hasKeyRange()).isFalse();
+		assertThat(plan.acceptedContexts()).isNull();
+		assertThat(plan.namedContextsOnly()).isFalse();
+		return plan;
+	}
+
+	private LmdbNativeDatatypeHistogram datatypeHistogram(NativeLmdbQuerySource source, SailDataset dataset,
+			LmdbPrefixRunPlan plan) {
+		return datatypeHistogram(source, dataset, plan, UNKNOWN);
+	}
+
+	private LmdbNativeDatatypeHistogram datatypeHistogram(NativeLmdbQuerySource source, SailDataset dataset,
+			LmdbPrefixRunPlan plan, long predicate) {
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+				new EvaluationStatistics(), false);
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, DATATYPE_HISTOGRAM, null)
+				.getTupleExpr();
+		return new LmdbNativeDatatypeHistogram(source, plan, UNKNOWN, predicate, UNKNOWN, TripleIndex.OBJ_IDX,
+				1 << TripleIndex.OBJ_IDX, "datatype", "literals", strategy, expression,
+				new QueryEvaluationContext.Minimal((Dataset) null));
 	}
 
 	/** Loads mixed-datatype data plus non-literal objects and returns the expected per-datatype statement counts. */

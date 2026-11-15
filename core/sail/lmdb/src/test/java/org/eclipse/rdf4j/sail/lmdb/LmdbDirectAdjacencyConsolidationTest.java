@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
@@ -476,6 +478,19 @@ class LmdbDirectAdjacencyConsolidationTest {
 		assertThat(state.base().predicateCatalog().ordinalForRaw(P1)).isEqualTo(originalPredicateOrdinal);
 		assertThat(state.base().predicateCatalog().ordinalForRaw(appendedPredicate))
 				.isGreaterThan(originalPredicateOrdinal);
+		LmdbAdjacencyPredicateCatalog catalog = state.base().predicateCatalog();
+		long appendedOrdinal = catalog.ordinalForRaw(appendedPredicate);
+		AtomicInteger polls = new AtomicInteger();
+		assertThat(catalog.ordinalForRaw(appendedPredicate, polls::incrementAndGet)).isEqualTo(appendedOrdinal);
+		assertThat(polls.get()).as("lookup polls while traversing the appended predicate segment")
+				.isGreaterThanOrEqualTo(3);
+		IllegalStateException cancelled = new IllegalStateException("injected predicate catalog cancellation");
+		AtomicInteger cancellationPolls = new AtomicInteger();
+		assertThatThrownBy(() -> catalog.ordinalForRaw(appendedPredicate, () -> {
+			if (cancellationPolls.incrementAndGet() == 3) {
+				throw cancelled;
+			}
+		})).isSameAs(cancelled);
 		assertThat(state.contextCatalog().ordinalForRaw(G1)).isPositive();
 
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {

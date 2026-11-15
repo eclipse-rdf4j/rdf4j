@@ -13,6 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -20,6 +24,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
@@ -28,6 +34,67 @@ import org.junit.jupiter.api.parallel.Resources;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class NativeLazyResultReplayTest {
+	@Test
+	void writeFailureAfterSpillClosesTheRetainedDictionary() throws Exception {
+		String old = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "16384");
+		long files = NativeLazyResultReplay.OPEN_FILES.get();
+		NativeExecutionContext context = new NativeExecutionContext();
+		var ledger = context.memoryLedger();
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource.DictionaryLease dictionary = mock(NativeLmdbQuerySource.DictionaryLease.class);
+		when(source.retainDictionaryLease()).thenReturn(dictionary);
+		IRI bad = mock(IRI.class);
+		IllegalStateException failure = new IllegalStateException("failed while writing a spilled term");
+		when(bad.getType()).thenReturn(Value.Type.IRI);
+		when(bad.stringValue()).thenThrow(failure);
+		NativeResultRow.Schema schema = new NativeResultRow.Schema("term");
+		NativeResultCursor producer = new NativeResultCursor() {
+			private int index;
+
+			@Override
+			public NativeResultRow next() {
+				Value value = index++ == 64 ? bad
+						: SimpleValueFactory.getInstance().createIRI("urn:filler:" + index + "x".repeat(512));
+				return new NativeResultRow(schema, new NativeResultCell[] { NativeResultCell.term(value) });
+			}
+
+			@Override
+			public NativeCancellationToken cancellation() {
+				return context.cancellation();
+			}
+
+			@Override
+			public NativeExecutionContext executionContext() {
+				return context;
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+		try {
+			try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "term" }, context,
+					context.cancellation(), producer, source);
+					NativeResultCursor first = replay.cursor(context.cancellation());
+					NativeResultCursor second = replay.cursor(context.cancellation())) {
+				for (int i = 0; i < 64; i++) {
+					assertThat(first.next()).isNotNull();
+				}
+				assertThat(second.next()).isNotNull();
+				assertThat(NativeLazyResultReplay.OPEN_FILES.get()).isEqualTo(files + 1L);
+				assertThatThrownBy(first::next).isSameAs(failure);
+				assertThatThrownBy(second::next).isSameAs(failure);
+			}
+			verify(dictionary, times(1)).close();
+		} finally {
+			context.close();
+			restore(old);
+		}
+		assertThat(ledger.usedBytes()).isZero();
+		assertThat(NativeLazyResultReplay.OPEN_FILES.get()).isEqualTo(files);
+	}
+
 	@Test
 	void independentReadersCrossSpillAndResumeAfterEarlyCloseWithoutReevaluating() {
 		String old = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);

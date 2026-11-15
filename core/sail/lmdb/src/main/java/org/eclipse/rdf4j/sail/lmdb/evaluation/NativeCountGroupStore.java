@@ -44,13 +44,16 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  */
 @Experimental
 public final class NativeCountGroupStore implements AutoCloseable {
+	/** A successful first arena holds this many distinct records before growth or spill is needed. */
+	static final int INITIAL_ARENA_RECORDS = 16;
 	public static final String MAX_BYTES_PROPERTY = "rdf4j.lmdb.nativeGroup.maxBytes";
 	public static final String ENABLED_PROPERTY = "rdf4j.lmdb.janinoCodegen.boundedGroups";
 	private static final long DEFAULT_MAX_BYTES = 64L << 20;
 	private static final int IO_BYTES = 4096;
 	private static final long[] NO_LONGS = new long[0];
 	private static final int[] NO_INTS = new int[0];
-	private final int groups, outputs, keyWidth, recordWidth, originalOffset, ordinalOffset, countsOffset;
+	private final int groups, outputs, keyWidth, equalityWidth, recordWidth, originalOffset, ordinalOffset,
+			countsOffset;
 	private final boolean[] distinct;
 	private final int distinctChannels;
 	private final LongUnaryOperator canonicalKey;
@@ -98,6 +101,9 @@ public final class NativeCountGroupStore implements AutoCloseable {
 		this.localBytes = maxBytes;
 		// [canonical group, tag, distinct term, original group, first ordinal, ordinary counts]
 		this.keyWidth = groups + 2;
+		// Without DISTINCT channels every resident record has tag == term == 0. Keep the spill layout, but do not
+		// compare these two invariant fields on each hash hit. DISTINCT stores still compare the complete event key.
+		this.equalityWidth = distinctChannels == 0 ? groups : keyWidth;
 		this.originalOffset = keyWidth;
 		this.ordinalOffset = keyWidth + groups;
 		this.countsOffset = ordinalOffset + 1;
@@ -154,7 +160,6 @@ public final class NativeCountGroupStore implements AutoCloseable {
 			return;
 		try {
 			poll();
-			checkCancelled();
 			ensureRoom(1 + distinctChannels);
 			// Count payload remains zero in the input scratch. Reset only the event tag/term.
 			scratch[groups] = 0L;
@@ -205,7 +210,6 @@ public final class NativeCountGroupStore implements AutoCloseable {
 			return;
 		try {
 			poll();
-			checkCancelled();
 			ensureRoom(channel >= 0 && distinct[channel] && value != -1L ? 2 : 1);
 			scratch[groups] = scratch[groups + 1] = 0L;
 			for (int i = 0; i < groups; i++) {
@@ -248,7 +252,6 @@ public final class NativeCountGroupStore implements AutoCloseable {
 			return;
 		try {
 			poll();
-			checkCancelled();
 			long canonical = groupId == -1L ? -1L : canonicalKey.applyAsLong(groupId);
 			if (capacity == 0)
 				ensureRoom(1);
@@ -282,11 +285,11 @@ public final class NativeCountGroupStore implements AutoCloseable {
 	private void ensureRoom(int needed) throws IOException {
 		if (capacity - size >= needed)
 			return;
-		int next = capacity == 0 ? 16 : capacity;
+		int next = capacity == 0 ? INITIAL_ARENA_RECORDS : capacity;
 		while (next < size + needed && next <= (Integer.MAX_VALUE - 8) / (2 * recordWidth))
 			next *= 2;
 		long bytes = arenaSize(next);
-		long ceiling = Math.max(arenaSize(Math.max(16, 2 * needed)), localBytes / 3L);
+		long ceiling = Math.max(arenaSize(Math.max(INITIAL_ARENA_RECORDS, 2 * needed)), localBytes / 3L);
 		if (next >= size + needed && bytes <= ceiling && grow(next, bytes))
 			return;
 		if (capacity == 0)
@@ -297,9 +300,38 @@ public final class NativeCountGroupStore implements AutoCloseable {
 	}
 
 	private long arenaSize(int entries) {
+		return arenaSize(entries, recordWidth, scratch.length + readRow.length + groupRow.length);
+	}
+
+	private static long arenaSize(int entries, int width, int fixedLongs) {
 		int table = tableSize(entries);
-		return Math.addExact(256L + 8L * (scratch.length + readRow.length + groupRow.length),
-				Math.addExact(8L * entries * recordWidth, 4L * table));
+		return Math.addExact(256L + 8L * fixedLongs,
+				Math.addExact(8L * entries * width, 4L * table));
+	}
+
+	/**
+	 * Whether all possible unary ordinary-count groups fit the configured local arena in the absence of competing
+	 * query-ledger claims. Shared pressure may still force a spill, so this is an expectation, not a retention proof.
+	 */
+	static boolean nominalUnaryGroupsFit(long groups, long localBytes) {
+		if (groups < 0L || localBytes < 4096L) {
+			return false;
+		}
+		// The unary schema has one canonical key, tag, term, original key, ordinal and count.
+		int width = 6;
+		int fixedLongs = 2 * width + 3;
+		int entries = INITIAL_ARENA_RECORDS;
+		while (entries < groups) {
+			if (entries > (Integer.MAX_VALUE - 8) / (2 * width)) {
+				return false;
+			}
+			entries *= 2;
+		}
+		if (entries > 1 << 28) {
+			return false;
+		}
+		long ceiling = Math.max(arenaSize(INITIAL_ARENA_RECORDS, width, fixedLongs), localBytes / 3L);
+		return arenaSize(entries, width, fixedLongs) <= ceiling;
 	}
 
 	private static int tableSize(int entries) {
@@ -370,6 +402,36 @@ public final class NativeCountGroupStore implements AutoCloseable {
 	}
 
 	private boolean sameKey(long[] a, int ao, long[] b, int bo, int width) {
+		if (width <= 0)
+			return true;
+		// Reject a different first group column before range setup and dispatch.
+		if (a[ao] != b[bo])
+			return false;
+		// The small keys stay scalar. Fallthrough shares the tail comparisons without duplicating each prefix.
+		switch (width) {
+		case 5:
+			return ((a[ao + 4] ^ b[bo + 4]) | (a[ao + 3] ^ b[bo + 3])
+					| (a[ao + 2] ^ b[bo + 2]) | (a[ao + 1] ^ b[bo + 1])) == 0L;
+		case 4:
+			if (a[ao + 3] != b[bo + 3])
+				return false;
+			// fall through
+		case 3:
+			if (a[ao + 2] != b[bo + 2])
+				return false;
+			// fall through
+		case 2:
+			return a[ao + 1] == b[bo + 1];
+		case 1:
+			return true;
+		default:
+			// The array ranges are valid arena/scratch slices; the JDK can vectorize this longer comparison.
+			return Arrays.equals(a, ao + 1, ao + width, b, bo + 1, bo + width);
+		}
+	}
+
+	// DISTINCT resident probes keep the original compact scalar loop; sameKey also serves merged group keys.
+	private boolean sameEventKey(long[] a, int ao, long[] b, int bo, int width) {
 		for (int i = 0; i < width; i++)
 			if (a[ao + i] != b[bo + i])
 				return false;
@@ -381,7 +443,10 @@ public final class NativeCountGroupStore implements AutoCloseable {
 		int slot = hash(scratch, 0) & mask;
 		while (slots[slot] != 0) {
 			int row = slots[slot] - 1;
-			if (sameKey(records, row * recordWidth, scratch, 0, keyWidth))
+			int recordOffset = row * recordWidth;
+			if (distinctChannels == 0
+					? sameKey(records, recordOffset, scratch, 0, equalityWidth)
+					: sameEventKey(records, recordOffset, scratch, 0, keyWidth))
 				return row;
 			slot = (slot + 1) & mask;
 		}
@@ -611,7 +676,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 	}
 
 	private void poll() {
-		if ((++ticks & 1023) == 0)
+		if ((ticks++ & 1023) == 0)
 			checkCancelled();
 	}
 

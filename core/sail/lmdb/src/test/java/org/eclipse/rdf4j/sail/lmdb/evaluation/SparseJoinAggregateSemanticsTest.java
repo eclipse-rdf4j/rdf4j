@@ -591,16 +591,16 @@ class SparseJoinAggregateSemanticsTest {
 	}
 
 	@Test
-	void recognizerRejectsUnboundCountsDistinctGraphsAndAdditionalJoinDimensions() {
+	void recognizerKeepsSupportedGroupsAndRejectsUnboundGraphsAndExtraJoins() {
 		PatternPlan left = pattern(0, 1, Term.unbound());
 		PatternPlan right = pattern(1, 2, Term.unbound());
 		SlotPlan join = new JoinPlan(left, right);
 		assertNotNull(LmdbSparseJoinAggregatePlan.tryCreate(join, new int[] { 0, 2 }, COUNTS, null));
-		assertNull(LmdbSparseJoinAggregatePlan.tryCreate(join, new int[] { 0 }, COUNTS, null));
-		assertNull(LmdbSparseJoinAggregatePlan.tryCreate(join, new int[] { 0, 1 }, COUNTS, null));
+		assertNotNull(LmdbSparseJoinAggregatePlan.tryCreate(join, new int[] { 0 }, COUNTS, null));
+		assertNotNull(LmdbSparseJoinAggregatePlan.tryCreate(join, new int[] { 0, 1 }, COUNTS, null));
 		assertNull(LmdbSparseJoinAggregatePlan.tryCreate(join, new int[] { 0, 2 },
 				new AggregateSpec[] { AggregateSpec.slot("count", 3, false, AggKind.COUNT) }, null));
-		assertNull(LmdbSparseJoinAggregatePlan.tryCreate(join, new int[] { 0, 2 },
+		assertNotNull(LmdbSparseJoinAggregatePlan.tryCreate(join, new int[] { 0, 2 },
 				new AggregateSpec[] { AggregateSpec.slot("count", 1, true, AggKind.COUNT) }, null));
 		assertNull(LmdbSparseJoinAggregatePlan.tryCreate(new JoinPlan(pattern(0, 1, Term.slot(3)),
 				pattern(1, 2, Term.slot(3))), new int[] { 0, 2 }, COUNTS, null));

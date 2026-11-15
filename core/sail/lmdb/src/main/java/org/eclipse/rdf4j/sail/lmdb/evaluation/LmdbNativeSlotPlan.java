@@ -351,6 +351,80 @@ interface SlotPlan {
 		return false;
 	}
 
+	/** A budget retry re-executes input effects; a known read mask alone does not prove repeatability. */
+	static boolean budgetRetrySafe(SlotPlan plan) {
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
+				|| plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
+			return true;
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return budgetRetrySafe(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return budgetRetrySafe(memo.original);
+		}
+		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf) {
+			return budgetRetrySafe(leaf.template);
+		}
+		if (plan instanceof FilterPlan filter) {
+			return filter.filter.capabilities().atPlacement(filter.filterMask).replaySafe()
+					&& budgetRetrySafe(filter.arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return budgetRetrySafe(entry.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			if (!budgetRetrySafe(extension.arg)) {
+				return false;
+			}
+			for (CopyBinding copy : extension.copies) {
+				if (!copy.encounterOrderReplaySafe) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof JoinPlan join) {
+			return budgetRetrySafe(join.left) && budgetRetrySafe(join.right);
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			for (SlotPlan child : join.children) {
+				if (!budgetRetrySafe(child)) {
+					return false;
+				}
+			}
+			for (MaskedFilter filter : join.filters) {
+				if (!filter.filter.capabilities().atPlacement(filter.mask).replaySafe()) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof LeftJoinPlan join) {
+			return budgetRetrySafe(join.left) && budgetRetrySafe(join.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return budgetRetrySafe(union.left) && budgetRetrySafe(union.right);
+		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return budgetRetrySafe(union.left) && budgetRetrySafe(union.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return budgetRetrySafe(minus.left) && budgetRetrySafe(minus.right);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return budgetRetrySafe(lateral.left) && budgetRetrySafe(lateral.right);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return budgetRetrySafe(distinct.arg);
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return budgetRetrySafe(guard.delegate) && budgetRetrySafe(guard.drained);
+		}
+		// A worker-bindable lexical or graph boundary may still own callbacks or attempt-local state.
+		return false;
+	}
+
 	static boolean canFlatten(SlotPlan plan) {
 		if (plan instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) plan;

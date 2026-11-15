@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -159,11 +160,15 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			NativeGroupStep nativeGroupStep = (NativeGroupStep) groupStep;
 			return new NativeHavingStep(groupStep,
-					bindings -> nativeGroupStep.evaluateWithScopedHaving(bindings, descriptor));
+					bindings -> nativeGroupStep.evaluateWithScopedHaving(bindings, descriptor), null);
+		}
+		if (requiresPhysicalResults(groupStep)) {
+			return null;
 		}
 		Predicate<BindingSet> predicate = strategy.precompile(filter.getCondition(), context).asPredicate();
 		return new NativeHavingStep(groupStep,
-				bindings -> new FilteringIteration(groupStep.evaluate(bindings), predicate));
+				bindings -> new FilteringIteration(groupStep.evaluate(bindings), predicate),
+				rows -> new FilteringIteration(rows, predicate));
 	}
 
 	QueryEvaluationStep compile(Group group) {
@@ -221,6 +226,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (arg == null) {
 				return null;
 			}
+			if (requiresPhysicalResults(arg.step)) {
+				return null;
+			}
 			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
 				return new AggregateRootStack(projectedFilterStep(arg.step, filter), arg.group);
 			}
@@ -235,12 +243,14 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 						strategy,
 						descriptor.pinnedExpr(), context);
 				QueryEvaluationStep step = new NativeHavingStep(arg.step,
-						bindings -> new FilteringIteration(arg.step.evaluate(bindings), evaluator));
+						bindings -> new FilteringIteration(arg.step.evaluate(bindings), evaluator),
+						rows -> new FilteringIteration(rows, evaluator));
 				return new AggregateRootStack(step, arg.group);
 			}
 			Predicate<BindingSet> predicate = strategy.precompile(filter.getCondition(), context).asPredicate();
 			QueryEvaluationStep step = new NativeHavingStep(arg.step,
-					bindings -> new FilteringIteration(arg.step.evaluate(bindings), predicate));
+					bindings -> new FilteringIteration(arg.step.evaluate(bindings), predicate),
+					rows -> new FilteringIteration(rows, predicate));
 			return new AggregateRootStack(step, arg.group);
 		}
 		if (node instanceof Order order) {
@@ -257,12 +267,37 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	private record AggregateRootStack(QueryEvaluationStep step, Group group) {
 	}
 
+	private static boolean requiresPhysicalResults(QueryEvaluationStep step) {
+		return step instanceof NativeResultStep nativeStep && nativeStep.requiresPhysicalResults();
+	}
+
 	/** HAVING changes the row observer, while the same native child still owns its physical alternatives. */
-	private record NativeHavingStep(QueryEvaluationStep arg, QueryEvaluationStep evaluator)
-			implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private record NativeHavingStep(QueryEvaluationStep arg, QueryEvaluationStep evaluator,
+			UnaryOperator<CloseableIteration<BindingSet>> relationModifier)
+			implements NativeResultStep, LmdbNativePhysicalPlan {
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			return evaluator.evaluate(bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNative(BindingSet bindings) {
+			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+			if (relationModifier == null) {
+				// Evaluation-scoped HAVING owns a query context shared with its group. Keep that exact ordinary path
+				// until the group can transfer the context together with its physical relation.
+				return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+			}
+			return NativeRootPipeline.relation(arg, bindings, relationModifier);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return LmdbNativeAggregatePlanner.requiresPhysicalResults(arg);
 		}
 
 		@Override
@@ -279,13 +314,17 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private QueryEvaluationStep projectedFilterStep(QueryEvaluationStep argument, Filter filter) {
+		if (requiresPhysicalResults(argument)) {
+			return null;
+		}
 		var scope = FilterBindingScope.resolve(filter);
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
 		requiresExecutionContext |= !descriptor.shareableAcrossEvaluations();
 		NativeBindingSetValueEvaluator projected = compileProjectedValue(strategy, descriptor.pinnedExpr(), context,
 				scope);
 		return new NativeHavingStep(argument,
-				bindings -> new FilteringIteration(argument.evaluate(bindings), projected));
+				bindings -> new FilteringIteration(argument.evaluate(bindings), projected),
+				rows -> new FilteringIteration(rows, projected));
 	}
 
 	/** Compiles a root MultiProjection over any tuple argument admitted by the semantic native row floor. */

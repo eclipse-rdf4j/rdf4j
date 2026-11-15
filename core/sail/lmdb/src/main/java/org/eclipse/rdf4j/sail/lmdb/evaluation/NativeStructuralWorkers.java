@@ -38,7 +38,7 @@ final class NativeStructuralWorkers {
 		}
 	}
 
-	static Throwable drain(List<? extends Future<?>> futures, NativeLmdbQuerySource.ParallelSource[] sources,
+	static Throwable drain(List<? extends Future<?>> futures, AutoCloseable[] sources,
 			NativeCancellationToken cancellation, Throwable failure) {
 		boolean interrupted = Thread.interrupted();
 		if (failure != null || interrupted) {
@@ -65,7 +65,7 @@ final class NativeStructuralWorkers {
 			}
 		}
 		if (sources != null) {
-			for (NativeLmdbQuerySource.ParallelSource source : sources) {
+			for (AutoCloseable source : sources) {
 				failure = KernelRuntime.closeResource(source, failure);
 			}
 		}
@@ -111,10 +111,13 @@ final class NativeStructuralWorkers {
 		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
 		while (failure != null && visited.add(failure)) {
 			if (failure instanceof KernelQueryCancelledException cancelled) {
-				return cancelled.origin() == cancellation ? 0 : 2;
+				return cancelled.origin() == cancellation ? 0 : 3;
+			}
+			if (failure instanceof LmdbNativeKernelPartitions.ParallelKernelDecline) {
+				return 1;
 			}
 			if (failure instanceof KernelCancelledException || failure instanceof LmdbNativeProbeDeadlineExceeded) {
-				return 1;
+				return 2;
 			}
 			failure = failure.getCause();
 		}

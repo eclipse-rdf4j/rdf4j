@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +29,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
@@ -42,6 +44,74 @@ import org.junit.jupiter.api.parallel.Resources;
 /** Source-facing contracts for projected-predicate contraction and failure ownership. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbProjectedPredicateJoinTest {
+
+	@Test
+	void projectedPresenceAndExactWeightsShareOneSweep() throws Exception {
+		Fixture fixture = new Fixture(3L, 1L);
+		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(8L << 20, 8L << 20);
+		try (var ledger = manager.openQuery();
+				NativeFactorProjections input = LmdbProjectedPredicateJoin.projections(fixture.source, true, true,
+						null, null, false, false, false, false, new int[][] { { 0 }, {} },
+						new boolean[] { false, true }, new int[] { 0, 1, 2 }, new long[3], 0, 1, 2,
+						null, ledger, null)) {
+			assertTrue(input.nextBatch());
+			assertTrue(input.next(0));
+			assertEquals(1L, input.multiplicity());
+			assertTrue(input.next(0));
+			assertEquals(1L, input.multiplicity());
+			assertTrue(input.next(1));
+			assertEquals(36L, input.multiplicity());
+		}
+		assertEquals(0L, manager.usedBytes());
+	}
+
+	@Test
+	void exactOneSidedRequestsDoNotRescanOppositeFiber() throws Exception {
+		int predicates = 256;
+		Fixture fixture = new Fixture(predicates, 3L, -1L);
+		AtomicInteger polls = new AtomicInteger();
+		KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(null, () -> {
+			polls.incrementAndGet();
+			return false;
+		}, null);
+		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(8L << 20, 8L << 20);
+		try (var ledger = manager.openQuery();
+				NativeFactorProjections input = LmdbProjectedPredicateJoin.projections(fixture.source, true, true,
+						null, null, false, false, false, false, new int[][] { { 0 }, { 1 } },
+						new boolean[] { true, true }, new int[] { 0, 1, 2 }, new long[3], 0, 1, 2,
+						null, ledger, cancellation)) {
+			assertTrue(input.nextBatch());
+			polls.set(0);
+			for (int projection = 0; projection < 2; projection++) {
+				for (int i = 0; i < predicates; i++) {
+					assertTrue(input.next(projection));
+					assertEquals(9L * predicates, input.multiplicity());
+				}
+				assertFalse(input.next(projection));
+			}
+			assertTrue(polls.get() < predicates / 8,
+					"each opposite fiber must be totaled once per batch, not once per event: " + polls.get());
+		}
+		assertEquals(0L, manager.usedBytes());
+	}
+
+	@Test
+	void predicatePresenceNeverComputesOverflowingFiberTotal() throws Exception {
+		Fixture fixture = new Fixture(2, Long.MAX_VALUE, -1L);
+		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(8L << 20, 8L << 20);
+		try (var ledger = manager.openQuery();
+				NativeFactorProjections input = LmdbProjectedPredicateJoin.projections(fixture.source, true, true,
+						null, null, false, false, false, false, new int[][] { { 0 }, { 1 } },
+						new boolean[] { false, true }, new int[] { 0, 1, 2 }, new long[3], 0, 1, 2,
+						null, ledger, null)) {
+			assertTrue(input.nextBatch());
+			assertTrue(input.next(0));
+			assertEquals(1L, input.multiplicity());
+			assertTrue(input.next(1));
+			assertThrows(QueryEvaluationException.class, input::multiplicity);
+		}
+		assertEquals(0L, manager.usedBytes());
+	}
 
 	@Test
 	void mixedContextsUseBoundedPositionedCursorReads() throws Exception {

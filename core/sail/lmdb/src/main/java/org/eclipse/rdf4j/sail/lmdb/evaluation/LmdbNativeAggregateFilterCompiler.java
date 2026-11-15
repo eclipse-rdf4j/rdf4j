@@ -554,7 +554,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		if (expr instanceof ListMemberOperator) {
 			NativeBooleanFilter membership = compileListMember((ListMemberOperator) expr, assuredMask);
 			if (membership != null) {
-				return membership;
+				NativeScalarPlan recipe = NativeScalarPlan.create(expr, this::existingSlot,
+						NativeScalarPlan.ResultKind.BOOLEAN, strictCompare(), assuredMask, false, false);
+				return membership.plannedBy(recipe);
 			}
 		}
 

@@ -12,12 +12,15 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.DECODED_ROW;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.DISTINCT_UPDATE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.GROUP_UPDATE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.HASH_BUILD_ROW;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.HASH_PROBE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.INTERPRETED_ROW;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.MEMBERSHIP_TEST;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.SCANNED_ROW;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.SORT_N_LOG2_N;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -86,6 +89,172 @@ class SparseJoinAggregateCostTest {
 					"a branching sparse reduction with bounded state must be a cold normal candidate");
 			verify(fixture.source, never()).newProbe();
 		}
+	}
+
+	@Test
+	void projectedCountChannelsQuoteEveryFixedPlaneRequest() {
+		try (Fixture fixture = new Fixture(256L, 256L, 16L, 16L, 16L, 16L, false)) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			RowState row = new RowState(source, fixture.layout, EmptyBindingSet.getInstance());
+			try {
+				initializeRow(row);
+				AggregateSpec[] aggregates = { AggregateSpec.star("all"),
+						AggregateSpec.slot("shared", 1, true, AggKind.COUNT),
+						AggregateSpec.slot("right", 2, true, AggKind.COUNT) };
+				LmdbSparseJoinAggregatePlan plan = LmdbSparseJoinAggregatePlan.tryCreate(fixture.input,
+						new int[] { 0 }, aggregates, null);
+				assertNotNull(plan);
+				NativeAggregatePhysicalPlan.Work work = plan.quote(row);
+				assertNotNull(work);
+				assertTrue(work.input().workEvidence().isComplete(),
+						"fixed-plane projected requests need their own complete work proof");
+				assertEquals(0D, work.input().lowRows(), "plane statistics do not prove overlap");
+				assertTrue(work.input().highRows() >= 3D * 256D + 256D * 16D,
+						"group presence, exact bag weight, shared identity and right identity are separate demands");
+				assertTrue(work.input().operations().plus(work.extra()).high(SCANNED_ROW) >= 512D);
+				NativePhysicalWorkQuote attached = projectedQuote(row, fixture.input, new int[] { 0 }, aggregates,
+						plan);
+				assertTrue(attached.workEvidence().isComplete());
+				assertTrue(attached.total().high(GROUP_UPDATE) >= work.input().highRows());
+				assertTrue(attached.total().high(DISTINCT_UPDATE) >= work.input().highRows());
+				assertEquals(Double.POSITIVE_INFINITY, attached.total().high(OUTPUT_MATERIALIZATION));
+				assertEquals(attached.total(), attached.startup(), "a completed replay blocks before output");
+				assertNull(plan.coldAnchor(row, work));
+				verify(fixture.source, never()).newProbe();
+			} finally {
+				row.closeDecodedInputs();
+				row.memoryScope.close();
+				source.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void projectedPredicateChannelsDoNotRequireDensePairAccumulator() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.hasCanonicalIds()).thenReturn(true);
+		when(source.idSpace()).thenReturn(source);
+		when(source.predicateProjectionStatistics(eq(true), any())).thenReturn(
+				new NativeLmdbQuerySource.PredicateProjectionStatistics(50_000L, 50_000L, 1L, 50_000L));
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbNativeHashJoin.queryMemoryOverride = LmdbQueryMemoryManager.createForTesting(1L << 30, 1L << 30);
+		SyntheticValueSource evaluation = SyntheticValueSource.forEvaluation(source);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0, "s", 1, "q", 2, "a", 3, "b", 4), null);
+		layout.freeze(List.of("p", "s", "q", "a", "b"));
+		RowState row = new RowState(evaluation, layout, EmptyBindingSet.getInstance());
+		try {
+			initializeRow(row);
+			PatternPlan left = new PatternPlan(Term.slot(1), Term.slot(0), Term.slot(3), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 50_000D);
+			PatternPlan right = new PatternPlan(Term.slot(1), Term.slot(2), Term.slot(4), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 50_000D);
+			AggregateSpec[] aggregates = { AggregateSpec.star("all"),
+					AggregateSpec.slot("shared", 1, true, AggKind.COUNT) };
+			LmdbSparseJoinAggregatePlan plan = LmdbSparseJoinAggregatePlan.tryCreate(new JoinPlan(left, right),
+					new int[] { 0, 2 }, aggregates, null);
+			assertNotNull(plan);
+			LmdbSparseJoinAggregatePlan prepared = plan.prepare(row);
+			assertNotNull(prepared);
+			NativeAggregatePhysicalPlan.Work work = prepared.quote(row);
+			assertNotNull(work, "one-fiber projected requests do not allocate a dense predicate-pair matrix");
+			assertTrue(work.input().workEvidence().isComplete());
+			assertEquals(0D, work.input().lowRows());
+			assertTrue(work.input().highRows() >= 50_000D * 50_000D);
+			assertTrue(prepared.automaticCandidate(row));
+			NativePhysicalWorkQuote attached = projectedQuote(row, new JoinPlan(left, right), new int[] { 0, 2 },
+					aggregates, prepared);
+			assertTrue(attached.workEvidence().isComplete());
+			assertTrue(attached.total().high(GROUP_UPDATE) >= work.input().highRows());
+			assertEquals(Double.POSITIVE_INFINITY, attached.total().high(OUTPUT_MATERIALIZATION));
+			assertEquals(attached.total(), attached.startup());
+			assertNull(prepared.coldAnchor(row, work));
+			verify(source, never()).newProbe();
+		} finally {
+			row.closeDecodedInputs();
+			row.memoryScope.close();
+			evaluation.executionContext().close();
+			LmdbNativeHashJoin.queryMemoryOverride = previous;
+		}
+	}
+
+	@Test
+	void projectedFullRowDistinctQuotesBoundedEventSort() {
+		try (Fixture fixture = new Fixture(256L, 256L, 16L, 16L, 16L, 16L, false)) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			RowState row = new RowState(source, fixture.layout, EmptyBindingSet.getInstance());
+			try {
+				AggregateSpec[] aggregates = { AggregateSpec.star("all"),
+						AggregateSpec.starDistinct("rows", new int[] { 0, 1, 2 }) };
+				LmdbSparseJoinAggregatePlan plan = LmdbSparseJoinAggregatePlan.tryCreate(fixture.input,
+						new int[] { 0 }, aggregates, null);
+				assertNotNull(plan);
+				assertEquals(NativeAggregatePhysicalPlan.Retention.BOUNDED_EVENTS, plan.retention());
+				NativePhysicalWorkQuote quote = projectedQuote(row, fixture.input, new int[] { 0 }, aggregates, plan);
+				assertTrue(quote.workEvidence().isComplete(), "full-row event sorting needs a complete work proof");
+				assertTrue(quote.total().high(SORT_N_LOG2_N) > 0D);
+				assertEquals(Double.POSITIVE_INFINITY, quote.total().high(OUTPUT_MATERIALIZATION));
+				assertEquals(quote.total(), quote.startup());
+			} finally {
+				row.closeDecodedInputs();
+				row.memoryScope.close();
+				source.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void projectedSharedRequestQuotesEverySpillableChannelRecord() {
+		try (Fixture fixture = new Fixture(256L, 256L, 16L, 16L, 16L, 16L, false)) {
+			when(fixture.source.idSpace()).thenReturn(fixture.source);
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(fixture.source);
+			RowState row = new RowState(source, fixture.layout, EmptyBindingSet.getInstance());
+			try {
+				initializeRow(row);
+				AggregateSpec[] aggregates = new AggregateSpec[18];
+				aggregates[0] = AggregateSpec.star("all");
+				for (int i = 1; i < aggregates.length; i++) {
+					aggregates[i] = AggregateSpec.slot("distinct" + i, 1, true, AggKind.COUNT);
+				}
+				LmdbSparseJoinAggregatePlan plan = LmdbSparseJoinAggregatePlan.tryCreate(fixture.input,
+						new int[] { 0 }, aggregates, null);
+				assertNotNull(plan);
+				NativeAggregatePhysicalPlan.Work work = plan.quote(row);
+				assertNotNull(work);
+				double records = 256D * (1D + 1D + 17D + 17D);
+				assertTrue(work.extra().high(SORT_N_LOG2_N) >= records * (Math.log(records) / Math.log(2D)),
+						"each selected channel may reinsert a group marker after a spill");
+				assertTrue(work.input().workEvidence().isComplete());
+			} finally {
+				row.closeDecodedInputs();
+				row.memoryScope.close();
+				source.executionContext().close();
+			}
+		}
+	}
+
+	private static NativePhysicalWorkQuote projectedQuote(RowState row, SlotPlan input, int[] groups,
+			AggregateSpec[] aggregates, LmdbSparseJoinAggregatePlan plan) {
+		NativeGroupIteration owner = new NativeGroupIteration(row.source, input, row.layout, groups, aggregates, false,
+				row.base, null, null, false, null);
+		LmdbNativeStrategyProposal<List<BindingSet>> proposal = new LmdbNativeStrategyProposal<>(List::of,
+				LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, () -> {
+				});
+		try {
+			assertTrue(owner.initialize(row));
+			proposal.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input, plan.retention(), plan));
+			new NativeAggregateCostQuotes(owner, row, null, false).attach(proposal);
+			return proposal.typedQuote();
+		} finally {
+			proposal.close();
+			owner.close();
+		}
+	}
+
+	private static void initializeRow(RowState row) {
+		assertTrue(NativeRowSeeder.seed(row.slots, row.layout, row.base, row.source));
+		row.recomputeBoundMask();
 	}
 
 	@Test

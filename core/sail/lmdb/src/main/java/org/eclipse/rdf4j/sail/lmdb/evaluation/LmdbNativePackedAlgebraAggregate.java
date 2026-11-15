@@ -151,13 +151,23 @@ final class LmdbNativePackedAlgebraAggregate {
 	 */
 	private static List<BindingSet> collectMarginals(SlotPlan plan, RowState row, int[] groupSlots,
 			AggregateSpec[] specs, NativeGroupIteration owner) throws IOException {
-		int[] arguments = new int[specs.length];
-		boolean[] needsWeight = new boolean[specs.length];
-		for (int i = 0; i < specs.length; i++) {
-			arguments[i] = specs[i].slot;
-			needsWeight[i] = specs[i].reducer.weightSensitive;
+		List<BindingSet> results = collectMarginals(row, groupSlots, specs, owner,
+				(producer, columns, weights) -> LmdbNativeFactorProjections.open(plan, producer, columns, weights));
+		if (results == null) {
+			throw new IllegalStateException("Admitted packed algebra declined marginal transport");
 		}
-		FactorProjectionLayout layout = new FactorProjectionLayout(groupSlots, arguments, needsWeight);
+		return results;
+	}
+
+	@FunctionalInterface
+	interface ProjectionOpener {
+		NativeFactorProjections open(RowState producer, int[][] columns, boolean[] exactWeights) throws IOException;
+	}
+
+	/** Shared reduction boundary for producers which preserve the requested binding correlations. */
+	static List<BindingSet> collectMarginals(RowState row, int[] groupSlots, AggregateSpec[] specs,
+			NativeGroupIteration owner, ProjectionOpener opener) throws IOException {
+		FactorProjectionLayout layout = projectionLayout(groupSlots, specs);
 		int[][] columns = layout.columns();
 		AggregateDistinctChannels membership = AggregateDistinctChannels.allHash(specs);
 		int[][] updates = new int[layout.size()][];
@@ -177,10 +187,9 @@ final class LmdbNativePackedAlgebraAggregate {
 		int mark = projected.mark();
 		AggContext context = new AggContext(row.source, owner.strictCompare, true);
 		try (NativeGroupTable table = NativeGroupTable.create(groupSlots, specs, context, membership, true, false);
-				NativeFactorProjections input = LmdbNativeFactorProjections.open(plan, producer, columns,
-						layout.exactWeights())) {
+				NativeFactorProjections input = opener.open(producer, columns, layout.exactWeights())) {
 			if (input == null)
-				throw new IllegalStateException("Admitted packed algebra declined marginal transport");
+				return null;
 			while (input.nextBatch()) {
 				for (int p = 0; p < columns.length; p++) {
 					while (input.next(p)) {
@@ -190,15 +199,24 @@ final class LmdbNativePackedAlgebraAggregate {
 							if (id != LmdbNativeAggregateCompiler.UNKNOWN && !projected.bindOrCheckTerm(slot, id))
 								throw new IllegalStateException("Inconsistent projected aggregate binding");
 						}
-						long weight = 1L;
+						boolean numericWeight = false;
+						boolean checkedWeight = false;
 						for (int i : updates[p]) {
-							if (needsWeight[i] && specs[i].hasInput(projected)) {
-								// Null/error-only inputs establish a group but never demand an enormous outside
-								// product.
-								weight = input.multiplicity();
-								break;
+							AggregateSpec spec = specs[i];
+							long value = spec.value(projected);
+							AggState.validateProjectedNumeric(spec, context, value);
+							if (AggState.observesWeight(spec, context, value)) {
+								if (spec.kind == AggKind.SUM || spec.kind == AggKind.AVG) {
+									numericWeight = true;
+								} else {
+									checkedWeight = true;
+								}
 							}
 						}
+						// A checked COUNT always observes multiplicity. Numeric-only consumers may defer a
+						// locally proved overflow until their own group's eventual type-error state is known.
+						long weight = checkedWeight ? input.multiplicity()
+								: numericWeight ? input.numericMultiplicity() : 1L;
 						table.addProjected(projected, weight, updates[p], memberships[p]);
 					}
 				}
@@ -208,6 +226,18 @@ final class LmdbNativePackedAlgebraAggregate {
 			projected.rollback(mark);
 			context.close();
 		}
+	}
+
+	/** Execution and producer costing must use exactly the same coalesced request set. */
+	static FactorProjectionLayout projectionLayout(int[] groupSlots, AggregateSpec[] specs) {
+		int[][] arguments = new int[specs.length][];
+		boolean[] needsWeight = new boolean[specs.length];
+		for (int i = 0; i < specs.length; i++) {
+			arguments[i] = specs[i].rowSlots != null && specs[i].distinct ? specs[i].rowSlots
+					: specs[i].slot >= 0 ? new int[] { specs[i].slot } : new int[0];
+			needsWeight[i] = specs[i].reducer.weightSensitive;
+		}
+		return new FactorProjectionLayout(groupSlots, arguments, needsWeight);
 	}
 
 }

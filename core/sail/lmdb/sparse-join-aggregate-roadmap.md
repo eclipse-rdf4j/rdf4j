@@ -8,9 +8,9 @@ directly on compressed counts is neither generally possible nor the right accept
 
 ## Starting point and measured motivation
 
-The [current implementation](sparse-join-aggregate.md) recognizes two mandatory fixed-predicate planes or two
+The 2026-11-07 [implementation](sparse-join-aggregate.md) recognized two mandatory fixed-predicate planes or two
 subject/object-to-predicate projections, with exact bag weights or independently proved DISTINCT incidences.
-Every aggregate in its group must be an equivalent non-DISTINCT COUNT. Input DISTINCT, aggregate DISTINCT and
+Every aggregate in its group had to be an equivalent non-DISTINCT COUNT. Input DISTINCT, aggregate DISTINCT and
 SELECT DISTINCT are different operations. Surviving UNION, OPTIONAL, MINUS and arbitrary grouped subqueries are
 outside this sparse recognizer; their elimination by another optimizer is not support for the surviving operator.
 
@@ -27,6 +27,29 @@ an independent raw-statement oracle: automatic 1639.386 ± 39.599 ms/op and forc
 A generated nonempty 16-predicate fixture measured automatic 1.180 ± 0.206 versus disabled 179.095 ± 7.929 ms/op.
 These are retained historical JMH results for that candidate, dataset, JVM and configuration, not measurements of this
 roadmap. Q11 remained a fixed-plane sparse control; ANALYTICS Q7/Q8 actually executed `irAggregateTypeMatrixParallel`.
+
+### Implementation progress, 2026-11-08
+
+Eligible fixed-plane and projected-predicate joins can now feed independent group-existence, bag COUNT and aggregate
+DISTINCT channels through the existing factor-projection and bounded group stores. The admitted reducers also include
+SUM, AVG, MIN and MAX where their inputs are retained and reducer laws apply. The same grouped physical result can be
+consumed by a nested group and forwarded through supported ORDER, slice, DISTINCT and HAVING wrappers. Input DISTINCT,
+aggregate DISTINCT and SELECT DISTINCT remain separate boundaries, and unsupported expressions, SAMPLE,
+GROUP_CONCAT, custom aggregates, UNION, OPTIONAL and unsupported join shapes continue through ordinary evaluation.
+
+Floating arithmetic, equal-valued distinct RDF extrema and malformed numeric literals require original encounter-order
+replay. A retained sparse recipe owns that attempt and uses its preselected table fallback only when the input is safe to
+replay. Numeric multiplicity that exceeds the checked range is retained as an unavailable reducer event until the
+same group's final error state is known; an independent COUNT still reports checked overflow. Group state, DISTINCT
+membership and result replay remain bounded and cancellation-aware. Physical work quotes include the actual projected
+request grain, channel updates and spill work; incomplete physical work is not treated as a complete execution price.
+
+Focused tests cover mixed COUNT/DISTINCT and numeric channels, graph multiplicity, nested physical transfer, retained
+source and worker authority, modifier scopes, replay ownership, overflow, ordered fallback and cancellation. This is
+an increment toward the milestones below, not a claim that arbitrary UNION, OPTIONAL, expressions or opaque reducers
+execute as compressed sparse work. Full-query performance claims require the matched completed runs described below.
+The tested dense mixed COUNT/DISTINCT fixtures matched generic results, but automatic selection chose non-sparse
+alternatives for both producer families; the forced-channel tests establish capability rather than an automatic gain.
 
 The normative baseline is SPARQL 1.1's [algebra](https://www.w3.org/TR/sparql11-query/#sparqlAlgebra),
 [aggregate definitions](https://www.w3.org/TR/sparql11-query/#aggregateAlgebra) and
