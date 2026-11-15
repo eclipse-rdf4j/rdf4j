@@ -2292,9 +2292,10 @@ final class LmdbNativeKernelExecution {
 				row.rollback(activeMark);
 				activeMark = -1;
 			}
+			row.cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
 			while (true) {
 				if (bufferPos == bufferRows) {
-					// Full checkpoints belong at refills; buffered candidates retain their bounded masked polls.
 					row.cancellation.check();
 					LmdbNativeProbeDeadline.poll(0);
 					try {

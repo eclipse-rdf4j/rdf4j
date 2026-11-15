@@ -159,6 +159,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 		if (weight == 0L)
 			return;
 		try {
+			checkCancelled();
 			poll();
 			ensureRoom(1 + distinctChannels);
 			// Count payload remains zero in the input scratch. Reset only the event tag/term.
@@ -209,6 +210,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 		if (weight == 0L)
 			return;
 		try {
+			checkCancelled();
 			poll();
 			ensureRoom(channel >= 0 && distinct[channel] && value != -1L ? 2 : 1);
 			scratch[groups] = scratch[groups + 1] = 0L;
@@ -251,6 +253,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 		if (weight == 0L)
 			return;
 		try {
+			checkCancelled();
 			poll();
 			long canonical = groupId == -1L ? -1L : canonicalKey.applyAsLong(groupId);
 			if (capacity == 0)

@@ -629,6 +629,43 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 	}
 
 	@Test
+	void cancellationFromFinalRejectedBufferedRowIsNotSwallowedByExhaustion() throws Exception {
+		setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		setProperty(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+		setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
+		Scenario scenario = scenarioWithResidualSlots(new ProbeSource(null, false));
+		AtomicInteger filterCalls = new AtomicInteger();
+		NativeBooleanFilter cancelOnFinalRow = row -> {
+			if (filterCalls.incrementAndGet() == ROOTS) {
+				assertThat(scenario.emitter.requestCancellation()).isTrue();
+				return false;
+			}
+			return true;
+		};
+		SlotPlan input = new JoinPlan(scenario.plan, scenario.plan);
+		SlotPlan plan = new FilterPlan(input, cancelOnFinalRow, 0b1111L);
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, scenario.row, null);
+		assertThat(lowered.bindings.residualFilters).hasSize(1);
+		assertThat(lowered.bindings.kernelResiduals).isEmpty();
+		LmdbNativeStrategyProposal<RowCursor> proposal = LmdbNativeKernelExecution.proposeRows(plan, scenario.row,
+				null, false);
+		assertThat(proposal).isNotNull();
+		try {
+			try (RowCursor cursor = proposal.open()) {
+				for (int row = 0; row < ROOTS - 1; row++) {
+					assertThat(cursor.next()).as("preceding row %s remains available; filter calls=%s", row,
+							filterCalls.get()).isTrue();
+				}
+				assertOwnedQueryCancellation(catchThrowable(cursor::next), scenario.row.cancellation);
+			}
+			assertThat(filterCalls).as("the last buffered candidate requests cancellation before being rejected")
+					.hasValue(ROOTS);
+		} finally {
+			scenario.emitter.close();
+		}
+	}
+
+	@Test
 	void realRowWorkerProbeFailureDoesNotBecomeASequentialDecline() throws Exception {
 		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
 		Scenario admitted = scenario(new ProbeSource(null, false));
@@ -1404,6 +1441,19 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		return new Scenario(plan, row, emitter);
 	}
 
+	private Scenario scenarioWithResidualSlots(ProbeSource source) {
+		NativeSlotLayout layout = new NativeSlotLayout(
+				Map.of("subject", 0, "object", 1, "unusedOne", 2, "unusedTwo", 3), null);
+		layout.freeze(List.of("subject", "object", "unusedOne", "unusedTwo"));
+		PatternPlan plan = aggregatePlan();
+		NativeGroupIteration emitter = new NativeGroupIteration(source, plan, layout, new int[0], AGGREGATES,
+				false, EmptyBindingSet.getInstance(), null, null, false, null);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance(), (TupleExpr) null,
+				emitter.cancellation);
+		assertThat(emitter.initialize(row)).isTrue();
+		return new Scenario(plan, row, emitter);
+	}
+
 	private static PatternPlan aggregatePlan() {
 		return new PatternPlan(Term.slot(0), Term.constant(PREDICATE), Term.slot(1), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, ROOTS);
@@ -1431,7 +1481,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 	}
 
 	private void setProperty(String name, String value) {
-		previousProperties.putIfAbsent(name, System.getProperty(name));
+		if (!previousProperties.containsKey(name)) {
+			previousProperties.put(name, System.getProperty(name));
+		}
 		System.setProperty(name, value);
 	}
 
