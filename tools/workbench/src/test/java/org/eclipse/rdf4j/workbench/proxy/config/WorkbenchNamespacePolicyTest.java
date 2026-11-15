@@ -23,8 +23,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The two namespace settings of workbench.properties: {@code namespaces}, which pages treat as if every repository had
- * stored them, and {@code namespaces.fallback}, which replaces the bundled (empty) list the query editor falls back on
- * for prefixes that are not defined.
+ * stored them, and {@code namespaces.fallback}, which replaces the bundled list the query editor falls back on for
+ * prefixes that are not defined.
  */
 class WorkbenchNamespacePolicyTest {
 
@@ -64,10 +64,12 @@ class WorkbenchNamespacePolicyTest {
 	}
 
 	@Test
-	void fallbackNamespacesAreTheBundledEmptyListByDefault() {
+	void fallbackNamespacesAreTheBundledListByDefault() {
 		WorkbenchPolicy policy = WorkbenchPolicy.fromProperties(new Properties(), Set.of());
 
-		assertThat(policy.getFallbackNamespaces()).isEmpty();
+		assertThat(policy.getFallbackNamespaces()).containsEntry("skos", "http://www.w3.org/2004/02/skos/core#")
+				.containsEntry("foaf", "http://xmlns.com/foaf/0.1/")
+				.doesNotContainKeys("rdf", "rdfs", "xsd", "owl");
 	}
 
 	@Test

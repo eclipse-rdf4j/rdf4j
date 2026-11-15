@@ -7402,6 +7402,7 @@ namespace workbench {
                     var explore = createElement(this.document, 'a', display.preformatted ? 'rdf-preformatted' : '');
                     explore.setAttribute('href', display.exploreHref);
                     if (display.kind === 'iri' || display.kind === 'bnode') {
+                        explore.setAttribute('title', display.title);
                         appendBreakableText(this.document, explore, display.label);
                     } else {
                         explore.textContent = display.label;

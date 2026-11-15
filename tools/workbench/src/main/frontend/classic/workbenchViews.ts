@@ -2789,7 +2789,7 @@ namespace workbench {
                     'Add this resource and its neighbours to the graph', false)
             ].filter((action: any) => !!action) : [];
             return h`<section id="explore-resource-card" class="workbench-island explore-resource-card" aria-label="Explored resource">
-                ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}
+                ${summary.label ? h`<h2 title=${isIri ? key.slice(1, -1) : key}>${text(summary.label)}</h2>` : ''}
                 <div class="explore-resource-card__iri"><code id="explore-resource-iri">${isIri ? key.slice(1, -1) : key}</code>
                     <button class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
                         aria-label="Copy resource" title="Copy resource" @click=${copy}>${icon(runtime, 'copy')}</button></div>
@@ -2847,7 +2847,7 @@ namespace workbench {
                     const value = row[valueIndex];
                     const href = resultExploreHref(value);
                     const label = exploreGraphLabel(value, namespaces);
-                    return h`<li class="workbench-copyable">${href ? h`<a href=${href}>${label}</a>`
+                    return h`<li class="workbench-copyable">${href ? h`<a href=${href} title=${termText(value)}>${label}</a>`
                         : renderTerm(runtime, value, context, true)}${copyResourceControl(runtime, value, label)}</li>`;
                 })}</ul>`;
             }
@@ -4856,6 +4856,7 @@ namespace workbench {
                     ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
                     @click=${() => invoke('workbench.query.insertPrefixes')}>Insert prefixes</button></div>`);
             return h`<div id="query-page" class="query-page"
+                    data-query-server-url=${text(info.server)} data-query-repository-id=${context.repositoryId}
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"
                     data-workbench-query-execution="true" data-workbench-results-target="query-results">
