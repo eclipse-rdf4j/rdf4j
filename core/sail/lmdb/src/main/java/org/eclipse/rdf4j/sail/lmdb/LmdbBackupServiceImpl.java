@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,6 +29,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +37,7 @@ import java.util.Objects;
 import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -52,6 +55,7 @@ import java.util.zip.ZipOutputStream;
 
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.backup.BackupCompression;
@@ -64,6 +68,7 @@ import org.eclipse.rdf4j.sail.backup.BackupType;
 import org.eclipse.rdf4j.sail.backup.PointInTimeRestoreRequest;
 import org.eclipse.rdf4j.sail.backup.SailBackupService;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBackupDeltaCodec.Record;
+import org.eclipse.rdf4j.sail.lmdb.PostCommitBackupPublisher.Stage;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,13 +81,16 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	private static final String FULL_DIR = "full";
 	private static final String INCREMENTAL_DIR = "incremental";
 	private static final String TXLOG_DIR = "txlog";
+	private static final String NATIVE_JOURNAL_DIR = "journal";
 	private static final String BACKUP_STATE_FILE = "backup.properties";
 	private static final String BACKUP_DIRECTORY_KEY = "backup-directory";
+	private static final Map<Path, SharedJournal> NATIVE_JOURNALS = new HashMap<>();
 
 	private final Path storeRoot;
 	private final LmdbSailStore backingStore;
 	private final LmdbStoreConfig config;
 	private final LmdbBackupJournalState journalState;
+	private final PostCommitBackupPublisher postCommitPublisher;
 	private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread thread = new Thread(r, "LmdbBackupScheduler");
 		thread.setDaemon(true);
@@ -103,6 +111,8 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	private volatile Runnable afterFullBackupTransactionIdCaptured = () -> {
 	};
 	private volatile long lastPublishedTxnId;
+	private UUID lastPublishedHead;
+	private NativeJournalLease nativeJournal;
 	private volatile boolean closed;
 	private Long failedPublicationTxnId;
 
@@ -112,10 +122,12 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		this.backingStore = backingStore;
 		this.config = config;
 		this.journalState = backingStore.backupJournalState();
+		this.postCommitPublisher = postCommitPublisher;
 		this.txLogRoot = resolveInitialTxLogRoot();
 		try {
 			// Startup has no in-flight publications. Range validation still checks durable journal coverage.
 			this.lastPublishedTxnId = backingStore.getCurrentCommittedTxnId();
+			this.lastPublishedHead = backingStore.getTripleStore().getBackupOutboxHead();
 		} catch (IOException e) {
 			throw new SailException("Unable to recover LMDB backup publication baseline", e);
 		}
@@ -165,6 +177,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 						migrateTransactionLogs(txLogRoot, requestedRoot);
 					}
 					persistBackupDirectory(requestedRoot);
+					closeNativeJournal();
 					txLogRoot = requestedRoot;
 				}
 			} finally {
@@ -356,6 +369,13 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		backupOperationLock.lock();
 		try {
 			backingStore.setCommitListener(null);
+			txLogPublicationLock.lock();
+			try {
+				// An admitted backup may still export or prune while close waits for its operation lock.
+				closeNativeJournal();
+			} finally {
+				txLogPublicationLock.unlock();
+			}
 		} finally {
 			backupOperationLock.unlock();
 		}
@@ -501,11 +521,8 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		Files.createDirectories(deltaDir);
 		boolean promoted = false;
 		try {
-			List<Path> logs = listTransactionLogs(backupDirectory, since.getAsLong(), currentTxn);
+			List<Path> logs = exportTransactionLogs(backupDirectory, since.getAsLong(), currentTxn, deltaDir);
 			validateLogCoverage(logs, since.getAsLong(), currentTxn, journalState.generation());
-			for (Path log : logs) {
-				Files.copy(log, deltaDir.resolve(log.getFileName()), StandardCopyOption.REPLACE_EXISTING);
-			}
 			Path artifactPath = deltaDir;
 			if (request.getCompression() == BackupCompression.ZIP) {
 				artifactPath = tempContainer.resolve("delta.zip");
@@ -574,13 +591,68 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				Files.deleteIfExists(temporaryLog);
 			}
 			lastPublishedTxnId = transactionId;
+			lastPublishedHead = backingStore.getTripleStore().getBackupOutboxHead();
 			txLogPublished.signalAll();
 		} catch (IOException e) {
+			recordFailure("commit-delta", transactionId, e);
 			markPublicationFailure(transactionId);
 			logger.warn("Failed to persist LMDB transaction delta log for txn {}", transactionId, e);
 			throw new RuntimeException(e);
 		} finally {
 			txLogPublicationLock.unlock();
+		}
+	}
+
+	/** Stores the already encoded source records without materializing RDF models or one file per commit. */
+	void onCommitBatch(List<Stage> stages) {
+		if (stages.isEmpty()) {
+			return;
+		}
+		long firstTransaction = stages.getFirst().transaction;
+		txLogPublicationLock.lock();
+		try {
+			ensureOpen();
+			Stage first = stages.getFirst();
+			if (first.previousTransaction > lastPublishedTxnId) {
+				throw new IOException("Noncontiguous LMDB transaction publication after " + lastPublishedTxnId);
+			}
+			for (Stage stage : stages) {
+				if (stage.path != null) {
+					validateLegacyStage(stage);
+				}
+			}
+			currentJournal(true).use(journal -> {
+				journal.append(stages, stage -> stage.path == null
+						? stage.openNativeSource(backingStore.getTripleStore())
+						: new BufferedInputStream(Files.newInputStream(stage.path)));
+				return null;
+			});
+			Stage last = stages.getLast();
+			if (last.transaction >= lastPublishedTxnId) {
+				lastPublishedTxnId = last.transaction;
+				lastPublishedHead = last.id;
+			}
+			txLogPublished.signalAll();
+		} catch (IOException failure) {
+			recordFailure("commit-delta", firstTransaction, failure);
+			markPublicationFailure(firstTransaction);
+			throw new SailException("Unable to persist native LMDB backup journal batch", failure);
+		} finally {
+			txLogPublicationLock.unlock();
+		}
+	}
+
+	private static void validateLegacyStage(Stage stage) throws IOException {
+		// Legacy stages are external files and may have been truncated between writing and recovery. Preserve the
+		// original fail-before-acknowledgement behavior without decoding newly encoded native stages on the hot path.
+		try (DataInputStream input = new DataInputStream(new BufferedInputStream(Files.newInputStream(stage.path)))) {
+			Stage actual = PostCommitBackupPublisher.readStage(input, stage.path);
+			for (int i = 0; i < actual.count; i++) {
+				LmdbBackupDeltaCodec.readRecord(input, SimpleValueFactory.getInstance());
+			}
+			if (input.read() != -1) {
+				throw new IOException("Trailing bytes in legacy LMDB backup stage");
+			}
 		}
 	}
 
@@ -610,45 +682,417 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	}
 
 	void initializePublicationBaseline(long transactionId) {
+		initializePublicationBaseline(transactionId, backingStore.getTripleStore().getBackupOutboxHead());
+	}
+
+	void initializePublicationBaseline(long transactionId, UUID identity) {
 		txLogPublicationLock.lock();
 		try {
 			lastPublishedTxnId = transactionId;
+			lastPublishedHead = identity;
 		} finally {
 			txLogPublicationLock.unlock();
 		}
 	}
 
 	private void migrateTransactionLogs(Path sourceRoot, Path targetRoot) throws IOException {
-		Path source = sourceRoot.resolve(TXLOG_DIR);
 		Path target = targetRoot.resolve(TXLOG_DIR);
-		if (!Files.isDirectory(source)) {
+		createDurableDirectories(target);
+		PostCommitBackupPublisher.Acknowledgement acknowledgement = postCommitPublisher == null
+				? new PostCommitBackupPublisher.Acknowledgement(lastPublishedHead, lastPublishedTxnId)
+				: postCommitPublisher.checkpointAcknowledgement();
+		// A -> B -> A must preserve A's retained prefix as well as B's newer history. Materialize both before
+		// advancing an existing target head across the interval that was published in the other directory.
+		exportTransactionLogs(targetRoot, Long.MIN_VALUE, Long.MAX_VALUE, target);
+		exportTransactionLogs(sourceRoot, Long.MIN_VALUE, Long.MAX_VALUE, target);
+		StoreProperties.forceParentDirectory(target);
+		StoreProperties.forceParentDirectory(targetRoot);
+		Path targetJournal = journalDirectory(targetRoot, journalState.generation());
+		if (!Files.isRegularFile(targetJournal.resolve("data.mdb"))
+				&& lastPublishedTxnId == acknowledgement.transaction()) {
 			return;
 		}
-		createDurableDirectories(target);
-		try (var files = Files.list(source)) {
-			for (Path file : files.toList()) {
-				if (!file.getFileName().toString().startsWith("txn-")) {
-					continue;
+		NativeJournalLease source = lastPublishedTxnId > acknowledgement.transaction() ? currentJournal(false) : null;
+		if (source == null && lastPublishedTxnId > acknowledgement.transaction()) {
+			throw new IOException("Missing unacknowledged native journal during backup migration");
+		}
+		try (NativeJournalLease targetLease = acquireNativeJournal(targetJournal, journalState.generation(), true,
+				acknowledgement.transaction(), acknowledgement.identity())) {
+			if (source == null) {
+				targetLease.use(journal -> {
+					migrateJournalBoundary(journal, null, acknowledgement);
+					return null;
+				});
+			} else {
+				withJournals(source, targetLease, (sourceJournal, journal) -> {
+					migrateJournalBoundary(journal, sourceJournal, acknowledgement);
+					return null;
+				});
+			}
+		}
+	}
+
+	private void migrateJournalBoundary(LmdbBackupJournal target, LmdbBackupJournal source,
+			PostCommitBackupPublisher.Acknowledgement acknowledgement) throws IOException {
+		if (target.headTransaction() < acknowledgement.transaction()) {
+			target.adoptBoundary(acknowledgement.transaction(), acknowledgement.identity());
+		}
+		if (source != null) {
+			// A batch may be durable while its ack is paused. It must exist in the target native journal too:
+			// after a crash replay compares native payloads, rather than trusting an exported gzip filename.
+			List<Stage> stages = new ArrayList<>();
+			for (long transaction : source.transactions(acknowledgement.transaction(), lastPublishedTxnId)) {
+				try (DataInputStream input = new DataInputStream(source.openStage(transaction))) {
+					stages.add(PostCommitBackupPublisher.readStage(input, null));
 				}
-				Path destination = target.resolve(file.getFileName());
-				if (Files.exists(destination)) {
-					if (!checksum(file).equals(checksum(destination))) {
-						throw new IOException("Conflicting LMDB journal at new backup directory");
+			}
+			if (stages.isEmpty() || stages.getFirst().previousTransaction != acknowledgement.transaction()
+					|| stages.getLast().transaction != lastPublishedTxnId) {
+				throw new IOException("Incomplete unacknowledged journal during backup migration");
+			}
+			target.append(stages, stage -> source.openStage(stage.transaction));
+		}
+	}
+
+	private NativeJournalLease currentJournal(boolean create) throws IOException {
+		if (nativeJournal == null) {
+			Path directory = journalDirectory(txLogRoot, journalState.generation());
+			if (!create && !Files.isRegularFile(directory.resolve("data.mdb"))) {
+				return null;
+			}
+			nativeJournal = acquireNativeJournal(directory, journalState.generation(), true,
+					lastPublishedTxnId, lastPublishedHead);
+		}
+		return nativeJournal;
+	}
+
+	private void closeNativeJournal() {
+		if (nativeJournal != null) {
+			nativeJournal.close();
+			nativeJournal = null;
+		}
+	}
+
+	boolean hasOpenNativeJournalForTest() {
+		txLogPublicationLock.lock();
+		try {
+			return nativeJournal != null;
+		} finally {
+			txLogPublicationLock.unlock();
+		}
+	}
+
+	Object nativeJournalIdentityForTest(Path backupDirectory, UUID generation) throws IOException {
+		txLogPublicationLock.lock();
+		try {
+			return withJournal(backupDirectory, generation, false, journal -> journal);
+		} finally {
+			txLogPublicationLock.unlock();
+		}
+	}
+
+	@FunctionalInterface
+	private interface JournalOperation<T> {
+		T apply(LmdbBackupJournal journal) throws IOException;
+	}
+
+	private <T> T withJournal(Path backupDirectory, UUID generation, boolean writable, JournalOperation<T> operation)
+			throws IOException {
+		Path directory = journalDirectory(backupDirectory, generation);
+		if (!Files.isRegularFile(directory.resolve("data.mdb"))) {
+			return null;
+		}
+		if (generation.equals(journalState.generation())
+				&& canonicalPath(backupDirectory).equals(canonicalPath(txLogRoot))) {
+			// close marks admission closed before waiting for an admitted backup. Keep its owner lease until that
+			// operation drains; foreign services borrow the same environment through the canonical-path registry.
+			if (nativeJournal != null) {
+				return nativeJournal.use(operation);
+			}
+			if (!closed) {
+				return Objects.requireNonNull(currentJournal(false)).use(operation);
+			}
+		}
+		try (NativeJournalLease lease = acquireNativeJournal(directory, generation, writable, 0,
+				PostCommitBackupPublisher.EMPTY)) {
+			return lease.use(operation);
+		}
+	}
+
+	/**
+	 * LMDB must be opened only once per path in a process. The owner retains a writable lease; restores from another
+	 * store borrow that same handle. Registry transitions never hold the monitor during native open, close or IO.
+	 */
+	private static NativeJournalLease acquireNativeJournal(Path directory, UUID generation, boolean writable,
+			long baseline, UUID baselineIdentity) throws IOException {
+		if (writable && !Files.isDirectory(directory)) {
+			createDurableDirectories(directory);
+		}
+		Path canonical = directory.toRealPath();
+		SharedJournal shared;
+		boolean create;
+		synchronized (NATIVE_JOURNALS) {
+			while (true) {
+				shared = NATIVE_JOURNALS.get(canonical);
+				if (shared == null) {
+					shared = new SharedJournal(canonical, generation, writable);
+					shared.references = 1;
+					// This new lock is uncontended. Reserving it before publishing the entry hides a partial open.
+					shared.operationLock.lock();
+					NATIVE_JOURNALS.put(canonical, shared);
+					create = true;
+					break;
+				}
+				if (!shared.generation.equals(generation)) {
+					throw new IOException("Native backup journal generation mismatch at " + canonical);
+				}
+				boolean needsWriter = writable && !shared.writable;
+				if (shared.closing || needsWriter || shared.waitingWriters != 0) {
+					if (needsWriter) {
+						shared.waitingWriters++;
+					}
+					try {
+						NATIVE_JOURNALS.wait();
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						NATIVE_JOURNALS.notifyAll();
+						throw new IOException("Interrupted while acquiring native backup journal", interrupted);
+					} finally {
+						if (needsWriter) {
+							shared.waitingWriters--;
+						}
 					}
 					continue;
 				}
-				Path temporary = Files.createTempFile(target, ".tmp-migrate-", ".delta.gz");
-				try {
-					Files.copy(file, temporary, StandardCopyOption.REPLACE_EXISTING);
-					PostCommitBackupPublisher.forceFile(temporary);
-					Files.move(temporary, destination, StandardCopyOption.ATOMIC_MOVE);
-				} finally {
-					Files.deleteIfExists(temporary);
+				shared.references++;
+				create = false;
+				break;
+			}
+		}
+		NativeJournalLease lease = new NativeJournalLease(shared);
+		if (create) {
+			boolean opened = false;
+			try {
+				shared.journal = new LmdbBackupJournal(canonical, generation, writable, baseline, baselineIdentity);
+				opened = true;
+			} catch (IOException | RuntimeException | Error failure) {
+				shared.openFailure = failure;
+				throw failure;
+			} finally {
+				shared.operationLock.unlock();
+				if (!opened) {
+					lease.close();
 				}
 			}
 		}
-		StoreProperties.forceParentDirectory(target);
-		StoreProperties.forceParentDirectory(targetRoot);
+		return lease;
+	}
+
+	private static final class SharedJournal {
+		private final Path directory;
+		private final UUID generation;
+		private final boolean writable;
+		private final ReentrantLock operationLock = new ReentrantLock();
+		private LmdbBackupJournal journal;
+		private Throwable openFailure;
+		private int references;
+		private int waitingWriters;
+		private boolean closing;
+
+		private SharedJournal(Path directory, UUID generation, boolean writable) {
+			this.directory = directory;
+			this.generation = generation;
+			this.writable = writable;
+		}
+	}
+
+	private static final class NativeJournalLease implements AutoCloseable {
+		private final SharedJournal shared;
+		private volatile boolean closed;
+
+		private NativeJournalLease(SharedJournal shared) {
+			this.shared = shared;
+		}
+
+		private LmdbBackupJournal journal() throws IOException {
+			if (closed || shared.journal == null) {
+				throw new IOException("Native backup journal lease is unavailable", shared.openFailure);
+			}
+			return shared.journal;
+		}
+
+		private <T> T use(JournalOperation<T> operation) throws IOException {
+			shared.operationLock.lock();
+			try {
+				return operation.apply(journal());
+			} finally {
+				shared.operationLock.unlock();
+			}
+		}
+
+		@Override
+		public void close() {
+			synchronized (NATIVE_JOURNALS) {
+				if (closed) {
+					return;
+				}
+				closed = true;
+				if (--shared.references != 0) {
+					return;
+				}
+				shared.closing = true;
+			}
+			shared.operationLock.lock();
+			try {
+				if (shared.journal != null) {
+					shared.journal.close();
+					shared.journal = null;
+				}
+			} finally {
+				shared.operationLock.unlock();
+				synchronized (NATIVE_JOURNALS) {
+					// Leave the closing entry visible until native close has finished: reopen may not overlap it.
+					NATIVE_JOURNALS.remove(shared.directory, shared);
+					NATIVE_JOURNALS.notifyAll();
+				}
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface JournalPairOperation<T> {
+		T apply(LmdbBackupJournal first, LmdbBackupJournal second) throws IOException;
+	}
+
+	private static <T> T withJournals(NativeJournalLease first, NativeJournalLease second,
+			JournalPairOperation<T> operation) throws IOException {
+		// Migration is the only operation spanning two native journals. Canonical-path order also covers inverse
+		// migrations from different services, while aliases of one environment acquire its lock only once.
+		SharedJournal lower = first.shared;
+		SharedJournal upper = second.shared;
+		if (lower.directory.compareTo(upper.directory) > 0) {
+			lower = second.shared;
+			upper = first.shared;
+		}
+		lower.operationLock.lock();
+		if (upper != lower) {
+			upper.operationLock.lock();
+		}
+		try {
+			return operation.apply(first.journal(), second.journal());
+		} finally {
+			if (upper != lower) {
+				upper.operationLock.unlock();
+			}
+			lower.operationLock.unlock();
+		}
+	}
+
+	private static Path journalDirectory(Path backupDirectory, UUID generation) {
+		return backupDirectory.resolve(TXLOG_DIR).resolve(NATIVE_JOURNAL_DIR).resolve(generation.toString());
+	}
+
+	private static List<UUID> journalGenerations(Path backupDirectory) throws IOException {
+		Path directory = backupDirectory.resolve(TXLOG_DIR).resolve(NATIVE_JOURNAL_DIR);
+		if (!Files.isDirectory(directory)) {
+			return List.of();
+		}
+		List<UUID> generations = new ArrayList<>();
+		try (var paths = Files.list(directory)) {
+			for (Path path : (Iterable<Path>) paths::iterator) {
+				if (!Files.isRegularFile(path.resolve("data.mdb"))) {
+					continue;
+				}
+				String name = path.getFileName().toString();
+				try {
+					UUID generation = UUID.fromString(name);
+					if (!name.equals(generation.toString()) || generation.equals(PostCommitBackupPublisher.EMPTY)) {
+						throw new IllegalArgumentException("Noncanonical native backup journal generation");
+					}
+					generations.add(generation);
+				} catch (IllegalArgumentException malformed) {
+					throw new IOException("Malformed native backup journal generation directory", malformed);
+				}
+			}
+		}
+		generations.sort(Comparator.naturalOrder());
+		return generations;
+	}
+
+	List<Long> publishedTransactionIds(Path backupDirectory, long fromExclusive, long toInclusive) throws IOException {
+		txLogPublicationLock.lock();
+		try {
+			TreeSet<Long> transactions = new TreeSet<>();
+			for (Path path : listTransactionLogs(backupDirectory, fromExclusive, toInclusive)) {
+				transactions.add(parseTransactionId(path));
+			}
+			for (UUID generation : journalGenerations(backupDirectory)) {
+				withJournal(backupDirectory, generation, false, journal -> {
+					transactions.addAll(journal.transactions(fromExclusive, toInclusive));
+					return null;
+				});
+			}
+			return List.copyOf(transactions);
+		} finally {
+			txLogPublicationLock.unlock();
+		}
+	}
+
+	/** Exports the unchanged public gzip delta format from native and legacy transaction history. */
+	List<Path> exportTransactionLogs(Path backupDirectory, long fromExclusive, long toInclusive, Path destination)
+			throws IOException {
+		txLogPublicationLock.lock();
+		try {
+			Files.createDirectories(destination);
+			Map<Long, Path> logs = new TreeMap<>();
+			for (Path legacy : listTransactionLogs(backupDirectory, fromExclusive, toInclusive)) {
+				Path target = destination.resolve(legacy.getFileName());
+				if (!Files.exists(target) || !Files.isSameFile(legacy, target)) {
+					Path temporary = Files.createTempFile(destination, ".tmp-native-export-", ".delta.gz");
+					try {
+						Files.copy(legacy, temporary, StandardCopyOption.REPLACE_EXISTING);
+						promoteJournal(temporary, target);
+					} finally {
+						Files.deleteIfExists(temporary);
+					}
+				}
+				logs.put(parseTransactionId(legacy), target);
+			}
+			for (UUID generation : journalGenerations(backupDirectory)) {
+				withJournal(backupDirectory, generation, false, journal -> {
+					for (long transaction : journal.transactions(fromExclusive, toInclusive)) {
+						Path target = destination.resolve(String.format("txn-%020d.delta.gz", transaction));
+						Path temporary = Files.createTempFile(destination, ".tmp-native-export-", ".delta.gz");
+						try {
+							try (OutputStream output = new GZIPOutputStream(
+									new BufferedOutputStream(Files.newOutputStream(temporary)))) {
+								journal.writeTransaction(transaction, output);
+							}
+							promoteJournal(temporary, target);
+						} finally {
+							Files.deleteIfExists(temporary);
+						}
+						logs.put(transaction, target);
+					}
+					return null;
+				});
+			}
+			return List.copyOf(logs.values());
+		} finally {
+			txLogPublicationLock.unlock();
+		}
+	}
+
+	private static void promoteJournal(Path temporary, Path target) throws IOException {
+		PostCommitBackupPublisher.forceFile(temporary);
+		if (Files.exists(target)) {
+			if (Files.mismatch(temporary, target) != -1) {
+				throw new IOException("Conflicting LMDB transaction journal at " + target);
+			}
+			PostCommitBackupPublisher.forceFile(target);
+		} else {
+			Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+		}
 	}
 
 	static void createDurableDirectories(Path directory) throws IOException {
@@ -672,11 +1116,11 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	void onCommitFailure(long transactionId, Throwable error) {
 		txLogPublicationLock.lock();
 		try {
+			recordFailure("commit-delta", transactionId, error);
 			markPublicationFailure(transactionId);
 		} finally {
 			txLogPublicationLock.unlock();
 		}
-		recordFailure("commit-delta", transactionId, error);
 	}
 
 	private void markPublicationFailure(long transactionId) {
@@ -795,7 +1239,9 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				}
 			}
 		}
-		for (Path log : listTransactionLogs(backupDirectory, fromExclusive, toInclusive)) {
+		Path exported = Files.createTempDirectory("rdf4j-lmdb-native-journals-");
+		temporaryLogDirs.add(exported);
+		for (Path log : exportTransactionLogs(backupDirectory, fromExclusive, toInclusive, exported)) {
 			selectedLogs.putIfAbsent(parseTransactionId(log), log);
 		}
 
@@ -1163,8 +1609,19 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	private void deleteTransactionLogsUpTo(Path backupDirectory, long cutoffTxn) throws IOException {
 		txLogPublicationLock.lock();
 		try {
-			for (Path log : listTransactionLogs(backupDirectory, Long.MIN_VALUE, cutoffTxn)) {
+			// Source reclamation checkpoints its own native proof. Retention also needs a forced proof when no
+			// later writer has run: retain exact replay bytes beyond the boundary actually checkpointed here.
+			long acknowledged = postCommitPublisher == null ? lastPublishedTxnId
+					: postCommitPublisher.checkpointAcknowledgement().transaction();
+			long cutoff = Math.min(cutoffTxn, acknowledged);
+			for (Path log : listTransactionLogs(backupDirectory, Long.MIN_VALUE, cutoff)) {
 				Files.deleteIfExists(log);
+			}
+			for (UUID generation : journalGenerations(backupDirectory)) {
+				withJournal(backupDirectory, generation, true, journal -> {
+					journal.pruneThrough(cutoff);
+					return null;
+				});
 			}
 			Path logDirectory = backupDirectory.resolve(TXLOG_DIR);
 			if (Files.isDirectory(logDirectory)) {

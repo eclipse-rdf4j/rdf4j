@@ -397,7 +397,10 @@ class AsyncValueRetirementCoordinatorTest {
 			fixture.cleanup.start();
 			assertTrue(fixture.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
 			assertTrue(processed.isEmpty());
-			assertEquals(0L, fixture.cleanup.metrics().acknowledgedCandidates());
+			AsyncValueRetirementCoordinator.Metrics dropped = fixture.cleanup.metrics();
+			assertEquals(0L, dropped.acknowledgedCandidates());
+			assertEquals(0L, dropped.queuedCandidates());
+			assertEquals(0L, dropped.unacknowledgedCandidates());
 			publish(fixture.cleanup, 10, 1);
 			assertTrue(fixture.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
 			assertEquals(List.of(candidate(10)), processed);
@@ -418,12 +421,18 @@ class AsyncValueRetirementCoordinatorTest {
 		List<Long> processed = new CopyOnWriteArrayList<>();
 		try (Fixture reopened = new Fixture(directory, smallestConfig(), collecting(processed))) {
 			assertFalse(AsyncValueRetirementCoordinator.hasSpool(directory));
-			assertEquals(1, reopened.cleanup.metrics().activeProducers());
-			assertEquals(20L, reopened.cleanup.metrics().unacknowledgedCandidates());
+			AsyncValueRetirementCoordinator.Metrics recovered = reopened.cleanup.metrics();
+			assertEquals(1, recovered.activeProducers());
+			assertEquals(20L, recovered.unacknowledgedCandidates());
+			assertEquals(20L, recovered.queuedCandidates());
 			assertBounds(reopened.cleanup, 16, 4096);
 			reopened.cleanup.start();
 			assertTrue(reopened.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
 			assertEquals(range(1, 20), processed);
+			AsyncValueRetirementCoordinator.Metrics drained = reopened.cleanup.metrics();
+			assertEquals(0L, drained.queuedCandidates());
+			assertEquals(0L, drained.unacknowledgedCandidates());
+			assertEquals(20L, drained.acknowledgedCandidates());
 			assertEquals(0L, streamFiles(directory).size());
 		}
 	}

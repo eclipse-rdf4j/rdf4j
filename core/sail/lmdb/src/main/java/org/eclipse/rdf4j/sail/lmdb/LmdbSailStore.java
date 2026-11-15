@@ -4485,7 +4485,7 @@ class LmdbSailStore implements SailStore {
 		// Explicit failure/rollback survives recovery of an individual physical attempt.
 		private boolean logicalFailure;
 		private RetainedFlushPublication retainedFlush;
-		private final List<PostCommitBackupPublisher.Stage> backupStages = new ArrayList<>();
+		private PostCommitBackupPublisher.ReleaseGroup backupReleaseGroup;
 
 		private PublicationContext(Object owner, WriterLease writerLease, boolean ownsOwner) {
 			this.owner = owner;
@@ -4595,8 +4595,8 @@ class LmdbSailStore implements SailStore {
 							completeUnownedValueCleanupProducer(context.owner);
 						}
 					} finally {
-						for (PostCommitBackupPublisher.Stage stage : context.backupStages) {
-							postCommitBackupPublisher.released(stage);
+						if (context.backupReleaseGroup != null) {
+							postCommitBackupPublisher.released(context.backupReleaseGroup);
 						}
 					}
 				}
@@ -6787,7 +6787,7 @@ class LmdbSailStore implements SailStore {
 			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
 			boolean temporaryOverflow) throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy, null, null,
-				null, TripleStore::new, PersistentSetFactory::new, LmdbFilterSelectivityStats::new, 1024,
+				null, null, PersistentSetFactory::new, LmdbFilterSelectivityStats::new, 1024,
 				temporaryOverflow);
 	}
 
@@ -6803,7 +6803,7 @@ class LmdbSailStore implements SailStore {
 			Runnable duringValueOverlayWarmupScanForTest, Consumer<ValueStore> afterValueStoreOpenForTest)
 			throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy,
-				duringValueOverlayWarmupScanForTest, afterValueStoreOpenForTest, null, TripleStore::new,
+				duringValueOverlayWarmupScanForTest, afterValueStoreOpenForTest, null, null,
 				PersistentSetFactory::new, LmdbFilterSelectivityStats::new);
 	}
 
@@ -6899,7 +6899,7 @@ class LmdbSailStore implements SailStore {
 					: null;
 			var valueStore = valueStoreFactory == null
 					? new ValueStore(new File(dataDir, "values"), properties, config, false,
-							duringValueOverlayWarmupScanForTest, format, true)
+							duringValueOverlayWarmupScanForTest, format, true, null, backupPublicationEnabled)
 					: valueStoreFactory.create(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
 			if (afterValueStoreOpenForTest != null) {
@@ -6909,7 +6909,10 @@ class LmdbSailStore implements SailStore {
 			valueStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.VALUE_STORE));
 			valueStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
-			tripleStore = tripleStoreFactory.create(new File(dataDir, "triples"), properties, config, valueStore);
+			tripleStore = tripleStoreFactory == null
+					? new TripleStore(new File(dataDir, "triples"), properties, config, valueStore,
+							backupPublicationEnabled)
+					: tripleStoreFactory.create(new File(dataDir, "triples"), properties, config, valueStore);
 			tripleStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.TRIPLE_STORE));
 			tripleStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
@@ -7185,6 +7188,19 @@ class LmdbSailStore implements SailStore {
 		// Cross any outer reentrant sink section, but never retain the gate during publication IO.
 		sinkStoreAccessLock.lock();
 		sinkStoreAccessLock.unlock();
+	}
+
+	long syncBackupPublicationBoundary() throws IOException {
+		// Journaled stores commit both native environments synchronously, dictionary before triples. Crossing
+		// the sink gate observes that completed durable boundary without forcing the same pages again. Startup
+		// recovery separately syncs historical external stages, which may predate these native commit flags.
+		// This gate remains available while the publisher drains after growth admission has closed.
+		sinkStoreAccessLock.lock();
+		try {
+			return getCurrentCommittedTxnId();
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
 	}
 
 	long getCurrentCommittedTxnId() throws IOException {
@@ -7499,6 +7515,20 @@ class LmdbSailStore implements SailStore {
 		sinkStoreAccessLock.lock();
 		try {
 			Throwable failure = null;
+			Throwable asynchronousFailure = null;
+			if (multiThreadingActive) {
+				try {
+					// Backup capture on the native worker borrows the dictionary writer. Drain it before
+					// aborting that transaction, including when this caller has been interrupted.
+					rollbackAsyncTransaction();
+					if (asyncRollbackException != null) {
+						throw new SailException("Failed to abort the asynchronous TripleStore transaction",
+								asyncRollbackException);
+					}
+				} catch (Throwable cleanupFailure) {
+					asynchronousFailure = cleanupFailure;
+				}
+			}
 			try {
 				valueStore.rollback(storeNativeTransaction);
 			} catch (Throwable cleanupFailure) {
@@ -7506,10 +7536,9 @@ class LmdbSailStore implements SailStore {
 			}
 			try {
 				if (multiThreadingActive) {
-					rollbackAsyncTransaction();
-					if (asyncRollbackException != null) {
-						throw new SailException("Failed to abort the asynchronous TripleStore transaction",
-								asyncRollbackException);
+					// Preserve dictionary failure precedence while still waiting for the borrowed owner first.
+					if (asynchronousFailure != null) {
+						failure = retainRollbackFailure(failure, asynchronousFailure);
 					}
 				} else {
 					tripleStore.rollback(storeNativeTransaction);
@@ -7757,9 +7786,6 @@ class LmdbSailStore implements SailStore {
 					// Dictionary additions precede authoritative triples in both modes. Only the durable policy records
 					// recoverable retirement intents here; async streams are ineligible until triple publication.
 					commitDictionaryBeforeTriple();
-					if (preparedBackupStage != null) {
-						valueStore.syncBackupBoundary();
-					}
 					if (noneWriteState != null && noneWriteState.owner == owner) {
 						noneWriteState.dictionaryCommitted = true;
 					}
@@ -7979,8 +8005,6 @@ class LmdbSailStore implements SailStore {
 					PublicationContext publication = publicationContext.get();
 					if (publication == null) {
 						postCommitBackupPublisher.released(stage);
-					} else {
-						publication.backupStages.add(stage);
 					}
 				}
 			}
@@ -7991,6 +8015,15 @@ class LmdbSailStore implements SailStore {
 			throws IOException {
 		if (postCommitBackupPublisher != null) {
 			preparedBackupStage = postCommitBackupPublisher.prepare(previousRequiredTxn, records);
+			PublicationContext publication = publicationContext.get();
+			if (publication != null) {
+				if (publication.backupReleaseGroup == null) {
+					// The first stage doubles as this scope's release token; checkpoint count does not grow heap.
+					publication.backupReleaseGroup = preparedBackupStage;
+				} else {
+					preparedBackupStage.releaseGroup = publication.backupReleaseGroup;
+				}
+			}
 		}
 	}
 
@@ -8028,15 +8061,6 @@ class LmdbSailStore implements SailStore {
 			lastBackupPublicationAttempt = transactionId;
 			if (postCommitBackupPublisher != null) {
 				postCommitBackupPublisher.committed(preparedBackupStage);
-				try {
-					// An external acknowledgement must never survive a rollback of an unsynced native head.
-					valueStore.syncBackupBoundary();
-					tripleStore.syncBackupBoundary();
-					preparedBackupStage.durable = true;
-				} catch (IOException | RuntimeException syncFailure) {
-					postCommitBackupPublisher.onCommitFailure(transactionId, previousRequiredTxn, records, syncFailure);
-					logger.warn("LMDB backup native durability boundary failed; stage retained", syncFailure);
-				}
 			}
 			CommitListener listener = commitListener;
 			if (listener != null && listener != postCommitBackupPublisher) {
@@ -12432,11 +12456,16 @@ class LmdbSailStore implements SailStore {
 						removeCount[0]++;
 						if (backupPublicationEnabled || explicit && sketchBasedJoinEstimator != null) {
 							try {
-								Statement removedStatement = valueStore.withWriterCaptureContext(
-										(stack, txn) -> captureBackupStatement(quadToStatement(quad)));
-								queueBackupRemove(removedStatement);
-								if (explicit) {
-									queueEstimatorRemove(removedStatement);
+								boolean needsEstimator = explicit && sketchBasedJoinEstimator != null;
+								if (needsEstimator
+										|| !pendingBackupRecords.addNativeStatement(valueStore, false, explicit,
+												quad)) {
+									Statement removedStatement = valueStore.withWriterCaptureContext(
+											(stack, txn) -> captureBackupStatement(quadToStatement(quad)));
+									queueBackupRemove(removedStatement);
+									if (explicit) {
+										queueEstimatorRemove(removedStatement);
+									}
 								}
 							} catch (IOException e) {
 								throw new UncheckedIOException(e);
