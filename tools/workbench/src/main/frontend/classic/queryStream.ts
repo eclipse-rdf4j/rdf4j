@@ -3933,7 +3933,18 @@ namespace workbench {
             });
         }
 
-        /** Maps a logical result height into the browser's measured scroll capacity. */
+        /**
+         * Next to the start and the end of a compressed result, logical and physical offsets match one to one over this
+         * many pixels (at most a quarter of the scroll range). The rows rendered ahead of the view then always fit between
+         * the view and the edge of the scroll box: with offsets compressed right up to the edges, the rows above the view
+         * near the start (and below it near the end) would need a negative spacer and were shown out of place.
+         */
+        var COMPRESSED_EDGE_BAND = 32768;
+
+        /**
+         * Maps a logical result height into the browser's measured scroll capacity: one to one in a band at each end,
+         * linearly compressed in between.
+         */
         export class ResultScrollCoordinates {
             physicalHeight = 0;
             private logicalHeight = 0;
@@ -3964,15 +3975,40 @@ namespace workbench {
             logicalOffset(physical: number): number {
                 var physicalRange = Math.max(0, this.physicalHeight - this.viewportHeight);
                 var logicalRange = Math.max(0, this.logicalHeight - this.viewportHeight);
-                return physicalRange === 0 ? 0
-                    : Math.max(0, Math.min(physicalRange, physical)) * logicalRange / physicalRange;
+                if (physicalRange === 0) {
+                    return 0;
+                }
+                var offset = Math.max(0, Math.min(physicalRange, physical));
+                var band = this.edgeBand(logicalRange, physicalRange);
+                if (offset <= band) {
+                    return offset;
+                }
+                if (offset >= physicalRange - band) {
+                    return logicalRange - (physicalRange - offset);
+                }
+                return band + (offset - band) * (logicalRange - 2 * band) / (physicalRange - 2 * band);
             }
 
             physicalOffset(logical: number): number {
                 var logicalRange = Math.max(0, this.logicalHeight - this.viewportHeight);
                 var physicalRange = Math.max(0, this.physicalHeight - this.viewportHeight);
-                return logicalRange === 0 ? 0
-                    : Math.max(0, Math.min(logicalRange, logical)) * physicalRange / logicalRange;
+                if (logicalRange === 0) {
+                    return 0;
+                }
+                var offset = Math.max(0, Math.min(logicalRange, logical));
+                var band = this.edgeBand(logicalRange, physicalRange);
+                if (offset <= band) {
+                    return offset;
+                }
+                if (offset >= logicalRange - band) {
+                    return physicalRange - (logicalRange - offset);
+                }
+                return band + (offset - band) * (physicalRange - 2 * band) / (logicalRange - 2 * band);
+            }
+
+            /** The one-to-one band at each end of the range (COMPRESSED_EDGE_BAND); none while nothing is compressed. */
+            private edgeBand(logicalRange: number, physicalRange: number): number {
+                return logicalRange > physicalRange ? Math.min(COMPRESSED_EDGE_BAND, physicalRange / 4) : 0;
             }
 
             get maximumOffset(): number {
@@ -4063,8 +4099,17 @@ namespace workbench {
                 previousRequested = requested;
             }
             document.body.removeChild(probe);
-            return capacity;
+            // Stay below the clamp: Firefox lays a real table or records box out a few hundred pixels short of what this
+            // probe scrolls, which left the last rows of a compressed result out of reach.
+            return capacity === Number.MAX_SAFE_INTEGER ? capacity
+                : capacity - Math.min(SCROLL_CAPACITY_HEADROOM, capacity / 256);
         }
+
+        /** The most pixels kept free below a measured scroll capacity (see measureScrollCapacity). */
+        var SCROLL_CAPACITY_HEADROOM = 4096;
+
+        /** How long a box must stop scrolling after a lifted finger before a touch swipe counts as over. */
+        var TOUCH_SCROLL_SETTLE_MS = 300;
 
         /** The fewest pixels a rendered result row takes (one line of text and its padding is about 36). */
         var MIN_RENDERED_ROW_HEIGHT = 20;
@@ -6690,6 +6735,17 @@ namespace workbench {
 
         var resultTableSequence = 0;
 
+        /**
+         * Where a table or records box is scrolled. logical is the offset the rows should show (the latest scroll intent,
+         * in uncompressed row pixels); physical is the scrollTop planned for it; committed is the scrollTop the renderer
+         * last wrote or adopted, so a different scrollTop means the user scrolled the box natively since.
+         */
+        interface ResultScrollPosition {
+            logical: number;
+            physical: number;
+            committed: number;
+        }
+
         /** Whether SELECT variables name a statement the Graph page reads (source/predicate/target, s/p/o, …). */
         export function hasStatementColumns(variables: string[]): boolean {
             var names = (variables || []).map((name: string) => String(name).toLowerCase());
@@ -6764,8 +6820,12 @@ namespace workbench {
             private pageEndIntent = false;
             private reflowAnchor: { row: number; within: number; end: boolean } = null;
             private viewportMeasurement: { width: number; height: number } = null;
-            private tablePosition = { logical: 0, physical: 0 };
-            private recordPosition = { logical: 0, physical: 0 };
+            private tablePosition: ResultScrollPosition = { logical: 0, physical: 0, committed: 0 };
+            private recordPosition: ResultScrollPosition = { logical: 0, physical: 0, committed: 0 };
+            /** A touch swipe is scrolling a box (see installTouchScrolling); fingerDown until its touchend. */
+            private touchScrolling = false;
+            private fingerDown = false;
+            private cancelTouchSettle: () => void = null;
             private rowNodes: { [index: string]: any } = {};
             private recordNodes: { [index: string]: any } = {};
             private topSpacer: any = null;
@@ -6841,8 +6901,13 @@ namespace workbench {
                 this.installKeyboardSideScrolling(this.tableWrap);
                 // N-Quads lines kept whole scroll sideways in the records box.
                 this.installKeyboardSideScrolling(this.records);
+                this.installTouchScrolling(this.tableWrap);
+                this.installTouchScrolling(this.records);
                 this.onScroll = () => {
                     this.syncFloatingHeadScroll();
+                    if (this.touchScrolling && !this.fingerDown) {
+                        this.awaitTouchScrollSettle();
+                    }
                     if (this.scrollMode === 'element') {
                         this.requestScheduledRender();
                     }
@@ -7002,6 +7067,7 @@ namespace workbench {
                 this.disposed = true;
                 this.rowRenderGeneration++;
                 this.recordRenderGeneration++;
+                this.stopTouchSettleTimer();
                 this.tableWrap.removeEventListener('scroll', this.onScroll, false);
                 this.records.removeEventListener('scroll', this.onScroll, false);
                 this.disposers.forEach(dispose => dispose());
@@ -7289,7 +7355,8 @@ namespace workbench {
                 var range = geometry.range;
                 return this.source.read(range.start, range.end - range.start)
                     .then(rows => {
-                    if (this.disposed || generation !== this.rowRenderGeneration) {
+                    if (this.disposed || generation !== this.rowRenderGeneration
+                            || this.scrolledWhileReading(this.tableWrap, geometry)) {
                         return;
                     }
                     var desired: any[] = [];
@@ -7514,7 +7581,8 @@ namespace workbench {
                 var start = range.start;
                 var end = range.end;
                 return this.source.read(start, end - start).then(rows => {
-                    if (this.disposed || generation !== this.recordRenderGeneration) {
+                    if (this.disposed || generation !== this.recordRenderGeneration
+                            || this.scrolledWhileReading(this.records, geometry)) {
                         return;
                     }
                     var desired: any[] = [];
@@ -7717,6 +7785,8 @@ namespace workbench {
             private prepareWindow(scrollport: any, heights: MeasuredRowHeights,
                     coordinates: ResultScrollCoordinates, viewportHeight: number): any {
                 var position = scrollport === this.records ? this.recordPosition : this.tablePosition;
+                // The scroll offset this window is planned from; see scrolledWhileReading.
+                var observed = this.scrollPosition(scrollport);
                 var oldLogical = this.logicalPosition(scrollport, coordinates, position);
                 var anchor = heights.range(oldLogical, 0, 0, 1).start;
                 var within = oldLogical - heights.offsetOf(anchor);
@@ -7734,26 +7804,75 @@ namespace workbench {
                     within = reflowAnchor.end ? 0 : reflowAnchor.within;
                 }
                 position.logical = Math.max(0, Math.min(coordinates.maximumOffset, heights.offsetOf(anchor) + within));
-                var scrollTop = coordinates.physicalOffset(position.logical);
+                // During a touch swipe the rows are laid out for the browser's scroll position, which stays as it is.
+                var touch = this.touchScroll();
+                var scrollTop = touch ? observed : coordinates.physicalOffset(position.logical);
                 position.physical = scrollTop;
+                if (touch) {
+                    position.committed = observed;
+                }
                 var logical = position.logical;
                 var rowCount = this.source.rowCount();
                 var range = this.rendersAllRows()
                     ? { start: 0, end: rowCount, topSpacer: 0, bottomSpacer: 0 }
                     : heights.range(logical, viewportHeight, 4, this.windowCap(scrollport));
                 return { range: range, scrollTop: scrollTop, anchor: anchor, within: within,
-                    requestedRow: requestedRow, reflowAnchor: reflowAnchor,
+                    requestedRow: requestedRow, reflowAnchor: reflowAnchor, observed: observed,
+                    elementScroll: this.scrollMode !== 'page', touch: touch,
                     atEnd: coordinates.maximumOffset > 0 && position.logical >= coordinates.maximumOffset };
             }
 
+            /**
+             * The logical offset to show: the latest intent while the box is still where the renderer left it (also while
+             * a window for that intent is being read, before its scrollTop is committed), else the native scroll offset.
+             */
             private logicalPosition(scrollport: any, coordinates: ResultScrollCoordinates,
-                    position: { logical: number; physical: number }): number {
+                    position: ResultScrollPosition): number {
                 var current = this.scrollPosition(scrollport);
                 // Preserve subpixel logical positions when an engine rounds programmatic scrollTop to CSS pixels.
-                if (Math.abs(current - position.physical) < 1) {
+                if (Math.abs(current - position.committed) < 1) {
                     return position.logical;
                 }
+                if (this.touchScroll()) {
+                    // A swipe moves the rows as far as the finger moved, not by the compressed scroll bar's scale.
+                    return Math.max(0, Math.min(coordinates.maximumOffset, position.logical + current - position.committed));
+                }
                 return coordinates.logicalOffset(current);
+            }
+
+            /**
+             * True when the rows' own box was scrolled natively (a scroll bar drag, a fling) while the window planned at
+             * geometry was read. Committing that window would move the box back to where the read began, so it is dropped
+             * and the newer position is rendered in the next frame. In page mode the renderer never moves the page.
+             */
+            private scrolledWhileReading(scrollport: any, geometry: any): boolean {
+                var current = this.scrollPosition(scrollport);
+                if (!geometry.elementScroll || this.scrollMode === 'page' || Math.abs(current - geometry.observed) < 1) {
+                    return false;
+                }
+                if (geometry.touch && this.touchScroll()) {
+                    // A swipe keeps scrolling: lay the rows read out for where it has got to rather than drop them.
+                    this.followTouchScroll(scrollport, geometry, current);
+                    return false;
+                }
+                this.requestScheduledRender();
+                return true;
+            }
+
+            /** Moves a window planned during a swipe on by the distance the swipe scrolled while its rows were read. */
+            private followTouchScroll(scrollport: any, geometry: any, current: number) {
+                var records = scrollport === this.records;
+                var position = records ? this.recordPosition : this.tablePosition;
+                var heights = records ? this.recordHeights : this.rowHeights;
+                var coordinates = records ? this.recordCoordinates : this.rowCoordinates;
+                position.logical = Math.max(0, Math.min(coordinates.maximumOffset,
+                    position.logical + current - geometry.observed));
+                position.physical = position.committed = current;
+                geometry.observed = current;
+                geometry.scrollTop = current;
+                geometry.anchor = heights.range(position.logical, 0, 0, 1).start;
+                geometry.within = position.logical - heights.offsetOf(geometry.anchor);
+                geometry.atEnd = coordinates.maximumOffset > 0 && position.logical >= coordinates.maximumOffset;
             }
 
             /** The window that scrolls the rows in page mode, or null where there is none (unit-test fakes). */
@@ -7782,8 +7901,8 @@ namespace workbench {
                 if (mode !== this.scrollMode) {
                     this.scrollMode = mode;
                     this.root.setAttribute('data-scroll-source', mode);
-                    this.tablePosition.physical = this.scrollPosition(this.tableWrap);
-                    this.recordPosition.physical = this.scrollPosition(this.records);
+                    this.tablePosition.physical = this.tablePosition.committed = this.scrollPosition(this.tableWrap);
+                    this.recordPosition.physical = this.recordPosition.committed = this.scrollPosition(this.records);
                 }
             }
 
@@ -7908,21 +8027,24 @@ namespace workbench {
             }
 
             private refreshPosition(scrollport: any, heights: MeasuredRowHeights,
-                    coordinates: ResultScrollCoordinates, position: { logical: number; physical: number },
+                    coordinates: ResultScrollCoordinates, position: ResultScrollPosition,
                     viewportHeight: number, geometry: any) {
                 coordinates.update(heights.offsetOf(this.source.rowCount()), viewportHeight);
                 // New height measurements can move the first visible row without changing an end seek's intent.
                 position.logical = geometry.atEnd ? coordinates.maximumOffset
                     : Math.max(0, Math.min(coordinates.maximumOffset, heights.offsetOf(geometry.anchor) + geometry.within));
-                position.physical = coordinates.physicalOffset(position.logical);
+                if (!geometry.touch) {
+                    position.physical = coordinates.physicalOffset(position.logical);
+                }
             }
 
-            private commitScroll(scrollport: any, position: { logical: number; physical: number }, geometry: any) {
+            private commitScroll(scrollport: any, position: ResultScrollPosition, geometry: any) {
                 if (this.scrollMode === 'page') {
                     // The page scrolls natively and the browser's scroll anchoring keeps the visible rows in place
                     // when rows above them are measured, so the renderer never moves the page itself.
                     position.physical = this.scrollPosition(scrollport);
                     position.logical = position.physical;
+                    position.committed = position.physical;
                     if (this.requestedRow === geometry.requestedRow) {
                         this.requestedRow = null;
                     }
@@ -7935,9 +8057,13 @@ namespace workbench {
                 // Commit native scrolling only after the new rows and their offscreen geometry exist.
                 // Reading a clamped interim scrollTop while spacers are replaced would lose the seek anchor.
                 var nativeMaximum = Math.max(0, scrollport.scrollHeight - scrollport.clientHeight);
-                // Native end includes header/border rounding that is outside the logical row-height model.
-                scrollport.scrollTop = geometry.atEnd && isFinite(nativeMaximum) ? nativeMaximum : position.physical;
+                // Native end includes header/border rounding that is outside the logical row-height model. A touch
+                // swipe keeps the browser's scroll position (and momentum); its end puts the scroll bar back.
+                if (!geometry.touch) {
+                    scrollport.scrollTop = geometry.atEnd && isFinite(nativeMaximum) ? nativeMaximum : position.physical;
+                }
                 position.physical = scrollport.scrollTop || 0;
+                position.committed = position.physical;
                 if (this.requestedRow === geometry.requestedRow) {
                     this.requestedRow = null;
                 }
@@ -7968,8 +8094,74 @@ namespace workbench {
                 this.disposers.push(() => scrollport.removeEventListener('keydown', keyboard, false));
             }
 
+            /**
+             * A touch swipe scrolls a box natively, momentum included, and the renderer must not take that scrolling
+             * over. From touchstart until the box comes to rest after the finger is lifted (scrollend, or
+             * TOUCH_SCROLL_SETTLE_MS without scrolling where there is no scrollend), the swipe's distance moves the rows
+             * one to one instead of through the compressed scroll bar's scale (where 1 px is many rows), and the scroll
+             * position stays the browser's. Once it settles, the scroll bar is put back where the rows are.
+             */
+            private installTouchScrolling(scrollport: any) {
+                var touchStart = (event: any) => {
+                    this.touchScrolling = true;
+                    this.fingerDown = true;
+                    this.stopTouchSettleTimer();
+                    // The row under the finger is often rendered away during the swipe; touchend still goes to it.
+                    var target = event && event.target;
+                    if (target && typeof target.addEventListener === 'function') {
+                        var lifted = () => {
+                            target.removeEventListener('touchend', lifted, false);
+                            target.removeEventListener('touchcancel', lifted, false);
+                            this.fingerDown = false;
+                            this.awaitTouchScrollSettle();
+                        };
+                        target.addEventListener('touchend', lifted, false);
+                        target.addEventListener('touchcancel', lifted, false);
+                    }
+                };
+                var scrollEnd = () => {
+                    if (this.touchScrolling && !this.fingerDown) {
+                        this.endTouchScrolling();
+                    }
+                };
+                scrollport.addEventListener('touchstart', touchStart, { passive: true });
+                scrollport.addEventListener('scrollend', scrollEnd, false);
+                this.disposers.push(() => {
+                    scrollport.removeEventListener('touchstart', touchStart, { passive: true });
+                    scrollport.removeEventListener('scrollend', scrollEnd, false);
+                });
+            }
+
+            /** After the finger is lifted, end the swipe once the box has not scrolled for a moment (momentum is over). */
+            private awaitTouchScrollSettle() {
+                this.stopTouchSettleTimer();
+                this.cancelTouchSettle = startTimer(() => this.endTouchScrolling(), TOUCH_SCROLL_SETTLE_MS);
+            }
+
+            private stopTouchSettleTimer() {
+                if (this.cancelTouchSettle) {
+                    this.cancelTouchSettle();
+                    this.cancelTouchSettle = null;
+                }
+            }
+
+            private endTouchScrolling() {
+                this.stopTouchSettleTimer();
+                this.touchScrolling = false;
+                this.fingerDown = false;
+                if (!this.disposed) {
+                    // Puts the scroll bar back at the compressed position of the rows now in view.
+                    this.requestScheduledRender();
+                }
+            }
+
+            /** A touch swipe scrolls the rows' own box (page scrolling is the browser's anyway). */
+            private touchScroll(): boolean {
+                return this.touchScrolling && this.scrollMode !== 'page';
+            }
+
             private installPreciseScrolling(scrollport: any, coordinates: ResultScrollCoordinates,
-                    position: { logical: number; physical: number }) {
+                    position: ResultScrollPosition) {
                 var move = (offset: number) => {
                     position.logical = Math.max(0, Math.min(coordinates.maximumOffset, offset));
                     this.requestRender();
@@ -7999,6 +8191,8 @@ namespace workbench {
                         : event.key === 'ArrowUp' ? current - line
                             : event.key === 'PageDown' ? current + page
                                 : event.key === 'PageUp' ? current - page
+                                    // The browser would scroll the compressed scroll bar a view, many views of rows.
+                                    : event.key === ' ' ? current + (event.shiftKey ? -page : page)
                                     : event.key === 'Home' ? 0
                                         : event.key === 'End' ? coordinates.maximumOffset : null;
                     if (next !== null) {
