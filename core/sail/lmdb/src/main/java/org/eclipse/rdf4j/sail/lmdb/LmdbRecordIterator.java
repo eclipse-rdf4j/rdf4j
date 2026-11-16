@@ -43,7 +43,7 @@ import org.lwjgl.util.lmdb.MDBVal;
 /**
  * A record iterator over the tuples in the split key/value chunks of a native LMDB index.
  */
-class LmdbRecordIterator implements RecordIterator {
+class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<TripleIndex> {
 
 	static class State {
 		private long cursor;
@@ -461,7 +461,8 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
-	void reset(TripleIndex index, int indexScore, long subj, long pred, long obj, long context,
+	@Override
+	public void reset(TripleIndex index, int indexScore, long subj, long pred, long obj, long context,
 			boolean explicit) throws IOException {
 		long stamp = readLock();
 		try {
@@ -547,7 +548,8 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
-	void dispose() {
+	@Override
+	public void dispose() {
 		long stamp = readLock();
 		try {
 			synchronized (txnRef) {

@@ -2594,8 +2594,7 @@ class TripleStore implements Closeable {
 			long context, boolean explicit) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
 			TripleIndex index = TripleIndex.getBestCompatibleOrderedIndex(selectedGeneration.indexes, statementOrder,
-					subj, pred, obj,
-					context);
+					subj, pred, obj, context);
 			if (index == null) {
 				throw new UnsupportedOperationException("StatementOrder is not supported: " + statementOrder);
 			}

@@ -18,6 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
@@ -50,6 +58,112 @@ class TripleStorePartialIndexesTest {
 
 	@TempDir
 	File dir;
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void partialResolutionRetainsAndDisposesTerminalChild(boolean batched) throws Exception {
+		try (TripleStore store = open("sp,psoc")) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.storeTriple(11, 44, 55, 0, true);
+			store.storeTriple(11, 66, 77, 0, true);
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn();
+					var children = mockConstruction(LmdbRecordIterator.class)) {
+				try (RecordIterator iterator = store.getTriples(txn, 11, -1, -1, -1, true)) {
+					assertEquals("sp", iterator.getIndexName());
+					if (batched) {
+						assertEquals(0, iterator.fill(new long[8], 2));
+					} else {
+						assertNull(iterator.next());
+					}
+					assertEquals(1, children.constructed().size());
+					var child = children.constructed().get(0);
+					verify(child, times(2)).reset(any(TripleIndex.class), anyInt(), anyLong(), anyLong(),
+							anyLong(), anyLong(), anyBoolean());
+					verify(child).dispose();
+				}
+				verify(children.constructed().get(0)).dispose();
+			}
+		}
+	}
+
+	@Test
+	void partialResolutionDisposesTerminalChildOnEarlyClose() throws Exception {
+		try (TripleStore store = open("sp,psoc")) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn();
+					var children = mockConstruction(LmdbRecordIterator.class, (child, context) ->
+							when(child.next()).thenReturn(new long[] { 11, 22, 33, 0 }))) {
+				try (RecordIterator iterator = store.getTriples(txn, 11, -1, -1, -1, true)) {
+					assertEquals("[11, 22, 33, 0]", Arrays.toString(iterator.next()));
+				}
+				verify(children.constructed().get(0)).dispose();
+			}
+		}
+	}
+
+	@Test
+	void partialResolutionDisposesTerminalChildAfterFailure() throws Exception {
+		try (TripleStore store = open("sp,psoc")) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn();
+					var children = mockConstruction(LmdbRecordIterator.class, (child, context) ->
+							when(child.next()).thenThrow(new SailException("scan failed")))) {
+				try (RecordIterator iterator = store.getTriples(txn, 11, -1, -1, -1, true)) {
+					assertThrows(SailException.class, iterator::next);
+					verify(children.constructed().get(0)).dispose();
+				}
+				verify(children.constructed().get(0)).dispose();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "cs,spoc", "cs,sp,psoc", "cs,sp,op,posc" })
+	void partialResolutionBatchesPreserveRowsAndCounters(String indexes) throws Exception {
+		try (TripleStore store = open(indexes)) {
+			Set<String> expected = new HashSet<>();
+			store.startTransaction();
+			for (int subject = 1; subject <= 70; subject++) {
+				for (int predicate = 101; predicate <= 103; predicate++) {
+					store.storeTriple(subject, predicate, 201, 0, true);
+					store.storeTriple(subject, predicate, 201, 301, true);
+					expected.add(Arrays.toString(new long[] { subject, predicate, 201, 0 }));
+				}
+			}
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn();
+					RecordIterator iterator = store.getTriples(txn, -1, -1, -1, 0, true)) {
+				assertEquals("cs", iterator.getIndexName());
+				Set<String> actual = new HashSet<>();
+				assertTrue(actual.add(Arrays.toString(iterator.next())));
+				long[] buffer = new long[16];
+				int count;
+				while ((count = iterator.fill(buffer, 4)) > 0) {
+					for (int row = 0; row < count; row++) {
+						assertTrue(actual.add(Arrays.toString(Arrays.copyOfRange(buffer, row * 4, row * 4 + 4))));
+					}
+					assertEquals(actual.size(), iterator.getSourceRowsMatchedActual());
+				}
+				assertEquals(expected, actual);
+				assertEquals(expected.size(), iterator.getSourceRowsMatchedActual());
+				assertEquals(iterator.getSourceRowsScannedActual() - iterator.getSourceRowsFilteredActual(),
+						iterator.getSourceRowsMatchedActual());
+				long scanned = iterator.getSourceRowsScannedActual();
+				long filtered = iterator.getSourceRowsFilteredActual();
+				iterator.close();
+				assertNull(iterator.next());
+				assertEquals(0, iterator.fill(buffer, 4));
+				assertEquals(scanned, iterator.getSourceRowsScannedActual());
+				assertEquals(filtered, iterator.getSourceRowsFilteredActual());
+			}
+		}
+	}
 
 	@Test
 	void contextSubjectPairsResolveThroughSubjectPredicatePairs() throws Exception {

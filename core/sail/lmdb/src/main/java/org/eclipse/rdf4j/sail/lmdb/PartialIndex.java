@@ -246,6 +246,7 @@ final class PartialIndex {
 		private int secondBufferCount;
 		private long lastSecond = -1;
 		private RecordIterator child;
+		private RecordIterator.Retainable<TripleIndex> retainedChild;
 		private long[] childBuffer;
 		private boolean closed;
 		private long scanned, matched, filtered;
@@ -341,7 +342,10 @@ final class PartialIndex {
 			long[] pattern = { s, p, o, c };
 			pattern[firstField] = first;
 			pattern[secondField] = nextSecond;
-			child = resolution.iterator(txn, pattern[0], pattern[1], pattern[2], pattern[3], explicit);
+			retainedChild = resolution.retainableIterator(txn, pattern[0], pattern[1], pattern[2], pattern[3],
+					explicit, retainedChild);
+			child = retainedChild != null ? retainedChild
+					: resolution.iterator(txn, pattern[0], pattern[1], pattern[2], pattern[3], explicit);
 			return true;
 		}
 
@@ -415,10 +419,11 @@ final class PartialIndex {
 
 		private void closeChild() {
 			if (child != null) {
-				scanned += child.getSourceRowsScannedActual();
-				filtered += child.getSourceRowsFilteredActual();
-				child.close();
+				RecordIterator current = child;
 				child = null;
+				scanned += current.getSourceRowsScannedActual();
+				filtered += current.getSourceRowsFilteredActual();
+				current.close();
 			}
 		}
 
@@ -445,7 +450,15 @@ final class PartialIndex {
 		@Override
 		public void close() {
 			closed = true;
-			closeChild();
+			try {
+				closeChild();
+			} finally {
+				if (retainedChild != null) {
+					RecordIterator.Retainable<TripleIndex> retained = retainedChild;
+					retainedChild = null;
+					retained.dispose();
+				}
+			}
 		}
 	}
 }

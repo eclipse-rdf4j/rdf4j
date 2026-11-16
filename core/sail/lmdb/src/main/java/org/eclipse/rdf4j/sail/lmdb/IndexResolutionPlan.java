@@ -73,6 +73,20 @@ final class IndexResolutionPlan {
 		return new LmdbRecordIterator(full, full.getPatternScore(s, p, o, c), s, p, o, c, explicit, txn);
 	}
 
+	/** Returns null for a partial hop, which requires its own resolving iterator. */
+	RecordIterator.Retainable<TripleIndex> retainableIterator(Txn txn, long s, long p, long o, long c,
+			boolean explicit, RecordIterator.Retainable<TripleIndex> reusable) throws IOException {
+		if (partial != null) {
+			return null;
+		}
+		int score = full.getPatternScore(s, p, o, c);
+		if (reusable == null) {
+			return new LmdbRecordIterator(full, score, s, p, o, c, explicit, txn, null, null, true);
+		}
+		reusable.reset(full, score, s, p, o, c, explicit);
+		return reusable;
+	}
+
 	List<String> fields() {
 		List<String> fields = new ArrayList<>(depth + 1);
 		for (IndexResolutionPlan plan = this; plan.partial != null; plan = plan.next) {
