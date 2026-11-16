@@ -209,7 +209,7 @@ for (const layout of ['records', 'table']) {
 		});
 	});
 
-	// Chromium synthesizes a real touch swipe (with native scrolling) through the DevTools protocol.
+	// Chromium takes touch events (with native scrolling) through the DevTools protocol.
 	test.describe(`${layout} with ${ROW_COUNT} results on a touch screen`, () => {
 		test.use({ hasTouch: true });
 		test.skip(({ browserName }) => browserName !== 'chromium', 'touch gestures are synthesized through Chromium');
@@ -219,14 +219,11 @@ for (const layout of ['records', 'table']) {
 			await toMiddle(page, scrollport);
 			const before = rowPosition(await renderedRows(scrollport));
 			const box = await scrollport.boundingBox();
-			const session = await page.context().newCDPSession(page);
-			await session.send('Input.synthesizeScrollGesture', { x: Math.round(box.x + box.width / 2),
-				y: Math.round(box.y + box.height / 2), yDistance: -300, speed: 800, gestureSourceType: 'touch',
-				preventFling: true });
+			await swipeUp(page, Math.round(box.x + box.width / 2), Math.round(box.y + box.height - 100), 300);
 			await settled(page);
 			const after = rowPosition(await renderedRows(scrollport));
 			const moved = (after.position - before.position) * before.pitch;
-			// The browser's touch slop and rounding add a little to the 300 px the finger travels.
+			// Chromium starts scrolling once the finger has moved its touch slop (15 px) and rounds a little.
 			expect(moved, 'a 300 px swipe should move the rows about 300 px').toBeGreaterThan(250);
 			expect(moved).toBeLessThan(400);
 			await page.waitForTimeout(800);
@@ -273,6 +270,27 @@ test('the last rows of a result just under the scroll capacity stay reachable be
 	expect(end.distinctTops, `the last rows must not lie on one another: ${end.tops}`).toBe(6);
 	expect(end.lastVisible, 'the last result is in view').toBe(true);
 });
+
+/**
+ * Swipes a finger `distance` px up from (x, y) through the DevTools protocol's touch events, and holds it still before
+ * lifting it so the swipe ends without a fling. (Input.synthesizeScrollGesture sends no touch moves in headless
+ * Chromium on Linux, so nothing scrolls there.)
+ */
+async function swipeUp(page, x, y, distance) {
+	const session = await page.context().newCDPSession(page);
+	const touch = (type, points) => session.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+	await touch('touchStart', [{ x, y }]);
+	for (let step = 1; step <= 15; step++) {
+		await touch('touchMove', [{ x, y: y - distance * step / 15 }]);
+		await page.waitForTimeout(16);
+	}
+	for (let still = 0; still < 6; still++) {
+		await touch('touchMove', [{ x, y: y - distance }]);
+		await page.waitForTimeout(30);
+	}
+	await touch('touchEnd', []);
+	await session.detach();
+}
 
 /** Scrolls the box to the middle of the result, where the scroll bar is compressed the most. */
 async function toMiddle(page, scrollport) {
