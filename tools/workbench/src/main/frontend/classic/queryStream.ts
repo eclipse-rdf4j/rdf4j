@@ -7348,7 +7348,7 @@ namespace workbench {
                 var generation = ++this.rowRenderGeneration;
                 var headerHeight = this.measureElementHeight(this.table.querySelector('thead'));
                 this.rowCoordinates.setCapacity(Math.max(1, this.tableScrollCapacity - headerHeight));
-                this.updateScrollMode(this.rowHeights, this.rowCoordinates);
+                this.updateScrollMode(this.tableWrap, this.rowHeights, this.rowCoordinates);
                 var viewportHeight = this.rowViewportHeight(this.tableWrap, headerHeight);
                 var geometry = this.prepareWindow(this.tableWrap, this.rowHeights, this.rowCoordinates, viewportHeight);
                 var scrollTop = geometry.scrollTop;
@@ -7574,7 +7574,7 @@ namespace workbench {
                     return Promise.resolve();
                 }
                 var generation = ++this.recordRenderGeneration;
-                this.updateScrollMode(this.recordHeights, this.recordCoordinates);
+                this.updateScrollMode(this.records, this.recordHeights, this.recordCoordinates);
                 var viewportHeight = this.rowViewportHeight(this.records, 0);
                 var geometry = this.prepareWindow(this.records, this.recordHeights, this.recordCoordinates, viewportHeight);
                 var range = geometry.range;
@@ -7894,16 +7894,31 @@ namespace workbench {
             }
 
             /** Pick the scroll source for the visible rows and expose it as data-scroll-source for the CSS. */
-            private updateScrollMode(heights: MeasuredRowHeights, coordinates: ResultScrollCoordinates) {
+            private updateScrollMode(scrollport: any, heights: MeasuredRowHeights, coordinates: ResultScrollCoordinates) {
                 heights.resize(this.source.rowCount());
+                // In page mode the page holds the rows and everything around them, so both must fit the capacity.
+                var pageHeight = heights.offsetOf(this.source.rowCount()) + this.pageHeightAround(scrollport);
                 var mode = this.pageView() && !this.isFullscreen()
-                    && !coordinates.exceedsCapacity(heights.offsetOf(this.source.rowCount())) ? 'page' : 'element';
+                    && !coordinates.exceedsCapacity(pageHeight) ? 'page' : 'element';
                 if (mode !== this.scrollMode) {
                     this.scrollMode = mode;
                     this.root.setAttribute('data-scroll-source', mode);
                     this.tablePosition.physical = this.tablePosition.committed = this.scrollPosition(this.tableWrap);
                     this.recordPosition.physical = this.recordPosition.committed = this.scrollPosition(this.records);
                 }
+            }
+
+            /**
+             * The height of the page around the rows' box: the editor and toolbars above it and anything below it. A
+             * page taller than the browser's scroll capacity stacks its last rows on one another, out of reach.
+             */
+            private pageHeightAround(scrollport: any): number {
+                var documentElement = this.document.documentElement;
+                var pageHeight = documentElement ? documentElement.scrollHeight : 0;
+                if (!isFinite(pageHeight) || !(pageHeight > 0)) {
+                    return 0;
+                }
+                return Math.max(0, pageHeight - this.measureElementHeight(scrollport));
             }
 
             /** Scroll offset of the rows: the element's scrollTop, or in page mode how far the rows sit above the
@@ -8181,7 +8196,8 @@ namespace workbench {
                     }
                 };
                 var keyboard = (event: any) => {
-                    if (!coordinates.compressed || event.target !== scrollport || event.altKey || event.metaKey) {
+                    if (!coordinates.compressed || event.defaultPrevented || event.altKey || event.metaKey
+                            || !this.scrollsRowsFrom(scrollport, event)) {
                         return;
                     }
                     var current = this.logicalPosition(scrollport, coordinates, position);
@@ -8206,6 +8222,28 @@ namespace workbench {
                     scrollport.removeEventListener('wheel', wheel);
                     scrollport.removeEventListener('keydown', keyboard, false);
                 });
+            }
+
+            /**
+             * Whether a key pressed with focus at event.target scrolls the rows: on the box itself, or on a link or other
+             * element inside it (focused with Tab), where the browser would otherwise scroll the compressed scroll bar.
+             * Not in a field, and Space still presses a focused button.
+             */
+            private scrollsRowsFrom(scrollport: any, event: any): boolean {
+                var target = event.target;
+                if (target === scrollport) {
+                    return true;
+                }
+                if (!target || typeof scrollport.contains !== 'function' || !scrollport.contains(target)) {
+                    return false;
+                }
+                var tag = String(target.tagName || '').toUpperCase();
+                if (target.isContentEditable || /^(?:INPUT|TEXTAREA|SELECT)$/.test(tag)) {
+                    return false;
+                }
+                var button = tag === 'BUTTON' || tag === 'SUMMARY'
+                    || (typeof target.getAttribute === 'function' && target.getAttribute('role') === 'button');
+                return !(event.key === ' ' && button);
             }
 
             private setSpacerHeight(row: any, height: number) {

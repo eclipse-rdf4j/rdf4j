@@ -655,3 +655,34 @@ for (const layout of ['table', 'records']) {
         result.renderer.dispose();
     });
 }
+
+/** Sends a key from inside the rows (a focused link or button), bubbling up to the scroll box as in a browser. */
+function keyFrom(element, key) {
+    element.dispatchEvent({ type: 'keydown', key, bubbles: true, defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; } });
+}
+
+for (const layout of ['table', 'records']) {
+    // A focused link inside the rows (reached with Tab) passes the scroll keys on to the box: the browser would scroll
+    // the compressed scroll bar by them, many views of rows. Space still presses a focused button.
+    test(`${layout} scroll keys from a focused link inside compressed rows page by the rows`, async () => {
+        const result = await compressedResult(layout);
+        result.scrollport.trigger('wheel', { deltaY: 30000, deltaMode: 0 });
+        await settle();
+        const start = result.reads[result.reads.length - 1][0];
+        const row = result.scrollport.querySelector('[data-query-row-index], [data-query-record-index]');
+        keyFrom(row, 'PageDown');
+        await settle();
+        const paged = result.reads[result.reads.length - 1][0];
+        assert.ok(Math.abs(paged - start - 4) <= 1,
+            `PageDown from a focused link should move one 96 px view (4 rows); the window moved ${paged - start} rows`);
+        const visible = result.scrollport.querySelector('[data-query-row-index], [data-query-record-index]');
+        const button = visible.ownerDocument.createElement('button');
+        visible.appendChild(button);
+        const reads = result.reads.length;
+        keyFrom(button, ' ');
+        await settle();
+        assert.equal(result.reads.length, reads, 'Space on a focused button presses the button instead of scrolling');
+        result.renderer.dispose();
+    });
+}

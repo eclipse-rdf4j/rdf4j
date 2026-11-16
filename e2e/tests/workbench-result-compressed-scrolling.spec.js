@@ -30,20 +30,24 @@ const files = {
 	'/scripts/template.js': path.join(workbenchRoot, 'target/frontend/scripts/template.js'),
 	'/scripts/queryStream.js': path.join(workbenchRoot, 'target/frontend/scripts/queryStream.js')
 };
-const pageHtml = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Compressed results</title>'
+const pageHtml = above => '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Compressed results</title>'
 	+ '<link rel="stylesheet" href="/styles/workbench-refresh.css"><link rel="stylesheet" href="/styles/query.css">'
 	+ '<script>var workbench = {};</script><script src="/scripts/template.js"></script>'
 	+ '<script src="/scripts/queryStream.js"></script></head>'
 	+ '<body class="workbench-body"><main id="content" class="workbench-main">'
-	+ '<div id="workbench-page-surface" class="workbench-page-surface"><div style="height: 400px">Editor</div>'
+	+ `<div id="workbench-page-surface" class="workbench-page-surface"><div style="height: ${above}px">Editor</div>`
 	+ '<section id="query-results" class="query-results"></section></div></main></body></html>';
 
-async function openResult(page, layout) {
+/**
+ * Opens a result of rowCount generated rows (ROW_COUNT when absent) in layout, below an editor `above` px tall (400 when
+ * absent). With expectElement (the default) it checks that the rows scroll in their own box.
+ */
+async function openResult(page, layout, { rowCount = ROW_COUNT, above = 400, expectElement = true } = {}) {
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.route(`${ORIGIN}/**`, route => {
 		const pathname = new URL(route.request().url()).pathname;
 		if (pathname === '/') {
-			return route.fulfill({ contentType: 'text/html', body: pageHtml });
+			return route.fulfill({ contentType: 'text/html', body: pageHtml(above) });
 		}
 		return files[pathname] ? route.fulfill({ path: files[pathname] }) : route.fulfill({ status: 404, body: '' });
 	});
@@ -70,6 +74,7 @@ async function openResult(page, layout) {
 				async count() { return rowCount; }, async truncate() {}, async dispose() {}
 			}
 		});
+		window.compressedRenderer = renderer;
 		renderer.beginBatch(0);
 		await renderer.accept({ type: 'head', version: 1 });
 		await renderer.accept({ type: 'view', id: 'tuple' });
@@ -80,10 +85,12 @@ async function openResult(page, layout) {
 		await renderer.accept({ type: 'end', metadata: { 'total-result-count': rowCount, 'result-offset': 0,
 			'result-limit': rowCount, 'result-batch-count': rowCount, 'result-has-more': false,
 			'result-next-offset': rowCount } });
-	}, { layout, rowCount: ROW_COUNT, latency: READ_LATENCY_MS });
+	}, { layout, rowCount, latency: READ_LATENCY_MS });
 	const scrollport = page.locator(layout === 'table'
 		? '#query-results .query-result-table-wrap' : '#query-results .query-result-records');
-	await expect(page.locator('#query-results .query-result-layout')).toHaveAttribute('data-scroll-source', 'element');
+	if (expectElement) {
+		await expect(page.locator('#query-results .query-result-layout')).toHaveAttribute('data-scroll-source', 'element');
+	}
 	await expect(page.locator('#query-results .query-result-layout')).toHaveAttribute('data-effective-layout', layout);
 	await page.evaluate(() => {
 		const result = document.querySelector('#query-results .query-result-layout');
@@ -161,6 +168,27 @@ for (const layout of ['records', 'table']) {
 			expect(last && last.visible, 'the last result is in view').toBe(true);
 		});
 
+		test('scroll keys from a focused link inside the rows page by the rows', async ({ page }) => {
+			const scrollport = await openResult(page, layout);
+			await toMiddle(page, scrollport);
+			const view = await scrollport.evaluate(element => element.clientHeight);
+			for (const key of ['PageDown', 'Space']) {
+				// Tab would focus a link of a row in view; the key then reaches the box from inside it.
+				await scrollport.evaluate(element => {
+					const top = element.getBoundingClientRect().top;
+					Array.from(element.querySelectorAll('a')).find(link => link.getBoundingClientRect().top > top + 40).focus();
+				});
+				const before = rowPosition(await renderedRows(scrollport));
+				const oneView = view / before.pitch;
+				await page.keyboard.press(key);
+				await settled(page);
+				const after = rowPosition(await renderedRows(scrollport));
+				expect(after.position - before.position, `${key} from a focused link should move about one view`)
+					.toBeGreaterThan(oneView * 0.8);
+				expect(after.position - before.position).toBeLessThan(oneView * 1.2);
+			}
+		});
+
 		test('Space and Shift+Space page by one view', async ({ page }) => {
 			const scrollport = await openResult(page, layout);
 			await toMiddle(page, scrollport);
@@ -208,6 +236,43 @@ for (const layout of ['records', 'table']) {
 		});
 	});
 }
+
+// A result that the browser could scroll with the page by itself, below an editor so tall that the page around it would be
+// taller than the browser can lay out: its last rows were stacked on one another and out of reach.
+test('the last rows of a result just under the scroll capacity stay reachable below a tall page', async ({ page }) => {
+	await openResult(page, 'table', { rowCount: 1000, expectElement: false });
+	const measured = await page.evaluate(() => {
+		const rows = document.querySelectorAll('#query-results [data-query-row-index]');
+		return { capacity: window.compressedRenderer.tableScrollCapacity,
+			pitch: rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top,
+			header: document.querySelector('#query-results thead').getBoundingClientRect().height };
+	});
+	// Rows that fit the browser's scroll capacity by 2000 px, so on their own they would scroll with the page.
+	const rowCount = Math.floor((measured.capacity - measured.header - 2000) / measured.pitch);
+	const tall = await page.context().newPage();
+	await openResult(tall, 'table', { rowCount, above: 8000, expectElement: false });
+	for (let turn = 0; turn < 4; turn++) {
+		await tall.evaluate(() => {
+			const element = document.querySelector('#query-results .query-result-layout')
+				.getAttribute('data-scroll-source') === 'element' ? document.querySelector('#query-results .query-result-table-wrap') : null;
+			if (element) {
+				element.scrollTop = element.scrollHeight;
+			} else {
+				window.scrollTo(0, document.documentElement.scrollHeight);
+			}
+		});
+		await settled(tall);
+	}
+	const end = await tall.evaluate(count => {
+		const rows = Array.from(document.querySelectorAll('#query-results [data-query-row-index]'));
+		const last = rows.find(row => Number(row.getAttribute('data-query-row-index')) === count - 1);
+		const tops = rows.slice(-6).map(row => Math.round(row.getBoundingClientRect().top));
+		return { tops, distinctTops: new Set(tops).size, lastVisible: !!last
+			&& last.getBoundingClientRect().bottom > 0 && last.getBoundingClientRect().top < window.innerHeight };
+	}, rowCount);
+	expect(end.distinctTops, `the last rows must not lie on one another: ${end.tops}`).toBe(6);
+	expect(end.lastVisible, 'the last result is in view').toBe(true);
+});
 
 /** Scrolls the box to the middle of the result, where the scroll bar is compressed the most. */
 async function toMiddle(page, scrollport) {
