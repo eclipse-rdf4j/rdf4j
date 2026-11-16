@@ -13843,7 +13843,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public String indexName(long subj, long pred, long obj, long context) {
 			checkOpen();
-			String lmdb = tripleStore.getIndexName(txn, subj, pred, obj, context);
+			String lmdb = tripleStore.getQueryIndexName(txn, subj, pred, obj, context);
 			LmdbAdjacencyReadView universalView = exactAdjacencyView(false);
 			if (universalView != null) {
 				String arbitrated = directAdjacency.arbitratedIndexName(universalView, null, subj, pred, obj, context,
@@ -13954,7 +13954,7 @@ class LmdbSailStore implements SailStore {
 				private final LmdbDirectAdjacencyIterator retainedDirect = new LmdbDirectAdjacencyIterator();
 				private final LmdbStatementAccessArbiter.ReusableMeasurement directMeasurement = new LmdbStatementAccessArbiter.ReusableMeasurement();
 				private final LmdbStatementAccessArbiter.ReusableMeasurement lmdbMeasurement = new LmdbStatementAccessArbiter.ReusableMeasurement();
-				private LmdbRecordIterator retained;
+				private RecordIterator.Retainable<IndexResolutionPlan> retained;
 				private RecordIterator currentSelection;
 				private LmdbDirectNativeAdjacency ownedAdjacencies;
 				private LmdbDirectWildcardAdjacency ownedWildcardAdjacencies;
@@ -13993,7 +13993,7 @@ class LmdbSailStore implements SailStore {
 						if (retained == null) {
 							retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 						} else {
-							tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+							tripleStore.resetTriples(txn, retained, subj, pred, obj, context, explicit);
 						}
 						if (observer != null) {
 							int variant = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
@@ -14058,7 +14058,7 @@ class LmdbSailStore implements SailStore {
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 					} else {
-						tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+						tripleStore.resetTriples(txn, retained, subj, pred, obj, context, explicit);
 					}
 					long openNanos = System.nanoTime() - started;
 					observeSelected(observer, LmdbStatementAccessArbiter.Source.LMDB, lmdbKey, null, subj, pred, obj,
@@ -15398,7 +15398,7 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
 				assertNativeSourceOpen();
-				String lmdb = tripleStore.getIndexName(txn, subj, pred, obj, context);
+				String lmdb = tripleStore.getQueryIndexName(txn, subj, pred, obj, context);
 				if (directEligible()) {
 					String arbitrated = directAdjacency.arbitratedIndexName(adjacencyView, null, subj, pred, obj,
 							context, lmdb);
@@ -15531,7 +15531,7 @@ class LmdbSailStore implements SailStore {
 
 		/**
 		 * Operator-owned probe: one dataset read stamp for the probe's lifetime (instead of one per scan) and one
-		 * retained LmdbRecordIterator that is re-aimed per probe key instead of re-created. A direct iterator is
+		 * retained record iterator that is re-aimed per probe key instead of re-created. A direct iterator is
 		 * retained only until the next open or probe close, matching {@link NativeProbe}'s ownership contract. The
 		 * source-open check runs once per open(), the same granularity the batched wrapper already reduced it to.
 		 */
@@ -15542,7 +15542,7 @@ class LmdbSailStore implements SailStore {
 			private final LmdbStatementAccessArbiter.ReusableMeasurement lmdbMeasurement = new LmdbStatementAccessArbiter.ReusableMeasurement();
 			private long readStamp;
 			private boolean stampHeld;
-			private LmdbRecordIterator retained;
+			private RecordIterator.Retainable<IndexResolutionPlan> retained;
 			private RecordIterator currentSelection;
 			private LmdbDirectNativeAdjacency ownedAdjacencies;
 			private LmdbDirectWildcardAdjacency ownedWildcardAdjacencies;
@@ -15588,7 +15588,7 @@ class LmdbSailStore implements SailStore {
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 					} else {
-						tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+						tripleStore.resetTriples(txn, retained, subj, pred, obj, context, explicit);
 					}
 					if (observer != null) {
 						int variant = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
@@ -15653,7 +15653,7 @@ class LmdbSailStore implements SailStore {
 				if (retained == null) {
 					retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 				} else {
-					tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+					tripleStore.resetTriples(txn, retained, subj, pred, obj, context, explicit);
 				}
 				long openNanos = System.nanoTime() - started;
 				observeSelected(observer, LmdbStatementAccessArbiter.Source.LMDB, lmdbKey, null, subj, pred, obj,

@@ -288,20 +288,20 @@ public class TripleStoreTest {
 
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			// range probe (subject bound), then re-aimed at other keys, shapes and indexes
-			LmdbRecordIterator it = tripleStore.getTriplesRetained(txn, 5, -1, -1, -1, true);
+			RecordIterator.Retainable<IndexResolutionPlan> it = tripleStore.getTriplesRetained(txn, 5, -1, -1, -1, true);
 			try {
 				assertEquals("subject-bound range probe", 2, count(it));
-				tripleStore.resetTriples(it, 7, -1, -1, -1, true);
+				tripleStore.resetTriples(txn, it, 7, -1, -1, -1, true);
 				assertEquals("re-aimed subject probe", 2, count(it));
-				tripleStore.resetTriples(it, 7, 2, 107, 1, true);
+				tripleStore.resetTriples(txn, it, 7, 2, 107, 1, true);
 				assertEquals("fully-bound exact probe", 1, count(it));
-				tripleStore.resetTriples(it, 7, 2, 108, 1, true);
+				tripleStore.resetTriples(txn, it, 7, 2, 108, 1, true);
 				assertEquals("fully-bound miss", 0, count(it));
-				tripleStore.resetTriples(it, -1, 3, -1, -1, true);
+				tripleStore.resetTriples(txn, it, -1, 3, -1, -1, true);
 				assertEquals("predicate-bound probe on the other index", 10, count(it));
-				tripleStore.resetTriples(it, -1, -1, -1, -1, true);
+				tripleStore.resetTriples(txn, it, -1, -1, -1, -1, true);
 				assertEquals("full scan after retained probes", 20, count(it));
-				tripleStore.resetTriples(it, 5, -1, -1, -1, true);
+				tripleStore.resetTriples(txn, it, 5, -1, -1, -1, true);
 				assertEquals("range probe again after full scan", 2, count(it));
 			} finally {
 				it.dispose();

@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,6 +24,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,6 +43,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -58,6 +61,240 @@ class TripleStorePartialIndexesTest {
 
 	@TempDir
 	File dir;
+
+	@ParameterizedTest
+	@ValueSource(strings = { "cs,sp,psoc", "cs,sp,op,posc", "cs,scop", "cs,spoc", "cs,sp,op,ocps" })
+	void retainedAndOrderedScansPreserveEveryBinding(String indexes) throws Exception {
+		try (TripleStore store = open(indexes)) {
+			store.startTransaction();
+			for (int i = 0; i < 300; i++) {
+				long s = 1000 + i % 70;
+				long p = 2000 + i % 41;
+				long c = i % 2 == 0 ? 0 : 4000;
+				store.storeTriple(s, p, 3000 + i % 11, c, true);
+				store.storeTriple(s, p, 5000 + i % 11, c, false);
+			}
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn()) {
+				RecordIterator.Retainable<IndexResolutionPlan> retained = store.getTriplesRetained(txn,
+						-1, -1, -1, 0, true);
+				try {
+					for (boolean explicit : new boolean[] { true, false }) {
+						for (long c : new long[] { 0, 4000, 3999 }) {
+							for (int mask = 0; mask < 16; mask++) {
+								long s = (mask & 1) != 0 ? 1000 : -1;
+								long p = (mask & 2) != 0 ? 2000 : -1;
+								long objectValue = explicit ? 3000 : 5000;
+								long o = (mask & 4) != 0 ? objectValue : -1;
+								long context = (mask & 8) != 0 ? c : -1;
+								Set<String> expected = rows(store, s, p, o, context, explicit);
+								store.resetTriples(txn, retained, s, p, o, context, explicit);
+								assertEquals(expected, collectRows(retained, (mask & 1) == 0));
+								retained.close();
+								assertNull(retained.next());
+								assertEquals(0, retained.fill(new long[4], 1));
+								for (StatementOrder order : store.getSupportedOrders(txn, s, p, o, context)) {
+									try (RecordIterator ordered = store.getTriples(txn, order, s, p, o, context,
+											explicit)) {
+										assertEquals(expected, collectOrderedRows(ordered, order));
+									}
+								}
+							}
+						}
+					}
+				} finally {
+					retained.dispose();
+				}
+				assertThrows(IllegalStateException.class,
+						() -> store.resetTriples(txn, retained, -1, -1, -1, -1, true));
+			}
+		}
+	}
+
+	@Test
+	void orderedScansCanProjectUnboundLeadingFields() throws Exception {
+		try (TripleStore store = open("cs,sp,op,psoc")) {
+			store.startTransaction();
+			for (int i = 0; i < 150; i++) {
+				store.storeTriple(1000 + i % 70, 2000 + i % 41, 3000 + i % 11,
+						i % 2 == 0 ? 0 : 4000, true);
+			}
+			store.commit();
+			Set<String> expected = rows(store, -1, -1, -1, -1, true);
+			try (Txn txn = store.getTxnManager().createReadTxn()) {
+				assertEquals(Set.of(StatementOrder.S, StatementOrder.P, StatementOrder.O, StatementOrder.C),
+						store.getSupportedOrders(txn, -1, -1, -1, -1));
+				for (StatementOrder order : List.of(StatementOrder.S, StatementOrder.O, StatementOrder.C)) {
+					String projection = switch (order) {
+					case S -> "sp";
+					case O -> "op";
+					case C -> "cs";
+					default -> throw new AssertionError(order);
+					};
+					assertEquals(projection, store.getIndexName(txn, order, -1, -1, -1, -1));
+					try (RecordIterator iterator = store.getTriples(txn, order, -1, -1, -1, -1, true)) {
+						assertEquals(projection, iterator.getIndexName());
+						assertEquals(expected, collectOrderedRows(iterator, order));
+					}
+				}
+				try (RecordIterator iterator = store.getAllTriplesSortedByContext(txn)) {
+					assertNotNull(iterator);
+					assertEquals("cs", iterator.getIndexName());
+					assertEquals(expected, collectOrderedRows(iterator, StatementOrder.C));
+				}
+			}
+		}
+	}
+
+	@Test
+	void orderedScansDoNotConcatenateIncompatiblePartialGroups() throws Exception {
+		try (TripleStore store = open("cs,sp,psoc")) {
+			store.startTransaction();
+			store.storeTriple(11, 44, 33, 0, true);
+			store.storeTriple(22, 22, 33, 0, true);
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn();
+					RecordIterator iterator = store.getTriples(txn, StatementOrder.P, -1, -1, -1, 0, true)) {
+				assertEquals("psoc", iterator.getIndexName());
+				assertEquals(Set.of("[11, 44, 33, 0]", "[22, 22, 33, 0]"),
+						collectOrderedRows(iterator, StatementOrder.P));
+				assertFalse(store.getSupportedOrders(txn, -1, -1, -1, -1).contains(StatementOrder.O));
+				assertThrows(UnsupportedOperationException.class,
+						() -> store.getTriples(txn, StatementOrder.O, -1, -1, -1, -1, true));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void partialRangeScansPreservePhysicalBoundsAndOrder(boolean explicit) throws Exception {
+		try (TripleStore store = open("sp,psoc")) {
+			store.startTransaction();
+			for (int p = 101; p <= 180; p++) {
+				store.storeTriple(11, p, 200 + p, p % 2 == 0 ? 0 : 4000, explicit);
+				store.storeTriple(22, p, 200 + p, 0, explicit);
+			}
+			store.commit();
+			Set<String> expected = rows(store, 11, -1, -1, -1, explicit);
+			Set<String> partitioned = new HashSet<>();
+			try (Txn txn = store.getTxnManager().createReadTxn()) {
+				TripleIndex full = store.getIndexes().getFirst();
+				try (RecordIterator iterator = store.getTriplesUsingIndex(txn, 11, -1, -1, -1, explicit, full, 0)) {
+					assertEquals("sp", iterator.getIndexName());
+					assertEquals(expected, collectOrderedRows(iterator, StatementOrder.P));
+				}
+				byte[] middle = TripleIndex.encodeKey("psoc", 11, 140, 340, 0);
+				List<LmdbKeyRange> ranges = List.of(new LmdbKeyRange(null, middle, "psoc"),
+						new LmdbKeyRange(middle, null, "psoc"));
+				for (LmdbKeyRange range : ranges) {
+					Set<String> expectedRange = new HashSet<>();
+					for (int p = 101; p <= 180; p++) {
+						long[] quad = { 11, p, 200 + p, p % 2 == 0 ? 0 : 4000 };
+						if (range.includes(quad)) {
+							expectedRange.add(Arrays.toString(quad));
+						}
+					}
+					try (RecordIterator iterator = store.getTriplesRange(txn, 11, -1, -1, -1, explicit, range)) {
+						assertTrue(iterator instanceof LmdbKeyRangeFilteringIterator);
+						Set<String> actual = collectOrderedRows(iterator, StatementOrder.P);
+						assertEquals(expectedRange, actual);
+						for (String row : actual) {
+							assertTrue(partitioned.add(row), "overlapping partitions");
+						}
+					}
+					try (RecordIterator iterator = store.getTriplesRangeUsingIndex(txn, 11, -1, -1, -1,
+							explicit, range)) {
+						assertTrue(iterator instanceof LmdbKeyRangeFilteringIterator);
+						assertEquals(expectedRange, collectOrderedRows(iterator, StatementOrder.P));
+					}
+				}
+				assertEquals(expected, partitioned);
+				assertThrows(IllegalStateException.class, () -> store.getTriplesRange(txn, 11, -1, -1, -1,
+						explicit, new LmdbKeyRange(null, null, "spoc")));
+				assertThrows(IllegalStateException.class, () -> store.getTriplesRangeUsingIndex(txn, 11, -1, -1, -1,
+						explicit, new LmdbKeyRange(null, null, "spoc")));
+			}
+		}
+	}
+
+	@Test
+	void retainedPartialScansCanBeClosedEarlyAndResetAcrossPlans() throws Exception {
+		try (TripleStore store = open("cs,sp,psoc")) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.storeTriple(11, 44, 55, 0, true);
+			store.storeTriple(66, 77, 88, 4000, false);
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn()) {
+				RecordIterator.Retainable<IndexResolutionPlan> iterator = store.getTriplesRetained(txn,
+						-1, -1, -1, 0, true);
+				try {
+					assertEquals("cs", iterator.getIndexName());
+					assertNotNull(iterator.next());
+					iterator.close();
+					store.resetTriples(txn, iterator, 11, -1, -1, -1, true);
+					assertEquals("sp", iterator.getIndexName());
+					assertEquals(Set.of("[11, 22, 33, 0]", "[11, 44, 55, 0]"), collectRows(iterator, true));
+					store.resetTriples(txn, iterator, -1, 22, -1, -1, true);
+					assertEquals("psoc", iterator.getIndexName());
+					assertEquals(Set.of("[11, 22, 33, 0]"), collectRows(iterator, false));
+					store.resetTriples(txn, iterator, -1, -1, -1, 4000, false);
+					assertEquals("cs", iterator.getIndexName());
+					assertEquals(Set.of("[66, 77, 88, 4000]"), collectRows(iterator, true));
+				} finally {
+					iterator.dispose();
+					iterator.dispose();
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void retainedPartialResolutionReusesNestedChildrenAcrossResets(boolean batched) throws Exception {
+		try (TripleStore store = open("cs,sp,psoc")) {
+			store.startTransaction();
+			for (boolean explicit : new boolean[] { true, false }) {
+				long context = explicit ? 0 : 4000;
+				store.storeTriple(11, 22, 33, context, explicit);
+				store.storeTriple(66, 44, 55, context, explicit);
+			}
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn();
+					var children = mockConstruction(LmdbRecordIterator.class)) {
+				RecordIterator.Retainable<IndexResolutionPlan> iterator = store.getTriplesRetained(txn,
+						-1, -1, -1, 0, true);
+				try {
+					for (boolean explicit : new boolean[] { true, true, false }) {
+						store.resetTriples(txn, iterator, -1, -1, -1, explicit ? 0 : 4000, explicit);
+						assertEquals("cs", iterator.getIndexName());
+						if (batched) {
+							assertEquals(0, iterator.fill(new long[8], 2));
+						} else {
+							assertNull(iterator.next());
+						}
+						iterator.close();
+						assertEquals(1, children.constructed().size());
+						verify(children.constructed().get(0), never()).dispose();
+					}
+					var child = children.constructed().get(0);
+					verify(child, times(5)).reset(any(TripleIndex.class), anyInt(), anyLong(), anyLong(),
+							anyLong(), anyLong(), anyBoolean());
+					store.resetTriples(txn, iterator, -1, -1, -1, 9999, true);
+					assertNull(iterator.next());
+					assertEquals(0, iterator.getSourceRowsScannedActual());
+					assertEquals(0, iterator.getSourceRowsMatchedActual());
+					assertEquals(0, iterator.getSourceRowsFilteredActual());
+				} finally {
+					iterator.dispose();
+					iterator.dispose();
+				}
+				verify(children.constructed().get(0)).dispose();
+				assertThrows(IllegalStateException.class,
+						() -> store.resetTriples(txn, iterator, -1, -1, -1, 0, true));
+			}
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
@@ -792,6 +1029,45 @@ class TripleStorePartialIndexesTest {
 			while ((quad = it.next()) != null) {
 				assertTrue(rows.add(Arrays.toString(quad)), "duplicate resolved statement");
 			}
+		}
+		return rows;
+	}
+
+	private static Set<String> collectRows(RecordIterator iterator, boolean batched) {
+		Set<String> rows = new HashSet<>();
+		if (batched) {
+			long[] buffer = new long[28];
+			int count;
+			while ((count = iterator.fill(buffer, 7)) > 0) {
+				for (int row = 0; row < count; row++) {
+					assertTrue(rows.add(Arrays.toString(Arrays.copyOfRange(buffer, row * 4, row * 4 + 4))),
+							"duplicate resolved statement");
+				}
+			}
+		} else {
+			long[] quad;
+			while ((quad = iterator.next()) != null) {
+				assertTrue(rows.add(Arrays.toString(quad)), "duplicate resolved statement");
+			}
+		}
+		assertEquals(rows.size(), iterator.getSourceRowsMatchedActual());
+		return rows;
+	}
+
+	private static Set<String> collectOrderedRows(RecordIterator iterator, StatementOrder order) {
+		int field = switch (order) {
+		case S -> TripleIndex.SUBJ_IDX;
+		case P -> TripleIndex.PRED_IDX;
+		case O -> TripleIndex.OBJ_IDX;
+		case C -> TripleIndex.CONTEXT_IDX;
+		};
+		Set<String> rows = new HashSet<>();
+		long previous = -1;
+		long[] quad;
+		while ((quad = iterator.next()) != null) {
+			assertTrue(quad[field] >= previous, "out-of-order resolved statement");
+			previous = quad[field];
+			assertTrue(rows.add(Arrays.toString(quad)), "duplicate resolved statement");
 		}
 		return rows;
 	}

@@ -32,6 +32,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
@@ -109,6 +110,33 @@ final class PartialIndex {
 	int score(long s, long p, long o, long c) {
 		return fieldValue(firstField, s, p, o, c) < 0 ? 0
 				: fieldValue(secondField, s, p, o, c) < 0 ? 1 : 2;
+	}
+
+	boolean supportsOrder(StatementOrder order, long[] pattern) {
+		int orderedField = switch (order) {
+		case S -> TripleIndex.SUBJ_IDX;
+		case P -> TripleIndex.PRED_IDX;
+		case O -> TripleIndex.OBJ_IDX;
+		case C -> TripleIndex.CONTEXT_IDX;
+		};
+		return pattern[orderedField] >= 0
+				|| (pattern[firstField] < 0 ? firstField == orderedField : secondField == orderedField);
+	}
+
+	boolean preservesOrder(String fieldOrder, long[] pattern) {
+		int ordinal = 0;
+		for (int field : new int[] { firstField, secondField }) {
+			if (pattern[field] >= 0) {
+				continue;
+			}
+			while (ordinal < fieldOrder.length() && pattern[fieldIndex(fieldOrder.charAt(ordinal))] >= 0) {
+				ordinal++;
+			}
+			if (ordinal == fieldOrder.length() || fieldIndex(fieldOrder.charAt(ordinal++)) != field) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Bind both projected fields for planning, preserving constraints on every other field. */
@@ -222,7 +250,12 @@ final class PartialIndex {
 
 	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit,
 			IndexResolutionPlan resolution) {
-		return new ResolvingIterator(txn, s, p, o, c, explicit, resolution);
+		return iterator(txn, s, p, o, c, explicit, resolution, false);
+	}
+
+	RecordIterator.Retainable<IndexResolutionPlan> iterator(Txn txn, long s, long p, long o, long c,
+			boolean explicit, IndexResolutionPlan resolution, boolean retainOnClose) {
+		return new ResolvingIterator(this, txn, s, p, o, c, explicit, resolution, retainOnClose);
 	}
 
 	void close() {
@@ -235,39 +268,78 @@ final class PartialIndex {
 		E(mdb_drop(txn, inferredDbi, true));
 	}
 
-	private final class ResolvingIterator implements RecordIterator {
+	private static final class ResolvingIterator implements RecordIterator.Retainable<IndexResolutionPlan> {
 		private final Txn txn;
-		private final long s, p, o, c, first, second;
-		private final boolean explicit;
-		private final IndexResolutionPlan resolution;
+		private final long txnLease;
+		private final boolean retainOnClose;
+		private PartialIndex index;
+		private long s, p, o, c, first, second;
+		private boolean explicit;
+		private IndexResolutionPlan resolution;
 		private final ChunkInput chunkInput = new ChunkInput();
-		private final long[] secondBuffer = new long[Chunks.MAX_CHUNK_SIZE * 2];
-		private int secondBufferIndex;
-		private int secondBufferCount;
+		private final long[] pairBuffer = new long[Chunks.MAX_CHUNK_SIZE * 2];
+		private int pairBufferIndex;
+		private int pairBufferCount;
+		private long lastFirst = -1;
 		private long lastSecond = -1;
 		private RecordIterator child;
-		private RecordIterator.Retainable<TripleIndex> retainedChild;
+		private RecordIterator.Retainable<IndexResolutionPlan> retainedChild;
 		private long[] childBuffer;
 		private boolean closed;
+		private boolean disposed;
 		private long scanned, matched, filtered;
 		private long rejected;
 
-		ResolvingIterator(Txn txn, long s, long p, long o, long c, boolean explicit,
-				IndexResolutionPlan resolution) {
+		ResolvingIterator(PartialIndex index, Txn txn, long s, long p, long o, long c, boolean explicit,
+				IndexResolutionPlan resolution, boolean retainOnClose) {
 			this.txn = txn;
+			this.txnLease = txn.lease();
+			this.retainOnClose = retainOnClose;
+			initialize(index, s, p, o, c, explicit, resolution);
+		}
+
+		private void initialize(PartialIndex index, long s, long p, long o, long c, boolean explicit,
+				IndexResolutionPlan resolution) {
+			this.index = index;
 			this.s = s;
 			this.p = p;
 			this.o = o;
 			this.c = c;
-			this.first = fieldValue(firstField, s, p, o, c);
-			this.second = fieldValue(secondField, s, p, o, c);
+			this.first = fieldValue(index.firstField, s, p, o, c);
+			this.second = fieldValue(index.secondField, s, p, o, c);
 			this.explicit = explicit;
 			this.resolution = resolution;
+			pairBufferIndex = 0;
+			pairBufferCount = 0;
+			lastFirst = -1;
+			lastSecond = -1;
+			scanned = 0;
+			matched = 0;
+			filtered = 0;
+			rejected = 0;
+			closed = false;
+		}
+
+		@Override
+		public void reset(IndexResolutionPlan plan, int indexScore, long s, long p, long o, long c,
+				boolean explicit) throws IOException {
+			if (!retainOnClose || disposed) {
+				throw new IllegalStateException("Iterator cannot be reset");
+			}
+			if (plan.partialIndex() == null) {
+				throw new IllegalArgumentException("Resolving iterator requires a partial index plan");
+			}
+			txn.ensureSnapshotValid(txnLease);
+			close();
+			initialize(plan.partialIndex(), s, p, o, c, explicit, plan.next());
 		}
 
 		@Override
 		public long[] next() {
 			try {
+				if (!closed) {
+					txn.ensureSnapshotValid(txnLease);
+				}
 				while (!closed) {
 					if (child != null) {
 						long[] quad = child.next();
@@ -289,7 +361,7 @@ final class PartialIndex {
 				}
 				return null;
 			} catch (IOException | RuntimeException e) {
-				close();
+				dispose();
 				throw new SailException(e);
 			}
 		}
@@ -297,6 +369,9 @@ final class PartialIndex {
 		@Override
 		public int fill(long[] buffer, int maxRows) {
 			try {
+				if (!closed) {
+					txn.ensureSnapshotValid(txnLease);
+				}
 				int rows = 0;
 				while (!closed && rows < maxRows) {
 					if (child == null && !openNextChild()) {
@@ -323,7 +398,7 @@ final class PartialIndex {
 				}
 				return rows;
 			} catch (IOException | RuntimeException e) {
-				close();
+				dispose();
 				throw new SailException(e);
 			}
 		}
@@ -334,35 +409,38 @@ final class PartialIndex {
 		}
 
 		private boolean openNextChild() throws IOException {
-			long nextSecond = nextSecond();
-			if (nextSecond < 0) {
+			if (!nextPair()) {
 				close();
 				return false;
 			}
 			long[] pattern = { s, p, o, c };
-			pattern[firstField] = first;
-			pattern[secondField] = nextSecond;
-			retainedChild = resolution.retainableIterator(txn, pattern[0], pattern[1], pattern[2], pattern[3],
-					explicit, retainedChild);
-			child = retainedChild != null ? retainedChild
-					: resolution.iterator(txn, pattern[0], pattern[1], pattern[2], pattern[3], explicit);
+			pattern[index.firstField] = lastFirst;
+			pattern[index.secondField] = lastSecond;
+			if (retainedChild == null) {
+				retainedChild = resolution.retainedIterator(txn, pattern[0], pattern[1], pattern[2], pattern[3],
+						explicit);
+			} else {
+				retainedChild.reset(resolution, 0, pattern[0], pattern[1], pattern[2], pattern[3], explicit);
+			}
+			child = retainedChild;
 			return true;
 		}
 
-		private long nextSecond() throws IOException {
-			if (secondBufferIndex == secondBufferCount) {
-				secondBufferIndex = 0;
-				secondBufferCount = preloadSeconds();
-				if (secondBufferCount == 0) {
-					return -1;
+		private boolean nextPair() throws IOException {
+			if (pairBufferIndex == pairBufferCount) {
+				pairBufferIndex = 0;
+				pairBufferCount = preloadPairs();
+				if (pairBufferCount == 0) {
+					return false;
 				}
 			}
-			lastSecond = secondBuffer[secondBufferIndex++];
-			return lastSecond;
+			lastFirst = pairBuffer[pairBufferIndex++];
+			lastSecond = pairBuffer[pairBufferIndex++];
+			return true;
 		}
 
-		private int preloadSeconds() throws IOException {
-			if (second >= 0 && lastSecond >= 0) {
+		private int preloadPairs() throws IOException {
+			if (first >= 0 && second >= 0 && lastSecond >= 0) {
 				return 0;
 			}
 			long stamp;
@@ -374,12 +452,13 @@ final class PartialIndex {
 			}
 			try (MemoryStack stack = stackPush()) {
 				int count = 0;
-				int dbi = db(explicit);
+				int dbi = index.db(explicit);
 				long cursor = txn.getCursor(dbi);
 				try {
+					long lowerFirst = lastFirst >= 0 ? lastFirst : Math.max(first, 0);
 					long lowerSecond = lastSecond >= 0 ? lastSecond : Math.max(second, 0);
-					long[] min = { first, lowerSecond };
-					MDBVal key = key(stack, first, lowerSecond);
+					long[] min = { lowerFirst, lowerSecond };
+					MDBVal key = key(stack, lowerFirst, lowerSecond);
 					MDBVal data = MDBVal.malloc(stack);
 					int rc = E(mdb_cursor_get(cursor, key, data, MDB_SET_RANGE));
 					// The lower bound may be inside the preceding chunk rather than at an anchor.
@@ -396,12 +475,14 @@ final class PartialIndex {
 						chunkInput.seek(min);
 						long[] pair;
 						while ((pair = chunkInput.next()) != null) {
-							if (pair[0] != first || (second >= 0 && second != pair[1])) {
+							if (first >= 0 && (pair[0] != first || (second >= 0 && second != pair[1]))) {
 								return count;
 							}
-							if (pair[1] > lastSecond) {
-								secondBuffer[count++] = pair[1];
-								if (count == secondBuffer.length) {
+							if ((second < 0 || second == pair[1])
+									&& (pair[0] > lastFirst || (pair[0] == lastFirst && pair[1] > lastSecond))) {
+								pairBuffer[count++] = pair[0];
+								pairBuffer[count++] = pair[1];
+								if (count == pairBuffer.length) {
 									return count;
 								}
 							}
@@ -429,7 +510,7 @@ final class PartialIndex {
 
 		@Override
 		public String getIndexName() {
-			return fields;
+			return index.fields;
 		}
 
 		@Override
@@ -449,14 +530,27 @@ final class PartialIndex {
 
 		@Override
 		public void close() {
-			closed = true;
-			try {
+			if (retainOnClose) {
+				closed = true;
 				closeChild();
-			} finally {
-				if (retainedChild != null) {
-					RecordIterator.Retainable<TripleIndex> retained = retainedChild;
-					retainedChild = null;
-					retained.dispose();
+			} else {
+				dispose();
+			}
+		}
+
+		@Override
+		public void dispose() {
+			if (!disposed) {
+				disposed = true;
+				closed = true;
+				try {
+					closeChild();
+				} finally {
+					if (retainedChild != null) {
+						RecordIterator.Retainable<IndexResolutionPlan> retained = retainedChild;
+						retainedChild = null;
+						retained.dispose();
+					}
 				}
 			}
 		}

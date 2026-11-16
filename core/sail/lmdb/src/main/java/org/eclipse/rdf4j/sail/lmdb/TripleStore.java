@@ -260,11 +260,19 @@ class TripleStore implements Closeable {
 
 	private static final class IndexGeneration {
 		final List<TripleIndex> indexes;
+		final List<PartialIndex> partialIndexes;
 		final TripleIndex[] best = new TripleIndex[16];
 		final boolean[] range = new boolean[16];
+		final IndexResolutionPlan[] plans = new IndexResolutionPlan[16];
+		final IndexResolutionPlan[][] orderedPlans = new IndexResolutionPlan[StatementOrder.values().length][16];
+		final Map<TripleIndex, IndexResolutionPlan[]> physicalPlans = new HashMap<>();
 
-		IndexGeneration(List<TripleIndex> indexes) {
+		IndexGeneration(List<TripleIndex> indexes, List<PartialIndex> partialIndexes) {
 			this.indexes = List.copyOf(indexes);
+			this.partialIndexes = List.copyOf(partialIndexes);
+			for (TripleIndex index : this.indexes) {
+				physicalPlans.put(index, new IndexResolutionPlan[16]);
+			}
 			for (int mask = 0; mask < best.length; mask++) {
 				long subj = (mask & 1) != 0 ? 1 : -1;
 				long pred = (mask & 2) != 0 ? 1 : -1;
@@ -272,6 +280,16 @@ class TripleStore implements Closeable {
 				long context = (mask & 8) != 0 ? 1 : -1;
 				best[mask] = TripleIndex.getBestIndex(this.indexes, subj, pred, obj, context);
 				range[mask] = best[mask].getPatternScore(subj, pred, obj, context) > 0;
+				long[] pattern = { subj, pred, obj, context };
+				plans[mask] = IndexResolutionPlan.select(this.partialIndexes, this.indexes, pattern);
+				for (StatementOrder order : StatementOrder.values()) {
+					orderedPlans[order.ordinal()][mask] = IndexResolutionPlan.ordered(this.partialIndexes,
+							this.indexes, pattern, order);
+				}
+				for (TripleIndex index : this.indexes) {
+					physicalPlans.get(index)[mask] = IndexResolutionPlan.usingIndex(this.partialIndexes, index,
+							pattern);
+				}
 			}
 		}
 	}
@@ -753,7 +771,7 @@ class TripleStore implements Closeable {
 			initializePageAndMapSize(config.getTripleDBSize());
 
 			Set<String> requestedIndexSpecs = TripleIndex.parseStatementIndexSpecList(indexSpecStr);
-			queryGeneration = new IndexGeneration(indexes);
+			queryGeneration = new IndexGeneration(indexes, partialIndexes);
 			indexes = queryGeneration.indexes;
 			for (TripleIndex index : indexes) {
 				indexHandles.put(index.toString(), index);
@@ -1621,7 +1639,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void rebuildIndexSelectionTable() {
-		IndexGeneration generation = new IndexGeneration(indexes);
+		IndexGeneration generation = new IndexGeneration(indexes, partialIndexes);
 		bestIndexByBoundMask = generation.best;
 		rangeSearchByBoundMask = generation.range;
 	}
@@ -2314,7 +2332,7 @@ class TripleStore implements Closeable {
 		for (String spec : TripleIndex.orderIndexSpecs(target)) {
 			next.add(Objects.requireNonNull(indexHandles.get(spec), "Missing committed statement index " + spec));
 		}
-		IndexGeneration generation = new IndexGeneration(next);
+		IndexGeneration generation = new IndexGeneration(next, partialIndexes);
 		indexCutoverTransactionId = firstNewReader;
 		previousQueryGeneration = queryGeneration;
 		indexes = generation.indexes;
@@ -2538,68 +2556,34 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * If an index exists by context - use it, otherwise return null.
+	 * If a full or resolving partial index can provide context order, use it; otherwise return null.
 	 *
-	 * @return All triples sorted by context or null if no context index exists
+	 * @return All triples sorted by context or null if no context-ordered plan exists
 	 * @throws IOException
 	 */
 	public RecordIterator getAllTriplesSortedByContext(Txn txn) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
-			List<TripleIndex> indexes = selectedGeneration.indexes;
-			for (TripleIndex index : indexes) {
-				if (index.getFieldSeq()[0] == 'c') {
-					// found a context-first index
-					return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, 0);
-				}
-			}
-			return null;
+			IndexResolutionPlan plan = selectedGeneration.orderedPlans[StatementOrder.C.ordinal()][0];
+			return plan == null ? null : plan.iterator(txn, -1, -1, -1, -1, true);
 		});
 	}
 
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
-		return withGeneration(txn, selectedGeneration -> {
-			int mask = boundMask(subj, pred, obj, context);
-			TripleIndex index = selectedGeneration.best[mask];
-			PartialIndex partial = bestPartialIndex(subj, pred, obj, context,
-					index.getPatternScore(subj, pred, obj, context));
-			if (partial != null) {
-				return IndexResolutionPlan.startingWith(partial, partialIndexes, selectedGeneration.indexes,
-						new long[] { subj, pred, obj, context }).iterator(txn, subj, pred, obj, context, explicit);
-			}
-			boolean rangeSearch = selectedGeneration.range[mask];
-			return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit,
-					selectedGeneration.best[mask], rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0);
-
-		});
-	}
-
-	private IndexResolutionPlan resolutionPlan(PartialIndex partial, long s, long p, long o, long c) {
-		return IndexResolutionPlan.startingWith(partial, partialIndexes, indexes, new long[] { s, p, o, c });
-	}
-
-	private PartialIndex bestPartialIndex(long subj, long pred, long obj, long context, int fullScore) {
-		PartialIndex bestPartial = null;
-		for (PartialIndex partial : partialIndexes) {
-			int score = partial.score(subj, pred, obj, context);
-			if (score > fullScore) {
-				bestPartial = partial;
-				fullScore = score;
-			}
-		}
-		return bestPartial;
+		return withGeneration(txn,
+				selectedGeneration -> selectedGeneration.plans[boundMask(subj, pred, obj, context)]
+						.iterator(txn, subj, pred, obj, context, explicit));
 	}
 
 	RecordIterator getTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
 			long context, boolean explicit) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
-			TripleIndex index = TripleIndex.getBestCompatibleOrderedIndex(selectedGeneration.indexes, statementOrder,
-					subj, pred, obj, context);
-			if (index == null) {
+			IndexResolutionPlan plan = selectedGeneration.orderedPlans[statementOrder.ordinal()]
+					[boundMask(subj, pred, obj, context)];
+			if (plan == null) {
 				throw new UnsupportedOperationException("StatementOrder is not supported: " + statementOrder);
 			}
-			return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, index.getPatternScore(subj, pred, obj, context));
-
+			return plan.iterator(txn, subj, pred, obj, context, explicit);
 		});
 	}
 
@@ -2615,8 +2599,7 @@ class TripleStore implements Closeable {
 			long obj, long context) {
 		EnumSet<StatementOrder> supported = EnumSet.noneOf(StatementOrder.class);
 		for (StatementOrder order : StatementOrder.values()) {
-			if (TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
-					context) != null) {
+			if (generation.orderedPlans[order.ordinal()][boundMask(subj, pred, obj, context)] != null) {
 				supported.add(order);
 			}
 		}
@@ -2629,6 +2612,11 @@ class TripleStore implements Closeable {
 
 	String getIndexName(Txn txn, long subj, long pred, long obj, long context) {
 		return selectGeneration(txn, generation -> generation.best[boundMask(subj, pred, obj, context)].toString());
+	}
+
+	/** Logical scan order; unlike the physical range index, this may name a partial projection. */
+	String getQueryIndexName(Txn txn, long subj, long pred, long obj, long context) {
+		return selectGeneration(txn, generation -> generation.plans[boundMask(subj, pred, obj, context)].indexName());
 	}
 
 	String getIndexName(StatementOrder order, long subj, long pred, long obj, long context) {
@@ -2651,15 +2639,14 @@ class TripleStore implements Closeable {
 					long pred = (mask & 2) != 0 ? 1L : -1L;
 					long obj = (mask & 4) != 0 ? 1L : -1L;
 					long context = (mask & 8) != 0 ? 1L : -1L;
-					TripleIndex index = order == null ? generation.best[mask]
-							: TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
-									context);
-					if (index == null) {
+					IndexResolutionPlan plan = order == null ? generation.plans[mask]
+							: generation.orderedPlans[order.ordinal()][mask];
+					if (plan == null) {
 						prefixes[orderIndex][mask] = -1;
 						continue;
 					}
 					int prefix = 0;
-					for (char field : index.getFieldSeq()) {
+					for (char field : plan.indexName().toCharArray()) {
 						int bit = switch (field) {
 						case 's' -> 1;
 						case 'p' -> 2;
@@ -2682,9 +2669,8 @@ class TripleStore implements Closeable {
 
 	private static String orderedIndexName(IndexGeneration generation, StatementOrder order, long subj, long pred,
 			long obj, long context) {
-		TripleIndex index = TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
-				context);
-		return index == null ? "" : index.toString();
+		IndexResolutionPlan plan = generation.orderedPlans[order.ordinal()][boundMask(subj, pred, obj, context)];
+		return plan == null ? "" : plan.indexName();
 	}
 
 	LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
@@ -3418,15 +3404,22 @@ class TripleStore implements Closeable {
 
 	RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, int indexScore) throws IOException {
-		return new LmdbRecordIterator(index, indexScore, subj, pred, obj, context, explicit, txn, null);
+		return withGeneration(txn, selectedGeneration -> {
+			IndexResolutionPlan[] plans = selectedGeneration.physicalPlans.get(index);
+			if (plans == null) {
+				throw new IllegalArgumentException("Statement index is not available in this snapshot: " + index);
+			}
+			return plans[boundMask(subj, pred, obj, context)]
+					.iterator(txn, subj, pred, obj, context, explicit, indexScore);
+		});
 	}
 
 	/**
 	 * Opens a pattern scan constrained to a raw key subrange of the pattern's index: {@code range.lowKey} inclusive,
 	 * {@code range.highKeyExclusive} exclusive, {@code null} bounds meaning the pattern's natural start/end. The index
-	 * is re-derived from the pattern's bound mask exactly like {@link #getTriples}; it must match the index the range
-	 * was planned against ({@code range.indexFieldSeq}), otherwise the planned bounds would slice a different key space
-	 * and results would be silently wrong.
+	 * is re-derived from the pattern's best full index; it must match the index the range was planned against
+	 * ({@code range.indexFieldSeq}). A resolving partial plan may replace the physical scan only when it preserves
+	 * that index's order; the original bounds are then applied to the resolved statements.
 	 */
 	RecordIterator getTriplesRange(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
 			LmdbKeyRange range) throws IOException {
@@ -3437,10 +3430,8 @@ class TripleStore implements Closeable {
 				throw new IllegalStateException("Key range was planned against index " + range.indexFieldSeq()
 						+ " but the pattern resolves to index " + index);
 			}
-			boolean rangeSearch = selectedGeneration.range[mask];
-			return new LmdbRecordIterator(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, subj, pred, obj,
-				context, explicit, txn, range, null, false);
-
+			return selectedGeneration.physicalPlans.get(index)[mask]
+					.iterator(txn, subj, pred, obj, context, explicit, range);
 		});
 	}
 
@@ -3462,38 +3453,30 @@ class TripleStore implements Closeable {
 			if (selected == null) {
 				throw new IllegalStateException("Key range names an unconfigured index: " + range.indexFieldSeq());
 			}
-			return new LmdbRecordIterator(selected, selected.getPatternScore(subj, pred, obj, context), subj, pred, obj, context, explicit,
-					txn, range, null, false);
+			return selectedGeneration.physicalPlans.get(selected)[boundMask(subj, pred, obj, context)]
+					.iterator(txn, subj, pred, obj, context, explicit, range);
 		});
 	}
 
 	/**
-	 * Creates an iterator in retained mode: close() only marks it exhausted, so the owner can re-aim it at the next
-	 * probe with {@link #resetTriples} and must eventually call {@code dispose()}.
+	 * Creates an iterator in retained mode: close() exhausts the active scan but keeps reusable full-index resources
+	 * and partial resolution trees. The owner can re-aim it with {@link #resetTriples} and must eventually call
+	 * {@code dispose()} to release the entire retained tree.
 	 */
-	LmdbRecordIterator getTriplesRetained(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
-			throws IOException {
-		return withGeneration(txn, selectedGeneration -> {
-			int mask = boundMask(subj, pred, obj, context);
-			var index = selectedGeneration.best[mask];
-			boolean rangeSearch = selectedGeneration.range[mask];
-			return new LmdbRecordIterator(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, subj, pred,
-					obj, context, explicit, txn, null, null, true);
-
-		});
+	RecordIterator.Retainable<IndexResolutionPlan> getTriplesRetained(Txn txn, long subj, long pred, long obj,
+			long context, boolean explicit) throws IOException {
+		return withGeneration(txn,
+				selectedGeneration -> selectedGeneration.plans[boundMask(subj, pred, obj, context)]
+						.retainedIterator(txn, subj, pred, obj, context, explicit));
 	}
 
 	/** Re-aims a retained iterator at the next probe pattern, re-selecting the index by boundness. */
-	void resetTriples(LmdbRecordIterator iterator, long subj, long pred, long obj, long context, boolean explicit)
-			throws IOException {
-		withGeneration(iterator.transaction(), selectedGeneration -> {
+	void resetTriples(Txn txn, RecordIterator.Retainable<IndexResolutionPlan> iterator, long subj, long pred, long obj,
+			long context, boolean explicit) throws IOException {
+		withGeneration(txn, selectedGeneration -> {
 			int mask = boundMask(subj, pred, obj, context);
-			var index = selectedGeneration.best[mask];
-			boolean rangeSearch = selectedGeneration.range[mask];
-			iterator.reset(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, subj, pred, obj, context,
-					explicit);
+			iterator.reset(selectedGeneration.plans[mask], 0, subj, pred, obj, context, explicit);
 			return null;
-
 		});
 	}
 
@@ -3513,7 +3496,6 @@ class TripleStore implements Closeable {
 		return withGeneration(txnRef, selectedGeneration -> {
 			TripleIndex index = selectedGeneration.best[boundMask(subj, pred, obj, context)];
 			return planSplitKeys(txnRef, index, subj, pred, obj, context, explicit, targetPartitions);
-
 		});
 	}
 
@@ -4592,15 +4574,14 @@ class TripleStore implements Closeable {
 	}
 
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {
+		IndexGeneration generation = queryGeneration;
 		long subj = boundMask(boundComponentMask, Component.S);
 		long pred = boundMask(boundComponentMask, Component.P);
 		long obj = boundMask(boundComponentMask, Component.O);
 		long context = boundMask(boundComponentMask, Component.C);
-		List<IndexAccessPath> accessPaths = new ArrayList<>(indexes.size());
-		int bestFullScore = 0;
-		for (TripleIndex index : indexes) {
+		List<IndexAccessPath> accessPaths = new ArrayList<>(generation.indexes.size());
+		for (TripleIndex index : generation.indexes) {
 			int prefixScore = index.getPatternScore(subj, pred, obj, context);
-			bestFullScore = Math.max(bestFullScore, prefixScore);
 			int prefixComponentMask = 0;
 			char[] fieldSequence = index.getFieldSeq();
 			for (int i = 0; i < prefixScore; i++) {
@@ -4609,16 +4590,20 @@ class TripleStore implements Closeable {
 			}
 			accessPaths.add(new IndexAccessPath(new String(fieldSequence), prefixScore, prefixComponentMask));
 		}
-		PartialIndex partial = bestPartialIndex(subj, pred, obj, context, bestFullScore);
-		if (partial != null) {
-			String fields = partial.fields();
-			int prefixLength = partial.score(subj, pred, obj, context);
+		IndexResolutionPlan plan = generation.plans[boundMask(subj, pred, obj, context)];
+		String fields = plan.indexName();
+		if (fields.length() == 2) {
+			int prefixLength = 0;
 			int prefixMask = 0;
-			for (int i = 0; i < prefixLength; i++) {
-				prefixMask |= 1 << toEstimatorComponent(fields.charAt(i)).ordinal();
+			for (int i = 0; i < fields.length(); i++) {
+				char field = fields.charAt(i);
+				if ((boundMask(subj, pred, obj, context) & (1 << statementField(field))) == 0) {
+					break;
+				}
+				prefixLength++;
+				prefixMask |= 1 << toEstimatorComponent(field).ordinal();
 			}
-			accessPaths.add(new IndexAccessPath(fields, prefixLength, prefixMask,
-					resolutionPlan(partial, subj, pred, obj, context).fields()));
+			accessPaths.add(new IndexAccessPath(fields, prefixLength, prefixMask, plan.fields()));
 		}
 		return List.copyOf(accessPaths);
 	}
