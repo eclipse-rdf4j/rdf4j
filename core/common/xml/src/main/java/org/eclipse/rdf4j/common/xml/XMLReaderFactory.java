@@ -27,6 +27,8 @@ import org.xml.sax.XMLReader;
  */
 public class XMLReaderFactory {
 
+	private static final Logger logger = LoggerFactory.getLogger(XMLReader.class);
+
 	public static final String XERCES_SAXPARSER = "org.apache.xerces.parsers.SAXParser";
 
 	/**
@@ -81,8 +83,6 @@ public class XMLReaderFactory {
 	 * @throws SAXException when no default XMLReader class can be found or instantiated.
 	 */
 	public static XMLReader createXMLReader() throws SAXException {
-		final Logger logger = LoggerFactory.getLogger(XMLReader.class);
-
 		XMLReader reader = null;
 
 		// first, try and initialize based on the system property.
@@ -144,8 +144,6 @@ public class XMLReaderFactory {
 	 * @throws SAXException when the supplied XMLReader class name can not be found or instantiated.
 	 */
 	public static XMLReader createXMLReader(String name) throws SAXException {
-		final Logger logger = LoggerFactory.getLogger(XMLReader.class);
-
 		XMLReader reader;
 		try {
 			reader = configureSecureXMLReader(_createXMLReader(name));
