@@ -16,6 +16,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import static jakarta.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static jakarta.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 import static jakarta.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
+import static jakarta.servlet.http.HttpServletResponse.SC_NOT_FOUND;
 import static jakarta.servlet.http.HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE;
 import static jakarta.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
 import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
@@ -39,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,6 +48,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
@@ -66,11 +71,14 @@ import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.QueryResultView;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.http.server.repository.TupleQueryResultView;
+import org.eclipse.rdf4j.http.server.repository.namespaces.NamespaceValidation;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -82,8 +90,11 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -179,6 +190,18 @@ public class TransactionController extends AbstractController implements Disposa
 						"Method not allowed: " + reqMethod);
 			}
 			break;
+		case GET_NAMESPACE:
+		case GET_NAMESPACES:
+		case SET_NAMESPACE:
+		case REMOVE_NAMESPACE:
+		case CLEAR_NAMESPACES:
+			if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
+				result = processNamespaceOperation(transaction, action, request, response);
+			} else {
+				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+						"Method not allowed: " + reqMethod);
+			}
+			break;
 		case PING:
 			String text = Long.toString(ActiveTransactionRegistry.INSTANCE.getTimeout(TimeUnit.MILLISECONDS));
 			Map<String, String> model = Collections.singletonMap(SimpleResponseView.CONTENT_KEY, text);
@@ -216,6 +239,76 @@ public class TransactionController extends AbstractController implements Disposa
 			ActiveTransactionRegistry.INSTANCE.active(transaction);
 		}
 		return result;
+	}
+
+	private ModelAndView processNamespaceOperation(Transaction transaction, Action action, HttpServletRequest request,
+			HttpServletResponse response) throws IOException, HTTPException {
+		try {
+			switch (action) {
+			case GET_NAMESPACE:
+				String prefix = getNamespacePrefix(request);
+				String namespace = transaction.getNamespace(prefix);
+				if (namespace == null) {
+					throw new ClientHTTPException(SC_NOT_FOUND, "Undefined prefix: " + prefix);
+				}
+				return new ModelAndView(SimpleResponseView.getInstance(),
+						Collections.singletonMap(SimpleResponseView.CONTENT_KEY, namespace));
+			case GET_NAMESPACES:
+				return getNamespaces(transaction, request, response);
+			case SET_NAMESPACE:
+				String updatedPrefix = getNamespacePrefix(request);
+				String name = IOUtil.readString(request.getReader()).trim();
+				NamespaceValidation.validateUpdate(updatedPrefix, name);
+				transaction.setNamespace(updatedPrefix, name);
+				break;
+			case REMOVE_NAMESPACE:
+				transaction.removeNamespace(getNamespacePrefix(request));
+				break;
+			case CLEAR_NAMESPACES:
+				transaction.clearNamespaces();
+				break;
+			default:
+				throw new IllegalArgumentException("Not a namespace operation: " + action);
+			}
+			return new ModelAndView(EmptySuccessView.getInstance());
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new ServerHTTPException("Transaction namespace operation interrupted", e);
+		} catch (ExecutionException e) {
+			throw new ServerHTTPException("Transaction namespace operation failed: " + e.getMessage(), e);
+		}
+	}
+
+	private String getNamespacePrefix(HttpServletRequest request) throws ClientHTTPException {
+		String prefix = request.getParameter(Protocol.NAMESPACE_PREFIX_PARAM_NAME);
+		if (prefix == null) {
+			throw new ClientHTTPException(SC_BAD_REQUEST, "Missing namespace prefix parameter");
+		}
+		return prefix;
+	}
+
+	private ModelAndView getNamespaces(Transaction transaction, HttpServletRequest request,
+			HttpServletResponse response)
+			throws ClientHTTPException, InterruptedException, ExecutionException {
+		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,
+				TupleQueryResultWriterRegistry.getInstance());
+		List<String> columnNames = List.of("prefix", "namespace");
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		// Transaction.getNamespaces consumes and closes the repository result on its dedicated owner thread.
+		var namespaces = new CloseableIteratorIteration<>(transaction.getNamespaces().iterator());
+		var bindings = new ConvertingIteration<Namespace, BindingSet>(namespaces) {
+			@Override
+			protected BindingSet convert(Namespace namespace) {
+				return new ListBindingSet(columnNames, valueFactory.createLiteral(namespace.getPrefix()),
+						valueFactory.createLiteral(namespace.getName()));
+			}
+		};
+		Map<String, Object> model = new HashMap<>();
+		model.put(QueryResultView.QUERY_RESULT_KEY, new IteratingTupleQueryResult(columnNames, bindings));
+		model.put(QueryResultView.FILENAME_HINT_KEY, "namespaces");
+		model.put(QueryResultView.HEADERS_ONLY, false);
+		model.put(QueryResultView.FACTORY_KEY, factory);
+		return new ModelAndView(TupleQueryResultView.getInstance(), model);
 	}
 
 	private UUID getTransactionID(HttpServletRequest request) throws ClientHTTPException {
