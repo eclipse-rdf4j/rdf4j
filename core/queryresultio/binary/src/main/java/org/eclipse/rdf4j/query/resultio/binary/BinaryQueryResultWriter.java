@@ -33,8 +33,10 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharsetEncoder;
+import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -47,11 +49,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
-import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
@@ -64,6 +65,11 @@ import org.eclipse.rdf4j.rio.RioSetting;
  */
 public class BinaryQueryResultWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, ByteSink {
 
+	private static final int STRING_BUFFER_SIZE = 4096;
+	private static final int XSD_DATATYPE_COUNT = CoreDatatype.XSD.values().length;
+	private static final int RDF_DATATYPE_COUNT = CoreDatatype.RDF.values().length;
+	private static final byte[][] CORE_DATATYPE_RECORD_TEMPLATES = createCoreDatatypeRecordTemplates();
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -74,6 +80,8 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	private final DataOutputStream out;
 
 	private final CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
+	// Bound retained scratch storage; oversized strings use the allocating strict-encoder fallback.
+	private final byte[] stringBuffer = new byte[Integer.BYTES + STRING_BUFFER_SIZE];
 
 	/**
 	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using the
@@ -82,8 +90,12 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	private final Map<String, Integer> namespaceTable = new HashMap<>(32);
 
 	private int nextNamespaceID;
+	// Templates are shared; records containing document-local namespace IDs belong to this writer.
+	private final byte[][] datatypeRecords = new byte[CORE_DATATYPE_RECORD_TEMPLATES.length][];
 
-	private BindingSet previousBindings;
+	// Snapshot the observed columns instead of retaining a possibly reused BindingSet.
+	private Value[] previousValues;
+	private byte[] markerBuffer;
 
 	private List<String> bindingNames;
 
@@ -146,9 +158,11 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 				writeString(bindingName);
 			}
 
-			List<Value> nullTuple = Collections.nCopies(this.bindingNames.size(), (Value) null);
-			previousBindings = new ListBindingSet(this.bindingNames, nullTuple);
+			previousValues = new Value[this.bindingNames.size()];
+			markerBuffer = new byte[this.bindingNames.size()];
 			nextNamespaceID = 0;
+			namespaceTable.clear();
+			Arrays.fill(datatypeRecords, null);
 		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
@@ -178,31 +192,35 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 			if (bindingSet.isEmpty()) {
 				writeEmptyRow();
 			} else {
-				for (String bindingName : bindingNames) {
-					Value value = bindingSet.getValue(bindingName);
+				int markerCount = 0;
+				for (int column = 0; column < bindingNames.size(); column++) {
+					Value value = bindingSet.getValue(bindingNames.get(column));
+					Value previous = previousValues[column];
 
 					if (value == null) {
-						writeNull();
-					} else if (value.equals(previousBindings.getValue(bindingName))) {
-						writeRepeat();
+						markerBuffer[markerCount++] = NULL_RECORD_MARKER;
+					} else if (value == previous || previous != null && value.equals(previous)) {
+						markerBuffer[markerCount++] = REPEAT_RECORD_MARKER;
 					} else {
+						writeMarkers(markerCount);
+						markerCount = 0;
 						writeValue(value);
 					}
+					previousValues[column] = value;
 				}
-
-				previousBindings = bindingSet;
+				writeMarkers(markerCount);
 			}
 		} catch (IOException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
 	}
 
-	private void writeNull() throws IOException {
-		out.writeByte(NULL_RECORD_MARKER);
-	}
-
-	private void writeRepeat() throws IOException {
-		out.writeByte(REPEAT_RECORD_MARKER);
+	private void writeMarkers(int count) throws IOException {
+		if (count == 1) {
+			out.writeByte(markerBuffer[0]);
+		} else if (count > 1) {
+			out.write(markerBuffer, 0, count);
+		}
 	}
 
 	private void writeValue(Value value) throws IOException {
@@ -251,31 +269,80 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 
 	private void writeLiteral(Literal literal) throws IOException {
 		String label = literal.getLabel();
-		IRI datatype = literal.getDatatype();
-
-		int marker;
-
-		if (Literals.isLanguageLiteral(literal)) {
-			marker = LANG_LITERAL_RECORD_MARKER;
-		} else {
-			String namespace = datatype.getNamespace();
-
-			if (!namespaceTable.containsKey(namespace)) {
-				// Assign an ID to this new namespace
-				writeNamespace(namespace);
-			}
-
-			marker = DATATYPE_LITERAL_RECORD_MARKER;
-		}
-
-		out.writeByte(marker);
-		writeString(label);
-
-		if (Literals.isLanguageLiteral(literal)) {
+		CoreDatatype coreDatatype = literal.getCoreDatatype();
+		if (coreDatatype == CoreDatatype.RDF.LANGSTRING || coreDatatype == CoreDatatype.RDF.DIRLANGSTRING) {
+			out.writeByte(LANG_LITERAL_RECORD_MARKER);
+			writeString(label);
 			writeString(getLanguageTag(literal));
-		} else {
-			writeQName(datatype);
+			return;
 		}
+		IRI datatype = literal.getDatatype();
+		int datatypeIndex = coreDatatypeIndex(coreDatatype);
+		// Preserve an unusual namespace/local-name split supplied by a noncanonical IRI implementation.
+		if (datatypeIndex >= 0 && datatype == coreDatatype.getIri()) {
+			byte[] record = datatypeRecords[datatypeIndex];
+			if (record == null) {
+				// Namespace declarations must precede the literal, never occur between its label and datatype.
+				Integer namespaceId = namespaceTable.get(datatype.getNamespace());
+				if (namespaceId == null) {
+					namespaceId = writeNamespace(datatype.getNamespace());
+				}
+				record = CORE_DATATYPE_RECORD_TEMPLATES[datatypeIndex].clone();
+				putInt(record, 1, namespaceId);
+				datatypeRecords[datatypeIndex] = record;
+			}
+			out.writeByte(DATATYPE_LITERAL_RECORD_MARKER);
+			writeString(label);
+			out.write(record);
+		} else {
+			Integer namespaceId = namespaceTable.get(datatype.getNamespace());
+			if (namespaceId == null) {
+				namespaceId = writeNamespace(datatype.getNamespace());
+			}
+			out.writeByte(DATATYPE_LITERAL_RECORD_MARKER);
+			writeString(label);
+			out.writeByte(QNAME_RECORD_MARKER);
+			out.writeInt(namespaceId);
+			writeString(datatype.getLocalName());
+		}
+	}
+
+	private static int coreDatatypeIndex(CoreDatatype datatype) {
+		if (datatype instanceof CoreDatatype.XSD xsd) {
+			return xsd.ordinal();
+		}
+		if (datatype instanceof CoreDatatype.RDF rdf) {
+			return XSD_DATATYPE_COUNT + rdf.ordinal();
+		}
+		if (datatype instanceof CoreDatatype.GEO geo) {
+			return XSD_DATATYPE_COUNT + RDF_DATATYPE_COUNT + geo.ordinal();
+		}
+		return -1;
+	}
+
+	private static byte[][] createCoreDatatypeRecordTemplates() {
+		CoreDatatype[][] families = { CoreDatatype.XSD.values(), CoreDatatype.RDF.values(), CoreDatatype.GEO.values() };
+		byte[][] templates = new byte[XSD_DATATYPE_COUNT + RDF_DATATYPE_COUNT + families[2].length][];
+		int index = 0;
+		for (CoreDatatype[] family : families) {
+			for (CoreDatatype datatype : family) {
+				byte[] localName = datatype.getIri().getLocalName().getBytes(StandardCharsets.UTF_8);
+				byte[] record = new byte[9 + localName.length];
+				record[0] = QNAME_RECORD_MARKER;
+				// Bytes 1..4 are filled with the writer's namespace ID when the datatype is first used.
+				putInt(record, 5, localName.length);
+				System.arraycopy(localName, 0, record, 9, localName.length);
+				templates[index++] = record;
+			}
+		}
+		return templates;
+	}
+
+	private static void putInt(byte[] bytes, int offset, int value) {
+		bytes[offset] = (byte) (value >>> 24);
+		bytes[offset + 1] = (byte) (value >>> 16);
+		bytes[offset + 2] = (byte) (value >>> 8);
+		bytes[offset + 3] = (byte) value;
 	}
 
 	private static String getLanguageTag(Literal literal) {
@@ -315,7 +382,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		out.writeInt(nextNamespaceID);
 		writeString(namespace);
 
-		Integer result = new Integer(nextNamespaceID);
+		Integer result = Integer.valueOf(nextNamespaceID);
 		namespaceTable.put(namespace, result);
 
 		nextNamespaceID++;
@@ -323,7 +390,57 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		return result;
 	}
 
+	private void writeBufferedString(int length) throws IOException {
+		putInt(stringBuffer, 0, length);
+		out.write(stringBuffer, 0, length + 4);
+	}
+
 	private void writeString(String s) throws IOException {
+		int length = s.length();
+		if (length <= stringBuffer.length - 4) {
+			int i = 0;
+			while (i < length) {
+				char c = s.charAt(i);
+				if (c > 0x7f) {
+					break;
+				}
+				stringBuffer[4 + i++] = (byte) c;
+			}
+			if (i == length) {
+				writeBufferedString(length);
+				return;
+			}
+		}
+
+		if (length <= (stringBuffer.length - 4) / 3) {
+			int bytes = 4;
+			for (int i = 0; i < length; i++) {
+				char c = s.charAt(i);
+				if (c < 0x80) {
+					stringBuffer[bytes++] = (byte) c;
+				} else if (c < 0x800) {
+					stringBuffer[bytes++] = (byte) (0xc0 | c >> 6);
+					stringBuffer[bytes++] = (byte) (0x80 | c & 0x3f);
+				} else if (!Character.isSurrogate(c)) {
+					stringBuffer[bytes++] = (byte) (0xe0 | c >> 12);
+					stringBuffer[bytes++] = (byte) (0x80 | c >> 6 & 0x3f);
+					stringBuffer[bytes++] = (byte) (0x80 | c & 0x3f);
+				} else {
+					if (!Character.isHighSurrogate(c) || i + 1 == length
+							|| !Character.isLowSurrogate(s.charAt(i + 1))) {
+						throw new MalformedInputException(1);
+					}
+					int codePoint = Character.toCodePoint(c, s.charAt(++i));
+					stringBuffer[bytes++] = (byte) (0xf0 | codePoint >> 18);
+					stringBuffer[bytes++] = (byte) (0x80 | codePoint >> 12 & 0x3f);
+					stringBuffer[bytes++] = (byte) (0x80 | codePoint >> 6 & 0x3f);
+					stringBuffer[bytes++] = (byte) (0x80 | codePoint & 0x3f);
+				}
+			}
+			writeBufferedString(bytes - 4);
+			return;
+		}
+		// Retain strict malformed-input handling for strings too large for the fixed scratch buffer.
 		ByteBuffer byteBuf = charsetEncoder.encode(CharBuffer.wrap(s));
 		out.writeInt(byteBuf.remaining());
 		out.write(byteBuf.array(), 0, byteBuf.remaining());
