@@ -18,11 +18,10 @@ import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 public class TripleSourceFactory {
 
 	public static TripleSource tripleSourceFor(Endpoint e, EndpointType t, FederationContext federationContext) {
-		if (EndpointIdentity.localStore(e) != null) {
-			return new SailTripleSource(e, federationContext);
-		}
 		switch (t) {
 		case NativeStore:
+			return new SailTripleSource(e, federationContext);
+		case LocalStore:
 			return new SailTripleSource(e, federationContext);
 		case SparqlEndpoint:
 			return new SparqlTripleSource(e, federationContext);
