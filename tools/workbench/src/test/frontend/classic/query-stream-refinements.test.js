@@ -2051,10 +2051,14 @@ function fakePageView() {
     };
 }
 
-async function renderedScrollSource(capacity) {
+async function renderedScrollSource(capacity, pageHeight) {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     document.defaultView = fakePageView();
+    if (pageHeight) {
+        // The editor, toolbars and anything else on the page around the result.
+        document.documentElement = { scrollHeight: pageHeight, getAttribute() { return null; } };
+    }
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore(), initialLayout: 'table' });
@@ -2074,6 +2078,13 @@ async function renderedScrollSource(capacity) {
 test('rows scroll with the page, and a result taller than the scroll capacity keeps its inner scroll element', async () => {
     assert.deepEqual(await renderedScrollSource(Number.MAX_SAFE_INTEGER), { source: 'page', compressed: false });
     assert.deepEqual(await renderedScrollSource(50), { source: 'element', compressed: true });
+});
+
+// A result that fits the browser's scroll capacity by itself can still make the page around it taller than that, which
+// cut its last rows off; it scrolls in its own element instead.
+test('a result whose page would be taller than the scroll capacity keeps its inner scroll element', async () => {
+    assert.equal((await renderedScrollSource(1000)).source, 'page');
+    assert.equal((await renderedScrollSource(1000, 5000)).source, 'element');
 });
 
 // Task M4.3: datatype and language tags, numeric cells and ?variable headings.
