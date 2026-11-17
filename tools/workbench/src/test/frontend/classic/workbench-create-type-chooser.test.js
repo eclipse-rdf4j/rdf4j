@@ -62,10 +62,21 @@ function flatten(template, handlers) {
     return template === null || typeof template === 'undefined' ? '' : String(template);
 }
 
+const lmdbTemplates = [
+    ['lmdb', 'LMDB Store'],
+    ['lmdb-rdfs', 'LMDB Store + RDFS'],
+    ['lmdb-shacl', 'LMDB Store + SHACL'],
+    ['lmdb-lucene', 'LMDB Store + Lucene'],
+    ['lmdb-rdfs-shacl', 'LMDB Store + RDFS and SHACL'],
+    ['lmdb-rdfs-lucene', 'LMDB Store + RDFS and Lucene'],
+    ['lmdb-shacl-lucene', 'LMDB Store + SHACL and Lucene'],
+    ['lmdb-rdfs-shacl-lucene', 'LMDB Store + RDFS, SHACL and Lucene']
+];
+
 const templates = [
     ['memory', 'Memory Store'], ['memory-rdfs', 'Memory Store + RDFS'], ['native-shacl', 'Native Store + SHACL'],
     ['remote', 'Remote RDF Store'], ['sparql', 'SPARQL endpoint proxy'], ['federate', 'Federation'],
-    ['lmdb', 'LMDB Store'], ['acme-graph', 'Acme Graph Store']
+    ...lmdbTemplates, ['acme-graph', 'Acme Graph Store']
 ];
 
 function chooser() {
@@ -86,7 +97,7 @@ test('the repository types are grouped by store in the server\'s order', () => {
         ['Memory', ['memory', 'memory-rdfs']],
         ['Native', ['native-shacl']],
         ['Remote and federation', ['remote', 'sparql', 'federate']],
-        ['LMDB', ['lmdb']],
+        ['LMDB', lmdbTemplates.map(([type]) => type)],
         ['Other', ['acme-graph']]
     ]);
 });
@@ -109,4 +120,24 @@ test('a line under the type chooser says what the chosen type is', () => {
     handlers[Number(change[1])]({ currentTarget: select });
     assert.equal(line.textContent, '');
     assert.equal(line.hidden, true, 'a type the Workbench does not know has no line');
+});
+
+test('LMDB combinations describe every configured feature', () => {
+    const { form, handlers } = chooser();
+    const change = /<select id="type"[^>]*@change=handler-(\d+)/.exec(form);
+    assert.ok(change, 'choosing a type updates the line');
+    const line = { textContent: '', hidden: true };
+    const descriptions = [
+        ['lmdb-rdfs-shacl', 'Adds RDF Schema inference and validates every change against SHACL shapes.'],
+        ['lmdb-shacl-lucene', 'Adds Lucene full-text search and validates every change against SHACL shapes.'],
+        ['lmdb-rdfs-shacl-lucene', 'Adds RDF Schema inference and Lucene full-text search, '
+            + 'and validates every change against SHACL shapes.']
+    ];
+    for (const [type, description] of descriptions) {
+        const select = { value: type, ownerDocument: { getElementById: id => id === 'type-description' ? line : null } };
+        handlers[Number(change[1])]({ currentTarget: select });
+        assert.equal(line.textContent,
+            'Stores the data on disk in LMDB, a memory-mapped database, for large data. ' + description, type);
+        assert.equal(line.hidden, false, type + ' has a visible description');
+    }
 });
