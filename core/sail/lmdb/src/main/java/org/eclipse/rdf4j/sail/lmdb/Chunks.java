@@ -24,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 
 import java.io.IOException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
@@ -42,6 +43,33 @@ public class Chunks {
 	public static final int MAX_CHUNK_SIZE = 32;
 
 	static final MpmcRingBuffer<ChunkOutput> chunkPool = new MpmcRingBuffer<>(16);
+
+	/** Counts the anchor and footer-declared suffix tuples without decompressing the chunk. */
+	static int tupleCount(ByteBuffer value, int elements, int splitPoint) throws IOException {
+		if (!value.hasRemaining()) {
+			return 1;
+		}
+		ByteBuffer footer = value.duplicate();
+		int footerEnd = footer.limit() - 1;
+		int footerStart = footerEnd - (footer.get(footerEnd) & 0xFF);
+		if (footerStart < footer.position() || footerStart >= footerEnd) {
+			throw new IOException("Invalid statement chunk footer length");
+		}
+		footer.limit(footerEnd).position(footerStart);
+		try {
+			for (int field = splitPoint; field < elements; field++) {
+				Varint.readUnsigned(footer);
+				footer.get();
+			}
+			long suffixTuples = Varint.readUnsigned(footer);
+			if (suffixTuples <= 0L || suffixTuples >= MAX_CHUNK_SIZE || footer.hasRemaining()) {
+				throw new IOException("Invalid statement chunk tuple count");
+			}
+			return (int) suffixTuples + 1;
+		} catch (BufferUnderflowException e) {
+			throw new IOException("Truncated statement chunk footer", e);
+		}
+	}
 
 	/**
 	 * Inserts a tuple into the sorted duplicate-value chunks for the current key, rewriting the affected chunk when

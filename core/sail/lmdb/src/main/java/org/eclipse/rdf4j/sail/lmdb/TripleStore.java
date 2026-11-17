@@ -73,6 +73,7 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
@@ -202,6 +203,14 @@ class TripleStore implements Closeable {
 	 * Variables *
 	 *-----------*/
 	private static final Logger logger = LoggerFactory.getLogger(TripleStore.class);
+	static final String META_DATABASE_NAME = "meta";
+	private static final byte[] STATEMENT_COUNTS_FORMAT_KEY = "statement-counts-format"
+			.getBytes(StandardCharsets.US_ASCII);
+	private static final byte[] EXPLICIT_STATEMENT_COUNT_KEY = "statement-counts-explicit"
+			.getBytes(StandardCharsets.US_ASCII);
+	private static final byte[] INFERRED_STATEMENT_COUNT_KEY = "statement-counts-inferred"
+			.getBytes(StandardCharsets.US_ASCII);
+	private static final long STATEMENT_COUNTS_VERSION = 1L;
 	static final String NAMESPACE_DATABASE_NAME = "namespaces";
 	static final byte[] NAMESPACE_FORMAT_KEY = "format".getBytes(StandardCharsets.US_ASCII);
 	static final byte[] NAMESPACE_SNAPSHOT_KEY = "snapshot".getBytes(StandardCharsets.US_ASCII);
@@ -519,6 +528,7 @@ class TripleStore implements Closeable {
 	private final int mainDbi;
 	private final int contextsDbi;
 	private final int namespacesDbi;
+	private final int metaDbi;
 	private int pageSize;
 	private final boolean autoGrow;
 	private final MapGrowthPolicy growthPolicy;
@@ -597,7 +607,8 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi, long ownedTransactionId) {
+	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi, int metaDbi,
+			long ownedTransactionId) {
 	}
 
 	private record PageAndMapState(int pageSize, boolean empty) {
@@ -650,8 +661,8 @@ class TripleStore implements Closeable {
 				env = pp.get(0);
 			}
 
-			// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred), 1 for namespaces.
-			E(mdb_env_set_maxdbs(env, 1 + 96 + 1 + 2 * PartialIndex.SUPPORTED_FIELDS.size()));
+			// Contexts, active/staging statement indexes, namespaces, metadata, and partial indexes.
+			E(mdb_env_set_maxdbs(env, 1 + 96 + 1 + 1 + 2 * PartialIndex.SUPPORTED_FIELDS.size()));
 			E(mdb_env_set_maxreaders(env, MAX_READERS));
 
 			// Open environment
@@ -664,7 +675,7 @@ class TripleStore implements Closeable {
 			}
 			E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
 			environmentLifecycle.afterOpen(env);
-			// Open the unnamed main database and contexts database in one serialized setup transaction. The main DBI is
+			// Open the unnamed main database and metadata databases in one serialized setup transaction. The main DBI is
 			// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
 			// comparator state.
 			DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
@@ -689,7 +700,15 @@ class TripleStore implements Closeable {
 				} else {
 					E(namespaceResult);
 				}
-				return new DatabaseHandles(mainDbi, contextsDbi, ip.get(0),
+				int namespacesDbi = ip.get(0);
+				int metaResult = mdb_dbi_open(txn, META_DATABASE_NAME, 0, ip);
+				if (metaResult == MDB_NOTFOUND) {
+					E(mdb_dbi_open(txn, META_DATABASE_NAME, MDB_CREATE, ip));
+					created = true;
+				} else {
+					E(metaResult);
+				}
+				return new DatabaseHandles(mainDbi, contextsDbi, namespacesDbi, ip.get(0),
 						created ? mdb_txn_id(txn) : expectedNativeTransactionId);
 			});
 			if (expectedNativeTransactionId >= 0L) {
@@ -698,6 +717,7 @@ class TripleStore implements Closeable {
 			mainDbi = databaseHandles.mainDbi();
 			contextsDbi = databaseHandles.contextsDbi();
 			namespacesDbi = databaseHandles.namespacesDbi();
+			metaDbi = databaseHandles.metaDbi();
 
 			txnManager = new TxnManager(env, Mode.RESET, LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 			txnManager.setReaderRetirementListener(this::signalIndexRebuild);
@@ -753,6 +773,7 @@ class TripleStore implements Closeable {
 					if (!nativeIndexManifest || !activeWithPairs.equals(effectiveIndexSpecs)) {
 						writeIndexSpecs(activeWithPairs);
 					}
+					initializeStatementCounts();
 					effectiveIndexSpecs = activeWithPairs;
 					endTransaction(true);
 					break;
@@ -1198,11 +1219,17 @@ class TripleStore implements Closeable {
 		if (expectedNativeTransactionId < 0L || lastTransactionId() != expectedNativeTransactionId) {
 			throw new IOException("Bulk triple generation has an unrecognized native writer");
 		}
-		for (long entries : explicitIndexEntryCounts().values()) {
-			if (entries != expectedStatements) {
-				throw new IOException("Incomplete bulk statement index");
+		txnManager.doWith((stack, txn) -> {
+			for (TripleIndex index : indexes) {
+				if (logicalIndexCount(txn, index, true) != expectedStatements) {
+					throw new IOException("Incomplete bulk statement index");
+				}
 			}
-		}
+			if (readStatementCount(stack, txn, true) != expectedStatements) {
+				throw new IOException("Bulk statement count differs from index membership");
+			}
+			return null;
+		});
 		reserveWriteCapacity(PreparedBulkStore.GENERATION_KEY.length + generation.length);
 		startTransaction();
 		try (MemoryStack stack = stackPush()) {
@@ -1315,6 +1342,12 @@ class TripleStore implements Closeable {
 			long[] subj, long[] pred, long[] obj, long[] context) {
 		indexUpdater.sortStatementIndicesByLeadingField(statementIndices, length, index, subj, pred, obj,
 				context);
+	}
+
+	void sortStatementIndicesByLeadingFields(int[] statementIndices, int length, TripleIndex index,
+		long[] subj, long[] pred, long[] obj, long[] context) {
+		indexUpdater.sortStatementIndicesByLeadingFields(statementIndices, length, index, subj, pred, obj,
+			context);
 	}
 
 	long getNativeCommitGeneration() {
@@ -1542,6 +1575,108 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	private void initializeStatementCounts() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			long version = readMetadataLong(stack, writeTxn, STATEMENT_COUNTS_FORMAT_KEY);
+			if (version >= 0L) {
+				if (version != STATEMENT_COUNTS_VERSION) {
+					throw new IOException("Unsupported statement count format version: " + version);
+				}
+				readStatementCount(stack, writeTxn, true);
+				readStatementCount(stack, writeTxn, false);
+				return;
+			}
+			if (readMetadataLong(stack, writeTxn, EXPLICIT_STATEMENT_COUNT_KEY) >= 0L
+					|| readMetadataLong(stack, writeTxn, INFERRED_STATEMENT_COUNT_KEY) >= 0L) {
+				throw new IOException("Statement counts exist without a format marker");
+			}
+			TripleIndex mainIndex = indexes.getFirst();
+			long explicit = logicalIndexCount(writeTxn, mainIndex, true);
+			long inferred = logicalIndexCount(writeTxn, mainIndex, false);
+			writeMetadataLong(stack, EXPLICIT_STATEMENT_COUNT_KEY, explicit);
+			writeMetadataLong(stack, INFERRED_STATEMENT_COUNT_KEY, inferred);
+			writeMetadataLong(stack, STATEMENT_COUNTS_FORMAT_KEY, STATEMENT_COUNTS_VERSION);
+			setupCommitWithoutNativeWrites = false;
+			nativeMutation = true;
+			unjournaledMutation = true;
+		}
+	}
+
+	private long logicalIndexCount(long txn, TripleIndex index, boolean explicit) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, index.getDB(explicit), handle));
+			long cursor = handle.get(0);
+			try {
+				MDBVal key = MDBVal.malloc(stack);
+				MDBVal value = MDBVal.malloc(stack);
+				long count = 0L;
+				int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				while (result != MDB_NOTFOUND) {
+					E(result);
+					count = Math.addExact(count, Chunks.tupleCount(value.mv_data(), 4,
+							index.getIndexSplitPosition()));
+					result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				return count;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	/** Returns -1 for an absent key; stored metadata longs must be nonnegative and big-endian. */
+	private long readMetadataLong(MemoryStack stack, long txn, byte[] key) throws IOException {
+		MDBVal keyValue = MDBVal.malloc(stack);
+		MDBVal dataValue = MDBVal.malloc(stack);
+		keyValue.mv_data(stack.bytes(key));
+		int result = mdb_get(txn, metaDbi, keyValue, dataValue);
+		if (result == MDB_NOTFOUND) {
+			return -1L;
+		}
+		E(result);
+		ByteBuffer data = Objects.requireNonNull(dataValue.mv_data()).order(ByteOrder.BIG_ENDIAN);
+		if (data.remaining() != Long.BYTES) {
+			throw new IOException("Malformed metadata value: " + new String(key, StandardCharsets.US_ASCII));
+		}
+		long value = data.getLong();
+		if (value < 0L) {
+			throw new IOException("Negative metadata value: " + new String(key, StandardCharsets.US_ASCII));
+		}
+		return value;
+	}
+
+	private long readStatementCount(MemoryStack stack, long txn, boolean explicit) throws IOException {
+		long count = readMetadataLong(stack, txn,
+				explicit ? EXPLICIT_STATEMENT_COUNT_KEY : INFERRED_STATEMENT_COUNT_KEY);
+		if (count < 0L) {
+			throw new IOException("Missing " + (explicit ? "explicit" : "inferred") + " statement count");
+		}
+		return count;
+	}
+
+	private void writeMetadataLong(MemoryStack stack, byte[] key, long value) throws IOException {
+		MDBVal keyValue = MDBVal.malloc(stack);
+		MDBVal dataValue = MDBVal.malloc(stack);
+		keyValue.mv_data(stack.bytes(key));
+		dataValue.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(value).flip());
+		checkMutationResult(mdb_put(writeTxn, metaDbi, keyValue, dataValue, 0));
+	}
+
+	private void addStatementCount(boolean explicit, long delta) throws IOException {
+		if (delta == 0L) {
+			return;
+		}
+		try (MemoryStack stack = stackPush()) {
+			long count = Math.addExact(readStatementCount(stack, writeTxn, explicit), delta);
+			if (count < 0L) {
+				throw new IOException("Statement count underflow");
+			}
+			writeMetadataLong(stack, explicit ? EXPLICIT_STATEMENT_COUNT_KEY : INFERRED_STATEMENT_COUNT_KEY,
+					count);
+		}
+	}
+
 	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
 		return txnManager.doWith((stack, txn) -> {
 			Map<String, LmdbStore.LmdbDatabaseStats> stats = new LinkedHashMap<>();
@@ -1549,6 +1684,7 @@ class TripleStore implements Closeable {
 			E(mdb_env_stat(env, stat));
 			stats.put("main", LmdbStore.LmdbDatabaseStats.from(stat));
 			addLmdbStats(stats, "contexts", txn, contextsDbi, stat);
+			addLmdbStats(stats, META_DATABASE_NAME, txn, metaDbi, stat);
 			for (TripleIndex index : indexes) {
 				addLmdbStats(stats, index.getName(true), txn, index.getDB(true), stat);
 				addLmdbStats(stats, index.getName(false), txn, index.getDB(false), stat);
@@ -2662,7 +2798,7 @@ class TripleStore implements Closeable {
 					prefixes[orderIndex][mask] = prefix;
 				}
 			}
-			return new NativeLmdbQuerySource.IndexAccessProfile(statTripleCount(txn, explicit), 1, prefixes,
+			return new NativeLmdbQuerySource.IndexAccessProfile(statementCount(txn, explicit), 1, prefixes,
 					adjacencyPossible, adjacencyPredicateWork, outgoingAdjacencyWork, incomingAdjacencyWork);
 		});
 	}
@@ -3009,7 +3145,7 @@ class TripleStore implements Closeable {
 	}
 
 	private long countAllTriples(Txn txnRef, boolean explicit) throws IOException {
-		return statTripleCount(txnRef, explicit);
+		return statementCount(txnRef, explicit);
 	}
 
 	/** A context count from existing metadata, or -1 when the statement planes must be counted separately. */
@@ -3048,10 +3184,10 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean hasAnyTriples(Txn txnRef, boolean explicit) throws IOException {
-		return statTripleCount(txnRef, explicit) > 0;
+		return statementCount(txnRef, explicit) > 0;
 	}
 
-	private long statTripleCount(Txn txnRef, boolean explicit) throws IOException {
+	private long statementCount(Txn txnRef, boolean explicit) throws IOException {
 		long readStamp;
 		try {
 			readStamp = txnRef.lockManager().readLock();
@@ -3060,10 +3196,7 @@ class TripleStore implements Closeable {
 			throw new IOException(e);
 		}
 		try (MemoryStack stack = stackPush()) {
-			TripleIndex mainIndex = generation(txnRef).indexes.getFirst();
-			MDBStat stat = MDBStat.malloc(stack);
-			E(mdb_stat(txnRef.get(), mainIndex.getDB(explicit), stat));
-			return stat.ms_entries();
+			return readStatementCount(stack, txnRef.get(), explicit);
 		} finally {
 			txnRef.lockManager().unlockRead(readStamp);
 		}
@@ -3418,8 +3551,8 @@ class TripleStore implements Closeable {
 	 * Opens a pattern scan constrained to a raw key subrange of the pattern's index: {@code range.lowKey} inclusive,
 	 * {@code range.highKeyExclusive} exclusive, {@code null} bounds meaning the pattern's natural start/end. The index
 	 * is re-derived from the pattern's best full index; it must match the index the range was planned against
-	 * ({@code range.indexFieldSeq}). A resolving partial plan may replace the physical scan only when it preserves
-	 * that index's order; the original bounds are then applied to the resolved statements.
+	 * ({@code range.indexFieldSeq}). A resolving partial plan may replace the physical scan only when it preserves that
+	 * index's order; the original bounds are then applied to the resolved statements.
 	 */
 	RecordIterator getTriplesRange(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
 			LmdbKeyRange range) throws IOException {
@@ -4320,14 +4453,12 @@ class TripleStore implements Closeable {
 
 		// Query optimization already holds the dataset's read transaction.
 		return txnManager.doWithPriority((stack, txn) -> {
+			if (bindingMask == 0) {
+				return CardinalityEstimate.exact((double) readStatementCount(stack, txn, true)
+						+ readStatementCount(stack, txn, false));
+			}
 			long generation = mappingGeneration.get();
 			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(txn, generation)) {
-				if (bindingMask == 0) {
-					double exact = (double) view.totalEntries(explicitDbName)
-							+ view.totalEntries(inferredDbName);
-					return CardinalityEstimate.exact(exact);
-				}
-
 				long[] tuple = new long[4];
 				index.getMinEntry(tuple, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
 						indexShape.rangeObject(obj), indexShape.rangeContext(context));
@@ -4385,9 +4516,10 @@ class TripleStore implements Closeable {
 	 *
 	 * <p>
 	 * This method was extracted from the old {@code cardinality} method, and {@code MAX_KEY_LENGTH} moved from
-	 * {@code TripleStore} to {@link TripleIndex}; those are the only mechanical differences from the tagged source. Do
-	 * not improve or retune this compatibility path in place. Fixes belong in the page-walking estimator unless a
-	 * deliberate change to the 5.3.2 fallback contract is accompanied by updated golden compatibility tests.
+	 * {@code TripleStore} to {@link TripleIndex}. Whole-store totals use logical statement metadata because physical
+	 * entry counts describe chunks. Do not improve or retune the sampling algorithm in place. Fixes belong in the
+	 * page-walking estimator unless a deliberate change to the 5.3.2 fallback contract is accompanied by updated golden
+	 * compatibility tests.
 	 * </p>
 	 */
 	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
@@ -4395,17 +4527,8 @@ class TripleStore implements Closeable {
 
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
-			// it's worthless to use the index, just retrieve all entries in the db
-			return txnManager.doWithPriority((stack, txn) -> {
-				double cardinality = 0;
-				for (boolean explicit : new boolean[] { true, false }) {
-					int dbi = index.getDB(explicit);
-					MDBStat stat = MDBStat.malloc(stack);
-					mdb_stat(txn, dbi, stat);
-					cardinality += (double) stat.ms_entries();
-				}
-				return cardinality;
-			});
+			return txnManager.doWithPriority((stack, txn) -> (double) readStatementCount(stack, txn, true)
+					+ readStatementCount(stack, txn, false));
 		}
 
 		return txnManager.doWithPriority((stack, txn) -> {
@@ -4747,11 +4870,19 @@ class TripleStore implements Closeable {
 	}
 
 	private int putIndexEntry(TripleIndex index, boolean explicit, long[] tuple) throws IOException {
-		return mutateIndexEntry(index, explicit, tuple, true);
+		int result = mutateIndexEntry(index, explicit, tuple, true);
+		if (result == MDB_SUCCESS && index == indexes.getFirst()) {
+			addStatementCount(explicit, 1L);
+		}
+		return result;
 	}
 
 	private int deleteIndexEntry(TripleIndex index, boolean explicit, long[] tuple) throws IOException {
-		return mutateIndexEntry(index, explicit, tuple, false);
+		int result = mutateIndexEntry(index, explicit, tuple, false);
+		if (result == MDB_SUCCESS && index == indexes.getFirst()) {
+			addStatementCount(explicit, -1L);
+		}
+		return result;
 	}
 
 	private int mutateIndexEntry(TripleIndex index, boolean explicit, long[] tuple, boolean add)
@@ -4890,7 +5021,7 @@ class TripleStore implements Closeable {
 						index.getFieldSeq())) {
 					System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
 				}
-				sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj, context);
+				indexUpdater.sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj, context);
 				currentFieldSeq = index.getFieldSeq();
 				long secondaryWriteCursor = addedCount > 0 ? getAlignedWriteCursor(i, index, explicit, cursorHandle)
 						: 0;
@@ -4943,77 +5074,6 @@ class TripleStore implements Closeable {
 		logAddedStatements(addedCount);
 	}
 
-	void sortStatementIndicesByLeadingFields(int[] statementIndices, int length, TripleIndex index, long[] subj,
-			long[] pred, long[] obj, long[] context) {
-		if (length < 2) {
-			return;
-		}
-		long[] leadingValues = ensureLeadingFieldValues(length);
-		int[] scratchIndices = ensureLeadingFieldScratchIndices(length);
-		long[] scratchValues = ensureLeadingFieldScratchValues(length);
-
-		boolean sortAll = true;
-		int fromStart = 0;
-		int nextLength = length;
-		for (StatementFieldValueAccessor fieldValueAccessor : index.fieldValueAccessors) {
-			long[] fieldValues = fieldValueAccessor.get(subj, pred, obj, context);
-
-			if (sortAll) {
-				boolean sorted = true;
-				boolean allSame = true;
-				for (int i = 1; i < length; i++) {
-					if (allSame && fieldValues[i - 1] != fieldValues[i]) {
-						allSame = false;
-					}
-					if (fieldValues[i - 1] > fieldValues[i]) {
-						sorted = false;
-						break;
-					}
-				}
-				if (sorted) {
-					if (allSame) {
-						// sort by next field
-						continue;
-					}
-					// nothing to do, all values are already sorted by this leading field
-					break;
-				}
-				System.arraycopy(fieldValues, 0, leadingValues, 0, length);
-				LeadingFieldSorters.lsdRadixSort(statementIndices, leadingValues, 0, length, scratchIndices,
-						scratchValues, leadingFieldRadixCounts, leadingFieldRadixOffsets);
-				sortAll = false;
-			} else {
-				boolean sortingNecessary = false;
-				int from = fromStart;
-				length = nextLength;
-				while (from < length) {
-					int to = from + 1;
-					long firstValue = leadingValues[from];
-
-					while (to < length && leadingValues[to] == firstValue) {
-						to++;
-					}
-
-					if (to - from > 1) {
-						if (!sortingNecessary) {
-							fromStart = from;
-							sortingNecessary = true;
-						}
-						nextLength = to;
-						System.arraycopy(fieldValues, from, leadingValues, from, to - from);
-						LeadingFieldSorters.lsdRadixSort(statementIndices, leadingValues, from, to,
-								scratchIndices, scratchValues,
-								leadingFieldRadixCounts, leadingFieldRadixOffsets);
-					}
-					from = to;
-				}
-				if (!sortingNecessary) {
-					break;
-				}
-			}
-		}
-	}
-
 	void reserveWriteCapacity(long requiredBytes) throws IOException {
 		if (!autoGrow || pageSize <= 0 || requiredBytes <= 0L) {
 			return;
@@ -5028,27 +5088,6 @@ class TripleStore implements Closeable {
 			}
 			growMapForEstimatedWrite(requiredBytes, attempt);
 		}
-	}
-
-	private int[] ensureLeadingFieldScratchIndices(int length) {
-		if (leadingFieldScratchIndices.length < length) {
-			leadingFieldScratchIndices = new int[length];
-		}
-		return leadingFieldScratchIndices;
-	}
-
-	private long[] ensureLeadingFieldValues(int length) {
-		if (leadingFieldValues.length < length) {
-			leadingFieldValues = new long[length];
-		}
-		return leadingFieldValues;
-	}
-
-	private long[] ensureLeadingFieldScratchValues(int length) {
-		if (leadingFieldScratchValues.length < length) {
-			leadingFieldScratchValues = new long[length];
-		}
-		return leadingFieldScratchValues;
 	}
 
 	private long preparedWriteReservation(int statementCount) {
@@ -6463,6 +6502,7 @@ class TripleStore implements Closeable {
 				incrementContext(stack, contextId, contexts.get(contextId));
 			}
 		}
+		addStatementCount(true, added);
 		return added;
 	}
 
@@ -6586,6 +6626,7 @@ class TripleStore implements Closeable {
 				}
 			}
 			updater.flush(mainWriteCursor, keyVal, dataVal);
+			addStatementCount(explicit, addedCount);
 			int[] mainOrderIndices = ensureAlignedWriteMainOrderIndices(addedCount);
 			System.arraycopy(sortedIndices, 0, mainOrderIndices, 0, addedCount);
 			LongIterator contextIterator = contextIncrements.keysView().longIterator();
@@ -6637,7 +6678,7 @@ class TripleStore implements Closeable {
 							index.getFieldSeq())) {
 							System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
 						}
-						sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj, context);
+						indexUpdater.sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj, context);
 						currentFieldSeq = index.getFieldSeq();
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
 							? getAlignedWriteCursor(i, index, explicit, cursorHandle)

@@ -190,6 +190,8 @@ final class TripleStoreIndexUpdater {
 		private int[] scratchOrder = new int[0];
 		private long[] fieldValues = new long[0];
 		private long[] scratchValues = new long[0];
+		private int[] scratchIndices = new int[0];
+		private boolean[] groupStart = new boolean[0];
 		private final int[] radixCounts = new int[256];
 		private final int[] radixOffsets = new int[256];
 
@@ -200,6 +202,8 @@ final class TripleStoreIndexUpdater {
 				scratchOrder = new int[count];
 				fieldValues = new long[count];
 				scratchValues = new long[count];
+				scratchIndices = new int[count];
+				groupStart = new boolean[count];
 			}
 		}
 	}
@@ -231,11 +235,6 @@ final class TripleStoreIndexUpdater {
 		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
 		workspace.ensureCapacity(count);
 		int[] currentOrder = workspace.currentOrder;
-		int[] scratchOrder = workspace.scratchOrder;
-		long[] fieldValues = workspace.fieldValues;
-		long[] scratchValues = workspace.scratchValues;
-		int[] radixCounts = workspace.radixCounts;
-		int[] radixOffsets = workspace.radixOffsets;
 		System.arraycopy(mainOrder, 0, currentOrder, 0, count);
 
 		SortedIndexEntries[] sortedIndexes = new SortedIndexEntries[indexes.size() - 1];
@@ -248,8 +247,7 @@ final class TripleStoreIndexUpdater {
 						index.getFieldSeq())) {
 					System.arraycopy(mainOrder, 0, currentOrder, 0, count);
 				}
-				sortStatementIndicesByLeadingField(currentOrder, count, index, subj, pred, obj, context,
-						fieldValues, scratchOrder, scratchValues, radixCounts, radixOffsets);
+				sortStatementIndicesByLeadingFields(currentOrder, count, index, subj, pred, obj, context);
 				currentFieldSequence = index.getFieldSeq();
 				sortedIndexes[indexPosition - 1] = prepareIndexEntries(indexPosition, index, currentOrder, subj, pred,
 						obj, context, count);
@@ -471,29 +469,11 @@ final class TripleStoreIndexUpdater {
 		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
 		workspace.ensureCapacity(count);
 		int[] statementIndices = workspace.mainOrder;
-		int[] scratchIndices = workspace.scratchOrder;
-		long[] fieldValues = workspace.fieldValues;
-		long[] scratchValues = workspace.scratchValues;
-		int[] radixCounts = workspace.radixCounts;
-		int[] radixOffsets = workspace.radixOffsets;
 		for (int i = 0; i < count; i++) {
 			statementIndices[i] = i;
 		}
-		StatementFieldValueAccessor[] accessors = mainIndex.fieldValueAccessors;
-		for (int fieldIndex = accessors.length - 1; fieldIndex >= 0; fieldIndex--) {
-			StatementFieldValueAccessor accessor = accessors[fieldIndex];
-			for (int i = 0; i < count; i++) {
-				fieldValues[i] = accessor.get(subj, pred, obj, context, statementIndices[i]);
-			}
-			LeadingFieldSorters.lsdRadixSort(statementIndices, fieldValues, count, scratchIndices, scratchValues,
-					radixCounts, radixOffsets);
-		}
+		sortStatementIndicesByLeadingFields(statementIndices, count, mainIndex, subj, pred, obj, context);
 		return statementIndices;
-	}
-
-	private SortedIndexEntries[] prepareSecondaryIndexChain(int[] indexPositions, int[] mainOrder, long[] subj,
-			long[] pred, long[] obj, long[] context, int count) {
-		return prepareSecondaryIndexChain(indexSupplier.get(), indexPositions, mainOrder, subj, pred, obj, context, count);
 	}
 
 	private SortedIndexEntries[] prepareSecondaryIndexChain(List<TripleIndex> indexes, int[] indexPositions,
@@ -501,11 +481,6 @@ final class TripleStoreIndexUpdater {
 		PreparedSortWorkspace workspace = preparedSortWorkspace.get();
 		workspace.ensureCapacity(count);
 		int[] currentOrder = workspace.currentOrder;
-		int[] scratchOrder = workspace.scratchOrder;
-		long[] fieldValues = workspace.fieldValues;
-		long[] scratchValues = workspace.scratchValues;
-		int[] radixCounts = workspace.radixCounts;
-		int[] radixOffsets = workspace.radixOffsets;
 		System.arraycopy(mainOrder, 0, currentOrder, 0, count);
 
 		TripleIndex mainIndex = indexes.getFirst();
@@ -519,8 +494,7 @@ final class TripleStoreIndexUpdater {
 						index.getFieldSeq())) {
 					System.arraycopy(mainOrder, 0, currentOrder, 0, count);
 				}
-				sortStatementIndicesByLeadingField(currentOrder, count, index, subj, pred, obj, context,
-						fieldValues, scratchOrder, scratchValues, radixCounts, radixOffsets);
+				sortStatementIndicesByLeadingFields(currentOrder, count, index, subj, pred, obj, context);
 				currentFieldSequence = index.getFieldSeq();
 				sortedIndexes[resultIndex] = prepareIndexEntries(indexPosition, index, currentOrder, subj, pred, obj,
 						context, count);
@@ -558,6 +532,64 @@ final class TripleStoreIndexUpdater {
 		sortStatementIndicesByLeadingField(statementIndices, length, index, subj, pred, obj, context,
 				workspace.fieldValues, workspace.scratchOrder, workspace.scratchValues, workspace.radixCounts,
 				workspace.radixOffsets);
+	}
+
+	void sortStatementIndicesByLeadingFields(int[] idx, int length, TripleIndex index,
+		long[] subj, long[] pred, long[] obj, long[] context) {
+		if (length < 2) {
+			return;
+		}
+		PreparedSortWorkspace ws = preparedSortWorkspace.get();
+		ws.ensureCapacity(length);
+		long[] keys = ws.fieldValues;
+		boolean[] groupStart = ws.groupStart; // new, capacity >= length
+
+		Arrays.fill(groupStart, 0, length, false);
+		groupStart[0] = true;
+		boolean hasOpenGroup = true;
+
+		for (StatementFieldValueAccessor acc : index.fieldValueAccessors) {
+			if (!hasOpenGroup) {
+				break;
+			}
+			long[] fv = acc.get(subj, pred, obj, context);
+			for (int k = 0; k < length; k++) {
+				keys[k] = fv[idx[k]];          // gather in current order
+			}
+
+			hasOpenGroup = false;
+			int from = 0;
+			while (from < length) {
+				int to = from + 1;
+				while (to < length && !groupStart[to]) {
+					to++;
+				}
+				if (to - from > 1) {
+					if (!isSorted(keys, from, to)) {
+						LeadingFieldSorters.lsdRadixSort(idx, keys, from, to,
+							ws.scratchIndices, ws.scratchValues,
+							ws.radixCounts, ws.radixOffsets);
+					}
+					for (int k = from + 1; k < to; k++) {   // refine groups
+						if (keys[k] != keys[k - 1]) {
+							groupStart[k] = true;
+						} else {
+							hasOpenGroup = true;
+						}
+					}
+				}
+				from = to;
+			}
+		}
+	}
+
+	private static boolean isSorted(long[] a, int from, int to) {
+		for (int i = from + 1; i < to; i++) {
+			if (a[i - 1] > a[i]) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private SortedIndexEntries prepareIndexEntries(int indexPosition, TripleIndex index, int[] statementIndices,

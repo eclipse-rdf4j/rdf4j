@@ -218,6 +218,8 @@ final class LegacyStoreDiscovery {
 		openKnownDatabase(stack, valuesTxn, ValueStore.TERM_INDEX_MANIFEST_DATABASE, valueDatabases, true);
 		openKnownDatabase(stack, triplesTxn, "contexts", tripleDatabases, true);
 		openKnownDatabase(stack, triplesTxn, TripleStore.NAMESPACE_DATABASE_NAME, tripleDatabases, true);
+		// Older generations acquire statement-count metadata when TripleStore opens them.
+		openKnownDatabase(stack, triplesTxn, TripleStore.META_DATABASE_NAME, tripleDatabases, false);
 		// Every legal permutation is probed, including absent indexes, so incomplete pairs and staged term indexes
 		// force ordinary recovery. This fixed work is independent of the number of dictionary or statement entries.
 		for (String spec : INDEX_SPECS) {
@@ -636,6 +638,9 @@ final class LegacyStoreDiscovery {
 			StoreProperties properties, boolean legacy, LegacyRetirementQueue retirementQueue) throws IOException {
 		Set<String> expectedTriples = new LinkedHashSet<>();
 		expectedTriples.add("contexts");
+		if (tripleDatabases.containsKey(TripleStore.META_DATABASE_NAME)) {
+			expectedTriples.add(TripleStore.META_DATABASE_NAME);
+		}
 		if (tripleDatabases.containsKey(TripleStore.NAMESPACE_DATABASE_NAME)) {
 			expectedTriples.add(TripleStore.NAMESPACE_DATABASE_NAME);
 		}

@@ -1055,6 +1055,11 @@ class LmdbInitialRunImportTest {
 		assertThat(sail.getBackingStore().explicitIndexEntryCounts())
 				.hasSize(3)
 				.allSatisfy((index, count) -> assertThat(count).as("anchor count for %s", index).isEqualTo(chunks));
+		TripleStore triples = sail.getBackingStore().getTripleStore();
+		try (var reader = triples.getTxnManager().createReadTxn()) {
+			assertThat(triples.countTriples(reader, -1, -1, -1, -1, true)).isEqualTo(2L * subjects);
+			assertThat(triples.countTriples(reader, -1, -1, -1, -1, false)).isZero();
+		}
 	}
 
 	private static LmdbStoreConfig config() {
