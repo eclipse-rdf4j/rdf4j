@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -173,7 +174,13 @@ public class SPARQLQueries {
 	/** An invocation-owned executable request and identity seeds, never additional result bindings. */
 	@InternalUseOnly
 	public record ServiceRequest(Service service, BindingSet parameterIdentities,
+			BindingSet nativeParameters,
 			Function<BindingSet, BindingSet> inputPreparation) {
+		public ServiceRequest(Service service, BindingSet parameterIdentities,
+				Function<BindingSet, BindingSet> inputPreparation) {
+			this(service, parameterIdentities, EmptyBindingSet.getInstance(), inputPreparation);
+		}
+
 		public BindingSet prepareRuntimeInput(BindingSet input) {
 			return inputPreparation.apply(input);
 		}
@@ -186,20 +193,35 @@ public class SPARQLQueries {
 	@InternalUseOnly
 	public static ServiceRequest prepareServiceRequest(Service service, List<BindingSet> runtimeRows,
 			Object receivingScope, boolean referencesSupported, boolean canonicalIDs) {
-		if (service.getPreparedInputBindings().isEmpty()) {
-			return new ServiceRequest(service, EmptyBindingSet.getInstance(),
+		Service.PreparedBindingRequest previous = service.getPreparedBindingRequest();
+		if (previous != null && (!previous.executableSource().equals(service.getAskQueryString())
+				|| !Objects.equals(previous.baseURI(), service.getBaseURI())
+				|| !service.getPreparedInputBindings().isEmpty())) {
+			throw new QueryEvaluationException("Unsupported prepared binding transport: changed executable SERVICE");
+		}
+		Map<String, Value> logicalParameters = previous == null ? service.getPreparedInputBindings()
+				: previous.parameters();
+		if (logicalParameters.isEmpty()) {
+			return new ServiceRequest(service, EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance(),
 					input -> FederatedServiceIdentity.prepareBindings(service, input, receivingScope,
 							referencesSupported, canonicalIDs));
 		}
-		MapBindingSet parameters = new MapBindingSet(service.getPreparedInputBindings().size());
-		MapBindingSet originals = new MapBindingSet(service.getPreparedInputBindings().size());
-		service.getPreparedInputBindings().forEach((name, value) -> {
+		String logicalSource = previous == null ? service.getAskQueryString() : previous.source();
+		MapBindingSet parameters = new MapBindingSet(logicalParameters.size());
+		MapBindingSet originals = new MapBindingSet(logicalParameters.size());
+		logicalParameters.forEach((name, value) -> {
 			originals.addBinding(name, value);
 			parameters.addBinding(name, RemoteBNode.toRemoteValue(value, receivingScope, referencesSupported,
 					canonicalIDs));
 		});
 		PreparedServiceQuerySpecializer.Result specialized = PreparedServiceQuerySpecializer.specialize(
-				service.getAskQueryString(), service.getBaseURI(), parameters);
+				logicalSource, service.getBaseURI(), parameters);
+		Map<String, Value> captured = new LinkedHashMap<>();
+		MapBindingSet nativeParameters = new MapBindingSet(specialized.capturedNames().size());
+		for (String name : specialized.capturedNames()) {
+			captured.put(name, logicalParameters.get(name));
+			nativeParameters.addBinding(name, parameters.getValue(name));
+		}
 		String request = specialized.source();
 		try {
 			ASTQueryContainer syntax = SyntaxTreeBuilder.parseQuery(request);
@@ -214,8 +236,11 @@ public class SPARQLQueries {
 			}
 			Service invocation = Service.fromBody(service.getServiceRef().clone(), ask.getArg().clone(), bodySource,
 					service.getPrefixDeclarations(), service.getBaseURI(), service.isSilent());
+			invocation.setPreparedBindingRequest(
+					new Service.PreparedBindingRequest(logicalSource, service.getBaseURI(), captured,
+							invocation.getAskQueryString()));
 			initializeServiceReferences(invocation);
-			ServiceRequest prepared = new ServiceRequest(invocation, originals, input -> {
+			ServiceRequest prepared = new ServiceRequest(invocation, originals, nativeParameters, input -> {
 				BindingSet transported = FederatedServiceIdentity.prepareBindings(invocation, input, receivingScope,
 						referencesSupported, canonicalIDs);
 				return transported;

@@ -80,6 +80,11 @@ import org.slf4j.LoggerFactory;
  */
 public class FedXConnection extends AbstractSailConnection {
 
+	@Override
+	public boolean supportsSPARQLBindingTransport() {
+		return true;
+	}
+
 	private static final Logger log = LoggerFactory.getLogger(FedXConnection.class);
 	protected final FedX federation;
 	protected final FederationContext federationContext;

@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan;
 import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.Mode;
@@ -26,7 +27,10 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 public class BindingAssignerOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr expression, Dataset dataset, BindingSet bindings) {
-		plan(expression, bindings, Mode.RUNTIME_INPUT).apply();
+		BindingOptimizationContext context = BindingOptimizationContext.forOptimizer(expression, bindings);
+		if (context.mode() != BindingOptimizationContext.Mode.EMPTY_INPUT) {
+			plan(expression, context.evaluationInput(), Mode.RUNTIME_INPUT).apply();
+		}
 	}
 
 	/**

@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -102,6 +103,8 @@ class RepositoryFederatedBlankNodeScopeTest {
 	@Test
 	void directCanonicalAskRestoresTrustedRemoteIdentity() {
 		var fixture = fixture();
+		// This test records serialized initial mappings in the executable SPARQL request.
+		when(fixture.connection.supportsSPARQLBindingTransport()).thenReturn(true);
 		Object epoch = new Object();
 		fixture.service.setBNodeIdentityScope(epoch);
 		fixture.service.setBlankNodeReferencesSupported(true);
@@ -147,6 +150,65 @@ class RepositoryFederatedBlankNodeScopeTest {
 		verify(fixture.connection, times(1)).prepareBooleanQuery(any(QueryLanguage.class), anyString(), isNull());
 		verify(fixture.ask, times(1)).evaluate();
 		assertEquals(snapshot, logical);
+	}
+
+	@Test
+	void nativeCanonicalAskAndSelectRetainTrustedIdentityThroughApiBindings() {
+		var fixture = fixture();
+		Object epoch = new Object();
+		fixture.service.setBNodeIdentityScope(epoch);
+		fixture.service.setBlankNodeReferencesSupported(true);
+		fixture.service.setCanonicalBNodeIDsSupported(true);
+		BNode canonical = VF.createBNode("canonical-remote");
+		Value alias = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, epoch, true).map(canonical);
+		BNode unrelated = VF.createBNode("canonical-remote");
+		MapBindingSet input = binding("s", alias);
+		input.addBinding("local", unrelated);
+		MapBindingSet askInputs = new MapBindingSet();
+		doAnswer(call -> {
+			askInputs.setBinding(call.getArgument(0), call.getArgument(1));
+			return null;
+		}).when(fixture.ask).setBinding(anyString(), any(Value.class));
+		when(fixture.ask.evaluate()).thenAnswer(ignored -> canonical.equals(askInputs.getValue("s")));
+		Service logical = service(false);
+		Service snapshot = logical.clone();
+		assertTrue(fixture.service.ask(logical, input, null));
+		assertEquals(canonical, askInputs.getValue("s"));
+		assertFalse(askInputs.getValue("s") instanceof RemoteBNode);
+		assertFalse(askInputs.hasBinding("local"));
+
+		TupleQuery select = mock(TupleQuery.class);
+		MapBindingSet selectInputs = new MapBindingSet();
+		when(fixture.connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), isNull())).thenReturn(select);
+		doAnswer(call -> {
+			selectInputs.setBinding(call.getArgument(0), call.getArgument(1));
+			return null;
+		}).when(select).setBinding(anyString(), any(Value.class));
+		MapBindingSet remote = binding("s", canonical);
+		remote.addBinding("o", canonical);
+		when(select.evaluate()).thenAnswer(ignored -> new IteratingTupleQueryResult(List.of("s", "o"),
+				canonical.equals(selectInputs.getValue("s")) ? List.of(remote) : List.of()));
+		try (var rows = fixture.service.select(logical, Set.of("s", "o"), input, null)) {
+			BindingSet row = rows.next();
+			assertSame(alias, row.getValue("s"));
+			assertSame(alias, row.getValue("o"));
+			assertSame(unrelated, row.getValue("local"));
+			assertFalse(rows.hasNext());
+		}
+		assertEquals(canonical, selectInputs.getValue("s"));
+		assertFalse(selectInputs.getValue("s") instanceof RemoteBNode);
+		assertFalse(selectInputs.hasBinding("local"));
+		assertSame(alias, input.getValue("s"));
+		assertSame(unrelated, input.getValue("local"));
+		assertEquals(snapshot, logical);
+		var askSource = ArgumentCaptor.forClass(String.class);
+		verify(fixture.connection).prepareBooleanQuery(eq(QueryLanguage.SPARQL), askSource.capture(), isNull());
+		var selectSource = ArgumentCaptor.forClass(String.class);
+		verify(fixture.connection).prepareTupleQuery(eq(QueryLanguage.SPARQL), selectSource.capture(), isNull());
+		assertFalse(askSource.getValue().contains("VALUES"));
+		assertFalse(selectSource.getValue().contains("VALUES"));
+		verify(fixture.ask).evaluate();
+		verify(select).evaluate();
 	}
 
 	@Test

@@ -98,6 +98,19 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
  */
 public interface RepositoryConnection extends AutoCloseable {
 
+	/**
+	 * Whether this connection evaluates SPARQL requests containing serialized initial solution mappings with their
+	 * complete SPARQL semantics, including VALUES, UNDEF, scope and compatible-mapping joins. SERVICE evaluation uses
+	 * this capability to transport runtime input rows in the query source. Parsing SPARQL alone does not imply this
+	 * capability: providers that consume inputs exclusively through {@link Query#setBinding(String, Value)} should
+	 * retain the default.
+	 *
+	 * @return {@code true} when serialized initial mappings are supported; {@code false} to use native query bindings.
+	 */
+	default boolean supportsSPARQLBindingTransport() {
+		return false;
+	}
+
 	/** Syntax policy for subsequently prepared queries and updates, independent of Rio parser settings. */
 	default QueryParseOptions getQueryParseOptions() {
 		return QueryParseOptions.DEFAULT;

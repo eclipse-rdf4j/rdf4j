@@ -409,7 +409,8 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
 			BindingSet bindings) {
-		return optimizeWithBindingContext(expr, evaluationStatistics, BindingOptimizationContext.runtime(bindings));
+		return optimizeWithBindingContext(expr, evaluationStatistics,
+				BindingOptimizationContext.resolve(expr, bindings));
 	}
 
 	@Override
@@ -472,18 +473,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		Dataset queryDataset = FedXUtil.toRdfDataset(queryInfo.getDataset());
 		QueryEvaluationUtility.pinFunctions(query);
 		if (preparedMode) {
-			for (var step : getBindingPreparationSteps()) {
-				QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(query, root -> {
-					step.lower(root, queryDataset);
-					return root;
-				});
-			}
-			BindingSet capture = parameters;
-			QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(query, root -> {
-				QueryEvaluationUtility.pinFunctions(root);
-				StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimizeForPreparedQuery(root, capture);
-				return root;
-			});
+			BindingOptimizationContext.forOptimizer(query, parameters);
 		} else {
 			QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(query, root -> {
 				StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimize(root, queryDataset, bindings);

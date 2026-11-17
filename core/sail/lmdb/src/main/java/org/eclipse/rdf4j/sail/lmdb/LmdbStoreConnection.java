@@ -1031,8 +1031,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			if (explanationCapture != null) {
 				// The optimized model itself escapes through Explanation after its iteration is closed.
 				// Complete its values while this read attempt still owns its epoch and native capabilities.
-				detachTupleValues(attemptExpression);
-				explanationCapture.tupleExpr = attemptExpression;
+				TupleExpr explainedExpression = super.getTupleExprForExplanation(attemptExpression);
+				detachTupleValues(explainedExpression);
+				explanationCapture.tupleExpr = explainedExpression;
 			}
 			return evaluation;
 		};

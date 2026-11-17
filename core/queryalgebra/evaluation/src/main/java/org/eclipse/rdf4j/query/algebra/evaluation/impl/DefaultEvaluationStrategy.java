@@ -141,7 +141,6 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
-import org.eclipse.rdf4j.query.algebra.evaluation.BindingContextAwareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
@@ -196,7 +195,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
@@ -464,50 +462,36 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
-		return optimizeWithBindingContext(expr, evaluationStatistics, BindingOptimizationContext.runtime(bindings));
+		return optimizeWithBindingContext(expr, evaluationStatistics,
+				BindingOptimizationContext.resolve(expr, bindings));
 	}
 
 	@Override
 	public TupleExpr optimizeForEmptyInput(TupleExpr expr, EvaluationStatistics evaluationStatistics,
 			BindingSet parameters) {
-		if (preparedBindingStrategyClass() != getClass()) {
-			if (parameters == EmptyBindingSet.getInstance()) {
-				return optimize(expr, evaluationStatistics, parameters);
-			}
-			throw new QueryEvaluationException("Evaluation strategy has not opted in to prepared query bindings: "
-					+ getClass().getName());
+		if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
 		}
-		if (GraphFrameBindings.from(parameters) != GraphFrameBindings.EMPTY) {
-			throw new QueryEvaluationException("Cannot capture private graph-frame binding metadata");
+		synchronized (this) {
+			queryPreparationStarted = true;
 		}
-		return optimizeWithBindingContext(expr, evaluationStatistics,
-				BindingOptimizationContext.emptyInput(parameters));
+		return PreparedQuery.optimize(this, expr, evaluationStatistics, parameters, dataset,
+				pipeline.getPreparationSteps());
 	}
 
 	/**
-	 * Declares the exact concrete strategy class that adopts empty-input preparation.
-	 * <p>
-	 * A subclass that opts in must override this method and return its own class literal, for example
-	 * {@code MyStrategy.class}. Do not return {@code getClass()}: an inherited declaration must not authorize further
-	 * subclasses whose legacy optimization overrides may have different semantics.
-	 * <p>
-	 * An adopted subclass should move preparation-sensitive logic from its
-	 * {@link #optimize(TupleExpr, EvaluationStatistics, BindingSet) optimize} override to
-	 * {@link #optimizeWithBindingContext(TupleExpr, EvaluationStatistics, BindingOptimizationContext)}, which receives
-	 * both modes. An old optimize override remains a runtime dispatch point and is not called for an adopted
-	 * empty-input preparation. An unadopted legacy strategy can still dispatch through that override when the input is
-	 * the canonical empty binding set, for which capture is vacuous.
+	 * Retained for subclasses compiled against the former opt-in mechanism. Preparation now preserves the existing
+	 * virtual optimize entry point and validates capture at the actual algebra boundary.
 	 *
-	 * @return the concrete strategy class that declares support
+	 * @deprecated no class opt-in is required
 	 */
+	@Deprecated
 	protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
 		return DefaultEvaluationStrategy.class;
 	}
 
 	/**
-	 * Shared invocation boundary used by this strategy for runtime optimization and adopted empty-input preparation.
-	 * Subclasses that opt in should implement preparation-sensitive envelopes here instead of relying on an override of
-	 * {@link #optimize(TupleExpr, EvaluationStatistics, BindingSet)} to intercept both modes.
+	 * Shared implementation beneath the existing virtual optimize entry point in both invocation modes.
 	 *
 	 * @param expr                 expression to optimize
 	 * @param evaluationStatistics statistics used by optimizers
@@ -535,30 +519,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			QueryEvaluationUtility.pinFunctions(prepared);
 			TupleExpr optimized = prepared;
 			if (context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT) {
-				for (QueryOptimizerPipeline.PreparationStep step : pipeline.getPreparationSteps()) {
-					optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, root -> {
-						step.lower(root, dataset);
-						return root;
-					});
-				}
-				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, root -> {
-					QueryEvaluationUtility.pinFunctions(root);
-					StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimizeForPreparedQuery(root, parameters);
-					return root;
-				});
+				BindingOptimizationContext.forOptimizer(optimized, parameters);
 			}
 			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-				if (context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT
-						&& optimizer.getClass() == BindingAssignerOptimizer.class) {
-					continue; // The standard parameter assignment has already run, with completeness validation.
-				}
 				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, optimizerRoot -> {
-					if (optimizer instanceof BindingContextAwareOptimizer aware
-							&& optimizer.getClass() == aware.bindingContextOptimizerClass()) {
-						aware.optimizeWithBindingContext(optimizerRoot, dataset, context);
-					} else {
-						optimizer.optimize(optimizerRoot, dataset, context.evaluationInput());
-					}
+					BindingSet legacy = PreparedQuery.optimizerInput(optimizerRoot, parameters);
+					BindingSet selected = pipeline.getOptimizerInputBindings(optimizer, legacy);
+					optimizer.optimize(optimizerRoot, dataset, PreparedQuery.optimizerInput(optimizerRoot, selected));
 					return optimizerRoot;
 				});
 			}

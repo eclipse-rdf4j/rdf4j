@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -53,6 +54,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class RepositoryCanonicalBatchAliasesTest {
 
@@ -193,6 +195,8 @@ class RepositoryCanonicalBatchAliasesTest {
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		TupleQuery query = mock(TupleQuery.class);
 		when(repository.getConnection()).thenReturn(connection);
+		// The endpoint response below models serialized row-index correlation, rather than native bindings.
+		when(connection.supportsSPARQLBindingTransport()).thenReturn(true);
 		when(connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), isNull())).thenReturn(query);
 		var row0 = new MapBindingSet();
 		row0.addBinding("__rowIdx", vf.createLiteral(0));
@@ -218,12 +222,28 @@ class RepositoryCanonicalBatchAliasesTest {
 			assertEquals(second, rows.next().getValue("s"));
 			assertFalse(rows.hasNext());
 		}
+		var source = ArgumentCaptor.forClass(String.class);
+		verify(connection).prepareTupleQuery(any(QueryLanguage.class), source.capture(), isNull());
+		List<BindingSet> transported = new ArrayList<>();
+		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, source.getValue(), null)
+				.getTupleExpr()
+				.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+					@Override
+					public void meet(BindingSetAssignment assignment) {
+						assignment.getBindingSets().forEach(transported::add);
+					}
+				});
+		assertEquals(2, transported.size());
+		assertEquals(vf.createLiteral("0"), transported.get(0).getValue("__rowIdx"));
+		assertEquals(vf.createLiteral("1"), transported.get(1).getValue("__rowIdx"));
+		assertEquals(vf.createBNode("canonical"), transported.get(0).getValue("s"));
+		assertEquals(vf.createBNode("canonical"), transported.get(1).getValue("s"));
 	}
 
 	@Test
 	void singleInvocationFallbackRetainsEachCanonicalInputAlias() {
 		var vf = SimpleValueFactory.getInstance();
-		for (String reason : List.of("oversized", "subquery", "rewrite-failure")) {
+		for (String reason : List.of("oversized", "subquery", "rewrite-failure", "native-provider")) {
 			Object epoch = new Object();
 			Value first = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, epoch, true)
 					.map(vf.createBNode("canonical"));
@@ -238,6 +258,7 @@ class RepositoryCanonicalBatchAliasesTest {
 			RepositoryConnection connection = mock(RepositoryConnection.class);
 			TupleQuery query = mock(TupleQuery.class);
 			when(repository.getConnection()).thenReturn(connection);
+			when(connection.supportsSPARQLBindingTransport()).thenReturn(reason.equals("rewrite-failure"));
 			when(connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), isNull())).thenAnswer(call -> {
 				String text = call.getArgument(1);
 				if (reason.equals("rewrite-failure") && text.contains("VALUES")) {
@@ -277,6 +298,8 @@ class RepositoryCanonicalBatchAliasesTest {
 			}
 			assertEquals(List.of(first, second), aliases, reason);
 			verify(query, times(1)).evaluate();
+			verify(connection, times(reason.equals("rewrite-failure") ? 2 : 1))
+					.prepareTupleQuery(any(QueryLanguage.class), anyString(), isNull());
 		}
 	}
 }

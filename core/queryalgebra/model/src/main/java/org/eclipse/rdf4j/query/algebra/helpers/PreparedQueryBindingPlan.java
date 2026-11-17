@@ -246,7 +246,10 @@ public final class PreparedQueryBindingPlan {
 			if (node instanceof TupleExpr tuple) {
 				if (!analysis.hasKnownBindingContract(tuple) || !context.bindingDomainKnown()) {
 					if (requireAssignment) {
-						throw unsupportedBindings(node);
+						throw new UnsupportedPreparedBindings(
+								"Cannot preserve query bindings through unmodelled binding scope: "
+										+ node.getClass().getName(),
+								true);
 					}
 					return false;
 				}
@@ -551,9 +554,20 @@ public final class PreparedQueryBindingPlan {
 
 	public static final class UnsupportedPreparedBindings extends QueryEvaluationException {
 		private static final long serialVersionUID = 1L;
+		private final boolean requiresScopeLowering;
 
 		private UnsupportedPreparedBindings(String message) {
+			this(message, false);
+		}
+
+		private UnsupportedPreparedBindings(String message, boolean requiresScopeLowering) {
 			super(message);
+			this.requiresScopeLowering = requiresScopeLowering;
+		}
+
+		/** Only unknown scope contracts may be resolved by an explicit structural lowering. */
+		public boolean requiresScopeLowering() {
+			return requiresScopeLowering;
 		}
 	}
 }

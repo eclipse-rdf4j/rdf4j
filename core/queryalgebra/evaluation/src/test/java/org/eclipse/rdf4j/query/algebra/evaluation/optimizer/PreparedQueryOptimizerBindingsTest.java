@@ -19,12 +19,17 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -32,6 +37,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -78,14 +84,18 @@ import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.WindowElem;
 import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -96,6 +106,267 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.junit.jupiter.api.Test;
 
 class PreparedQueryOptimizerBindingsTest {
+	@Test
+	void repeatedPreparationCapturesFreshMutableValuesWithoutChangingSource() {
+		var vf = SimpleValueFactory.getInstance();
+		for (boolean queryRoot : List.of(false, true)) {
+			var row = new MapBindingSet();
+			row.addBinding("x", vf.createLiteral(1));
+			List<BindingSet> sourceRows = List.of(row);
+			var values = new BindingSetAssignment();
+			values.setBindingNames(Set.of("x"));
+			values.setBindingSets(sourceRows);
+			TupleExpr expression = queryRoot ? new QueryRoot(values) : values;
+			var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			strategy.setOptimizerPipeline(List::of);
+			TupleExpr first = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(),
+					EmptyBindingSet.getInstance());
+			row.setBinding("x", vf.createLiteral(2));
+			TupleExpr second = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(),
+					EmptyBindingSet.getInstance());
+			try (var rows = strategy.precompile(first).evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).as("first invocation, queryRoot=%s", queryRoot)
+						.extracting(result -> result.getValue("x"))
+						.containsExactly(vf.createLiteral(1));
+			}
+			try (var rows = strategy.precompile(second).evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).as("second invocation, queryRoot=%s", queryRoot)
+						.extracting(result -> result.getValue("x"))
+						.containsExactly(vf.createLiteral(2));
+			}
+			assertThat(values.getBindingSets()).as("caller VALUES source, queryRoot=%s", queryRoot)
+					.isSameAs(sourceRows);
+			assertThat(expression.getParentNode()).as("caller parent, queryRoot=%s", queryRoot).isNull();
+		}
+	}
+
+	@Test
+	void repeatedPreparationOwnsAlgebraAndKeepsEarlierPlansStable() {
+		var vf = SimpleValueFactory.getInstance();
+		var firstInput = new MapBindingSet();
+		firstInput.addBinding("x", vf.createLiteral(1));
+		var secondInput = new MapBindingSet();
+		secondInput.addBinding("x", vf.createLiteral(2));
+		List<BindingSet> inputs = List.of(firstInput, secondInput, EmptyBindingSet.getInstance());
+		for (boolean queryRoot : List.of(false, true)) {
+			TupleExpr expression = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result"));
+			if (queryRoot) {
+				expression = new QueryRoot(expression);
+			}
+			TupleExpr original = expression.clone();
+			var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			strategy.setOptimizerPipeline(List::of);
+			List<TupleExpr> plans = new ArrayList<>();
+			for (BindingSet input : inputs) {
+				plans.add(strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input));
+				assertThat(expression).as("caller algebra, queryRoot=%s, input=%s", queryRoot, input)
+						.isEqualTo(original);
+				assertThat(expression.getParentNode()).as("caller parent, queryRoot=%s", queryRoot).isNull();
+			}
+			for (int i = 0; i < plans.size(); i++) {
+				try (var rows = strategy.precompile(plans.get(i)).evaluate(EmptyBindingSet.getInstance())) {
+					assertThat(QueryResults.asList(rows))
+							.as("prepared result, queryRoot=%s, invocation=%s", queryRoot, i)
+							.extracting(row -> row.getValue("result"))
+							.containsExactly(inputs.get(i).getValue("x"));
+				}
+			}
+		}
+	}
+
+	@Test
+	void serializedLegacyBindingViewRetainsValuesWithoutInvocationAuthority() throws Exception {
+		AtomicReference<BindingSet> observed = new AtomicReference<>();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+				observed.set(bindings);
+				return super.optimize(expression, statistics, bindings);
+			}
+		};
+		strategy.optimizeForEmptyInput(constructedProjection(), new EvaluationStatistics(), parameters());
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (var output = new ObjectOutputStream(bytes)) {
+			output.writeObject(observed.get());
+		}
+		BindingSet restored;
+		try (var input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			restored = (BindingSet) input.readObject();
+		}
+		assertThat(restored).isEqualTo(parameters());
+		var independent = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		independent.setOptimizerPipeline(List::of);
+		TupleExpr runtime = independent.optimize(constructedProjection(), new EvaluationStatistics(), restored);
+		try (var rows = independent.precompile(runtime).evaluate(restored)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result"))
+					.containsExactly(parameters().getValue("x"), SimpleValueFactory.getInstance().createLiteral(2));
+		}
+	}
+
+	@Test
+	void standaloneStrategyDefaultPreparationOwnsItsSafetyScope() {
+		var strategy = new DelegatingStrategy();
+		for (BindingSet input : List.of(EmptyBindingSet.getInstance(), parameters())) {
+			var expression = new QueryRoot(
+					new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result")));
+			TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), input);
+			try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result"))
+						.containsExactly(input.getValue("x"));
+			}
+		}
+	}
+
+	@Test
+	void partialOptimizerCannotCompleteCaptureForOpaqueSibling() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+				var union = (Union) ((QueryRoot) expression).getArg();
+				new ConstantOptimizer(this).optimize(union.getLeftArg(), null, new QueryBindingSet(bindings));
+				var opaque = (OpaqueScope) union.getRightArg();
+				opaque.replaceWith(opaque.getArg());
+				return super.optimize(expression, statistics, bindings);
+			}
+		};
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new Union(
+				new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result")),
+				new OpaqueScope(new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result")))));
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters()))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("OpaqueScope");
+	}
+
+	@Test
+	void nestedInvocationsAndInactiveClonesDoNotAcquirePreparedInputMode() {
+		AtomicReference<TupleExpr> clone = new AtomicReference<>();
+		var independent = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		independent.setOptimizerPipeline(List::of);
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+				clone.set(expression.clone());
+				TupleExpr runtime = independent.optimize(constructedProjection(), statistics, parameters());
+				try (var rows = independent.precompile(runtime).evaluate(parameters())) {
+					assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result"))
+							.containsExactly(parameters().getValue("x"),
+									SimpleValueFactory.getInstance().createLiteral(2));
+				}
+				return super.optimize(expression, statistics, bindings);
+			}
+		};
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(constructedProjection(), new EvaluationStatistics(),
+				parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result"))
+					.containsExactly(null, SimpleValueFactory.getInstance().createLiteral(2));
+		}
+		new ConstantOptimizer(independent).optimize(clone.get(), null, parameters());
+		try (var rows = independent.precompile(clone.get()).evaluate(parameters())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result"))
+					.containsExactly(parameters().getValue("x"), SimpleValueFactory.getInstance().createLiteral(2));
+		}
+	}
+
+	@Test
+	void legacyStrategyEnvelopeAndCompilationRunForPreparedBindings() {
+		AtomicInteger optimizations = new AtomicInteger();
+		AtomicInteger compilations = new AtomicInteger();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+				optimizations.incrementAndGet();
+				assertThat(bindings.getValue("x")).isEqualTo(parameters().getValue("x"));
+				return new QueryRoot(((QueryRoot) super.optimize(expression, statistics, bindings)).getArg());
+			}
+
+			@Override
+			public QueryEvaluationStep precompile(TupleExpr expression) {
+				compilations.incrementAndGet();
+				return super.precompile(expression);
+			}
+		};
+		strategy.setOptimizerPipeline(List::of);
+		TupleExpr prepared = strategy.optimizeForEmptyInput(constructedProjection(), new EvaluationStatistics(),
+				parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result"))
+					.containsExactly(null, SimpleValueFactory.getInstance().createLiteral(2));
+		}
+		assertThat(optimizations).hasValue(1);
+		assertThat(compilations).hasValue(1);
+	}
+
+	@Test
+	void directCoreOptimizerResolvesPreparationAfterLegacyBindingCopy() {
+		AtomicInteger calls = new AtomicInteger();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+				calls.incrementAndGet();
+				var copy = new QueryBindingSet(bindings);
+				new ConstantOptimizer(this).optimize(expression, null, copy);
+				TupleExpr optimized = super.optimize(expression, statistics, bindings);
+				new ConstantOptimizer(this).optimize(optimized, null, new QueryBindingSet(bindings));
+				return optimized;
+			}
+		};
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new Filter(new Union(new SingletonSet(), assignedSingleton(2)),
+				new Bound(Var.of("x"))));
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("x"))
+					.containsExactly(SimpleValueFactory.getInstance().createLiteral(2));
+		}
+		assertThat(calls).hasValue(1);
+	}
+
+	@Test
+	void legacyBeforeSuperLoweringRunsBeforeCompleteParameterCapture() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+				var opaque = (OpaqueScope) ((QueryRoot) expression).getArg();
+				opaque.replaceWith(opaque.getArg());
+				return super.optimize(expression, statistics, bindings);
+			}
+		};
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new OpaqueScope(
+				new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result"))));
+		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
+		try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result"))
+					.containsExactly(parameters().getValue("x"));
+		}
+	}
+
+	@Test
+	void failedPreparationDoesNotLeaveAnActiveOptimizationContext() {
+		var expression = constructedProjection();
+		AtomicReference<TupleExpr> observed = new AtomicReference<>();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public TupleExpr optimize(TupleExpr root, EvaluationStatistics statistics, BindingSet bindings) {
+				observed.set(root);
+				throw new IllegalStateException("extension failed");
+			}
+		};
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters()))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("extension failed");
+		var runtime = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		runtime.setOptimizerPipeline(List::of);
+		TupleExpr optimized = runtime.optimize(observed.get(), new EvaluationStatistics(), parameters());
+		try (var rows = runtime.precompile(optimized).evaluate(parameters())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("result"))
+					.containsExactly(parameters().getValue("x"), SimpleValueFactory.getInstance().createLiteral(2));
+		}
+	}
+
 	@Test
 	void constructedProjectionHasDistinctRuntimeAndPreparedResults() {
 		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
@@ -1501,7 +1772,7 @@ class PreparedQueryOptimizerBindingsTest {
 				new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "result"))));
 
 		TupleExpr prepared = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters());
-		assertThat(observed.get()).isSameAs(EmptyBindingSet.getInstance());
+		assertThat(observed.get()).isEqualTo(parameters());
 		try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
 			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
 					.containsExactly(parameters().getValue("x"));
@@ -1552,27 +1823,25 @@ class PreparedQueryOptimizerBindingsTest {
 	}
 
 	@Test
-	void inheritedLegacyStrategyFailsClosedExceptCanonicalEmptyInput() {
+	void inheritedLegacyStrategyReceivesPreparedLogicalParameters() {
 		var strategy = new LegacyStrategy();
-		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(),
-				parameters())).isInstanceOf(QueryEvaluationException.class);
-		assertThat(strategy.observed).isNull();
-		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(),
-				new EmptyBindingSet())).isInstanceOf(QueryEvaluationException.class);
-		assertThat(strategy.observed).isNull();
+		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), parameters());
+		assertThat(strategy.observed).isEqualTo(parameters());
+		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), new EmptyBindingSet());
+		assertThat(strategy.observed).isEmpty();
 		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), EmptyBindingSet.getInstance());
-		assertThat(strategy.observed).isSameAs(EmptyBindingSet.getInstance());
+		assertThat(strategy.observed).isEmpty();
 	}
 
 	@Test
-	void explicitStrategyOptInUsesTheSharedContextHook() {
+	void legacyStrategyEnvelopeAlsoReachesTheSharedContextHook() {
 		var strategy = new AdoptedStrategy();
 		MapBindingSet parameters = parameters();
 		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), parameters);
-		assertThat(strategy.context.parameters()).isSameAs(parameters);
+		assertThat(strategy.context.parameters()).isEqualTo(parameters);
 		assertThat(strategy.context.evaluationInput()).isSameAs(EmptyBindingSet.getInstance());
 		assertThat(strategy.context.mode()).isEqualTo(BindingOptimizationContext.Mode.EMPTY_INPUT);
-		assertThat(strategy.oldOverrideCalled).isFalse();
+		assertThat(strategy.oldOverrideCalled).isTrue();
 	}
 
 	@Test
@@ -1600,11 +1869,11 @@ class PreparedQueryOptimizerBindingsTest {
 		strategy.optimize(new SingletonSet(), new EvaluationStatistics(), input);
 		assertThat(optimizer.observed).isSameAs(input);
 		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), input);
-		assertThat(optimizer.observed).isSameAs(EmptyBindingSet.getInstance());
+		assertThat(optimizer.observed).isEqualTo(input);
 	}
 
 	@Test
-	void customPipelineKeepsOptimizerOrderAndActualInput() {
+	void customPipelineKeepsOptimizerOrderAndBindingSelector() {
 		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		var calls = new ArrayList<String>();
 		var seen = new ArrayList<BindingSet>();
@@ -1632,14 +1901,14 @@ class PreparedQueryOptimizerBindingsTest {
 		MapBindingSet input = parameters();
 		strategy.optimize(new SingletonSet(), new EvaluationStatistics(), input);
 		assertThat(calls).containsExactly("first", "second");
-		assertThat(seen).allSatisfy(bindings -> assertThat(bindings).isSameAs(input));
-		assertThat(selectorCalled).isFalse();
+		assertThat(seen).allSatisfy(bindings -> assertThat(bindings).isEmpty());
+		assertThat(selectorCalled).isTrue();
 		calls.clear();
 		seen.clear();
 		strategy.optimizeForEmptyInput(new SingletonSet(), new EvaluationStatistics(), input);
 		assertThat(calls).containsExactly("first", "second");
-		assertThat(seen).allSatisfy(bindings -> assertThat(bindings).isSameAs(EmptyBindingSet.getInstance()));
-		assertThat(selectorCalled).isFalse();
+		assertThat(seen).allSatisfy(bindings -> assertThat(bindings).isEmpty());
+		assertThat(selectorCalled).isTrue();
 	}
 
 	private static final class LegacyStrategy extends DefaultEvaluationStrategy {
@@ -1922,6 +2191,65 @@ class PreparedQueryOptimizerBindingsTest {
 		strategy.setOptimizerPipeline(() -> List.of(optimizer));
 		strategy.optimize(new SingletonSet(), new EvaluationStatistics(), parameters);
 		assertThat(observed.get()).isSameAs(parameters);
+	}
+
+	private static final class DelegatingStrategy implements EvaluationStrategy {
+		private final DefaultEvaluationStrategy delegate = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+
+		@Override
+		public TupleExpr optimize(TupleExpr expression, EvaluationStatistics statistics, BindingSet bindings) {
+			return delegate.optimize(expression, statistics, bindings);
+		}
+
+		@Override
+		public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+			delegate.setOptimizerPipeline(pipeline);
+		}
+
+		@Override
+		public QueryEvaluationStep precompile(TupleExpr expression) {
+			return delegate.precompile(expression);
+		}
+
+		@Override
+		public QueryEvaluationStep precompile(TupleExpr expression, QueryEvaluationContext context) {
+			return delegate.precompile(expression, context);
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(TupleExpr expression, BindingSet bindings) {
+			return delegate.evaluate(expression, bindings);
+		}
+
+		@Override
+		public Value evaluate(ValueExpr expression, BindingSet bindings) {
+			return delegate.evaluate(expression, bindings);
+		}
+
+		@Override
+		public boolean isTrue(ValueExpr expression, BindingSet bindings) {
+			return delegate.isTrue(expression, bindings);
+		}
+
+		@Override
+		public boolean isTrue(QueryValueEvaluationStep expression, BindingSet bindings) {
+			return delegate.isTrue(expression, bindings);
+		}
+
+		@Override
+		public FederatedService getService(String serviceUrl) {
+			return delegate.getService(serviceUrl);
+		}
+
+		@Override
+		public QueryEvaluationMode getQueryEvaluationMode() {
+			return delegate.getQueryEvaluationMode();
+		}
+
+		@Override
+		public void setQueryEvaluationMode(QueryEvaluationMode mode) {
+			delegate.setQueryEvaluationMode(mode);
+		}
 	}
 
 	private static MapBindingSet parameters() {

@@ -290,25 +290,44 @@ public final class RemoteBNode extends SimpleBNode {
 		 * identify a parameter in this mode, because they may belong to the caller's local blank-node namespace.
 		 */
 		public BindingSet recoverOriginalBindings(BindingSet row) {
+			return recoverOriginalBindings(row, null);
+		}
+
+		/** Recovers parameter identities while retaining the exact original alias at each caller-owned column. */
+		public BindingSet recoverOriginalBindings(BindingSet row, BindingSet originalBindings) {
 			if (canonicalOriginals.isEmpty()) {
 				return row;
 			}
-			return mapValues(row, (name, value) -> recoverOriginalValue(value));
+			return mapValues(row, (name, value) -> recoverOriginalValue(value,
+					originalBindings == null ? null : originalBindings.getValue(name)));
 		}
 
-		private Value recoverOriginalValue(Value value) {
+		private Value recoverOriginalValue(Value value, Value original) {
+			if (original != null
+					&& (value == original || value instanceof RemoteBNode && corresponds(original, value))) {
+				validateProvenance(original);
+				return original;
+			}
 			if (value instanceof RemoteBNode remote) {
 				Provenance provenance = remote.getProvenance();
 				if (provenance != null && provenance.canonicalResultID()
 						&& provenance.identityScope() == identityScope) {
-					BNode original = canonicalOriginals.get(provenance.remoteID());
-					if (original != null) {
-						return original;
+					BNode recovered = canonicalOriginals.get(provenance.remoteID());
+					if (recovered != null) {
+						return recovered;
 					}
 				}
 			} else if (value instanceof TripleTerm triple) {
-				Value subject = recoverOriginalValue(triple.getSubject());
-				Value object = recoverOriginalValue(triple.getObject());
+				TripleTerm originalTriple = original instanceof TripleTerm candidate
+						&& triple.getPredicate().equals(candidate.getPredicate()) ? candidate : null;
+				Value subject = recoverOriginalValue(triple.getSubject(),
+						originalTriple == null ? null : originalTriple.getSubject());
+				Value object = recoverOriginalValue(triple.getObject(),
+						originalTriple == null ? null : originalTriple.getObject());
+				if (originalTriple != null && subject == originalTriple.getSubject()
+						&& object == originalTriple.getObject()) {
+					return originalTriple;
+				}
 				if (subject != triple.getSubject() || object != triple.getObject()) {
 					return SimpleValueFactory.getInstance()
 							.createTripleTerm((Resource) subject,

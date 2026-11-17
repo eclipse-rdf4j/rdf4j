@@ -46,6 +46,18 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 public interface SailConnection extends AutoCloseable {
 
 	/**
+	 * Whether query evaluation supports the complete SPARQL semantics of serialized initial solution mappings,
+	 * including VALUES, UNDEF, scope and compatible-mapping joins. Repositories delegate this capability to select
+	 * SERVICE runtime-row transport. Support for parsing SPARQL or preparing a native query does not by itself imply
+	 * support for these mappings.
+	 *
+	 * @return {@code true} when serialized initial mappings are supported; {@code false} for native input bindings.
+	 */
+	default boolean supportsSPARQLBindingTransport() {
+		return false;
+	}
+
+	/**
 	 * Checks whether this SailConnection is open. A SailConnection is open from the moment it is created until it is
 	 * closed.
 	 *

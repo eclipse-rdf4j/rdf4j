@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -63,6 +64,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		bindings = BindingOptimizationContext.forOptimizer(tupleExpr, bindings).evaluationInput();
 		QueryAlgebraBindingAnalysis previous = CURRENT_ANALYSIS.get();
 		CURRENT_ANALYSIS.set(QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings));
 		try {

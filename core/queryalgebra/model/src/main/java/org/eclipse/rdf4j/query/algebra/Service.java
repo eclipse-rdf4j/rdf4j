@@ -60,6 +60,7 @@ public class Service extends UnaryTupleOperator {
 
 	private final boolean silent;
 	private Map<String, Value> preparedInputBindings = Map.of();
+	private PreparedBindingRequest preparedBindingRequest;
 	private volatile RuntimeBindingHistory runtimeBindingHistory = new RuntimeBindingHistory(Map.of(), Set.of(), null);
 	private volatile SavedBindingNames savedBindingNames;
 	private Set<String> bnodeReferenceVarNames = Set.of();
@@ -117,6 +118,26 @@ public class Service extends UnaryTupleOperator {
 	@InternalUseOnly
 	public void setPreparedInputBindings(Map<String, Value> bindings) {
 		preparedInputBindings = Map.copyOf(bindings);
+	}
+
+	/** Consumed logical inputs retain their original source and values, independently of runtime solution mappings. */
+	@InternalUseOnly
+	public record PreparedBindingRequest(String source, String baseURI, Map<String, Value> parameters,
+			String executableSource)
+			implements Serializable {
+		public PreparedBindingRequest {
+			parameters = Map.copyOf(parameters);
+		}
+	}
+
+	@InternalUseOnly
+	public PreparedBindingRequest getPreparedBindingRequest() {
+		return preparedBindingRequest;
+	}
+
+	@InternalUseOnly
+	public void setPreparedBindingRequest(PreparedBindingRequest request) {
+		preparedBindingRequest = request;
 	}
 
 	/** Proven runtime substitutions in the saved body, retained only to validate later preparation. */
@@ -367,6 +388,7 @@ public class Service extends UnaryTupleOperator {
 			Service o = (Service) other;
 			return serviceRef.equals(o.getServiceRef())
 					&& preparedInputBindings.equals(o.preparedInputBindings)
+					&& Objects.equals(preparedBindingRequest, o.preparedBindingRequest)
 					&& runtimeBindingHistory.equals(o.runtimeBindingHistory)
 					&& bnodeReferenceVarNames.equals(o.bnodeReferenceVarNames)
 					&& reservedBNodeIDs.equals(o.reservedBNodeIDs)
@@ -378,6 +400,7 @@ public class Service extends UnaryTupleOperator {
 	@Override
 	public int hashCode() {
 		return super.hashCode() ^ serviceRef.hashCode() ^ preparedInputBindings.hashCode()
+				^ Objects.hashCode(preparedBindingRequest)
 				^ runtimeBindingHistory.hashCode()
 				^ bnodeReferenceVarNames.hashCode()
 				^ reservedBNodeIDs.hashCode();

@@ -124,6 +124,11 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		return sailConnection;
 	}
 
+	@Override
+	public boolean supportsSPARQLBindingTransport() {
+		return sailConnection.supportsSPARQLBindingTransport();
+	}
+
 	/**
 	 * Forwards the resolver to the underlying sail connection if it is a {@link FederatedServiceResolverClient}. If a
 	 * non-null resolver cannot reach the innermost (unwrapped) sail connection, a warning is logged once per connection

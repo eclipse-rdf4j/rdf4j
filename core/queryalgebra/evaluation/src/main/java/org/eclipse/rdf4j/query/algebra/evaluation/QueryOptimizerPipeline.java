@@ -34,14 +34,9 @@ public interface QueryOptimizerPipeline {
 	Iterable<QueryOptimizer> getOptimizers();
 
 	/**
-	 * Formerly selected the bindings passed to an optimizer. Evaluation strategies now pass the actual evaluation input
-	 * to legacy optimizers and do not consult this selector: supplying a different binding set can make optimizer
-	 * proofs unsound. Optimizers needing logical parameters as well should implement
-	 * {@link BindingContextAwareOptimizer} and explicitly opt in for their concrete class.
-	 *
-	 * @deprecated use the actual optimizer input and {@link BindingContextAwareOptimizer} for logical parameters
+	 * Selects the values visible to a legacy optimizer. A prepared invocation retains its separate, explicit actual
+	 * evaluation-input contract even when a selector supplies a different view of the logical parameters.
 	 */
-	@Deprecated
 	@InternalUseOnly
 	default BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
 		return initialBindings;

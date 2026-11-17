@@ -91,7 +91,12 @@ public class ConstantOptimizer implements BindingContextAwareOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		optimizeWithInputs(tupleExpr, bindings, evaluationBindings == null ? bindings : evaluationBindings, true);
+		BindingOptimizationContext context = BindingOptimizationContext.forOptimizer(tupleExpr, bindings);
+		if (context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT) {
+			optimizeWithInputs(tupleExpr, context.parameters(), context.evaluationInput(), false);
+		} else {
+			optimizeWithInputs(tupleExpr, bindings, evaluationBindings == null ? bindings : evaluationBindings, true);
+		}
 	}
 
 	@Override

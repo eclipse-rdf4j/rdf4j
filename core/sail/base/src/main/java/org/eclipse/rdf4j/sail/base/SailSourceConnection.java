@@ -170,9 +170,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	// Track the result sizes generated when evaluating a query, used by explain(...)
 	private boolean trackResultSize;
 
-	// By default all tuple expressions are cloned before being optimized and executed. We don't want to do this for
-	// .explain(...) since we need to retrieve the optimized or executed plan.
+	// Skip the connection-level clone for explain(...), whose prepared root is retained separately below.
 	private boolean cloneTupleExpression = true;
+
+	// Retain the actual prepared root only while its explanation is being assembled.
+	private TupleExpr tupleExprForExplanation;
 
 	// Track the time used when evaluating a query, used by explain(...)
 	private boolean trackTime;
@@ -257,6 +259,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
+	public boolean supportsSPARQLBindingTransport() {
+		return true;
+	}
+
+	@Override
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		logger.trace("Incoming query model:\n{}", tupleExpr);
@@ -309,6 +316,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 			tupleExpr = strategy.optimizeForEmptyInput(tupleExpr, store.getEvaluationStatistics(),
 					canonicalParameters(bindings));
+			if (!cloneTupleExpression) {
+				tupleExprForExplanation = tupleExpr;
+			}
 			if (runtimeTelemetryEnabled) {
 				setRuntimeTelemetryEnabled(tupleExpr, true);
 			}
@@ -354,8 +364,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		TupleExpr explainedTupleExpr = tupleExpr;
 		setRuntimeTelemetryEnabled(tupleExpr, false);
 		setExecutionSummaryEnabled(tupleExpr, false);
+		TupleExpr previousTupleExprForExplanation = tupleExprForExplanation;
 
 		try (var explanationContext = QueryExplanationContext.enter(level, bindings)) {
+			tupleExprForExplanation = tupleExpr;
 
 			switch (level) {
 			case Telemetry:
@@ -417,6 +429,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, explainedTupleExpr);
 
 		} finally {
+			if (explainedTupleExpr == tupleExpr && tupleExprForExplanation != null) {
+				explainedTupleExpr = tupleExprForExplanation;
+			}
+			tupleExprForExplanation = previousTupleExprForExplanation;
 			TupleExpr reportTarget = tupleExpr instanceof QueryRoot root ? root.getArg() : tupleExpr;
 			reportTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
 			setRuntimeTelemetryEnabled(tupleExpr, false);
@@ -453,7 +469,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 * attempt-specific expression may override this to expose the expression that was actually evaluated.
 	 */
 	protected TupleExpr getTupleExprForExplanation(TupleExpr tupleExpr) {
-		return tupleExpr;
+		return tupleExprForExplanation == null ? tupleExpr : tupleExprForExplanation;
 	}
 
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,

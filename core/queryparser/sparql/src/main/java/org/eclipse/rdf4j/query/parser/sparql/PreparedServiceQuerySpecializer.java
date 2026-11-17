@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -234,7 +235,11 @@ final class PreparedServiceQuerySpecializer {
 				result.replace(range.start(), range.end(), edit.getValue());
 				previousStart = range.start();
 			}
-			return new Result(result.toString());
+			Set<String> capturedNames = new LinkedHashSet<>();
+			plan.replacements().forEach(replacement -> capturedNames.add(replacement.variable().getName()));
+			plan.projectionRecoveries().forEach(recovery -> capturedNames.add(recovery.name()));
+			plan.serviceInputs().values().forEach(inputs -> capturedNames.addAll(inputs.keySet()));
+			return new Result(result.toString(), Set.copyOf(capturedNames));
 		} catch (QueryEvaluationException failure) {
 			throw failure;
 		} catch (Exception failure) {
@@ -351,7 +356,7 @@ final class PreparedServiceQuerySpecializer {
 		return new QueryEvaluationException("Unsupported prepared binding transport: " + reason);
 	}
 
-	record Result(String source) {
+	record Result(String source, Set<String> capturedNames) {
 	}
 
 	private static void validateRestorations(TupleExpr root, List<Restore> restores) {

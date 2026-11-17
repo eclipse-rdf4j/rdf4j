@@ -15,6 +15,9 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedQuery;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryBindingPreparation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /** Binding inputs owned by one optimization invocation, without copying their representations or metadata. */
@@ -32,6 +35,22 @@ public record BindingOptimizationContext(Mode mode, BindingSet parameters, Bindi
 
 	public static BindingOptimizationContext runtime(BindingSet input) {
 		return new BindingOptimizationContext(Mode.RUNTIME, input, input);
+	}
+
+	public static BindingOptimizationContext resolve(TupleExpr expression, BindingSet input) {
+		QueryBindingPreparation preparation = PreparedQuery.find(expression, input);
+		return preparation == null ? runtime(input)
+				: new BindingOptimizationContext(Mode.EMPTY_INPUT, preparation.parameters(),
+						preparation.evaluationInput());
+	}
+
+	/** Public optimizer entry points also work when invoked directly by a legacy strategy envelope. */
+	public static BindingOptimizationContext forOptimizer(TupleExpr expression, BindingSet input) {
+		QueryBindingPreparation preparation = PreparedQuery.find(expression, input);
+		if (preparation != null) {
+			preparation.prepare(expression);
+		}
+		return resolve(expression, input);
 	}
 
 	public static BindingOptimizationContext emptyInput(BindingSet parameters) {

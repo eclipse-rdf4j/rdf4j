@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -69,6 +71,33 @@ public class FedXSingleSourceGraphTest extends SPARQLBaseTest {
 	private static final String TERM_QUERY = "SELECT ?g ?part ?tail ?source WHERE { GRAPH ?g { "
 			+ "?claim <" + RDF.REIFIES + "> <<(?part <" + EDGE + "> ?tail)>> ; <" + SOURCE + "> ?source } }";
 	private static final String MODE_QUERY = "SELECT ?s WHERE { ?s <urn:delegation:edge> ?o FILTER(?x = 1) }";
+
+	@Test
+	public void inheritedFederationStrategyPreservesPreparedTypeConstraint() throws Exception {
+		IRI bob = VF.createIRI("urn:bob");
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.add(bob, RDF.TYPE, FOAF.PERSON);
+			second.add(FOAF.PERSON, RDF.TYPE, OWL.CLASS);
+		}
+		var context = federationContext();
+		var strategy = new FederationEvaluationStrategy(context) {
+		};
+		String text = "SELECT ?s WHERE { ?s a ?type }";
+		var info = new QueryInfo(text, null, QueryType.SELECT, 0, false, context, strategy, null);
+		var parameters = new MapBindingSet();
+		parameters.addBinding("type", FOAF.PERSON);
+		try {
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null).getTupleExpr();
+			TupleExpr prepared = strategy.optimizeForEmptyInput(expression,
+					new FederationEvaluationStatistics(info, null), parameters);
+			try (var rows = strategy.evaluate(prepared, EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s")).containsExactly(bob);
+			}
+		} finally {
+			info.close();
+		}
+	}
 
 	@BeforeEach
 	public void prepareSinglePopulatedMember() throws Exception {
