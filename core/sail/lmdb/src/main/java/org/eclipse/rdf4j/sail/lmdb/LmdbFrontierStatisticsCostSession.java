@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderMemory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderWork;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceIntervalKind;
@@ -65,9 +66,10 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 	private final LmdbMappedSemiAntiCosting semiAntiCosting;
 	private final LmdbSemanticPopulationProof semanticProofs;
 	private final LmdbBindingAssurance bindings;
-	private final AtomicBoolean closed = new AtomicBoolean();
+	private final AtomicBoolean closed;
 	private MappedEvidenceState[] states = new MappedEvidenceState[64];
 	private int stateCount;
+	private PackedProviderWork providerWork;
 
 	LmdbFrontierStatisticsCostSession(PackedCostSession delegate, LmdbPackedCostModel mappedCostModel,
 			FrontierStatisticsView statistics, PackedQueryView query, LmdbEstimatorRuntime runtime,
@@ -79,13 +81,29 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 	LmdbFrontierStatisticsCostSession(PackedCostSession delegate, LmdbPackedCostModel mappedCostModel,
 			FrontierStatisticsView statistics, PackedQueryView query, LmdbEstimatorRuntime runtime,
 			boolean datasetUsesStoreDefaults, int planeMask) {
-		this(delegate, mappedCostModel, statistics, query, runtime, datasetUsesStoreDefaults, planeMask, true);
+		this(delegate, mappedCostModel, statistics, query, runtime, datasetUsesStoreDefaults, planeMask, true,
+				new AtomicBoolean());
+	}
+
+	LmdbFrontierStatisticsCostSession(PackedCostSession delegate, LmdbPackedCostModel mappedCostModel,
+			FrontierStatisticsView statistics, PackedQueryView query, LmdbEstimatorRuntime runtime,
+			boolean datasetUsesStoreDefaults, int planeMask, AtomicBoolean closed) {
+		this(delegate, mappedCostModel, statistics, query, runtime, datasetUsesStoreDefaults, planeMask, true, closed);
 	}
 
 	private LmdbFrontierStatisticsCostSession(PackedCostSession delegate, LmdbPackedCostModel mappedCostModel,
 			FrontierStatisticsView statistics, PackedQueryView query, LmdbEstimatorRuntime runtime,
 			boolean datasetUsesStoreDefaults, int planeMask, boolean verifyReadScope) {
+		this(delegate, mappedCostModel, statistics, query, runtime, datasetUsesStoreDefaults, planeMask,
+				verifyReadScope,
+				new AtomicBoolean());
+	}
+
+	private LmdbFrontierStatisticsCostSession(PackedCostSession delegate, LmdbPackedCostModel mappedCostModel,
+			FrontierStatisticsView statistics, PackedQueryView query, LmdbEstimatorRuntime runtime,
+			boolean datasetUsesStoreDefaults, int planeMask, boolean verifyReadScope, AtomicBoolean closed) {
 		this.verifyReadScope = verifyReadScope;
+		this.closed = Objects.requireNonNull(closed, "closed");
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
 		this.mappedCostModel = Objects.requireNonNull(mappedCostModel, "mappedCostModel");
 		this.statistics = Objects.requireNonNull(statistics, "statistics");
@@ -113,12 +131,23 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		delegate.bindProviderMemory(memory);
 	}
 
+	@Override
+	public void bindProviderWork(PackedProviderWork work) {
+		requireCurrentRead();
+		providerWork = Objects.requireNonNull(work, "provider work");
+		mappedCostModel.bindAdmittedWork(work);
+		delegate.bindProviderWork(work);
+	}
+
 	private void completePhysical(byte kind, int relation, PackedCostContext context, PackedCostEstimate output) {
 		completePhysical(kind, relation, context, output, false);
 	}
 
 	private void completePhysical(byte kind, int relation, PackedCostContext context, PackedCostEstimate output,
 			boolean authenticatedRetainedCandidate) {
+		if (providerWork != null) {
+			providerWork.require(1L);
+		}
 		PhysicalEventKey.Origin origin = physicalOrigins.complete(kind, relation, context, output,
 				authenticatedRetainedCandidate);
 		learning.applyIndependentPhysical(relation, origin, context, output);
@@ -485,6 +514,8 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
+		providerWork = null;
+		mappedCostModel.releaseAdmittedBudget();
 		learning.close();
 		try {
 			delegate.close();

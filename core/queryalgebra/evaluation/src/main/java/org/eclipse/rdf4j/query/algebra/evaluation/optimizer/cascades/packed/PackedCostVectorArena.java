@@ -123,6 +123,24 @@ final class PackedCostVectorArena {
 		setBuilderInterval(dimensionId, value, value, value, 0);
 	}
 
+	boolean setBuilderInterval(int dimensionId, double lowerValue, double pointValue, double upperValue,
+			int lineageId, PackedProviderWork work, PackedProviderMemory memory) {
+		work.require(1L);
+		if (lowerValue != upperValue && builderLower == null) {
+			long bytes = 2L * (24L + (long) STRIDE * Double.BYTES)
+					+ ((24L + (long) STRIDE * Integer.BYTES + 7L) & ~7L);
+			if (!budget.canReserveBytes(bytes)) {
+				return false;
+			}
+			work.require(5L * STRIDE);
+			if (!memory.tryReserve(bytes)) {
+				return false;
+			}
+		}
+		setBuilderInterval(dimensionId, lowerValue, pointValue, upperValue, lineageId);
+		return true;
+	}
+
 	int internBuilder() {
 		if (table.length == 0) {
 			return 0;
@@ -164,6 +182,231 @@ final class PackedCostVectorArena {
 		return vectorId;
 	}
 
+	/** Interns under the borrowing session's work and memory authorities, publishing only after all steps succeed. */
+	int internBuilder(PackedProviderWork work, PackedProviderMemory memory, long resultBytes) {
+		if (table.length == 0) {
+			return 0;
+		}
+		boolean intervals = builderHasIntervals(work);
+		work.require(1L + Long.bitCount(builderKnownMask));
+		long hash = builderHash();
+		int slot = findBuilderSlot(hash, intervals, work);
+		int existing = table[slot];
+		if (existing != 0) {
+			return memory.tryReserve(resultBytes) ? existing : 0;
+		}
+		return appendBuilder(hash, slot, intervals, work, memory, resultBytes);
+	}
+
+	private boolean builderHasIntervals(PackedProviderWork work) {
+		if (builderLower == null) {
+			return false;
+		}
+		for (int dimensionId = 1; dimensionId <= DIMENSION_COUNT; dimensionId++) {
+			work.require(1L);
+			if ((builderKnownMask & bit(dimensionId)) != 0L
+					&& (Double.compare(builderLower[dimensionId], builderPoint[dimensionId]) != 0
+							|| Double.compare(builderPoint[dimensionId], builderUpper[dimensionId]) != 0
+							|| builderLineageIds[dimensionId] != 0)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private int findBuilderSlot(long hash, boolean intervals, PackedProviderWork work) {
+		int slot = PackedPrimitiveHash.slot(hash, table.length);
+		while (true) {
+			work.require(1L);
+			int vectorId = table[slot];
+			if (vectorId == 0 || hashes[vectorId] == hash && matchesBuilder(vectorId, intervals, work)) {
+				return slot;
+			}
+			slot = slot + 1 & table.length - 1;
+		}
+	}
+
+	private boolean matchesBuilder(int vectorId, boolean intervals, PackedProviderWork work) {
+		work.require(1L);
+		if (knownMasks[vectorId] != builderKnownMask) {
+			return false;
+		}
+		int base = vectorId * STRIDE;
+		if (lower == null && !intervals) {
+			if (nonZeroMasks[vectorId] != builderNonZeroMask) {
+				return false;
+			}
+			long remaining = builderNonZeroMask;
+			while (remaining != 0L) {
+				work.require(1L);
+				int dimensionId = Long.numberOfTrailingZeros(remaining) + 1;
+				if (Double.doubleToLongBits(point[base + dimensionId]) != Double
+						.doubleToLongBits(builderPoint[dimensionId])) {
+					return false;
+				}
+				remaining &= remaining - 1L;
+			}
+			return true;
+		}
+		long remaining = builderKnownMask;
+		while (remaining != 0L) {
+			work.require(1L);
+			int dimensionId = Long.numberOfTrailingZeros(remaining) + 1;
+			int index = base + dimensionId;
+			if (Double.doubleToLongBits(lower == null ? point[index] : lower[index]) != Double
+					.doubleToLongBits(builderLower(dimensionId))
+					|| Double.doubleToLongBits(point[index]) != Double.doubleToLongBits(builderPoint[dimensionId])
+					|| Double.doubleToLongBits(upper == null ? point[index] : upper[index]) != Double
+							.doubleToLongBits(builderUpper(dimensionId))
+					|| (lineageIds == null ? 0 : lineageIds[index]) != builderLineageId(dimensionId)) {
+				return false;
+			}
+			remaining &= remaining - 1L;
+		}
+		return true;
+	}
+
+	private int appendBuilder(long hash, int slot, boolean intervals, PackedProviderWork work,
+			PackedProviderMemory memory, long resultBytes) {
+		if (size == Integer.MAX_VALUE || knownMasks.length == 0) {
+			budget.tryReserveBytes(Long.MAX_VALUE);
+			return 0;
+		}
+		int vectorId = size + 1;
+		int oldCapacity = knownMasks.length - 1;
+		int capacity = oldCapacity;
+		while (capacity < vectorId) {
+			work.require(1L);
+			if (capacity > Integer.MAX_VALUE >>> 1) {
+				budget.tryReserveBytes(Long.MAX_VALUE);
+				return 0;
+			}
+			capacity <<= 1;
+		}
+		int tableCapacity = table.length;
+		while (PackedPrimitiveHash.maximumFill(tableCapacity) < vectorId) {
+			work.require(1L);
+			if (tableCapacity > Integer.MAX_VALUE >>> 1) {
+				budget.tryReserveBytes(Long.MAX_VALUE);
+				return 0;
+			}
+			tableCapacity <<= 1;
+		}
+		int rowCount = capacity + 1;
+		long columns = (long) rowCount * STRIDE;
+		if (columns > Integer.MAX_VALUE - 8L) {
+			budget.tryReserveBytes(Long.MAX_VALUE);
+			return 0;
+		}
+		int columnCount = (int) columns;
+		boolean growRows = capacity != oldCapacity;
+		boolean growTable = tableCapacity != table.length;
+		boolean makePoint = point == null && builderKnownMask != 0L;
+		boolean makeIntervals = intervals && lower == null;
+		long additionalBytes = requiredBytes(capacity, tableCapacity) - requiredBytes(oldCapacity, table.length);
+		if (!budget.canReserveBytes(additionalBytes)) {
+			budget.tryReserveBytes(additionalBytes);
+			return 0;
+		}
+		// Charge the actual array entries allocated or copied, not a table-capacity-based worst-case estimate.
+		long copyWork = growRows ? 3L * (knownMasks.length + (long) rowCount) : 0L;
+		if (growRows && point != null) {
+			copyWork += point.length + (long) columnCount;
+		}
+		if (growRows && lower != null) {
+			copyWork += 3L * (lower.length + (long) columnCount);
+		}
+		if (makePoint) {
+			copyWork += columnCount;
+		}
+		if (makeIntervals) {
+			copyWork += 5L * columnCount;
+		}
+		if (growTable) {
+			copyWork += tableCapacity;
+		}
+		work.require(copyWork);
+		if (additionalBytes != 0L && !budget.tryReserveBytes(additionalBytes)) {
+			return 0;
+		}
+		long[] nextKnown = growRows ? Arrays.copyOf(knownMasks, rowCount) : knownMasks;
+		long[] nextNonZero = growRows ? Arrays.copyOf(nonZeroMasks, rowCount) : nonZeroMasks;
+		long[] nextHashes = growRows ? Arrays.copyOf(hashes, rowCount) : hashes;
+		double[] nextPoint = point;
+		double[] nextLower = lower;
+		double[] nextUpper = upper;
+		int[] nextLineage = lineageIds;
+		if (growRows && point != null) {
+			nextPoint = Arrays.copyOf(point, columnCount);
+		}
+		if (growRows && lower != null) {
+			nextLower = Arrays.copyOf(lower, columnCount);
+			nextUpper = Arrays.copyOf(upper, columnCount);
+			nextLineage = Arrays.copyOf(lineageIds, columnCount);
+		}
+		if (makePoint) {
+			nextPoint = new double[columnCount];
+		}
+		if (makeIntervals) {
+			nextLower = Arrays.copyOf(nextPoint, columnCount);
+			nextUpper = Arrays.copyOf(nextPoint, columnCount);
+			nextLineage = new int[columnCount];
+		}
+		int[] nextTable = table;
+		if (growTable) {
+			nextTable = new int[tableCapacity];
+			for (int stored = 1; stored <= size; stored++) {
+				work.require(1L);
+				int nextSlot = PackedPrimitiveHash.slot(hashes[stored], tableCapacity);
+				while (true) {
+					work.require(1L);
+					if (nextTable[nextSlot] == 0) {
+						break;
+					}
+					nextSlot = nextSlot + 1 & tableCapacity - 1;
+				}
+				nextTable[nextSlot] = stored;
+			}
+			slot = PackedPrimitiveHash.slot(hash, tableCapacity);
+			while (true) {
+				work.require(1L);
+				if (nextTable[slot] == 0) {
+					break;
+				}
+				slot = slot + 1 & tableCapacity - 1;
+			}
+		}
+		work.require(1L + DIMENSION_COUNT);
+		if (!memory.tryReserve(resultBytes)) {
+			return 0;
+		}
+		int base = vectorId * STRIDE;
+		nextKnown[vectorId] = builderKnownMask;
+		nextNonZero[vectorId] = builderNonZeroMask;
+		for (int dimensionId = 1; dimensionId <= DIMENSION_COUNT; dimensionId++) {
+			if ((builderKnownMask & bit(dimensionId)) != 0L) {
+				nextPoint[base + dimensionId] = builderPoint[dimensionId];
+				if (nextLower != null) {
+					nextLower[base + dimensionId] = builderLower(dimensionId);
+					nextUpper[base + dimensionId] = builderUpper(dimensionId);
+					nextLineage[base + dimensionId] = builderLineageId(dimensionId);
+				}
+			}
+		}
+		nextHashes[vectorId] = hash;
+		nextTable[slot] = vectorId;
+		knownMasks = nextKnown;
+		nonZeroMasks = nextNonZero;
+		hashes = nextHashes;
+		point = nextPoint;
+		lower = nextLower;
+		upper = nextUpper;
+		lineageIds = nextLineage;
+		table = nextTable;
+		size = vectorId;
+		return vectorId;
+	}
+
 	/** Compatibility projection: CPU retains the historical scalar workRows diagnostic. Not quantity authority. */
 	int importEstimate(PackedCostEstimate estimate) {
 		return importEstimate(estimate, false);
@@ -174,7 +417,28 @@ final class PackedCostVectorArena {
 		return importEstimate(estimate, true);
 	}
 
+	int importQuantities(PackedCostEstimate estimate, PackedProviderWork work, PackedProviderMemory memory,
+			long resultBytes) {
+		if (estimate == null) {
+			throw new NullPointerException("estimate");
+		}
+		long dimensions = 1L + (estimate.hasExplicitPhysicalCost() ? 10L : 0L)
+				+ (estimate.hasDependentCostComponents() ? 14L : 0L);
+		work.require(builderResetWork() + dimensions);
+		buildEstimate(estimate, true);
+		return internBuilder(work, memory, resultBytes);
+	}
+
+	long builderResetWork() {
+		return 1L + (builderLineageIds == null ? 0L : builderLineageIds.length);
+	}
+
 	private int importEstimate(PackedCostEstimate estimate, boolean quantities) {
+		buildEstimate(estimate, quantities);
+		return internBuilder();
+	}
+
+	private void buildEstimate(PackedCostEstimate estimate, boolean quantities) {
 		if (estimate == null) {
 			throw new NullPointerException("estimate");
 		}
@@ -213,7 +477,6 @@ final class PackedCostVectorArena {
 					estimate.materializationLookups());
 			setBuilderFinite(PackedCostDimensionRegistry.SPILL_WORK, estimate.memorySpillWork());
 		}
-		return internBuilder();
 	}
 
 	/** Reconstructs the quantity view of an imported estimate without trusting its legacy CPU price carrier. */

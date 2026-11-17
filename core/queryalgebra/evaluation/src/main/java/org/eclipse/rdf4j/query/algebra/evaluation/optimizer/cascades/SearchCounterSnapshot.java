@@ -13,17 +13,26 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
-/** Exact successful-work counters captured at an optimizer result boundary. */
+/**
+ * Exact successful-work counters captured at an optimizer result boundary. {@code providerWorkUnits} counts admitted
+ * provider callbacks and provider-internal batches, which are accounted separately from search work.
+ */
 @Experimental
 public record SearchCounterSnapshot(long ruleWork, long dphypPairProbes, long partitionProbes,
-		long candidateEvaluations, long predicateProbes) {
+		long candidateEvaluations, long predicateProbes, long providerWorkUnits) {
 
-	public static final SearchCounterSnapshot ZERO = new SearchCounterSnapshot(0L, 0L, 0L, 0L, 0L);
+	public static final SearchCounterSnapshot ZERO = new SearchCounterSnapshot(0L, 0L, 0L, 0L, 0L, 0L);
 
 	public SearchCounterSnapshot {
 		if (ruleWork < 0L || dphypPairProbes < 0L || partitionProbes < 0L || candidateEvaluations < 0L
-				|| predicateProbes < 0L) {
+				|| predicateProbes < 0L || providerWorkUnits < 0L) {
 			throw new IllegalArgumentException("search counters must be non-negative");
 		}
+	}
+
+	/** Compatibility constructor for counters captured without provider work. */
+	public SearchCounterSnapshot(long ruleWork, long dphypPairProbes, long partitionProbes,
+			long candidateEvaluations, long predicateProbes) {
+		this(ruleWork, dphypPairProbes, partitionProbes, candidateEvaluations, predicateProbes, 0L);
 	}
 }

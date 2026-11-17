@@ -78,6 +78,11 @@ public final class QueryPlanCapture {
 	private static final String ISOLATED_OUTPUT_DIRECTORY = "query-plan-capture";
 
 	private static final String OPTIMIZER_TRACE_JSON_METRIC = "optimizer.cascadesTraceJson";
+	/**
+	 * Prefix of the value a store returns for an optimizer diagnostic it did not retain with a plan (for example a plan
+	 * replayed from its plan cache); the rest of the value says why.
+	 */
+	private static final String OMITTED_DIAGNOSTIC_PREFIX = "omitted:";
 	private static final DateTimeFormatter FILE_TIMESTAMP_FORMATTER = DateTimeFormatter
 			.ofPattern("yyyyMMdd-HHmmssSSS")
 			.withZone(ZoneOffset.UTC);
@@ -200,10 +205,15 @@ public final class QueryPlanCapture {
 		return snapshot;
 	}
 
+	/**
+	 * The first level's parsed optimizer trace. A trace the store omitted is recorded as an explicit
+	 * {@code traceOmitted} marker carrying the store's reason, unless a later level still has the trace.
+	 */
 	private Map<String, Object> extractOptimizerTrace(Map<String, QueryPlanExplanation> explanations) {
 		if (explanations == null || explanations.isEmpty()) {
 			return Map.of();
 		}
+		String omission = null;
 		for (String level : List.of(levelKey(Explanation.Level.Optimized), levelKey(Explanation.Level.Telemetry),
 				levelKey(Explanation.Level.Unoptimized))) {
 			QueryPlanExplanation explanation = explanations.get(level);
@@ -217,6 +227,12 @@ public final class QueryPlanCapture {
 			if (traceJson == null || traceJson.isBlank()) {
 				continue;
 			}
+			if (traceJson.startsWith(OMITTED_DIAGNOSTIC_PREFIX)) {
+				if (omission == null) {
+					omission = traceJson.substring(OMITTED_DIAGNOSTIC_PREFIX.length()).strip();
+				}
+				continue;
+			}
 			try {
 				return snapshotMapper.readValue(traceJson,
 						new TypeReference<LinkedHashMap<String, Object>>() {
@@ -228,6 +244,12 @@ public final class QueryPlanCapture {
 				parseError.put("rawLength", traceJson.length());
 				return parseError;
 			}
+		}
+		if (omission != null) {
+			LinkedHashMap<String, Object> omitted = new LinkedHashMap<>();
+			omitted.put("formatVersion", "1");
+			omitted.put("traceOmitted", omission);
+			return omitted;
 		}
 		return Map.of();
 	}

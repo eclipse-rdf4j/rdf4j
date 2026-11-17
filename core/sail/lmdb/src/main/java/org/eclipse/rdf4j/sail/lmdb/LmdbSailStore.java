@@ -1248,7 +1248,7 @@ class LmdbSailStore implements SailStore {
 				for (Object directOwner : directWriters.keySet()) {
 					if (directOwner != owner) {
 						throw new LmdbTransactionRetryException(
-								"capacity recovery cannot replace another admitted writer's continuation", null);
+								ADMITTED_WRITER_CONFLICT, null);
 					}
 				}
 				for (ReadViewLease view : views.keySet()) {
@@ -2691,7 +2691,6 @@ class LmdbSailStore implements SailStore {
 	private static final String COUNT_RUNTIME_METRIC = "optimizer.countRuntime";
 	private static final int EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES = 65_536;
 	private static final int EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES = 65_536;
-	private static final int CASCADES_PLAN_CACHE_CAPACITY = 1_024;
 	private static final int FRONTIER_DELTA_BATCH_MUTATIONS = 16_384;
 	private static final double FRONTIER_DELETE_REBUILD_THRESHOLD = 0.10d;
 	/** Fraction of the persistent delta envelope after which signed deltas are folded into a fresh base. */
@@ -3052,12 +3051,6 @@ class LmdbSailStore implements SailStore {
 		void onCommitFailure(long transactionId, long previousRequiredTxn, List<LmdbBackupDeltaCodec.Record> records,
 				Throwable error);
 	}
-
-	/**
-	 * A fast non-blocking circular buffer backed by an array.
-	 *
-	 * @param <T> Type of elements within this buffer
-	 */
 
 	private static void idleSpin(int attempts) {
 		if ((attempts & 0x3FF) == 0x3FF) {
@@ -4963,6 +4956,15 @@ class LmdbSailStore implements SailStore {
 			// version remains suitable for dataset currentness, but cannot certify a shared-cache sample.
 			return (currentPublicationVersion & 1L) == 0L && capturedPublicationVersion == currentPublicationVersion
 					&& isSnapshotCurrent() && publicationVersion == currentPublicationVersion;
+		}
+
+		/** An admitted immutable view may keep its old snapshot while an unchanged publication is in progress. */
+		boolean isLiveForAdmittedFrontierView() {
+			long publication = publicationVersion;
+			return namespacePersistenceFailure == null && tripleTxn.version() == tripleTxnVersion
+					&& valueSnapshot.isCurrent() && capturedNamespaceGeneration == namespaceGeneration
+					&& capturedPublicationVersion == (publication & ~1L)
+					&& capturedPublicationVersion == (publicationVersion & ~1L);
 		}
 
 		void ensureNativeSnapshotsValid() throws SailException {
@@ -7430,8 +7432,7 @@ class LmdbSailStore implements SailStore {
 		this.frontierPlannerSettings = LmdbFrontierPlannerSettings.from(config);
 		this.legacyPlanningEvidenceRequiresFreshOwner = format.isLegacy();
 		this.frontierStatisticsDirectory = new File(dataDir, "frontier-statistics-v2").toPath();
-		this.cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY, 16,
-				frontierPlannerSettings.packedPlanCacheBudgetBytes());
+		this.cascadesPlanCache = frontierPlannerSettings.newPackedPlanCache();
 		this.setFactoryFactory = setFactoryFactory;
 		try {
 			UUID durableStoreId = null;
@@ -7834,6 +7835,7 @@ class LmdbSailStore implements SailStore {
 			boolean waitForCommitBarrier = false;
 			boolean retry = false;
 			boolean prepared = false;
+			long mapSizeAtPublication = tripleStore.mapSizeBytes();
 			IOException capacity = null;
 			TripleStore.DomainCommitBarrierUnavailable unavailableBarrier = null;
 			Object domainOwner = new Object();
@@ -7916,26 +7918,49 @@ class LmdbSailStore implements SailStore {
 				if (!autoGrow || capacity.getSuppressed().length != 0) {
 					throw firstCapacity;
 				}
+				// Another admitted writer (or the growth it owns) may legitimately make emergency growth unavailable
+				// here: the failed publication was rolled back, so wait for that writer and retry it completely.
+				boolean writerConflict = false;
 				try {
 					Object owner = new Object();
 					try (MapGrowthAttempt growth = mapGrowthCoordinator.begin(owner)) {
 						growth.requestQuiescence(MapResizeKind.TRIPLE_STORE);
 						if (!tripleStore.growMapForEstimatedWrite(tripleStore.mapSizeBytes(), growth)) {
-							throw new IOException("Predicate-domain rebuild could not grow the TripleStore map");
+							// False means a write transaction was open (another writer owns the store) or the map
+							// no longer needs to grow. The failed publication was rolled back, so retry it after the
+							// writer is gone, unless nothing changed and the map still reports no need to grow.
+							long mapSize = tripleStore.mapSizeBytes();
+							if (mapSize == mapSizeAtPublication && !tripleStore.requiresResizeForEstimatedWrite(mapSize)) {
+								throw new IOException("Predicate-domain rebuild could not grow the TripleStore map");
+							}
+							writerConflict = true;
 						}
 					}
 				} catch (IOException | RuntimeException | Error growthFailure) {
-					if (firstCapacity != growthFailure) {
-						Throwable contextualFailure = growthFailure;
-						if (growthFailure instanceof IOException
-								&& growthFailure.getCause() instanceof InterruptedException) {
-							contextualFailure = new IOException(
-									"Interrupted while growing the TripleStore map for domain initialization",
-									growthFailure);
+					if (growthFailure instanceof LmdbTransactionRetryException conflict
+							&& isAdmittedWriterConflict(conflict)) {
+						// Emergency growth cannot replace another admitted writer's continuation: wait for it.
+						writerConflict = true;
+					} else {
+						if (firstCapacity != growthFailure) {
+							Throwable contextualFailure = growthFailure;
+							if (growthFailure instanceof IOException
+									&& growthFailure.getCause() instanceof InterruptedException) {
+								contextualFailure = new IOException(
+										"Interrupted while growing the TripleStore map for domain initialization",
+										growthFailure);
+							}
+							firstCapacity.addSuppressed(contextualFailure);
 						}
-						firstCapacity.addSuppressed(contextualFailure);
+						throw firstCapacity;
 					}
-					throw firstCapacity;
+				}
+				if (writerConflict) {
+					// Released as soon as the conflicting logical writer is gone; closing or interrupt end the wait
+					// by throwing from the lease acquisition, exactly as in the waitForWriter arm below.
+					try (WriterLease ignored = acquireWriterLease(new Object())) {
+						// Rescan and republish the complete domain after the conflicting writer released authority.
+					}
 				}
 			} else if (waitForWriter) {
 				try (WriterLease ignored = acquireWriterLease(new Object())) {
@@ -7958,6 +7983,18 @@ class LmdbSailStore implements SailStore {
 				valueStore.awaitDomainIdentityReady();
 			}
 		}
+	}
+
+	/**
+	 * The growth coordinator's reason when another admitted writer would have to be replaced. The retry exception
+	 * embeds it in a longer message, so it is recognised by containment of this exact text.
+	 */
+	private static final String ADMITTED_WRITER_CONFLICT = "capacity recovery cannot replace another admitted writer's continuation";
+
+	/** Only this reason ends when the conflicting writer's lease is released; the other reasons do not. */
+	private static boolean isAdmittedWriterConflict(LmdbTransactionRetryException conflict) {
+		String message = conflict.getMessage();
+		return message != null && message.contains(ADMITTED_WRITER_CONFLICT);
 	}
 
 	private boolean finishDeferredRdfTermDomains() throws IOException {
@@ -8467,8 +8504,10 @@ class LmdbSailStore implements SailStore {
 			FrontierStatisticsStatus status = opened.status();
 			if (!storeTxnStarted.get() && status.availability() == FrontierStatisticsAvailability.READY
 					&& !journalState.requiresBaseRebuildAfter(status.coveredSequence())) {
-				tripleStore.acknowledgeFrontierMutationsThrough(Math.min(status.coveredSequence(), latestSequence),
-						reader);
+				TripleStore.FrontierAcknowledgementCommit acknowledgement = tripleStore
+						.acknowledgeFrontierMutationsThrough(Math.min(status.coveredSequence(), latestSequence),
+								reader);
+				recordFrontierAcknowledgement(opened, acknowledgement);
 				StoreSnapshotCoordinates acknowledged = currentStoreSnapshotCoordinates(reader);
 				opened.recordMetadataOnlySnapshotAdvance(acknowledged.physicalSnapshotEpoch(),
 						acknowledged.statementMutationStamp());
@@ -9091,14 +9130,24 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void acknowledgeFrontierCoverage(long coveredSequence, Txn reader) throws IOException {
-		tripleStore.acknowledgeFrontierMutationsThrough(coveredSequence, reader);
+		TripleStore.FrontierAcknowledgementCommit acknowledgement = tripleStore
+				.acknowledgeFrontierMutationsThrough(coveredSequence, reader);
 		LmdbStatisticsService service = statisticsService;
 		if (service != null) {
+			recordFrontierAcknowledgement(service, acknowledgement);
 			StoreSnapshotCoordinates currentSnapshot = reader == null
 					? currentStoreSnapshotCoordinates()
 					: currentStoreSnapshotCoordinates(reader);
 			service.recordMetadataOnlySnapshotAdvance(
 					currentSnapshot.physicalSnapshotEpoch(), currentSnapshot.statementMutationStamp());
+		}
+	}
+
+	/** The acknowledgement's own commit changed only the mutation journal, which no generation describes. */
+	private static void recordFrontierAcknowledgement(LmdbStatisticsService service,
+			TripleStore.FrontierAcknowledgementCommit acknowledgement) {
+		if (acknowledgement != null) {
+			service.recordMetadataOnlyCommit(acknowledgement.epoch(), acknowledgement.unchangedSequence());
 		}
 	}
 
@@ -9996,6 +10045,11 @@ class LmdbSailStore implements SailStore {
 	private boolean processAsyncValueCleanup(long[] ids, int size, ValueStore.CleanupReservation identity)
 			throws IOException {
 		if (initialImportClosing || !valueStore.isValueReclamationEnabled()) {
+			return false;
+		}
+		// A pinned reader defers all cleanup (rechecked under the publication below). Registering a publication only
+		// to abandon it would make every pinned reader transiently not current for shared statistics.
+		if (tripleStore.getTxnManager().minPinnedSnapshotRevision() != Long.MAX_VALUE) {
 			return false;
 		}
 		Object owner = new Object();
@@ -11440,6 +11494,11 @@ class LmdbSailStore implements SailStore {
 		if (failure == null && publishDomainQualification) {
 			failure = attemptClose(failure, this::publishRdfTermDomainQualification);
 		}
+		if (failure == null && publishDomainQualification) {
+			// The same complete-owner, first-close gate: the closed value store certified its own final state.
+			failure = attemptClose(failure,
+					() -> LmdbLanguageTagVariantMerge.publishClosed(domainQualificationProperties, valueStore));
+		}
 		if (failure != null) {
 			logger.warn("Failed to close store", failure);
 			if (failure instanceof SailException sailException) {
@@ -11816,7 +11875,8 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private void runScheduledFrontierRebuild() {
+	/** One scheduled Frontier refresh; package-private so tests can sequence background work around it. */
+	void runScheduledFrontierRebuild() {
 		boolean retry = false;
 		long requestAtStart = frontierRebuildRequestedNanos;
 		try {
@@ -12087,7 +12147,11 @@ class LmdbSailStore implements SailStore {
 		BASE_REBUILD_REQUIRED
 	}
 
-	private boolean rebuildScheduledFrontierStatistics() {
+	/**
+	 * The base rebuild a scheduled refresh decided on; package-private so tests can sequence it against an explicit
+	 * rebuild.
+	 */
+	boolean rebuildScheduledFrontierStatistics() {
 		boolean locked = false;
 		try {
 			lockForFrontierAdmission(frontierRebuildLock);
@@ -12112,8 +12176,10 @@ class LmdbSailStore implements SailStore {
 		long epoch = snapshot.snapshotEpoch();
 		long sequence = snapshot.coveredSequence();
 		FrontierStatisticsStatus before = service.status();
+		// The generation's own acknowledgement commits after its covered epoch; a snapshot that differs from the
+		// generation's only by such recorded metadata-only commits is still described exactly.
 		if (!service.rebuildRequired() && before.availability() == FrontierStatisticsAvailability.READY
-				&& before.coveredEpoch() == epoch && before.coveredSequence() == sequence
+				&& service.describesSnapshot(epoch, sequence)
 				&& !frontierBaseRefreshOverdue(before)) {
 			service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d, -1L,
 					0.0d, Double.NaN, Double.NaN);
@@ -18981,6 +19047,15 @@ class LmdbSailStore implements SailStore {
 			}
 			readView.ensureNativeSnapshotsValid();
 			return readView.isCurrentForStatistics();
+		}
+
+		@Override
+		public boolean isLiveForAdmittedFrontierView() {
+			if (closed.get()) {
+				throw new SailException("The owning LMDB dataset is closed");
+			}
+			readView.ensureNativeSnapshotsValid();
+			return readView.isLiveForAdmittedFrontierView();
 		}
 
 		@Override

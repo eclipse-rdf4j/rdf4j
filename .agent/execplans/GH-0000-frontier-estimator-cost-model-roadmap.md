@@ -1,6 +1,6 @@
 > Historical implementation roadmap. Descriptions of retired synopsis, query-index, materialization, and migration paths below are historical evidence, not supported configuration or current behavior. See [the current LMDB estimation guide](../../core/sail/lmdb/README.md) for the surviving V2, quad, and cold-filter systems.
 
-> Current planning addition (2026-11-06): [unify Cascades, native strategies, and LMDB/adjacency physical costing](#2026-11-06-unified-physical-costing-implementation-plan). This dated section specifies the next implementation phases for that scope against branch `GH-0000-lmdb-predicate-guarantees`, commit `ae211fc3869a3a5a7388ff9e0a4793e0bf78396a`. Its preparation is source inspection and documentation only. No implementation, compilation, tests, benchmarks, or sub-agent work was performed. Earlier measurements remain historical evidence, not validation of this proposed work.
+> Active implementation (updated 2026-11-07): [unify Cascades, native strategies, and LMDB/adjacency physical costing](#2026-11-06-unified-physical-costing-implementation-plan). Upstream main is merged at `2007a9fdbb83eed79047d4cec0696c49ec1c20f8`; the user's uncommitted implementation and this plan are restored. Native-local selector improvements are reusable inputs to the roadmap, not completion of its shared planning/execution contracts. Earlier measurements remain historical evidence, not validation of the merged implementation.
 
 # Build the complete Frontier and Cascades query optimizer
 
@@ -39,7 +39,7 @@ The observable result is a planner whose explanations can answer: which alternat
 state priced each candidate, which alternatives survived Pareto dominance, which learned observation changed a
 dimension, which range fact enabled a rewrite, and why the selected plan won.
 
-The end-to-end proof is the complete 117-query Theme catalog plus exhaustive and generated small-query oracles. Every
+The end-to-end proof is the complete current 182-cell Theme catalog plus exhaustive and generated small-query oracles. Every
 query must retain authoritative SPARQL result-bag semantics, every rewrite must expose its proof and rejection reason,
 and every selected physical plan must be traceable to the Frontier state and multidimensional costs used during
 search. Planning and execution measurements must use matched stores, JVMs, evidence modes, and fixed-plan controls;
@@ -51,10 +51,1973 @@ rewrite.
 - [x] (2026-11-06) Inspect current physical costing boundaries and design the unified implementation phases.
   The dated section below is the active plan for this scope; historical unchecked milestones remain obligations
   where applicable, rather than instructions to restore retired systems.
-- [x] (2026-11-06) Finish the dated implementation plan and inspect its document diff. All implementation phases
-  remain unstarted; validation in this task is limited to source reads and document checks.
-- [ ] Unified phase 0: establish current baseline and executable regression oracles. Execution has not started.
-- [ ] Unified phase 1: connect shared contracts and planning budgets.
+- [x] (2026-11-06) Finish the dated implementation plan and inspect its document diff. At that checkpoint its phases
+  had not started; subsequent implementation and validation are recorded below.
+- [ ] **Unified phase 0, partially qualified:** the pre-merge cold-planning benchmark contains a snapshot-scope
+  fallback and is not a valid performance baseline. The admitted-view lifetime and affected restored work have focused
+  post-merge qualification; a frozen forward source, empirical shared-host A/A, catalog gap inventory and real
+  integration reds now exist. Full catalog and full-scale outcomes, qualified timing controls, cached replay, and the
+  selected-to-executed native handoff remain open; phase 0 is not accepted as complete. Its unresolved gates carry
+  forward to the final campaign while the behavior-preserving phase 1 contract adapter begins.
+- [x] (2026-11-07) Merge upstream `855a77e816602007a0dec9af6a811d00af44acf1` into
+  `d69e9dd27a7411830ab497aff728301b4889211f` as `2007a9fdbb83eed79047d4cec0696c49ec1c20f8`.
+  Git reapplied its autostash; all 5,288 original untracked files and 38 non-overlapping tracked modifications match
+  their preserved SHA-256 values, and the two overlapping LMDB files retain the same local patch modulo line offsets.
+  The index is clean. The independent backup and safety ref remain under
+  `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/` and `refs/codex/merge-safety/upstream-20261106`.
+  On the exact committed merge tree, focused ownership/cancellation suites passed 165 and 25 cases, the combined
+  selector/quote/pipeline suite passed 98, and affected model binding/tuple tests passed 31. A prior run of the same
+  98-case selection had one unreproduced DISTINCT quote-comparison failure; preserve its report and investigate it
+  rather than attributing a cause or declaring it fixed. The clean pre-merge LMDB pipeline suite independently had
+  the same three plan-shape failures as the merge candidate. Reports and diagnostics are in the backup's
+  `retry-regressions/` directory and `initial-evidence.upstream-merge-20261106.txt`.
+- [x] (2026-11-07) Audit the reapplied working tree before any further edits: all original untracked artifacts and
+  non-overlapping tracked files match the preservation manifest; both overlapping local patches match the saved
+  autostash changes after ignoring hunk positions and blob IDs. The safety ref and independent backup are retained.
+- [ ] Reconcile the restored-source LMDB qualification failures before resuming implementation. The nine-class
+  packed evaluation selection passes 176/176. The six-class LMDB selection runs 80 tests with 6 failures and 8
+  errors: named-index, range, and provider-admission classes pass 25/25; the admitted-view no-op publication
+  regression passes all three explicit/inferred/combined cases, while one packed-search population assertion,
+  two real read-ownership cases, and eleven repeated-variable cases fail. The reports and exact selectors are in
+  `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/validated-live-source/` and
+  `initial-evidence.upstream-merged-wip.txt`. A preserved pre-merge-WIP reconstruction is being tested against the
+  same selection. All 80 test identities and all 14 failure/error identities and messages match the merged work;
+  only pipeline stack line offsets differ in three cases. These failures therefore predate the merge. Two test
+  fixtures have since been updated to model admitted-view and same-session VALUES evidence, without weakening their
+  existing assertions; repeated-variable coverage now passes 14/14. The finite-VALUES case reaches a distinct
+  inclusive-plane discrepancy (expected 3, observed 4). Its prefix and append contexts have different assured-input
+  frames, so their population proof correctly refuses composition and the surviving four-row estimate is isolated,
+  not a contextual result. A preserved same-frame diagnostic passes 1/1: mapped finite-domain evidence produces the
+  expected two and three contextual rows and visits for explicit and combined planes, while the mismatched frame
+  remains refused. The correction and refusal control are in the live test and pass; the diagnostic evidence is in
+  `validated-live-source/55-finite-same-frame-diagnostic/`.
+  A real-store alias diagnostic confirms that a predicate-only prefix may retain a nonzero candidate population while
+  actual work stays unknown, whereas a context-leading alias remains unavailable; the permanent regression checks
+  both index shapes and passes. Its reports are in `validated-live-source/51-live-alias-test-green/`.
+  A publication trace confirms a separate admitted-view defect: the explicit mapped leaf remains at two rows while
+  a delegated projection uses a now-unqualified fresh scope and changes the root estimate from two to three. Preserve
+  the original assertions and fix the reader/plane capability through decorated costing before closing phase 0.
+  The in-repository `LmdbMappedPlanningPublicationRaceTest#admittedDecoratedFactorsKeepTheirPlaneAcrossPublication`
+  fails all three reader-plane cases across projection, extension, filter, and nested wrappers (112 distinct failed
+  assertions). For example, explicit projection changes from two rows/eight work to three rows/eleven work; an
+  inclusive filter also changes provenance. The red report is preserved at
+  `validated-live-source/52-publication-decorated-plane-red/` and in `initial-evidence.upstream-merged-wip.txt`.
+  Separate pre-fix controls for nested, foreign, closed and escaped session ownership, and for a committed write
+  invalidating the admitted view, pass 1/1 each in `validated-live-source/53-*` and `54-*` respectively. The
+  intended correction is a session-owned borrowed view and reader capability threaded through delegated estimates,
+  without relaxing fresh admission, shared evidence, finite-scan budgets, or invalidation.
+  Its optional query-scope estimator caches can retain variable-size keys, finite relations, evidence profiles and
+  opaque sketches. A fixed per-entry reservation cannot bound those graphs. Until phase 1 supplies defensible
+  retained-payload accounting, admitted-session estimates must not be inserted into those optional scope caches;
+  call-local memoization remains, with no claim that existing temporary computation is fully memory-accounted.
+  An initial capability patch made the original three-plane matrix pass 3/3 in
+  `validated-live-source/56-capability-patch-frozen-matrix/`; it was then revised to avoid unaccounted retention.
+  Before the no-retention revision, the in-repository
+  `LmdbMappedPlanningPublicationRaceTest#admittedDelegatedFactorDoesNotRetainUnbudgetedQueryResults` test failed
+  1/1: two delegated calls charged only one mapped probe instead of two because a query-scope result was retained.
+  Its report is in `validated-live-source/57-retention-hit-proof-red/`. Additional direct tests cover pre-probe work
+  refusal, foreign ownership, nonempty delegated prefix context, and isolation from scalar scope-cache entries.
+  The reviewed no-retention candidate and these test additions are preserved as
+  `publication-capability-no-retention-review.patch` (SHA-256 `ab23b73c7243717e6f272b1ff1a1a0daf1910e57ca91e05215327cd5f98a5f07`)
+  in the merge backup. The preceding retention regression now passes 1/1 in
+  `validated-live-source/58-no-retention-fix-focused/run-01-retention-green/`; five direct controls pass 7/7
+  including all three prefix planes in `run-02-budget-owner-prefix-cache-binding-controls/`. They exercise pre-probe
+  refusal, foreign/closed owners, connected prefixes, scalar-cache isolation and finite-binding retention. The
+  original publication matrix passes 3/3 and the corrected finite-VALUES reader-plane case passes 1/1 in `run-03-*`
+  and `run-04-*` respectively. Scoped Spotless formatting and check pass for exactly the 15 touched Java files;
+  none of the 12 pre-existing repository-wide header findings concerns those files. The formatted source snapshot
+  SHA-256 is `1c45631b79540829b93ffa296b53438b0bb5383e01a6e3a672a69b4d755a9b0e`, under
+  `run-05-targeted-live-formatting/final-formatted-source-snapshot/`. The original six restored-WIP LMDB classes now
+  pass 93/93 on that formatted source. Eight additional related estimator classes bring the run to 241 tests, with
+  13 failures and 24 errors concentrated in four classes; the reports are in `run-06-broader-restored-wip/` and
+  the 97 matching identities from those four classes were checked against preserved pre-capability WIP in `run-07-*`.
+  The V2 suite had the same 23 null-owner errors in both trees; its mocks did not supply the current admitted-read
+  contract. Its migrated ownership-aware fixture preserves the assertions and now passes 30/30 in `run-09-*`.
+  Both source-size architecture assertions already fail
+  at merged HEAD and pre-merge d69: engine 701/700 and evaluation facade 577/500; the capability adds five engine
+  lines. Do not raise the limits. One publication-admission case passed before the capability and failed afterward,
+  while three others changed from failing to passing. A single run cannot classify that drift; compare the exact
+  selector and class on immutable source snapshots before attributing cause. That target passes both standalone and
+  within its class on each preserved snapshot; the one broader-run failure timed out waiting for the initial native
+  guard before the borrowed-admission assertions and captured no child stack. The direct guard code and test hashes
+  match. This is unresolved evidence, not proof of flakiness or of a capability regression; see `run-08-*`.
+- [ ] Complete the forward-baseline prerequisites before any timed comparison. The current uncached planning
+  benchmark checks plan shape only during trial setup and combines preparation stages, so it cannot prove that every
+  measured invocation followed the intended path. Add validated invocation-level selection, execution, completion
+  and fallback receipts; separate planning, selected preparation, fixed-plan execution and end-to-end lanes; and
+  provide the independent small-plan oracle and deterministic fixtures specified below. Enumerate the complete
+  current Theme catalog (14 themes by 13 query indices) and record unsupported, missing and timed-out cells. Verify
+  exact or isomorphic result bags with an independent oracle; a probabilistic fingerprint alone is not equality.
+  Current coverage is narrower: the Theme planning benchmark defaults to 7 themes by 11 indices; the existing Jena
+  oracle defaults to 145 cells and validates counts; the bounded exact-bag LMDB comparison supplies fixtures for
+  nine themes. The catalog includes nondeterministic SAMPLE/tie-sensitive cases and cells with billions or trillions
+  of full-size rows, so choose deterministic bounded inputs or explicitly validate permitted results rather than
+  pretending hashes or impractical enumeration prove all full-size bags. A proposed first independent core oracle
+  enumerates a small connected join's proven legal orientations, scores literal typed-work vectors under independent
+  synthetic prices, and checks exact duplicate-preserving bags; it is a characterization proposal, not yet a red or
+  evidence of native recipe integration. Its first two-price run has one pass and one failing estimate assertion.
+  The same-invocation diagnostic quotes both dependent orders at 33 and 26 for EXPENSIVE_SEEKS, but the exact-complete
+  selected original join reports cost 6 and estimated rows 1; both independently materialized orientations had
+  already produced the correct two-row duplicate bag. The selected bag was not reached in that case. Determine
+  whether the fixture omitted a separately valid root logical event or the planner skipped a required physical quote
+  before proposing production changes. Source tracing identifies a physically costed written-root incumbent with
+  isolated child winners; the fixture omitted that valid costing route and left its independently known join rows
+  unrefined. Revise the test-only independent model to enumerate that route and both contextual routes, distinguish
+  route from final orientation, and preserve exact bags and both price schedules. No production bug follows from the
+  underspecified fixture. Evidence is in `run-37-oracle-same-invocation-complete-source/`. The corrected test-only
+  characterization now passes both price schedules 2/2 in `run-39-three-route-oracle/`; it is limited to the current
+  admitted generic dependent-join space and makes no native-recipe or global physical-optimality claim. Its scoped
+  formatting/check passes; final test SHA-256 `b7e61310d45c85f45b89a25f5a1439a05b7553f177eaca58159335dd66a13448`
+  and the unchanged-source proof are in `run-41-oracle-exact-format/`.
+  Freeze a complete source/input manifest and isolated dependency caches, pin and record the container/JDK, data and
+  flags, and use isolated sources for every benchmark run. Docker repository isolation was verified with the pinned
+  image: the inner helper's CLI `.m2_repo` overrides the wrapper's `MAVEN_OPTS` `.m2_repo_linux_j26`; therefore use a
+  private full source copy with its own copied `.m2_repo`, never the live checkout. Dry-run evidence is in
+  `validated-live-source/run-22-phase0-maven-docker-repo-isolation/`. Establish repeated
+  matched baseline-versus-baseline variability and fix lane tolerances before candidate comparisons; collect JFR
+  separately from ordinary matched timing. Preserve all earlier invalid benchmark artifacts as diagnostics.
+  The first implementation slice is a test-first audit of reused-root Cascades outcome metrics: exercise real
+  success, opaque-node fallback and success again on the same root, including pipeline-cache reuse. Preserve unrelated
+  semantic and physical metrics while ensuring applied/fallback, completeness and reason describe the current
+  invocation. Only after its in-repository red may the optimizer-owned outcome fields be corrected. A later benchmark
+  receipt must read that same optimized invocation and distinguish cache reuse from fresh search without invoking the
+  optimizer a second time or using a process-global counter for per-invocation attribution.
+  The first red is now captured in `run-10-cascades-outcome-freshness-red/`: after actual successful planning and
+  fallback on the same root, `optimizer.cascadesApplied` incorrectly remains `true` (1 test, 1 failure, 0 errors).
+  An initial prefix-wide reset was also disproven: it removed the retained selected child's rule provenance during
+  fallback. Its 1/1 red is preserved in `run-11-cascades-child-provenance-red/`. Replace it with an explicit
+  invocation-owned field inventory; a separate real pipeline-cache hit needs its own red because it bypasses the
+  optimizer and may copy cached metrics over an incoming root's stale fallback. That pipeline-hit red is now captured
+  1/1 in `run-12-cascades-pipeline-cache-red/`: the genuine cache hit retained an earlier fallback flag. Preserve
+  selected-plan provenance while correcting both invocation boundaries. The fallback-specific guarantee sentinels
+  also survived a later successful replan or pipeline hit: `run-13-cascades-sentinel-pre-fix-matrix/` records those
+  two failures and a passing retained-provenance control. Reset only those exact owned sentinel values; other guarantee
+  annotations remain plan provenance. A reviewed explicit `InvocationMetric` inventory and both boundary resets are
+  now frozen for focused qualification. Cached plans may still carry the original construction's search times and
+  counters; the upcoming receipt must classify those as cached-plan provenance, not fresh work on the current hit,
+  and prove that distinction while retaining cached completeness, cost and selected-plan provenance.
+  The corrected invocation-field reset passes its original smallest selector 1/1 and the complete
+  `LmdbCascadesPlanningFailSafeTest` 7/7, including real pipeline and packed cache hits, cancellation, inverse
+  success/fallback, and retained rule/guarantee provenance. Reports are in
+  `validated-live-source/run-17-deterministic-cache-fixture/`. The earlier store-readiness packed-cache miss and its
+  diagnostic remain preserved without a claimed cause; the final test uses an independently proven stable cache
+  fixture and requires genuine hit/no-estimator-call evidence.
+  After targeted formatting, the same fail-safe class passes 7/7, the ownership-aware V2 fixture passes 30/30, four
+  directly affected pipeline tests pass, and core `PackedPlanCacheTest` passes 52/52. The related LMDB packed-cache
+  class has 8 failures in 13 cases; compare those identities with preserved pre-capability WIP before attributing them
+  to this work. Seven failing methods also failed on both clean merged HEAD and pre-capability WIP. For the remaining
+  semantic-zero hit assertion, matched two-method runs fail on both baselines and pass on the current overlay, while
+  earlier full-class runs showed the reverse; the result is selection-sensitive and its cause remains unproved.
+  The learned-filter test's numeric-only snapshot cannot authorize feedback publication, so its later invalidation
+  assertion requires an owner-qualified fixture and an independently observed revision change. Exact reports are in
+  `validated-live-source/run-18-targeted-format-final-verify/` and `run-20-cache-drift-matched/`.
+  The next approved slice captures an immutable receipt from the same `LmdbBenchmarkQueryPlan.prepare` optimize
+  result, before precompilation, with fresh search, packed-cache hit, pipeline-cache hit, fallback and unobserved
+  outcomes distinguished. Only the qualified planning benchmark lane imposes COMPLETE/no-fallback requirements, and
+  its uncached lane also requires fresh search. A separate explicit expectation must permit intentionally bounded
+  incomplete plans for phase 6. Receipt access must not repeat optimization, attribute inherited pipeline counters to
+  current work, or leave resources open when validation rejects a call. The first required red is the real
+  `LmdbFrontierPlanningBenchmarkTest#measuredPlanningRejectsBudgetExhaustion`. Its first run instead failed in
+  setup because no eight-factor Frontier state was observed; it did not reach the budget assertion and is not a
+  behavior red. Its explanation shows an applied COMPLETE packed plan with 17 candidates, but no Frontier evidence;
+  do not weaken the eight-factor setup invariant or call that lane qualified. Evidence is in
+  `validated-live-source/run-19-frontier-budget-receipt-red/`. The approved smaller red uses the existing real Theme
+  planning fixture and must prove BUDGET_EXHAUSTED on the same measured invocation, without another optimize call.
+  That red is captured: `ThemeQueryPlanRunBenchmarkTest#measuredPlanningRejectsBudgetExhaustion` confirms the same
+  invocation is BUDGET_EXHAUSTED but fails because the measured method does not reject it (1 test, 1 failure,
+  0 errors), in `validated-live-source/run-21-theme-budget-receipt-red/`. An initial receipt candidate passes that
+  selector 1/1, direct receipt tests 5/5 and the full Theme benchmark test 19/19 in
+  `validated-live-source/run-23-receipt-candidate-qualification/`. Its Frontier benchmark class still fails the
+  unchanged eight-factor setup invariant before receipt checks; the plan in that run reported BUDGET_EXHAUSTED, so
+  that lane remains unqualified. Review found a missing outer-cache marker was incorrectly treated as false; the
+  in-repository marker/pipeline red now records 8 cases, 4 intended failures and 0 errors in
+  `validated-live-source/run-24-marker-pipeline-red/`: absent outer markers were called FRESH/PACKED and the real
+  uncached pipeline left null or stale true instead of false. The explicit-marker correction now passes that
+  selection 8/8 in `validated-live-source/run-25-receipt-marker-fix-qualification/01-marker-four-methods-green/`;
+  the full direct receipt class passes 12/12 and the full Theme benchmark class passes 19/19 in the same bundle.
+  Scoped formatting/check and post-format reruns also pass 8/8, 12/12 and 19/19 respectively in
+  `validated-live-source/run-26-format-marker-final-qualification/`; these selections overlap and are not additive.
+  The frozen selected diff SHA-256 is `0bff2db5760f6cada9370a2cfd54b5436e4123f6f6319426581f562e08d7f735`.
+  The uncached lane's OBSERVE expectation still requires an explicitly observed fresh path; it relaxes completion
+  expectations, not cache identity.
+  Next, diagnose the actual Frontier admission using same-invocation receipts and effective mode, work, deadline and
+  memory settings; do not broaden arbitrary limits or weaken its eight-factor invariant. Design genuinely separate
+  planning and selected-preparation timing boundaries, including native preparation that remains lazy after
+  precompilation. Return a concrete next slice and its validation before changing that implementation.
+  Same-invocation native receipts must distinguish considered, selected, opened, executed-completed, fallback and
+  abort for each native subregion. `DispatchLoop`'s process-global decision records/observer are not sufficient for
+  attribution: ranking precedes open and the observer fires after open, not completed consumption. Inspect same-tree
+  `LmdbNativeExplain`/attempt metrics and evaluation-identity phase events instead; detached receipts must not retain
+  a source or lease. WRITTEN/EXACT algebra controls alone do not prove a fixed physical plan.
+  Existing runtime-plan summaries merge openings by rendered shape, OR completion and overwrite strategy, so they
+  cannot identify one evaluation of a reused prepared step. The approved next design introduces an opt-in, bounded,
+  detached per-evaluation typed contract with an outer benchmark invocation handle distinct from native region tokens.
+  Begin with native row-owner full/partial/reuse/concurrency and explicit UNOBSERVED/UNLINKED status; GROUP/nesting
+  follow. Add only unused behavior-neutral value/interface scaffolding first, then capture real prepared-step missing
+  event reds through that contract before connecting runtime owners. Do not manufacture a red via a test facade that
+  always returns UNOBSERVED, or treat cumulative explain telemetry as a defect.
+  The initial contract is opt-in and bounded by event and label limits; overflow reports TRUNCATED rather than
+  overwriting prior evidence as complete. Detached facts carry only primitive/enums/immutable labels, no per-row
+  events or live sources, contexts, leases or throwables. Scoped handles restore on every exception/iterator call,
+  and workers inherit explicitly; any global ID generator is for uniqueness, not attribution. A real compiled-step
+  test must cover full and partial consumption in both orders, concurrent openings, disabled capture and overflow
+  isolation before lifecycle wiring. Uninstrumented group/retry/nested regions stay UNOBSERVED. Publish terminal
+  completion only after the actual owner's successful cleanup; selected-to-executed linkage remains UNLINKED. Distinguish
+  FAILED and CANCELLED from a discarded speculative attempt, preserve root-complete versus child-partial under LIMIT,
+  and do not render full plans or exception messages merely to discover that the observation budget is exhausted.
+  The unused bounded scaffold passes 8/8. Real compiled-step full/partial tests in both orders fail 2/2 and concurrent
+  openings fail 1/1 at the intended OBSERVED-versus-UNOBSERVED assertion, after result bags/filter settlement and
+  distinct invocation IDs pass. Reports are in `native-observation-qualification-20261107-h0718btq/`. No native
+  lifecycle wiring was present for those reds.
+  A real owner-transfer test must leave capture A's entry scope before consuming its iterator, then verify later pulls
+  under no scope or capture B still publish only to A. Row EOF precedes final context settlement, and a context close
+  can defer work until the last lease releases, so worker-handoff and cleanup-failure tests are required before any
+  terminal event can claim successful completion. The six transfer variants now reach their intended missing-event
+  reds after bag, scope-restoration and full/partial filter-settlement checks pass; reports are in
+  `native-row-settlement-qualification-20261107-iv16n1qj/`. Corrected real context-resource/producer cleanup cases
+  now fail 6/6 and held-child/worker settlement cases 2/2 only at the intended missing-event assertions, after bags,
+  cleanup identity, lease and release gates pass; see `native-row-settlement-fixture-qualification-20261107-rodi9bwa/`.
+  Real cancellation cases also fail 2/2 only at the missing-event assertion after cancellation, cleanup and identity
+  checks pass. The 0/2-cap real tests currently see UNOBSERVED because no owner event exists, so they do not yet prove
+  overflow behavior; retain them as post-wiring gates alongside the passing standalone bounds controls. Evidence is in
+  `native-row-cancel-import-qualification-20261107-f3b8253d/`.
+  An initial owner-wiring candidate passes 11 focused selections, 40 tests, in
+  `native-row-owner-wiring-qualification-20261107-7006b5de/`, including real overflow and lease/worker controls.
+  Review found the new latch must not infer PARTIAL when producer outcome is still absent, and a reentrant producer
+  close may deliver a nested finish before the outer cleanup returns. Both counterexamples are now recorded: the
+  outcome-after-settlement unit failed 1/1, and real reentrant close failed 2/2 while preserving original throwable
+  identity and close count; all saw a premature PARTIAL. Reports are in
+  `native-row-reentrant-red-qualification-20261107-dbf98c64/`. Correct only the observation latch without altering
+  engine scheduling/exception precedence. Review also found a specific promotion-order risk: an occurrence-local
+  cancellation can carry a real suppressed producer cleanup failure, but the new finally block could publish CANCELLED
+  before existing promotion rethrows that failure. Add a real reentrant cancellation+cleanup red, then bracket the
+  existing promotion boundary without duplicating throwable analysis. The red is now captured: both EOF cases pass;
+  both cancellation cases preserve cleanup primary, cancellation observer/origin, one close and no terminal during
+  cleanup, then lack the required FAILED event. The full actual phase was not printed, so do not assert it was
+  CANCELLED. Reports are in `native-row-cancel-promotion-red-qualification-20261107-27c7f87a/`. The 40-test result is
+  pre-correction, not final.
+  The final owner change brackets the existing cleanup-failure promotion before publishing a terminal event. The
+  original promotion and outcome-ordering reds pass 4/4 and 1/1; full observation and filter-completion classes pass
+  17/17 and 196/196. A post-format combined selection then had one incomplete-feedback assertion error: its worker
+  gate did not establish that the full filter input remained unconsumed. The same method passed once on each of the
+  formatted candidate and a constructed candidate-minus-observation counterfactual; neither proves the failing run's
+  cause. Preserve that unresolved report and the counterfactual manifests in
+  `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/validated-live-source/native-row-promotion-fix-qualification-20261107-28097232/`.
+  A test-only fixture now holds both distinct workers at first acceptance and derives its source population from the
+  bounded morsel, batch and queue capacities, preserving the reentrant-close and incomplete-feedback assertions. The
+  focused method passes 1/1, its class 196/196, and the combined lifecycle selection 280/280 both before and after
+  formatting. The final fixture patch and reports are in
+  `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/validated-live-source/worker-reentry-fixture-review-oqtihPXv/`.
+  This qualifies only fresh owned row-region observations; group, ordered, nested, retry and physical strategy events
+  remain unobserved, and selected-to-executed linkage remains unlinked. Next bind an invocation-owned benchmark handle
+  to the same capture across lazy evaluation and cancellation, beginning with a real delayed-step regression.
+  That real delayed-final-result regression failed 3/3 at opening capture A's missing ROW event after exact bags,
+  same-tree one-optimize/precompile, scope transfer and lazy-open checks passed. The unchanged assertions now pass
+  3/3: an opt-in capture follows the returned iterator's operations and timeout cancellation, and a per-evaluation
+  handle owns its detached snapshot. No-capture/disabled openings preserve the original iterator; cooperative
+  cancellation is advertised only when the wrapped result supports it. The native preparation class passes 19/19 and
+  the combined helper/preparation/receipt/observation/Theme selection passes 84/84 before and after scoped formatting.
+  Preserve the red, final patch and reports under
+  `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/validated-live-source/benchmark-observation-FMCuV4IH/`.
+  Per-invocation row observations do not yet certify the outer query, a native strategy or fallback; next separate
+  optimization, final-result precompile and lazy evaluation/first-pull/drain/close timing boundaries on the same
+  owned invocation, and build the bounded independent semantic catalog before matched A/A timing.
+  The catalog oracle now has a typed exact solution-bag codec and one global blank-node bijection; exact duplicate
+  multiplicities, unbound slots and nested RDF terms are retained. The prior cross-store oracle compared raw blank-node
+  identifiers and failed an isomorphic-input regression. Subsequent review exposed malformed numeric/literal records,
+  multiplicity-sum overflow and row-recursive stack overflow on bounded-stack 4,096-row ground and blank-node bags;
+  all were recorded as reds before correction. Ground rows now match directly and blank-node rows use an iterative,
+  reversible bijection search, with exhaustive small-graph controls and no arbitrary size cutoff. A separate typed
+  adapter regression caught 24 ways to silently normalize inconsistent literal metadata; reconstruction now verifies
+  the captured metadata. The reviewed final patch passes codec 19/19 and cross-store oracle 9/9 after formatting. Reds,
+  source identities and qualification reports are under
+  `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/codec-canonical-final-review-k6vdezp0/` and its linked bundles.
+  This codec is infrastructure, not catalog parity: generate and independently verify a bounded REAL_ESTATE bundle
+  for 13 cells first, then account for all 182 cells and SPARQL nondeterminism before claiming semantic coverage.
+  The bounded REAL_ESTATE fixture now has independently checked q0--q12 witnesses, and Jena generated and separately
+  verified 13 raw typed bags from its pinned 522-statement dataset. The first hermetic cross-engine comparison failed
+  at q0: Jena emitted the computed decimal AVG `950000.0`, while RDF4J MemoryStore emitted `950000` with the same
+  datatype and numeric value; the other row and multiplicities matched. Preserve both raw bags and the exact failure.
+  A separate, conservative expression-provenance policy may compare supported computed integer/decimal results by
+  equal datatype and exact numeric value, while source terms and unproved or term-sensitive origins remain exact;
+  this is value equivalence, not exact Jena RDF-term equality. RDF4J MemoryStore, generic LMDB and native LMDB must
+  still match each other as exact bags. The approved design and its limitations are in
+  `/private/tmp/rdf4j-computed-policy-design-20261107-mffQAV/design.md`. Its separate, fail-closed policy now preserves
+  raw rows, multiplicities and global term identity while relaxing only proven computed decimal/integer outputs with
+  the same datatype and exact numeric value. The manifest records and independently recomputes the proof. All 13
+  bounded REAL_ESTATE cells pass the Jena comparison under that stated policy and match exactly among RDF4J modes;
+  policy, bundle and codec tests pass 15/9/19, and the LMDB fixture, independent oracle and observation classes pass
+  3/9/17 after formatting. All 13 native-enabled execution receipts remain UNOBSERVED, so this establishes mode parity
+  only and does not prove native execution. The 16 raw dataset, result-bag and order files remain byte-identical to the
+  independently verified Jena bundle. Preserve red, commands, observations and final qualification at
+  `/private/tmp/rdf4j-computed-policy-final-review-20261107-Pa6K0h/qualification-summary.md`. Jena fixture conversion
+  explicitly rejects unsupported named graphs, directional literals and triple terms; all other catalog cells remain
+  open, as do native selection/execution identity and a valid matched timing baseline.
+  The timing slice preserves legacy `planQuery` and `planUncachedQuery` as combined measurements and adds separately
+  named optimize, final-tuple-precompile, reused-prepared-step and end-to-end lanes. An owned preparation lifecycle
+  must carry the same selected tree and receipt across stages, preserve eager `prepare` behavior, and retire dataset
+  and branch on all failures or transfer them once. An untimed exact-bag qualification does not prove every later
+  measured invocation's bag; counts and fingerprints do not fill that gap. Preparation in invocation teardown may
+  warm code or feedback, so cache, feedback and storage regimes must be pinned before A/A timing. A reused prepared
+  step is not a fixed physical plan: lazy native selection, binding and code generation can remain in evaluation.
+  The final seven-file timing/fixture patch is
+  `/private/tmp/rdf4j-timing-lanes-20261107-3z24z8pv/final-review/timing-and-fixture.patch` (SHA-256
+  `e46891743f14df559a8d2c600423a070aff5d9173c0b6cae52fb90d35080dcf6`). After scoped formatting, the related
+  selection passed 132/132 and the unchanged fixture/lane selector passed 25/25 before and after; the legacy helper
+  baseline selector passed 15 cases before and 30 after its class gained 15 cases. Preserved reds prove cleanup
+  failure identity, timeout restoration, explicit-input use and malformed fixture rejection; exact commands and
+  reports are in `final-review/qualification-summary.md` beside the patch. All four actual generated JMH lane bodies
+  completed a one-fork, one-iteration lifecycle smoke on a fresh, isolated REAL_ESTATE q2 store. Its same-helper
+  preflight reported FRESH/COMPLETE and matched the 25-row Jena bag exactly; the three measured planning invocations
+  reported PIPELINE_CACHE/COMPLETE, while the reused-step lane reported that receipt once at its initial preparation.
+  The smoke used native execution disabled, discarded timing scores, and did not establish selected-to-executed
+  identity or per-invocation bag equality. Preflight executed first; generated-code and OS page-cache state remain
+  UNKNOWN. All 20,174 copied inputs stayed byte-identical; 1,600 additional isolated build outputs were retained and
+  enumerated. Command arrays, fixture hashes, observation limits and logs are in
+  `/private/tmp/rdf4j-timing-lanes-20261107-3z24z8pv/isolated-jmh-snapshot/`.
+  During an attempted diagnostic, `debug-surefire.sh --skip-install` unexpectedly formatted 210 Java files before
+  failing compilation against stale local artifacts; no test JVM started. The reviewed recovery patch restored all
+  210 verified preimages, including six WIP paths and the new consumer, with no other changes across 23,136 source
+  and configuration paths and no change to HEAD, branch or index. Preserve the pre/post copies, logs and audit at
+  `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/formatter-live-recovery-20261107T182000Z/`. Future manual
+  Maven and debugger invocations must use current installed artifacts and explicitly skip formatter/import sorting.
+  In the preserved same-flow AUTO diagnostic, the actual receipt is FRESH/BUDGET_EXHAUSTED with
+  CANDIDATE_EVALUATIONS, 17 charged work/candidate units and no selected Frontier state. The paired explicit-only
+  dataset reports epoch 5, owner/transaction/dictionary present, plane 1 and a current matching preparer. Selected
+  fallback/admission annotations are absent, so this does not identify the session that was admitted. The separate
+  EXACT control is FRESH/COMPLETE with the same 17 work/candidate units and zero selected Frontier state; it also has
+  no selected admission metadata. Increasing a limit alone therefore does not explain the observed EXACT failure.
+  Evidence is under `run-34-frontier-same-flow-diagnostic-w7i55469/`. A remaining hypothesis is that the optimizer
+  pipeline captures an empty qualified epoch during construction and substitutes generic evaluation statistics,
+  bypassing the Frontier provider; a later live owner does not prove the constructor saw that owner. Capture the
+  actual constructor-time decision and inspect isolation/lazy-pin timing before treating this as a cause. A corrected
+  sealed-source EXACT debugger run observed epoch 5 and an actual admitted `LmdbFrontierStatisticsCostSession` with
+  generation 5 and plane 1, so that no-session hypothesis did not occur in this invocation. Its first inspected
+  Frontier leaf had 4,096 estimated rows but unknown physical work/seeks and a max-double objective; determine whether
+  that uncertainty is justified and trace evidence through attachment, detachment and selected materialization. Its
+  first leaf did attach `proof=1` and `evidenceStateId=1`; residual components outside the selected native prefix
+  deliberately leave actual skip-scan visits/seeks unknown rather than deriving them from candidate population.
+  The paired uninstrumented control still fails the eight-factor assertion. Debugger pauses invalidate timing and
+  completion comparisons; exact source/control/debug evidence is in `run-40-frontier-exact-debugger-sealed/`.
+  A separate source audit found that `CascadesPlanner` derives public completeness and provenance reason only from
+  legacy deadline/work booleans, so packed resource-limit or unsupported-semantics outcomes can be labeled COMPLETE.
+  A later sealed single-invocation EXACT trace links that defect to the observed Frontier setup failure: provider
+  admission exhausted retained memory at 66,673,230 of 67,108,864 bytes, then scalar fallback ran without provider
+  evidence. The packed result was `INCOMPLETE_RESOURCE_LIMIT`, but its public receipt said COMPLETE. The earlier
+  extraction/detachment branches were not reached. The paired unpaused TRACE run also had no detached events; this
+  identifies the observed route, not the cause or legitimacy of retained-memory consumption. Full evidence and the
+  no-debug source-identical control are in `run-43-frontier-provider-trace-jdb/`; debugger timings are diagnostic.
+  A subsequent sealed first-latch trace identifies a 12,582,912-byte `PackedPhysicalMetadataArena` planned-double
+  metric array growth (1,048,576 to 2,097,152 slots), requested while 435,634 bytes remained. It arose through
+  `PackedMemo.addPhysicalMetadata` and `PackedJoinEnumerator.retainDenseCandidate`, not an optional provider probe;
+  no duplicate charge was observed. These are logical cumulative reservations, not a measured live heap. Examine
+  arena/candidate lifetimes before declaring over-accounting; do not increase the production default or weaken the
+  eight-factor invariant. The unpaused EXACT control and trace are in `run-45-frontier-first-resource-latch/`.
+  For phase 0 this eight-factor lane is explicitly resource-incomplete and excluded from COMPLETE-planning latency
+  comparisons until the actual invariant is met. Continue baseline qualification using lanes whose eligibility and
+  completion are observed; a general configurable retained-budget contract belongs to phase 1, not a benchmark-only
+  increase of the production default.
+  Add an in-repository five-status boundary matrix and a real
+  resource-limited public optimize red before any exhaustive mapping/API or receipt-policy correction. Both are now
+  captured in `run-42-completeness-reds/`: resource/unsupported are mislabeled COMPLETE in the five-status matrix,
+  and a real zero-retention executable plan is likewise mislabeled. Two receipt cases also fail to propagate those
+  statuses. The approved exhaustive adapter/completeness/receipt correction may proceed; preserve selected plans,
+  metrics, decision summaries and distinct causes. The reviewed fix now passes all focused reds and full affected
+  classes: boundary 8/8, resource budget 18/18, receipt 14/14 and Theme 19/19 in `run-44`; these counts are distinct
+  full classes, not added to their overlapping focused selections. Scoped formatting/check and post-format reruns
+  pass core 26/26 and LMDB 33/33 in `completeness-format-20261107-bsoj8nl2/`; selected diff SHA-256 is
+  `bd1032ff08c113c9e156b00d8ee5b7d79610494640be8226c50880b2e249ea2d`, with no nonselected source changes.
+  Read-only review found that Frontier setup uses a separate default-inferred explain, whereas measured preparation
+  forks an explicit-only source. The benchmark helper also calls the three-argument strategy factory (thereby using
+  the default policy) and `precompile`, while the repository passes its actual execution policy and calls
+  `precompileFinalTupleResult`. The next approved test-first slice will exercise the real native tuple-result entry,
+  non-default policy and exact root/nested bags before aligning the benchmark helper. A separate Error-path cleanup
+  red must prove primary/suppressed exception behavior before any ownership correction. The later Frontier diagnostic
+  must use the same prepared invocation/receipt and declared population as measurement. Label stages optimization
+  and final-result precompile; native opening, fallback compilation and binding can remain lazy through first pull.
+  Native-entry tests now reproduce both helper mismatches (3 cases, 2 intended failures): final tuple-result entry was
+  not called and the non-default store policy was not passed; nested duplicate/aggregate bags pass. Reports are in
+  `validated-live-source/run-28-native-entry-error-reds/01-native-entry-red/`. Separate Error-path tests also fail
+  4/4 as intended: the dataset is not closed at three preparation stages and cleanup failures are not suppressed
+  onto the original error. The reviewed helper candidate passes the native-entry/policy/bag class 3/3 and the
+  preparation-failure class 5/5, including an added self-suppression/branch-Error case, in `run-29-*`. Dependent
+  helper test run has 11/12 passing; its plan-quality audit failure (`Filter at root.requiredInputFrame`) reproduces
+  identically on the preserved pre-entry source in `run-30-preentry-query-audit-ixmh6vlz/`. Receipt/Theme tests remain
+  to be rerun after this classification. The distinct successful-close Error red is now captured 4/4 in
+  `run-31-close-control-prefx-o0pac16r/01-close-error-red/`: branch closure may be skipped, the primary may be
+  replaced, or self-suppression may throw. Separate real native WRITTEN/EXACT controls pass 2/2 for their declared
+  selected-algebra order and duplicate-preserving result bags; they do not establish a fixed physical plan. The scoped
+  close fix now passes the focused red 4/4, full failure-cleanup class 9/9, native preparation class 5/5, receipt
+  class 12/12 and Theme class 19/19 in `run-32-close-fix-qualification-u2ba722b/`; the focused four overlap the nine.
+  Targeted formatting/check changed only the selected native-preparation test, and a post-format combined run passes
+  all four full classes 45/45 in `run-33-close-helper-format-and-verify-efu6t87g/`. The pre-existing plan-quality
+  audit and Frontier setup failures remain open.
+  Matched A/A timing may begin only after freezing the forward source and all measurement identities and declaring
+  which observed, COMPLETE lane and cache/feedback/storage regime it measures. A bounded q2 result is partial baseline
+  evidence, not the full-scale or fixed-physical-plan acceptance comparison.
+  Audit follow-up: direct mapped callbacks currently check their owning scope at entry. A writer can overlap a pinned
+  read, but overlap alone does not show a defect: the older-snapshot estimate may linearize before that commit. Before
+  changing this separate lane, establish the authority/feedback/selected-recipe publication contract and reproduce an
+  invalid escape beyond permitted snapshot semantics; the delegated-cost red does not establish one.
+- [x] (2026-11-06 12:58Z) Run the mandatory initial offline root quick clean install. All reactor modules succeeded in 01:45; tests were skipped. Full output is `maven-build.log`; the prior log was preserved as `/tmp/maven-build.log.pre-initial-root-quick-install-20261106`.
+- [x] (2026-11-06 13:40Z) Observe the smallest physical-quantity regression before production changes. `PackedDeclaredQuantityReplayTest#composingAChildDoesNotInventAnUnknownSeekCount` ran one test with one expected failure because an unknown seek count became known during composition. Offline Maven first lacked the Surefire JUnit provider; an online retry reached the test. Retained report and exact commands are in `initial-evidence.unified-costing-20261106.txt`, with full logs under `/private/tmp/rdf4j-unified-costing-regression-20261106T133509Z/`.
+- [x] (2026-11-06 13:49Z) Observe the independent dependent-subquery pricing regression. `PackedPhysicalCostContractTest#dependentSubqueryObjectiveIsNotRepricedAsSourceRows` ran one test with one expected failure: objective 1110 instead of 210 when a tenfold source price was applied again to an already-priced subquery. Evidence is appended to `initial-evidence.unified-costing-20261106.txt`, with retained reports and logs under `/private/tmp/rdf4j-unified-objective-red-20261106T134457Z/`.
+- [x] (2026-11-06) Observe a selected-prefix access counterexample after updating its mocked read-selection fixture to model the current session contract. `LmdbPackedRepeatedVariableAccessCostTest#selectiveConstantOutsideThePrefixDoesNotShrinkTheScannedPopulation` ran one test with one failure and no errors: the prefix population is 97 while the complete-pattern logical result is 1. Later source inspection showed `LmdbRecordIterator` can skip residual-mismatch runs, so the test's original expectation that exactly 97 entries are visited is not established; it must be corrected against real traversal and seek evidence. The original fixture setup error and diagnostic red are preserved under `/private/tmp/rdf4j-lmdb-access-regression-20261106T135557Z/` and `/private/tmp/rdf4j-unified-costing-final-regressions-20261106T141102Z/01-access/` respectively. The candidate LMDB correction is provisional until it represents that distinction honestly.
+- [ ] **[in_progress] Unified phase 1:** add real structural region-coverage/work-once, typed-outcome, shared-budget
+  reservation/cleanup and zero-optional executable-fallback contract tests, then a behavior-preserving adapter. Keep
+  existing scalar models and selection behavior compatible; review each substantive slice before expanding it.
+  Current review follow-up: qualify the scoped invocation and VALUES corrections against the affected selections.
+  The real-store scalar red retained an isolated output of 100 but priced a per-invocation candidate of 50, 100 scans
+  and 100 result rows for two unrelated inputs; the corrected focused selection passes with candidate 100 and 200
+  scans and result rows. An actual enumerator red priced two isolated reopen variants at 134 rather than 150; both
+  now pass, as does the disconnected-component control. An isolated factor with possible input bindings retains
+  unknown candidate, visit, seek and result work when no conditional model is available. Finite and component
+  quantities retain their own measured domains. The estimate-zero invocation clamp is unchanged.
+  Before the correction a nested VALUES row-only name was absent from both leaf and parent possible-output masks;
+  two variants failed despite projection-barrier and bag controls passing. Cached binding analysis now marks the
+  header domain incomplete and propagates that uncertainty while preserving the declared header. The affected
+  finite-filter rule control passes; this does not establish blanket safety for every pre-memo rule. Exact red and
+  focused green evidence is retained under `/private/tmp/rdf4j-quantity-invocations-20261108-ty_kmnh_/`.
+  Quote graphs remain fixed transient per admitted callback; no new reusable scratch was added. The new input proof
+  walks up to four statement terms for each prefix relation inside an admitted callback, but has no distinct
+  per-relation work charge. Existing reusable `PackedCostEstimate` metric-array growth likewise has no separate
+  reserve at allocation. Neither total JVM heap nor complete callback work is claimed as budget-accounted.
+  The interim formatted 192-test selection passed 203 cases and matched all 192 earlier identities, including the
+  original 76 and dependent 38. Subsequent fully bound scope reds showed an isolated all-constant factor changing
+  from 1 to 2 rows and 2 to 4 scans/results, and a prefix-bound isolated factor changing from 100 to 2; both were
+  spuriously marked contextual by the scalar compatibility adapter. A further opaque-prefix constant red produced
+  unknown work even though constants cannot observe input bindings. The focused corrected selection passes both
+  tests, including the opaque-prefix variant. Preserve the exact red reports and rerun qualification on the final
+  formatted source; no new claim about the previously excluded fixture failures follows from these tests.
+  A downstream audit found that dense append and retained-context paths can keep a finite isolated winner price when
+  a contextual factor explicitly reports unknown work. Reproduce this through the real enumerator before changing
+  propagation; an unpriced dependent candidate must not become a finite winner through its invocation stamp. The
+  real two-factor planner red selected dependent iteration and certified a lower bound despite unknown contextual
+  work; its actual result bag and a fully priced dependent control passed. A separate single-access red has no priced
+  alternative but returned a finite total and lower bound; its executable result bag remains correct. A third red shows
+  an unopened provider on the zero-budget fallback still received a finite total; that test preserves its separate
+  INCOMPLETE_WORK_LIMIT search reason. Preserve search completion independently from typed comparison and selected-price
+  availability, and propagate unknown through the memo, public plan/provenance, decisions, caches, learning and
+  telemetry without a numeric proxy. Preserve a priced independent alternative and an executable ordinary fallback.
+  Full TDD red evidence for all three is in `evidence/red-21-price-comparison-budget/` under the invocation artifact.
+  One exploratory build overlapped live source edits; `evidence/iterate-core-unpriced-01/INVALID-SOURCE-OVERLAP.txt`
+  marks its reports invalid even though the start/end hash check happened to report stable. All later source edits and
+  builds are serialized. A stable, pre-adapter public-boundary test then failed because an unavailable packed price
+  became an accessible finite `CostVector`. A separate real LMDB cache red failed for both unpriced and priced-but-
+  incomparable winners: the former threw on an invalid interval, and the latter was reused as a cache hit. The source,
+  Surefire reports and initial-evidence entries are retained in `evidence/red-23-public-boundary/` and
+  `evidence/red-24-lmdb-cache/`. Boundary and cache fixes are in progress and have not yet passed verification.
+  A subsequent real `EXISTS` parent red exposed unknown work being converted to a saturated finite number; its
+  priced control and executable bag are retained. A further real memoized-optional callback observed the same
+  saturation, while a dependent-only admitted search assigned a finite 427 to an unpriced fallback. The latter's
+  small input is below the existing hash admission threshold; a larger input separately exercises the priced
+  independent alternative. Reports and exact sources are in `evidence/red-25-unpriced-parents/` and
+  `evidence/red-26-memo-and-fallback/`. Corrections remain subject to focused and cross-path verification.
+  The scalar `EXISTS` variant separately failed in `rebaseObjective` while the explicit-physical variant passed;
+  `evidence/red-27-scalar-parent/` retains that in-repo red. A read-only JDWP breakpoint on the fully priced
+  control identified an unpriced written-order fallback retained alongside the costed ordinary join. An interim
+  candidate-equivalence check produced a focused green but was withdrawn: runtime join guards and LMDB native
+  selection can consume per-node estimates, so the two recipes' different estimates do not prove identical physical
+  execution. Preserve that focused run and exact withdrawn source as investigation evidence, not final acceptance.
+  A priced winner remains usable but its comparison stays unbounded in this case until actual execution identity can
+  be proved. The written-order safety check also walks prefix relations and at most
+  six existing binding masks per relation without allocating new masks; it has no distinct per-mask work charge beyond
+  its existing owning planner operation. The breakpoint evidence is in `evidence/debug-known-comparison/`; no
+  complete JVM-heap accounting is claimed.
+  Further production-path reds found that a nested UNION could compose a context-free child into a purportedly
+  contextual price of 321, and that an ordinary OPTIONAL could price unavailable bound work from an isolated child.
+  A condition-bearing OPTIONAL retained a finite fallback of 226; a competing unconditioned OPTIONAL suppressed its
+  independently priced hash alternative. Scalar and explicit-physical providers reproduced both. A separate bound
+  isolated-estimate red showed unsupported prices 122 and 226; a disconnected explicit access required 427 rather
+  than 226 for two inputs, and a mixed VALUES input was assigned 223 without contextual pricing. The initially
+  asserted scalar value of 222 was corrected before the fix to the established startup-once recurrence of 221; the
+  exact original and corrected reports are retained. The first inherited-prefix investigative red is not itself proof
+  of selected mispricing: its returned 30-cost winner had context zero and the direct dependent caller rejects it.
+  `red-29` and `red-32` through `red-36` preserve the actual reports and source snapshots under the invocation artifact.
+  Contextual composition now requires the requested input identity; OPTIONAL retains unavailable work separately from
+  an executable fallback, and can select a finite independent implementation without certifying a complete comparison.
+  A proven disconnected prefix repeats the source event's isolated work without treating composed row metadata as an
+  invocation-work certificate. A prefix with possible, but not assured, bindings still reaches the provider. The
+  source-stable `green-36-optional-scope` focused selection passed 281/281 including bags, known prices, mixed inputs,
+  independent alternatives, and zero-budget controls. Search exhaustion remains distinct from comparison completeness.
+  The new prefix-domain check traverses the already retained prefix masks without allocating reusable scratch, but has
+  no separate deterministic charge for each mask operation. A broad formatted-source qualification is still required.
+  A further 214-case LMDB fallback selection reported
+  182 null-read-selection fixture errors and 11 binding-contract assertion failures; all 193 matched by test identity,
+  kind and message in the isolated 12,661-source-hash-matched immediately pre-follow-up counterfactual, with the
+  current authorized index precomputation. This comparison does not establish their origin on an earlier base.
+  The inactive provider contract's three-blocker review follow-up has matching planner-backed evidence: before the
+  correction, 10 of 14 tests failed for cancellation precedence, an attempt resumed after raw admission refusal,
+  or a provider getter reentering the shared vector builder. The focused corrected selection passes 37 of 37,
+  including the original 23 provider-contract controls. Reports, scoped formatting and source identities are in
+  `/private/tmp/rdf4j-provider-review-fixes-20261108-m5ys9pbp/`. The corrected candidate awaits independent review;
+  fresh broad affected and LMDB qualification must follow review. No runtime selection or backend was activated.
+  The subsequent signed-zero review correction uses the arena's numerical equality when rejecting UNKNOWN
+  degenerate intervals. Real planner/provider tests covered quote and boundary for all signed-zero point/endpoint
+  permutations, both before and after actual interval-builder materialization, and exact-zero and invalid-input
+  controls. The two tests failed before the correction and passed afterward; the direct two-class selection passed
+  39/39. Evidence is in `/private/tmp/rdf4j-provider-signed-zero-20261108-8b_m1ywq/`; this candidate awaits review
+  before fresh broad qualification.
+  The next review correction rejects non-finite, negative and unordered quantity intervals before reading or
+  interpreting lineage, while checking cancellation around the provider getters. Real quote and boundary tests
+  exposed masked invalid UNKNOWN declarations before the change; the matching five tests and the prior two-class
+  direct selection now pass 5/5 and 44/44. The new source remains inactive and awaits review before broad
+  qualification; evidence is in `/private/tmp/rdf4j-provider-interval-validation-20261108-_99a26rw/`.
+  Sol's review of the corrected finite provider follow-up found no blocker, as relayed by the coordinating agent.
+  Fresh qualification on the exact reviewed source passed 455/455 affected core tests and the same three original
+  scalar, inclusive-cost and zero-optional nested-bag controls. The affected LMDB selection passed 49/50: its sole
+  pipeline hot-hit assertion matches the preserved pre-repair counterfactual by method, message and line 359; its
+  deeper cause remains unestablished. Source identities were stable across each selection; the full commands and
+  reports are in `/private/tmp/rdf4j-provider-qualified-20261108-k28hrwt6/`. No runtime strategy was activated.
+  A phase-2 access foundation now shares the configured-index contiguous-prefix calculation used by the native
+  profile and packed access description. Their existing pricing, selection and source ownership remain separate.
+  The same 74 real-index, native, packed and edge-case controls passed before and after, and after scoped formatting;
+  the original three scalar/inclusive/zero-optional controls passed again. Seven tests in the existing mocked
+  fully-bound class failed before and after with the same null read-selection error, before index costing; the
+  separate pipeline hot-hit assertion still matches the preserved pre-repair counterfactual. Evidence and scoped
+  source audits are in `/private/tmp/rdf4j-shared-index-shape-20261108-8aw_l3n_/`. No source-root LEAF provider,
+  observer, selection, executable binding, or complete unified physical quote is claimed; phases 1 and 2 remain open.
+  The following access-feature slice uses one allocation-free bound/prefix description and common covered/residual
+  derivation in both native quote and packed/factor access paths. The native absent-ordered-index case stays distinct
+  from an available empty prefix, and each consumer retains its existing interval, unknown and scalar pricing.
+  The prior 74 controls plus one real native all-mask control passed 75/75 before and after and after formatting;
+  38 dependent fan-out and native quote tests also passed. Reports and audits are in
+  `/private/tmp/rdf4j-shared-access-features-20261108-j85qts42/`. Numeric work, consumer/snapshot authority,
+  executable recipes, discovery and strategy selection remain open; neither phase 1 nor phase 2 is complete.
+  The subsequent shared quantity candidate was independently reviewed and required two corrections. The partial
+  packed residual path had already calculated a candidate population, but replaced `output.accessRows` with unknown
+  before the same production quote read it. Pass that candidate into the existing quote separately; retain unknown
+  visited entries and skip-scan seeks, and project the modeled per-invocation candidate as a named planned metric.
+  Each quote quantity now carries an enforced source-population, per-invocation, total-invocation-work, isolated-factor,
+  connected-component or complete-context scope. A per-invocation estimate can be an average, not a guarantee about
+  each binding. These scopes do not certify physical bounds, a shared snapshot, an execution receipt or cross-consumer
+  authority. Existing native and packed pricing remain the compatibility targets; allocation/planning overhead and
+  performance have not been measured for this change.
+
+  The real-store residual regression first checked a 1,000-entry prefix, unknown visited entries and seeks, and one
+  open. Its newly requested planned-candidate metric was absent before the repair, so the single-method report failed
+  with expected 1,000 and actual NaN; the matching method passed afterward. This red observes the missing metric, not
+  the private quote. Source tracing separately establishes that the old quote received unknown access rows. A separate
+  ordinary optimized and executed query showed a covered candidate metric survive selected-recipe materialization;
+  this does not claim that the residual quote was selected. The final scoped LMDB selection passed 192/192, including
+  exact testcase matches for the previous 76/76 and dependent 38/38, seven scope tests, the real-store and selected-plan
+  cases, and 16/16 `TripleIndexPrecomputationTest` tests on the user-authorized current index baseline. The three
+  original scalar/inclusive-cost/zero-work core controls also passed. Reports, source identities and scoped formatting
+  are in `/private/tmp/rdf4j-quantity-scope-repair-20261108-XLRf96ca/`.
+
+  A broader 195-test run had three null mock-estimate errors in `LmdbAccessQuoteEvidenceQualificationTest` and one
+  annotated-filter assertion failure. All four matched by method, kind and message in a private source copy matching
+  every one of the 12,642 saved immediately pre-repair Java/XML/plan hashes and including the current external index
+  changes. This is pre-repair-candidate attribution, not proof against the earlier extraction or HEAD; the four were
+  excluded from the final 192-test selection and remain open. The earlier seven fully-bound mock failures and the
+  separately reproduced pipeline hot-hit failure were not rerun. The repository-wide copyright check also reported
+  twelve unrelated pre-existing invalid headers; the six changed Java files passed the scoped header and formatter
+  checks. Independent review of this candidate is still required before declaring the slice accepted.
+
+  The subsequent invocation-scope review found that the non-contextual scalar path divided an isolated 100-row
+  factor by two unrelated VALUES invocations, then stamped the result as per invocation. Real cost-session reds
+  established that source visits and emitted source work also lost the second invocation. The revised quote keeps
+  isolated, connected-component and complete-context domains distinct, scales the unchanged disconnected input,
+  and retains unknown work for bound or mixed inputs without conditional evidence. It leaves modeled zero-prefix
+  clamping separate from a proof that no execution occurs. Native one-invocation intervals and packed point-only
+  multi-invocation quotes now have separate supported contracts. A separate nested VALUES red established that
+  row-only binding names were missing before parent-mask derivation; declared header and materialization identity are
+  preserved while possible names are conservatively carried through the existing binding analysis and scope barriers.
+
+  Unknown physical objectives now remain unavailable through winner selection, parent composition, detached
+  metadata, experimental plan provenance and telemetry. Search exhaustion and cost-comparison completeness are
+  separate: an executable fallback or priced winner remains valid, but an unpriced relevant alternative prevents a
+  cheapest-plan certificate. Exact-key cache replay can retain a valid unpriced recipe and its original owner; family,
+  stale, reranking and learning paths require their separate proofs. Actual detached checkpoint and stale-generation
+  tests first failed when valid rows/work with an unavailable current objective threw an invalid-estimate exception.
+  Replay now emits a distinct unavailable-price refusal; resume and stale validation decline reuse and replan without
+  fabricating a certificate. Existing provider failure and cancellation identity controls remain in the selection.
+
+  The plan-quality audit retains an unavailable executable root candidate separately, in trace order, without
+  comparing it numerically or changing the selected plan. In the original bound bushy fixture, the actual candidate
+  was materialized with unavailable estimated and comparison costs; finite per-node annotations did not prove its
+  complete bound-input work. The same test identity retains the original per-reopen inequality for a disconnected
+  prefix, whose input is unchanged on every invocation; an additional bound-prefix test checks the explicit unpriced
+  candidate. No extra estimator pass is made by the audit. The focused core selection passed 363/363 before final
+  formatting, including these controls, exact-owner replay, provider exception handling and zero-budget fallback.
+  The corresponding reds and reports are in `/private/tmp/rdf4j-quantity-invocations-20261108-ty_kmnh_/evidence/`.
+
+  A 20-case counterfactual against the exact immediately pre-follow-up Java/XML/plan source matched five broader core
+  failures; it does not establish behavior against an older base. Three LMDB feedback-stat failures likewise matched
+  that source. A separate allocation assertion passed on the counterfactual but failed once in the current combined
+  run and remains to be rechecked; it is not attributed to the baseline. The seven fully-bound mock errors, four
+  prior scope-slice failures and prior pipeline hot-hit failure remain separately excluded and unresolved. One
+  source/build overlap run was invalidated and preserved; subsequent reported runs used stable source snapshots.
+
+  Quote graphs remain bounded transient callback objects, not cached quotes. No new reusable audit scratch array was
+  added, but retaining extra unranked audit alternatives can materialize more detached plans, and the existing opt-in
+  audit does not separately reserve all temporary or returned plan-object heap. Existing reusable
+  `PackedCostEstimate` metric-array growth also has no separate allocation-point reserve. Neither total JVM heap nor
+  all callback work is claimed as budget-accounted. Final cross-module selection, scoped formatting and independent
+  review remain pending; unified phase 1 and all provider/execution and performance gates remain open.
+  Slice A is an inert, source-backed join/statement-pattern occurrence and coverage contract; it does not activate
+  provider discovery, selection, cache binding or execution. Its valid-region red, work-admission red, matching
+  legacy pre/post controls and 106-test post-format core selection are preserved in
+  `/private/tmp/rdf4j-phase1-region-slice-20261108-3f894nxg/`. Unsupported region operators remain unclaimed, and
+  root has reviewed and accepted this limited foundation. Before any runtime activation or expansion, replace its
+  independently supplied authorities with one authenticated planner-owned budget, cost arena and session-generation
+  boundary. A coverage proof must retain its actual root and covered-region identity so another subregion with the same
+  external boundaries cannot reuse it; quote vectors must also authenticate the arena that owns them. Slice A alone
+  establishes none of those later ownership contracts.
+
+  A separate same-store SOCIAL_MEDIA q11/q12 regression fully drained the expected exact RDF4J bags and then
+  reproduced `PackedMemoInvariantException` warnings on native-enabled cache replay; its in-repository red and
+  command are preserved under `/private/tmp/rdf4j-social-cache-repro-20261108-f4yoaddv/actual-red/`. The private
+  same-invocation ownership trace in that bundle's `private-diagnostic-pass2/ownership-extract.txt` proves that
+  deterministic fallback remained `INCOMPLETE_WORK_LIMIT` and produced a recipe over a separately encoded fallback
+  query, while publication paired that recipe with the original planning query. The exact cache hit later consumed
+  that mismatched pair. Before runtime provider or descriptor wiring, design and review a focused ownership repair
+  that preserves the actual recipe owner separately from the planning/query template, keeps incomplete status and
+  eligible incomplete caching, and covers exact replay and affected family/structural rebinding. Root approved that
+  repair design. The new core exact-replay regression reproduced payload 39 before the repair, and a same-invocation
+  witness showed one statement-pattern opcode selecting different actual RDF patterns and duplicate bags in the two
+  arenas. The candidate repair now carries each recipe's actual query owner separately from the planning template,
+  gates family/checkpoint use on owner and concrete-invocation compatibility, and retains exact incomplete replay.
+  Raced-hit and completed-flight paths are covered with latches. The original SOCIAL q11/q12 warning-and-bag test is
+  green, and the post-format targeted core selection passes 316 tests. Two existing provider-checkpoint controls now
+  use the previously measured 55-unit provider-backed stage, assert seven provider calls and detached evidence, and
+  retain their changed-evidence/corruption assertions. Evidence is under
+  `/private/tmp/rdf4j-cache-owner-repair-20261108-2f604rfl/`; root reviewed and accepted that cache-owner repair.
+
+  The broader LMDB selection passed 45 of 46 tests. Its pipeline aggregate-budget hot-hit failure also reproduced at
+  the same assertion in an isolated, hash-audited copy with the pre-repair packed sources. The deeper cause is not
+  established; the failure is retained under that bundle's `final-lmdb-dependent-red/` and
+  `pipeline-counterfactual/evidence/`. This repair does not claim phase 0 or phase 6 completion or native execution
+  merely from an enabled flag.
+  The phase-1 B/C review candidate now binds each region factory to the exact planner work/memory session,
+  packed query, memo vector arena, and a revocable generation. Proofs retain the covered root and occurrence edges;
+  quotes, boundary vectors and nested results require the issuing proof and actual boundary edge. The same-budget
+  foreign-memory red and the real provider cleanup-lifetime red are retained under /private/tmp/rdf4j-phase1-bc-20261108-qleCkGY3/evidence/.
+  A real positive provider created and composed a quote under the shared owner, and the existing zero-optional
+  nested query bag control stayed green. Work, deadline and memory refusals are separately classified; the factory
+  does not open an independent quota or refund retained-byte high water. The full focused core selection passed
+  382 tests after formatting, and the exact three original scalar/zero-work controls passed before and after.
+  Real detached-checkpoint replay also exposed a provider exception being swallowed as corrupt state; explicit
+  structural rejection and a protected provider boundary now preserve the original error, cancellation, and close
+  suppression identities without retrying the provider. The matching reds and greens are in the same evidence tree.
+  The focused LMDB selection passed 49 of 50; its single hot-hit failure matches the frozen pre-repair counterfactual. No physical strategy discovery, selector, cache/binder activation, execution handoff or
+  candidate timing is claimed; phases 0 and 6 and the broader phase-1 obligations remain open.
+
+  The phase-1 review follow-up validates cached producer mappings, population and state references, context and
+  input-event identities, and replay phases before provider callbacks, and structural child counts before interning.
+  Both direct resume and cache refresh now reject the tested corruptions through the typed fresh-memo path and
+  replace the revoked region generation. Composition admits its bounded boundary traversal before inspecting
+  boundary handles. Callback, binding and cleanup failures preserve the exact original throwable, including when
+  close throws that same object; a checked throwable also closes its session and releases the cache flight.
+  Thirteen malformed-input variants failed through each entry point before the repair, while valid replay and
+  current-provider error controls remained intact. The final broad affected selection passed 397 tests; the same
+  three scalar/zero-work controls passed again. The LMDB selection passed 49 of 50 with the same previously
+  reproduced hot-hit assertion. Evidence is preserved under
+  `/private/tmp/rdf4j-phase1-bc-review-followup-20261108-5NU2jjK8/` for independent review; phase 1 remains open.
+
+  The next phase-1 review candidate admits actual inspected dimensions, hash probes, array copies and rehash work
+  through the same session owner in bounded steps. Row growth and rehash are staged before vector publication;
+  partial work and admitted modeled memory remain charged on refusal. The retained-byte owner accounts modeled
+  retained-capacity and reusable-scratch high water; growth reserves a capacity delta, not the full transient
+  coexistence of old and new arrays, so it does not prove a bound on JVM heap or total live scratch peak. Legacy
+  `PackedCostEstimate` scope is now retained:
+  a one-occurrence LOCAL quote can be composed with complete boundary subtrees, while an INCLUSIVE quote requires
+  no external boundaries. LOCAL boundary costs are accepted only at leaves. Coherent incompatible scopes report
+  `UNSUPPORTED`; missing or inconsistent scope evidence reports `EVIDENCE_UNAVAILABLE`. A real nested control
+  charges 7 + 20 + 2 = 29 once. A fused quote covering several internal occurrences while excluding external
+  boundaries still needs a distinct coverage-scoped quote contract. Focused post-format qualification passed 57
+  tests; this candidate is frozen for independent review before the broader regressions are rerun. Evidence is at
+  `/private/tmp/rdf4j-phase1-bc-actual-scope-20261108-AB2zcC4K/`; no phase is declared complete.
+
+  Root accepted the actual-work/scope review and relayed that independent Sol found no concrete blocker. Fresh
+  qualification of the exact frozen 18-file identity passed 411 affected core tests and the three matched scalar,
+  inclusive-cost and nested zero-work bag controls. The affected LMDB selection passed 49 of 50; its sole failure
+  repeats the pre-repair counterfactual's same hot-hit assertion and line 359, whose deeper cause remains unproven.
+  Source hashes matched before and after each selection. Reports, commands and source-identity audits are retained at
+  `/private/tmp/rdf4j-phase1-bc-final-20261108-ZOCQh3KD/qualification/`. Fused coverage-scoped quotes and the
+  remaining phase-1 obligations are still open; phases 0 and 6 are not declared complete.
+
+  The inactive provider-contract review candidate adds a distinct covered-exclusive quantity declaration, bound to
+  the actual source root, current root-operator callback, query/session generation, covered occurrence proof and
+  boundary edges. Request, quote, boundary and vector handles are request/context-owned and non-reentrant; the first
+  authenticated request refusal stops that attempt. A real provider callback composes covered work 9 with a complete
+  boundary 20 for the true 7 + 20 + 2 = 29 control. Unknown correlation is MIXED or unavailable; unproved peak,
+  retained-memory and latency composition remains unknown. Nested reuse is unavailable without owner proof that
+  the exact child edge receives an equivalent input context. Consumer demand and snapshot facts remain unknown.
+  The versioned detached value is a schema-validated declaration, not a selected or executable backend binding.
+
+  The initial capability red incorrectly used a leaf callback for the outer root. After preserving the candidate,
+  exact source hashes and all artifacts, individually guarded patches returned only this slice's behavior to its
+  saved optional-UNSUPPORTED scaffold. The corrected real root-refinement test then failed as expected, and the
+  preserved implementation was replayed afterward; this is recovered test-first evidence, not a claim that the
+  valid red preceded the first implementation. A separate real reentrancy red preceded its guard. Recovery artifacts
+  are in `/private/tmp/rdf4j-provider-recovery-inventory-20261108-xkdair_l/` and
+  `/private/tmp/rdf4j-provider-recovered-red-20261108-jawv59f0/evidence/`.
+  After scoped formatting, 434 affected core tests and the exact three pre-change scalar/zero-work controls passed.
+  The affected LMDB selection passed 49 of 50; its sole failure is the same pre-repair counterfactual hot-hit
+  assertion at `LmdbPipelinePlanCacheTest.java:359`, with the deeper cause still unestablished. Source hashes matched
+  before and after each final selection. The modeled retained-capacity/scratch high water is not an actual JVM heap
+  or complete live-scratch bound. Provider/backend conformance, derived-context nesting, discovery, selection,
+  cache/binder activation, execution handoff, full-corpus/fixed-plan and performance gates remain open; phase 1 stays
+  in progress and phases 0 and 6 are not declared complete.
+
+  2026-11-09/10 continuation (Claude). Evidence root for this block:
+  `/private/tmp/rdf4j-phase1-continue-20261109-2OK1vQjv/`; specs and reviews are also copied to `.agent/designs/` and
+  `.agent/reviews/`. The previous session's last run (`red-55`) had died on a full disk before Surefire ran; its test
+  was re-run, observed red and fixed (`PackedSearchBudget.permitsUnrankedAuditMaterialization` also refuses once its
+  owner has stopped). The pending scoped formatting was applied, and for the first time in this phase the whole
+  `core/queryalgebra/evaluation` module was run rather than selections: 7,671 tests, 210 red. Committed HEAD
+  `4ab0c09438` does not compile for `core/sail/lmdb` (it needs untracked files), so only the core module has a HEAD
+  counterfactual: 177 of the 210 were also red at HEAD and 33 were caused by the uncommitted phase-1 work
+  (`evidence/qualify-01-core-module/`, `evidence/counterfactual-head-core-4/`).
+
+  Root causes of the 33 (`rca-seed-search.md`, `rca-unknown-lifecycle.md`): every provider callback was charged one
+  unit on the search budget and a refused charge threw `PackedProviderWork.Exhausted`, which no search code caught,
+  so a stop discarded already priced complete plans and returned the unpriced written-order fallback, and a latched
+  retained-byte stop acted as a work refusal; the rest were tests pinning the old approach (isolated pricing of a
+  bound input, NaN totals rejected by the winner table, a closed memory handle returning false) and were rewritten
+  around their surviving invariants (`impl-core-tests/`). On the theme workload in LMDB's default mode (`auto`, 512
+  units, constant unchanged) the unified currency made 148 of 176 plannable queries stop on the work limit, 138
+  return an unpriced plan and 114 plans differ from exact mode (`measure-auto/per-query.csv`).
+
+  The owner decided that provider work is a separate limit of the same budget owner and that each failing test is
+  triaged as real bug or outdated test. Implemented in four independently reviewed rounds
+  (`spec-budget-stop-and-provider-limit.md`; `impl-core-budget/`, `-r2/`, `-r3/`, `-r4/`; `review-core-budget.md`,
+  `review-core-budget-r2.md`): `PackedPlannerLimits.providerWorkLimit` (unbounded at every existing call site) and
+  `providerWorkUnits` published next to the search count; kernel drivers absorb the planner's own refusal at the
+  phase boundary and publish the best retained state, including the sparse and scalar kernels; a retained-byte stop
+  no longer refuses provider work; default-implementation pricing of a winner-less group runs in a
+  mandatory-completion scope that optional work steps out of; an offer records its inputs as current only when it
+  was fully priced, and is otherwise retried; a correlated-lattice transition is marked explored, and a lattice
+  certified, only if no stop was absorbed while it ran, and a transition whose nested search absorbed a refusal
+  publishes no state (it had published a child at the context-free price, 7.0 against 1,006.0 in the fixture);
+  checkpoint replay charges the provider dimension and a refused replay restarts an ordinary search; unknown work
+  stays unknown instead of throwing; a re-entrant scratch-estimate clobbering in
+  `contextualizeEquivalentAccessPaths` (present at HEAD, exposed once the path became reachable;
+  `rca-startup-once-q10.md`) is fixed with per-activation save frames and covered by `LmdbSocialQ10AutoPlanningIT`.
+  The ten budget-pinned tests went green unedited. Final requalification: core module 7,718 tests with 176 red, all
+  176 also red at HEAD; `core/queryalgebra/model` 249 tests green (`evidence/requal5-*`).
+
+  After round 1 the theme measurement gave: searches complete 28 → 135, unpriced selected plans 139 → 11, plans
+  differing from exact mode 114 → 51, and all 155 completed exact-mode searches keep their plan
+  (`measure-auto/after1-per-query.csv`). Default-mode cold planning time rose from 13.9 s to 37.5 s over 182 queries
+  (measured under heavy machine load) because the planner now plans instead of giving up; per query it costs about
+  what exact mode costs, almost all of it provider callbacks. No measurement has been repeated after rounds 2–4.
+
+  LMDB selections: 214 reds were triaged (`rca-lmdb-model.md`, `rca-lmdb-cache-feedback.md`); 204 were outdated
+  fixtures (mock runtimes predating read ownership, stubs of superseded overloads) and were rewritten (`impl-lmdb/`).
+  Two real pre-existing bugs were fixed test-first: a failed reset never made learned state unavailable (the tests had
+  been committed without the feature) and a capturing lambda allocated per feedback publication. A new real-store
+  test shows the planner still selects and prices the direct S,P,O lookup behind an opaque filter.
+
+  Plan-decision cache. 155 of 176 theme queries end with comparison completeness UNAVAILABLE_COST (145 in exact mode;
+  sources classified in `spec-written-fallback-pricing.md`), and this phase had gated publication, refresh and
+  observation recording on a complete comparison, so none of them was cached. Implemented and reviewed
+  (`spec-decision-cache-replay-and-capacity.md`, `impl-lmdb-cache/`, `-r2/`, `review-lmdb-cache.md`): replay-only
+  admission (an authority on the LMDB certificate; served only on an exact hit; never refreshed, promoted, routed or
+  aliased onto a ranked entry; refused for a search under a finite deadline or with a foreground-sampling wall-clock
+  cut) and a capacity policy that cannot get stuck (admission may evict least-recently-used families for a key that
+  has missed before, tracked by a bounded doorkeeper keyed on a revision-independent digest of the exact key's
+  identity; dead replay-only families are reclaimed first). Cached entries were shrunk
+  (`spec-shrink-cached-plan-entries.md`, `impl-lmdb-cache-r3/`): cache-owned templates are frozen so their charge is
+  exact, and three explanation diagnostics are replaced by a placeholder on a cache hit unless the new store setting
+  `retainCachedPlanDiagnostics` is on; EXPLAIN text and JSON of a cached plan are pinned byte-identical. On the theme
+  run at the default 4 MiB cache: 25 families resident (was 6), 175 of 176 queries served by the third planning, no
+  plan differences, real heap for 175 families 56 MB → 27 MB.
+
+  Cache rounds 4–6 (2026-11-10; `impl-lmdb-cache-r4/`, `-r5/`, `-r6/`; reviews
+  `.agent/reviews/GH-0000-decision-cache-review-r3-2026-11-10.md` and `-r4-`) are merged into the working tree.
+  (1) A planning whose reads were cut by a wall-clock limit is no longer faked as a provider-work refusal: the core
+  contract `PackedCostSession.reproducible()` (default true) is read last by the planner, and an unreproducible
+  planning keeps its result for its own request but is neither published nor handed to waiters
+  (`PackedPlanCache.decline`). LMDB wraps its session in `LmdbPlanningCutAwareCostSession` (cut count at the start
+  of the planning scope against the count now); the refresh path and the uncached path open the same scope. Those
+  two guards (review items E3, E6a) have no failing test because a cut cannot be produced deterministically
+  in-repo. (2) Retired decisions leave a bounded tombstone (data generation plus a 64-bit digest of the build
+  evidence). A build replaces a retired or unservable variant only if its data generation is not lower and its
+  evidence snapshot differs; a build from an older pinned snapshot never displaces a servable replay-only family.
+  The cache's evidence epoch is not an evidence clock and takes no part in these comparisons. (3) A ranked variant
+  can serve only if its evidence is current or its champion has refresh work; a hard-invalid ranked family is dead;
+  admission never evicts for a key retired under the request's evidence. (4) The identity digest mixes 64 bits per
+  code unit instead of `String.hashCode`. (5) Charges are itemised and never below what is retained (version 352,
+  variant 680, challenger posterior 120, appended alias 168 bytes). (6) `retainCachedPlanDiagnostics` is opted into
+  only where plans are captured or explained; timing benchmarks keep the store default. Theme harness after round
+  6 (plan-only, default 4 MiB): hits by attempt {2: 47, 3: 175}, 26 first-attempt capacity bypasses, 0 wall-clock
+  cuts in 546 plannings, 0 plan differences (`impl-lmdb-cache-r6/harness-r6-default.summary.txt`). Round 6 had no
+  independent full review; only its replacement rule (`mayReplace`, `newerThan`) was read by the coordinator.
+
+  Requalification of the merged tree (`evidence/requal6-*`): core module 7,720 tests, 177 red — the 176 of
+  `requal5-01` plus one method of `MaterializedReplayJoinIteratorCancellationTest`
+  (`experimentalCancellationBeforeRowsArePublishedPreventsLeftCreation`), which is intermittent (reruns FAIL, PASS,
+  FAIL) in files this work did not touch. Triage: outdated test. `TimeLimitIteration.interrupt()` has delivered
+  the cancellation on a virtual thread since merge a9b477c32a, so the replay sees it at its next poll point, not
+  when `interrupt()` returns; commit 4b2a72bc4c added delivery waits to three sibling tests and missed this one
+  and four others. The five tests now wait for delivery before asserting (test file only; 18 of 20 red before,
+  0 of 30 after; a mutated publication gate that ignores cancellation turns the corrected test red 10 of 10;
+  `impl-matflake/`). Verified in a private copy with identical sources; not yet re-run in the working tree. `core/queryalgebra/model` 249 green. LMDB consumer selection 480 tests, 7 red
+  (the same 7 as before, one former red now green). Decision-cache selection: LMDB 420 tests, 20 red (19 as in the
+  implementer's final run plus one intermittent), benchmark 71/11 and benchmark-common 16/0 unchanged, evaluation
+  165/0. `LmdbSocialQ10AutoPlanningIT` green. Two `LmdbPackedPlanCacheTest` methods
+  (`multipleFreshAnonymousPathVariablesReuseExecutablePlan`, `boundedCorrelatedAnonymousQueriesReuseTheHonestIncumbent`)
+  flip between runs of the same source.
+
+  Final measurement on the merged build (`measure-final/summary.txt`; machine load 14–76 throughout). Planner:
+  181 of 182 default-mode plans are identical to the build after budget round 1 and cold planning time at equal
+  load is 1.02× (default) and 0.99× (exact); default mode has 135 complete searches, 12 unpriced selected plans and
+  54 plans that differ from exact mode. Plan-only cache harness unchanged ({2: 49, 3: 175}). With query execution
+  under the store's default configuration (native evaluation off, 2 ms sampling cap, adaptive evidence, 4 MiB) the
+  decision cache is close to useless: (a) a completed evaluation moves the global LEO revision in 119 of 182 cases
+  and every replay-only entry then fails the exact-evidence check — after an evaluation that moved LEO, 56 of 56
+  resident replay-only entries missed, 33 of 33 hit when it did not move; LEO moved in every one of seven rounds
+  for 121 queries, so it does not converge; (b) at 4 MiB a cycle over 182 queries evicts every family before its
+  next turn (0 hits in every round; about 25 families of about 300 KB fit); with a 256 MiB pipeline cache the same
+  schedule gives 30 hits per plan round (all 24 ranked queries, 6 of 151 replay-only); (c) ranked entries survive
+  only because they are served stale with a detached refresh (166 stale serves per evaluation round), so the
+  planning CPU is moved off the request, not saved; (d) under that load 60 of 181 first plannings were cut by the
+  2 ms sampling cap and published nothing. The re-planning an unconditional hit would have saved is about 810–860
+  s over seven rounds. Not yet established: whether the learned values change materially or only the epoch ticks,
+  and whether the public `TupleQuery.evaluate()` path ever hits (a five-query check found a different key from
+  the benchmark preparation path). One evaluation error is unexplained and under investigation: a cache-served
+  plan failed native precompilation with `slot layout is already frozen` (PHARMA q9, native evaluation on).
+
+  Follow-up measurement (`measure-final/followup/summary.txt`, copy in
+  `.agent/research/GH-0000-phase1-continuation-2026-11-09/`): the feedback epoch ticks once per accepted
+  publication (9,807 of 9,807); 44–54 % of them change no stored value; where a model value changes, the
+  planner-visible value moves by a median of 6 % early and 2 % by round five and no key grows; 2,100 of 4,278
+  value-changing writes are read by no later planning. Through the public API a replay-only lookup after a
+  completed evaluation of the same query missed 142 of 142 times, and in rotation 0 of 116 hit. The benchmark
+  preparation path keys plans as evaluation mode STANDARD with `read.planes=1`; the public API uses STRICT and
+  `read.planes=3` (default `includeInferred`). A three-step proposal (revision advances only on real change; an
+  entry depends on the learned facts its planning read; a tolerance for small movements) is in
+  `.agent/designs/GH-0000-cache-validity-under-execution-feedback-2026-11-10.md` and awaits the owner.
+
+  Defects found by these runs and their state (all uncommitted):
+  - Read planes read more than once per request, and an idle value-cleanup pass registering a publication it then
+    abandons: fixed test-first and merged (`.agent/reviews/GH-0000-read-plane-observation-2026-11-10.md`,
+    `impl-planemask/`). The warm-hit test is green 10 of 10 in the working tree (3 of 10 red before).
+  - `slot layout is already frozen`: pre-existing native-compiler defect (a root attempt declines after freezing
+    its planner's layout and the row fallback reuses that planner); needs no cache hit; reproduces on an 8-triple
+    store. Fixed test-first (`LmdbNativeDeclinedAggregateRootTest`, `impl-q9-frozen-layout/`) and merged; verified
+    in a private copy only. The query shape now runs as a generic island instead of throwing; running it natively
+    is a performance follow-up.
+  - A timed-out evaluation is published to learning as completed (the interrupted iterator answers "no more
+    rows"), and a node opened with outer bindings is recorded under its unbound key (exact fact 1 instead of 45,337
+    for `?x lib:name ?y`, which changes LIBRARY q10's plan). RCA:
+    `.agent/research/GH-0000-phase1-continuation-2026-11-09/rca-exact-fact-context-and-timeout-completion.md`.
+    Fixed test-first over three rounds with an independent review between rounds one and two
+    (`.agent/reviews/GH-0000-feedback-cut-and-bound-open-review-2026-11-10.md`, `impl-exact-fact/`) and merged: the
+    outermost feedback wrapper records a cancellation request (returns false, forwards nothing) and an end of
+    stream observed after a request or under an interrupt is published as cut; a time-tracking root now publishes
+    completion at all; an exact fact, the logical-row observation, physical residuals and the lifecycle are written
+    only when no open of the node received a binding for one of its own variables.
+  Requalification after the read-plane merge (`evidence/requal7-*`): decision-cache selection 421 tests, 20 red
+  (unchanged); consumers 481, 9 red (differences are the intermittent `LmdbPackedPlanCacheTest` methods); 46
+  cleanup, GC and retirement classes 462 tests, 43 red against 44 red on the pre-change tree, 35 with identical
+  messages and the rest intermittent on both sides, except
+  `LmdbRetirementForeignWriterWindowTest#committedRetirementReleasesNativeOwnersBeforeWaitingForDictionaryReaders`
+  (2 red of 4 after, 0 of 4 before); sampled again interleaved it is red 1 of 12 before and 0 of 12 after and
+  green in three class runs on each side, so it is intermittent on both sides and the cleanup pre-check stands.
+  `LmdbPackedPlanCacheTest#semanticExactZeroCertificateSurvivesPlanCacheHit` is red 5 of 5 alone on the pre-change
+  tree and green inside its class: pre-existing order dependence.
+
+  `LmdbPackedPlanCacheTest` triage (`impl-packedtests/`): all seven stable reds and the order-dependent method were
+  outdated tests, none a product defect; rewritten test-only and merged (40 of 40 single-method and 4 of 4 class
+  runs green in a private copy, each rewritten test red under a one-line product mutation; not re-run in the
+  working tree). Causes: planning on a store whose startup maintenance was still moving the revisions (a planning
+  that overlaps it is refused; six methods, plus a ninth currently-green one that got the same wait); feedback
+  recorded under a bare execution-snapshot binding, which no longer authorises publication (two methods; now
+  recorded under a live paired read source); binding values taken from the store's own value factory, which have
+  no binding identity, so the request never uses the pipeline cache (one method; now external values); and the
+  expectation that a decision survives a commit by stale-serve, which holds only for a ranked decision (one method;
+  now a single-pattern query whose comparison is COMPLETE). Two methods
+  (`freshlyParsedCorrelatedAnonymousVariablesReuseCompletePlan`,
+  `boundedCorrelatedAnonymousQueriesReuseTheHonestIncumbent`) use a query with no anonymous variables, so they test
+  reuse of a ranked decision, not what their names say. Product question raised by the triage: a request whose
+  bindings come from `connection.getValueFactory()` bypasses the pipeline plan cache entirely
+  (`LmdbQueryValueIdentity.Capture` refuses API-native values since 89e3e9c0e7).
+
+  Requalification after the frozen-layout, `LmdbPackedPlanCacheTest` and feedback merges (`evidence/requal8-*`,
+  working tree, first compile of every merged file): evaluation module 7,731 tests, 176 red (7,720 and 177 before;
+  no new red, the cancellation test is green, 11 new feedback tests green); model module 249/0; decision-cache
+  selection 421 tests, 13 red (20 before) and consumers 481, 2 red (9 before), the difference in both being seven
+  `LmdbPackedPlanCacheTest` methods now green; `LmdbSocialQ10AutoPlanningIT` green. A feedback, learning and
+  native selection of 102 classes (no earlier reference): 1,168 tests, 71 red, of which 61 match the implementers'
+  pre-change reports (50 verbatim, 11 after masking numbers), 4 are red before with a different message, 1 was
+  green in one pre-change run (`LmdbNativeAggregateDemandTest#physicalLengthConsumerCannotSilentlyIgnoreItsForcedRoute[2]`)
+  and 5 have no pre-change evidence (four in `LmdbNativeDomainRootHashQuoteTest`,
+  `LmdbNativePackedRootFactorTest#boundNativeRunExportsBorrowedRoot`); all ten are red 3 of 3 alone. Counterfactual
+  on the snapshot from before the three merges (`evidence/requal8-cf-*`; the snapshot differs from the working
+  tree in exactly the 16 merged files): the five uncovered tests and the differing-message ones are red 3 of 3
+  there with the working tree's messages (the message differences are between a large selection and a
+  single-class run, on both sides), so they are pre-existing. `physicalLengthConsumerCannotSilentlyIgnoreItsForcedRoute[2]`
+  is red 2 of 6 on the snapshot against 4 of 4 on the working tree; sampled again in 12 strictly interleaved
+  single-method pairs (`evidence/requal8-cf2-*`) it is red 10 of 12 on the snapshot and 12 of 12 on the working
+  tree, the recorded route is `aggState` in every red run and no log line gives a reason: intermittent on both
+  sides, not attributable to the merges (the snapshot's greens cluster at high machine load). Added to the
+  pre-existing backlog. `LmdbPackedPlanCacheTest` is green in three class runs;
+  `cacheIsOwnedByStoreAndInvalidatedByDataRevision` (body untouched by the rewrite) is red 4 of 4 alone and 3 of 3
+  alone on the snapshot. RCA (`rca-cache-owned-alone/NOTES.md`): outdated test. It plans twice right after init;
+  in a cold JVM the first planning (about 240 ms, reproducible, cached) overlaps the post-ready publication of the
+  estimator providers and of the Frontier statistics service, which moves `leoRevision` and `frontierRevision`, so
+  the second lookup finds the entry and correctly refuses it; in a warm JVM both plannings finish before the
+  publication, and the later "invalidated by data revision" assertion then passes for the wrong reason. Fixed
+  test-only by waiting for startup maintenance (`settle(store)`); in a private copy green 3 of 3 alone and red
+  under each of two product mutations (data revision dropped from the key; a private cache per optimizer); in the
+  working tree green 3 of 3 alone and 13 of 13 in two class runs (`evidence/requal9-settle-*`). Side
+  observation, open: on an empty store the same query's comparison is COMPLETE before the Frontier statistics
+  service is published and UNAVAILABLE_COST after it is published with no generation.
+
+  Cache validity, step 1 (merged 2026-11-11, uncommitted). `LmdbOperatorFeedbackStats.planningRevision()` is now
+  a version of the learned state planning reads: the sum of mutation counters, each advanced in the critical
+  section of the mutation it versions (model posterior/calibration/censored-bound/decay/eviction changes; exact
+  fact rows changed, a fact becoming current, any fact-bearing eviction; lifecycle store revision deltas across
+  observations, commits and the publication-path decision, including its bookkeeping; legacy clock ticks one for
+  one; typed ticks only while a clock-decayed legacy store holds state). A typed publication only ticks the
+  observation clock. Spec `.agent/designs/GH-0000-cache-validity-step1-truthful-planning-revision-2026-11-10.md`;
+  two independent review rounds, six findings, five fixed test-first (publication-time lifecycle bookkeeping
+  unversioned; live-stamp read under the monitor; reset after a failed reset; a bump after its mutation; eviction
+  of a fact readable only at the live stamp), one kept as a documented exclusion until step 2 (an eviction made by
+  a planning's own lifecycle admission changes a sibling's regression limit). Tests:
+  `LmdbPlanningRevisionVersionTest` (29) and store-level `LmdbNoOpFeedbackPlanCacheTest` (a second evaluation that
+  only rewrites its exact fact leaves the LEO revision unchanged and the next lookup is `USE`; red before).
+  Requalification in the working tree (`evidence/requal10-*`): no new red against requal8 and against the
+  pre-merge copy; `LmdbPlanCacheCommitInvalidationTest#warmSpocOnlyGuaranteeFilterDropMustNotSurviveCommit` turned
+  green (3 of 3 alone, red 3 of 3 before the merge).
+
+  Constant-time "other applicability known" in `FrontierLearningModel` (merged 2026-11-11, uncommitted; Routine
+  B). The two posterior maps are wrapped in `PosteriorCells`, which keeps a key count per applicability group
+  beside the insertion-ordered map; the three whole-map scans per decision become one hash lookup, asked only when
+  the exact key is absent. Same 251 tests before and after; a probe over gate outcomes, estimates, sidecar bytes
+  and eviction order gave identical digests on both copies; six one-line index mutations all turn the new
+  `FrontierLearningModelSiblingApplicabilityTest` red. On a full model (4,096 physical keys) a decision visited
+  about 2,348 entries before and none after (17.4 µs to 0.34 µs, synthetic keys, loaded machine). Requalified
+  with stable keys (requal11, below); a later workload measurement on the read log shows replay at about 1.2 % of
+  planning time, against 21.7 % before.
+
+  Direct measurement of validation by re-read (`measure-validity/summary-replay.txt`; caches off, theme workload,
+  replay of the previous planning's reads before the next planning, then plan comparison). No wrong serve in any
+  schedule. Served, with lifecycle `regressionLimit` excluded from the comparison: rotation 281 of 728 (39 %),
+  same query repeated 299 of 544 (55 %), two plannings with no feedback in between 1,134 of 1,456 (78 %); with
+  `regressionLimit` compared 141, 157 and 450, because that value depends on the order of lifecycle decisions
+  inside one planning (a planning's own log replays to a different limit in 681 of 910 plannings). Tolerance
+  adds 6 (rotation) and 34 (repeat) serves at ln 1.25 and 26 and 38 at ln 1.5, none wrong; ignoring gate-label
+  differences without an estimate is also free of wrong serves up to ln 1.5 (rotation 345) and produces 2 at
+  ln 2. Every divergence between consecutive plannings is preceded by a changed recorded read (logical value or
+  presence, an exact fact becoming current, a learned filter surface, a cached sample that the previous planning
+  itself wrote), by a 2 ms sampling cut on one side, or by a parser-random name; none has an identical prefix.
+  3.5 % of plannings are not reproducible (all from the 2 ms live-sample cap, almost all in the first round).
+  Replay costs 21.7 % of a planning, 82–86 % of it the whole-map scans removed above.
+
+  Stable learning keys (merged 2026-11-11, uncommitted; Routine A; spec
+  `.agent/designs/GH-0000-stable-physical-learning-keys-2026-11-10.md`, evidence `impl-stable-keys/`). Names the
+  parser generates differently on every parse no longer reach learning identities: the planning `PackedQuery`
+  carries, beside its object table, the plan identity's canonical ordinal of each such name
+  (`canonicalNameOrdinals`, never read by execution, costing or the cache identity); the physical source identity
+  writes it under its own token tag, the binding-layout fingerprint folds ordinals under a domain constant, and
+  join factors order bindings of equal role and break ties by ordinal (`SemanticBinding.compareNames`: exact names
+  first, in their old order). `Filter.getBindingNames()` now returns the argument's names followed by an EXISTS
+  sub-query's in insertion order, because the hash order of that set reached the logical key. Names that label
+  constants stay exact, so queries without generated names keep their bytes, with one accepted exception: every
+  `FILTER EXISTS` relation gets a new logical key once (its numbering followed string hashes before); blank-node
+  `[ ]` and unprojected-BIND physical and event keys also change once. Two independent review rounds: no wrong
+  sharing; 25 query shapes × 15 parses and a renaming sweep over 14 shapes give 0 key mismatches (before: every
+  shape with a path, HAVING or EXISTS differed on every parse). requal11
+  (`evidence/requal11-summary.txt`): new tests 56/56; `core/queryalgebra/model` 251/0, `core/queryparser/sparql`
+  503/0, `core/queryalgebra/evaluation` 7731 with the same 176 reds as requal8, `compliance/sparql` 3612/0 in both
+  trees, the requal10 LMDB selections and 11 further classes with no case red only after the merges (pre-merge
+  base `trees/base-flm-index`). The byte-compatibility pins cover a plain query, a three-pattern join, OPTIONAL,
+  GROUP BY (golden values captured on the pre-change copy and identical after) and `FILTER EXISTS` (the changed
+  value, pinned as the accepted deviation); five one-line mutations each turn the matching pin red; 17/17 in the
+  working tree. Open: none of the pinned shapes produces an event key; the store-level rebind route is covered
+  only by the core unit test.
+
+  Cache validity, step 2 phase A — record and replay (merged into the working tree 2026-11-11, uncommitted, 25
+  files; spec `.agent/designs/GH-0000-cache-validity-step2-validation-by-re-read-2026-11-11.md`, evidence
+  `impl-readlog/`). Learned reads are recorded at their owners into a planning-scoped log and replayed without
+  side effects; nothing consumes the log yet. On the theme workload 179–180 of 182 logs replay as identical right
+  after their own planning and a replay costs about 1.2 % of planning time. The independent review's nine fixes
+  (R1–R9 in the spec) are merged. Requalification (`evidence/requal12-summary.txt`) was wound down early for the
+  upstream merge below and is incomplete: the baselined selections and the 68-class owner selection show no new
+  red against a pre-merge copy; one new test is intermittently red
+  (`LmdbPlanningReadLogStoreTest#aLearnedLogicalEstimateRecordsTheMappedBoundsCheckAndReplaysIt`, a coverage
+  prerequisite, also red on the pre-A2 sources; cause and fix in the Frontier rebuild paragraph below); in the
+  whole-module comparison 79 red cases in
+  29 classes are unclassified (no reruns), and a root cost-estimate difference printed by
+  `LmdbPackedPredicateRangePlanningTest` (20.0K in the working-tree chunk run, 12 in the base runs) is unexplained.
+  These stay open until classified; they are not a baseline.
+  Classification on frozen copies before and after phase A (`evidence/classify14-summary.txt`, 54 runs, hashes
+  stable): the 20.0K estimate is intermittent on both sides (4 of 8 runs before, 2 of 8 after), so it is not from
+  phase A; `LmdbSailStoreTest` has the same 11 red cases on both sides; of 168 red cases in the 27 other classes,
+  109 are the same in both, 37 intermittent in both, 13 red only after and 8 red only before (all but two of the
+  one-sided cases at 1–2 of 3 runs in timing-sensitive concurrency tests on a loaded machine). The two
+  deterministic differences were read: `LmdbSailStoreTest#defaultApproveAllSubmitsOneSmallIngestBatch` (fast
+  "intervening native writer" error before, 15-minute hang after) swaps the store's value store for a Mockito
+  spy, a field-by-field copy, while post-ready maintenance still works on the original; and
+  `LmdbEstimatorPublicationAdmissionTest#delegateConstructionFailuresReleaseAdmissionAndGuard` (failing parameter
+  moved from [2] to [1]) samples free reader slots without waiting for background maintenance. Working
+  hypothesis for both: tests racing post-ready background maintenance, symptom decided by timing; root cause,
+  production-deadlock check and test fixes in flight (`impl-bgrace/`). No evidence of a phase A regression.
+
+  Cache validity, step 2 phase A2 — compact log (merged into the working tree 2026-11-11, uncommitted, 17 files;
+  evidence `impl-readlog/`). A read that found nothing is stored as a 128-bit digest; with enforcement off the
+  lifecycle reads collapse into one guard; pass ratios and learned surfaces compare exactly. Incremental log bytes
+  on the theme workload: 201.8 KB → 3.4 KB median (p90 9.2 KB); as charged by the cache, median 9.2 KB, max
+  105.5 KB. Independent review: no wrong verdict in about 2,700 serves compared with fresh plannings; the compact
+  form disagrees with full keys only towards "changed". Requalification (`evidence/requal13-summary.txt`, 67 runs
+  against the pre-merge copy, hashes stable): no case red 3/3 in one tree and never in the other; 13 mismatching
+  cases in 8 classes are intermittent or red in both. The within-tolerance verdict is restated in the spec and
+  confirmed by the owner ("keep, measure it"): it may differ from a fresh planning at an unguarded discrete
+  planner rule (found: the hash-join 256-row floor); the audit and the B measurement report that rate.
+
+  Cache validity, step 2 phase B — the pipeline cache serves an entry whose log still replays (merged into the
+  working tree 2026-11-11 evening, uncommitted, 21 files; evidence `impl-phaseB/`, switches
+  `rdf4j.lmdb.planCache.readLog.validation` default on, `.audit` default off, `.maxBytes` default 256 KiB). Three
+  implementation rounds and two independent reviews: a log never costs a cached family (logs live in spare room
+  and are dropped first), an in-flight refresh or publication survives a concurrent log drop, serve without
+  re-stamp, the audit plans against a private empty packed cache. Capacity is identical with the switch on and off
+  (16-query rotation 16 families / 48 hits / 0 evictions; 24-query 23 / 23 / 49). Measured limit: 6 of 16 and 16
+  of 23 resident plans have no log because their planning was answered by the packed plan cache; such a plan
+  takes the old path at its first learned-state change. Open: the uncached packed entry point chose a different
+  plan than a cache-miss search for 8 of 47 audited requests under the experimental-full rollout; the B
+  measurement (hit rates on/off, verdicts, audit mismatches, within-tolerance rate, plans without a log by
+  reason) is not run yet. Requalification of the merge with the Frontier fix (`evidence/requal14-summary.txt`,
+  completed 2026-11-12 01:23, all counted runs after the semaphore limit was raised, source hashes stable): 14
+  selections against the exact pre-merge snapshot, 27 mismatching cases rerun standalone 3 times per tree, none
+  red in one tree only (6 red in every observation of both with different numbers or first lines, 6 red in both
+  with one green on one side, 5 intermittent in both, 10 red once in a selection run and 0/3 standalone in both).
+  One-sided: the two outdated plan-cache tests above (WT-only reds, since rewritten) and green new tests. With
+  `readLog.validation=false` no case present in both trees differs; 55 new revalidation tests rely on the default
+  and are red with the switch forced off from outside (expected for tests of the feature; 1 sets it itself). The
+  formerly flaky read-log fixture: 0 red in 10 standalone runs. Whole-module comparison
+  (`evidence/module15-summary.txt`) still to run, in class batches.
+
+  Redundant Frontier rebuild after acknowledgement (merged with phase B, uncommitted, 5 files; note
+  `.agent/designs/GH-0000-frontier-redundant-rebuild-after-acknowledgement-2026-11-11.md`, evidence
+  `impl-frontier-ack/`). A publication's own journal acknowledgement advanced the snapshot epoch, so an already
+  requested rebuild built and published again (second planning-revision move, re-keyed learning, and the
+  intermittent `LmdbPlanningReadLogStoreTest#aLearnedLogicalEstimateRecordsTheMappedBoundsCheckAndReplaysIt`).
+  The service now records the acknowledgement's own commit and a snapshot is covered when only such commits,
+  without a gap, follow the generation. Equal journal sequence is not used as proof: the initial NONE run import
+  writes statements without journaling them. Open, not reproduced: the delta path and lease acquisition do treat
+  equal sequences as "no change", so a base built for an empty store may be served after such an import.
+
+  Upstream merge (2026-11-11): `origin/main` at `1acc280c48` merged as `31fade148e` (12 commits, 35 files, no
+  conflicts; `LmdbSailStore.java` combined with its uncommitted local change by a clean three-way merge); root
+  quick build green; 13 of 14 touched classes green, `LmdbSailStoreTest` red in 7 cases that were already red
+  before the merge (classification on frozen copies in flight, `evidence/classify14-summary.txt`).
+
+  Interaction of the two merges (2026-11-11 night, verified in private copy `trees/f10fix`, not merged while the
+  requalification hash-checks the tree; evidence `impl-f10fix/`): two `LmdbPlanCacheRevalidationStoreTest` cases
+  relied on `rebuildFrontierStatistics()` publishing on an unchanged store, i.e. on the removed defect. Rewritten
+  test-side (a held scheduled refresh and a real commit); red before, green after, three mutations caught. Product
+  observation recorded as open design item in the step-2 design note: between a commit and the Frontier
+  publication that covers it, planning uses the conventional cost session, which creates no feedback contracts,
+  and the Frontier planning revision moves twice per commit (by reading and red-then-green, not traced).
+
+  Tests racing post-ready maintenance (2026-11-12, private copy `trees/bgrace`, test-only, not merged; evidence
+  `impl-bgrace/report.txt`, backup `tmp-evidence-backup-2026-11-12-part5-bgrace.tgz`). Post-ready maintenance has
+  run asynchronously since 52992a2ee8; a Mockito `spy()` swapped into `LmdbSailStore` after `init()` is a field
+  copy whose writer-admission and trusted-transaction state diverges from the original while maintenance still
+  writes (three outcomes reproduced deterministically: green, "intervening native writer", hang). 12 red cases in
+  `LmdbSailStoreTest` and `LmdbEstimatorPublicationAdmissionTest` fixed without production changes (factory-seam
+  subclasses instead of spies, fixture awaits maintenance, outdated pause points moved, two tests that pinned the
+  estimator-discard behaviour abandoned in 8475bbcd75 rewritten to the current contract); 0 red in 10 class runs
+  each. No product deadlock found. Open product bug: `testOrderByLmdbIndexPreservesJoinOrder` returns rows out of
+  `STABLE_INDEX(?type)` order (4 of 10 class runs) when a query overlaps post-ready startup; one such execution
+  ran `factorizedRows` with the label pattern first; working hypothesis: the order survives the removal of the
+  Order node only by accident of costs because the factorized proposal passes `requiredPrefixMask = 0`
+  (root cause and deterministic reproducer in flight, `impl-bgrace/ordbug/`). Not triaged: 7 other admission-test
+  reds (5 at 10/10). Semaphore incident: the POSIX semaphore pool ran out on 2026-11-11 ~20:50 (leaked by killed
+  LMDB JVMs); limit raised by the user to 20000; all agents now probe before each run and never SIGKILL a JVM;
+  whole-module runs are split into class batches under the 1800 s fork timeout.
+
+  Merged into the working tree 2026-11-12 01:30 (uncommitted): the rewritten plan-cache test and the two
+  test-race files. Post-merge in the real tree (`impl-pomheap/`): `LmdbPlanCacheRevalidationStoreTest` 15/15;
+  `LmdbSailStoreTest` 71 cases ×3, only `testOrderByLmdbIndexPreservesJoinOrder` red (3 of 3); admission test
+  fixed cases green, one more red of the untriaged reader-slot family seen once
+  (`observedIterationFailureRestoresItsReadResourceContext`, 126 vs 127). Build change by owner decision (no
+  `-Xms`, `-Xmx` 8 GB): the root Surefire and Failsafe argLines and the lmdb `frontier-vector-tests` argLine went
+  from `-Xmx16G` to `-Xmx8G`; pre/post green with identical counts through each, fork command lines show the
+  flag, no tracked pom sets `-Xms`; lmdb unit forks stay at 4G. Agents run Maven itself at 4G. Seen once in a new
+  workspace, not investigated: `core/sail/lmdb` verify ends with a japicmp "Class not found:
+  ...FederatedServiceResolver" after green tests.
+
+  Ordering bug root cause (2026-11-12 01:50, `impl-bgrace/ordbug/report.txt`): deterministic reproducer on a
+  settled store (`LmdbStableIndexOrderFactorizedJoinTest`, red 10/10; private copy). `LmdbOrderByOptimizer`
+  removes the Order node and leaves only `setOrder` on the anchor pattern and a left-operand/merge-join-off
+  directive; `factorizedRows` (`MultiJoinPlan.sinkUnconsumedPatterns` keeps the smaller static estimate first)
+  then reorders. The startup-window flip was the rdf:type leaf priced at the Cascades default 10000 because
+  `LmdbPackedCostModel` returned NaN (why is open). Same shape on upstream main (be1f4ad254, by reading).
+  Decision: follow the existing convention — a pattern with a requested order is an order contract and
+  strategies that cannot preserve encounter order decline (factorizedRows, and parallelPipelines / batch hash
+  join if a red test demonstrates the break); pinned-marker option deferred. Implementation in flight
+  (`impl-bgrace/ordfix/`). Mutation checks of the rewritten tests: the estimator one is caught; the
+  snapshot-coordinate one survived (its park point holds the barrier in both shapes) and is being strengthened.
+
+  Ordering fix merged into the working tree 2026-11-12 05:57 (uncommitted; `impl-bgrace/ordfix/report.txt`,
+  `changes.diff`, `me-test.diff`). `MultiJoinPlan.containsOrderedScan()` (moved from adaptive filter placement)
+  now makes five strategies decline with reason `ordered-scan`: `factorizedRows`, `parallelPipelines`, the batch
+  hash join (`LmdbNativeHashJoin.tryPlan`), and — found by the implementer, each shown returning rows in the
+  wrong order first — `orderedDistinct` and `prefixRun` (DISTINCT over a join / over one ordered pattern).
+  `LmdbStableIndexOrderFactorizedJoinTest`: 11 of 13 red on the pre-fix copy, 13/13 after; five mutations (one
+  per decline) all caught; `LmdbSailStoreTest` 10 class runs 71/71 with `testOrderByLmdbIndexPreservesJoinOrder`
+  0/10 red (4/10 before). Two-copy comparison (84 classes, 1,301 cases; plus 41 order-related classes, 708
+  cases): no status change caused by the fix other than that test red→green. The hash-join break needs the
+  ordered pattern as build side (settled 100 vs 600 rows, `rdf4j.lmdb.nativeHashJoin.minRows=0`). STABLE_INDEX is
+  the only production source of a requested order (`QueryJoinOptimizer` never sets one under LMDB: the standard
+  pipeline wraps the source in `OrderBlindTripleSource`, the Cascades pipeline has no `QueryJoinOptimizer`), so
+  only STABLE_INDEX queries lose these strategies; that cost is unmeasured and the declines are unconditional
+  (an order-safe hash join whose probe is the ordered scan is declined too). Open, by reading only: wildcard
+  existence round owner, left-join batch/factor paths under OPTIONAL (unforced test green), the bushy runtime
+  hash build (not a `MultiJoinPlan`). The strengthened snapshot-coordinate test (second pause point in
+  `latestFrontierMutationSequence(Txn)`) is red 3/3 under its mutation and green 13/13 without.
+  Pre-existing, untriaged: 149 cases red on both the pre-fix and fixed copies in 24 `LmdbNative*` /
+  `LmdbFiniteValues*` classes (`impl-bgrace/ordfix/s6-red-both.txt`); the whole-module comparison in flight
+  (`evidence/module15-r2/`) produces the complete list for triage. Hit-rate measurement: the revalidation-on
+  theme run hit OutOfMemoryError at the 4 GB fork heap (03:45); the matrix was restarted at 8 GB. Not a
+  validation effect: heap after GC peaks at 6.5 GB in the theme rotation with validation off and on alike.
+
+  Phase B measurement result (2026-11-12 10:05; `impl-phaseB/measure-b/b-measurement.txt`, `-tables.txt`,
+  `-within-tolerance.txt`; 12 clean runs at 8 GB fork heap, shared machine at load 4–7, peaks 19, plus 4
+  diagnostic runs). Rotations: T = theme by theme, C = all themes cycled; two runs each of off / on / audit.
+  - Audit: 0 mismatches in 471 identical-verdict serves (criterion 1 met).
+  - Hit rate after a learned-only change: 0.6–1.2 % off, 18.7–23.8 % on; on the explain right after a query's
+    own evaluation 1.3–1.8 % → 40–43 % (criterion 3 met). All lookups: T 0.37–0.40 → 0.48–0.49, C 0.37 → 0.46.
+    Explain wall time per run: C 162/209 s off, 130/137 s on; T 177/172 s off, 126/172 s on. Replay median
+    0.07 ms, p99 < 0.6 ms (one 152.7 ms outlier) against ~105 ms full planning.
+  - Verdicts per on run: identical 109–135, within tolerance 73–86, changed 220–236 (first differing read:
+    logical ~90, learned surface ~57, exact fact ~35, event ~29). Replay failures, capture mismatches and lost
+    re-stamps: 0.
+  - Within-tolerance serves that differ from a fresh plan: 11 of 314 (3.5 %), five distinct queries; two differ
+    only in the physical fingerprint, three in join order / FILTER-BIND placement. Not the hash-join row floor.
+    Whether the served plans run slower was not measured (the fresh planning did not price them).
+  - Criterion 2 (no query consistently slower with validation on): not met as literally written. LIBRARY q0/q1/
+    q7/q8 round 1 were 2–3× slower in both T-on runs, but those evaluations missed the cache and planned afresh
+    in every configuration, both T-audit runs (validation also on) and 3 diagnostic on-runs did not show it, and
+    recorded plans were identical on and off. Of the 21–27 evaluations per T run that executed a revalidated
+    plan, all used the off runs' plan structure and one was 12 % slower. Cause of the LIBRARY case not
+    identified; validation not shown to be it.
+  - Capacity is the binding limit: the 4 MiB pipeline cache holds 6–13 of a theme's 13 families (24–25 small
+    ones), evicts 474–669 families per run, and most read logs are dropped for slack (T: 325–379 of ~680
+    variants), so 141–181 learned changes per T run end in a miss for want of a log.
+  - Pre-existing, all configurations: 72 WARN "Packed cascades planning failed … Unsupported Cascades operator"
+    per run.
+  Owner assessment: revalidation stays default on (correctness criterion met, benefit shown, no slowdown
+  attributable to it). The within-tolerance rule is put to the user with the 3.5 % figure. Cache capacity is
+  now the main lever and needs a decision.
+
+  Whole-module comparison after the merges (2026-11-12 16:30; `evidence/module15-r2/summary.txt`; WT snapshot
+  `72703332…`, 7872 files, vs BASE `b6fc983a…`; forks at 4 GB): no stable green→red in WT. Eight cases are stably
+  red→green (six in `LmdbSailStoreTest`, `LmdbPlanningNullValueRegressionTest#valuesWithUndefRows…`,
+  `LmdbStaleAnswerAfterInsertTest#insertIsVisibleAfterCrossQueryWarmup`). Two WT-only intermittents on thin
+  evidence (2 of 4 red in WT, 0 of 4 in BASE): `LmdbNativeParallelPipelinesTest#externalRootChunkKillSwitch
+  KeepsScalarWorkerFallback`, `LmdbRetirementPairedReaderAdmissionTest#dictionaryPressureReleasesStatementReader
+  BeforeWaiting[1]` — 10 runs per tree in flight. The ten WT-only classes (114 tests) are green. Post-merge check:
+  `LmdbStableIndexOrderFactorizedJoinTest` 13/13, `LmdbSailStoreTest` 71/71 ×3. Not run: `QueryBenchmarkTest`
+  (exceeds the 1800 s fork timeout), `LmdbStoreMultiRepoTest` (OutOfMemoryError at 4 GB and intermittently at
+  8 GB, both trees).
+  The module is far from zero red: WT 19859 tests, 1024 failures, 347 errors; 1349 cases in 273 classes are red in
+  both trees. 266 of those classes are tracked, unmodified test files, nearly all added in October–November
+  2026. Largest message clusters: 121 AssertJ "Expecting actual:" (30 classes), 80 "the ordinary compiler must
+  admit this statement shape" (`LmdbNativeStatementTermRoleTest`), 47 NPE on `watchedNamespaceHashes`, 43
+  "Missing store.properties for an existing ValueStore dictionary", 70 "Unsupported LmdbStore version", 37 NPE
+  on `LmdbFrontierReadSelection.matchesSource`. Next discriminator in flight (`evidence/module15-r3/`): the same
+  273 classes on a clean archive of HEAD 31fade148e, to split committed reds from reds caused by uncommitted
+  work, clustered by message. Cause-level triage (real bug vs outdated test) follows per cluster.
+
+  Follow-up (2026-11-12 18:20; `evidence/module15-r3/summary.txt`): the two WT-only intermittents are not
+  WT-specific at 10 runs per tree (kill-switch case WT 2/10, BASE 5/10, "offered and declined
+  ('snapshot-unavailable')"; paired-reader case WT 0/10, BASE 1/10). The committed HEAD does not compile on its
+  own: commit 4ab0c09438 ("optimizations", 2026-11-08, on the remote branch) committed `TripleStore.java`
+  referencing the untracked `LmdbIndexAccessFeatures` and an uncommitted `LmdbRecordIterator` constructor; the
+  merge 31fade148e inherited that. The committed-vs-uncommitted split is therefore being taken at the previous
+  first parent 2007a9fdbb (`evidence/module15-r4/`). Cause triage started for the store-format / direct
+  `ValueStore` family (~200 cases; `triage-storefmt/`).
+
+  Store-format family triaged (2026-11-12 19:00; `triage-storefmt/report.txt`, `diffs/ALL-proposed-fixes.diff`;
+  private copy, not merged): 183 cases + 2 adjacent, six root causes, none from the 11-11 merge (onsets 10-23 to
+  10-31, by reading code at those commits). 150 + 2 proven red→green in the copy.
+  - R1 (67, wrong fixture): `ValueStoreIdCacheTest` subclass hooks run during constructor-time core-datatype
+    seeding before its field initialisers; fixture now inert until constructed and stamps format 7 properly.
+  - R2 (real product regression, performance only; was hidden behind R1): the per-batch absent-hash memo was
+    lost in merge 17f5004874 — `findIdsCaptured` probes every absent namespace prefix per IRI instead of per
+    batch on format-2 stores (12400 probes for 400 IRIs, bound 1600). Fix accepted with an owner addition: the
+    memo is cleared whenever `nativeCommitGeneration` moves inside the batch.
+  - R3 (44), R4 (36+1), R6 (3), R7 (1): fixtures open stores with unstamped `StoreProperties`; the refusal is
+    deliberate (165bba16a8, 87ac925b4a, 89e3e9c0e7). Fixtures now stamp through
+    `LmdbOwningTestStoreMetadata.open` / `initializeProperties`.
+  - R8 (unmasked by R4): `LmdbValueGcRecoveryTest` injected its fault in a method the recovery path no longer
+    calls (seam moved); `LmdbConstructorCleanupTest` pinned an exception type in the status text that the
+    product's `"FAILED: " + getMessage()` convention (three sites) does not produce.
+  - R5 (33, open): `LmdbHistoricalBulkDomainCompatibilityTest` (32) and `LmdbLegacyEstimatorV2CompatibilityTest`
+    (1) use fixtures in format 6, which the product rejects on purpose (75753ac897). Retire or re-capture is a
+    user decision; analysis of what they still protect is in flight.
+  Merged into the working tree 2026-11-12 20:10 (uncommitted; `triage-storefmt/merge/`, `merge-item6/`; verified
+  in the private copy on identical formatted files: family + 18 blast-radius classes = 946 tests, 33 errors (R5),
+  3 failures listed below; `ValueStoreIdCacheTest` 67/67 ×3). 18 test files and `ValueStore.java`:
+  - R2 as described, plus a re-read of the writer handle after the in-row `resizeForAllocation` (the old code
+    would probe the consumed transaction after a resize checkpoint). The commit-generation guard has no test:
+    the batch reserves its whole footprint first and no seam forces a mid-batch commit.
+  - `ValueStore.getId`: the own-identity shortcut is skipped under a borrowed read context (merge a9b477c32a
+    dropped upstream's handling; a lookup under a borrowed older snapshot returned a current-revision ID that
+    names a retired value there). Existing failing test `testLazyBorrowDoesNotReadReusedIdFromOlderDictionary`
+    [1,2] red→green. Same condition the reverse-ID cache path already uses.
+  - Outdated tests: three `ValueStoreTest` `…HashCodeDoesNotInitializeAfterRestart` duplicates and one stale
+    assertion removed (upstream rewrote them as `…WarmsTheRuntimeCacheAfterRestart` in 52992a2ee8; the merge
+    kept both); `testDatatypeCacheKeepsOldAndFreshMeaningsOfAReusedIdSeparate` sets
+    `setAsyncValueCleanup(false)`; `LmdbSynchronousIngestTest#rebuildSnapshotCountsPriorCommittedMutationsOnce`
+    [1–6] rewritten to the quad-synopsis contract (an overtaken rebuild publishes its pinned snapshot, serves no
+    usable evidence, requests a refresh; the next rebuild counts the commit exactly once);
+    `LmdbSailStoreOverlayStartupTest#durablePostReady…` performs the owner's load-and-discover step.
+  Still red in these classes:
+  - `LmdbBoundedStartupTest[3]` LEGACY — real product bug: `LmdbLanguageTagVariantMerge.mergeIfRequired` plans
+    (scans all language literals) on every format-2 open, ~4.4k cursor reads + ~400 seeding probes against a
+    budget of 1,000. Needs a completion proof tied to the trusted native transaction chain; owner design pending.
+  - `ValueStoreTest#testLegacyRebuildMapFullAbortsAndRetriesAfterGrowth` — hybrid from a merge (map exhausted by
+    the startup commit before the recovery under test); fixture reshape in flight.
+  - `LmdbBoundedStartupTest[7]` — intermittent, unexplained; attribution probe in flight.
+  - R5 — being converted to fixtures generated at test time (domain-less format-7 bulk store; format-7 store
+    with the authentic v2 estimator files grafted), with a mutation check each. The captured format-6 resources
+    become unreferenced; their removal is for the user.
+
+  R5 converted and merged 2026-11-13 00:40 (`triage-storefmt/round3/merge-r5/`): both tests now generate their
+  stores at test time (domain-less format-7 bulk generation via `LmdbBulkLoader` with guarantees DISABLED, with
+  setup assertions that it really is domain-less; format-7 store with the authentic v2 estimator files grafted);
+  32/32 and 1/1 green, mutation checks red (16 of 32; 1 of 1). The historical test's domain reads now run inside
+  a pinned planning view (required since a9b477c32a). Eight `lmdb-compat/v6-pre-domain-*` resources are no
+  longer referenced (kept; removal is the user's call); the legacy-estimator zip's store entries are unused.
+  `testLegacyRebuildMapFull…`: no fixture can pass all three attempts — the second attempt fails in the
+  reconstruction's own first commit, whose MDB_MAP_FULL is not reported like the batch path's. Decision: product
+  change (uniform "auto-grow is disabled" failure with `RefCountRecoveryMapFullException` cause), in flight.
+  `LmdbBoundedStartupTest[7]`: reads are stable (385 of 1,000); the fixture's 1,100-ID queue is smaller than the
+  4,096 bounded pass and races the async coordinator; fixture fix in flight. `LmdbBoundedStartupTest[3]`: design
+  written (`.agent/designs/GH-0000-legacy-language-reconcile-bounded-startup-2026-11-13.md`: a clean-close
+  witness on the value environment's transaction id lets a format-2 open skip the reconcile scan, conditional
+  on proving that this build's own writes never need the next open's repair); implementation in flight in a
+  private copy (`impl-langwitness/`).
+
+  2026-11-13 02:00: `LmdbBoundedStartupTest[7]` fixed test-only and merged (`triage-storefmt/round4/
+  merge-retireq/`): the case pins the synchronous post-ready pass (added 52992a2ee8, before async cleanup
+  existed), so it now disables async cleanup, queues 4,096 + 1,100 IDs and asserts exactly 1,100 remain; 10 of 10
+  green, unbounded-pass mutation red, startup reads unchanged at 388. Map-full test: even with the product
+  wrapping, a third reopen fails in the store's own bootstrap commit (a failed capacity-bound reconstruction
+  consumes the headroom), so the reopen-three-times shape is unsatisfiable. Decision: three attempts on one open
+  maintenance store (Option A) plus the wrapping of the two reconstruction metadata commits, pinned by a second
+  test (fail, reopen, fail structurally, grow, succeed); in flight (`round5/`). Three further reds seen in the
+  blast radius (`LmdbCrashRecoveryTest.nativeIndexRewriteSurvivesCrashBeforePropertiesSave`,
+  `LmdbValueGcOwnershipTest.legacyCloseRetainsUnusedTermsWhileObjectIndexBuildIsDelayed[1,2]`) are with the same
+  agent for root cause.
+
+  2026-11-13 03:30: legacy language-reconcile witness merged (uncommitted; design file above has the hand-back):
+  a clean-close sidecar file `.rdf4j-language-tag-reconciliation` lets a format-2 open skip the reconcile scan;
+  18 new tests, six mutations caught, nothing stable green→red in a 92-class comparison. It deviates from the
+  design (file, not `store.properties` key) to keep the legacy sidecar's bytes unchanged.
+  `LmdbBoundedStartupTest[3]` is still red (5,649 → 1,207 reads, budget 1,000): 973 reads are alternative-IRI
+  probes in `ValueStore.seedCoreDatatypes`; follow-up in flight.
+
+  2026-11-13 05:20: seeding attribution (`impl-langwitness/seeding/report.txt`, `attribution-table.txt`). On a
+  default legacy store (reference counts untrusted) `seedCoreDatatypes` only looks up: 46 of 48 core datatypes
+  are absent, nothing is created, so every open repeats the same misses — 17 reads per absent datatype, of which
+  6 are bookkeeping for two read admissions (lookup, miss publication). Totals of the 973: 466 `mdb_txn_id`
+  bookkeeping, 314 namespace-candidate probes (each probed once; the names arrive sorted), 46 primary re-probes,
+  46 namespace re-reads. Merged: `getCapturedId` skips the second alternative search when the namespace is known
+  (the primary miss already searched every other split in the same read transaction) — seeding 973 → 835,
+  `[3]` 1,207 → 1,069, ids byte-identical on four store images against an independent cursor-scan oracle
+  (`ValueStoreLegacyDatatypeSeedingTest`), three mutations caught. Still red by 69 reads. Decision: one read
+  admission for the whole lookup pass (no persisted seeding state, no moved test seam); in flight
+  (`impl-langwitness/seeding2/`).
+
+  2026-11-13 06:10, merged (uncommitted; `triage-storefmt/round5/merge-mapfull3/`, `merge-extra/`):
+  - `ValueStore.reconstructReferenceCountsOffline`: the UNKNOWN-marker and completion-proof commits report
+    MDB_MAP_FULL as the reconstruction's structured capacity failure when auto-grow is off
+    (`commitRefCountRecoveryMetadata`). `ValueStoreTest`: the map-full test makes its three attempts on one open
+    maintenance store; new `testLegacyRebuildMapFullAfterReopenReportsMarkerCommitCapacity` pins the wrapping
+    (red without it, 10 of 10 green with it, mutation red). Headroom measured on 16 KiB pages only.
+  - `TripleStore.commitReindexTransaction`: a rebuild batch that wrote nothing publishes no LMDB transaction, but
+    its id was recorded as the store's own last transaction; every later ownership check then failed
+    ("intervening native writer for predicate domains", "unowned native transaction" at close). The id is now
+    taken only if the environment advanced to it. `LmdbValueGcOwnershipTest.legacyCloseRetainsUnusedTermsWhile
+    ObjectIndexBuildIsDelayed[1,2]` red 3/3 → green 5/5. Open doubt: `LmdbFrozenReplayTest
+    #mutationReplayPreservesDefaultAndNamedContextClears` red 2 of 10 with the fix, 0 of 8 without; 20+20 runs
+    in flight.
+  - `LmdbCrashRecoveryTest.nativeIndexRewriteSurvivesCrashBeforePropertiesSave`: outdated premise (every writer
+    open now saves `store.properties`, already naming the requested index set, de7d35f97b). Decision: test-only,
+    cover both directions of sidecar/native disagreement and verify that the native manifest is authoritative;
+    in flight (`round6/`).
+
+  2026-11-13 10:30, merged (uncommitted; `impl-langwitness/seeding2/report.txt`): `seedCoreDatatypes` on a store
+  under construction with untrusted counts runs all 48 lookups inside one read admission and publishes the
+  misses once after the pass (same latest-view and revision check as each per-lookup publication made). The
+  `findIdInTransaction` seam is still called once per datatype. Creation for trusted-count stores stays on the
+  existing path inside the startup writer (a separate lookup pass first would double the lookups); pinned by
+  `aFailureWhileCreatingTheMissingDatatypesCommitsNoneOfThem`. Seeding 835 → 606 reads; `LmdbBoundedStartupTest
+  [3]` 1,069 → 840 and `LmdbLegacyAliasWitnessRegressionTest#unchangedCleanLegacyGeneration…` 1,067 → 838
+  against 1,000, green 5 of 5 each; ids byte-identical on four images and a trusted-counts store; three mutations
+  caught; 102-class comparison: nothing stable green→red. The blast ran before a three-way merge onto the
+  map-full hunks (0 conflicts; 136-case focused selection rerun after). Composition check of all merges since
+  the r2 snapshot is in flight on a fresh snapshot (`evidence/module15-r6/`).
+
+  2026-11-13 11:10 (`triage-storefmt/round6/`): the reindex fix's doubt is cleared — `LmdbFrozenReplayTest
+  #mutationReplayPreservesDefaultAndNamedContextClears` red 3 of 20 with the hunk, 2 of 20 without, same message
+  (a pre-existing flake). `LmdbCrashRecoveryTest` reworked test-only and merged: the crash after the reindex
+  commit is checked with the sidecar as saved at open and with the pre-open sidecar bytes restored; both recover
+  to `{posc=128}`, READY, no ownership error, old tree emptied, sidecar and manifest agreeing after close; a
+  cleanup mutation is caught by both, "trust the sidecar over the manifest" only by the restored-sidecar
+  scenario and only when both `LegacyStoreDiscovery` and `TripleStore` are mutated (the manifest is protected
+  twice). Not covered yet: a crash after the open-time sidecar save but before the native reindex commit
+  (sidecar `posc`, manifest `{spoc}`); a third scenario is in flight (`round7/`).
+
+  2026-11-13 12:40 (`triage-storefmt/round7/`): third crash scenario merged (test-only), using the existing
+  `TripleStore.afterIndexRebuildBatch()` seam: crash with the `posc` tree staged, manifest still `{spoc}`,
+  sidecar already `posc`. A reopen without an index override keeps the manifest's set, empties the staged tree
+  and writes `spoc` back to the sidecar; store consistent, READY, no ownership error. The interrupted request is
+  not completed — pinned, with the three deciding places named in the test (`LegacyStoreDiscovery
+  .validateDescriptors`, the `TripleStore` constructor, `TripleStore.initializeIndexBuild`). "Trust the sidecar"
+  is caught only when planted in both discovery and the constructor (either half alone is redundant).
+
+  Red split at the last buildable commit (2026-11-12 23:55; `evidence/module15-r4/summary.txt`; C = 2007a9fdbb,
+  2026-11-07, builds; 269 of the 273 red classes exist there). Of the 1349 cases red in both trees: 1254 are red
+  at C with the same first line, 46 red with a different first line (14 of them differ only in digits), 39 green
+  at C (32 green in all three runs there), 9 in four untracked test classes, 1 not run. So ~96 % of the red set
+  is committed history, not this session's or other uncommitted work. The 39 post-C cases sit in 14 classes whose
+  test files are byte-identical at C and in the working tree, so code changed under them:
+  `LmdbPropertyPathCorrelatedBudgetTest` 17, `LmdbEstimateAuditHarnessTest` 5, `LmdbFrozenReplayTest` 3,
+  `LmdbPlanCacheCommitInvalidationTest` 2, `LmdbNativeParallelPipelinesTest` 2,
+  `LmdbNativeScanBackedHashBuildParityTest` 2, and eight classes with one each. Onset search across the dated
+  working-tree snapshots (`trees/base` 11-09 21:46 onwards) is in flight (`evidence/module15-r5/`): it separates
+  reds that predate this session from reds caused by its merges.
+
+  Onset of the 39 post-2007a9fdbb reds (2026-11-13 05:40; `evidence/module15-r5/summary.txt`): 34 are already
+  red in the working-tree snapshot of 11-09 21:46, i.e. they arrived with commit 4ab0c09438 or with uncommitted
+  work before this session's phase-1 continuation. One changed during this session's first interval
+  (`LmdbFrozenReplayTest#asyncProducerReportsFrozenFailureWithoutPrematureErrors[1]`: red 1 of 8 at 11-09
+  21:46, 6 of 8 at 11-10 10:29); `[2]` is intermittent throughout; `LmdbNativeParallelFilterCleanupTest
+  #actualParallelOwner…[2]`, `LmdbNativeParallelAggregationTest#singlePatternPlainCountUsesParallelAggregation`
+  and `LmdbNativeParallelPipelinesTest#parallelSelectUsesExternalRootChunkByDefault` are green alone at every
+  snapshot and red only in batch context. Root-cause triage in flight in two private copies:
+  planner/estimate side, 27 cases (`triage-planner39/`); native engine and frozen replay, 12 cases
+  (`triage-native39/`).
+
+  Planner-side root causes of the post-2007a9fdbb reds (2026-11-13 09:00; `triage-planner39/report.txt`): none is
+  in commit 4ab0c09438; all five come from uncommitted phase-0/1 work already present on 11-09.
+  - RC-1 (17, `LmdbPropertyPathCorrelatedBudgetTest`; outdated test): the mapped view is opened only through
+    `readSelection.openAdmittedView`, which refuses a statistics service that is not the runtime's own, and
+    delegated scalar estimates read through the admitted view without a cached result (one extra `estimateJoin`
+    per path costing). Test updated to spy the entry's real read selection; merged; a budget mutation is caught.
+  - RC-2 (3, `LmdbPlanCacheCommitInvalidationTest` ×2, `LmdbAdjacencyPlannerEvidenceTest`): every two-relation
+    join keeps its unpriced written-order fallback as a root candidate, so the comparison is UNAVAILABLE_COST and
+    the decision is replay-only: never refreshed, refused once learned evidence moves — and each execution's
+    feedback moves it, so a repeatedly executed query re-plans every time; adjacency becoming ready forces a
+    synchronous re-plan. The tier-dominance prototype makes the original tests green with the same plans. This
+    is the "measured in use" evidence the 2026-11-09 hold asked for; the decision goes back to the user. The
+    replay-only test updates are packaged but not merged.
+  - RC-3a (2, real regression, slower plans; test notes say about 2× on the AAS benchmark): a statement pattern
+    whose bound parts are not a full index prefix now has unknown work, and a priced plan always outranks an
+    unpriced one, so the anchor-first plan cannot be chosen in any search mode.
+  - RC-3b (4, real regression): dependent-iteration candidates whose right input has only a standalone estimate
+    are refused (`unavailableFactorWork`); q14 switches to hash/Cartesian joins over full-scan estimates
+    (join estimated 200,000 rows, actual 432); q25 throws `PackedMemoInvariantException` "correlated DPhyp
+    target was unreachable" and falls back to an unestimated plan.
+  - RC-3c (1, real regression, cause not found): in auto mode the search stops at 590 work units and returns the
+    unpriced written-order plan (a 5.5e9-row Cartesian start) although the anytime invariant requires the
+    cheapest complete priced plan retained so far.
+  Measured candidates for RC-3 (upper-bound price for residual scans; lattice declines instead of throwing;
+  standalone price when no variable is shared; the RC-3c incumbent trace) and the corpus-wide effect of each,
+  with tier dominance as a fourth row, are in flight (`triage-planner39/round2/`). Nothing is merged for RC-3.
+
+  Native-engine and frozen-replay root causes (2026-11-13 12:00; `triage-native39/report.txt`). Only 3 of the 12
+  cases broke after 2007a9fdbb; the other 9 fail there too when their class runs alone (their "green" was one
+  two-fork batch run).
+  - R1 (7 cases + about 20 other flaky cases in the same classes; racy fixture): on a fresh store the post-ready
+    thread publishes the deferred RDF-term domains in a native write transaction; a fixture commit landing
+    before `finishDeferredRdfTermDomains` makes it publish again after that commit (trace: post-ready txn 3,
+    fixture txn 4, post-ready txn 5 → `parallel-decline snapshot expected=4 sibling=5`; in `LmdbFrozenReplayTest`
+    one extra writer start / commit generation). Fixtures now await background maintenance; all 0 of 20. Merged.
+  - R2 (`connectionShutdownInterruptAfterResultCloseDrainsBackpressuredWorkers`; product race, metric only):
+    `requestShutdown` cancels the signal and interrupts operation threads before `onShutdownRequested` marks the
+    read registrations, so a back-pressured worker saw an unowned interrupt and was counted as a worker failure.
+    `consumeInterruptionOwner` now attributes an interrupt on an active read to the connection once its own
+    cancellation signal is cancelled; 6/6 (20/20 earlier) → 0/20. Merged.
+  - R6 (`LmdbNativeAliasJoinEncounterOrderTest#weightedCustomReducers…`; outdated test): pinned one join-order
+    dependent sequence; the generic and automatic routes now assert the exact bag, DISTINCT and the 16
+    callbacks. A double-call mutation is still caught. Merged.
+  - R3 (`LmdbNativeScanBackedHashBuildParityTest` filteredEmpty[1,2]; regression): residual scans priced NaN
+    seed unpriced singleton states, `costDenseCorrelatedTarget` throws `PackedMemoInvariantException`, the
+    optimizer logs a WARN with stack trace and falls back to the generic nested loop on every planning. An
+    8-line containment (return "cannot certify" instead of throwing when a retained state is unpriced) is
+    proven on the case; held for the planner-side corpus measurement of the same change.
+  - R4 (`LmdbNativeDeepOptionalStrategyTest`; plan-quality regression): the root plan is unpriced, so the BGP
+    stays in text order and the OPTIONALs run as generic left joins around eight native islands; NaN source not
+    isolated; goes to the planner-side work.
+  - R5 (`LmdbNativeGenericBridgeScopeTest#scalarSubquerySharesTheOuterNowScope`; wrong results, also at
+    2007a9fdbb): the scalar subquery's generic island folds `NOW()` at compile time from the compile-time
+    context while the outer `NOW()` comes from the per-evaluation scope, so two `NOW()`s in one execution
+    differ. Fix in flight (test-first, `triage-native39/round2/`).
+  Unattributed: `LmdbNativeParallelPipelinesTest#closingResultCancelsWorkersDeniedBeforeNativeDelegateClose
+  [3,4]` time out in 12 of 20 runs after the fixes against 4 of 12 in the agent's baseline and 10 of 10 in an
+  earlier round; 20+20 alternating runs in flight.
+
+  Measured candidates for the plan-quality regressions (2026-11-13 14:10; `triage-planner39/round2/report.txt`;
+  plan-only probe over 182 theme queries: 25 COMPLETE comparisons, 12 unpriced roots, 6 Cascades fallbacks;
+  about 7 % run-to-run noise on planning time).
+  - Dependent iteration priced when the right input shares no variable with the prefix: all four RC-3b cases
+    green, q14 gets the 2007a9fdbb plan back (join 624 rows, not 200,000), q25 no longer throws; corpus: one query
+    goes from unpriced to priced with a new plan; no neighbouring test changes.
+  - Lattice declines instead of throwing: one RC-3b case alone; never fires in the corpus; with the rule above
+    its decline fires 0 times in the audit cases (the lattice becomes reachable).
+  - Residual scan priced at its upper bound (visits ≤ P, seeks ≤ max(1, P−2), from `LmdbRecordIterator` and
+    `TripleIndex.skipTarget`): both RC-3a cases and the audit alternative green, but a sampled population of
+    zero then prices the scan and `LmdbAccessQuoteEvidenceQualificationTest#coincidentStatisticalZeroBounds
+    CannotProveAnEmptyPrefix` goes red; restricting to exact/certified populations leaves both AAS tests red
+    (their populations are sampled). The four-index corpus never makes a residual lookup, so it cannot show
+    this rule's effect. Round 1's "E4 = the commit's price" was wrong: the commit priced from output rows.
+  - RC-3c cause found: both trees make the same 77 offers and find the same priced improvement at 512 work
+    units; today 55 of 77 offers are unpriced (`refineWrittenJoinCandidate` returns unknown when a connected
+    prefix may change an isolated right winner's input; `PackedIncumbentSearch` keeps a two-child JOIN's total
+    unknown), and an unpriced re-offer cannot replace an unpriced incumbent (`PackedWinnerTable
+    .candidateIsBetter`, `refreshesSameExecutableFallback`), so the root keeps the Cartesian subtree.
+  - Tier dominance: 58 of 182 comparisons become COMPLETE with no plan or price change; it breaks
+    `LmdbPipelinePlanCacheTest#realStoreHitFeeds…` (the second execution becomes USE_AND_REFRESH,
+    "outside-stability-envelope", where the test expects a plain hit) and six core cases that pin
+    UNAVAILABLE_COST. Still the user's decision.
+  Owner decisions (implementation in flight, test-first, `triage-planner39/round3/`): (1) price disconnected
+  dependent iteration as left rows × standalone price; (2) the correlated lattice returns "cannot certify" only
+  when a retained state is unpriced and otherwise still throws; (3) residual scans are priced at the scan's
+  upper bound at the population's own guarantee level (exact, certified, statistical upper bound), never from a
+  non-certified zero, and stay unknown without a population; (4) an unpriced incumbent may be refreshed by the
+  same physical expression over child winners that are at least as good and one strictly better. These are
+  bounds and dominance rules, not invented point estimates; the proper residual-scan quote remains phase 2.
+
+  Composition check (2026-11-13 15:00; `evidence/module15-r6/summary.txt`; snapshot `trees/verify-1113`, hash
+  `6bd715f5…`, taken after the store-format, witness, map-full, reindex and seeding merges and before the
+  native-engine and crash-recovery merges): the tree compiles and installs; 363 classes (every changed or new
+  test class plus every class referencing `ValueStore`, `StoreProperties`, the language merge, reindexing or the
+  domain qualification) ran 5,125 tests. Against the r2 observations: 226 cases red→green, 28 new cases all
+  green, 0 stable green→red, and no red case left in the 22 changed or new test classes. Five cases are
+  intermittent on this snapshot and were 0 of 4 before: three `LmdbFrozenReplayTest#mutationReplay…` cases
+  (2–3 of 4, "expected 2 native attempts, was 3"), `LmdbRetirementForeignWriterWindowTest
+  #overlayInvalidationFailure…` (3 of 4), `LmdbRetirementTermOverlapTest#independentTermWriter…` (2 of 4).
+  Hypothesis: the post-ready publication race (R1) with timing shifted by the startup changes; mechanism capture
+  and fix in flight with the native-engine agent — not yet cleared. 262 cases remain red in the 363 classes, all
+  in test classes whose files did not change.
+
+  Four planner rules merged 2026-11-13 16:30 (uncommitted; `triage-planner39/round3/report.txt`, per-rule diffs in
+  `round3/package/`): `PackedJoinEnumerator` (rules 1, 2), `LmdbPackedCostModel` (rule 3), `PackedWinnerTable`
+  (rule 4), four new test classes.
+  - Rule 1: a dependent-iteration candidate or continuation whose right input is unrelated to the prefix
+    (`prefixMayChangeFactorInput` false for every right relation: outputs, the whole input contract including
+    nested FILTER/EXTENSION reads, unknown domains counted as shared) is priced as left work + right work ×
+    max(1, left rows) + probe work; metric `optimizer.dependentRightPrice=unrelated-to-prefix`. RC-3b 4/4 green.
+  - Rule 2: `declineUnreachableCorrelatedTarget` returns false and marks the comparison unavailable only when a
+    pareto-active retained state is unpriced; otherwise it still throws. ScanBacked filteredEmpty[1,2] green.
+    In the audit corpus the 280 "target was unreachable" fallbacks had every state priced (dependent transitions
+    refused); rule 1 removes them, rule 2 alone does not.
+  - Rule 3: a residual lookup with a non-empty native prefix is priced at the scan's upper bound (visits P,
+    seeks max(1, P−2), one open) with P at the population's guarantee level; `optimizer.residualAccessPricing`
+    = exact/certified/statistical-upper-bound; unknown for an unavailable population, a statistical zero, no
+    finite upper, or `unknownFactorAccess`. Deviation accepted: full-index scans (empty native prefix) stay
+    unknown — pricing them turned eight `LmdbNativeScanBackedHashBuildParityTest` ledger assertions red by a
+    path not yet traced. RC-3a 2/2 and the audit alternative green.
+  - Rule 4: an unpriced offer replaces an unpriced incumbent of the same tier and physical expression when
+    every child winner ranks at least as well and one strictly better (priced beats unpriced; priced by the
+    table's ordering; unpriced children recursively, depth 64). No extra bytes per offer. RC-3c green (root
+    rows 216,792, not 3.85e14; still BUDGET_EXHAUSTED / UNAVAILABLE_COST) and `LmdbNativeDeepOptionalStrategyTest`
+    green.
+  Verified in the private copy: each rule alone turns only its own cases green; with all four, LMDB selection
+  237 cases and core packed selection 1,862 cases have nothing green→red; four mutations caught. Corpus
+  (182 queries, plan-only): two plans change (HIGHLY_CONNECTED:8 becomes priced; SOCIAL_MEDIA:5 swaps two
+  patterns), unpriced roots 18 → 17, planning time within noise; rule 3 is not exercised by the four-index
+  corpus. Not verified: runtime of the two changed plans (execution in flight, `round4/`); the whole-module
+  effect (both modules in flight on a fresh snapshot, `evidence/module15-r7/`).
+
+  Execution of the changed plans (2026-11-13 18:00; `triage-planner39/round4/report.txt`; shared machine, load
+  4–7, interleaved runs):
+  - HIGHLY_CONNECTED:8 (rule 1) is slower: pooled median 1,749 ms against 1,493 ms (+17 %, ranges do not
+    overlap, 15 evaluations per side; same single row). The newly priced edge-first plan (root work 26.0M)
+    outranks the unpriced type-first plan because a priced candidate always outranks an unpriced one. Rule 1 is
+    kept (it fixes the four audit cases and removes 280 planner fallbacks in the audit tests); this query is a
+    recorded regression until the type-first plan's connected dependent iteration can be priced.
+  - SOCIAL_MEDIA:5 (rule 4): no measurable change (12.5 against 12.3 ms).
+  - AAS fixtures (rule 3): about 2× faster with the same result — specificAsset ~350 ms against ~760 ms, query2
+    ~760 ms against ~1,790 ms.
+  - `query2UsesConnectedEndpointBoundPathWithBoundedWork` is green only when another test has warmed the planner:
+    alone in a cold JVM the 500 ms Cascades deadline cuts the budget-256 search at 85 work units
+    (DEADLINE_EXPIRED). Test to be made work-bounded; cold planning cost (about 483 ms for 85 work units) is an
+    open performance item.
+  - One all-four query2 evaluation in a diagnostic sequence ran for more than six minutes (generic
+    `JoinIterator`; plan not captured; did not recur in five later runs). Not explained. Whether a
+    deadline-cut search returns a worse plan under the new rules is being tested first (`round5/`); until that
+    is answered the four rules are merged but not cleared.
+  - The eight ScanBacked reds of the as-specified rule 3 are not ledger numbers but term ids: the assertions
+    check which pattern the native kernel builds its hash table from (`LmdbNativeHashJoin.tryPlanKernel`: the
+    smaller estimate, the right child on a tie). Pricing both full-index scans equally changed the join order
+    and produced a 256/256 tie. The two older `scanBackedHashBuildsSupportSubjectAndObjectConstants` reds are
+    the same tie at 512/512.
+
+  2026-11-13 20:00 (`triage-planner39/round5/report.txt`): the four rules are cleared of the six-minute
+  evaluation. A search stopped before about 65 candidate evaluations returns the written-order plan (Cartesian
+  pair first, unpriced) on both builds; it does not finish in 120 s, while a stop at 69–91 evaluations gives a
+  priced plan running in 1.7–3.0 s. This predates the rules. The stall recurred once in 9 repeats of the
+  diagnostic sequence with the rules and 0 in 8 without (not significant); a fresh planning during the stall
+  chose a good plan, so the stalled evaluation ran its own early-cut plan. Why the cut happens: the search
+  costs ~3.6 ms per evaluation warm (88–91 % Frontier statistics evaluation), planning takes 800 ms cold against
+  a 500 ms deadline, and 8 of 30 warm plannings lost 0.3–3.9 s off-CPU under load; with a 500 ms deadline this
+  query never reaches its 256-unit budget. Owner decision: the wall-clock deadline stops the search only once a
+  complete priced root plan is retained (`.agent/designs/GH-0000-planning-deadline-first-priced-plan-2026-11-13
+  .md`); implementation in flight (`round6/`), with a corpus measurement of never-priced queries before merge.
+  Open performance item: Frontier statistics evaluation dominates planning.
+  Merged test-only: `LmdbAASQuery2CascadesHypergraphPlanningTest` query2 and query3 cases widen the wall-clock
+  deadline so the work budget is their only limit (green alone in a cold JVM 10 of 10; query2 still fails on the
+  build without the rules for the original reason).
+  HIGHLY_CONNECTED:8: the type-first plan is the written-order fallback, unpriced because VALUES →
+  Join(cycle, weight) has a composite right input with no contextual certificate that reads `?optWeight`;
+  the provider would need a per-invocation price for that composite. Executed rows: 4.39M type-first against
+  5.15M edge-first; the 26.0M price is about five times the actual work.
+  ScanBacked remaining reds (red at 2007a9fdbb as well): `scanBackedHashBuildsSupportSubjectAndObjectConstants`
+  [1,2] — the inner join input carries the join-conditioned estimate, giving a 512/512 tie that builds the right
+  child (proposal: rank build sides by a plan-time standalone estimate; product), and its object half expects a
+  hash that is now correctly declined (47,150 against 32,279; fixture); `guardedContext…`[1,2] — the planner
+  emits an algebra-level `HashJoinIteration` over two native scans, the forced native route then declines
+  (test premise outdated, or a product decision on that join). Not fixed.
+
+  2026-11-13 21:30 (`triage-planner39/round6/report.txt`; decisions in the deadline design file): the deadline
+  hazard is narrower than recorded above — the default auto mode has no wall-clock deadline on the main LMDB
+  planning path; `timeoutMillis` applies only in budgeted mode. First implementation: query2 with a forced early
+  deadline returns a priced plan (1.2–1.3 s) where today it returns the Cartesian written-order plan; costs
+  measured in the budgeted corpus: the never-priced SOCIAL_MEDIA:10 plans for ~950 ms, up from ~522 ms, and three
+  priceable queries overrun needlessly because the probe sees only the memo's root winner. Not merged. Owner
+  decisions: the probe asks whether the plan the deadline stop would assemble is priced; the overrun is capped
+  at the deadline's own length (hard stop at twice the timeout). Refinement in flight (`round7/`). Open: a
+  plan-cache flight waiter may start planning with an already expired deadline (by reading only).
+
+  2026-11-13 22:30, merged (uncommitted; `triage-native39/round2/report.txt`, `report-R5.txt`,
+  `addon-intermittent/report.txt`; after the `verify-1113b` snapshot, so not in the r7 run):
+  - R5 fixed in production (`NativeRootPipeline`, `NativeExecutionContext.queryScopedGenericStep`): the semantic
+    projection boundary prepared its argument once against the compile-time context, so `NOW()` was folded at
+    compile time there (two values 48 ms apart in one execution, a stale `NOW()` on retained steps; ORDER/TopK
+    keys alike) and `BNODE()` shared one allocation scope across all evaluations. A share-safe argument keeps
+    its single preparation; any other is prepared on first use per evaluation against that evaluation's context
+    and cached on the query-scope owner (never per outer row). `RAND`, `UUID`, `STRUUID` were never folded.
+    `LmdbNativeGenericBridgeScopeTest`: 27 tests, 9 red before, 27 green; five mutations caught; compile plus
+    evaluate time unchanged (62.1 against 62.8 µs); 44 classes compared, nothing red only on the fixed side,
+    three more cases green. `NativeOrderOwnerLifecycleAcceptanceTest#genericTupleFunctionNowArgument…[1–4]`
+    asserted that an explicit compile-time context controls the native `NOW()`; changed to assert the opposite
+    (production never passes an explicit `NOW()`; honouring a caller-pinned one would need a new API).
+    `genericFirstUnion…` pinned a pre-11-04 plan shape and was restructured.
+  - `closingResultCancelsWorkersDeniedBeforeNativeDelegateClose[3,4]` and `closingResultHandlesReuse…[1,2]`: the
+    post-ready race in the one fixture the first await missed (a forced parallel decline at the first `hasNext`
+    runs the test's gated close on the main thread, which waits on a latch only the main thread releases, until
+    the 60 s timeout). Await added after the copy into the private store; 0 of 20.
+  - The five newly intermittent cases: none caused by 2026-11-13's product changes (all 24 changed files restored
+    to their earlier versions: same rates). `LmdbFrozenReplayTest`: the post-ready publication is the third
+    native attempt; `CountingLmdbStore.init()` now awaits maintenance — the class is 99/99 green in 20 of 20
+    runs (52 other cases there were red in every run for the same reason). `LmdbRetirementForeignWriterWindow
+    Test` and `LmdbRetirementTermOverlapTest`: the asynchronous value-cleanup worker retires the receipt the test
+    recorded or holds the writer lease; both now set `setAsyncValueCleanup(false)` as 51 other classes do; eight
+    more cases green; three older reds remain and one failure that was masked now shows at a later line.
+
+  2026-11-13 23:50: refined deadline rule merged (uncommitted; four core planner files, one new core test class,
+  an LMDB test support class and one new query2 test; hand-back in the deadline design file). In budgeted mode
+  the search continues past the wall-clock deadline to the first priced plan for at most the deadline's own
+  length; auto mode is unaffected. Plan-cache flight waiter defect reproduced (waiter plans with the owner's
+  expired deadline); candidate B (wait for the owner until its hard stop) in flight (`round8/`).
+
+  2026-11-14 01:00: core plan-cache flight waiter fix merged (uncommitted; `triage-planner39/round8/report.txt`;
+  `PackedSearchBudget.hardStopNanos()/clockNanos()`, `PackedPlanCache` flight carries the owner's hard stop and
+  `FlightClaim.await(budget)` is interruptible, `PackedCascadesPlanner`; new `PackedPlanCacheFlightWaiterTest`,
+  7 cases, 5 red before; three mutations caught; core 1,898 and LMDB 428 cases pass→pass). A waiter waits for the
+  owner's result until the owner's hard stop, then plans alone with the fallback marked
+  `optimizer.planCacheFlightWaiterFallback=owner-hard-stop`; a no-deadline waiter used an uninterruptible
+  `join()` and now ends on interrupt. In LMDB the core flight is practically never shared in budgeted mode (the
+  limits include each request's own absolute deadline; flights join only on equal limits); identical concurrent
+  requests are deduplicated in `LmdbPipelinePlanCache`, whose waiter also blocks on an uninterruptible `join()`
+  (a cancelled waiter stays blocked until its owner ends) — fix in flight (`round9/`). Left as is: the
+  flight-capacity wait in `PackedPlanCache.beginFlight` is interruptible but not bounded by a deadline.
+
+  2026-11-14 02:00: `LmdbPipelinePlanCache` waiter made cancellable and merged (uncommitted;
+  `triage-planner39/round9/report.txt`): `shared.get()` replaces `shared.join()`; an interrupted waiter restores
+  its interrupt status and throws `QueryInterruptedException`, handled at `SailSourceConnection` :342–344 like any
+  cancelled planning; a waiter holds no reservation, so nothing is released. New
+  `LmdbPipelinePlanCacheCancelledWaiterTest` (red before: the waiter stays parked 10 s; green after; mutation
+  red) compares cache counters with and without the cancelled waiter. LMDB selection 428 pass→pass. Not
+  verified end to end with a real connection close or query timeout (the test interrupts the thread). New
+  behaviour: a request already interrupted when it reaches an unfinished flight now fails at once.
+
+  Whole-module run on the tree with the four planner rules (2026-11-14 03:00; `evidence/module15-r7/summary.txt`;
+  snapshot `trees/verify-1113b`, hash `b7d0e1ca…`; it predates the `NOW()` fix, the deadline rule, the waiter
+  fixes and the later fixture fixes).
+  - `core/queryalgebra/evaluation`, whole module on both snapshots: no per-case difference (7,766 tests; 176
+    cases red on both with the same first line — a red set in this module that was not on record; the three new
+    `Packed*` classes green).
+  - `core/sail/lmdb`, whole module (19,892 tests, 970 failures, 159 errors): against r2, 266 red→green, 37 new
+    cases all green, and 11 cases STABLY green→red (3/3 alone on the new snapshot, 0/3 alone on the earlier one),
+    outside the selection the rules were verified on: four `LmdbPackedRepeatedVariableAccessCostTest` cases,
+    `LmdbAccessQuoteExecutionRegressionTest#residualSkipScanCannotPresentPrefixPopulationAsKnownVisitedWork`
+    and `#selectedCoveredAccessCarriesItsModeledCandidateToTheExecutablePlan`, `LmdbFrontierReadOwnershipContract
+    Test#rawContextAliasesCannotBecomeMissingGraphWorkZeros`, `LmdbNativeRawEqualityDispatchTest[3,4]`,
+    `LmdbFrontierPlanningBenchmarkTest#constructsEightFactorFrontierPlanningState` (BUDGET_EXHAUSTED),
+    `LmdbNativeLeftJoinSweepTest#selectiveOuterDeclinesTheSweep`. At least three pin principles rule 3 must
+    respect (a prefix population is not known visited work; an absent alias IRI is not a zero-work certificate;
+    the scanned population is not narrowed). The rules stay in the working tree but are NOT cleared; attribution
+    per rule and the rule changes are in flight (`triage-planner39/round10/`), with a blast radius widened to
+    every LMDB test class that touches the cost model, quotes, forced strategies or plan structure.
+  - New triage baseline: 1,129 cases still red in 255 `core/sail/lmdb` classes (`evidence/module15-r7/compare/
+    still-red.txt`, clusters in `still-red-clusters.txt`; 40 clusters of five or more cover 568). Largest:
+    `LmdbNativeStatementTermRoleTest` 80, `LmdbFrozenReplayTest` 53 (fixed after this snapshot),
+    `LmdbNativeServiceQueryCompletenessTest` 44, `LmdbMappedWholeOperatorSurfaceTest` 37,
+    `LmdbNativeValuesFilterFoldShapesTest` 34.
+
+  2026-11-14 03:45: the user approved triaging all remaining reds and then said to stop using subagents. The
+  one running agent was stopped mid-work (`triage-planner39/round10/`: per-rule attribution done, its fix
+  incomplete — 17 green→red candidates in its own wide run). Attribution of the 11 regressions (single-rule
+  builds, `round10/runs/a-*`): rule 3 causes eight (it presents the prefix population as visited work and prices
+  an absent alias IRI as zero, both against principles those tests state; it also exhausts the benchmark
+  fixture's budget), rule 2 causes the two `LmdbNativeRawEqualityDispatchTest` cases, rule 1 causes
+  `LmdbNativeLeftJoinSweepTest#selectiveOuterDeclinesTheSweep`, rule 4 none.
+  Owner decision: rules 1, 2 and 3 are reverted from the working tree (reverse-applied; their diffs and three
+  test classes kept under `.agent/research/GH-0000-phase1-continuation-2026-11-09/reverted-planner-rules-
+  2026-11-14/`); rule 4 stays. Consequence: the RC-3a (2 + the audit alternative), RC-3b (4) and ScanBacked
+  filteredEmpty (2) cases are red again as before 2026-11-13, HIGHLY_CONNECTED:8 returns to its earlier plan, and
+  the AAS speed-up is gone. The measured candidates remain the starting point for doing this properly: residual
+  scans need a quote that carries a bound without a point estimate (phase 2), and any planner rule is merged
+  only after a whole-module per-case comparison. Verification run of the affected classes on the working tree
+  in progress (main thread).
+
+  Revert verified on the working tree (2026-11-14 04:30; main thread, workspace `revertverify`, reports under
+  the session scratchpad `revert-verify/`): the 11 regression cases are green again
+  (`LmdbPackedRepeatedVariableAccessCostTest` 28/28, `LmdbAccessQuoteExecutionRegressionTest` 7/7,
+  `LmdbFrontierReadOwnershipContractTest` 32/32, `LmdbNativeRawEqualityDispatchTest` 4/4,
+  `LmdbFrontierPlanningBenchmarkTest` 2/2, `LmdbNativeLeftJoinSweepTest` 7/7); rule 4's cases stay green
+  (`LmdbNativeDeepOptionalStrategyTest` 11/11, `LmdbSubSelectDirectLookupEstimateTest` 3 pass, 1 skip); red again
+  as expected: `LmdbAASQuery2CascadesHypergraphPlanningTest` 2, `LmdbEstimateAuditHarnessTest` 13 (8 older + 5),
+  `LmdbNativeScanBackedHashBuildParityTest` 6 (4 older + 2). Core: `PackedWinnerTableChildRefreshTest` 28/28,
+  `PackedPlanCacheFlightWaiterTest` 7/7, `PackedPlanCacheTest` 65/65, `PackedSearchBudgetTest` 12/12.
+  One deadline-rule test depended on the reverted rule 2: `PackedPlanningDeadlineOverrunTest
+  #overrunWithoutAPricedPlanEndsWhenTheGraceExpires` ran a never-priced search to completion as a fixture
+  check, which without rule 2 ends in "correlated DPhyp target was unreachable". The check is now bounded by
+  work (deadline + grace + 1 units); the class is 8/8. Consequence to keep in mind: in budgeted mode a
+  never-priced correlated-filter search that used to be cut by the deadline can now run on during the grace to
+  that invariant failure, after which LMDB falls back to the generic plan with a warning (what auto mode does
+  for such a query in any case). Not measured.
+  Next (main thread, no subagents): rerun all 255 formerly red LMDB classes on the current tree to get the real
+  remaining list (in progress, scratchpad `redbase/`), then triage family by family
+  (`triage-families/*.classes.txt`).
+
+  2026-11-16: the user allowed Sonnet subagents again, closely supervised (diagnosis-only tasks, 40-minute time
+  box, `STATUS.md`, no real-tree access; brief in `triage-families/COMMON.md`, copy in
+  `.agent/research/GH-0000-phase1-continuation-2026-11-09/scripts/`). Evidence under /private/tmp is being purged
+  by age (the semaphore probe and older run directories are gone); reports and diffs of 2026-11-12/13 are backed
+  up in `.agent/research/GH-0000-phase1-continuation-2026-11-09/tmp-evidence-backup-2026-11-16-part6.tgz`.
+  Current red list on the working tree after the revert: 1,044 cases in 240 classes (scratchpad
+  `redbase/red-now.txt`, backed up as `scratchpad-redbase-2026-11-16.tgz`).
+  - `LmdbNativeStatementTermRoleTest` (80; wrong fixture, test committed red in cce41a89a5): it called the
+    native compiler with a null dataset and an unvalued graph variable, which `NativeContextSelection.supports`
+    declines on purpose (only a selected set of ordinary named graphs proves the variable's values are
+    unchanged resource ids). The fixture now supplies a dataset with the quad's graph as named graph, and a new
+    case pins the decline for the null dataset. 98/98 on the working tree (main thread run).
+
+  - Step-shape classes (`LmdbNativeBoundaryFirstAssociationTest` 14, `LmdbNativeTrailingRegionDependencyTest`
+    22, `LmdbNativeInteriorIslandTest` 10; Sonnet diagnosis, `triage-families/a3/`): an archive of 4b2a72bc4c^
+    runs them 0 / 6 / 2 red, the working tree 14 / 22 / 10. Cause for 35 of the 38 new reds: commit 4b2a72bc4c
+    (2026-11-04) calls `NativeRootPipeline.projectionBoundary` in `compilePhysical` before any native root
+    compiler; for a projection with a non-guaranteed output (CONCAT, VALUES … UNDEF) it returns a boundary whose
+    argument is prepared by the generic evaluator (`NativeProjection(arg=JoinQueryEvaluationStep)`), so the
+    native row root with its interior alternatives, trailing-region movement and boundary hoist is never built.
+    Results stay correct; the optimisation is lost (real regression). Skipping the boundary at the root in the
+    agent's copy brings the association class from 14 to 1 red. That contradicts the comment a few lines below
+    ("the semantic pipeline is the total floor, not a higher-priority replacement for optimized row plans").
+    Candidate being measured across all native-engine test classes before any decision: use the boundary only
+    after the ordinary root compilers decline (`a3/round2/`). Six older reds are a fixture whose
+    `Bound(?n) = Bound(?c)` filter the simplifier folds to `true = true` (fixture fix in flight, `a1/round2/`);
+    two `minusLexicalScope…` cases lose a recorded cardinality (cause unproven).
+
+  - `LmdbNativeValuesFilterFoldShapesTest` (34; Sonnet diagnosis, `triage-families/a2/`): rows are correct in
+    every case; only plan assertions fail. 30 are an outdated test: since 4b2a72bc4c the fold is wrapped in a
+    `ValuesInputGuard(folded=…, retained=…)` that keeps the unfolded plan as a runtime fallback, and the test's
+    `doesNotContain("Values(rows=")` trips on the `retained=` branch (stripping it in the agent's copy turns the
+    30 green). Case [14] is a real plan-shape regression: `TupleExprs.tupleBindingObservationDomain` reports
+    `known=false` for a pattern with `LmdbValueVar` constants (the exact-class table does not list the `Var`
+    subclass), and `references()` then aborts the fold. [5] and [7] undetermined; [34] is a single-row VALUES
+    that is not inlined (planner side). Test update and two candidate fixes for [14] being prepared in the
+    agent's copy (`a2/round2/`).
+  - `LmdbNativeLexicalOptionalConditionTest` (13): same cause as the step-shape classes — the projection
+    boundary claims the projection (`needsSemanticProjection` is true for a projected OPTIONAL subselect
+    operand), the argument runs as a generic `LeftJoin`, and the native lexical OPTIONAL lowering is never
+    reached. With the boundary disabled for a `LeftJoin` argument in the agent's copy all 14 pass with native
+    rows equal to the control. Covered by the candidate measurement.
+
+  - 2026-11-16 12:50: the `LmdbNativeValuesFilterFoldShapesTest` update is merged and verified on the working
+    tree (main thread: 66 tests, 4 failures — [5], [7], [14], [34]; a fold-disabling mutation turned the 30 red
+    again in the agent's copy). The fold expectations now read the `folded=` branch of each
+    `ValuesInputGuard` (balanced-parenthesis parse) and assert the `retained=` branch exists. [7] has the same
+    cause as [14]. Owner decision for [14]/[7]: decide locally in the LMDB values compiler (a constant `Var`
+    with a value does not make a pattern's observation domain unknown) and leave the model's exact-class rule
+    alone; merge only after a broad per-case comparison (in flight, `a2/round3/`). [5]: the shared optimizer
+    turns the FILTER into `BindingSetAssignment[code=…]` without the exact-values mark, so neither fold entry
+    applies — open, planner side. The fixture fix for the six folded-`Bound` cases is ready but they then meet
+    the projection-boundary assertion; held (`.agent/research/…/triage-families/a1-round2-fixture.diff`).
+
+  - 2026-11-16 13:30, row-root-first candidate measured and rejected (`.agent/research/…/triage-families/
+    a3-round2-*`; 3,214 cases in 224 classes, 4 of 8 batches): trying the native root compilers before the
+    projection boundary turns 72–76 cases green but 326–341 red, stably. Six are wrong results (a hidden LATERAL
+    input renamed across VALUES/BIND/nested projection: counts 1 where 3 are expected; an API parameter binding
+    dropped from the row, three cases; a path identity row missing, two cases); about 320 are authority-fact
+    assertions (row values plus tracked/request/local provenance) in the `Native…Boundary` and `NativeSealed…`
+    classes. So the boundary is a correctness mechanism and cannot simply be reordered. Whether a narrower
+    condition exists (the optimisation-pinning shapes leaving `needsSemanticProjection` through a different exit
+    than the correctness cases, or the boundary's argument compiled natively with origin facts) is being
+    diagnosed (`a3/round3/`). Until then the 35 step-shape cases, the 13 lexical-OPTIONAL cases and the six
+    held fixture cases stay red as a known optimisation regression of 4b2a72bc4c.
+
+  - 2026-11-16 14:20, the boundary's exits do not separate the groups (`.agent/research/…/triage-families/
+    a3-round3-*`). Every optimisation-pinning case leaves `needsSemanticProjection` through the same exit as most
+    wrong-result and provenance cases: the projection's argument has neither a `NativeBGPOrigin` nor a
+    `NativeProjectionAuthorityProof`. What differs is the argument: a Join of BGP patterns, VALUES and nested
+    scope-change Projections for the optimisation tests; Lateral, ArbitraryLengthPath, LeftJoin, Union, Order,
+    Graph for the correctness cases (the dropped API parameter uses the "projected name not guaranteed" exit).
+    The boundary prepares its argument with `exactOriginView`, which offers the native compiler only leaves
+    that carry an origin proof and builds every composite from generic operators — 95 Joins, 74 Projections and
+    70 Extensions refused, 231 leaves compiled natively in the three classes. The per-row facts at stake are
+    `BindingSetOrigin` (tracked, request names, local names, retained parameters) and the GRAPH frame; the
+    native side can carry them (`NativeRowProvenance`, `NativeProjectedBindingSet`) but only derives them where a
+    static proof exists. Two ways forward, an owner/user decision: extend the origin proofs and the native row
+    step to a Join over subquery-boundary Projections, or accept generic execution for those shapes and
+    re-target the tests at shapes that still reach the native row root. A corpus count of how many theme
+    queries take the boundary with a generic argument is in flight (`a3/round4/`).
+
+  - 2026-11-16 16:10: corpus footprint of the projection boundary (`.agent/research/…/triage-families/
+    a3-round4-table.tsv`): 17 of 117 theme queries compile through it, all with a generic argument; 16 are the
+    long OPTIONAL-chain queries at index 11/12 (not in the harness's default 77), through the "projected name
+    not guaranteed" exit; 151 left joins run as generic operators. Of the ten largest, five finish (0.7–22 s,
+    counts match the catalog) and five time out at 60 s. No baseline yet; the same ten are being timed on
+    4b2a72bc4c^ (`a3/round5/`).
+    The local fix chosen for FoldShapes [14]/[7] does not work on a clean build (the earlier result ran with the
+    other candidate's model jar still installed; three more unknown-observation gates in the values compiler
+    decline). Withdrawn before any merge. The model-level candidate (a constant `Var` subclass with a value is
+    a known node) is being evaluated with clean-build proof and whole-module runs of the model and evaluation
+    modules (`a2/round4/`).
+
+  - 2026-11-16 17:00, before-boundary timing is inconclusive (`.agent/research/…/triage-families/a3-round5-*`):
+    the archive of 4b2a72bc4c^ refuses the current theme store ("Unrecognized namespace database metadata key:
+    backup-logical-boundary"), so eight of the ten queries have no baseline. On an older medical-records-only
+    store both trees open: MEDICAL_RECORDS:11 runs 1.2–1.3 s before and 2.1–2.3 s now (same counts);
+    MEDICAL_RECORDS:12 timed out at 60 s before and runs 1.4–1.6 s now. Row counts match the catalog wherever a
+    query finishes, on both trees. Correction to the round-4 reading: under the boundary several of these
+    queries do get a native left-join chain through `NativeSealedProjection` (PHARMA:12, LIBRARY:12,
+    MEDICAL_RECORDS:11/12), three are native multi-joins, and three are generic iterators (PHARMA:3,
+    ELECTRICAL_GRID:12, TRAIN:12). So there is no evidence of a broad slowdown from the boundary; the cost is
+    specific to shapes `NativeSealedProjection` does not admit, such as the tests' join over nested subselects.
+    Decision put to the user: re-target the ~54 optimisation-pinning cases at shapes that still reach the native
+    row root and record the sealed-projection extension as a design item, or extend it first.
+
+  - 2026-11-16 19:00, the constant-`Var` rule in the model's observation-domain analysis (candidate (b)) is
+    still not merged (`.agent/research/…/triage-families/a2-round5/compare.txt`). Compared on batches b03–b09
+    in both states (7,006 further cases, clean builds, compile lines recorded): four stable green→red, all
+    forced kernel tiers that now decline with `no-fusion-opportunity` and none a row mismatch
+    (`LmdbNativeRawEqualityDispatchTest#equalityProbePreservesRowsAndCountAcrossRawExecutionRoutes[3],[4]`,
+    `LmdbNativeServiceQueryCompletenessTest#queryRunsWithRealKernelAndFederation[73],[74]`); five stable
+    red→green, among them rows [23],[24] of the same service class. Temporary counters show the new rule was
+    reached at all LMDB callers (BGP origin 435 times, sealed projection 46, primitive input 96). The rule
+    therefore moves which native route a constant-bearing pattern takes; whether the four cases are outdated
+    forced-tier expectations or a lost fusion route is being traced with a per-call-site switch
+    (`a2/round6/`). Diagnosis of family C path classes and family B boundary classes started in parallel.
+
+  - 2026-11-16 20:00, the four cases are explained and the rule is applied to the working tree, provisionally
+    until the comparison on the classes outside the 715-class selection is back (`a2/round7/`). With one call
+    site at a time switched back to the old rule, only `NativeBGPOrigin.appendPattern` restores the four
+    cases: a single statement pattern whose constants are the store's own `Var` subclass now has a known
+    observation domain, so `NativeExactOriginStep` admits it as a native leaf under a generic parent. Before,
+    such a leaf was never native (since the exact-class table of 2026-10-31) and a forced kernel tier was
+    silently not consulted; now the tier is offered at a one-scan leaf and declines because one scan has
+    nothing to fuse. Rows and counts are identical in both states. The two tests therefore force a preference
+    list (`<kernel tier>,batch`) for exactly those shapes (GRAPH bodies; `rows-limit-zero`); a single tag stays
+    a hard force everywhere else. Rows [23]/[24] turn green through `NativePrimitiveInputSemantics`: the BIND
+    over a known pattern is primitive, and the aggregate kernel the test demands now binds. Red-first evidence
+    for the model test: `.agent/research/…/triage-families/a2-round6/TupleExprsTest-pre-fix-red.txt`.
+
+  - 2026-11-16 20:00, two more families are mostly the projection boundary
+    (`.agent/research/…/triage-families/a1-c-paths/`, `a3-b-boundary/`). Paths: 33 of the 40 reds in
+    `LmdbNativePropertyPathTest`, `LmdbNativeGeneralPathTest` and `LmdbNativeZeroLengthNodeIdsTest` fail
+    because a projection over a path has neither a BGP origin nor a projection authority, so the path body is
+    prepared by the ordinary evaluator and the native path plans never run (boundary disabled in a copy: 40 →
+    7 red). Boundary classes: 42 of 54 reds in `NativePureUnionVisibilityBoundaryTest`,
+    `NativeCompositeOriginBoundaryTest` and `NativeNestedSelectInvocationScopeTest` are exit E2b/E3b with a
+    LeftJoin, Union, Order or Lateral argument; none is a wrong result. These tests were committed one minute
+    after the boundary (cce41a89a5 after 4b2a72bc4c) and describe themselves as "feature-admission red …
+    the actual composite owner must execute": they specify unfinished work, a native OPTIONAL/UNION owner
+    under the boundary, and are not outdated. That weighs the open decision towards extending native
+    admission rather than re-targeting tests. Independent of the boundary: ten cases where the input binds an
+    output name of the nested SELECT and `NativeSubSelectScopeBoundaryStep` deliberately runs the ordinary
+    fallback on a detached clone (no execution-path metric on the test's Group), and two where
+    `NativeContextSelection.supports` refuses a lowered private graph.
+
+  - 2026-11-16 21:00, the boundary is a measured performance regression for property paths
+    (`.agent/research/…/triage-families/a1-c-paths-cost/results.tsv`; 200,000-edge tree, 7 timed runs after 3
+    warm-ups, two alternating rounds per state, identical row counts). Median with the boundary against the
+    boundary disabled in a copy: `<root> :p+ ?o` 1,675 ms against 306 ms; `<root> :p* ?o . ?o :q ?v` 2,706 ms
+    against 47 ms; `<root> (:p|:q)+ ?o` 3,074 ms against 301 ms. A path with a bound object, `:p?` and a
+    COUNT over a path are unaffected. So the 33 path reds are real: since 2026-11-04 a SELECT over an
+    unbounded path runs the path in the ordinary evaluator. Disabling the boundary is not the fix (trying the
+    native row root first was measured and gives wrong results in six cases); the open design question is
+    where a path body may be admitted as a native leaf under the boundary and what it must prove
+    (`a1/c-paths-design/`, diagnosis in flight).
+
+  - 2026-11-16 23:40, the constant-`Var` rule is no longer provisional
+    (`.agent/research/…/triage-families/a2-round7/compare.txt`): the 829 LMDB test classes outside the earlier
+    selection were compared case by case in both states (8,939 cases): no stable green→red and no stable
+    red→green; twelve unstable flips, each rerun alone twice per state. Together with rounds 4 and 5 every
+    `*Test` class of the module except `LmdbStoreMultiRepoTest` and `QueryBenchmarkTest` has been compared, plus
+    the whole model and evaluation modules. On the working tree the deciding classes give: `TupleExprsTest`
+    26/26, `LmdbNativeValuesFilterFoldShapesTest` 64/66 (cases [5] and [34] remain), `LmdbNativeRawEqualityDispatchTest`
+    4/4, `LmdbNativeServiceQueryCompletenessTest` 42 red (was 44). `LmdbNativeRangePartitionedScanTest` was red
+    alone in both states (a fixture race with the post-ready maintenance commit: the sibling transaction id no
+    longer matches the source's and `openParallelSources` returns null); it now waits for background
+    maintenance in `setUp` and is 5/5 in three alone-runs. Unstable cases seen in the comparison and still to
+    triage: `LmdbOperatorFeedbackPlanningTest#secondPlanUsesLeftJoinOperatorFeedbackForBoundOptionalFanout`
+    (correction 2026-11-17: it passes alone 5 of 5; it fails only in one 11-class composition under load, in
+    both states), `LmdbRdfTermDomainStartupCapacityTest#startupRebuildRetriesAnUnjournaledCommitAsOneCompleteOperation[2]`,
+    `LmdbCommitAtomicityTest#autogrowCommitFailureBeforeTheFirstPhysicalCommitLeavesThePreexistingModel`,
+    `LmdbSailStoreCloseTest#closeDrainsRunningScheduledPersistBeforeClosingEstimator`.
+
+  - 2026-11-16 23:40, design for the path regression written:
+    `.agent/designs/GH-0000-native-path-under-sealed-projection-2026-11-16.md` (admit an `ArbitraryLengthPath` in
+    `NativeSealedProjection`, empty untracked frame and default graph only; slice 1 `+` over one statement
+    pattern, slice 2 `*` with a constant IRI endpoint). Disabling the boundary for paths is unsafe: 33 of 56
+    cases in `NativePathProjectionProvenanceContractTest` and `LmdbNativeContextSelectionContractTest` go red,
+    two with wrong bags. Slice 1 is being prototyped in a private copy (`a1/c-paths-proto/`). The packed forced
+    declines are the boundary too for 20 of 27 cases (exit E3 on a BIND result; the packed planner is offered
+    only the leaf and cannot produce the constant slot); the six `LmdbNativePackedFtreeWitnessTest` cases are
+    independent (a `FILTER … IN` rewritten to a VALUES child, which the packed planner does not accept). A
+    census of all red classes with the boundary disabled is running (`a3/boundary-census/`).
+
+  - 2026-11-17 01:30, boundary census and path prototype
+    (`.agent/research/…/triage-families/a3-boundary-census/`, `a1-c-paths-proto/`). All 240 red LMDB classes
+    (4,276 cases) were run with the boundary as it is and with it disabled by a property in a copy: 928 red
+    with the boundary, 1,069 without; 213 cases are stably red only because of the boundary
+    (`boundary-caused.txt`) and 356 cases are stably green only because of it (`boundary-protects.txt`), 18 of
+    those with wrong rows (extra alias binding in `NativeProjectionOrderTieBoundaryTest`, missing request
+    parameters in `LmdbNativeApiParameterParityTest`, a lateral rename). So the boundary stays, and the 213 are
+    the backlog of shapes that need a native route under it; the largest groups are
+    `LmdbNativeServiceQueryCompletenessTest` 34, `LmdbNativePropertyPathTest` 22,
+    `LmdbNativeLexicalOptionalConditionTest` 13, `LmdbNativePackedMorselsTest` 13, `LmdbKeyedSubqueryJoinTest`
+    11, `LmdbNativeWildcardPredicateBatchTest` 10. The first slice of the path design works in a copy: only
+    `NativeSealedProjection` changes; over the six path and four sealed-projection classes 41 reds become 28
+    (13 `LmdbNativePropertyPathTest` cases green, none green→red, both contract classes unchanged), and
+    `<root> :p+ ?o` on the 200,000-edge tree drops from about 1,670 ms to about 345 ms (306 ms with the
+    boundary disabled). `:p*` and alternatives are unchanged (later slices). Not merged: the test is being
+    strengthened (row provenance, random differential, composites) and a whole-module comparison is running
+    (`a1/c-paths-proto2/`).
+
+  - 2026-11-17, owner decision on the projection-boundary reds: extend native admission first. The
+    boundary-pinned tests are not re-targeted; the 213 boundary-caused cases are worked off by admitting more
+    shapes natively under the boundary, one slice at a time in order of payoff (refusal histogram in
+    `a3/sealed-refusals/`), each with a design note, a prototype in a private copy, a differential test with
+    mutations, and a whole-module per-case comparison before it is merged.
+
+  - 2026-11-17 06:30, ordering of the admission slices by measured cost
+    (`.agent/research/…/triage-families/a3-cluster-cost/summary.tsv`, `a3-filter-facts/`, `a3-service-facts/`).
+    Counting refusals misranks the work: the sealed projection's most frequent first refusal is a Filter, but
+    admitting filters turns only 6 cases green, because a value-only filter over patterns never reaches the
+    boundary (`NativeBGPOrigin` admits it). Counting red cases misranks it too: the largest cluster, 34 service
+    queries, has one local pattern before a remote call, so there is nothing for a kernel to fuse and the row
+    provenance through SERVICE differs from what the sealed projection emits. So the boundary's run-time cost
+    was measured for 17 query shapes on a 100,000-subject store (same compiled source, boundary on and off by
+    a property in a copy, identical row counts everywhere). Stable costs: ORDER BY with LIMIT over a BIND 170 ms
+    against 26 ms (the top-k route is lost), OPTIONAL with a condition 1,490 ms against 313 ms. BIND, MINUS,
+    NOT EXISTS, nested SELECT, UNION with BIND and GRAPH are within 1.2–1.8×, not separable from noise on the
+    loaded machine; a nested grouped subselect and `GRAPH ?g` are faster with the boundary. Order of work:
+    property paths (4.6–58×; slice 1 in comparison), then OPTIONAL with a condition, then ORDER BY with LIMIT
+    over a BIND; the service cluster last, as a separate owner decision.
+
+  - 2026-11-17 15:00, first admission slice merged (uncommitted): property paths of length one or more over a
+    single statement pattern run through the sealed projection
+    (`.agent/designs/GH-0000-native-path-under-sealed-projection-2026-11-16.md`, hand-back section). Only
+    `NativeSealedProjection` changes. Test first: `NativeSealedPathProjectionTest` red 9 of 41 on the working
+    tree, green after. Whole-module per-case comparison in private copies: 1,542 of 1,542 LMDB test classes,
+    19,638 cases, no stable green→red, 29 stable red→green. On the working tree `LmdbNativePropertyPathTest`
+    goes from 23 red to 10 and `<root> :p+ ?o` on the 200,000-edge tree from about 1,670 ms to about 345 ms.
+    Second slice (OPTIONAL with a condition,
+    `.agent/designs/GH-0000-optional-condition-under-sealed-projection-2026-11-17.md`) works in a copy: the
+    measured query goes from 1,490 ms to 328 ms, 21 classes unchanged; its whole-module comparison is running.
+
+  - 2026-11-17 15:00, fixture races fixed and one real bug found while triaging unstable cases. Five tests
+    raced the store's background work and now exclude it explicitly: the post-ready maintenance publication
+    (`LmdbNativeRangePartitionedScanTest`, `LmdbOperatorFeedbackPlanningTest`,
+    `LmdbFilterReadContextIdentityTest`: a query or capture inside an open publication has no current read
+    authority, so a forced parallel strategy declines, operator feedback is dropped, or a read context is not
+    captured) and the asynchronous value cleanup (`LmdbExplicitRetirementFailureTest`, two cases of
+    `LmdbRdfTermDomainStartupCapacityTest`: the cleanup thread drains the retirement queue or holds the
+    dictionary write transaction that the test drives directly). `LmdbResourceDatasetCompositionTest`: one case
+    pinned visit counting through a value subclass that the plan cache has refused since 2026-11-06; it is
+    rewritten as two cases and the visit bound is dropped as unobservable. Real bug, not fixed yet
+    (`triage-families/a2/round15/`): when the post-ready thread hits map-full committing the deferred
+    RDF-term-domain work while a user write is admitted, the growth coordinator refuses
+    ("capacity recovery cannot replace another admitted writer's continuation"), the startup code attaches the
+    refusal as suppressed and rethrows, and the domain work fails for the rest of the process although
+    auto-grow is on (`LmdbRdfTermDomainStartupCapacityTest#domainEnabledEmptyStartupAcceptsSmallAutoGrowCapacity`,
+    7 of 8 warm iterations). Reproducer, after-failure state and fix options in progress (`a2/round16/`).
+    Also found, not yet diagnosed: for an OPTIONAL whose right-side-only filter is relocated into the right arm
+    (`regex(str(?w), …)`, `strlen(str(?w)) > 1`), the native route returns the same bag but rows that do not
+    carry `?w` as a local name (`a3-optional-condition-proto/scratch-reproducer.diff`).
+
+  - 2026-11-17 21:30, second admission slice and the startup fix merged (uncommitted). OPTIONAL with a
+    condition runs through the sealed projection
+    (`.agent/designs/GH-0000-optional-condition-under-sealed-projection-2026-11-17.md`, sections "Prototype
+    hand-back" and "Merge"): test first (`NativeSealedOptionalConditionProjectionTest`, 14 of 50 red, then
+    green), whole-module comparison 1,543 of 1,544 classes with no stable green→red; the measured query goes
+    from about 1,490 ms to about 328 ms. The one apparent regression in that comparison was a race that fails
+    about half the time in every file-and-copy combination — two reruns per state are not enough to call a
+    flip stable in a class that is already unstable; eight reruns or a swap test are. Startup bug fixed
+    (`triage-families/a2-round16/`, `a2-round17/`, `a2-round18/`): in
+    `LmdbSailStore.initializeDeferredRdfTermDomains`, when emergency map growth is refused because another
+    writer is admitted, or the map cannot be grown because a write transaction is open, the thread waits for
+    that writer's lease and retries the complete publication instead of failing. The maintenance pattern
+    (phased growth) was tried first and rejected because it changes the pinned interrupt behaviour of this
+    branch. Test first: `LmdbDeferredDomainStartupWriterOverlapTest`, two latch-ordered cases, both red before;
+    with the fix the new test and `LmdbRdfTermDomainStartupCapacityTest` are 33 of 33 in three runs, and
+    `domainEnabledEmptyStartupAcceptsSmallAutoGrowCapacity` failed 0 of 80 in the agent's loop (5 of 40 before).
+    Unproven: two mutants survive (always retry when growth returns false; retry on every refusal reason)
+    because no test can produce those states, and the refusal is recognised by its message text. Still
+    untriaged in that class: `publicationCloseFailureRetainsOperationCapacityAndNeverInventsRetry` (about one
+    run in five) and `startupRebuildRetriesAnUnjournaledCommitAsOneCompleteOperation`. Next slice in
+    progress: zero-length paths with a constant endpoint and alternatives inside a path
+    (`triage-families/a1-c-paths-slice23-facts/`: probe with no mismatch; 2,700 ms to 53–67 ms and 3,000 ms to
+    322–377 ms).
+  - 2026-11-17 23:40, path slice 2 merged (uncommitted) and bulk fixtures corrected. Zero-length closures with
+    a constant endpoint and same-direction alternatives of single patterns now run through the sealed projection
+    (`.agent/designs/GH-0000-native-path-under-sealed-projection-2026-11-16.md`, "Slice 2 merge"): whole-module
+    comparison 1,541 of 1,541 classes, no stable green→red, 14 stable red→green; test first on the working tree
+    (`NativeSealedPathProjectionTest` 11 of 69 red, then green); ten related classes 39 reds before, 25 after,
+    none new. The three bulk-load test classes used a 2 MiB loader memory budget, below the loader's fixed
+    overhead of about 2.6 MiB, which makes the external sort write one run file per record (124 s against about
+    1 s for 10,000 statements); the fixtures now use 64 MiB and are 159 of 159 green
+    (`triage-families/a3-bulk-hang/`, `a3-bulk-budget/`). What the loader itself should do with such a budget
+    is an open owner question. Next admission slice: ORDER BY with LIMIT over a BIND (measured 6.7×).
+  - 2026-11-17 (later), third admission slice designed, prototype in an agent's private copy
+    (`.agent/designs/GH-0000-computed-bind-under-sealed-projection-2026-11-18.md`; facts in
+    `triage-families/a3-orderby-bind-facts/`). The measured query (154–168 ms against 20–21 ms) is refused
+    because its BIND is computed, not because of ORDER BY: Order and Slice are the boundary's own stages and stay
+    outside the sealed body, so admitting the BIND alone reached 70–93 ms in a crude probe. Every Extension
+    evaluator marks a BIND target as locally produced even when the expression fails; the sealed projection
+    derives local names from bound cells, so the design adds an always-local rule for a computed target and
+    restricts it to the mandatory spine of the body. Whether an order push-down slice follows depends on the
+    prototype's time breakdown.
+  - 2026-11-17 (evening), computed-BIND slice merged into the working tree (uncommitted; design note "Merge"
+    section; evidence `triage-families/a3-computed-bind-proto2/`). Review of the prototype found that a computed
+    IRI could become a native join or OPTIONAL key (it carries a synthetic id, not a store id); it gave equal
+    rows on the test data, and is now refused: a computed target may not be a shared name of a Join or LeftJoin,
+    nor a LeftJoin condition name. Whole-module comparison 1,545 of 1,545 classes, 19,896 cases, no stable
+    green→red, 73 stable red→green (the new test). On the working tree `NativeSealedComputedBindProjectionTest`
+    went from 74 of 183 red to green and 13 related classes kept the same 61 red cases. The slice fixes no
+    previously red test; its effect is cost (157–169 ms to 81–91 ms on the measured query in the prototype,
+    17–23 ms with the boundary disabled). The remainder is the per-row projection and the boundary's own top-K
+    stage; pushing Order and Slice under the boundary is undecided (owner question open).
+
+  Not done in this block, still required for the phase-1 exit: recognition purity, the remaining budget-charging
+  gaps, dimension-mapping and algebra-law tests, inactive LMDB provider conformance, and the nested-context design.
+  Open items and untriaged pre-existing reds are listed in the 2026-11-10 revision note at the end of this file.
+  Phase 1 stays in progress; phases 0 and 6 are not declared complete.
+
 - [ ] Unified phase 2: quote LMDB and adjacency physical access.
 - [ ] Unified phase 3: preserve consumer requirements and comparable costs.
 - [ ] Unified phase 4: deliver the first selected-to-executed physical recipe.
@@ -826,7 +2789,7 @@ rewrite.
   is not timing evidence. The frozen 5-warmup/20-measurement regret campaign, matched fixed-plan execution, absolute
   planning targets, and both tenfold planning aggregates remain open until their prescribed campaigns finish; no
   result is inferred from inventory completeness or unsaturated timing.
-- [ ] **[in_progress] Milestone 9:** replace the raw Frontier payload, derived query index, and query-time exact-replay
+- [ ] Milestone 9 (previously in progress; paused while unified costing is implemented): replace the raw Frontier payload, derived query index, and query-time exact-replay
   fallback with one disk-resident, directly queryable statistics generation that remains bounded at 20 billion
   triples. M9.0 through the bounded online-maintenance core of M9.4 are implemented test-first. Missing V2 evidence cannot
   enter statement count/iteration or exact connected-surface paths; `FrontierLinearTransforms.join` no longer
@@ -1655,6 +3618,86 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
 
 ## Surprises & Discoveries
 
+- Observation (2026-11-08): the partial residual quote reused the physical-access field after that field had been
+  deliberately cleared to unknown. The modeled prefix candidate therefore vanished even while the original local
+  variable still held it. A real iterator showed that the candidate population is not a count of visited keys. The
+  missing new metric failed before the repair, while the quote-input loss is established separately by source trace.
+
+- Observation (2026-11-08): invalid UNKNOWN intervals with equal endpoints, including infinity, negative values and
+  out-of-range points, returned unavailable evidence before numeric validation. The actual provider quote and
+  boundary tests also showed that a lineage getter could run and fail before the invalid numeric interval was rejected.
+
+- Observation (2026-11-08): `Double.compare` distinguished signed-zero endpoints that the cost arena treats as
+  equal, allowing an UNKNOWN degenerate declaration to become READY. Both quote and boundary reproduced the mismatch
+  using the actual owner with fresh and materialized interval-builder storage. Exact zeros remained valid.
+
+- Observation (2026-11-08): a raw coverage quote, boundary quote or composition invoked from a strategy quantity
+  getter could reset the shared arena builder after earlier outer quantities were written. The real provider red
+  changed expected source interval `[27, 29, 31]` to `[120, 120, 120]` or `[40, 40, 40]`. An inactive or reopened
+  request could also bypass attribution of a raw work/memory refusal, while interrupted stopped requests returned
+  normal outcomes. The complete red and post-correction control selection are preserved in the review-fix evidence.
+
+- Observation (2026-11-08): a different borrowed memory handle for the same budget was accepted by the first
+  factory candidate, and replay treated a provider `IllegalStateException` as checkpoint corruption. A six-callback
+  run continued after the first failure and surfaced the close error as primary. Evidence:
+  `/private/tmp/rdf4j-phase1-bc-20261108-qleCkGY3/evidence/same-budget-foreign-memory-red/` and
+  `/private/tmp/rdf4j-phase1-bc-20261108-qleCkGY3/evidence/checkpoint-identity-red-stack/`.
+
+- Observation (2026-11-07, upstream reconciliation): the upstream selector supplies native-local typed feature
+  quotes, static priors, candidate offers, bind-time decline and reranking, DISTINCT/row-demand handling, decision
+  diagnostics, and an optional advisory learner. `LmdbNativeAccessFacts` improves prefix/output estimates, but
+  native still chooses after packed planning, uses its own time pricing, and does not consume a packed executable
+  strategy descriptor or the shared packed search/provider budget. These advances partially supply phases 2, 3, 5,
+  and 7; they do not close those phases. The learner's coarse native key is not a substitute for recipe-, consumer-,
+  snapshot-, and pricing-version-qualified feedback.
+  Evidence: merged `LmdbNativeDispatchLoop`, `LmdbNativeSelector`, `LmdbNativeCostQuote`, `LmdbNativeCostVectors`,
+  `LmdbNativeStaticPrior`, `LmdbNativeOffers`, `LmdbNativeAdvisoryLearner`, `LmdbNativeAccessFacts`,
+  `PackedPlanRecipe`, and `LmdbPhysicalCostObjective`; independent review of `d69e9dd27a..855a77e816`.
+
+- Observation (2026-11-07, static review): native ordinary-versus-wildcard kernel and some grouping/prefix
+  dominance declarations rely on measured cases and can suppress alternatives before price or advice comparison.
+  The source does not yet establish a substitutability and work bound for every relevant input and continuation.
+  This is an open phase-3/5 strategy-retention obligation, not a demonstrated wrong result or measured regression.
+  Evidence: `LmdbNativeKernelExecution.ordinaryKernelDominates`, grouping candidate declarations in
+  `LmdbNativeGroupStep`, and elimination in `LmdbNativeSelector`.
+
+- Observation (2026-11-07, merge qualification): one 98-test run reported a parsed DISTINCT/OFFSET quote mismatch
+  (full 3.2742523189196753 versus offset 165.3575540779186 interpreted work). The same untouched selection later
+  passed 98/98, and two fresh-store repetitions of the unchanged assertions also passed. A low-interference
+  observer saw ordinary q-then-p prefix scans and the same 165.3575540779186 quote for full and offset in passing
+  runs. The failing run did not retain its selected algebra or snapshot identity; its saved logs contain no mapped
+  lifetime exception or planning-fallback warning. Preserve the one failure as unresolved, non-reproduced evidence;
+  do not infer a cause, change the assertion, or call the issue fixed. A possible mismatch between a packed
+  DISTINCT-skip leaf estimate and an ordinary native scan remains a separate hypothesis to test on the actual
+  selected input before relying on it.
+  Evidence: `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/retry-regressions/37-*`, `40-*` through `43-*`.
+
+- Observation (2026-11-06, source inspection): the actual planning chain is `LmdbQueryOptimizerPipeline` request-bound rewrites → `LmdbCascadesOptimizer` / packed selection → native row/group compilation and native arbitration; runtime statement access independently chooses LMDB or adjacency. `LmdbPackedCostModel` currently starts ordinary access rows from returned rows, except for an additional repeated-component population check. The existing `LmdbNativeStrategyPriorityTest` has ten `@Test` methods and all ten are disabled, so it is not active strategy coverage. `LmdbFrontierPlanningBenchmark` already supplies an eight-pattern, two-index planning fixture; its warm and renamed-query methods are controls for planning only, not a substitute for the required full workload and fixed-plan execution lanes.
+  Evidence: `LmdbQueryOptimizerPipeline.java:303-309`, `LmdbPackedCostModel.java:455-508`, `LmdbNativeGroupStep.java:1458`, `LmdbNativeRowStep.java:1708-1716`, `LmdbSailStore.java:17924-17979`, and `LmdbNativeStrategyPriorityTest.java:117-279`.
+
+- Observation (2026-11-06, source inspection): `PackedSearchBudget` deliberately records a refused optional block without latching it; a smaller block can still fit. Its current mandatory-completion operation still draws from that same deterministic allowance, while the new design requires a separately accounted minimal valid fallback. Existing declared-quantity tests already check unknown axes through copies, metadata, and trace, so extensions must preserve those routes as well as selection and recipe detachment.
+  Evidence: `PackedSearchBudget.java:66-125` and `PackedDeclaredQuantityReplayTest.java:38-81`.
+
+- Observation (2026-11-06, independent source review): selected packed metadata is lowered into planned metrics and existing join hints, then native compilation reconstructs slot plans and independently arbitrates native strategy and statement access. `PatternPlan`'s stored index name alone is not enforced when its iterator opens. `NativePhysicalInputRecipe` captures several leaf/unary inputs and semantic correspondence but not arbitrary join/filter/union regions; its match deliberately ignores pattern order. A selected-to-executed contract must connect the materializer, native compiler, group/row arbitration, and statement-access binding without relying on test-only forced strategy selection.
+  Evidence: `PackedPlanMaterializer.java:848`, `LmdbNativeEvaluationStrategy.java:558`, `LmdbNativeAggregateCompiler.java:339`, `LmdbNativeGroupStep.java:1458`, `LmdbSailStore.java:17905`, and `NativePhysicalInputRecipe.java:63-113`.
+
+- Observation (2026-11-06, independent source review): `QueryModelNode` metadata can carry an immutable detached descriptor through ordinary clones, but is transient and shallow-copied; node replacement and the LMDB cache's explicit value-copy preflight, detached-copy, and retained-accounting paths require deliberate handling. Planned string/double metrics cannot carry the typed descriptor. Existing unforced indexed-count and adjacency-observer fixtures can provide actual strategy/source evidence for an end-to-end handoff test.
+  Evidence: `QueryModelNode.java:462-563`, `AbstractQueryModelNode.java:194`, `LmdbCacheValueCopies.java:386-395,468-480,622-628`, `NativeAggregateMetadataCostTest.java:228`, and `LmdbDirectAdjacencyQueryTest.java:299`.
+
+- Observation (2026-11-06, initial control run): the existing uncached planning benchmark emitted two `Packed cascades planning failed; falling back to the pipeline-normalized plan: Mapped planning session is outside its live owning read scope` warnings in one JMH invocation (the second fork's warmup iteration 2 and measurement iteration 3). The run completed, but its measurements combine intended planning and fallback and therefore cannot establish an acceptance baseline. Its trial-setup assertion alone does not check each measured invocation. Further matched runs were paused pending diagnosis; preserve the original run and establish a per-invocation check and correct read-scope behavior before treating this lane as evidence.
+  Evidence: `/private/tmp/rdf4j-unified-costing-baseline-20261106T130209Z/benchmark-output.after-run-01-estimateUncachedMultiBridge.log` and `LmdbFrontierStatisticsCostSession.java:103-105`.
+
+- Observation (2026-11-06, debugger diagnostic): an in-process run against the identical frozen JMH jar completed 3 warmup and 15 measurement iterations with a breakpoint on the authority failure, but did not hit it. An initial launch inherited suspended JDWP into JMH's helper JVM and, after debugger detach, reproduced one warning without capturing the failed predicate. The exact invalidating event remains unknown; do not weaken snapshot-currentness checks or infer that a writer caused the warning.
+  Evidence: `/private/tmp/rdf4j-frontier-runtime-diagnosis-20261106T131653Z/` and `/private/tmp/rdf4j-frontier-runtime-diagnosis-20261106T133046Z/`.
+
+- Observation (2026-11-06, follow-up diagnostic): the next attempt could not acquire JMH's machine-wide lock because a separate active `ThemeQueryBenchmark.executeQuery` process from the user's `rdf4j7` checkout held it. Do not bypass the lock, stop that process, or run resource-heavy builds alongside its measurements. Resume diagnostics and baseline controls when it exits; the pending access regression may then run.
+  Evidence: `/private/tmp/rdf4j-frontier-lifetime-diagnosis-20261106T135151Z/` and the running process command line observed during the attempt.
+
+- Observation (2026-11-06, test-first): adding child physical quantities uses `finiteOrZero` for each existing axis and then recomputes scalar work from those axes. This turns an unknown existing seek into the child's known seek and can also replace an independent producer price with a raw count sum. Dependent FILTER/subquery callers additionally feed an already-priced dependent winner back into the source-row axis; a non-unit-price test now reproduces the second conversion as 1110 rather than 210.
+  Evidence: `PackedCostEstimate.java:522-549`, `PackedIncumbentSearch.java:922-931`, `PackedFilterRules.java:159-167`, `PackedJoinEnumerator.java:5281-5294`, and `initial-evidence.unified-costing-20261106.txt`.
+
+- Observation (2026-11-06, build side effect): the test lifecycle's Spotless apply modified 13 previously clean, unrelated Java files in `core/queryalgebra/evaluation`. The exact tool-generated diff was retained in `/private/tmp/rdf4j-unified-spotless-recovery-ap6isf6_/formatting.patch` and then reversed without `git restore` or `git reset`; only the roadmap and intended test files remain modified. Future targeted verify commands use the repository's `-Dformatter.skip=true -Dimpsort.skip=true` properties to avoid reformatting unrelated files, with touched files formatted separately at the appropriate serialized gate.
+
 - Observation (2026-11-06, static source inspection): the current branch already has 41 stable physical cost
   dimensions, explicit composition rules, packed physical properties, work/deadline/memory limits, provider memory
   accounting, and native proposals with deferred openers. The missing work is continuity across these boundaries,
@@ -2380,8 +4423,143 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
   while the join program correctly omitted bound components from its variable classes. Comparing the full masks
   rejected the program. The focused constructor regression and original Social Q7 integration now pass after the
   invariant compares only repeated pairs whose two components remain unbound.
+- Observation: narrow test selections hid 33 regressions; unified phase 1 had never run the whole core module.
+  Evidence: `evidence/qualify-01-core-module/` (7,671 tests, 210 red) against
+  `evidence/counterfactual-head-core-4/` under `/private/tmp/rdf4j-phase1-continue-20261109-2OK1vQjv/`. Committed
+  HEAD `4ab0c09438` does not compile for `core/sail/lmdb`, so LMDB has no HEAD counterfactual.
+- Observation: LMDB's default planner mode is `auto` with a 512-unit work limit, and provider callbacks were a
+  median 95 percent of the units a search consumed under the unified currency (5–122× inflation, median 19×).
+  Evidence: `measure-auto/per-query.csv`; exact-mode method breakdown on MEDICAL, SOCIAL and PHARMA:
+  `realizeEvidenceState(int)` 46 percent, `objectiveScore` 17 percent, costing callbacks about 16 percent.
+- Observation: a plan-decision-cache family was modeled at about 3.25 times its real heap size, the default cache
+  held about seven theme plans, and once full it refused every admission forever.
+  Evidence: `spec-decision-cache-replay-and-capacity.md` section 2 and `spec-shrink-cached-plan-entries.md`; the
+  admission rule dates from 89e3e9c0e7 (2026-10-23), before this phase.
+- Observation: foreground filter sampling during planning has a 2 ms wall-clock limit; a timed-out sample changes
+  the planner's input without changing any revision.
+  Evidence: `review-lmdb-cache.md` finding C7 and the round-2 fix (`LmdbPlanningWallClockCuts`).
+- Observation: `PackedDependentSubqueryCosting.contextualCost` falls back to the context-free subquery winner when
+  no contextual winner exists for a non-zero input context, so a bound subquery can be published at a context-free
+  price; it also happens without any refusal when the nested search is cut by its search budget.
+  Evidence: fourth review of the budget change (7.0 against 1,006.0 in the core fixture). Measured afterwards
+  (`spec-contextual-subquery-price.md`, data under `measure-auto/pdsc/`): on the LMDB theme corpus the
+  `contextualCost` fallback never runs (LMDB's semi/anti providers cost the subquery themselves); the sibling
+  fallbacks in `selectedWinner` and `recordScalarPlans` occur in about ten queries and are almost all structural (the
+  subquery is not safe to cost with outer bindings, so no contextual search can exist). Returning unknown for every
+  missing contextual winner changed no theme plan but broke three correlated core tests ("correlated DPhyp target was
+  unreachable") and unpriced the deadline-expired canonical candidate, so that fix was not adopted.
+- Observation: `PackedSelectedPlanContextualizer` ignores its cost model, so
+  `selectedContextualizerRejectsComponentOnlyOperatorRefinement` cannot fail for the reason in its name.
+- Observation: exact mode stops at the 64 MiB retained-state limit for 21 theme queries (12 in SPARSE); six theme
+  queries cannot be planned by Cascades because the codec rejects an operator; the explain path throws "slot layout
+  is already frozen" on PHARMA q9; `LmdbThemeQueryRegressionIT` has been `@Disabled` as a class since 3b019db10c;
+  `testsuites/benchmark` holds about 2,900 generated `dependency-reduced-pom-*.xml` files from mvnf quick installs.
+- Observation: the LEO revision behaves as a clock, not as an evidence version. With the store's default
+  configuration a completed evaluation advances it in about two of three cases, for the same query in every one of
+  seven repetitions, and it is global, so one query's execution invalidates every other query's replay-only cache
+  entry. All plan-only cache hit rates recorded in this plan overstate what an executing workload gets.
+  Evidence: `/private/tmp/rdf4j-phase1-continue-20261109-2OK1vQjv/measure-final/summary.txt`.
+- Observation: the benchmark configuration (native evaluation on) publishes runtime feedback for 10 of 182
+  evaluations; the store default (native evaluation off) for 119 of 182. Benchmarks therefore do not exercise the
+  feedback-driven invalidation that a default store sees.
+- Observation: the request's cache key reads the Frontier read-plane mask more than once per request, so the gate,
+  the key and the planning can disagree; this is the cause of the intermittent warm-hit test
+  (`LmdbDetachedPlanningOwnershipTest`, 3 of 10 red before and after the cache rounds).
+- Observation (2026-11-10): physical residual learning and lifecycle verification are wired only for filters and
+  EXISTS. A physical residual is written, and a lifecycle entry verified, only when the executed iterator reports
+  an implementation id equal to the planned one; only `FilterIterator` (which echoes the planned id) and
+  `MaterializedExistsFilterIteration` report one. Statement-pattern leaves, joins, hash joins and paths never do,
+  so their physical cells are leased and read (a median of 258 reads per planning) but never written: 0 of about
+  1.58 million physical decisions in the logical population returned an estimate. The rejection rule is the
+  design; the missing reporters are incomplete wiring (the learned-feedback execplan asks for them). Not fixed;
+  owner decision pending. Evidence: `/private/tmp/rdf4j-phase1-continue-20261109-2OK1vQjv/rca-physical-and-keys/NOTES.md`.
+- Observation (2026-11-10): parser-generated variable names (`_anon_having_…`, `_anon_path_…`, random per parse)
+  are embedded raw in the physical residual key's layout hash and in the event key's source and frames, so 33 of
+  182 theme queries never reuse their physical or event cells and the shared 4,096-key map fills by round 4.
+  Fix specified in `.agent/designs/GH-0000-stable-physical-learning-keys-2026-11-10.md`. Same evidence.
+- Observation (2026-11-10): every model decision scans a whole key map for a boolean that only selects a gate
+  label (a median of 1.64 million entries per planning, about 14 % of planning time under load). Fix specified in
+  `.agent/designs/GH-0000-flm-applicability-index-2026-11-10.md`.
 
 ## Decision Log
+
+- Decision: the semantic projection boundary stays first in `compilePhysical`, and the tests that pin native
+  execution of shapes it currently hands to the ordinary evaluator are not re-targeted. Native admission under
+  the boundary is extended instead (through the sealed projection), slice by slice in order of payoff. Basis:
+  the census of 2026-11-17 (213 cases red only because of the boundary; 356 green only because of it, at least
+  18 with wrong rows without it), the measured 4.6–58× slowdown of property-path queries, and the
+  "feature-admission red" tests committed with the boundary. Date/Author: 2026-11-17 / owner (Håvard), recorded
+  by Claude.
+- Decision: accept that making learning keys independent of parser-generated names re-keys every `FILTER EXISTS`
+  relation's logical key once, although the query contains no generated name. The old key followed the hash order
+  of `Filter.getBindingNames()`; keeping those bytes would mean keeping a key that changes with any generated name
+  in the sub-query. Learned cells under the old keys are orphaned and age out; no plan or result depends on them.
+  Date/Author: 2026-11-11 / Claude.
+- Decision: the planning revision keeps excluding lifecycle bookkeeping that a planning causes itself (admission,
+  `planned`, leases); the replay of a read log captures a separate lifecycle version before and after instead.
+  Including it in the planning revision would move the revision in every planning. Known limitation recorded:
+  with lifecycle enforcement on, exact-revision caches can serve a decision whose capacity-protected answer a
+  lease release has since changed (reviewer scratch test
+  `aLeaseReleaseFlipsAnEnforcedCapacityDecisionWithoutMovingAnyVersion`). Enforcement is off by default.
+  Date/Author: 2026-11-11 / Claude.
+- Decision: a read whose value feeds a test that switches between two estimates (the mapped-bounds intersection)
+  is validated by the test's result, recomputed at replay, not by the tolerance; with lifecycle enforcement on
+  the tolerance is zero. Date/Author: 2026-11-11 / Claude.
+- Decision: retain the candidate and prefix as per-invocation quantities, give emitted rows their actual factor,
+  component or context domain, and give physical work its total-invocation domain. Reject scope-incompatible quote
+  construction and do not convert a candidate into a visit or seek bound. Publish the candidate from the same packed
+  quote used for physical projection; do not create an observer quote or issue an unowned source-root provider.
+  Date/Author: 2026-11-08 / Håvard and Codex.
+
+- Decision: check cancellation and validate finite, nonnegative, ordered quantity values before consulting lineage;
+  check cancellation again after that getter. Preserve exact provider and cleanup failures for valid input, and keep
+  the numerical equality rule for valid signed-zero UNKNOWN declarations. Date/Author: 2026-11-08 / Håvard and Codex.
+
+- Decision: use the arena's numerical endpoint equality in the request's UNKNOWN degenerate-interval guard. This
+  treats positive and negative zero as equal without changing the arena or adding an independent budget. Existing
+  finite and ordered input validation stays in place. Date/Author: 2026-11-08 / Håvard and Codex.
+
+- Decision: a request has at most one owner-authenticated activation; closing it revokes its borrowed values and
+  cannot be done during an operation. Check cancellation before normal outcomes, and snapshot and validate each
+  admitted provider quantity before resetting the shared builder. Keep all work and scratch-memory admission on the
+  existing planner owner, with no session-close ownership transfer or extra quota. This is an inactive contract and
+  awaits independent review and broad qualification. Date/Author: 2026-11-08 / Håvard and Codex.
+
+- Decision: pair the planner work and memory bindings to one session before issuing an immutable generation handle;
+  authenticate the query and memo arena, retain proof occurrence identities, and reissue the handle only for a new
+  memo generation. Treat only explicit structural/evidence mismatches as checkpoint rejection; guard provider
+  exceptions by their origin so even the same exception type is propagated unchanged.
+  Rationale: shared budget identity, equal numeric vector IDs, or equal boundary sets alone do not establish session
+  or covered-region identity, and arbitrary provider errors must never authorize fallback.
+  Date/Author: 2026-11-08 / Håvard and Codex.
+
+- Decision: integrate the upstream native selector and retire the old adaptive/machine/store models and native
+  arbiter instead of restoring that hierarchy. Keep upstream unbounded upper-axis arithmetic and missing-work
+  evidence, and carry the branch's reusable-filter ownership, terminal cancellation, failed-open cleanup,
+  selected-result lifetime, and worker handoff contracts through the new dispatch. Obsolete probe/hedge-specific
+  tests retire with those removed features; the general lifecycle invariants have active replacement coverage.
+  Keep serializable observation ordering and native group-pushdown as independently named pipeline settings.
+  Rationale: the upstream execution and quote contracts supersede the old native-local owners, while the branch's
+  ownership and transaction guarantees remain necessary across retries and nested/parallel execution.
+  Date/Author: 2026-11-07 / Håvard and Codex.
+
+- Decision: keep the packed physical provider, shared objective/budget, selected executable descriptor and binder,
+  consumer/cache identity, and executed-recipe feedback attribution as explicit unfinished roadmap work. Existing
+  native-local selector intervals or advisory learning do not certify packed feasibility or cross-family dominance.
+  Rationale: native reranking still occurs after packed selection, and the two systems do not yet share one
+  comparable work or executable-recipe contract.
+  Date/Author: 2026-11-07 / Codex.
+
+- Decision: execute the entire unified costing plan using the existing roadmap, with initial build, test, and
+  measurement evidence retained separately and no implementation commit or push. The later user-authorized upstream
+  merge is a separate merge commit and does not stage this plan or the local implementation. The earlier planning-only
+  restriction was specific to the earlier request and is superseded by the user's implementation request.
+  Rationale: the current request expressly authorizes implementation and validation; maintaining one living plan avoids conflicting progress and preserves the existing delivery boundaries.
+  Date/Author: 2026-11-06 / Codex.
+
+- Decision: while a separate user-owned benchmark holds JMH's global lock, prepare the narrow test-first quantity-correctness correction and defer builds, verification, and measurements. Preserve the pre-change benchmark jar and do not treat this unvalidated change as the phase-0 performance candidate or as a completed integration phase.
+  Rationale: the retained in-repository failure proves the existing cost contract already loses unknown information, and the correction can be developed without disturbing the other benchmark. Complete baseline controls and freeze their per-lane tolerances before evaluating the later unified optimizer candidate; the original baseline remains invalid where it mixed fallback paths.
+  Date/Author: 2026-11-06 / Codex.
 
 - Decision: extend this sole roadmap with the 2026-11-06 phased implementation plan; do not create another ExecPlan.
   Rationale: the repository's optimizer-plan inventory explicitly requires one governing roadmap. Preserve historical
@@ -2917,15 +5095,100 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
   supports arbitrary sparse nonnegative column IDs with memory proportional to column count. The final profile has
   no bottom-K reference allocation and only 0.04 percent column-lookup samples.
   Date/Author: 2026-08-16 / Codex.
+- Decision: Provider callbacks and provider-internal batches are charged to a separate `providerWorkLimit` of the
+  one `PackedSearchBudget`; `workLimit` and `workUnits()` count search steps only, and the provider limit is
+  unbounded by default.
+  Rationale: the unified currency made the unchanged default budget (512) return unpriced plans for 138 of 176 theme
+  queries; rescaling the constant would encode internal callback multiplicity. Consequence to revisit in phase 6:
+  only the deadline bounds provider work, and detached refresh runs without a deadline.
+  Date/Author: 2026-11-09 / owner decision, recorded by Claude.
+- Decision: Anytime invariant. When any limit stops planning, the planner returns the cheapest complete priced plan
+  retained so far; a refused callback abandons only the candidate being costed; a parent that cannot be costed is
+  offered unpriced over its priced child; an absorbed stop never yields a completeness certificate.
+  Rationale: the roadmap already required a preserved incumbent; the abort path violated it.
+  Date/Author: 2026-11-09 / Claude.
+- Decision: Comparison completeness keeps its meaning (every executable candidate priced). The tier-dominance rule
+  (ignore an unpriced fallback-tier candidate that the ranking policy can never select over a priced one; it would
+  make 49 theme queries COMPLETE with no plan change) is on hold until replay-only caching is measured in use.
+  Rationale: pricing the written-order fallback from the enumerator's result was prototyped and rejected (the
+  incumbent and the enumerator build different context keys, 0 of 2,717 lookups matched, and pricing it afresh
+  changed 17 selected plans); the tier rule would also switch stale validation, family reuse and feedback back on.
+  Date/Author: 2026-11-09 / owner decision.
+- Decision: A decision with an unavailable comparison may be cached for exact replay only and never acts as a
+  ranking certificate.
+  Rationale: re-planning an identical request on unchanged inputs is deterministic, and gating all caching on a
+  complete comparison left most real queries uncached until phases 2–3 supply contextual evidence.
+  Date/Author: 2026-11-09 / Claude, owner informed.
+- Decision: Decision-cache admission evicts only for a key with proven reuse; there is no fixed in-flight reserve.
+  Rationale: a fixed reserve removes capacity permanently and refuses an entry that fits under a small budget.
+  Date/Author: 2026-11-09 / Claude.
+- Decision: Shrink cached plan entries by making the accounting exact for frozen cache-owned templates and by
+  dropping explanation diagnostics from them, with the opt-in store setting `retainCachedPlanDiagnostics` for
+  tooling. The cache's 1/16 share of the evidence budget is unchanged until the shrink has been measured in use.
+  Date/Author: 2026-11-10 / owner decision.
+- Decision: `isBounded()` does not include the provider limit, and a retained-byte stop latched during session open
+  still forces the unpriced fallback; both are recorded as open, not changed.
+  Rationale: including the provider limit would make a provider-limited run seed and cost prefixes twice, so an
+  exact fit would not be reproducible, and the production default leaves that limit unbounded.
+  Date/Author: 2026-11-10 / Claude.
+- Decision: Whether a planning may be shared is an explicit session property (`PackedCostSession.reproducible()`),
+  not a simulated budget refusal.
+  Rationale: a faked provider-work refusal degraded the cut planning itself and reported it as
+  INCOMPLETE_WORK_LIMIT; the planning is valid for its own request and only its publication is unsafe.
+  Date/Author: 2026-11-10 / Claude.
+- Decision: "Newer evidence" for replacing a retired or unservable cached decision means: data generation not
+  lower, and an evidence snapshot different from the one the retired decision was built under.
+  Rationale: the same snapshot would reproduce the retired decision; a lower data generation is an older pinned
+  reader; requiring a strictly higher data generation left a retired key uncached on a store without commits.
+  Date/Author: 2026-11-10 / Claude.
+- Decision (owner, 2026-11-10): implement all three steps of
+  `.agent/designs/GH-0000-cache-validity-under-execution-feedback-2026-11-10.md`: the planning revision advances
+  only when planner-visible learned state changed; a cached decision depends on the learned cells its planning
+  read; small movements of a read value do not invalidate, with the tolerance chosen by measurement.
+  Rationale: with execution, the feedback epoch is a clock, so every completed query invalidated every
+  evidence-exact entry (replay-only hits 0 of 116 in rotation, 0 of 142 after an own completed evaluation).
+  Date/Author: 2026-11-10 / owner, recorded by Claude.
+- Decision: step 2 validates a cached decision by re-executing the learned reads its planning recorded and
+  comparing outcomes, not by per-cell versions.
+  Rationale: what a planning reads is f(cell statistics, the model's decay clock, the calibration shared by the
+  applicability, existence of sibling keys, the planner's own inputs); a write to another cell moves the decay
+  clock and the shared calibration, so a version on the cell read is unsound
+  (`.agent/research/GH-0000-phase1-continuation-2026-11-09/learned-state-read-write-inventory.md`, H.1, H.2, H.6).
+  Re-reading is exact for a reproducible planning and needs no model of those couplings. Step 1 is specified as a
+  sum of component mutation counters (`.agent/designs/GH-0000-cache-validity-step1-truthful-planning-revision-2026-11-10.md`).
+  Date/Author: 2026-11-10 / Claude.
+- Decision: before the step-2 spec, (a) make the model's "other applicability known" answer constant-time
+  (`.agent/designs/GH-0000-flm-applicability-index-2026-11-10.md`), (b) put filter-selectivity reads in the read
+  log, and (c) measure the validation decision directly (replay planning N's reads before planning N+1, compare
+  plans, with the planner's reproducibility flag and a no-feedback control).
+  Rationale (sizing measurement, `/private/tmp/rdf4j-phase1-continue-20261109-2OK1vQjv/measure-validity/summary.txt`):
+  step 1 alone leaves the feedback component moving after 94–98 % of completed evaluations; the filter component
+  moves in about 18 % of evaluations; re-reading costs a median 14 % of a planning because each decision scans a
+  whole key map for a gate label; 875 of 916,396 model decisions return an estimate; consecutive plannings of one
+  query have identical reads in 27–54 % (rotation) and 40–69 % (repeat) of cases with no plan change among them,
+  while all 27 plan changes fall where the read set differs, 20 of them without an attributed cause.
+  Two defects seen and sent to root-cause analysis, not yet fixed: parser-generated variable names inside physical
+  and event learning keys (33 of 182 queries never reuse those cells; the physical map reaches its 4,096 cap), and
+  physical learning in the logical population never yielding an estimate (0 of about 1.58 million decisions).
+  Date/Author: 2026-11-10 / Claude.
 
 ## Outcomes & Retrospective
 
-The 2026-11-06 addition is an implementation design only. It maps current source owners to nine dependent phases,
-defines a common physical recipe and costing boundary, and specifies correctness, planning-overhead, execution,
-cache, and feedback acceptance gates. All production changes and executable validation remain unstarted. No earlier
-benchmark result establishes a performance claim for this design. The next implementation work, if requested with
-permission to execute the necessary tools, is phase 0's baseline and smallest failing regression, followed by the
-shared budgeted contracts and storage-access quotes; it is not immediate expansion of every native strategy.
+The phase-1 B/C contract and checkpoint exception boundary are a source-stable, test-first review candidate. The
+remaining phase-1 provider accounting, strategy integration, executable binding, cache/feedback and performance
+qualification are not complete; the positive test exercises a caller-supplied provider without selecting a new
+physical strategy. The immutable packet and limitations are at /private/tmp/rdf4j-phase1-bc-20261108-qleCkGY3/review-packet/.
+
+The upstream merge now incorporates its native-local selector and retains the branch's uncommitted costing and
+mapped-view work. The merge-specific source and regression checks are recorded in Progress; qualification of the
+restored combined source is in progress. The shared physical strategy provider and selected-to-executed native
+descriptor are not implemented, and no post-merge end-to-end performance improvement is established. The original
+planning benchmark cannot serve as a valid matched baseline because it contains snapshot-scope fallback.
+
+The 2026-11-06 addition maps current source owners to nine dependent implementation phases and defines correctness,
+planning-overhead, execution, cache, and feedback acceptance gates. Implementation and validation are now authorized
+and have started with the required baseline build; the production integration and performance qualifications remain
+outstanding. No earlier benchmark result establishes a performance claim for this design.
 
 The 2026-08-18 MEDICAL q9 estimator and costing repair is complete. Projected-distinct sampling now averages every
 configured equal-weight lane without sorting or overflowing, treats zero as a valid replica, rejects incomplete and
@@ -3904,14 +6167,40 @@ This is an addition to the sole optimizer roadmap, not a replacement implementat
 source baseline is `GH-0000-lmdb-predicate-guarantees` at `ae211fc3869a3a5a7388ff9e0a4793e0bf78396a` in
 `/Users/havardottestad/Documents/Programming/rdf4j-small-things`. Before future implementation, recheck the branch,
 working tree, and named source owners; extend changed abstractions rather than restoring a historical design.
-The phases below are unstarted. Commands are instructions for a later implementation session, not actions authorized
-or executed by this planning request. This request prohibits running project code, compilation, and sub-agents.
+Implementation and execution are authorized. The implementation began at `d69e9dd27a`; current merged HEAD is
+`2007a9fdbb83eed79047d4cec0696c49ec1c20f8`, with the partially implemented work restored uncommitted. The source
+owners and evidence below are updated for the merge. All phase exit gates remain open until their full contracts and
+evidence are recorded here. Preserve the one active progress item and existing untracked evidence throughout work.
 
 The scope includes Cascades search, native strategy recognition and execution, ordinary LMDB indexes, adjacency
 access, consumer-sensitive costing, plan caching, and feedback attribution. It preserves SPARQL semantics and the
 existing query-ready Frontier Statistics V2, quad, and cold-filter evidence sources. It does not require a new
 storage format, new statistics engine, new external dependency, or a second optimizer. Any later discovery requiring
 such a change must be justified here before broadening the implementation.
+
+### Reconciliation of upstream work and remaining contracts
+
+Upstream already supplies native strategy-local feature counts, incomplete-work evidence, infinite upper bounds,
+static price priors, candidate offers, selector explanations, distinct-demand handling, and bind-time decline/retry.
+Preserve `LmdbNativeStrategyProposal.finishQuote`'s unknown ceiling and non-double-counted fallback expectation, and
+the native code-generation contract in which a cached shape is independent of store IDs and compiled binding may
+still decline to an interpreter. `LmdbNativeAccessFacts` supplies useful prefix and output evidence, but it does not
+enumerate every packed index/adjacency alternative or prove that a packed choice is what execution opens.
+
+The restored local work already carries unknown/risk-aware packed costs, dependent composition, shared planning
+budget/session admission, bounded fallback and incomplete-cache status, typed LMDB access evidence, named-index/range
+execution work, and a candidate admitted mapped-view lifetime repair. Those changes are partial and uncommitted.
+Current native selection still reranks in row/group execution; `PackedPlanRecipe` has no native executable strategy
+descriptor, native prices are separate from `LmdbPhysicalCostObjective`, and native admission is not charged through
+`PackedSearchBudget`. Cache reuse, generated/interpreted fallback identity, and feedback attribution must therefore
+remain explicit integration work. Do not infer an integrated recipe or a physical proof from the selected packed
+logical plan, a native-local learned interval, or a best-prefix estimate.
+
+The merge preserves filter ownership across declined, replayed, selected, failed, and parallel worker paths; it also
+keeps native group-pushdown distinct from serializable observation ordering and includes native enablement in the
+pipeline cache signature. Future strategy integration must preserve these contracts under nested execution,
+cancellation, and cleanup failure. Native dominance declarations that rest on measured cases require real
+substitutability/work proofs or must remain candidates for ordinary price comparison.
 
 ### Source orientation and existing foundations
 
@@ -3949,16 +6238,55 @@ The native package is
 `LmdbNativeAggregatePatternCompiler` and `LmdbNativePatternPlan` translate query expressions and describe access.
 `LmdbNativeRowStep` and `LmdbNativeGroupStep` assemble strategy choices. `LmdbNativeStrategyProposal` already defers
 opening resources, while `NativeAggregatePhysicalPlan` separates producer quoting from consumption. Reuse their
-ownership rules. `NativePhysicalInputRecipe` records semantic input correspondence; `LmdbNativePhysicalVariantKey`
-records physical distinctions. `LmdbNativeCostVector`, `NativePhysicalWorkEvidence`, `LmdbNativeCostEstimate`,
-`LmdbNativeAdaptiveCostModel`, and `LmdbNativeStrategyArbiter` carry native physical estimates and selection logic.
-`LmdbPhysicalCostObjective` in the LMDB package supplies another pricing boundary that must become consistent with
-the shared policy.
+ownership rules. `NativePhysicalInputRecipe` records semantic input correspondence. Native-local pricing now uses
+`LmdbNativeCostVector`, `LmdbNativeCostQuote`, `LmdbNativeCostVectors`, `NativePhysicalWorkEvidence`, and
+`LmdbNativeStaticPrior`; `LmdbNativeOffers`, `LmdbNativeSelector`, and `LmdbNativeDispatchLoop` admit, rank, and open
+the choices. `LmdbNativeAdvisoryLearner` is optional and uses a coarse native strategy/variant/access key. The prior
+`LmdbNativePhysicalVariantKey`, `LmdbNativeCostEstimate`, adaptive/machine/store model, and native arbiter hierarchy
+were retired upstream; do not restore them. `LmdbPhysicalCostObjective` in the LMDB package supplies another pricing
+boundary that must become consistent with the shared policy.
 
 These sources show integration gaps, not an absence of physical costing. Some packed access estimates still derive
 rows visited from estimated rows returned; describing a B-tree prefix does not fix that estimate. Native strategy
 recognition can happen after logical selection, and native and packed decisions do not universally use one objective
 or one selected executable recipe. Source inspection alone does not establish the size of any resulting slowdown.
+
+### Current implementation inventory (reconciled after upstream merge)
+
+
+The request-bound optimizers in `LmdbQueryOptimizerPipeline` run before `LmdbCascadesOptimizer` selects and installs a
+packed plan. `PackedPlanMaterializer` emits existing physical metadata and join hints, after which
+`LmdbNativeEvaluationStrategy` and `LmdbNativeAggregatePlanner` compile the selected algebra anew. This separation
+also applies when a generic enclosing operator contains native children; a root-only descriptor would not cover them.
+
+For a statement pattern, `TripleStore.describePackedAccessPath` records the preferred snapshot-local index, its
+covered/missing field masks, and access mode. `LmdbPackedCostModel` supplies the current rows and
+invocation estimates and turns them into source, seek, open, and result events. Native pattern compilation has its
+own index/order and work evidence, while `LmdbSailStore.statementsArbitrated` independently chooses LMDB or a
+snapshot-covered adjacency source and reports a runtime source/variant key through the observer. Index availability,
+contexts, inferred/explicit planes, ranges, and the actual reader snapshot constrain all three routes. This inventory
+does not yet establish equivalent quotes or an enforceable selected index.
+
+For aggregate producers, `NativeGroupStep` and `NativeGroupIteration.offerCandidates` recognize indexed count,
+adjacency aggregate, type matrix, existence intersection, ordered/prefix-run grouping, wildcard reduction, factorized
+tail, packed factor tree, leapfrog, kernels, and parallel implementations under their own capability checks.
+`NativeAggregateCostQuotes`, family feature quotes, `LmdbNativeStaticPrior`, and `LmdbNativeSelector` price and rank
+them; selected proposals bind or open execution-time resources and can decline. `NativePhysicalInputRecipe` captures
+only currently supported input forms. `LmdbNativeAdvisoryLearner` can optionally refine native-local prices using its
+coarse strategy/variant/index/access key, which is not a packed recipe identity. The native aggregate binder and
+quote are not yet the packed planner's selected descriptor.
+
+For row producers, `NativeRowsStep.offerUnorderedStrategies` and the corresponding ordered path admit prefix/run,
+ordered distinct, leapfrog, packed/factorized, batch, interpreted/generated kernels, parallel execution, adaptive
+filter placement, and nested execution. Ordering, duplicate handling, retained slots, binding scope, and replay-safe
+evaluation constrain the offers. `LmdbNativeInteriorPlans` selects native children for compatible consumers. The
+current dispatch can rerank these offers and attribute native-local feedback to the chosen variant without any packed
+candidate naming that variant first. Hash/merge and path opportunities also have their own implementation-specific
+eligibility and estimation; their complete recognition-to-bind mapping remains to be audited before phase 5 closes.
+
+This is a working inventory, not a claim that each family's eligibility or every fallback path is fully cataloged.
+Finish the family-specific restrictions, physical properties, quote provenance, binder ownership, and feedback keys
+as each integration slice is exercised; the disabled priority test does not close that gap.
 
 ### The target decision and execution contract
 
@@ -4055,9 +6383,20 @@ stable IDs or silently reinterpret persisted values. Preserve saturation behavio
 ### Phase 0 — Establish current evidence and regression oracles
 
 
-**Dependency and purpose.** This is the first executable phase after a separate instruction permits implementation
-and execution. Establish what the current branch does before changing its decisions, and make later claims about
+**Dependency and purpose.** This is the first executable phase of the authorized implementation. Establish what the
+current branch does before changing its decisions, and make later claims about
 planning speed and execution improvement reproducible. The present document is not its benchmark baseline.
+
+**Baseline decision (2026-11-07).** After the restored working tree and its reader-lifetime prerequisites pass their
+remaining qualification, freeze that complete merged, partially implemented source state as a new forward baseline.
+Inventory every included partial costing change and record source, dependency, JDK, configuration, dataset and store
+identities. Establish repeated baseline-versus-baseline variation and freeze per-lane tolerances before changing later
+unified-provider decisions. The preserved pre-merge planning run includes a fallback during measurement and is not a
+valid baseline. Its lifetime patch and the delegated capability also depend on WIP-only provider interfaces, so do
+not backport or copy partial implementations merely to manufacture a historical comparison. This forward baseline
+can assess subsequent work against the state actually frozen; it cannot establish a performance change attributable to
+the already-present WIP relative to `d69e9dd2`, upstream main or the pre-merge tree. Make no such claim without an
+independently valid matched comparison. Retain all old measurements as diagnostics, not acceptance evidence.
 
 **Work.** Inventory actual call paths from `LmdbQueryOptimizerPipeline` through packed selection, native strategy
 assembly, statement access arbitration, and execution. Record each strategy's recognizer, quote source, binder,
@@ -4086,6 +6425,19 @@ hardware, JDK, data snapshot, index configuration, concurrency, flags, and resul
 Theme query catalog, not only a remembered count of its historical cells. Keep a fixed-plan control to distinguish
 optimizer overhead from a changed execution plan.
 
+The native fixed-physical control depends on the selected-descriptor-to-binder handoff delivered in phase 4; requiring
+that handoff as a phase-0 prerequisite would make the roadmap circular. During phase 0, investigate a constrained
+generic-only control (for example, immutable data and a single usable access) and call it fixed only if its actual
+execution identity and applicability are proved. Record an unavailable control honestly if that proof is not
+possible. The forward baseline and phase-0 exit inventory can document this specific integration gap; a native
+fixed-physical execution comparison and selected-to-executed proof remain mandatory for phase-4 acceptance rather
+than being fabricated by diagnostics or asserted complete before the descriptor exists. The current q2 fixture has
+two indexes and permits adjacency; its receipt does not describe every generic access. A single-index, native-off,
+adjacency-disabled fixture is configurable, but generic empty/count/cache shortcuts and the mutable per-pattern index
+field prevent that configuration alone from proving the complete execution route. Existing lower-level iterator/index
+tests are useful controls, not an invocation-level q2 receipt. Treat this generic fixed-access control as UNPROVEN
+until its same-evaluation bag, snapshot and actual accesses are established.
+
 **Proof and exit.** Add the proposed `LmdbUnifiedPhysicalPlanningTest` in the LMDB test package and an independent
 small-plan oracle in core packed tests. Capture the smallest failing behavior test before each later production
 change. Phase 0 itself ends with a reproducible current baseline, an inventory of coverage gaps, and regression
@@ -4093,18 +6445,153 @@ fixtures that can demonstrate the missing integration. No new strategy is enable
 Set performance tolerances from repeated baseline-versus-baseline variation before measuring a candidate; record
 them here so the acceptance threshold cannot be widened after a disappointing result.
 
+**Dependency refinement (2026-11-08).** The frozen forward source and dependency inventory, observed q2 shared-host
+A/A variation, 182-cell gap ledger, and current integration reds are sufficient to begin a behavior-preserving phase 1
+contract adapter without waiting for every phase-0 acceptance campaign. Phase 0 itself remains incomplete: carry the
+remaining bounded/full-scale corpus, cached replay, quiet-host/matched execution controls and final timing obligations
+explicitly into the later qualification campaign. Do not enable a decision-changing physical family or claim a
+performance acceptance until the evidence required for that decision exists. The phase-4 native descriptor and
+selected-to-executed proof remain phase-4 deliverables, so phase 0 must not depend circularly on their completion.
+
+**Current exit gaps and operational continuation (2026-11-07).** The following catalog status refers to bounded
+independent semantic qualification on the current WIP, not historical count checks or full-scale timings. Each row
+covers the named theme's q0--q12, thirteen distinct cells. REAL_ESTATE uses the pinned 522-statement bundle: all
+thirteen cells have an independent Jena comparison under the documented conservative computed-numeric value policy
+and exact RDF4J MemoryStore/generic-LMDB/native-enabled bags. SOCIAL_MEDIA q0--q12 have the same bounded comparison
+on a separate 75-statement fixture, including q11's ordered key groups. ADAPTIVE_FILTER_PLACEMENT and
+DATA_TRANSFORMATION q0--q12 also passed these comparisons on separate deterministic default graphs. The other 130
+cells are NOT_RUN under this qualification, not known unsupported and not evidence of semantic failure:
+
+| Bounded catalog cells | Current outcome |
+| --- | --- |
+| REAL_ESTATE q0--q12 | 13 qualified with the stated Jena value policy; native execution UNOBSERVED |
+| SOCIAL_MEDIA q0--q12 | 13 qualified with the stated Jena value policy; native execution UNOBSERVED |
+| ADAPTIVE_FILTER_PLACEMENT q0--q12 | 13 qualified; q0, q8 and q9 observed a native row region with no selected-to-executed link; the other ten UNOBSERVED |
+| DATA_TRANSFORMATION q0--q12 | 13 qualified; native execution UNOBSERVED |
+| MEDICAL_RECORDS, LIBRARY, ENGINEERING, HIGHLY_CONNECTED, TRAIN q0--q12 | 65 NOT_RUN |
+| ELECTRICAL_GRID, PHARMA, SPARSE q0--q12 | 39 NOT_RUN |
+| ANALYTICS, EXPLORATION q0--q12 | 26 NOT_RUN |
+
+Maintain a per-cell ledger with exact query, fixture, dataset and configuration identities, individual bounded
+result and any unsupported, resource-incomplete, semantically unqualified, failed or not-run outcome. Do not silently
+drop cells, infer unsupported status from missing observations, or call a cell COMPLETE from a count or fingerprint.
+The SOCIAL_MEDIA fixture is a deterministic default graph with dataset SHA-256
+`b366d1370a138ebe7ed53724f6af8754fc18b16f30cefbf0b4d0a65980e873cd` and manifest SHA-256
+`0b7ca00c7f6de9c63f01e74508b3a46188e7b7a4a3381d677b8f91f303ee435c`. Its independent witness tests check positive
+aggregate values, both q5 UNION branches, distinct degree thresholds, cycles including permitted repeated positions,
+self-follow exclusion, OPTIONAL fanout and missing bindings, q11 ties, and q12 DISTINCT duplicate elimination.
+Isolated edge-removal controls rule out alternative cycles in the checked negative cases. Jena's unmodified q11 and
+q12 bags contain 54 and 237 rows respectively. The 39 bounded per-invocation captures reported UNOBSERVED with no
+truncation; native-enabled mode alone is not evidence of native execution. The updated 182-cell inventory and
+preserved red/green reports are under `/private/tmp/rdf4j-social-oracle-20261107-6vecgbot/qualified-v2/`.
+The 156-cell query inventory and proposed batches, prepared before the latest qualification, are sealed under
+`/private/tmp/rdf4j-remaining-catalog-batches-20261108-863bbxfv/`. The adaptive fixture has 29 statements and dataset
+SHA-256 `92d7317c8c3bd2fb29167b4063f9271d8be1638303a8b41dad96e26d0831a9d4`; the transformation fixture has 89
+statements and dataset SHA-256 `468224f5abab150b430778f4f6dee94b40a6dbbb732866cf86083212163ce253`. The former's
+tests compare explicit full bags including duplicate projected rows; the latter's tests verify positive aggregate
+counts, expression boundaries, fallback choices and DISTINCT fanout. Existing REAL_ESTATE and SOCIAL_MEDIA resources
+regenerate byte for byte. The shared profile checks supported order and slice shapes and rejects SAMPLE, GROUP_CONCAT
+and REDUCED until a separate permitted-result contract exists. Key-group sidecars currently accept only IRI or
+unbound keys; other key terms fail closed. The 52-qualified ledger, raw observations and reports are under
+`/private/tmp/rdf4j-expression-oracle-batch-20261108-h3zv5rm_/qualified/`. All 156 observations for these four themes
+were within the 512-event/128-character limits; three adaptive native-enabled invocations observed a started and
+completed row region, with no selected-to-executed link. An enabled flag alone remains insufficient evidence of native
+execution. Full result bags were drained; these small fixture checks do not impose a general result-row resource cap.
+Create representative bounded fixtures and independent permitted-result checks for nondeterministic SAMPLE,
+unordered GROUP_CONCAT and tied slices. ANALYTICS and EXPLORATION need their actual cross-theme and graph populations.
+Full-scale resource and timing outcomes are separate ledger axes and have not yet been qualified for this forward
+baseline. The independently diagnosed eight-factor Frontier planning fixture is RESOURCE_LIMIT_REACHED at the current
+retained-memory budget; it is not a COMPLETE-planning latency sample, and that outcome must not be assigned to a
+particular catalog cell without an observed matching invocation.
+
+The validated merged-plus-WIP state is frozen in `/private/tmp/rdf4j-phase0-freeze-20261107-7z22bikf/`, with an
+inventory of partial changes and source, dependency, JDK, hardware, query, dataset, store/index and configuration
+identities. Its original 182-row ledger pinned every query but predates SOCIAL_MEDIA qualification; the separately
+sealed SOCIAL_MEDIA ledger above has 26 qualified cells, and the later adaptive/transformation ledger has 52. The
+freeze's 25,783 source files and 8,986 dependency files matched before/after live audits; evidence-only updates to
+this plan after that freeze are not included in the sealed source. Use private complete source copies and private
+`.m2_repo` clones: the tested Docker wrapper's command-line local-repository setting overrides its
+environment setting, so running the wrapper against the live checkout would write live build state. The isolation
+audit is `/private/tmp/rdf4j-upstream-merge-preserve-ycf154_j/validated-live-source/run-22-phase0-maven-docker-repo-isolation/report.md`.
+The review-ready `PROTOCOL.md` in that freeze specifies the qualified q2 lane/fixture seam, identities, alternating
+paired A/A schedule, same-invocation receipt gates and a variation-derived per-lane tolerance method to freeze before
+any decision-changing candidate. Its pinned Linux/JDK 26 jar passes a same-helper FRESH/COMPLETE 25-row exact-bag
+preflight. The shared-host Linux A/A then stopped at its predeclared retry cap with zero valid pairs: the first two
+optimize-only pair attempts encountered FRESH during warmup; the third attempt's A fork reported seven
+PIPELINE_CACHE/COMPLETE iteration receipts, but its paired fork encountered FRESH during measurement. JMH returned
+zero despite the benchmark exception, and the independent validator correctly rejected the incomplete run. There is
+no tolerance or performance conclusion. Preserve all attempts, host-load evidence and the sealed blocked-study
+handoff at `AA-BLOCKED.md` in the freeze. A later read-only same-invocation JDI diagnostic reproduced FRESH/COMPLETE
+and traced the conservative pipeline admission bypass to differing captured/current evidence revisions: the former
+included adjacency-statistics generation 3 while the latter had no available generation. This establishes a changing
+availability observation, not its deeper lifecycle cause or an eviction defect; retain the latter as a phase 6 audit
+question. The trace is `/private/tmp/rdf4j-cache-diagnostic-20261107-enbdblex/jdi-run-v4/jdi-events.log`. Do not
+relabel these runs or widen the retry cap. Independently prepare a separately versioned FRESH/COMPLETE protocol only
+if both cache layers can be explicitly disabled and the observed
+receipt confirms the regime. A same-helper non-timed q2 control using the existing zero cache-evidence budget produced
+30/30 FRESH/COMPLETE receipts; the frozen explicit-fixture JMH setup cannot yet specify that store setting. Expose the
+existing nonnegative budget as an optional, default-preserving fixture input only after a real setup/receipt red,
+validate its representation, and verify zero plus positive/default controls before sealing a new protocol. Keep the
+earlier frozen experiment intact. The in-repository red observed the zero value ignored and a repeated PIPELINE_CACHE
+receipt; the candidate applies the optional budget and the real zero-budget setup and repeat report FRESH/COMPLETE.
+The full Theme benchmark test class passed 52/52 before and after scoped formatting. A newly added positive-budget
+control now allows any observed planning path because retention is permitted rather than guaranteed; after that
+correction, scoped formatting and the complete Theme class again passed 52/52. The adjacent helper class retains its
+known pre-entry `Filter at root.requiredInputFrame` failure (14/15). Evidence is retained at
+`/private/tmp/rdf4j-fixture-budget-20261107.2MOZh0/` and
+`/private/tmp/rdf4j-fixture-budget-correction-20261107.O1j5wx/`. The separately frozen fresh protocol passed all
+four generated-harness lifecycle smokes and a same-fixture zero-retention diagnostic, then completed 80/80 valid A/A
+pairs without replacements. Its empirical ratio envelopes are 0.67445--1.48268 for optimization,
+0.73613--1.35846 for final-tuple precompilation, 0.90656--1.10307 for reused-step evaluation, and
+0.89923--1.11206 end to end. Each sample's preflight matched the exact q2 bag and each planning receipt was
+FRESH/COMPLETE; reused-step had one initial receipt per fork. The shared host ranged from 4.54% to 90.29% busy and
+selected-to-executed identity remained UNOBSERVED. These envelopes describe that shared-host experiment only; the
+rank interpretation assumes exchangeability, and they do not establish quiet-host acceptance, native/fixed-physical
+execution, speedup or non-regression. Frozen inputs and all 3,445 run artifacts were independently hashed; the
+complete protocol, measurements and limitations are in
+`/private/tmp/rdf4j-fresh-phase0-freeze-20261107-yk_3d53i/postrun/RESULTS.md` (results-seal SHA-256
+`bee806bdf462b3036b1b0373b2d3f4029580b3667156994a063e9863efb2dcc0`). The cached-path study remains blocked. Run JFR
+separately as diagnostic instrumentation, not as the A/A timing control.
+
+The independent core oracle currently covers three admitted dependent-join costing routes under synthetic prices;
+it does not enumerate native alternatives or prove a global physical optimum. The unchanged
+`LmdbUnifiedPhysicalPlanningTest#selectedStatementAccessMatchesTheExecutedSource` was rerun on an isolated clone of
+the frozen source and dependency seed: one test failed with the same six missing candidate/quote/recipe assertions as
+the preserved pre-merge red, while a real `pocs` cursor scanned and matched 32 rows and the separate evaluation's
+result bag passed. The selected-equals-actual assertion passed because both IDs were null. The test exposes neither
+same-invocation packed completion/fallback nor admitted-view identity, so this repeat does not yet distinguish absent
+provider/recipe/binder integration from incomplete planning or a scope fallback. Preserve its exact command, reports,
+two setup failures and source/dependency audits in `/private/tmp/rdf4j-selected-access-20261107.BHQHVv/`. A subsequent
+private test-only diagnostic of that same explanation invocation reported COMPLETE, approximate=false, empty limit
+causes and no packed cache hit; its statement carried mapped-statistics status, no mapped fallback reason, and matching
+generation/base/covered epoch 4. The same runtime receipt reported a completed `pocs` cursor with 32 scanned/matched
+rows, but selected/executed recipe fields remained absent. The separate root fallback key was UNOBSERVED, and the
+exact bag still came from another evaluation. Thus this invocation was not resource-incomplete or a scalar statement
+estimate, but matching planned and runtime index names do not establish a binder handoff. Its retained diagnostic
+patch, control and reports are in `/private/tmp/rdf4j-selected-access-telemetry-20261107.XXL9Ek/`. General provider
+quote, selected recipe/binder, budget/refusal, cache/feedback and execution
+identity oracles must then demonstrate the missing phase 1--4 contracts. Existing observations cover fresh owned ROW
+regions only; GROUP, ordered, borrowed, nested, retry and native strategy-attempt paths remain UNOBSERVED, and the
+selected-to-executed link remains UNLINKED. A packed native executable descriptor does not yet exist, so neither
+written algebra order nor reusing a compiled step supplies the required fixed-physical-plan control.
+
 ### Phase 1 — Connect shared contracts and budget every provider
 
 
-**Dependency and purpose.** Depends on phase 0. Make physical alternatives representable and optional estimation work
-accountable before adding more alternatives to search. This phase can land with an adapter preserving existing
-selection behavior; subsequent behavioral changes still require their own failing tests.
+**Dependency and purpose.** Begins after phase 0 has frozen its forward source, evidence inventory and integration
+reds, without declaring phase 0's remaining acceptance gates complete. Make physical alternatives representable and
+optional estimation work accountable before adding more alternatives to search. This phase begins with an adapter
+preserving existing selection behavior; subsequent behavioral changes still require their own failing tests and
+applicable baseline/control evidence.
 
 **Work.** Extend `PackedCostSession`, `PackedPhysicalMetadataArena`, `PackedPhysicalPropertyInterner`,
 `PackedCostEstimate`, and `PackedPlanRecipe` using the provider contract above. Map native physical features and
 evidence into `PackedCostDimensionRegistry` and `PackedCostVectorArena`; preserve startup, unknown quantities,
 structural bounds, and native consumption information. Use `PackedCostAlgebra` for composition. Add explicit tests
-that a region quote replaces its covered internal work rather than summing it twice.
+that a region quote replaces its covered internal work rather than summing it twice. Define coverage with verified
+structural handles and edges from the actual region, not an unaudited count asserted by a provider. At bind time,
+distinguish a legitimate capability/resource refusal that permits a declared fallback from cancellation and real
+execution failures; preserve the original failure and cleanup identities rather than hiding them to run fallback.
 
 Extend `PackedPlannerLimits` accounting so recognition, costing, optional metadata access, evidence realization,
 refinement, detachment, and cache validation all charge the same query-level budget. Keep work, deadline, retained
@@ -4307,8 +6794,9 @@ filter, and expression boundaries; an opaque operation must not accidentally dis
 **Proof and exit for each slice.** Add focused cases to active family tests and to the shared end-to-end fixture.
 Force each supported alternative in a controlled test, compare its result bag to the reference, then verify normal
 planning chooses it only when the supplied costs and properties justify it. Include a losing case and an unsupported
-case with a valid fallback. Extend `LmdbPhysicalWorkPricingRegressionTest`, `LmdbNativeStrategyArbiterTest`,
-`LmdbNativeStrategyProposalTest`, native decision diagnostics, and relevant family parity tests. Measure recognition
+case with a valid fallback. Extend `LmdbPhysicalWorkPricingRegressionTest`, `LmdbNativeSelectorTest`,
+`LmdbNativeDispatchLoopEdgeCaseTest`, `LmdbNativeStrategyProposalTest`, native decision diagnostics, and relevant
+family parity tests. Measure recognition
 and quote counts as well as execution work. Every previously supported family must be either integrated or explicitly
 listed as a remaining compatibility path; no silent loss of native coverage is acceptable.
 
@@ -4375,8 +6863,8 @@ same dimensions without conflating cardinality errors, missing work, and machine
 correct unlearned model; learning must not conceal an inconsistent implementation contract.
 
 **Work.** Integrate `LmdbMappedFrontierLearningSession`, the packed cost session/replay path,
-`LmdbNativeAdaptiveCostModel`, native execution diagnostics, and statement-access observations through a versioned
-descriptor linking query region, physical recipe, access choice, consumer requirement, and evidence scope. Attribute
+the opt-in `LmdbNativeAdvisoryLearner`, native execution diagnostics, and statement-access observations through a
+versioned descriptor linking query region, physical recipe, access choice, consumer requirement, and evidence scope. Attribute
 actual work to the variant that ran, including runtime fallback, rather than the preferred variant that was quoted.
 Separate operator-local from inclusive totals so an aggregate region, its pattern scans, and an enclosing pipeline
 do not all train on the same elapsed time as independent work.
@@ -4473,10 +6961,10 @@ merely to prove that its obvious plan is cheapest. A costly uncertain query can 
 requiring exhaustive exploration for every query. Do not encode benchmark names, query IDs, arbitrary shape sizes,
 or a permanently preferred algorithm as production policy.
 
-### Concrete steps for a later authorized implementation session
+### Concrete steps for the authorized implementation session
 
 
-All commands below are prospective. None was executed while writing this plan. Work from
+Commands below are the reproducible workflow; their actual outcomes must be recorded in the living sections. Work from
 `/Users/havardottestad/Documents/Programming/rdf4j-small-things`. Use the repository's required JDK 25 or newer and
 record the exact JVM used for every comparison. Inspect the current checkout and existing evidence before edits:
 
@@ -4484,8 +6972,7 @@ record the exact JVM used for every comparison. Inspect the current checkout and
     git log -1 --oneline
     git diff -- .agent/execplans/GH-0000-frontier-estimator-cost-model-roadmap.md
 
-Once execution and implementation are authorized, use the repository's required initial installation before tests.
-This is an instruction for future work, not an exception to the current prohibition on compilation:
+Use the repository's required initial installation before tests:
 
     mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install 2>&1 \
       | tee maven-build.log \
@@ -4499,7 +6986,8 @@ Examples for current tests are:
     python3 .codex/skills/mvnf/scripts/mvnf.py PackedCostAlgebraTest --retain-logs
     python3 .codex/skills/mvnf/scripts/mvnf.py PackedPhysicalCostContractTest --retain-logs
     python3 .codex/skills/mvnf/scripts/mvnf.py LmdbPhysicalWorkPricingRegressionTest --retain-logs
-    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeStrategyArbiterTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeSelectorTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeDispatchLoopEdgeCaseTest --retain-logs
 
 The new test names in the phases are proposed files, not existing coverage. Create them in the corresponding core
 packed or LMDB test package, with the same package convention as adjacent tests. For example, phase 2's prospective
@@ -4567,11 +7055,10 @@ evidence here instead of marking a family complete.
 ### Artifacts, priority, and definition of completion
 
 
-The current artifact is this dated plan and the updates to the roadmap's Progress, Surprises & Discoveries,
-Decision Log, and Outcomes & Retrospective. Source inspection and document-diff checks are the only current evidence.
-Future artifacts are the strategy/access catalog, initial failing and subsequent passing test reports, small-oracle
-results, quote-to-execution traces, fixed-plan controls, benchmark metadata/results, and profiling captures when
-needed. None of those future artifacts is claimed to exist from this planning task.
+Artifacts must include this roadmap's living sections, the strategy/access catalog, initial failing and subsequent
+passing test reports, small-oracle results, quote-to-execution traces, fixed-plan controls, benchmark metadata/results,
+and profiling captures when needed. Earlier planning produced source inspection and document checks only; it did not
+produce executable evidence for this implementation.
 
 The first implementation priorities are the budgeted shared contract, correct physical access work, and the
 selected-to-executed recipe handoff. Consumer properties and retention are part of that first complete integration,
@@ -4591,3 +7078,205 @@ Cascades, native strategy, and LMDB/adjacency costing, including executable reci
 consumer requirements, bounded planning, cache validation, and feedback. Updated the required living sections and
 explicitly separated this documentation-only task from future implementation and executable validation. The addition
 preserves the single-roadmap rule and does not treat historical timings as evidence for the proposed design.
+
+Plan revision note (2026-11-06 / Codex): started the newly authorized implementation, replaced the stale planning-only
+status, and moved the sole active progress marker to phase 0. Historical milestones and their evidence are retained.
+Recorded the successful initial build and source-grounded baseline inventory; neither establishes a performance or
+integration result.
+
+Plan revision note (2026-11-06 / Codex): after preserving the two focused reds above, corrected unknown-axis addition
+and implemented a candidate repair for the separately priced dependent-subquery objective. The latter composes the
+winner's scalar objective once, preserves the actual local versus inclusive scope, and marks composite physical
+quantities unavailable when the subquery supplied only a price. Scheduled filters retain the chosen complete price
+instead of asking the provider to price the same partial event again. These changes are not accepted until the
+focused and cross-path tests pass; neither a source-prefix fixture setup error nor an unreproduced baseline is a
+behavioral red or a performance control.
+
+Plan revision note (2026-11-06 / Codex): an independent reviewer found that the in-progress composite correction
+must also preserve the source lifecycle risk premium, and that an explicit vector with unavailable result or peak
+memory can reach a strict finite-only reopening calculation. Added targeted regression tests before changing either
+path. Independent LMDB source tracing also identified named-context residual and actual-index-selection gaps; their
+own in-repository reds are still required. Earlier ordinary benchmark data is invalid because it included fallback;
+the unrelated JMH lock owner exited before the subsequently retained access and quantity tests began.
+
+Plan revision note (2026-11-06 / Codex): the first lifecycle and unknown-resource reopening fixes pass their two
+focused tests. A subsequent typed-child-plus-scalar-child regression still loses the lifecycle envelope and has
+been retained red, as have corrected unknown-visit and real wildcard-index counterexamples; see
+`/private/tmp/rdf4j-unified-costing-realstore-validation-20261106T143133Z/`. A real skip-scan fixture independently
+showed 1,000 prefix candidates and fewer visited keys, so an exact prefix population cannot stand in for exact
+sequential work. The named-graph fixture initially failed before its intended assertion and has been corrected to
+represent the provider's lowered graph domain; its actual behavioral outcome is not yet established. Interim
+changes are still being validated and no unified phase is marked complete.
+
+Plan revision note (2026-11-06 / Codex): the next focused run passed the independent-subquery lifecycle comparison,
+price-only quantity-transcript replay, real-store access/index/context class (5 tests), and repeated-variable access
+class (14 tests). It separately captured a source-only reopen-profile red, unavailable-base promotion, and additional
+cancellation and cleanup reds in `/private/tmp/rdf4j-unified-costing-final-verification-20261106T155420Z/`.
+Candidate corrections now retain lifecycle provenance, decline a partial reopen profile when a child has no supplied
+quantities, carry typed Frontier leaf evidence rather than interpreting a diagnostic string, preserve unavailable
+coverage, and propagate cancellation while closing both owners. Focused and broader module validation of those
+latest changes is in progress; baseline fallback ownership, shared provider budgets, physical selection handoff,
+remaining strategy families, cache/feedback, and performance qualification remain open.
+
+Plan revision note (2026-11-06 / Codex): all seven focused classes passed (102, 25, 5, 6, 4, 11, and 14 tests),
+but the subsequent complete query-evaluation module reported 125 failures and 53 errors across 7,480 tests. The
+full report and symptom grouping are retained under
+`/private/tmp/rdf4j-unified-costing-final-suite-20261106T162026Z/08-evaluation-module/`. One failure directly
+identified an introduced static collection in packed hot state; its correction is awaiting a targeted rerun.
+The other failures span tuple-function bindings, EXISTS, filter rewrites, join ordering/representatives, SERVICE,
+deep binding-origin chains and cancellation; their baseline status is unknown. A private immutable HEAD archive
+with a separate Maven repository is being used to compare the same selectors and full module without disturbing the
+working tree. The LMDB module gate remains unrun; no failure is assumed pre-existing from its name alone.
+
+Plan revision note (2026-11-06 / Codex): the isolated, tracked-only HEAD archive reproduced 177 of the current
+module failures/errors with the same class, exact testcase/parameter name, and failure/error status. The only
+current-only failure was the introduced packed hot-state collection; its smallest selector subsequently passed after
+that collection was removed. The baseline-only documentation error came from a required research file omitted by
+the tracked-only archive, so it is an archive-input mismatch rather than a proven branch failure. Both complete
+report sets, the 35 additional passing current test invocations, the immutable archive identity, and the exact
+comparison are retained at `/private/tmp/rdf4j-unified-costing-baseline-audit-20261106Tn5zeKu/baseline/03-comparison/`.
+This comparison qualifies the unrelated evaluation failures by identity; it is not a green module result. The
+reviewer's typed-child-profile regression is retained red, and its focused rerun passed after clearing the incomplete
+profile on typed-child composition. The packed hot-state layout selector passed after removing the static collection.
+
+Plan revision note (2026-11-06 / Codex): a zero-work request currently opens its optional cost session before checking
+the search allowance; the smallest failure is preserved under
+`/private/tmp/rdf4j-unified-costing-budget-focused-20261106TCmRl0v/run/`. A separate interrupted-thread fallback
+regression expected `QueryInterruptedException` but returned normally, with report and command under
+`/private/tmp/rdf4j-unified-costing-budget-cancel-20261106Ta3WdoO/run/`. No budget implementation has been changed
+yet. Follow-up cases cover the expired-deadline and zero-retained-memory paths, optional range callbacks, and result
+bags for nested UNION, OPTIONAL, MINUS, EXISTS, subquery, and VALUES/UNDEF. The current codec also performs rule
+saturation and calls the range provider before the search budget exists; cache identity/validation and continuation
+must be accounted for when the fallback boundary is repaired, without misreporting an unexamined provider space as
+complete. The first native handoff is concurrently being designed and must carry a detached selected descriptor to
+actual index/adjacency execution, with independently observed selection and explicit fallback.
+
+Plan revision note (2026-11-06 / Codex): the six fallback regressions now pass alongside the adjacent search-budget,
+deadline, retained-memory, and plan-cache classes (86 tests total); the reports and commands are retained at
+`/private/tmp/rdf4j-unified-costing-budget-green-20261106TBYNdpT/`. The tested uncached stop paths check cancellation
+and the applicable limit before optional session/range work, encode the executable canonical source without optional
+rule saturation, preserve the nested three-row result bag, and expose the number of logical candidates actually
+constructed for the fallback. That counter is separate from the optional search allowance; it does not claim to count
+every codec visit. This is not phase 1 completion: positive-budget provider internals, cache validation and replay,
+all optional codec work, and actual-operation/scratch accounting still require one shared budget owner. A separate
+end-to-end LMDB red is being run for natural physical candidate selection and execution observation.
+
+Plan revision note (2026-11-06 / Codex): the new real-store physical-handoff selector compiled and failed on the
+missing candidate/quote counts and selected/executed receipts. Its independently constructed 32-row RDF bag passed,
+and telemetry observed the actual LMDB `pocs` cursor, variant 2887, scanning and returning 32 rows. The report is
+`/private/tmp/rdf4j-unified-physical-planning-20261106Tchtqbp/run/`; it does not yet prove why the candidate count
+was absent, and the known snapshot-scope fallback remains a possible contributing condition. Descriptor transport
+must include generic and native binding, per-node witness/identity, retention through all LMDB cache ownership gates,
+and single-flight lifetime accounting; an explanation string alone cannot enforce execution.
+
+Plan revision note (2026-11-06 / Codex): further regressions showed that a one-unit request previously opened one
+provider and made six uncharged estimate/refinement calls, that an expired cached request accessed optional range
+evidence while creating its cache identity, and that a zero-budget plan-quality audit dereferenced an absent decision
+trace. Red reports are in `/private/tmp/rdf4j-unified-costing-budget-extended-20261106TjuYORW/run/`. A first shared
+borrowed-work owner now admits the session before opening and charges opaque compatibility callbacks, while allowing
+cooperative providers to reserve internal batches; nested operation charging and all cache/codec paths remain open.
+The new focused budget, memory, lifecycle, and search-budget classes passed, but two existing cache continuation
+assertions fail because a one-unit request now performs no provider estimation. More importantly, the current
+candidate abort path can discard a complete provider incumbent after later refusal; preserve a detached, validated
+incumbent before adjusting those fixture budgets. The combined reports are in
+`/private/tmp/rdf4j-unified-costing-physical-binding-workflow-20261106TSOeJj6/02-core-qualification/`.
+
+Plan revision note (2026-11-06 / Codex): a further independent control confirmed that a complete provider root can
+already exist when optional work runs out, yet the current recovery drops its provider event; the failing assertion
+and typed provider-open memory-refusal error are retained under
+`/private/tmp/rdf4j-unified-costing-provider-admission-retry-20261106T2015Z/01-core-provider-refusal/`. Four LMDB
+provider-work forwarding and pre-open admission failures are retained in the sibling `02-lmdb-provider-admission/`.
+The separately exposed portfolio-cancellation and suppressed-close failures have focused greens in
+`/private/tmp/rdf4j-unified-costing-shared-cleanup-check-20261106T1940Z/`. A later refusal after the champion was
+detached also revealed an exact decision summary attached to an incomplete result; that status correction now passes,
+and the regression requires no exact cache hit or stale-validation authority for the incomplete entry. The five
+direct named-index tests pass in `/private/tmp/rdf4j-unified-costing-source-stable-20261106T1930Z/01-lmdb-selected-index/`;
+the indexed descriptor and range-plus-ID-filter binder remain unfinished.
+
+Plan revision note (2026-11-06 / Codex): an independent Sol review identified two remaining extraction boundaries:
+typed provider memory refusal while detaching the selected winner and work refusal while capturing plan-quality
+audit challengers must retain the executable winner and an honest incomplete status. A direct/cache/audit regression
+matrix is being run before those corrections. The preceding source-stable runs passed 25 LMDB tests and 129 packed
+evaluation tests at `/private/tmp/rdf4j-unified-costing-stable-multiclass-validation-20261106T2120Z/`. These are
+focused gates, not full-module or performance acceptance. The measured one-open/one-reserved-detach continuation
+fixture reached a real provider-backed incomplete checkpoint at work allowance 55 with seven provider callbacks;
+the existing continuation assertions were updated to that observed stage and retain their original checks.
+
+The original planning-baseline failures occurred during live pipeline costing, 5.023 seconds apart on the same JMH
+worker. A new independent lifetime investigation has identified a plausible no-op asynchronous-maintenance
+publication overlap, but no test yet proves it is the failing predicate. Preserve the frozen baseline evidence and
+current read-scope guards while establishing a real snapshot/read-view reproduction; performance baselines and
+thresholds remain open.
+
+Plan revision note (2026-11-06 / Codex): the Sol review matrix now passes for direct, cache and plan-quality audit
+entrypoints under work refusal, provider memory refusal and cancellation, including a later refused audit challenger;
+the focused budget/cache/lifecycle classes passed 138 tests under
+`/private/tmp/rdf4j-unified-costing-publication-race-core-validation-20261106T2230Z/02-core-classes/`. On a typed
+detachment stop, the same complete executable winner is retained without provider runtime state, trace or certificate;
+that result is not admitted to the plan cache. A later stop after successful detachment preserves the already detached
+champion and synchronizes completion status across the result and summary. This does not authorize stripping an
+execution-critical descriptor from a future native candidate.
+
+The real publication/read-view regression now reproduces the exact baseline lifetime exception in explicit,
+inferred and combined planes after a no-op publication begins inside an already admitted mapped session. Its fresh
+physical-admission refusal assertions pass first, and the retained report is
+`/private/tmp/rdf4j-unified-costing-publication-race-core-validation-20261106T2230Z/01-lmdb-race/`. This proves a
+triggering condition, not the historical JMH cause. The session-only repair must preserve paired reader/lease,
+native growth invalidation, real commit, nested and closed scope, and cancellation checks. The core physical
+strategy/descriptor implementation is starting separately; its candidates must possess any execution-critical
+detached identity before becoming complete incumbents.
+
+Plan revision note (2026-11-08 / Codex): recorded the phase-1 B/C ownership and exception-boundary review
+candidate, its real red/green evidence and unresolved qualification without marking phases 0, 1 or 6 complete.
+
+Plan revision note (2026-11-08 / Codex): recorded the bounded phase-2 index-shape foundation and its matched
+compatibility evidence while keeping the remaining phase-1 provider and phase-2 physical-quote dependencies open.
+
+Plan revision note (2026-11-08 / Codex): recorded the shared access-feature boundary and its matched/dependent
+evidence without claiming the remaining numeric quote, provider, execution, full-corpus or performance gates.
+
+Plan revision note (2026-11-08 / Codex): recorded the shared quantity review corrections, real red/green projection
+evidence, dimensional scopes, current-index qualification and isolated pre-repair comparison. The sole phase-1 progress
+entry remains active; this does not establish the remaining phase-1 or phase-2 provider and execution contracts.
+
+Plan revision note (2026-11-10 / Claude): recorded the phase-1 continuation (whole-module qualification, the
+separate provider-work limit and anytime invariant, the LMDB fixture triage, replay-only decision caching, the
+capacity policy and the entry shrink) in Progress, Surprises & Discoveries and the Decision Log. Nothing is
+committed. Phase 1 remains the sole active item. Open items carried forward:
+
+- The written-order emission's access-path expansion draws from the shared bounded budget (503 of 512 search units
+  for SOCIAL_MEDIA q10). Options: a two-phase pass (expansions after every region has an incumbent), a
+  per-expansion sub-budget, or documenting the current behaviour. Belongs with phase 6.
+- A finite default provider limit or time budget for cold planning (phase 6), with JMH numbers on a quiet machine.
+- The context-free fallback in `PackedDependentSubqueryCosting` (see Surprises & Discoveries). Not changed. The
+  narrow rule that the measurement supports: keep the context-free price for structural cases (that plan is what
+  runs once per outer row); return unknown only when the subquery could have been costed contextually but no
+  contextual winner exists, in `contextualCost`, `selectedWinner` and `recordScalarPlans` alike; run the missing
+  contextual search on demand as mandatory work for the canonical candidate; and make the correlated lattice
+  tolerate unpriced transitions. Tests to write first are listed in `spec-contextual-subquery-price.md`. Few real
+  queries are affected, so this belongs with the phase-3 consumer-sensitive costing work.
+- The tier-dominance rule, and contextual evidence from the LMDB provider for OPTIONAL right sides and dependent
+  joins (phases 2–3). Suggested exit measure: the share of theme queries with a COMPLETE comparison (31 of 176 in
+  exact mode when measured).
+- The decision cache's share of the evidence budget and frequency-aware eviction: a workload that cycles through
+  more distinct queries than fit gets no hits under least-recently-used eviction.
+- LMDB does not publish `providerWorkUnits` on the installed plan; refreshed ranked cache versions are still charged
+  by the old model; the retry after an absorbed refusal re-prices pending offers but does not re-search the regions
+  that contain them.
+- Pre-existing reds not triaged: 176 in the core module (all red at HEAD: TupleFunction* 113,
+  ExistsFilteredProbePreparationTest 20, filter/join optimizer and SERVICE tests); in LMDB the post-commit
+  receipt-settlement tests (need per-service `Error` handling in `LmdbSailStore` post-commit maintenance), two
+  `LmdbPostCommitLearnedStateFailureTest` cases (test-only wait), `LmdbFilterSamplingSafetyTest` ×3,
+  `LmdbDeferredProviderRealQueryRegressionTest` ×2, `LmdbProviderPublicationCacheTest`, the plan-quality audit
+  rejecting a `Filter` operator, about 21 stable and a few intermittent reds in `LmdbPackedPlanCacheTest`,
+  `LmdbPlanCacheCommitInvalidationTest`, `LmdbForegroundFilterSamplingEpochTest`,
+  `LmdbGenericFilterFactorReadContextTest` and `LmdbCurrentAliasCacheIdentityTest` (all red before this work;
+  `evidence/counterfactual-precache-lmdb-cache-*`), and the phase-4 handoff tests
+  (`LmdbUnifiedPhysicalPlanningTest`, `LmdbPhysicalRecipeBindingTest`).
+
+Plan revision note (2026-11-11 / Claude): recorded the merge and requalification (requal11) of the constant-time
+applicability index and of stable learning keys, the accepted one-time re-keying of `FILTER EXISTS` logical keys,
+the state of cache-validity step 2 (phase A built and reviewed in a private copy, nine review fixes and the memory
+design open, phase B not specified in detail yet), and three decisions. Unified phase 1 stays the only item in
+progress; the original phase-1 exit slices (recognition purity, budget-charging gaps, dimension mapping and algebra
+laws, inactive LMDB provider conformance, nested-context design) are still not started.

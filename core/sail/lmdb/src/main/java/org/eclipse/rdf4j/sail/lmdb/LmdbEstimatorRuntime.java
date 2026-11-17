@@ -75,12 +75,24 @@ final class LmdbEstimatorRuntime {
 	private record FrontierReadScope(LmdbFrontierReadSelection selection, FrontierReadScope previous) {
 	}
 
-	QueryOptimizationScope beginFrontierReadScope(org.eclipse.rdf4j.query.algebra.evaluation.TripleSource source,
+	/**
+	 * A Frontier read scope opened inside a request's planning-read pin. The request observes its read planes exactly
+	 * once, when the scope opens: the represented plane mask of the selection captured then, or 0 when the composition
+	 * is not represented or its read authority was not current at that moment. {@link #frontierReadPlaneMask()}
+	 * re-checks currency on every call and only decides whether a piece of shared evidence may be used; it is not the
+	 * request's planes.
+	 */
+	interface PlanningReadScope extends QueryOptimizationScope {
+		/** The read planes observed when the scope opened; 0 keeps the whole request off plane-qualified reuse. */
+		int observedReadPlanes();
+	}
+
+	PlanningReadScope beginFrontierReadScope(org.eclipse.rdf4j.query.algebra.evaluation.TripleSource source,
 			org.eclipse.rdf4j.query.Dataset dataset) {
 		return beginFrontierReadScope(source, dataset, -1);
 	}
 
-	QueryOptimizationScope beginFrontierReadScope(org.eclipse.rdf4j.query.algebra.evaluation.TripleSource source,
+	PlanningReadScope beginFrontierReadScope(org.eclipse.rdf4j.query.algebra.evaluation.TripleSource source,
 			org.eclipse.rdf4j.query.Dataset dataset, int requiredPlaneMask) {
 		LmdbFrontierReadSelection selected = LmdbFrontierReadSelection.capture(this, source, dataset);
 		if (requiredPlaneMask != -1 && selected.representedPlaneMask() != requiredPlaneMask) {
@@ -88,8 +100,13 @@ final class LmdbEstimatorRuntime {
 		}
 		FrontierReadScope scope = new FrontierReadScope(selected, frontierReadScope.get());
 		frontierReadScope.set(scope);
-		return new QueryOptimizationScope() {
+		return new PlanningReadScope() {
 			private boolean closed;
+
+			@Override
+			public int observedReadPlanes() {
+				return scope.selection().representedPlaneMask();
+			}
 
 			@Override
 			public void close() {
@@ -138,6 +155,7 @@ final class LmdbEstimatorRuntime {
 		return scope == null ? -1L : scope.selection().snapshotEpoch();
 	}
 
+	/** Per-read evidence admission: 0 while the active selection is not current, even inside one request. */
 	int frontierReadPlaneMask() {
 		FrontierReadScope scope = frontierReadScope.get();
 		return scope != null ? scope.selection().planeMask()
@@ -319,6 +337,19 @@ final class LmdbEstimatorRuntime {
 		return estimate(expression, Set.of(), EstimationTier.STANDARD, false, readContext);
 	}
 
+	BagEstimate estimate(TupleExpr expression, LmdbFilterReadContext readContext,
+			LmdbAdmittedFrontierRead admittedRead) {
+		try (QueryOptimizationScope ignored = pinProviderView()) {
+			EstimateContext context = rootContext(expression, readContext, admittedRead)
+					.withBoundNames(Set.of())
+					.withEstimationTier(EstimationTier.STANDARD)
+					.withExactProbePermission(false);
+			BagEstimate estimate = semanticEstimate(expression, context);
+			context.requireAdmittedRead();
+			return estimate;
+		}
+	}
+
 	BagEstimate estimate(TupleExpr expression, Set<String> boundNames, EstimationTier tier,
 			boolean exactProbePermitted) {
 		return estimate(expression, boundNames, tier, exactProbePermitted, null);
@@ -467,24 +498,39 @@ final class LmdbEstimatorRuntime {
 	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext,
 			LmdbFilterReadContext readContext) {
 		try (QueryOptimizationScope ignored = pinProviderView()) {
-			return factorCostInScope(expression, costContext, readContext);
+			return factorCostInScope(expression, costContext, readContext, null);
+		}
+	}
+
+	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext,
+			LmdbFilterReadContext readContext, LmdbAdmittedFrontierRead admittedRead) {
+		try (QueryOptimizationScope ignored = pinProviderView()) {
+			return factorCostInScope(expression, costContext, readContext, admittedRead);
 		}
 	}
 
 	private Optional<FactorCostEstimate> factorCostInScope(TupleExpr expression, CostContext costContext,
-			LmdbFilterReadContext readContext) {
+			LmdbFilterReadContext readContext, LmdbAdmittedFrontierRead admittedRead) {
 		if (expression == null) {
 			return Optional.empty();
 		}
 		CostContext cost = costContext == null ? CostContext.of(Set.of(), 1.0d, 1.0d, false) : costContext;
-		EstimateContext context = context(expression, cost, readContext);
+		EstimateContext context = context(expression, cost, readContext, admittedRead);
+		context.requireAdmittedRead();
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
-		ScopedFactorCostCacheKey cacheKey = scope == null
+		// Its retained graph is not admitted by the mapped session's provider-memory budget.
+		ScopedFactorCostCacheKey cacheKey = scope == null || admittedRead != null
 				? null
 				: ScopedFactorCostCacheKey.of(expression, cost, context, scope);
 		if (cacheKey != null) {
 			Optional<FactorCostEstimate> cached = scope.factorCosts.get(cacheKey);
 			if (cached != null) {
+				if (LmdbPlanningReadLog.predatesSlice(scope.sliceStamps.get(cacheKey))) {
+					// The entry predates a cache computation that records its reads as a slice, and a factor cost has
+					// no value equality to recheck it against: the slice cannot vouch for it.
+					LmdbPlanningReadLog.markIncomplete("scope-cache-factor-cost");
+				}
+				context.requireAdmittedRead();
 				return cached;
 			}
 		}
@@ -495,10 +541,16 @@ final class LmdbEstimatorRuntime {
 		FactorCostEstimate result = view.factorCosts()
 				.assemble(expression, context, qualified,
 						LmdbEstimateClassification.databaseExact(semantic), scope);
-		result = finiteDerivedFactorCost(expression, cost, semantic, result, scope).orElse(result);
+		// A mapped session must not introduce the legacy raw finite-surface scan through delegated costing.
+		if (admittedRead == null) {
+			result = finiteDerivedFactorCost(expression, cost, semantic, result, scope).orElse(result);
+		}
+		context.requireAdmittedRead();
 		Optional<FactorCostEstimate> estimate = Optional.of(result);
 		if (cacheKey != null) {
-			scope.factorCosts.put(cacheKey.toStorable(), estimate);
+			ScopedFactorCostCacheKey storable = cacheKey.toStorable();
+			scope.factorCosts.put(storable, estimate);
+			LmdbPlanningReadLog.stampSliceEntry(scope.sliceStamps, storable);
 		}
 		return estimate;
 	}
@@ -586,13 +638,25 @@ final class LmdbEstimatorRuntime {
 		ProviderView view = providerView();
 		LmdbOperatorFeedbackStats feedback = view.providers().feedback();
 		LmdbFilterSelectivityStats filters = view.providers().filters();
-		long revision = LmdbEstimatorRevisionSupport.mixRevision(
-				0x4c454f5f52455649L, feedback == null ? 0L : feedback.planningRevision());
-		revision = LmdbEstimatorRevisionSupport.mixRevision(revision,
-				filters == null ? 0L : filters.planningRevision());
-		revision = LmdbEstimatorRevisionSupport.mixRevision(revision,
-				learned == null ? 0L : learned.planningRevision());
-		return LmdbEstimatorRevisionSupport.mixRevision(revision, view.providers().generation()) & Long.MAX_VALUE;
+		return leoRevision(feedback == null ? 0L : feedback.planningRevision(),
+				filters == null ? 0L : filters.planningRevision(), learned == null ? 0L : learned.planningRevision(),
+				view.providers().generation());
+	}
+
+	private static long leoRevision(long feedback, long filters, long learnedFilters, long providerGeneration) {
+		long revision = LmdbEstimatorRevisionSupport.mixRevision(0x4c454f5f52455649L, feedback);
+		revision = LmdbEstimatorRevisionSupport.mixRevision(revision, filters);
+		revision = LmdbEstimatorRevisionSupport.mixRevision(revision, learnedFilters);
+		return LmdbEstimatorRevisionSupport.mixRevision(revision, providerGeneration) & Long.MAX_VALUE;
+	}
+
+	/** The four inputs of the LEO revision, read in its order (feedback, filters, learned filters, generation). */
+	private LearnedRevisions learnedRevisions(ProviderView view) {
+		LmdbOperatorFeedbackStats feedback = view.providers().feedback();
+		LmdbFilterSelectivityStats filters = view.providers().filters();
+		return new LearnedRevisions(feedback == null ? 0L : feedback.planningRevision(),
+				filters == null ? 0L : filters.planningRevision(), learned == null ? -1L : learned.planningRevision(),
+				view.providers().generation());
 	}
 
 	/**
@@ -620,18 +684,38 @@ final class LmdbEstimatorRuntime {
 		try (QueryOptimizationScope ignored = pinProviderView()) {
 			long dataRevision = snapshotVersion();
 			long frontierRevision = frontierPlanningRevision();
-			long leoRevision = leoRevision();
+			LearnedRevisions learnedRevisions = learnedRevisions(providerView());
+			long leoRevision = learnedRevisions.leoRevision();
 			long learnedEvidenceRevision = LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
 					dataRevision, leoRevision, frontierRevision);
-			return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision);
+			return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision,
+					learnedRevisions);
 		}
 	}
 
+	/**
+	 * One capture of the planning revisions. {@code learned} carries the LEO revision's inputs separately, so that
+	 * "only learned state differs" can be told apart from a provider publication; it is null for a capture made without
+	 * them.
+	 */
 	record PlanningRevisions(
 			long dataRevision,
 			long frontierRevision,
 			long leoRevision,
-			long learnedEvidenceRevision) {
+			long learnedEvidenceRevision,
+			LearnedRevisions learned) {
+
+		PlanningRevisions(long dataRevision, long frontierRevision, long leoRevision, long learnedEvidenceRevision) {
+			this(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision, null);
+		}
+	}
+
+	/** The LEO revision's inputs; {@code learnedFilters} is -1 when learned filter selectivity is absent. */
+	record LearnedRevisions(long feedback, long filters, long learnedFilters, long providerGeneration) {
+		long leoRevision() {
+			return LmdbEstimatorRuntime.leoRevision(feedback, filters, learnedFilters < 0L ? 0L : learnedFilters,
+					providerGeneration);
+		}
 	}
 
 	QueryOptimizationScope beginScope() {
@@ -699,6 +783,11 @@ final class LmdbEstimatorRuntime {
 	 */
 	long snapshotVersion() {
 		return storageAccess.dataRevision();
+	}
+
+	/** See {@link LmdbEstimatorStorageAccess#oldestLivePlanningDataRevision()}. */
+	long oldestLivePlanningDataRevision() {
+		return storageAccess.oldestLivePlanningDataRevision();
 	}
 
 	PackedPlanCache cascadesPlanCache() {
@@ -803,7 +892,8 @@ final class LmdbEstimatorRuntime {
 		// This is conditional fan-out among keys present in the predicate. No overlap with the prefix is proved.
 		double rowsPerPrefix = patternRows / domain.getAsLong();
 		return rowsPerPrefix > Double.MAX_VALUE / Math.max(1D, prefixRows)
-				? Double.MAX_VALUE : prefixRows * rowsPerPrefix;
+				? Double.MAX_VALUE
+				: prefixRows * rowsPerPrefix;
 	}
 
 	OptionalLong adjacencyKeyDomain(StatementPattern pattern, String variable) {
@@ -912,9 +1002,10 @@ final class LmdbEstimatorRuntime {
 				: Optional.of(best);
 	}
 
-	private EstimateContext context(TupleExpr expression, CostContext cost, LmdbFilterReadContext readContext) {
+	private EstimateContext context(TupleExpr expression, CostContext cost, LmdbFilterReadContext readContext,
+			LmdbAdmittedFrontierRead admittedRead) {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
-		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression, readContext),
+		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression, readContext, admittedRead),
 				providerView().prefixes(), scope);
 	}
 
@@ -928,6 +1019,14 @@ final class LmdbEstimatorRuntime {
 				leoRevision(), scope, adaptiveEvidenceAllowed())
 				.withFilterReadContext(readContext == null ? null : readContext.forExpression(expression))
 				.withReadPopulation(frontierReadPopulation(), frontierReadPlaneMask(), frontierReadSnapshotEpoch());
+	}
+
+	private EstimateContext rootContext(TupleExpr expression, LmdbFilterReadContext readContext,
+			LmdbAdmittedFrontierRead admittedRead) {
+		if (admittedRead != null) {
+			admittedRead.requireRuntime(this);
+		}
+		return rootContext(expression, readContext).withAdmittedRead(admittedRead);
 	}
 
 	boolean adaptiveEvidenceAllowed() {

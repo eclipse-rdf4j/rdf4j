@@ -38,6 +38,11 @@ interface LmdbPinnedReadTxnSource {
 		return false;
 	}
 
+	/** Validates an already admitted immutable Frontier view against this still-live paired snapshot. */
+	default boolean isLiveForAdmittedFrontierView() {
+		return false;
+	}
+
 	/** Generation of usable adjacency planner statistics for this retained reader, or empty when unavailable. */
 	default OptionalLong adjacencyStatisticsGeneration() {
 		return OptionalLong.empty();

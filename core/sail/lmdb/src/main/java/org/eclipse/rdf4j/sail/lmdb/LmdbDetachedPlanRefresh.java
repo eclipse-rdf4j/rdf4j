@@ -57,6 +57,10 @@ import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRefreshWork {
 
 	private static final long OBJECT_BYTES = 392L;
+	private static final Runnable NO_HOOK = () -> {
+	};
+	/** Test seam: runs after a refresh's planning, before its end capture. */
+	private static volatile Runnable afterPlanningForTest = NO_HOOK;
 
 	private final LmdbEstimatorRuntime runtime;
 	private final int readPlaneMask;
@@ -205,15 +209,46 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				throw new IllegalStateException("detached refresh data changed while opening its planning snapshot");
 			}
 			ensureAssumptionsCurrent(buildRevisions.dataRevision());
+			LmdbPipelinePlanCache.Revision buildRevision = new LmdbPipelinePlanCache.Revision(buildRevisions,
+					predicateRangeVersion, runtime.adaptiveEvidenceAllowed());
 			LmdbPlanDecisionCache.EvidenceSnapshot buildEvidence = LmdbPipelinePlanCache.evidence(buildRevisions);
-			return executeAgainstReadScope(snapshotEpoch, tripleSource, buildRevisions, buildEvidence, dataset,
+			return executeAgainstReadScope(snapshotEpoch, tripleSource, buildRevision, buildEvidence, dataset,
 					bindings);
 		}
 	}
 
 	private LmdbPlanDecisionCache.RefreshComputation executeAgainstReadScope(long snapshotEpoch,
-			SailDatasetTripleTermSource tripleSource, LmdbEstimatorRuntime.PlanningRevisions buildRevisions,
+			SailDatasetTripleTermSource tripleSource, LmdbPipelinePlanCache.Revision buildRevision,
 			LmdbPlanDecisionCache.EvidenceSnapshot buildEvidence, Dataset dataset, BindingSet bindings) {
+		// The refresh plans in its own planning scope: a planner read cut by its wall-clock limit anywhere in it makes
+		// the planning unreproducible, and the refresh is dropped (no challenger, no promotion). The scope's read log
+		// is taken before it ends, for the refresh's own publication check.
+		LmdbPlanningWallClockCuts.beginPlanning();
+		try {
+			// Only an outermost planning keeps a log (F4); a refresh runs on its own thread, so it always is one.
+			LmdbPlanningReadLog.Mark readLog = LmdbPlanCacheRevalidation.validationEnabled()
+					? LmdbPlanningReadLog.markAtPlanningStart()
+					: null;
+			try {
+				return planAgainstReadScope(snapshotEpoch, tripleSource, buildRevision, buildEvidence, dataset,
+						bindings, LmdbPlanningWallClockCuts.planningMark(), readLog);
+			} catch (RuntimeException | Error failure) {
+				if (readLog != null) {
+					// Closes the slice the refresh opened; a failed refresh publishes nothing.
+					LmdbPlanningReadLog.slice(readLog);
+				}
+				throw failure;
+			}
+		} finally {
+			LmdbPlanningWallClockCuts.endPlanning();
+		}
+	}
+
+	private LmdbPlanDecisionCache.RefreshComputation planAgainstReadScope(long snapshotEpoch,
+			SailDatasetTripleTermSource tripleSource, LmdbPipelinePlanCache.Revision buildRevision,
+			LmdbPlanDecisionCache.EvidenceSnapshot buildEvidence, Dataset dataset, BindingSet bindings,
+			long planningMark, LmdbPlanningReadLog.Mark readLog) {
+		LmdbEstimatorRuntime.PlanningRevisions buildRevisions = buildRevision.planningRevisions();
 		boolean storeDefaults = datasetIdentity.usesStoreDefaults();
 		OptionalLong detachedSnapshotEpoch = OptionalLong.of(snapshotEpoch);
 		DefaultEvaluationStrategy evaluationStrategy = new DefaultEvaluationStrategy(tripleSource, dataset, null);
@@ -236,7 +271,16 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 			refreshed = PackedCascadesPlanner.refresh(packedWork, runtime.cascadesPlanCache(), packedContext,
 					costModel, rangeProvider);
 		}
+		// A refresh served by a packed entry (exact, family or waiter) or resumed from a checkpoint did not make the
+		// cost session's reads this planning needs: its log is incomplete.
+		LmdbPlanningReadLog.markReusedPackedWork(refreshed.refreshedPlan().metrics().planCacheHit(),
+				refreshed.refreshedPlan().selectedPlan());
 		PackedPlanDecisionSummary summary = refreshed.selectedSummary();
+		if (!summary.selectedCostInterval().available()
+				|| summary.comparisonCompleteness() != PackedPlanDecisionSummary.ComparisonCompleteness.COMPLETE) {
+			// Refresh is advisory; retain the serving champion when no complete price comparison exists.
+			throw new IllegalStateException("detached plan refresh has no complete cost comparison");
+		}
 		CascadesPlan cascadesPlan = CascadesPlanner.fromPackedResult(packedWork.optimizationGoal(),
 				refreshed.refreshedPlan());
 		LmdbCascadesOptimizer annotator = new LmdbCascadesOptimizer(runtime, trackResultSize,
@@ -246,6 +290,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		executable = LmdbQueryOptimizerPipeline.finalizeOrderAndLimit(executable, dataset, bindings, tripleSource,
 				experimentalQueryOptimizations);
 		assumptions.annotate(executable);
+		afterPlanningForTest.run();
 		LmdbEstimatorRuntime.PlanningRevisions currentRevisions = runtime.capturePlanningRevisions();
 		LmdbPipelinePlanCache.PredicateRangeIdentity currentRangeIdentity = LmdbPipelinePlanCache.PredicateRangeIdentity
 				.capture(buildRangeIdentity.predicates(), runtime);
@@ -259,8 +304,9 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				.map(PackedPlanDecisionSummary.CandidateSummary::costInterval)
 				.map(LmdbDetachedPlanRefresh::interval)
 				.orElse(null);
-		// The decision cache charges optional provider payload once across its complete immutable portfolio.
-		long planBytes = saturatedAdd(512L, FactorCostCacheKey.estimatedStructuralRetainedBytes(executable));
+		// The version's own records; the decision cache charges the template per object, and optional provider payload
+		// once across its complete immutable portfolio.
+		long planBytes = LmdbPipelinePlanCache.VERSION_OBJECT_BYTES;
 		boolean predicateRangeDependent = LmdbPipelinePlanCache.guaranteeDependent(summary, assumptions);
 		if (predicateRangeDependent && !buildRangeIdentity.equals(currentRangeIdentity)) {
 			throw new IllegalStateException("detached refresh predicate-range evidence changed during packed planning");
@@ -271,13 +317,52 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				preserveObservationOrder, runtimeTelemetry, queryEvaluationMode, mode, predicateRangeVersion,
 				currentRangeIdentity, predicateRangeProofsAllowed, assumptions, buildRevisions.dataRevision(),
 				experimentalQueryOptimizations, filterReadIdentity, inputIdentity, readPlaneMask);
-		return new LmdbPlanDecisionCache.RefreshComputation(buildEvidence, currentEvidence, executable,
+		// Checked after the last planning work (installation, ORDER BY and LIMIT finalization included). Refresh is
+		// advisory: the serving champion stays, and the failure never reaches a query.
+		if (LmdbPlanningWallClockCuts.count() != planningMark) {
+			throw new IllegalStateException("detached plan refresh planning was cut by a wall-clock limit");
+		}
+		// B3 for the refresh's own publication check: a move in learned state alone during the refresh is no move when
+		// the refresh's own log replays identical against the end capture; it is then published as planned there.
+		LmdbPlanningReadLog.Log log = readLog == null ? null : LmdbPlanningReadLog.slice(readLog);
+		LmdbPlanDecisionCache.EvidenceSnapshot publishedEvidence = buildEvidence;
+		if (log != null && !buildEvidence.equals(currentEvidence) && rescued(log, buildRevision,
+				new LmdbPipelinePlanCache.Revision(currentRevisions, runtime.predicateRangeVersion(),
+						runtime.adaptiveEvidenceAllowed()))) {
+			publishedEvidence = currentEvidence;
+		}
+		return new LmdbPlanDecisionCache.RefreshComputation(publishedEvidence, currentEvidence, executable,
 				summary.physicalFingerprint(), selectedInterval, incumbentInterval,
-				LmdbPipelinePlanCache.certificate(summary, buildEvidence.globalEpoch()),
-				LmdbPlanDecisionCache.PlanStabilityEnvelope.exact(buildEvidence), planBytes, 1L, true,
+				LmdbPipelinePlanCache.certificate(summary, publishedEvidence.globalEpoch()),
+				LmdbPlanDecisionCache.PlanStabilityEnvelope.exact(publishedEvidence), planBytes, 1L, true,
 				0L, predicateRangeDependent ? currentRangeIdentity : null, predicateRangeDependent,
 				committedSnapshotDependent ? buildRevisions.dataRevision() : 0L, committedSnapshotDependent,
 				nextRefresh);
+	}
+
+	/**
+	 * B3 for the refresh's own publication: whether its log replays identical at its end capture. A replay that fails
+	 * is counted as a failed replay and the refresh keeps its build evidence, as without the check (F6).
+	 */
+	private boolean rescued(LmdbPlanningReadLog.Log log, LmdbPipelinePlanCache.Revision start,
+			LmdbPipelinePlanCache.Revision end) {
+		try {
+			return LmdbPlanCacheRevalidation.publishableUnder(
+					new LmdbPlanCacheRevalidation.RuntimeValidator(runtime, null), log, start, end);
+		} catch (RuntimeException replayFailure) {
+			LmdbPipelinePlanCache cache = runtime.frontierSettings().pipelinePlanCache();
+			if (cache != null) {
+				cache.revalidationCounters().replayed(null);
+			}
+			return false;
+		}
+	}
+
+	/** Test seam: installs the hook a refresh runs after its planning, before its end capture; returns the previous. */
+	static Runnable setAfterPlanningForTest(Runnable hook) {
+		Runnable previous = afterPlanningForTest;
+		afterPlanningForTest = hook == null ? NO_HOOK : hook;
+		return previous;
 	}
 
 	@Override

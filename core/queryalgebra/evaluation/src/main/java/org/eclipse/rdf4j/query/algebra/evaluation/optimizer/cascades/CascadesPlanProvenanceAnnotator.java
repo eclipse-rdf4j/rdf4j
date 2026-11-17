@@ -86,7 +86,7 @@ public final class CascadesPlanProvenanceAnnotator {
 	private static void annotateRoot(QueryModelNode node, PlanProvenance provenance, String plannerIdOverride) {
 		annotateIdentity(node, provenance, plannerIdOverride);
 		EstimateSnapshot estimate = provenance.estimate();
-		CostVector cost = provenance.cost();
+		CostVector cost = provenance.price().orElse(null);
 		boolean originatingCostEvent = hasOriginatingCostEvent(node);
 		for (Map.Entry<String, String> entry : estimate.stringMetrics().entrySet()) {
 			if (!isExactJoinSurfaceMetric(entry.getKey())) {
@@ -108,14 +108,20 @@ public final class CascadesPlanProvenanceAnnotator {
 		}
 		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID,
 				provenance.ruleId() + ":g" + provenance.memoGroupId() + ":e" + provenance.expressionId());
-		double plannedRows = finiteOr(cost.rows(), estimate.rows());
-		double plannedWorkRows = finiteOr(cost.workRows(), estimate.workRows());
+		double plannedRows = cost == null ? estimate.rows() : finiteOr(cost.rows(), estimate.rows());
+		double plannedWorkRows = cost == null ? estimate.workRows() : finiteOr(cost.workRows(), estimate.workRows());
+		node.setStringMetricPlanned("optimizer.cascadesPriceAvailability", cost == null ? "UNAVAILABLE" : "AVAILABLE");
 		if (!originatingCostEvent) {
 			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plannedRows);
 			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
-			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS,
+					cost == null ? Double.NaN : cost.workRows());
 			node.setResultSizeEstimate(plannedRows);
 			node.setCostEstimate(plannedWorkRows);
+		}
+		if (cost == null) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, Double.NaN);
+			return;
 		}
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, cost.uncertaintyRows());

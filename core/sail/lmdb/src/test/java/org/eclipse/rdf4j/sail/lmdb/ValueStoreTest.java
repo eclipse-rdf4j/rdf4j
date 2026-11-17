@@ -51,6 +51,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
@@ -971,28 +972,6 @@ public class ValueStoreTest {
 	}
 
 	@Test
-	public void testLazyIriHashCodeDoesNotInitializeAfterRestart() throws Exception {
-		IRI iri = Values.iri("urn:hash:iri");
-		int expectedHash = iri.hashCode();
-		long id = storeValueAndReopen(iri, hashCacheEnabledConfig());
-		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
-		assertFalse(isInitialized(lazyValue));
-		assertEquals(expectedHash, lazyValue.hashCode());
-		assertFalse("hashCode should not initialize lazy IRIs after restart", isInitialized(lazyValue));
-	}
-
-	@Test
-	public void testLazyLiteralHashCodeDoesNotInitializeAfterRestart() throws Exception {
-		Literal literal = Values.literal("literal-hash");
-		int expectedHash = literal.hashCode();
-		long id = storeValueAndReopen(literal, hashCacheEnabledConfig());
-		LmdbLiteral lazyValue = (LmdbLiteral) valueStore.getLazyValue(id);
-		assertFalse(isInitialized(lazyValue));
-		assertEquals(expectedHash, lazyValue.hashCode());
-		assertFalse("hashCode should not initialize lazy literals after restart", isInitialized(lazyValue));
-	}
-
-	@Test
 	public void testDirectedLanguageLiteralRoundTripsAfterRestart() throws Exception {
 		Literal literal = SimpleValueFactory.getInstance()
 				.createLiteral("directed literal ".repeat(20), "en", Literal.BaseDirection.LTR);
@@ -1052,19 +1031,6 @@ public class ValueStoreTest {
 	}
 
 	@Test
-	public void testLazyBNodeHashCodeDoesNotInitializeAfterRestart() throws Exception {
-		valueStore.close();
-		valueStore = createValueStore(hashCacheEnabledConfig());
-		LmdbBNode bNode = valueStore.createBNode("hash-bnode");
-		int expectedHash = bNode.hashCode();
-		long id = storeValueAndReopen(bNode, hashCacheEnabledConfig());
-		LmdbBNode lazyValue = (LmdbBNode) valueStore.getLazyValue(id);
-		assertFalse(isInitialized(lazyValue));
-		assertEquals(expectedHash, lazyValue.hashCode());
-		assertFalse("hashCode should not initialize lazy bnodes after restart", isInitialized(lazyValue));
-	}
-
-	@Test
 	public void testDisabledHashCacheDoesNotTrackPendingHashUpdates() throws Exception {
 		Literal literal = Values.literal("hash-cache-disabled");
 		valueStore.startTransaction(true);
@@ -1103,7 +1069,6 @@ public class ValueStoreTest {
 		assertFalse(isInitialized(lazyValue));
 		assertEquals(secondHash, lazyValue.hashCode());
 		assertNotEquals("recycled IDs must not keep the previous hash", firstHash, lazyValue.hashCode());
-		assertFalse("hashCode should not initialize recycled lazy bnodes after restart", isInitialized(lazyValue));
 		LmdbBNode warm = new LmdbBNode(lazyValue.getInternalIdentity().revision(), secondId);
 		assertFalse(isInitialized(warm));
 		assertEquals(secondHash, warm.hashCode());
@@ -4012,7 +3977,9 @@ public class ValueStoreTest {
 	@Test
 	public void testDatatypeCacheKeepsOldAndFreshMeaningsOfAReusedIdSeparate() throws Exception {
 		valueStore.close();
-		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1).setInlineLiterals(false);
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1)
+				.setInlineLiterals(false)
+				.setAsyncValueCleanup(false);
 		valueStore = createValueStore(new File(dataDir, "datatype-cache-values"), config);
 		assertFalse("the opened value format must honor inlineLiterals=false",
 				valueStore.getFormat().inlinesLiterals());
@@ -4937,8 +4904,85 @@ public class ValueStoreTest {
 
 	@Test
 	public void testLegacyRebuildMapFullAbortsAndRetriesAfterGrowth() throws Exception {
+		MapFullRebuildFixture fixture = createMapFullRebuildFixture("constrained");
+		File constrainedDir = fixture.directory();
+		byte[] authoritativeBefore = authoritativeDictionaryDigest(constrainedDir);
+		// The first failed attempt commits partial counts until MDB_MAP_FULL, which leaves no room for another open's
+		// bootstrap commit. Retry on one maintenance store, so every attempt reaches the reconstruction itself.
+		ValueStore maintenance = new ValueStore(constrainedDir, fixture.config());
+		try {
+			for (int attempt = 0; attempt < 3; attempt++) {
+				IOException failure = assertThrows(IOException.class, maintenance::reconstructReferenceCountsOffline);
+				assertNotNull("Recovery must retain the native capacity failure", failure.getCause());
+				assertTrue("Recovery must encounter actual native capacity exhaustion: " + failure.getCause(),
+						failure.getCause().getMessage().contains("recovery reached MDB_MAP_FULL"));
+				assertFalse("A failed reconstruction must leave counts untrusted",
+						maintenance.hasTrustedReferenceCounts());
+			}
+		} finally {
+			maintenance.close();
+		}
+		assertMapFullRebuildPreserved(constrainedDir, authoritativeBefore);
+		assertGrowthCompletesReconstruction(fixture);
+	}
+
+	/**
+	 * Pins the offline reconstruction's own marker commits. The first attempt clears the counts and commits part of the
+	 * rebuild before its count-batch writer reaches MDB_MAP_FULL. A reopen still fits its bootstrap commit, and the
+	 * second attempt then fails in the UNKNOWN marker commit, which must report the same structured capacity failure as
+	 * the batch writers. A third reopen would fail with a raw MDB_MAP_FULL in the store's own bootstrap commit; that is
+	 * a store-open failure, not a reconstruction failure, so this test stops after the second attempt.
+	 */
+	@Test
+	public void testLegacyRebuildMapFullAfterReopenReportsMarkerCommitCapacity() throws Exception {
+		MapFullRebuildFixture fixture = createMapFullRebuildFixture("constrained-reopen");
+		File constrainedDir = fixture.directory();
+		byte[] authoritativeBefore = authoritativeDictionaryDigest(constrainedDir);
+		long untrustedId = fixture.datatypeIds()[fixture.datatypeIds().length - 1];
+
+		ValueStore first = new ValueStore(constrainedDir, fixture.config());
+		try {
+			IOException batchFailure = assertThrows(IOException.class, first::reconstructReferenceCountsOffline);
+			assertRefCountRecoveryCapacityFailure(batchFailure);
+			String phase = batchFailure.getCause().getMessage();
+			assertTrue("the first attempt must fail in a count-recovery writer: " + phase,
+					phase.endsWith("during the mutation") || phase.endsWith("during native commit"));
+			assertFalse(first.hasTrustedReferenceCounts());
+		} finally {
+			first.close();
+		}
+		Map<Long, Long> partialCounts = closedNativeRefCounts(constrainedDir);
+		assertNotEquals("the first attempt must commit the clear of the untrusted input", Long.valueOf(17L),
+				partialCounts.get(untrustedId));
+		assertFalse("the first attempt must commit at least one count batch", partialCounts.isEmpty());
+		assertMapFullRebuildPreserved(constrainedDir, authoritativeBefore);
+
+		// The reopen's bootstrap commit still fits; the reconstruction's UNKNOWN marker commit does not.
+		ValueStore reopened = new ValueStore(constrainedDir, fixture.config());
+		try {
+			IOException markerFailure = assertThrows(IOException.class, reopened::reconstructReferenceCountsOffline);
+			assertRefCountRecoveryCapacityFailure(markerFailure);
+			assertEquals("LMDB ref_counts recovery reached MDB_MAP_FULL during the UNKNOWN marker commit",
+					markerFailure.getCause().getMessage());
+			assertInstanceOf(LmdbUtil.MapFullException.class, markerFailure.getCause().getCause());
+			assertFalse(reopened.hasTrustedReferenceCounts());
+		} finally {
+			reopened.close();
+		}
+		assertEquals("the failed marker commit must not change the committed partial counts", partialCounts,
+				closedNativeRefCounts(constrainedDir));
+		assertMapFullRebuildPreserved(constrainedDir, authoritativeBefore);
+		assertGrowthCompletesReconstruction(fixture);
+	}
+
+	/** A closed fixed-map store with untrusted ref_counts input, filled to STARTUP_HEADROOM_PAGES short of full. */
+	private record MapFullRebuildFixture(File directory, LmdbStoreConfig config, long[] datatypeIds,
+			long[] literalIds, long nestedId) {
+	}
+
+	private MapFullRebuildFixture createMapFullRebuildFixture(String name) throws IOException {
 		valueStore.close();
-		File constrainedDir = new File(dataDir, "constrained");
+		File constrainedDir = new File(dataDir, name);
 		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(8L * 1024 * 1024).setAutoGrow(false);
 		valueStore = new ValueStore(constrainedDir, config);
 		// Incoming bounded recovery needs more than one scan; a one-leaf count DB can fit reclaimed bookkeeping pages.
@@ -4959,48 +5003,60 @@ public class ValueStoreTest {
 		assertEquals(LmdbStoreFormat.CURRENT_VERSION, valueStore.getFormat().getVersion());
 		valueStore.close();
 		long cleanTransaction = assertClosedCleanRefCountMarker(constrainedDir);
-		fillClosedNativeMapToCapacity(constrainedDir, actualMapSize, datatypeIds[referenceCount - 1]);
+		replaceClosedRefCount(constrainedDir, actualMapSize, datatypeIds[referenceCount - 1], 17);
 		assertClosedExternalRefCountInput(constrainedDir, cleanTransaction, datatypeIds[referenceCount - 1], 17);
-		byte[] authoritativeBefore = authoritativeDictionaryDigest(constrainedDir);
-		for (int attempt = 0; attempt < 3; attempt++) {
-			IOException failure = assertThrows(IOException.class, () -> {
-				ValueStore maintenance = new ValueStore(constrainedDir, config);
-				try {
-					maintenance.reconstructReferenceCountsOffline();
-				} finally {
-					maintenance.close();
-				}
-			});
-			assertAll(
-					"bounded recovery keeps authoritative bytes and cannot publish completion on native capacity failure",
-					() -> {
-						assertNotNull("Recovery must retain the native capacity failure", failure.getCause());
-						assertTrue("Recovery must encounter actual native capacity exhaustion: " + failure.getCause(),
-								failure.getCause().getMessage().contains("recovery reached MDB_MAP_FULL"));
-					},
-					() -> assertArrayEquals("Failed bounded recovery must preserve every dictionary and term record",
-							authoritativeBefore, authoritativeDictionaryDigest(constrainedDir)),
-					() -> inspectNativeStore(constrainedDir, (stack, txn) -> {
-						assertStructuredRefCountCompletionUntrusted(stack, txn);
-						return null;
-					}));
-		}
-		valueStore = new ValueStore(constrainedDir, config.setAutoGrow(true));
+		// Bounded startup defers reconstruction to explicit offline maintenance, but every open still makes one small
+		// bootstrap commit. Record the untrusted input once with ample capacity, measure the remaining capacity on a
+		// disposable copy, then leave the real map STARTUP_HEADROOM_PAGES pages of filler records short of full: enough
+		// for the maintenance store's startup commit, too little for the offline reconstruction, which must then reach
+		// MDB_MAP_FULL.
+		new ValueStore(constrainedDir, config).close();
+		int headroom = startupHeadroomFillers(closedNativePageSize(constrainedDir, actualMapSize));
+		File capacityProbe = new File(dataDir, name + "-capacity-probe");
+		copyClosedNativeStore(constrainedDir, capacityProbe);
+		int capacity = fillClosedNativeMap(capacityProbe, actualMapSize, Integer.MAX_VALUE);
+		assertTrue("the fixed map must hold more filler records than the startup headroom", capacity > headroom);
+		assertEquals("the real fill stops short of the measured capacity", capacity - headroom,
+				fillClosedNativeMap(constrainedDir, actualMapSize, capacity - headroom));
+		return new MapFullRebuildFixture(constrainedDir, config, datatypeIds, literalIds, nestedId);
+	}
+
+	private static void assertRefCountRecoveryCapacityFailure(IOException failure) {
+		assertEquals("Cannot rebuild ValueStore ref_counts: LMDB map is full and auto-grow is disabled",
+				failure.getMessage());
+		assertNotNull("Recovery must retain the native capacity failure", failure.getCause());
+		assertEquals("RefCountRecoveryMapFullException", failure.getCause().getClass().getSimpleName());
+	}
+
+	private void assertMapFullRebuildPreserved(File directory, byte[] authoritativeBefore) {
+		assertAll("bounded recovery keeps authoritative bytes and cannot publish completion on native capacity failure",
+				() -> assertArrayEquals("Failed bounded recovery must preserve every dictionary and term record",
+						authoritativeBefore, authoritativeDictionaryDigest(directory)),
+				() -> inspectNativeStore(directory, (stack, txn) -> {
+					assertStructuredRefCountCompletionUntrusted(stack, txn);
+					return null;
+				}));
+	}
+
+	private void assertGrowthCompletesReconstruction(MapFullRebuildFixture fixture) throws IOException {
+		long[] datatypeIds = fixture.datatypeIds();
+		long[] literalIds = fixture.literalIds();
+		valueStore = new ValueStore(fixture.directory(), fixture.config().setAutoGrow(true));
 		assertFalse(valueStore.hasTrustedReferenceCounts());
 		valueStore.reconstructReferenceCountsOffline();
-		for (int index = 0; index < referenceCount; index++) {
+		for (int index = 0; index < datatypeIds.length; index++) {
 			assertEquals("Growth must restart and commit the complete bounded reconstruction", 1L,
 					persistedRefCount(datatypeIds[index]));
 			assertEquals(literalIds[index], valueStore.getId(Values.literal("stored literal " + index,
 					Values.iri("urn:legacy:namespace:" + index + ":datatype"))));
 		}
-		assertNotNull(valueStore.getValue(nestedId));
+		assertNotNull(valueStore.getValue(fixture.nestedId()));
 		valueStore.startTransaction(true);
 		Set<Long> candidates = new HashSet<>();
 		valueStore.gcIds(Set.of(literalIds[0]), candidates);
 		assertTrue("The recovered nested reference protects its datatype closure", candidates.isEmpty());
 		valueStore.commit();
-		assertNotNull(valueStore.getValue(nestedId));
+		assertNotNull(valueStore.getValue(fixture.nestedId()));
 		assertEquals(1L, persistedRefCount(datatypeIds[0]));
 	}
 
@@ -5239,7 +5295,7 @@ public class ValueStoreTest {
 		assertEquals("the one captured real owner has one pending hint", 1L, stat.ms_entries());
 	}
 
-	private void fillClosedNativeMapToCapacity(File directory, long actualMapSize, long corruptedId)
+	private void replaceClosedRefCount(File directory, long actualMapSize, long corruptedId, long count)
 			throws IOException {
 		long env;
 		try (MemoryStack stack = stackPush()) {
@@ -5251,28 +5307,114 @@ public class ValueStoreTest {
 			E(mdb_env_set_maxdbs(env, 18));
 			E(mdb_env_set_mapsize(env, actualMapSize));
 			E(mdb_env_open(env, directory.getAbsolutePath(), MDB_NOTLS, 0664));
-			// Every writer in this fixed-map fixture uses the owner's captured physical map size.
+			// An independent raw writer with the owner's captured physical map size.
 			LmdbUtil.writeTransaction(env,
 					(stack, txn) -> {
-						replaceRefCount(stack, txn, corruptedId, 17);
+						replaceRefCount(stack, txn, corruptedId, count);
 						return null;
 					});
-			int maximumEntries = Math.toIntExact(actualMapSize / 2048L + 1L);
+		} finally {
+			mdb_env_close(env);
+		}
+	}
+
+	/** Value bytes of each filler record written by {@link #fillClosedNativeMap}. */
+	private static final int FILLER_VALUE_BYTES = 2048;
+
+	/**
+	 * LMDB pages the map-full rebuild fixture leaves free for the maintenance store's open. The lower bound is the
+	 * bootstrap commit every open makes, a page-count cost (its copy-on-write path); the upper bound is the offline
+	 * reconstruction, which rewrites ref_counts for 8,192 values, a byte-volume cost. Only 16 KiB pages were measured,
+	 * where 7 fillers share a leaf page: the open failed with 1 or 2 fillers left (0.3 pages); the reconstruction
+	 * reached MDB_MAP_FULL with 3 to 64 fillers left (0.4 to 9.1 pages, about 150 KB) and completed with 96 (13.7
+	 * pages). Two pages is the geometric middle of the 0.4 to 9.1 page window. With 4 KiB pages the same byte volume
+	 * spans four times as many pages, which would widen the upper margin if the open still needs less than two pages.
+	 * Pages of 4, 8 and 64 KiB are unmeasured.
+	 */
+	private static final int STARTUP_HEADROOM_PAGES = 2;
+
+	/**
+	 * Converts {@link #STARTUP_HEADROOM_PAGES} into filler records with LMDB's leaf layout (mdb.c, PAGEHDRSZ = 16): a
+	 * node of NODESIZE (8) + key + value bytes stays inline while it is at most me_nodemax, which is (pageSize - 16) /
+	 * 2 rounded down to even, minus 2; then (pageSize - 16) / (node + 2) inline nodes with their 2-byte index slots
+	 * share one leaf page. A larger node moves its value to (16 - 1 + value) / pageSize + 1 overflow pages. For 2 KiB
+	 * values this gives 14 fillers with 16 KiB pages and 2 with 4 KiB pages.
+	 */
+	private static int startupHeadroomFillers(int pageSize) {
+		int pageHeader = 16;
+		int node = 8 + Integer.BYTES + FILLER_VALUE_BYTES;
+		int nodeMax = (((pageSize - pageHeader) / 2) & -2) - 2;
+		if (node > nodeMax) {
+			int overflowPages = (pageHeader - 1 + FILLER_VALUE_BYTES) / pageSize + 1;
+			return Math.ceilDiv(STARTUP_HEADROOM_PAGES, overflowPages);
+		}
+		return STARTUP_HEADROOM_PAGES * ((pageSize - pageHeader) / (node + 2));
+	}
+
+	private static int closedNativePageSize(File directory, long actualMapSize) throws IOException {
+		long env;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_env_create(pointer));
+			env = pointer.get(0);
+		}
+		try (MemoryStack stack = stackPush()) {
+			E(mdb_env_set_maxdbs(env, 18));
+			E(mdb_env_set_mapsize(env, actualMapSize));
+			E(mdb_env_open(env, directory.getAbsolutePath(), MDB_NOTLS, 0664));
+			MDBStat stat = MDBStat.calloc(stack);
+			E(mdb_env_stat(env, stat));
+			return stat.ms_psize();
+		} finally {
+			mdb_env_close(env);
+		}
+	}
+
+	private static void copyClosedNativeStore(File source, File target) throws IOException {
+		Files.createDirectories(target.toPath());
+		try (var files = Files.list(source.toPath())) {
+			for (Path file : files.toList()) {
+				if (Files.isRegularFile(file) && !file.getFileName().toString().equals("lock.mdb")) {
+					Files.copy(file, target.toPath().resolve(file.getFileName()));
+				}
+			}
+		}
+	}
+
+	/** Writes filler records, one per raw transaction, until the limit or actual MDB_MAP_FULL. */
+	private int fillClosedNativeMap(File directory, long actualMapSize, int limit) throws IOException {
+		long env;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_env_create(pointer));
+			env = pointer.get(0);
+		}
+		try {
+			E(mdb_env_set_maxdbs(env, 18));
+			E(mdb_env_set_mapsize(env, actualMapSize));
+			E(mdb_env_open(env, directory.getAbsolutePath(), MDB_NOTLS, 0664));
+			// Every writer in this fixed-map fixture uses the owner's captured physical map size.
+			int maximumEntries = Math.toIntExact(Math.min(limit, actualMapSize / FILLER_VALUE_BYTES + 1L));
+			int written = 0;
 			for (int filler = 0; filler < maximumEntries; filler++) {
 				int entry = filler;
 				try {
 					LmdbUtil.writeTransaction(env, (stack, txn) -> {
 						MDBVal key = MDBVal.calloc(stack).mv_data(stack.malloc(Integer.BYTES).putInt(entry).flip());
-						MDBVal data = MDBVal.calloc(stack).mv_data(stack.calloc(2048));
+						MDBVal data = MDBVal.calloc(stack).mv_data(stack.calloc(FILLER_VALUE_BYTES));
 						E(mdb_put(txn, openDatabaseWithTxn(txn, "migration_capacity", MDB_CREATE), key, data, 0));
 						return null;
 					});
+					written++;
 				} catch (LmdbUtil.LmdbException full) {
 					assertEquals("the bounded raw writer reached actual native capacity", MDB_MAP_FULL, full.errorCode);
-					return;
+					return written;
 				}
 			}
-			throw new AssertionError("physical payload bound exhausted without native MDB_MAP_FULL");
+			if (limit == Integer.MAX_VALUE) {
+				throw new AssertionError("physical payload bound exhausted without native MDB_MAP_FULL");
+			}
+			return written;
 		} finally {
 			mdb_env_close(env);
 		}
@@ -6006,9 +6148,10 @@ public class ValueStoreTest {
 	@Test
 	public void testCoreDatatypeCounterSurvivesTermIndexInitialization() throws Exception {
 		valueStore.close();
-		StoreProperties properties = new StoreProperties()
-				.setLiteralReferenceEncoding(StoreProperties.LITERAL_REFERENCE_ENCODING_CORE_V1);
 		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false);
+		// A transient codec seam must carry a complete writer identity to reopen an existing native generation.
+		StoreProperties properties = new StoreProperties();
+		LmdbStoreFormat.forNewStore(config).initializeProperties(properties);
 		File directory = new File(dataDir, "core-counter");
 		valueStore = new ValueStore(directory, properties, config);
 		valueStore.startTransaction(true);

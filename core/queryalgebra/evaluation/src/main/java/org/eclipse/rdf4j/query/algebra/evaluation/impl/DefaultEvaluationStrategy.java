@@ -1028,7 +1028,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		RuntimeFeedbackCountingIterator preboundFeedbackIterator = runtimeFeedbackTarget.active()
 				&& !resultTelemetryEnabled && !runtimeTelemetryEnabled
 						? new RuntimeFeedbackCountingIterator(runtimeFeedbackTarget,
-								publishRuntimeFeedback ? compilation : null)
+								publishRuntimeFeedback ? compilation : null, publishRuntimeFeedback)
 						: null;
 		if (preboundFeedbackIterator != null) {
 			return qes -> bindings -> {
@@ -2287,22 +2287,41 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 	}
 
+	/**
+	 * An end of stream reported after the reporting root wrapper recorded a cooperative cancellation request, or while
+	 * the evaluating thread is interrupted (a {@code LookAheadIteration} answers an interrupted thread with
+	 * {@code hasNext() == false}), is a cut, never an exhaustion. Only the outermost feedback wrapper of an evaluation
+	 * records requests; a counting wrapper below it never has one and classifies by the interrupt alone. Consulted once
+	 * per end of stream, never per row; the interrupt flag is only read, never cleared.
+	 */
+	private static boolean cutObservedAtEndOfStream(boolean cancellationRequested) {
+		return cancellationRequested || Thread.currentThread().isInterrupted();
+	}
+
 	/** Ordinary learned feedback path: direct primitive counters only, with no query-node access after precompile. */
 	private static final class RuntimeFeedbackCountingIterator
-			implements CloseableIteration<BindingSet>, IndexReportingIterator, FeedbackWorkReportingIterator {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator, FeedbackWorkReportingIterator,
+			CooperativeCancellation {
 		private CloseableIteration<BindingSet> iterator;
 		private final RuntimeFeedbackTarget target;
 		private final RuntimeFeedbackCompilation compilation;
+		/*
+		 * True only for the wrapper of a compilation root, which is then the outermost feedback wrapper of the
+		 * evaluation and plays the feedback root's part for cancellation requests.
+		 */
+		private final boolean outermost;
 		private long rowsProduced;
 		private boolean sawTerminalFalse;
 		private boolean cancelled;
 		private boolean failed;
 		private boolean active;
+		private volatile boolean cancellationRequested;
 
 		private RuntimeFeedbackCountingIterator(RuntimeFeedbackTarget target,
-				RuntimeFeedbackCompilation compilation) {
+				RuntimeFeedbackCompilation compilation, boolean outermost) {
 			this.target = target;
 			this.compilation = compilation;
+			this.outermost = outermost;
 		}
 
 		private RuntimeFeedbackCountingIterator bind(CloseableIteration<BindingSet> iterator, BindingSet bindings) {
@@ -2314,9 +2333,27 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			sawTerminalFalse = false;
 			cancelled = false;
 			failed = false;
+			if (outermost) {
+				// Only the outermost wrapper ever records a request; an inner wrapper is re-opened per outer row and
+				// must not pay a volatile write per open.
+				cancellationRequested = false;
+			}
 			active = true;
 			target.open(bindings);
 			return this;
+		}
+
+		/*
+		 * As the feedback root: the outermost wrapper records the request so that the end of stream it causes publishes
+		 * as a cut, and declines delivery. A wrapper below it records nothing, so a re-invocable inner wrapper never
+		 * carries a request into a later open. Neither forwards: delivery stays exactly as before.
+		 */
+		@Override
+		public boolean requestCancellation() {
+			if (outermost && active) {
+				cancellationRequested = true;
+			}
+			return false;
 		}
 
 		@Override
@@ -2327,7 +2364,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			try {
 				boolean present = iterator.hasNext();
 				if (!present) {
-					sawTerminalFalse = true;
+					if (cutObservedAtEndOfStream(cancellationRequested)) {
+						cancelled = true;
+					} else {
+						sawTerminalFalse = true;
+					}
 					close();
 				}
 				return present;
@@ -3248,12 +3289,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 	}
 
-	private static final class RuntimeFeedbackRootIterator implements CloseableIteration<BindingSet> {
+	private static final class RuntimeFeedbackRootIterator
+			implements CloseableIteration<BindingSet>, CooperativeCancellation {
 		private final RuntimeFeedbackCompilation compilation;
 		private CloseableIteration<BindingSet> delegate;
 		private boolean exhausted;
 		private boolean failed;
 		private boolean active;
+		private volatile boolean cancellationRequested;
 
 		private RuntimeFeedbackRootIterator(RuntimeFeedbackCompilation compilation) {
 			this.compilation = compilation;
@@ -3266,8 +3309,22 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			this.delegate = Objects.requireNonNull(delegate);
 			exhausted = false;
 			failed = false;
+			cancellationRequested = false;
 			active = true;
 			return this;
+		}
+
+		/*
+		 * Records the request so that the end of stream it causes publishes as a cut, and declines delivery: the
+		 * operators below never receive it, exactly as before this wrapper recorded requests, and the caller's own
+		 * escalation (a time limit interrupts and then closes) runs whatever this returns.
+		 */
+		@Override
+		public boolean requestCancellation() {
+			if (active) {
+				cancellationRequested = true;
+			}
+			return false;
 		}
 
 		@Override
@@ -3282,7 +3339,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			try {
 				boolean present = delegate.hasNext();
 				if (!present) {
-					exhausted = true;
+					exhausted = !cutObservedAtEndOfStream(cancellationRequested);
 					close();
 				}
 				return present;
@@ -3304,7 +3361,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			try {
 				return delegate.next();
 			} catch (NoSuchElementException exhaustedIteration) {
-				exhausted = true;
+				exhausted = !cutObservedAtEndOfStream(cancellationRequested);
 				close();
 				throw exhaustedIteration;
 			} catch (Throwable failure) {
@@ -3361,6 +3418,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		long rowsProduced;
 		boolean cancelled;
 		boolean failed;
+		volatile boolean cancellationRequested;
 		long sourceRowsBaseline = -1L;
 		long randomSeeksBaseline = -1L;
 		long expressionEvaluationsBaseline = -1L;
@@ -3436,10 +3494,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			long started = telemetry.startHasNext();
 			try {
 				hasNext = iterator.hasNext();
-				if (!hasNext) {
-					sawTerminalFalse = true;
-					if (costFeedbackTracking) {
-						exhausted = true;
+				if (!hasNext && !sawTerminalFalse && !cancelled) {
+					if (cutObservedAtEndOfStream(cancellationRequested)) {
+						cancelled = true;
+						telemetry.cancelled();
+					} else {
+						sawTerminalFalse = true;
+						if (costFeedbackTracking) {
+							exhausted = true;
+						}
 					}
 				}
 				return hasNext;
@@ -3548,6 +3611,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					throw closeFailure;
 				}
 			}
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			if (!isClosed()) {
+				cancellationRequested = true;
+			}
+			return super.requestCancellation();
 		}
 
 		/*
@@ -3682,6 +3753,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		private boolean exhausted;
 		private boolean failed;
 		private boolean cancelled;
+		private volatile boolean cancellationRequested;
 
 		public TimedIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
@@ -3731,14 +3803,28 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
+		/*
+		 * IterationWrapper.hasNext closes, and so publishes, at the end of stream before an override could classify it.
+		 * This keeps its semantics (closed or interrupted answers false; an end of stream closes) but classifies the
+		 * end of stream first, as ResultSizeCountingIterator does.
+		 */
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
 			boolean hasNext = false;
 			long started = telemetry.startHasNext();
 			try {
-				hasNext = super.hasNext();
+				if (isClosed()) {
+					return false;
+				}
+				hasNext = !Thread.currentThread().isInterrupted() && iterator.hasNext();
 				if (!hasNext) {
-					exhausted = true;
+					if (cutObservedAtEndOfStream(cancellationRequested)) {
+						cancelled = true;
+						telemetry.cancelled();
+					} else {
+						exhausted = true;
+					}
+					close();
 				}
 				return hasNext;
 			} catch (Throwable failure) {
@@ -3768,6 +3854,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			} finally {
 				super.handleClose();
 			}
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			if (!isClosed()) {
+				cancellationRequested = true;
+			}
+			return super.requestCancellation();
 		}
 
 		private void markFailure(Throwable failure) {

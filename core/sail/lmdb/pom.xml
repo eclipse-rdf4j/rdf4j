@@ -763,7 +763,7 @@
 							</includes>
 							<failIfNoTests>false</failIfNoTests>
 							<reportNameSuffix>vector</reportNameSuffix>
-							<argLine>@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true ${rdf4j.test.tmpdirArgLine} --add-modules jdk.incubator.vector</argLine>
+							<argLine>@{argLine} ${mockito.javaagent} -Xmx8G -Djava.awt.headless=true ${rdf4j.test.tmpdirArgLine} --add-modules jdk.incubator.vector</argLine>
 							<systemPropertyVariables>
 								<rdf4j.frontier.vector.enabled>true</rdf4j.frontier.vector.enabled>
 								<rdf4j.frontier.vector.required>true</rdf4j.frontier.vector.required>

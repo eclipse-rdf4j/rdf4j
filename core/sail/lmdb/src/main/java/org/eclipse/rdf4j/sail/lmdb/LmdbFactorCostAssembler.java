@@ -279,22 +279,17 @@ final class LmdbFactorCostAssembler {
 		if (tripleStore == null) {
 			return AccessPathSelection.none(lookupMask);
 		}
-		List<TripleStore.IndexAccessPath> candidates = tripleStore.indexAccessPaths(lookupMask);
-		TripleStore.IndexAccessPath best = null;
-		for (TripleStore.IndexAccessPath candidate : candidates) {
-			if (best == null || candidate.prefixLength() > best.prefixLength()) {
-				best = candidate;
-			}
-		}
+		TripleStore.IndexAccessPath best = tripleStore.preferredIndexAccessPath(lookupMask);
 		if (best == null) {
 			return AccessPathSelection.none(lookupMask);
 		}
-		int covered = lookupMask & best.prefixComponentMask();
-		int missing = lookupMask & ~best.prefixComponentMask();
+		long features = LmdbIndexAccessFeatures.of(lookupMask, best.prefixComponentMask());
+		int covered = LmdbIndexAccessFeatures.coveredMask(features);
+		int missing = LmdbIndexAccessFeatures.residualMask(features);
 		String accessMode = TripleStore.physicalAccessMode(lookupMask, best.prefixComponentMask(), best.prefixLength());
 		boolean direct = "directLookup".equals(accessMode);
 		return new AccessPathSelection(best.indexFieldSequence(), best.prefixLength(), covered, missing, direct,
-				candidates.size(), accessMode);
+				best.candidateCount(), accessMode);
 	}
 
 	private static StatementPattern accessPattern(TupleExpr expression) {

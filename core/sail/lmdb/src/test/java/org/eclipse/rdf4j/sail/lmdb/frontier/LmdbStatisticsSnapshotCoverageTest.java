@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.frontier;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -134,6 +135,82 @@ class LmdbStatisticsSnapshotCoverageTest {
 		assertEquals(FrontierFallbackReason.NONE, service.estimateLeaf(5L, predicateProbe()).fallbackReason());
 	}
 
+	// A publication's own acknowledgement commits right after the generation's covered epoch and changes no statement;
+	// the generation describes the snapshot it produced, and nothing the planner keys on moves.
+	@Test
+	void metadataOnlyCommitRightAfterTheCoveredEpochIsDescribedWithoutMovingTheGeneration() throws Exception {
+		service = openService();
+		service.publish(generation(1L, 5L));
+		service.recordStoreCommit(5L, 5L, System.currentTimeMillis());
+		FrontierStatisticsStatus before = service.status();
+		assertTrue(service.describesSnapshot(5L, 5L), "a generation describes its own snapshot");
+		assertFalse(service.describesSnapshot(6L, 5L), "before it is recorded, epoch 6 could be a statement commit");
+
+		assertTrue(service.recordMetadataOnlyCommit(6L, 5L));
+		assertTrue(service.describesSnapshot(6L, 5L), "the recorded metadata-only commit 6 changed nothing described");
+		assertFalse(service.describesSnapshot(7L, 5L), "commit 7 is unknown");
+		assertTrue(service.recordMetadataOnlyCommit(7L, 5L));
+		assertTrue(service.describesSnapshot(7L, 5L), "an unbroken chain of metadata-only commits stays described");
+		assertFalse(service.describesSnapshot(7L, 6L), "a different journal sequence is never described");
+		assertFalse(service.describesSnapshot(4L, 5L), "an older snapshot is not the generation's snapshot");
+
+		FrontierStatisticsStatus after = service.status();
+		assertEquals(before.generationId(), after.generationId());
+		assertEquals(before.coveredEpoch(), after.coveredEpoch(),
+				"the covered epoch feeds the Frontier planning revision and must not move");
+		assertEquals(before.coveredSequence(), after.coveredSequence());
+		assertEquals(before.availability(), after.availability());
+		assertEquals(before.fallbackReason(), after.fallbackReason());
+	}
+
+	// The journal sequence alone does not prove that a commit left the statements alone (an initial run import writes
+	// statements without advancing it); only the recorded metadata-only commits themselves do.
+	@Test
+	void anInterleavedCommitBreaksTheMetadataOnlyChain() throws Exception {
+		service = openService();
+		service.publish(generation(1L, 5L));
+		service.recordStoreCommit(5L, 5L, System.currentTimeMillis());
+		// Commit 6 is an ordinary store commit at the unchanged journal sequence; commit 7 is metadata-only.
+		service.recordStoreCommit(6L, 5L, System.currentTimeMillis());
+		assertTrue(service.recordMetadataOnlyCommit(7L, 5L));
+
+		assertFalse(service.describesSnapshot(6L, 5L));
+		assertFalse(service.describesSnapshot(7L, 5L),
+				"a metadata-only commit after an unproven commit does not make the generation describe it");
+		assertTrue(service.describesSnapshot(5L, 5L));
+	}
+
+	@Test
+	void aMetadataOnlyCommitAtAStaleSequenceIsRefused() throws Exception {
+		service = openService();
+		service.publish(generation(1L, 5L));
+		service.recordStoreCommit(5L, 5L, System.currentTimeMillis());
+		service.recordStoreCommit(6L, 6L, System.currentTimeMillis());
+
+		assertFalse(service.recordMetadataOnlyCommit(7L, 5L),
+				"an interleaved statement coordinate must not be paired with the older sequence");
+		assertFalse(service.describesSnapshot(7L, 5L));
+		assertFalse(service.acquire(7L).ready(), "a refused commit does not advance the physical epoch either");
+		assertThrows(IllegalArgumentException.class, () -> service.recordMetadataOnlyCommit(-1L, 0L));
+		assertThrows(IllegalArgumentException.class, () -> service.recordMetadataOnlyCommit(0L, -1L));
+	}
+
+	@Test
+	void aNewGenerationStartsFromItsOwnCoveredEpoch() throws Exception {
+		service = openService();
+		service.publish(generation(1L, 5L));
+		service.recordStoreCommit(5L, 5L, System.currentTimeMillis());
+		assertTrue(service.recordMetadataOnlyCommit(6L, 5L));
+		service.recordStoreCommit(7L, 7L, System.currentTimeMillis());
+		service.publish(generation(7L, 1L, 7L));
+
+		assertFalse(service.describesSnapshot(6L, 5L), "the previous generation's snapshot is no longer published");
+		assertTrue(service.describesSnapshot(7L, 7L));
+		assertFalse(service.describesSnapshot(8L, 7L));
+		assertTrue(service.recordMetadataOnlyCommit(8L, 7L));
+		assertTrue(service.describesSnapshot(8L, 7L));
+	}
+
 	private LmdbStatisticsService openService() throws IOException {
 		return LmdbStatisticsService.open(directory,
 				new FrontierStatisticsHeapGovernor(
@@ -146,12 +223,17 @@ class LmdbStatisticsSnapshotCoverageTest {
 	}
 
 	private FrontierStatisticsManifest generation(long generationId, long epoch) throws IOException {
+		return generation(generationId, -1L, epoch);
+	}
+
+	private FrontierStatisticsManifest generation(long generationId, long previousGenerationId, long epoch)
+			throws IOException {
 		FrontierStatisticsBuildConfig config = FrontierStatisticsBuildConfig.testing(
 				32L * 1024L * 1024L, 64, 32, 256, 2L * 1024L * 1024L);
 		FrontierStatisticsHeapGovernor governor = new FrontierStatisticsHeapGovernor(
 				64L * 1024L * 1024L, 8L * 1024L * 1024L, 16L * 1024L * 1024L, 8L * 1024L * 1024L);
-		return FrontierStatisticsBuilder.build(directory, generationId, -1L, emptySnapshot(epoch), governor,
-				config);
+		return FrontierStatisticsBuilder.build(directory, generationId, previousGenerationId, emptySnapshot(epoch),
+				governor, config);
 	}
 
 	private static FrontierLeafProbe predicateProbe() {

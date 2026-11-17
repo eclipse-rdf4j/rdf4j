@@ -29,38 +29,47 @@ import org.junit.jupiter.api.Test;
 
 class PackedOperatorComponentRefinementTest {
 
+	private static final int NO_COMPONENT_OPERATOR = 0;
+
 	@Test
 	void incumbentRejectsComponentOnlyOperatorRefinement() {
-		TupleExpr source = optional();
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		PackedQuery controlQuery = PackedQueryCodec.encodeForPlanning(optional());
+		PackedMemo controlMemo = memo(controlQuery);
+		int controlWinnerId = new PackedIncumbentSearch(controlQuery, controlMemo, unboundedBudget(), false,
+				boundOptionalCosts(NO_COMPONENT_OPERATOR)).build();
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(optional());
 		PackedMemo memo = memo(query);
 		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, unboundedBudget(), false,
-				componentOperatorCosts(PackedRelOp.LEFT_JOIN));
+				boundOptionalCosts(PackedRelOp.LEFT_JOIN));
 
 		int rootWinnerId = search.build();
 
-		assertEquals(10.0d, memo.winnerOutputRows(rootWinnerId), 0.0d,
+		assertTrue(Double.isFinite(controlMemo.winnerTotalCost(controlWinnerId)),
+				"The bound right side is priced from measured contextual evidence, so the control has a finite total");
+		assertEquals(controlMemo.winnerOutputRows(controlWinnerId), memo.winnerOutputRows(rootWinnerId), 0.0d,
 				"A component-only operator estimate cannot replace the complete OPTIONAL rows");
-		assertEquals(30.0d, memo.winnerTotalCost(rootWinnerId), 0.0d,
+		assertEquals(controlMemo.winnerTotalCost(controlWinnerId), memo.winnerTotalCost(rootWinnerId), 0.0d,
 				"A component-only operator estimate cannot replace the complete OPTIONAL work");
 	}
 
 	@Test
 	void selectedContextualizerRejectsComponentOnlyOperatorRefinement() {
-		TupleExpr source = optional();
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(optional());
 		PackedMemo memo = memo(query);
 		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, unboundedBudget(), false,
-				basePatternCosts());
+				boundOptionalCosts(NO_COMPONENT_OPERATOR));
 		int rootWinnerId = search.build();
+		double rows = memo.winnerOutputRows(rootWinnerId);
+		double total = memo.winnerTotalCost(rootWinnerId);
 		PackedSelectedPlanContextualizer contextualizer = new PackedSelectedPlanContextualizer(query, memo,
-				unboundedBudget(), componentOperatorCosts(PackedRelOp.LEFT_JOIN), search.selectedRowsByGroup());
+				unboundedBudget(), boundOptionalCosts(PackedRelOp.LEFT_JOIN), search.selectedRowsByGroup());
 
 		int contextualWinnerId = contextualizer.contextualize(rootWinnerId);
 
-		assertEquals(10.0d, memo.winnerOutputRows(contextualWinnerId), 0.0d,
+		assertTrue(Double.isFinite(total), "The selected OPTIONAL must carry a finite price to be retained");
+		assertEquals(rows, memo.winnerOutputRows(contextualWinnerId), 0.0d,
 				"Selected-DAG contextualization must retain the complete OPTIONAL rows");
-		assertEquals(30.0d, memo.winnerTotalCost(contextualWinnerId), 0.0d,
+		assertEquals(total, memo.winnerTotalCost(contextualWinnerId), 0.0d,
 				"Selected-DAG contextualization must retain the complete OPTIONAL work");
 	}
 
@@ -438,6 +447,47 @@ class PackedOperatorComponentRefinementTest {
 
 	private static PackedCostModel basePatternCosts() {
 		return (query, relationId) -> query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+	}
+
+	/**
+	 * Prices the OPTIONAL of {@link #optional()} with measured contextual evidence for its bound right side. An
+	 * isolated estimate cannot price a right side whose input the left side binds, so a scalar fixture would leave the
+	 * OPTIONAL unpriced and make any total comparison vacuous. {@code componentOperator} selects the operator that
+	 * additionally reports a component-only refinement; use {@link #NO_COMPONENT_OPERATOR} for the control.
+	 */
+	private static PackedCostModel boundOptionalCosts(int componentOperator) {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				if (!query.prefixBindsStatementComponent(context, relationId, 0)) {
+					output.setRows(10.0d, 10.0d);
+					return;
+				}
+				double invocations = Math.max(1.0d, context.prefixRows());
+				output.setContextualRows(invocations, invocations);
+				output.setInvocations(invocations);
+				output.setEvidenceStateId(101);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (componentOperator != NO_COMPONENT_OPERATOR && query.operatorTag(relationId) == componentOperator) {
+					output.setComponentRows(2.0d, 2.0d);
+					output.setReplacesChildWork(true);
+					output.setEstimateProvenance("component-operator-test", "operator_feedback");
+				}
+			}
+		};
 	}
 
 	private static PackedCostModel componentOperatorCosts(int operatorTag) {

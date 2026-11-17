@@ -21,6 +21,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.AnnotationTripleRef;
@@ -492,6 +493,51 @@ public final class LmdbCacheValueCopies {
 			}
 		}
 		return root;
+	}
+
+	/**
+	 * What a plan served from the cache returns for an explanation diagnostic the cache did not retain. Plan tooling
+	 * recognizes the {@code "omitted:"} prefix (QueryPlanCapture records an omitted optimizer trace as omitted).
+	 */
+	static final String OMITTED_CACHED_DIAGNOSTIC = "omitted: replayed from the plan cache";
+
+	/**
+	 * Explanation diagnostics: read only by direct metric access on a plan (plan capture, tests), never by EXPLAIN text
+	 * or JSON, never by execution, learning or a certificate.
+	 */
+	private static final Set<String> EXPLANATION_DIAGNOSTICS = Set.of("optimizer.packedExplanation",
+			"optimizer.packedExplanationJson", "optimizer.cascadesTraceJson");
+
+	/**
+	 * The copy a cache retains as its own template. The cache never reads that template in place: it only copies it
+	 * ({@link #copy}, for every hit) and accounts it ({@link #account}). Every owned node is frozen
+	 * ({@link AbstractQueryModelNode#freezeDetachedPlanningState()}): its deferred diagnostics render without storing a
+	 * rendering and its metric maps are rebuilt, so the template retains exactly what {@link #account} charges, for as
+	 * long as it is retained. Unless {@code retainDiagnostics}, each explanation diagnostic is replaced, without being
+	 * rendered, by {@link #OMITTED_CACHED_DIAGNOSTIC}; the plan returned to the planning request keeps its own.
+	 *
+	 * @return the frozen copy, or null when the source has no detached copy or a node cannot be frozen
+	 */
+	static TupleExpr copyForCache(TupleExpr source, boolean retainDiagnostics) {
+		TupleExpr copy = copy(source, true);
+		List<QueryModelNode> nodes = copy == null ? null : ownedNodes(copy);
+		if (nodes == null) {
+			return null;
+		}
+		List<String> omitted = new ArrayList<>(EXPLANATION_DIAGNOSTICS.size());
+		for (QueryModelNode node : nodes) {
+			if (!retainDiagnostics) {
+				omitted.clear();
+				node.removeStringMetricsPlannedIf(name -> EXPLANATION_DIAGNOSTICS.contains(name) && omitted.add(name));
+				for (String name : omitted) {
+					node.setStringMetricPlanned(name, OMITTED_CACHED_DIAGNOSTIC);
+				}
+			}
+			if (!(node instanceof AbstractQueryModelNode owned) || !owned.freezeDetachedPlanningState()) {
+				return null;
+			}
+		}
+		return copy;
 	}
 
 	private static List<Value> values(QueryModelNode node) {

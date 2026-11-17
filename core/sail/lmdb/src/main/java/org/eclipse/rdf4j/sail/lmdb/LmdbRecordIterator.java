@@ -174,6 +174,12 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, LmdbKeyRange range, LmdbValueIdFilter idFilter)
+			throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false, range, null, idFilter, 0);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef, LmdbValueIdFilter idFilter, int distinctPrefixLength)
 			throws IOException {
 		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, idFilter, distinctPrefixLength, null);
@@ -245,11 +251,9 @@ class LmdbRecordIterator implements RecordIterator {
 					this.exactKeySearch = false;
 				}
 
-				if (range != null) {
-					if (exactKeySearch) {
-						throw new IllegalArgumentException("Bounded scans are not supported for exact key lookups");
-					}
-					if (range.lowKey() != null) {
+				if (range != null && !exactKeySearch) {
+					if (range.lowKey() != null
+							&& (minKeyBuf == null || compareKey(range.lowKey(), minKeyBuf) > 0)) {
 						if (minKeyBuf == null) {
 							minKeyBuf = txnRef.takeKeyBuffer();
 						}
@@ -257,7 +261,8 @@ class LmdbRecordIterator implements RecordIterator {
 						minKeyBuf.put(range.lowKey());
 						minKeyBuf.flip();
 					}
-					if (range.highKeyExclusive() != null) {
+					if (range.highKeyExclusive() != null
+							&& (maxKeyBuf == null || compareKey(range.highKeyExclusive(), maxKeyBuf) <= 0)) {
 						if (maxKeyBuf == null) {
 							maxKeyBuf = txnRef.takeKeyBuffer();
 						}
@@ -274,18 +279,20 @@ class LmdbRecordIterator implements RecordIterator {
 					// all four fields are bound, so the single mdb_get can run right here under the lock we
 					// already hold; a successful lookup means the key equals the probe and quad already holds
 					// the matching values, making next() JNI-free after snapshot validation
-					LmdbUtil.setMDBValData(keyData, minKeyBuf);
-					int rc = mdb_get(txn, dbi, keyData, valueData);
-					if (rc == MDB_SUCCESS) {
-						sourceRowsScannedActual++;
-						if (this.idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
-							sourceRowsMatchedActual++;
-							exactKeyFound = true;
-						} else {
-							sourceRowsFilteredActual++;
+					if (range == null || range.includes(quad)) {
+						LmdbUtil.setMDBValData(keyData, minKeyBuf);
+						int rc = mdb_get(txn, dbi, keyData, valueData);
+						if (rc == MDB_SUCCESS) {
+							sourceRowsScannedActual++;
+							if (this.idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
+								sourceRowsMatchedActual++;
+								exactKeyFound = true;
+							} else {
+								sourceRowsFilteredActual++;
+							}
+						} else if (rc != MDB_NOTFOUND) {
+							E(rc);
 						}
-					} else if (rc != MDB_NOTFOUND) {
-						E(rc);
 					}
 				} else {
 					this.cursorPool = cursorPool != null && txnRef.isReadOnly() ? cursorPool : null;
@@ -722,6 +729,18 @@ class LmdbRecordIterator implements RecordIterator {
 		// equal common prefix: a longer key sorts after the bound (out in both modes); a byte-equal key is out
 		// only when the bound is exclusive; a strict prefix of the bound sorts before it (in range in both modes)
 		return upperExclusive ? keyLength >= maxLength : keyLength > maxLength;
+	}
+
+	/** LMDB's unsigned, shorter-prefix-first ordering for an external bound and a natural pattern bound. */
+	private static int compareKey(byte[] key, ByteBuffer bound) {
+		int common = Math.min(key.length, bound.limit());
+		for (int i = 0; i < common; i++) {
+			int compared = Integer.compare(key[i] & 0xff, bound.get(i) & 0xff);
+			if (compared != 0) {
+				return compared;
+			}
+		}
+		return Integer.compare(key.length, bound.limit());
 	}
 
 	private void freeResources() {

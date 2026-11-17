@@ -290,7 +290,12 @@ class LmdbSailStoreOverlayStartupTest {
 				super.startValueOverlayWarmupAfterStoreInitialization();
 			}
 		};
-		try (LmdbSailStore owner = new LmdbSailStore(directory, new StoreProperties(directory),
+		// Reopen with the owner's startup inputs: LmdbStore loads and discovers the persisted pair before it builds
+		// the backing store, so predicate-domain maintenance can attribute the post-ready retirement commit.
+		StoreProperties properties = new StoreProperties(directory);
+		assertThat(properties.load()).isTrue();
+		LegacyStoreDiscovery.discover(directory, properties);
+		try (LmdbSailStore owner = new LmdbSailStore(directory, properties,
 				config(true).setAsyncValueCleanup(false), false, values, TripleStore::new)) {
 			owner.startBackgroundMaintenanceAfterInitialization();
 			joinPostReadyInitializer();

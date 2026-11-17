@@ -1,0 +1,158 @@
+{
+  "format" : "rdf4j-social-media-solution-bag-oracle",
+  "version" : 2,
+  "theme" : "SOCIAL_MEDIA",
+  "codec" : {
+    "format" : "rdf4j-exact-solution-bag",
+    "version" : 1
+  },
+  "comparisonPolicy" : {
+    "id" : "rdf4j-proven-computed-numeric-bag",
+    "version" : 1
+  },
+  "jena" : {
+    "artifact" : "org.apache.jena:jena-arq",
+    "version" : "6.1.0",
+    "jarSha256" : "bc0fac2551db4b8616c861aab5b3bb5c7a3897e4516e8990bbab234a5a8f904c"
+  },
+  "fixture" : {
+    "profile" : "social-media-witness-v2",
+    "scope" : {
+      "graphs" : "default-graph-only",
+      "directionalLiterals" : false,
+      "tripleTerms" : false
+    },
+    "fixtureActualCounts" : {
+      "user" : 18,
+      "post" : 3
+    },
+    "statementCount" : 75
+  },
+  "dataset" : {
+    "file" : "dataset.nq",
+    "format" : "N-Quads",
+    "sha256" : "b366d1370a138ebe7ed53724f6af8754fc18b16f30cefbf0b4d0a65980e873cd",
+    "bytes" : 8959,
+    "statements" : 75
+  },
+  "queries" : [ {
+    "index" : 0,
+    "name" : "Social: follow pairs among users 0-2",
+    "querySha256" : "c5de583e08995ee1e44fde46c68e463b376c1c6949c108d62a6ef1737153710a",
+    "bagFile" : "query-00.json",
+    "bagSha256" : "92a155b6a3f8786303098516f3dcf1485666bb3b2b284e26c9c9ca5aae7545df",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 1,
+    "name" : "Social: mutual trio of users 0-2",
+    "querySha256" : "3d07d7217118cb80ad703dcea5eacd20f36c4f16ed2891d80fcefebebd594514",
+    "bagFile" : "query-01.json",
+    "bagSha256" : "159adbb7345ca4882aa34b292707cb9b8b8412ff89c31f5e7625e9f3652b5924",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 2,
+    "name" : "Social: mutual follows among users 3-6",
+    "querySha256" : "edd7d3373058517ee4f4f16e038f907024b218ffe69b851dd9032733f1d89190",
+    "bagFile" : "query-02.json",
+    "bagSha256" : "0ddc92f66c56f727cc3d811512b6715c6dff8d77b138276074bfcb4f7dfd1f4d",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 3,
+    "name" : "Social: degree >=3 among users 3-6",
+    "querySha256" : "44e335173230ec01f02170002971de4c1287b07eef1cca1a71a6801d7690d520",
+    "bagFile" : "query-03.json",
+    "bagSha256" : "e6d20df19bec51d1cc12f6db87337c3a11dd16f617ba0e55a10e5b76cb4196b9",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "degree" ]
+  }, {
+    "index" : 4,
+    "name" : "Social: follows among users 7-11",
+    "querySha256" : "9786d512bfb7629359030b4ca8df278af0f4f86df94e1a29c210584e7f709a2a",
+    "bagFile" : "query-04.json",
+    "bagSha256" : "035cba65f4468e490944205b4eec4a89fc6447932236f84e5f1637cd1fb00caa",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 5,
+    "name" : "Social: activity from mutual follows or posts",
+    "querySha256" : "792700da70e282d8e677289d149971b4f363aaf997abf7e98321bb10f23ac8e8",
+    "bagFile" : "query-05.json",
+    "bagSha256" : "b31f7b0d28c0bbb0cf24b3b0e58b982c84065d9d2f94ecc2117652b910784c57",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 6,
+    "name" : "Social: connections >=5 among users 12-17",
+    "querySha256" : "9e5d142f7d8328e56c27e3d90626c4acca8b8160bebde3f1f78f4d6bdfc533bf",
+    "bagFile" : "query-06.json",
+    "bagSha256" : "e9611ad11c2bad31bb4b9b37ca8142c205e4c06c4c11d13f1dfd7943f425a293",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "connections" ]
+  }, {
+    "index" : 7,
+    "name" : "Social: mutual follows among users 12-17",
+    "querySha256" : "3fb407a4c0d629deb4df6051883a03782c067d5a041c6308e17ba77325615565",
+    "bagFile" : "query-07.json",
+    "bagSha256" : "035cba65f4468e490944205b4eec4a89fc6447932236f84e5f1637cd1fb00caa",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 8,
+    "name" : "Social: 3-cycle among users 0-2",
+    "querySha256" : "0bbccb67d52fc1f18d25540830e5aa3d6d77afbd1bc6d3ed06799a83c6cd31bc",
+    "bagFile" : "query-08.json",
+    "bagSha256" : "035cba65f4468e490944205b4eec4a89fc6447932236f84e5f1637cd1fb00caa",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 9,
+    "name" : "Social: 4-cycle among users 3-6",
+    "querySha256" : "13febf8839102e264ac2a6cd9396483f4224bb774402d23e47de09513b86d92c",
+    "bagFile" : "query-09.json",
+    "bagSha256" : "0ddc92f66c56f727cc3d811512b6715c6dff8d77b138276074bfcb4f7dfd1f4d",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 10,
+    "name" : "Social: 5-cycle among users 7-11",
+    "querySha256" : "221bdbfcf3d69a9b9be711358bb91e469e8ca5aacf3ffe4e6af743ece6974355",
+    "bagFile" : "query-10.json",
+    "bagSha256" : "e86a1f2d2c04f131e3a568d338f42adecdbcca248a1431ca0f158f1deb26292f",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 11,
+    "name" : "Social: denormalized users and posts view",
+    "querySha256" : "e3a066466ad4ccec4acd3d2b3f99f3d82c8632f0ce647f50ab15332a3d1b2282",
+    "bagFile" : "query-11.json",
+    "bagSha256" : "4dd9a23157d42545a14cfe1a169d9d0e4769149edece890a24a66ce0ee197565",
+    "distinctRows" : 54,
+    "rows" : 54,
+    "computedNumericVariables" : [ ],
+    "orderFile" : "query-11-order.json",
+    "orderSha256" : "6864e5bdd1304c7224b458e533a1989b9ec3c19f0aa42ea59760f2964c4128a3"
+  }, {
+    "index" : 12,
+    "name" : "Social: union-heavy denormalized users and posts view",
+    "querySha256" : "33c974559f1a2d3cd0cec9396791847f46b75e1a9cefecd5cd6551955bc5e0e1",
+    "bagFile" : "query-12.json",
+    "bagSha256" : "0a01a8b4da3b26e95812e675cbf2cb8b216665b45d266eccbf4c5d5395c4f941",
+    "distinctRows" : 237,
+    "rows" : 237,
+    "computedNumericVariables" : [ ]
+  } ]
+}

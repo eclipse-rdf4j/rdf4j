@@ -84,8 +84,10 @@ class LmdbNativeProviderPayloadOwnershipTest {
 			measuring.close();
 		}
 		// The same quota covers two successive owner phases. A flight is released before the final family
-		// is published; the capacity must fit the larger authentic phase, not only final resident bytes.
-		long exactCapacity = Math.max(flightIdentityBytes(source, context), exactBytes);
+		// is published; the capacity must fit the larger authentic phase, not only final resident bytes. The miss
+		// doorkeeper the first flight charges stays resident next to both phases.
+		long exactCapacity = Math.max(flightIdentityBytes(source, context), exactBytes)
+				+ LmdbPlanDecisionCache.doorkeeperBytes(8);
 		LmdbPipelinePlanCache exact = new LmdbPipelinePlanCache(8, 1, exactCapacity);
 		LmdbPipelinePlanCache shortCache = new LmdbPipelinePlanCache(8, 1, exactCapacity - 1);
 		try {

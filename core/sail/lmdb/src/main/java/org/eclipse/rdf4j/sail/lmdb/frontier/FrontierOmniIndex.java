@@ -181,8 +181,7 @@ final class FrontierOmniIndex {
 	private FrontierLeafEstimate estimateLeafWithinBudget(FrontierLeafProbe probe, Scratch scratch)
 			throws IOException {
 		if (probe.contradictoryRepeatedBindings()) {
-			return new FrontierLeafEstimate(0.0d, 0.0d, 0.0d, 1.0d,
-					"frontier-v2-omni-contradiction", FrontierFallbackReason.NONE);
+			return FrontierLeafEstimate.exact(0.0d, "frontier-v2-omni-contradiction");
 		}
 		if (probe.boundMask() == 0) {
 			return FrontierLeafEstimate.unavailable(FrontierFallbackReason.UNSUPPORTED_QUERY_SHAPE);
@@ -208,7 +207,8 @@ final class FrontierOmniIndex {
 		}
 		return new FrontierLeafEstimate(point, lower, upper, confidence,
 				deltaIndex.isEmpty() ? "frontier-v2-omni" : "frontier-v2-omni-delta",
-				FrontierFallbackReason.NONE);
+				FrontierFallbackReason.NONE,
+				exact ? FrontierLeafEstimate.Guarantee.EXACT : FrontierLeafEstimate.Guarantee.ESTIMATE);
 	}
 
 	double estimateProjectedDistinct(FrontierLeafProbe probe, int component, Scratch scratch) throws IOException {

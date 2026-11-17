@@ -21,6 +21,7 @@ final class PackedIncumbentSearch {
 	private static final int LOGICAL_IMPLEMENTATION = 1;
 	private static final int FEATURE_LOGICAL_ALTERNATIVES = 1;
 	private static final int FEATURE_CORRELATED_PREDICATES = 1 << 1;
+	private static final long UNAVAILABLE_OPTIONAL_CONTEXT = -1L;
 	private static final int[] EMPTY_PREFIX = new int[0];
 
 	private final PackedQuery query;
@@ -45,15 +46,23 @@ final class PackedIncumbentSearch {
 	private PackedCostEstimate memoizedRightResources;
 	private PackedCostEstimate memoizedRightPriceMetadata;
 	private PackedCostEstimate memoizedOptionalEstimate;
+	private PackedDependentSubqueryCosting.Summary dependentCostSummary;
 	private final PackedEvidenceContext inheritedEvidenceContext;
 	private final int[] inheritedPrefix;
 	private final int[] physicalJoinPrefix;
 	private final byte[] preparedLogicalGroups;
 	private final boolean hasLogicalAlternatives;
+	/** Set when the last default offer's provider work was refused, so its inputs were not priced. */
+	private boolean defaultOfferRefused;
+	/** Result of the last offerLogicalImplementation: whether it priced everything it attempted. */
+	private boolean lastOfferFullyPriced;
+	/** Set when any offer since the search began was not fully priced, so some group may still be pending. */
+	private boolean unpricedOfferSeen;
 	private final boolean hasCorrelatedPredicates;
 	private final int singleCanonicalJoinRegionRoot;
 	private boolean resumingDetachedCheckpoint;
 	private int workUnits;
+	private PackedCascadesPlanner.ProviderWorkBinding providerWork;
 
 	PackedIncumbentSearch(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
 			boolean exploreReorderings, PackedCostModel costModel) {
@@ -96,6 +105,12 @@ final class PackedIncumbentSearch {
 	static PackedIncumbentSearch forSession(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
 			boolean exploreReorderings, PackedCostSession costSession) {
 		return new PackedIncumbentSearch(query, memo, budget, exploreReorderings, costSession);
+	}
+
+	/** Lets mandatory parent completion run its provider callbacks in the session's mandatory work scope. */
+	void bindProviderWork(PackedCascadesPlanner.ProviderWorkBinding providerWork) {
+		this.providerWork = providerWork;
+		joinEnumerator.bindProviderWork(providerWork);
 	}
 
 	int build() {
@@ -166,6 +181,14 @@ final class PackedIncumbentSearch {
 				}
 			}
 		}
+		if (!hasLogicalAlternatives && unpricedOfferSeen) {
+			/*
+			 * Without logical alternatives neither the alternatives pass nor its dependency worklist follows. A group
+			 * whose offer was not fully priced stays pending, so price every pending group once more over its current
+			 * inputs. This is one pass: a refusal that persists leaves the group pending and ends the search.
+			 */
+			rootWinnerId = propagateChangedInputs(rootWinnerId, anyPropertyId, false);
+		}
 
 		if (hasLogicalAlternatives) {
 			/*
@@ -208,10 +231,12 @@ final class PackedIncumbentSearch {
 				boolean correlatedPredicate = isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId));
 				boolean logicalInputsChanged = !logicalInputsAreCurrent(logicalExpressionId, anyPropertyId);
 				boolean continuationInputsChanged = !logicalInputContinuationsAreCurrent(logicalExpressionId);
+				boolean offerPriced = true;
 				if (logicalInputsChanged
 						|| query.relOperator(logicalExpressionId) != PackedRelOp.JOIN && continuationInputsChanged
 						|| correlatedPredicate && !prioritizedCorrelatedRegions[logicalExpressionId]) {
 					rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
+					offerPriced = lastOfferFullyPriced;
 				}
 				boolean prioritizedJoinContextChanged = prioritizedJoinRegions[logicalExpressionId]
 						&& !prioritizedJoinInputsAreCurrent(logicalExpressionId, anyPropertyId,
@@ -234,7 +259,9 @@ final class PackedIncumbentSearch {
 					}
 					applyUncoveredFilterPlacement(logicalExpressionId);
 				}
-				rememberLogicalInputContinuationGenerations(logicalExpressionId);
+				if (offerPriced) {
+					rememberLogicalInputContinuationGenerations(logicalExpressionId);
+				}
 			}
 			rootWinnerId = propagateChangedInputs(rootWinnerId, anyPropertyId, true, prioritizedCorrelatedRegions);
 		}
@@ -332,6 +359,47 @@ final class PackedIncumbentSearch {
 
 	int retainedRootWinnerId() {
 		return memo.findWinner(logicalGroupId(query.rootRelId()), memo.anyPropertyId(), 0, 0, 0);
+	}
+
+	/** Whether the root group already retains a complete plan with a finite price (the budget's deadline probe). */
+	boolean retainsPricedRootPlan() {
+		int rootWinnerId = retainedRootWinnerId();
+		return rootWinnerId != 0 && Double.isFinite(memo.winnerTotalCost(rootWinnerId));
+	}
+
+	/**
+	 * Whether the root would retain a priced plan once the join region rooted at {@code regionRootRelationId} publishes
+	 * a priced winner: every subtree outside that region already retains a priced winner, and every level above the
+	 * region is still unoffered, so the canonical pass completes it over the region's new winner by a mandatory offer.
+	 * A level above the region that already retains an unpriced winner is not re-offered by a stopped search, so it
+	 * keeps the search going. Linear in the query's relations; asked only while the region retains a priced candidate.
+	 */
+	boolean retainsPricedRootOnceRegionPublishes(int regionRootRelationId) {
+		return pricedOnceRegionPublishes(query.rootRelId(), regionRootRelationId) != PRICED_WALK_OPEN;
+	}
+
+	private static final int PRICED_WALK_PRICED = 0;
+	private static final int PRICED_WALK_THROUGH_REGION = 1;
+	private static final int PRICED_WALK_OPEN = 2;
+
+	private int pricedOnceRegionPublishes(int relationId, int regionRootRelationId) {
+		if (relationId == regionRootRelationId) {
+			return PRICED_WALK_THROUGH_REGION;
+		}
+		int winnerId = memo.findWinner(logicalGroupId(relationId), memo.anyPropertyId(), 0, 0, 0);
+		if (winnerId != 0) {
+			return Double.isFinite(memo.winnerTotalCost(winnerId)) ? PRICED_WALK_PRICED : PRICED_WALK_OPEN;
+		}
+		boolean throughRegion = false;
+		for (int child = 0; child < query.relChildCount(relationId); child++) {
+			int childWalk = pricedOnceRegionPublishes(query.relChild(relationId, child), regionRootRelationId);
+			if (childWalk == PRICED_WALK_OPEN) {
+				return PRICED_WALK_OPEN;
+			}
+			throughRegion |= childWalk == PRICED_WALK_THROUGH_REGION;
+		}
+		// An unoffered level is completed after the stop only when the region lies below it.
+		return throughRegion ? PRICED_WALK_THROUGH_REGION : PRICED_WALK_OPEN;
 	}
 
 	private boolean[] prioritizeContainingJoinRegions(int anyPropertyId, boolean canonicalOnly,
@@ -778,16 +846,37 @@ final class PackedIncumbentSearch {
 			childWinnerIds[ordinal] = childWinnerId;
 			defaultChildWinnerIds[ordinal] = childWinnerId;
 		}
-		int winnerId = offerSelectedLogicalImplementation(logicalExpressionId, anyPropertyId,
-				costContextualCorrelatedImplementation, false);
+		long absorbedStopsBefore = budget.absorbedProviderStops();
+		defaultOfferRefused = false;
+		int winnerId = offerAdmittedLogicalImplementation(logicalExpressionId, anyPropertyId,
+				costContextualCorrelatedImplementation);
 		System.arraycopy(defaultChildWinnerIds, 0, childWinnerIds, 0, childCount);
 		if (costSession != null && childCount != 0
 				&& query.relOperator(logicalExpressionId) != PackedRelOp.JOIN && !budget.exhausted()) {
-			offerLogicalContinuationCombinations(logicalExpressionId, anyPropertyId,
-					costContextualCorrelatedImplementation, childCount, 0, false);
+			try {
+				offerLogicalContinuationCombinations(logicalExpressionId, anyPropertyId,
+						costContextualCorrelatedImplementation, childCount, 0, false);
+			} catch (PackedProviderWork.Exhausted refused) {
+				// Optional continuation candidates only; the incumbent offered above stays complete.
+				if (!budget.isProviderRefusal(refused)) {
+					throw refused;
+				}
+				budget.recordAbsorbedProviderStop();
+			}
 		}
 		System.arraycopy(defaultChildWinnerIds, 0, childWinnerIds, 0, childCount);
-		rememberLogicalInputs(logicalExpressionId, childCount);
+		/*
+		 * The offer is fully priced only when its default implementation was priced and no provider refusal was
+		 * absorbed anywhere inside it (continuations, optional alternatives, contextual sub-searches). Only then do its
+		 * inputs and continuation generations become current; otherwise the group stays pending and the dependency
+		 * worklist and the alternatives pass price it again over these inputs once provider work is admitted again.
+		 */
+		lastOfferFullyPriced = !defaultOfferRefused && budget.absorbedProviderStops() == absorbedStopsBefore;
+		if (lastOfferFullyPriced) {
+			rememberLogicalInputs(logicalExpressionId, childCount);
+		} else {
+			unpricedOfferSeen = true;
+		}
 		int selectedWinnerId = memo.findWinner(logicalGroupId(logicalExpressionId), anyPropertyId, 0, 0, 0);
 		if (selectedWinnerId != 0) {
 			selectedRowsByGroup[logicalGroupId(logicalExpressionId)] = memo.winnerOutputRows(selectedWinnerId);
@@ -796,8 +885,78 @@ final class PackedIncumbentSearch {
 		return winnerId;
 	}
 
+	/**
+	 * Offers the default children's logical implementation. A refused provider callback abandons only this candidate.
+	 * When the group has no incumbent yet the candidate completes a mandatory parent over children that already have
+	 * winners: its callbacks run in the session's mandatory provider-work scope, and if they are still refused the
+	 * parent is offered unpriced over its priced children rather than letting the refusal unwind the search.
+	 */
+	private int offerAdmittedLogicalImplementation(int logicalExpressionId, int anyPropertyId,
+			boolean costContextualCorrelatedImplementation) {
+		if (costSession == null) {
+			return offerSelectedLogicalImplementation(logicalExpressionId, anyPropertyId,
+					costContextualCorrelatedImplementation, false);
+		}
+		int groupId = logicalGroupId(logicalExpressionId);
+		boolean mandatory = memo.findWinner(groupId, anyPropertyId, 0, 0, 0) == 0;
+		boolean scoped = mandatory && providerWork != null;
+		boolean previousScope = scoped && providerWork.enterMandatoryCompletion();
+		try {
+			return offerSelectedLogicalImplementation(logicalExpressionId, anyPropertyId,
+					costContextualCorrelatedImplementation, false);
+		} catch (PackedProviderWork.Exhausted refused) {
+			if (!budget.isProviderRefusal(refused)) {
+				throw refused;
+			}
+			budget.recordAbsorbedProviderStop();
+			defaultOfferRefused = true;
+			int incumbentId = memo.findWinner(groupId, anyPropertyId, 0, 0, 0);
+			return incumbentId != 0 ? incumbentId : offerUnpricedExecutableFallback(logicalExpressionId, anyPropertyId);
+		} finally {
+			if (scoped) {
+				providerWork.leaveMandatoryCompletion(previousScope);
+			}
+		}
+	}
+
+	/**
+	 * Installs the mandatory parent incumbent without provider work after its admission was refused. The candidate
+	 * keeps the default child winners and the evidence-free row bound, but it has no price: its total is NaN and the
+	 * search records that its cost comparison is unavailable.
+	 */
+	private int offerUnpricedExecutableFallback(int logicalExpressionId, int anyPropertyId) {
+		int childCount = query.relChildCount(logicalExpressionId);
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			childGroupIds[ordinal] = query.relChild(logicalExpressionId, ordinal);
+		}
+		System.arraycopy(defaultChildWinnerIds, 0, childWinnerIds, 0, childCount);
+		int groupId = logicalGroupId(logicalExpressionId);
+		costEstimate.clear();
+		double outputRows = outputRows(logicalExpressionId, childCount);
+		budget.markUnavailableCostComparison();
+		int physicalExpressionId = memo.addPhysicalAlternative(groupId, query.relOperator(logicalExpressionId),
+				query.relPayload(logicalExpressionId), anyPropertyId, LOGICAL_IMPLEMENTATION, logicalExpressionId,
+				childGroupIds, 0, childCount);
+		int metadataId = memo.addPhysicalMetadata(costEstimate, outputRows, Double.NaN);
+		int tieBreakRank = Long.bitCount(query.relRuleMask(logicalExpressionId)) << 1;
+		int winnerId = memo.offerExecutableFallbackWinnerWithMetadata(groupId, anyPropertyId, 0, 0, 0,
+				physicalExpressionId, metadataId, tieBreakRank, outputRows, Double.NaN, Double.NaN, childWinnerIds, 0,
+				childCount);
+		if (memo.winnerPhysicalExpressionId(winnerId) == physicalExpressionId
+				&& memo.winnerPhysicalMetadataId(winnerId) == metadataId) {
+			selectedRowsByGroup[groupId] = memo.winnerOutputRows(winnerId);
+			if (isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
+				PackedDependentSubqueryCosting.recordContextualPlans(query, memo, winnerId, logicalExpressionId,
+						EMPTY_PREFIX, null, 0, 1.0d, 0, 0, 0, 0);
+			}
+		}
+		workUnits++;
+		return winnerId;
+	}
+
 	private int offerSelectedLogicalImplementation(int logicalExpressionId, int anyPropertyId,
 			boolean costContextualCorrelatedImplementation, boolean retainExactContinuation) {
+		budget.recordFallbackCandidate();
 		int childCount = query.relChildCount(logicalExpressionId);
 		double childCost = 0.0d;
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
@@ -808,20 +967,54 @@ final class PackedIncumbentSearch {
 						? childWinnerIds[1]
 						: 0;
 		int optionalRightInputContextId = 0;
+		boolean unavailableOptionalRightWork = false;
 		if (costSession != null && childCount == 2
 				&& query.relOperator(logicalExpressionId) == PackedRelOp.LEFT_JOIN) {
-			long contextualRight = contextualizeOptionalRight(logicalExpressionId, childWinnerIds[0]);
-			int contextualRightWinnerId = (int) contextualRight;
-			optionalRightInputContextId = (int) (contextualRight >>> 32);
-			if (contextualRightWinnerId != 0 && contextualRightWinnerId != childWinnerIds[1]) {
-				childWinnerIds[1] = contextualRightWinnerId;
-				childCost = saturatedAdd(memo.winnerTotalCost(childWinnerIds[0]),
-						memo.winnerTotalCost(childWinnerIds[1]));
+			boolean previousScope = suspendMandatoryScope();
+			long contextualRight;
+			try {
+				contextualRight = contextualizeOptionalRight(logicalExpressionId, childWinnerIds[0]);
+			} finally {
+				resumeMandatoryScope(previousScope);
+			}
+			if (contextualRight == UNAVAILABLE_OPTIONAL_CONTEXT) {
+				// Keep the ordinary right recipe, but do not use its isolated price for bound execution.
+				unavailableOptionalRightWork = true;
+				budget.markUnavailableCostComparison();
+				childCost = Double.NaN;
+			} else {
+				int contextualRightWinnerId = (int) contextualRight;
+				optionalRightInputContextId = (int) (contextualRight >>> 32);
+				if (contextualRightWinnerId != 0) {
+					boolean measuredRows = winnerHasMeasuredContextualRows(contextualRightWinnerId);
+					double invocations = memo.winnerOutputRows(childWinnerIds[0]);
+					double rightWork = measuredRows
+							? joinEnumerator.contextualChildWork(contextualRightWinnerId, invocations,
+									optionalRightInputContextId)
+							: joinEnumerator.isolatedContextualChildWork(contextualRightWinnerId, invocations,
+									optionalRightInputContextId);
+					if (!finiteNonNegative(rightWork)) {
+						unavailableOptionalRightWork = true;
+						budget.markUnavailableCostComparison();
+						childCost = Double.NaN;
+					} else {
+						if (measuredRows) {
+							childWinnerIds[1] = contextualRightWinnerId;
+						}
+						childCost = saturatedAdd(memo.winnerTotalCost(childWinnerIds[0]), rightWork);
+					}
+				}
 			}
 		}
 		if (costSession != null && !exploreReorderings && childCount == 2
 				&& query.relOperator(logicalExpressionId) == PackedRelOp.JOIN) {
-			int contextualRightWinnerId = contextualizeJoinRight(logicalExpressionId, childWinnerIds[0]);
+			boolean previousScope = suspendMandatoryScope();
+			int contextualRightWinnerId;
+			try {
+				contextualRightWinnerId = contextualizeJoinRight(logicalExpressionId, childWinnerIds[0]);
+			} finally {
+				resumeMandatoryScope(previousScope);
+			}
 			if (contextualRightWinnerId != 0 && contextualRightWinnerId != childWinnerIds[1]) {
 				childWinnerIds[1] = contextualRightWinnerId;
 				childCost = saturatedAdd(memo.winnerTotalCost(childWinnerIds[0]),
@@ -833,6 +1026,13 @@ final class PackedIncumbentSearch {
 				&& hasTypedSemiAntiAlternative(logicalExpressionId);
 		if (costContextualCorrelatedImplementation && costSession != null && childCount == 1
 				&& isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
+			/*
+			 * For an assured correlated predicate this canonical contextual candidate is the default implementation: it
+			 * is priced in the current scope (the mandatory one when the group has no winner), and a refusal abandons
+			 * the whole offer. Falling through to a context-free price would offer exactly what this candidate
+			 * replaces. Only its nested embedded-subquery search is optional; the enumerator suspends the scope around
+			 * it.
+			 */
 			int contextualWinnerId = joinEnumerator.offerCanonicalCorrelatedPredicate(logicalExpressionId,
 					childWinnerIds[0], retainExactContinuation);
 			if (contextualWinnerId != 0) {
@@ -886,10 +1086,18 @@ final class PackedIncumbentSearch {
 			if (!componentRefinement && finiteNonNegative(costEstimate.outputRows())) {
 				outputRows = costEstimate.outputRows();
 			}
-			if (finiteNonNegative(physicalJoinCost)) {
+			if (query.relOperator(logicalExpressionId) == PackedRelOp.JOIN && childCount == 2
+					&& Double.isNaN(physicalJoinCost)) {
+				// Preserve the executable fallback without treating its isolated RHS as a contextual price.
+				totalCost = Double.NaN;
+				if (costEstimate.hasExplicitPhysicalCost()) {
+					costEstimate.setPhysicalCostWithUnknownChild(Double.NaN);
+				}
+			} else if (finiteNonNegative(physicalJoinCost)) {
 				totalCost = physicalJoinCost;
 				physicalJoinCostRefined = costSession.supportsPhysicalJoinRefinement();
-			} else if (!componentRefinement && finiteNonNegative(costEstimate.workRows())) {
+			} else if (!componentRefinement && (costEstimate.hasExplicitPhysicalCost()
+					|| finiteNonNegative(costEstimate.workRows()))) {
 				if (costEstimate.hasExplicitPhysicalCost()) {
 					if (costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
 						/*
@@ -915,30 +1123,48 @@ final class PackedIncumbentSearch {
 				 */
 				costEstimate.setReplacesChildWork(false);
 			}
-			if (!costEstimate.dependentSubqueriesCosted()) {
+			PackedDependentSubqueryCosting.Summary dependent = null;
+			if (!costEstimate.dependentSubqueriesCosted()
+					&& PackedDependentSubqueryCosting.hasSubquery(query, logicalExpressionId)) {
 				double dependentInvocations = childCount >= 1
 						? memo.winnerOutputRows(childWinnerIds[0])
 						: 1.0d;
-				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, logicalExpressionId,
-						dependentInvocations);
-				if (dependentCost > 0.0d) {
+				if (dependentCostSummary == null) {
+					dependentCostSummary = new PackedDependentSubqueryCosting.Summary();
+				}
+				dependent = dependentCostSummary;
+				PackedDependentSubqueryCosting.defaultCost(query, memo, logicalExpressionId, dependentInvocations,
+						dependent);
+				if (dependent.present()) {
+					double dependentCost = dependent.point();
 					if (costEstimate.hasExplicitPhysicalCost()) {
-						double objectiveBeforeDependent = costSession.objectiveScore(costEstimate);
-						costEstimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
-								0.0d, 0.0d);
-						double objectiveAfterDependent = costSession.objectiveScore(costEstimate);
-						totalCost = saturatedAdd(totalCost,
-								objectiveIncrement(objectiveBeforeDependent, objectiveAfterDependent));
-					} else {
-						double completeCost = totalCost + dependentCost;
-						totalCost = Double.isFinite(completeCost) ? completeCost : Double.MAX_VALUE;
+						double scopedCost = costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL
+								? costSession.objectiveScore(costEstimate)
+								: totalCost;
+						costEstimate.setPhysicalCostWithUnknownChild(saturatedAdd(scopedCost, dependentCost));
 					}
+					totalCost = saturatedAdd(totalCost, dependentCost);
+				}
+			}
+			if (unavailableOptionalRightWork && !(costEstimate.hasExplicitPhysicalCost()
+					&& costEstimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE
+					&& finiteNonNegative(totalCost))) {
+				// A complete inclusive provider price may cover the missing child; a local or scalar fallback cannot.
+				totalCost = Double.NaN;
+				if (costEstimate.hasExplicitPhysicalCost()) {
+					costEstimate.setPhysicalCostWithUnknownChild(Double.NaN);
 				}
 			}
 			if (costEstimate.hasExplicitPhysicalCost()) {
 				costEstimate.setOutputRowsPreservingPhysicalCost(outputRows);
 			} else {
+				if (dependent != null && dependent.present()) {
+					costEstimate.rebaseObjective(totalCost);
+				}
 				costEstimate.setRows(outputRows, totalCost);
+			}
+			if (dependent != null && dependent.present()) {
+				dependent.applyLifecycle(costEstimate);
 			}
 		}
 		int physicalExpressionId = memo.addPhysicalAlternative(groupId,
@@ -980,11 +1206,37 @@ final class PackedIncumbentSearch {
 			}
 		}
 		workUnits++;
-		winnerId = offerMemoizedPositiveOptional(logicalExpressionId, anyPropertyId,
-				independentOptionalRightWinnerId, optionalRightInputContextId, scalarOperatorCostRefined,
-				retainExactContinuation, winnerId);
-		return offerIndependentPositiveOptionalHash(logicalExpressionId, anyPropertyId,
-				independentOptionalRightWinnerId, scalarOperatorCostRefined, retainExactContinuation, winnerId);
+		/*
+		 * The default implementation is priced and offered. The memoized and hash OPTIONAL implementations are optional
+		 * alternatives: they run outside the mandatory scope, and a refusal abandons only the alternative.
+		 */
+		boolean previousScope = suspendMandatoryScope();
+		try {
+			winnerId = offerMemoizedPositiveOptional(logicalExpressionId, anyPropertyId,
+					independentOptionalRightWinnerId, optionalRightInputContextId, scalarOperatorCostRefined,
+					retainExactContinuation, winnerId);
+			return offerIndependentPositiveOptionalHash(logicalExpressionId, anyPropertyId,
+					independentOptionalRightWinnerId, scalarOperatorCostRefined, retainExactContinuation, winnerId);
+		} catch (PackedProviderWork.Exhausted refused) {
+			if (!budget.isProviderRefusal(refused)) {
+				throw refused;
+			}
+			budget.recordAbsorbedProviderStop();
+			return winnerId;
+		} finally {
+			resumeMandatoryScope(previousScope);
+		}
+	}
+
+	/** Leaves the mandatory-completion scope for optional work; returns the scope to restore afterwards. */
+	private boolean suspendMandatoryScope() {
+		return providerWork != null && providerWork.suspendMandatoryCompletion();
+	}
+
+	private void resumeMandatoryScope(boolean previousScope) {
+		if (providerWork != null) {
+			providerWork.leaveMandatoryCompletion(previousScope);
+		}
 	}
 
 	private void offerLogicalContinuationCombinations(int logicalExpressionId, int anyPropertyId,
@@ -1240,7 +1492,15 @@ final class PackedIncumbentSearch {
 			 * can only detach the originating contextual events. Retain the binary rule as the exact fallback when the
 			 * lattice is unsupported, incomplete, or stale.
 			 */
-			workUnits += filterRules().apply(logicalExpressionId);
+			try {
+				workUnits += filterRules().apply(logicalExpressionId);
+			} catch (PackedProviderWork.Exhausted refused) {
+				// A placement alternative is offered only after its callbacks; abandoning it keeps every incumbent.
+				if (!budget.isProviderRefusal(refused)) {
+					throw refused;
+				}
+				budget.recordAbsorbedProviderStop();
+			}
 		}
 	}
 
@@ -1471,9 +1731,11 @@ final class PackedIncumbentSearch {
 			}
 
 			memo.beginWinnerChangeBatch();
+			boolean offerPriced = true;
 			if (!logicalInputsCurrent
 					|| query.relOperator(logicalExpressionId) != PackedRelOp.JOIN && !continuationInputsCurrent) {
 				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
+				offerPriced = lastOfferFullyPriced;
 			}
 			if (enumerateSearchAlternatives) {
 				enumerateJoinRegion(logicalExpressionId);
@@ -1484,7 +1746,9 @@ final class PackedIncumbentSearch {
 					applyUncoveredFilterPlacement(logicalExpressionId);
 				}
 			}
-			rememberLogicalInputContinuationGenerations(logicalExpressionId);
+			if (offerPriced) {
+				rememberLogicalInputContinuationGenerations(logicalExpressionId);
+			}
 			int changeEnd = memo.winnerChangeCount();
 			for (int changeOrdinal = 0; changeOrdinal < changeEnd; changeOrdinal++) {
 				int changedGroupId = memo.winnerChangedGroupId(changeOrdinal);
@@ -1730,19 +1994,12 @@ final class PackedIncumbentSearch {
 
 	private static double saturatedMultiply(double left, double right) {
 		double product = left * right;
-		return Double.isFinite(product) ? product : Double.MAX_VALUE;
+		return Double.isNaN(product) ? Double.NaN : Double.isFinite(product) ? product : Double.MAX_VALUE;
 	}
 
 	private static double saturatedAdd(double left, double right) {
 		double sum = left + right;
-		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
-	}
-
-	private static double objectiveIncrement(double before, double after) {
-		if (!finiteNonNegative(before) || !finiteNonNegative(after) || after < before) {
-			return Double.MAX_VALUE;
-		}
-		return after - before;
+		return Double.isNaN(sum) ? Double.NaN : Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
 	}
 
 	private void estimate(int logicalExpressionId) {
@@ -1777,9 +2034,6 @@ final class PackedIncumbentSearch {
 	private long contextualizeOptionalRight(int logicalExpressionId, int leftWinnerId) {
 		int leftRelationId = query.relChild(logicalExpressionId, 0);
 		int leftAssuredMaskId = query.relAssuredMaskId(leftRelationId);
-		if (query.maskCardinality(leftAssuredMaskId) == 0) {
-			return 0;
-		}
 		/*
 		 * OPTIONAL evaluates its right input against the bindings produced by the selected left implementation.
 		 * Preserve that implementation's concrete order and Frontier/event lineage just as canonical dependent JOIN
@@ -1789,6 +2043,8 @@ final class PackedIncumbentSearch {
 		if (inheritedPrefixCount == 0) {
 			return 0;
 		}
+		boolean prefixMayChangeRightInput = joinEnumerator.prefixMayChangeFactorInput(inheritedPrefix,
+				inheritedPrefixCount, query.relChild(logicalExpressionId, 1));
 		inheritedEvidenceContext.reset(inheritedPrefix, null, 0, inheritedPrefixCount,
 				memo.winnerOutputRows(leftWinnerId), winnerEvidenceStateId(leftWinnerId), leftAssuredMaskId,
 				leftAssuredMaskId, query.relSemanticScope(logicalExpressionId),
@@ -1800,8 +2056,16 @@ final class PackedIncumbentSearch {
 		int winnerId = joinEnumerator.optimizeWithInheritedPrefix(query.relChild(logicalExpressionId, 1),
 				inheritedEvidenceContext);
 		workUnits += joinEnumerator.contextualWorkUnits();
-		return winnerHasMeasuredContextualRows(winnerId) ? ((long) inputContextId << 32) | (winnerId & 0xffffffffL)
-				: 0L;
+		if (memo.winnerInputContextId(winnerId) != inputContextId
+				|| !finiteNonNegative(memo.winnerTotalCost(winnerId))) {
+			// A context-free return means no contextual winner was retained, even when it is executable.
+			return UNAVAILABLE_OPTIONAL_CONTEXT;
+		}
+		if (!winnerHasMeasuredContextualRows(winnerId) && prefixMayChangeRightInput) {
+			// Composed winner rows and an invocation stamp cannot convert isolated work into a bound-input price.
+			return UNAVAILABLE_OPTIONAL_CONTEXT;
+		}
+		return ((long) inputContextId << 32) | (winnerId & 0xffffffffL);
 	}
 
 	private int contextualizeJoinRight(int logicalExpressionId, int leftWinnerId) {

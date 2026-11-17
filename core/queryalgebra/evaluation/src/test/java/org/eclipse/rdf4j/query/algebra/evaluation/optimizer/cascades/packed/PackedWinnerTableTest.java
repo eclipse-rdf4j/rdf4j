@@ -109,12 +109,40 @@ class PackedWinnerTableTest {
 		for (double invalid : new double[] { Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY }) {
 			assertThrows(IllegalArgumentException.class,
 					() -> offerMemory(winners, tier, context, 1, 101, invalid, 10.0d, 10.0d, Double.NaN, false));
-			assertThrows(IllegalArgumentException.class,
-					() -> offerMemory(winners, tier, context, 1, 101, 1.0d, invalid, 10.0d, Double.NaN, false));
+			if (!Double.isNaN(invalid)) {
+				// A NaN total is the explicit "price unavailable" state, not an invalid price; it is admitted and
+				// ranked by unavailablePriceIsAdmittedAndRanksBelowEveryPricedOffer.
+				assertThrows(IllegalArgumentException.class,
+						() -> offerMemory(winners, tier, context, 1, 101, 1.0d, invalid, 10.0d, Double.NaN, false));
+			}
 			assertThrows(IllegalArgumentException.class,
 					() -> offerMemory(winners, tier, context, 1, 101, 1.0d, 10.0d, invalid, Double.NaN, false));
 		}
 		assertEquals(0, winners.size());
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0,0", "0,7", "1,0", "1,7" })
+	void unavailablePriceIsAdmittedAndRanksBelowEveryPricedOffer(int tier, int context) {
+		PackedSearchBudget budget = new PackedSearchBudget(new PackedPlannerLimits(Long.MAX_VALUE, Long.MAX_VALUE));
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1, budget);
+
+		int unavailable = offerMemory(winners, tier, context, 1, 101, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+				false);
+
+		assertEquals(unavailable, winners.find(1, 1, 0, context, 0), "an all-NaN offer is an admitted winner");
+		assertTrue(Double.isNaN(winners.totalCost(unavailable)));
+		assertEquals(tier == PackedWinnerTable.COSTED, budget.hasUnavailableCostComparison(),
+				"only a costed-tier offer without a price makes the cost comparison unavailable");
+		int priced = offerMemory(winners, tier, context, 2, 102, 1.0d, 10.0d, 10.0d, Double.NaN, false);
+		assertNotEquals(unavailable, priced);
+		assertEquals(priced, winners.find(1, 1, 0, context, 0), "a priced offer displaces an unpriced incumbent");
+		assertEquals(10.0d, winners.totalCost(priced));
+		assertEquals(priced,
+				offerMemory(winners, tier, context, 3, 103, Double.NaN, Double.NaN, Double.NaN, Double.NaN, false),
+				"an unpriced offer cannot displace a priced incumbent");
+		assertEquals(priced, winners.find(1, 1, 0, context, 0));
+		assertTrue(Double.isNaN(winners.totalCost(unavailable)), "earlier winner records remain immutable");
 	}
 
 	@ParameterizedTest

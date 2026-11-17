@@ -98,11 +98,13 @@ final class LmdbPhysicalCostObjective {
 
 	private static double saturatedMultiply(double left, double right) {
 		double result = left * right;
-		return Double.isFinite(result) && result >= 0.0d ? result : Double.MAX_VALUE;
+		return Double.isNaN(result) ? Double.NaN
+				: Double.isFinite(result) && result >= 0.0d ? result : Double.MAX_VALUE;
 	}
 
 	private static double saturatedAdd(double left, double right) {
 		double result = left + right;
-		return Double.isFinite(result) && result >= 0.0d ? result : Double.MAX_VALUE;
+		return Double.isNaN(result) ? Double.NaN
+				: Double.isFinite(result) && result >= 0.0d ? result : Double.MAX_VALUE;
 	}
 }

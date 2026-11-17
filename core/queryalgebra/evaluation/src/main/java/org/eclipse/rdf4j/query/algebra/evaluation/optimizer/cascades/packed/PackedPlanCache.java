@@ -171,9 +171,21 @@ public final class PackedPlanCache {
 	FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source,
 			PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity,
 			PackedPlannerLimits limits) {
+		return beginFlight(fingerprint, context, source, sourceIdentity, familyIdentity,
+				Objects.requireNonNull(limits, "limits"), limits.deadlineNanos());
+	}
+
+	/**
+	 * Claims the flight of a key, or joins the in-flight planning of the same key and limits. A new flight records
+	 * {@code ownerHardStopNanos}, the instant by which its owner's planning stops at the latest (fixed when the owner's
+	 * budget was created, never extended); its waiters wait for the owner's result until then.
+	 */
+	FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source,
+			PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity,
+			PackedPlannerLimits limits, long ownerHardStopNanos) {
 		return segment(fingerprint, context)
 				.beginFlight(fingerprint, context, source, sourceIdentity, familyIdentity,
-						Objects.requireNonNull(limits, "limits"));
+						Objects.requireNonNull(limits, "limits"), ownerHardStopNanos);
 	}
 
 	void publish(FlightClaim claim, PlanEntry planEntry, QueryEntry queryEntry) {
@@ -401,6 +413,11 @@ public final class PackedPlanCache {
 			return identity.accountRetainedMemory(account);
 		}
 
+		/** The exact identity this key compares for equality; read by {@link PackedQueryIdentityDigest}. */
+		PackedQueryCacheIdentity identity() {
+			return identity;
+		}
+
 		@Override
 		public int hashCode() {
 			return Long.hashCode(fingerprint.high() ^ Long.rotateLeft(fingerprint.low(), 29));
@@ -519,8 +536,12 @@ public final class PackedPlanCache {
 			this.familyIdentity = familyIdentity == null ? null : familyIdentity.detached();
 			this.query = query;
 			this.recipe = recipe;
+			// Family identity alone cannot authenticate recipe IDs after fallback re-encodes the planning query.
+			// Only associate candidates and continuations with a family whose template has this owner's packed rows.
+			PackedQueryFamilyIdentity recipeFamily = familyIdentity != null
+					&& query.hasSameCacheIdentity(familyIdentity.parameterizedQueryTemplate()) ? familyIdentity : null;
 			this.optimizationDecision = Objects.requireNonNull(optimizationDecision, "optimizationDecision")
-					.withFamilyIdentity(familyIdentity);
+					.withFamilyIdentity(recipeFamily);
 			this.outputRows = outputRows;
 			this.totalCost = totalCost;
 			this.completionStatus = Objects.requireNonNull(completionStatus, "completionStatus");
@@ -578,24 +599,32 @@ public final class PackedPlanCache {
 		}
 
 		boolean supportsStaleValidation() {
-			return exactComplete() && recipe.hasDetachedEvidence();
+			return exactComplete() && optimizationDecision.costComparisonAvailable()
+					&& Double.isFinite(totalCost) && recipe.hasDetachedEvidence();
 		}
 
 		private boolean reusableFor(PackedPlannerLimits requestedLimits) {
-			if (exactComplete()) {
+			if (exactComplete() && hasComparablePrice()) {
 				return true;
 			}
-			return completionStatus == PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT
+			// An unpriced exact-source recipe is executable, but cannot stand in for a request with different search
+			// resources or become an exact ranking certificate. The original decision and price state remain attached.
+			return (completionStatus == PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT || exactComplete())
 					&& planningLimits.deadlineNanos() == Long.MAX_VALUE
 					&& requestedLimits.deadlineNanos() == Long.MAX_VALUE
 					&& planningLimits.workLimit() == requestedLimits.workLimit()
+					&& planningLimits.providerWorkLimit() == requestedLimits.providerWorkLimit()
 					&& planningLimits.maxRetainedBytes() == requestedLimits.maxRetainedBytes();
 		}
 
 		private boolean matches(Fingerprint candidateFingerprint, Context candidateContext, TupleExpr source,
 				PackedQueryCacheIdentity candidateIdentity) {
 			return fingerprint.equals(candidateFingerprint) && context.equals(candidateContext)
-					&& sameSource(sourceSnapshot, sourceIdentity, source, candidateIdentity, candidateContext);
+					&& matchesSource(source, candidateIdentity, candidateContext);
+		}
+
+		boolean matchesSource(TupleExpr source, PackedQueryCacheIdentity candidateIdentity, Context candidateContext) {
+			return sameSource(sourceSnapshot, sourceIdentity, source, candidateIdentity, candidateContext);
 		}
 
 		private boolean structurallyMatches(Fingerprint candidateFingerprint, Context candidateContext,
@@ -614,8 +643,17 @@ public final class PackedPlanCache {
 			// candidate's concrete query must be row-identical to it before the recipe is materialized over it.
 			return fingerprint.equals(candidateFingerprint)
 					&& context.equals(candidateContext)
+					&& matchesFamily(candidateIdentity);
+		}
+
+		boolean matchesFamily(PackedQueryFamilyIdentity candidateIdentity) {
+			return hasComparablePrice()
 					&& PackedQueryFamilyIdentity.sameConcreteInvocation(familyIdentity, candidateIdentity)
 					&& query.hasSameCacheIdentity(candidateIdentity.concreteQuery());
+		}
+
+		private boolean hasComparablePrice() {
+			return optimizationDecision.costComparisonAvailable() && Double.isFinite(totalCost);
 		}
 
 		private long evidenceBytes() {
@@ -695,34 +733,54 @@ public final class PackedPlanCache {
 
 	record FlightClaim(Segment segment, Flight flight, boolean owner, PlanEntry hit) {
 
-		/**
-		 * Waits for the owner's plan. Returns {@code null} when the owner's flight failed (its failure belongs to the
-		 * owner's query; the flight has already been removed so the caller can claim ownership itself) or when the
-		 * flight's planning deadline passed before the owner published: in both cases the caller must plan for itself.
-		 * A flight without a deadline is awaited without bound. An interrupt is a cancellation of the waiting query and
-		 * is rethrown with the interrupt flag restored.
-		 */
+		/** {@link #await(PackedSearchBudget)} on the real clock, returning only the owner's plan. */
 		PlanEntry await() {
+			return await(null).plan();
+		}
+
+		/**
+		 * Waits for the owner's plan until the owner's hard stop, read on {@code waiter}'s clock (the real clock for
+		 * {@code null}). The result has no plan when the owner's flight failed or published nothing (that belongs to
+		 * the owner's query; a failed flight is already removed, so the caller can claim ownership itself), or when the
+		 * owner's hard stop passed first: in each case the caller must plan for itself. A flight whose owner has no
+		 * deadline is awaited without bound. An interrupt is a cancellation of the waiting query: it ends the wait at
+		 * once and is rethrown with the interrupt flag restored.
+		 */
+		FlightWait await(PackedSearchBudget waiter) {
 			if (hit != null) {
-				return hit;
+				return new FlightWait(hit, false);
 			}
-			long deadlineNanos = flight.planningLimits.deadlineNanos();
+			long hardStopNanos = flight.ownerHardStopNanos;
 			try {
-				if (deadlineNanos == Long.MAX_VALUE) {
-					return flight.result.join();
+				if (hardStopNanos == Long.MAX_VALUE) {
+					return new FlightWait(flight.result.get(), false);
 				}
-				long remainingNanos = deadlineNanos - System.nanoTime();
-				if (remainingNanos <= 0L) {
-					return flight.result.getNow(null);
+				while (true) {
+					long remainingNanos = hardStopNanos - (waiter == null ? System.nanoTime() : waiter.clockNanos());
+					if (remainingNanos <= 0L) {
+						PlanEntry published = flight.result.getNow(null);
+						return new FlightWait(published, published == null && !flight.result.isDone());
+					}
+					try {
+						return new FlightWait(flight.result.get(remainingNanos, TimeUnit.NANOSECONDS), false);
+					} catch (TimeoutException beforeTheHardStop) {
+						// The real clock ended the timed wait; the waiter's clock says whether the hard stop passed.
+					}
 				}
-				return flight.result.get(remainingNanos, TimeUnit.NANOSECONDS);
-			} catch (CompletionException | CancellationException | ExecutionException | TimeoutException failed) {
-				return null;
+			} catch (CompletionException | CancellationException | ExecutionException failed) {
+				return new FlightWait(null, false);
 			} catch (InterruptedException interrupted) {
 				Thread.currentThread().interrupt();
 				throw new IllegalStateException("Interrupted while waiting for a packed cache flight", interrupted);
 			}
 		}
+	}
+
+	/**
+	 * What a flight waiter received: the owner's plan, or none; {@code ownerHardStopPassed} when it stopped waiting
+	 * because the owner's hard stop passed while the owner was still planning.
+	 */
+	record FlightWait(PlanEntry plan, boolean ownerHardStopPassed) {
 	}
 
 	private static final class Flight {
@@ -732,13 +790,16 @@ public final class PackedPlanCache {
 		private PackedQueryCacheIdentity sourceIdentity;
 		private PackedQueryFamilyIdentity familyIdentity;
 		private final PackedPlannerLimits planningLimits;
+		/** The owner's hard stop: its waiters wait for its result until then. Fixed, never extended. */
+		private final long ownerHardStopNanos;
 		private final CompletableFuture<PlanEntry> result = new CompletableFuture<>();
 		private PackedProviderCacheIdentity retainedIdentity;
 
 		private Flight(Fingerprint fingerprint, Context context, TupleExpr source,
 				PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity,
-				PackedPlannerLimits planningLimits) {
+				PackedPlannerLimits planningLimits, long ownerHardStopNanos) {
 			this.fingerprint = fingerprint;
+			this.ownerHardStopNanos = ownerHardStopNanos;
 			this.context = context;
 			PackedStatementPatternSemanticsCodec codec = sourceIdentity == null
 					? PackedStatementPatternSemanticsCodec.NONE
@@ -933,7 +994,7 @@ public final class PackedPlanCache {
 
 		private synchronized FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source,
 				PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity,
-				PackedPlannerLimits limits) {
+				PackedPlannerLimits limits, long ownerHardStopNanos) {
 			while (true) {
 				PlanEntry hit = findPlanLocked(fingerprint, context, source, sourceIdentity, limits);
 				if (hit == null && familyIdentity != null) {
@@ -952,7 +1013,8 @@ public final class PackedPlanCache {
 					}
 				}
 				if (empty >= 0) {
-					Flight flight = new Flight(fingerprint, context, source, sourceIdentity, familyIdentity, limits);
+					Flight flight = new Flight(fingerprint, context, source, sourceIdentity, familyIdentity, limits,
+							ownerHardStopNanos);
 					while (!providerIdentities.tryRetain(flight.retainedIdentity, retainedEvidenceBytes)) {
 						if (!evictProviderKeyOwner()) {
 							return null; // Mandatory actual source/key cannot fit: ordinary complete uncached search.

@@ -50,6 +50,8 @@ public final class PackedPlanValidationRequest {
 	}
 
 	static PackedPlanValidationRequest detachedContinuation(PackedQueryView query, PackedPlanRecipe recipe) {
+		// Construction fingerprints cached phases, so validate them before constructing the replay request.
+		recipe.costingTrace().validateReplayInputs();
 		return new PackedPlanValidationRequest(query, recipe, DETACHED_CONTINUATION_CONTEXT,
 				DETACHED_CONTINUATION_CONTEXT);
 	}

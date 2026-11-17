@@ -36,6 +36,7 @@ final class PackedFilterRules {
 	private final PackedCostContext costContext = new PackedCostContext();
 	private final PackedCostEstimate helperEstimate = new PackedCostEstimate();
 	private final PackedCostEstimate rootEstimate = new PackedCostEstimate();
+	private PackedDependentSubqueryCosting.Summary dependentCostSummary;
 	private final RuleApplicabilityResult applicability = new RuleApplicabilityResult();
 
 	PackedFilterRules(PackedQuery query, PackedMemo memo, PackedRuleState ruleState,
@@ -132,6 +133,7 @@ final class PackedFilterRules {
 		double helperCost = memo.winnerTotalCost(filteredInputWinnerId) + filteredRows;
 		helperEstimate.clear();
 		helperEstimate.setRows(filteredRows, helperCost);
+		PackedDependentSubqueryCosting.Summary dependent = null;
 		if (costSession != null) {
 			int inputEvidenceStateId = winnerEvidenceStateId(filteredInputWinnerId);
 			costContext.reset(emptyPrefix, 0, 0, 1.0d, inputEvidenceStateId);
@@ -142,7 +144,8 @@ final class PackedFilterRules {
 			if (!helperEstimate.hasComponentOutputRows() && finiteNonNegative(helperEstimate.outputRows())) {
 				filteredRows = helperEstimate.outputRows();
 			}
-			if (!helperEstimate.hasComponentOutputRows() && finiteNonNegative(helperEstimate.workRows())) {
+			if (!helperEstimate.hasComponentOutputRows() && (helperEstimate.hasExplicitPhysicalCost()
+					|| finiteNonNegative(helperEstimate.workRows()))) {
 				if (helperEstimate.hasExplicitPhysicalCost()
 						&& helperEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
 					double localObjective = costSession.objectiveScore(helperEstimate);
@@ -156,24 +159,36 @@ final class PackedFilterRules {
 			} else if (helperEstimate.hasComponentOutputRows()) {
 				helperEstimate.setReplacesChildWork(false);
 			}
-			if (!helperEstimate.dependentSubqueriesCosted()) {
-				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, filterExpressionId,
-						filteredInputRows);
-				if (dependentCost > 0.0d) {
+			if (!helperEstimate.dependentSubqueriesCosted()
+					&& PackedDependentSubqueryCosting.hasSubquery(query, filterExpressionId)) {
+				if (dependentCostSummary == null) {
+					dependentCostSummary = new PackedDependentSubqueryCosting.Summary();
+				}
+				dependent = dependentCostSummary;
+				PackedDependentSubqueryCosting.defaultCost(query, memo, filterExpressionId, filteredInputRows,
+						dependent);
+				if (dependent.present()) {
+					double dependentCost = dependent.point();
 					if (helperEstimate.hasExplicitPhysicalCost()) {
-						helperEstimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
-								0.0d, 0.0d, 0.0d);
-						helperCost = costSession.objectiveScore(helperEstimate);
-					} else {
-						helperCost = saturatedAdd(helperCost, dependentCost);
+						double scopedCost = helperEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL
+								? costSession.objectiveScore(helperEstimate)
+								: helperCost;
+						helperEstimate.setPhysicalCostWithUnknownChild(saturatedAdd(scopedCost, dependentCost));
 					}
+					helperCost = saturatedAdd(helperCost, dependentCost);
 				}
 			}
 		}
 		if (helperEstimate.hasExplicitPhysicalCost()) {
 			helperEstimate.setOutputRowsPreservingPhysicalCost(filteredRows);
 		} else {
+			if (dependent != null && dependent.present()) {
+				helperEstimate.rebaseObjective(helperCost);
+			}
 			helperEstimate.setRows(filteredRows, helperCost);
+		}
+		if (dependent != null && dependent.present()) {
+			dependent.applyLifecycle(helperEstimate);
 		}
 		unaryWinner[0] = filteredInputWinnerId;
 		int helperMetadataId = memo.addPhysicalMetadata(helperEstimate, filteredRows, helperCost);
@@ -265,6 +280,6 @@ final class PackedFilterRules {
 
 	private static double saturatedAdd(double left, double right) {
 		double result = left + right;
-		return Double.isFinite(result) ? result : Double.MAX_VALUE;
+		return Double.isNaN(result) ? Double.NaN : Double.isFinite(result) ? result : Double.MAX_VALUE;
 	}
 }

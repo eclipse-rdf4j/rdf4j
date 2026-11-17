@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -76,6 +77,9 @@ class LmdbNativeParallelFilterCleanupTest {
 				}
 				connection.commit();
 			}
+			// Parallel leapfrog workers need sibling snapshots of this dataset's LMDB snapshot. Startup maintenance
+			// (deferred RDF-term-domain publication) may still commit after the load and would make them decline.
+			LmdbTestUtil.awaitBackgroundMaintenance((LmdbStore) repository.getSail(), 30, TimeUnit.SECONDS);
 			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset((LmdbStore) repository.getSail())) {
 				NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
 				TrackingSource clean = new TrackingSource(actual);

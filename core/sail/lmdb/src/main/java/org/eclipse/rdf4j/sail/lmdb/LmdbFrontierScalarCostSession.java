@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderMemory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderWork;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
 
@@ -70,6 +71,11 @@ final class LmdbFrontierScalarCostSession implements PackedCostSession {
 	}
 
 	@Override
+	public void bindProviderWork(PackedProviderWork work) {
+		scalar.bindProviderWork(work);
+	}
+
+	@Override
 	public double objectiveScore(PackedCostEstimate estimate) {
 		return scalar.objectiveScore(estimate);
 	}
@@ -92,6 +98,11 @@ final class LmdbFrontierScalarCostSession implements PackedCostSession {
 	@Override
 	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
 		return scalar.detachEvidence(evidenceStateIds);
+	}
+
+	@Override
+	public boolean reproducible() {
+		return scalar.reproducible();
 	}
 
 	@Override

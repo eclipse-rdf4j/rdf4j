@@ -50,6 +50,10 @@ final class PhysicalEventKey {
 		return root;
 	}
 
+	String currentFrame() {
+		return currentFrame;
+	}
+
 	@Override
 	public int hashCode() {
 		return 31 * root.hash + currentFrame.hashCode();

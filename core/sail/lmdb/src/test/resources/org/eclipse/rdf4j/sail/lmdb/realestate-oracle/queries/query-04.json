@@ -1,0 +1,1 @@
+{"format":"rdf4j-exact-solution-bag","version":1,"variables":["count"],"rows":[{"values":[{"type":"literal","lexical":"9","datatype":"http://www.w3.org/2001/XMLSchema#integer","language":null,"direction":"none"}],"multiplicity":1}]}

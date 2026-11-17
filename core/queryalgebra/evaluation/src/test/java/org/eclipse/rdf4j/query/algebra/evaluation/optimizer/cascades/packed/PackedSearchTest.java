@@ -72,6 +72,8 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PackedSearchTest {
 
@@ -105,7 +107,8 @@ class PackedSearchTest {
 		assertEquals("root-v2:tier/operator/form;cost-ordered;even-quantiles;exact-executable-dedup",
 				first.samplingAlgorithm());
 		assertTrue(first.rootCandidateCount() >= firstAlternatives.size());
-		assertEquals(first.rootCandidateCount() - first.paretoSurvivorCount(), first.dominatedCandidateCount());
+		assertEquals(first.rootCandidateCount() - first.paretoSurvivorCount() - first.unrankedCandidateCount(),
+				first.dominatedCandidateCount());
 		int selected = 0;
 		List<String> firstIds = new ArrayList<>();
 		List<String> secondIds = new ArrayList<>();
@@ -113,7 +116,7 @@ class PackedSearchTest {
 		for (int index = 0; index < firstAlternatives.size(); index++) {
 			PackedPlanQualityAlternative alternative = firstAlternatives.get(index);
 			assertTrue(alternative.selectedByPolicy() || alternative.paretoSurvivor()
-					|| alternative.sampledDominated());
+					|| alternative.sampledDominated() || alternative.unrankedCandidate());
 			assertInstanceOf(TupleExpr.class, alternative.plan());
 			assertTrue(alternative.stratumOrdinal() < alternative.stratumPopulation());
 			selected += alternative.selectedByPolicy() ? 1 : 0;
@@ -239,7 +242,7 @@ class PackedSearchTest {
 	}
 
 	@Test
-	void dependentBushyAlternativeChargesEveryLeftReopen() {
+	void dependentBushyAlternativeWithoutContextualAuthorityRemainsUnpriced() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = pattern(values, "drug", "urn:targets", "target", Double.NaN);
 		StatementPattern first = pattern(values, "trial", "urn:armDrug", "drug", Double.NaN);
@@ -257,9 +260,16 @@ class PackedSearchTest {
 		};
 
 		PackedPlanQualityAuditResult audit = PackedCascadesPlanner.auditPlanQuality(source,
-				OptimizationGoal.root(), costs, null, 100);
+				OptimizationGoal.root(), costs, null, 100, PackedPlannerLimits.unbounded());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				audit.selectedPlanningResult().decisionSummary().comparisonCompleteness());
+		assertTrue(audit.rootCandidateCount() >= audit.alternatives().size());
 		PackedPlanQualityAlternative dependentBushy = null;
 		for (PackedPlanQualityAlternative alternative : audit.alternatives()) {
+			if (!alternative.unrankedCandidate()) {
+				assertTrue(Double.isFinite(alternative.estimatedCost()));
+				assertTrue(Double.isFinite(alternative.comparisonCost()));
+			}
 			if (alternative.plan() instanceof Join join
 					&& join.getLeftArg() instanceof StatementPattern left
 					&& left.getPredicateVar().hasValue()
@@ -271,7 +281,100 @@ class PackedSearchTest {
 		}
 
 		assertTrue(dependentBushy != null,
-				() -> "the audit must expose the legal dependent bushy alternative: " + audit.alternatives());
+				() -> "the audit must expose the legal dependent bushy alternative: rootCandidates="
+						+ audit.rootCandidateCount() + ", unavailable=" + audit.unavailableCandidateCount()
+						+ ", alternatives=" + audit.alternatives());
+		assertTrue(dependentBushy.unrankedCandidate());
+		assertFalse(dependentBushy.priceAvailable());
+		assertTrue(Double.isNaN(dependentBushy.estimatedCost()));
+		assertTrue(Double.isNaN(dependentBushy.comparisonCost()));
+		assertFalse(dependentBushy.paretoSurvivor());
+		assertFalse(dependentBushy.sampledDominated());
+		assertTrue(audit.unrankedCandidateCount() > 0);
+		assertTrue(audit.unavailableCandidateCount() > 0);
+		assertEquals(0, audit.omittedUnrankedCandidateCount());
+		assertEquals(PackedPlanQualityAuditResult.UnrankedAdmission.COMPLETE, audit.unrankedAdmission());
+		var data = PackedPlanDifferentialSupport.model();
+		var drug = values.createIRI("urn:drug:1");
+		var trial = values.createIRI("urn:trial:1");
+		data.add(drug, values.createIRI("urn:targets"), values.createIRI("urn:target:1"));
+		data.add(trial, values.createIRI("urn:armDrug"), drug);
+		data.add(trial, values.createIRI("urn:result"), values.createIRI("urn:result:1"));
+		assertEquals(PackedPlanDifferentialSupport.evaluate(data, source),
+				PackedPlanDifferentialSupport.evaluate(data, dependentBushy.plan()));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "sample", "work", "deadline", "memory" })
+	void unrankedAuditMaterializationRequiresAnExplicitSampleAndUnboundedOwner(String restriction) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = new Join(pattern(values, "drug", "urn:targets", "target", Double.NaN),
+				new Join(pattern(values, "trial", "urn:armDrug", "drug", Double.NaN),
+						pattern(values, "trial", "urn:result", "result", Double.NaN)));
+		PackedCostModel costs = (query, relationId) -> {
+			if (!query.isStatementPattern(relationId)) {
+				return Double.NaN;
+			}
+			return "urn:targets".equals(query.statementPatternValue(relationId, 1).stringValue())
+					? 100.0d
+					: 10.0d;
+		};
+		long unlimited = Long.MAX_VALUE;
+		PackedPlannerLimits limits = switch (restriction) {
+		case "sample" -> PackedPlannerLimits.unbounded();
+		case "work" -> new PackedPlannerLimits(unlimited - 1, unlimited, unlimited);
+		case "deadline" -> new PackedPlannerLimits(unlimited, unlimited - 1, unlimited);
+		case "memory" -> new PackedPlannerLimits(unlimited, unlimited, unlimited - 1);
+		default -> throw new AssertionError(restriction);
+		};
+		int samples = restriction.equals("sample") ? 0 : 1;
+		PackedPlanQualityAuditResult audit = PackedCascadesPlanner.auditPlanQuality(source,
+				OptimizationGoal.root(), costs, null, samples, limits);
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				audit.selectedPlanningResult().decisionSummary().comparisonCompleteness());
+		assertTrue(audit.alternatives().stream().anyMatch(PackedPlanQualityAlternative::selectedByPolicy));
+		assertFalse(audit.alternatives().stream().anyMatch(PackedPlanQualityAlternative::unrankedCandidate),
+				"unproved audit materialization must honor the explicit " + restriction + " limit");
+		assertTrue(audit.selectedPlanningResult().exactComplete());
+		assertTrue(audit.omittedUnrankedCandidateCount() > 0);
+		assertEquals(restriction.equals("sample") ? PackedPlanQualityAuditResult.UnrankedAdmission.SAMPLE_LIMIT
+				: PackedPlanQualityAuditResult.UnrankedAdmission.RESOURCE_PROOF_UNAVAILABLE,
+				audit.unrankedAdmission());
+	}
+
+	@Test
+	void dependentBushyAlternativeChargesEveryLeftReopen() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = pattern(values, "outerDrug", "urn:targets", "target", Double.NaN);
+		StatementPattern first = pattern(values, "trial", "urn:armDrug", "drug", Double.NaN);
+		StatementPattern second = pattern(values, "trial", "urn:result", "result", Double.NaN);
+		TupleExpr source = new Join(outer, new Join(first, second));
+		PackedCostModel costs = (query, relationId) -> {
+			if (!query.isStatementPattern(relationId)) {
+				return Double.NaN;
+			}
+			return "urn:targets".equals(query.statementPatternValue(relationId, 1).stringValue())
+					? 100.0d
+					: 10.0d;
+		};
+		PackedPlanQualityAuditResult audit = PackedCascadesPlanner.auditPlanQuality(source,
+				OptimizationGoal.root(), costs, null, 100, PackedPlannerLimits.unbounded());
+		PackedPlanQualityAlternative dependentBushy = null;
+		for (PackedPlanQualityAlternative alternative : audit.alternatives()) {
+			if (alternative.plan() instanceof Join join
+					&& join.getLeftArg() instanceof StatementPattern left
+					&& left.getPredicateVar().hasValue()
+					&& "urn:targets".equals(left.getPredicateVar().getValue().stringValue())
+					&& join.getRightArg() instanceof Join) {
+				dependentBushy = alternative;
+				break;
+			}
+		}
+		assertTrue(dependentBushy != null,
+				() -> "the disconnected bushy alternative must be materialized: rootCandidates="
+						+ audit.rootCandidateCount() + ", unavailable=" + audit.unavailableCandidateCount()
+						+ ", alternatives=" + audit.alternatives());
+		assertTrue(dependentBushy.priceAvailable(), "the unrelated prefix repeats an unchanged right input");
 		Join dependentJoin = (Join) dependentBushy.plan();
 		double minimumReopenWork = dependentJoin.getLeftArg().getResultSizeEstimate()
 				* dependentJoin.getRightArg().getCostEstimate();
@@ -1330,6 +1433,76 @@ class PackedSearchTest {
 				selected::toString);
 		assertEquals("memoized-correlated",
 				selected.getStringMetricPlanned("optimizer.physicalJoinImplementation"), selected::toString);
+	}
+
+	@Test
+	void memoizedOptionalDoesNotTurnUnavailableLocalPricingIntoAMaximumBound() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		LeftJoin source = new LeftJoin(
+				pattern(values, "shared", "urn:left", "leftValue", Double.NaN),
+				pattern(values, "shared", "urn:right", "rightValue", Double.NaN));
+		int[] memoizedCallbacks = { 0 };
+		double[] callbackPrice = { Double.NaN };
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:left".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 1_000.0d
+						: 1_000_000.0d;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						double rows = estimateRows(query, relationId);
+						output.setRows(rows, rows);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						output.setContextualRows(1_000.0d, 100_000.0d);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (query.operatorTag(relationId) == PackedRelOp.LEFT_JOIN) {
+							output.putPlannedDoubleMetric("optimizer.memoizedCorrelationDistinctKeys", 1.0d);
+						}
+					}
+
+					@Override
+					public double objectiveScore(PackedCostEstimate estimate) {
+						return estimate.iteratorOpens() > 0.0d && estimate.expressionEvaluations() > 0.0d
+								? Double.NaN
+								: estimate.workRows();
+					}
+
+					@Override
+					public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+						if ("memoized-correlated".equals(
+								output.plannedStringMetric("optimizer.physicalJoinImplementation"))) {
+							memoizedCallbacks[0]++;
+							callbackPrice[0] = output.objectivePoint();
+						}
+					}
+				};
+			}
+		};
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+		assertTrue(memoizedCallbacks[0] > 0, "the real memoized candidate reached the provider callback");
+		assertTrue(Double.isNaN(callbackPrice[0]), () -> "unavailable local price became " + callbackPrice[0]);
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+		var data = PackedPlanDifferentialSupport.model();
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:left"), values.createIRI("urn:leftValue"));
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:right"), values.createIRI("urn:rightValue"));
+		assertEquals(List.of("leftValue=urn:leftValue|rightValue=urn:rightValue|shared=urn:subject"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
 	}
 
 	@Test
@@ -3051,7 +3224,9 @@ class PackedSearchTest {
 
 		PackedQuery query = PackedQueryCodec.encode(assignment);
 
-		assertEquals(1, query.maskCardinality(query.relOutputMaskId(query.rootRelId())));
+		assertEquals(Set.of("declared", "actual"),
+				Set.copyOf(query.bindingNames(query.relOutputMaskId(query.rootRelId()))),
+				"possible output includes both the declared header and a row-only binding");
 		assertEquals(0, query.maskCardinality(query.relAssuredMaskId(query.rootRelId())));
 	}
 

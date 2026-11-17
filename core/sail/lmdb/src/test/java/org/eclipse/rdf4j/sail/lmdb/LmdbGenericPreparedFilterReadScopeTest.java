@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.within;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.FilterPassEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -65,7 +67,7 @@ class LmdbGenericPreparedFilterReadScopeTest {
 	}
 
 	@BeforeEach
-	void setUp() {
+	void setUp() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
 		config.setNativeEvaluationEnabled(false);
 		config.setExperimentalQueryOptimizations(true);
@@ -83,6 +85,25 @@ class LmdbGenericPreparedFilterReadScopeTest {
 						vf.createLiteral((i % 4 == 0 ? "hit:" : "miss:") + i));
 			}
 			connection.commit();
+		}
+		// A census is learned only from a read that no store publication overlapped; startup maintenance (deferred
+		// term-domain publication, index builds) publishes after init, so wait until it has completed.
+		LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
+	}
+
+	@Test
+	void genericFilterOutcomeFeedbackDoesNotInventAnObjectivePrice() {
+		try (Read read = open()) {
+			TupleExpr optimized = read.strategy.optimize(parse(QUERY), read.statistics, EmptyBindingSet.getInstance());
+			var step = read.strategy.precompile(optimized);
+			Filter filter = onlyFilter(optimized);
+			RuntimeFeedbackContract contract = filter.getRuntimeFeedbackContract();
+			assertThat(contract).isNotNull();
+			assertThat(contract.descriptor()).isInstanceOf(LmdbFilterOutcomeFeedbackDescriptor.class);
+			assertThat(contract.admits(RuntimeFeedbackContract.ADMIT_FILTER)).isTrue();
+			assertThat(contract.admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE)).isFalse();
+			assertThat(contract.objectivePoint()).isNaN();
+			assertThat(QueryResults.asList(step.evaluate(EmptyBindingSet.getInstance()))).hasSize(ROWS / 4);
 		}
 	}
 

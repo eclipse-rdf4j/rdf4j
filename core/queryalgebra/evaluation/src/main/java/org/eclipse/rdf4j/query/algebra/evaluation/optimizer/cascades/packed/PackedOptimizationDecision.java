@@ -30,10 +30,15 @@ final class PackedOptimizationDecision {
 	record EstimatedCostInterval(double lower, double point, double upper) {
 
 		EstimatedCostInterval {
-			if (!finiteNonNegative(lower) || !finiteNonNegative(point) || !finiteNonNegative(upper)
-					|| lower > point || point > upper) {
+			boolean unavailable = Double.isNaN(lower) && Double.isNaN(point) && Double.isNaN(upper);
+			if (!unavailable && (!finiteNonNegative(lower) || !finiteNonNegative(point) || !finiteNonNegative(upper)
+					|| lower > point || point > upper)) {
 				throw new IllegalArgumentException("invalid packed candidate cost interval");
 			}
+		}
+
+		boolean available() {
+			return !Double.isNaN(point);
 		}
 	}
 
@@ -53,29 +58,33 @@ final class PackedOptimizationDecision {
 	private final Candidate[] candidates;
 	private final PackedSearchCompletionStatus completionStatus;
 	private final long deterministicWorkUnits;
+	private final long providerWorkUnits;
 	private final PackedSearchCheckpoint searchCheckpoint;
+	private final boolean comparisonAvailable;
 
 	PackedOptimizationDecision(PackedQueryFamilyIdentity familyIdentity, Candidate[] candidates,
 			PackedSearchCompletionStatus completionStatus, long deterministicWorkUnits) {
-		this(familyIdentity, candidates, completionStatus, deterministicWorkUnits, null);
+		this(familyIdentity, candidates, completionStatus, deterministicWorkUnits, 0L, null, true);
 	}
 
 	private PackedOptimizationDecision(PackedQueryFamilyIdentity familyIdentity, Candidate[] candidates,
-			PackedSearchCompletionStatus completionStatus, long deterministicWorkUnits,
-			PackedSearchCheckpoint searchCheckpoint) {
+			PackedSearchCompletionStatus completionStatus, long deterministicWorkUnits, long providerWorkUnits,
+			PackedSearchCheckpoint searchCheckpoint, boolean comparisonAvailable) {
 		if (candidates == null || candidates.length == 0 || candidates.length > MAXIMUM_CANDIDATES) {
 			throw new IllegalArgumentException("a packed optimization decision requires one to four candidates");
 		}
-		if (deterministicWorkUnits < 0L) {
+		if (deterministicWorkUnits < 0L || providerWorkUnits < 0L) {
 			throw new IllegalArgumentException("packed decision work units must be nonnegative");
 		}
 		this.familyIdentity = familyIdentity == null ? null : familyIdentity.detached();
 		this.candidates = candidates.clone();
 		this.completionStatus = Objects.requireNonNull(completionStatus, "completionStatus");
 		this.deterministicWorkUnits = deterministicWorkUnits;
-		this.searchCheckpoint = searchCheckpoint;
+		this.providerWorkUnits = providerWorkUnits;
+		boolean allPricesAvailable = comparisonAvailable;
 		for (int candidate = 0; candidate < this.candidates.length; candidate++) {
 			Objects.requireNonNull(this.candidates[candidate], "candidate");
+			allPricesAvailable &= this.candidates[candidate].estimatedCost().available();
 			for (int retained = 0; retained < candidate; retained++) {
 				if (this.candidates[candidate]
 						.physicalIdentity()
@@ -84,6 +93,8 @@ final class PackedOptimizationDecision {
 				}
 			}
 		}
+		this.comparisonAvailable = allPricesAvailable;
+		this.searchCheckpoint = allPricesAvailable ? searchCheckpoint : null;
 	}
 
 	static PackedOptimizationDecision champion(PackedPlanRecipe recipe, TupleExpr materializedPlan, double totalCost,
@@ -95,13 +106,14 @@ final class PackedOptimizationDecision {
 	}
 
 	PackedOptimizationDecision withFamilyIdentity(PackedQueryFamilyIdentity identity) {
-		PackedSearchCheckpoint checkpoint = searchCheckpoint;
-		if (checkpoint == null && identity != null) {
+		PackedSearchCheckpoint checkpoint = identity != null && searchCheckpoint != null
+				&& searchCheckpoint.matches(identity) ? searchCheckpoint : null;
+		if (checkpoint == null && identity != null && comparisonAvailable) {
 			checkpoint = PackedSearchCheckpoint.incomplete(identity, candidates, completionStatus,
 					deterministicWorkUnits);
 		}
 		return new PackedOptimizationDecision(identity, candidates, completionStatus, deterministicWorkUnits,
-				checkpoint);
+				providerWorkUnits, checkpoint, comparisonAvailable);
 	}
 
 	PackedOptimizationDecision withChampion(PackedPlanRecipe recipe, double totalCost) {
@@ -115,14 +127,44 @@ final class PackedOptimizationDecision {
 			}
 		}
 		return new PackedOptimizationDecision(familyIdentity, Arrays.copyOf(updated, uniqueCount), completionStatus,
-				deterministicWorkUnits, searchCheckpoint);
+				deterministicWorkUnits, providerWorkUnits, searchCheckpoint, comparisonAvailable);
 	}
 
 	PackedOptimizationDecision withDeterministicWorkUnits(long workUnits) {
-		PackedSearchCheckpoint checkpoint = familyIdentity == null
+		PackedSearchCheckpoint checkpoint = familyIdentity == null || !comparisonAvailable
 				? null
 				: PackedSearchCheckpoint.incomplete(familyIdentity, candidates, completionStatus, workUnits);
-		return new PackedOptimizationDecision(familyIdentity, candidates, completionStatus, workUnits, checkpoint);
+		return new PackedOptimizationDecision(familyIdentity, candidates, completionStatus, workUnits,
+				providerWorkUnits, checkpoint, comparisonAvailable);
+	}
+
+	/** Records the provider work admitted while this decision was searched; it never enters a checkpoint. */
+	PackedOptimizationDecision withProviderWorkUnits(long units) {
+		return units == providerWorkUnits ? this
+				: new PackedOptimizationDecision(familyIdentity, candidates, completionStatus,
+						deterministicWorkUnits, units, searchCheckpoint, comparisonAvailable);
+	}
+
+	PackedOptimizationDecision withCompletionStatus(PackedSearchCompletionStatus status) {
+		Objects.requireNonNull(status, "completionStatus");
+		if (status == completionStatus) {
+			return this;
+		}
+		PackedSearchCheckpoint checkpoint = familyIdentity == null || !comparisonAvailable ? null
+				: PackedSearchCheckpoint.incomplete(familyIdentity, candidates, status, deterministicWorkUnits);
+		return new PackedOptimizationDecision(familyIdentity, candidates, status, deterministicWorkUnits,
+				providerWorkUnits, checkpoint, comparisonAvailable);
+	}
+
+	PackedOptimizationDecision withoutCompleteCostComparison() {
+		return comparisonAvailable
+				? new PackedOptimizationDecision(familyIdentity, candidates, completionStatus, deterministicWorkUnits,
+						providerWorkUnits, null, false)
+				: this;
+	}
+
+	boolean costComparisonAvailable() {
+		return comparisonAvailable;
 	}
 
 	int candidateCount() {
@@ -150,7 +192,7 @@ final class PackedOptimizationDecision {
 	}
 
 	TupleExpr materializeCandidate(int candidate, PackedQueryFamilyIdentity invocation) {
-		if (familyIdentity == null || invocation == null || !familyIdentity.matches(invocation)) {
+		if (!PackedQueryFamilyIdentity.sameConcreteInvocation(familyIdentity, invocation)) {
 			throw new IllegalArgumentException("packed decision family does not match the current invocation");
 		}
 		return PackedPlanMaterializer.materialize(invocation.concreteQuery(), candidate(candidate).recipe());
@@ -164,12 +206,16 @@ final class PackedOptimizationDecision {
 		return deterministicWorkUnits;
 	}
 
+	long providerWorkUnits() {
+		return providerWorkUnits;
+	}
+
 	PackedSearchCheckpoint searchCheckpoint() {
 		return searchCheckpoint;
 	}
 
 	long retainedBytes() {
-		long bytes = 32L + (long) candidates.length * 40L;
+		long bytes = 40L + (long) candidates.length * 40L;
 		PackedProviderRetainedMemory providerMemory = new PackedProviderRetainedMemory();
 		for (Candidate candidate : candidates) {
 			bytes = saturatedAdd(bytes, candidate.recipe().detachedEvidenceBytes(providerMemory));
@@ -208,7 +254,8 @@ final class PackedOptimizationDecision {
 					retained.physicalIdentity(), retained.estimatedCost(), retained.diversityKey());
 		}
 		return new PackedOptimizationDecision(familyIdentity, stripped, completionStatus, deterministicWorkUnits,
-				searchCheckpoint == null ? null : searchCheckpoint.withoutDetachedQuantities());
+				providerWorkUnits,
+				searchCheckpoint == null ? null : searchCheckpoint.withoutDetachedQuantities(), comparisonAvailable);
 	}
 
 	boolean hasRetainedProviderPayload() {
@@ -228,7 +275,8 @@ final class PackedOptimizationDecision {
 					retained.physicalIdentity(), retained.estimatedCost(), retained.diversityKey());
 		}
 		return new PackedOptimizationDecision(familyIdentity, stripped, completionStatus, deterministicWorkUnits,
-				searchCheckpoint == null ? null : searchCheckpoint.withoutRetainedProviderPayload());
+				providerWorkUnits, searchCheckpoint == null ? null : searchCheckpoint.withoutRetainedProviderPayload(),
+				comparisonAvailable);
 	}
 
 	private Candidate candidate(int candidate) {
@@ -247,7 +295,7 @@ final class PackedOptimizationDecision {
 	}
 
 	boolean accountCacheStructure(RetainedMemoryAccount account) {
-		if (!account.add(this, 48L)) {
+		if (!account.add(this, 56L)) {
 			return true;
 		}
 		PackedCacheMemory.array(account, candidates);

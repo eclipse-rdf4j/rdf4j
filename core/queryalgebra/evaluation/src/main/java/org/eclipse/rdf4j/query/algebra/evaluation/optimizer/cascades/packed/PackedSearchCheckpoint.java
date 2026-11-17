@@ -135,7 +135,7 @@ final class PackedSearchCheckpoint {
 	}
 
 	boolean matches(PackedQueryFamilyIdentity invocation) {
-		return familyIdentity.matches(invocation);
+		return PackedQueryFamilyIdentity.sameConcreteInvocation(familyIdentity, invocation);
 	}
 
 	PackedQuery rehydrateQuery(PackedQueryFamilyIdentity invocation) {
@@ -177,4 +177,13 @@ final class PackedSearchCheckpoint {
 				&& continuationRecipe.accountCacheStructure(account);
 	}
 
+}
+
+/** A specifically identified detached-checkpoint structural or evidence mismatch. */
+class PackedCheckpointRejectedException extends IllegalStateException {
+	private static final long serialVersionUID = 1L;
+
+	PackedCheckpointRejectedException(String message) {
+		super(message);
+	}
 }

@@ -13,21 +13,33 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
-/** Immutable phase timings and primitive search-size counters for one complete planning call. */
+/**
+ * Immutable phase timings and primitive search-size counters for one complete planning call. {@code workUnits} counts
+ * search work; {@code providerWorkUnits} counts the provider callbacks and provider-internal batches admitted on the
+ * search's separate provider-work limit.
+ */
 @Experimental
 public record PlanningMetrics(long encodeNanos, long searchNanos, long extractionNanos, long materializationNanos,
-		long cacheNanos, long workUnits, int groups, int logicalExpressions, int physicalExpressions, int winners,
-		boolean planCacheHit, boolean queryTemplateCacheHit) {
+		long cacheNanos, long workUnits, long providerWorkUnits, int groups, int logicalExpressions,
+		int physicalExpressions, int winners, boolean planCacheHit, boolean queryTemplateCacheHit) {
 
-	public static final PlanningMetrics ZERO = new PlanningMetrics(0L, 0L, 0L, 0L, 0L, 0L, 0, 0, 0, 0,
+	public static final PlanningMetrics ZERO = new PlanningMetrics(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0, 0, 0, 0,
 			false, false);
 
 	public PlanningMetrics {
 		if (encodeNanos < 0L || searchNanos < 0L || extractionNanos < 0L || materializationNanos < 0L
-				|| cacheNanos < 0L || workUnits < 0L || groups < 0 || logicalExpressions < 0
-				|| physicalExpressions < 0 || winners < 0) {
+				|| cacheNanos < 0L || workUnits < 0L || providerWorkUnits < 0L || groups < 0
+				|| logicalExpressions < 0 || physicalExpressions < 0 || winners < 0) {
 			throw new IllegalArgumentException("planning metrics must be non-negative");
 		}
+	}
+
+	/** Compatibility constructor for a call that admitted no provider work. */
+	public PlanningMetrics(long encodeNanos, long searchNanos, long extractionNanos, long materializationNanos,
+			long cacheNanos, long workUnits, int groups, int logicalExpressions, int physicalExpressions, int winners,
+			boolean planCacheHit, boolean queryTemplateCacheHit) {
+		this(encodeNanos, searchNanos, extractionNanos, materializationNanos, cacheNanos, workUnits, 0L, groups,
+				logicalExpressions, physicalExpressions, winners, planCacheHit, queryTemplateCacheHit);
 	}
 
 }

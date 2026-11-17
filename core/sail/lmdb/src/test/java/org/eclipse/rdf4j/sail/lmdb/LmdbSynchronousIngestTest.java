@@ -66,6 +66,7 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadEvidence;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadProbe;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadValueHash;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
@@ -87,9 +88,13 @@ class LmdbSynchronousIngestTest {
 	private static final IRI PREDICATE = VF.createIRI("urn:sync-ingest:predicate");
 
 	private static double predicateRows(SketchBasedJoinEstimator estimator, IRI predicate) {
+		return predicateEvidence(estimator, predicate).rows().estimate();
+	}
+
+	private static QuadEvidence predicateEvidence(SketchBasedJoinEstimator estimator, IRI predicate) {
 		QuadProbe probe = new QuadProbe(QuadProbe.PREDICATE, QuadProbe.OBJECT, 0L,
 				QuadValueHash.hash(predicate), 0L, 0L, estimator.quadSnapshotIdentity());
-		return estimator.synopsisService().probe(probe).rows().estimate();
+		return estimator.synopsisService().probe(probe);
 	}
 
 	@Test
@@ -656,11 +661,18 @@ class LmdbSynchronousIngestTest {
 					}
 					sink.flush();
 				}
-				double expected = remove ? 0D : (double) ((count + 1) / 2);
-				assertEquals(expected,
-						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:0")));
+				// The quad synopsis pins its rebuild snapshot before reading. A commit after that pin makes the
+				// rebuild stale: it may publish only the pinned rows and must not serve them as usable evidence.
 				releaseRefresh.countDown();
-				assertEquals(remove ? 1L : count + 1L, refresh.get(10, TimeUnit.SECONDS));
+				assertEquals(remove ? count + 1L : 1L, refresh.get(10, TimeUnit.SECONDS),
+						"the overtaken rebuild publishes the snapshot it pinned before the concurrent commit");
+				assertFalse(predicateEvidence(estimator, VF.createIRI("urn:sizing:predicate:0")).usable(),
+						"a rebuild overtaken by a commit must not serve its pinned counts");
+				assertTrue(estimator.hasPendingBackgroundRefresh(), "the overtaken rebuild must request a refresh");
+				assertEquals(remove ? 1L : count + 1L, estimator.rebuild(),
+						"the next rebuild counts the concurrent commit exactly once");
+				assertEquals(remove ? 0D : (double) ((count + 1) / 2),
+						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:0")));
 				try (SailSink sink = fixture.store.getBackingStore()
 						.getExplicitSailSource()
 						.sink(IsolationLevels.NONE)) {

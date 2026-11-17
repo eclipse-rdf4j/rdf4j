@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -236,6 +237,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Map<TypedSemiAntiDistinctKey, TypedSemiAntiDistinctCounts> typedSemiAntiDistinct = new LinkedHashMap<>();
 	private final Set<SemiAntiSurfaceKey> frontierOriginSemiAntiSurfaces = new HashSet<>();
 	private final Map<String, ExactCardinalityCell> exactCardinalityFacts = new LinkedHashMap<>();
+	/*
+	 * Digest index over the exact-fact cells (the planning read log's witness for a read that found no current fact):
+	 * every cell is listed under its key's digest, so a key always finds its own cell; a collision only adds cells
+	 * under a digest, which a probe answers as "a fact is current" if any of them is. Maintained wherever cells are
+	 * created, evicted, cleared or loaded.
+	 */
+	private final Map<LearningKeyDigests.Digest, Object> exactFactsByDigest = new HashMap<>();
 
 	/**
 	 * Observed output cardinality of a top-level, uncorrelated logical relation, valid only while the store's LMDB
@@ -269,7 +277,36 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final IdentityHashMap<TupleExpr, Map<String, LeoOperatorKey>> planningLeoKeyCache = new IdentityHashMap<>();
 
 	private long feedbackEpoch;
+	/*
+	 * Components of planningRevision(). Each is advanced under this monitor in the critical section of the mutation it
+	 * versions (before it, or in a finally block after it), and none is ever reset, so their sum never decreases and
+	 * never repeats a value after a change.
+	 */
+	/** The observation clock restored from the sidecar at construction. */
+	private long planningRevisionBase;
+	/** Clock advances of every site other than the typed publication, one for one with the clock. */
+	private long legacyClockTicks;
+	/** An exact fact whose rows change or that becomes current; a current fact evicted. */
+	private long exactFactMutations;
+	/** {@link PlanLifecycleStore#revision()} advances made by feedback observations and store mutations. */
+	private long lifecycleObservedMutations;
+	/**
+	 * Typed clock ticks seen by a reader that takes the clock as "now" (learned operators, learned multipliers, plan
+	 * candidates, a pending rule-steering cooldown); typed semi/anti distinct writes once they are read.
+	 */
+	private long structuralMutations;
+	/** Sticky: set by the first read of the typed semi/anti distinct counts, after which their writes are versioned. */
+	private boolean typedSemiAntiDistinctRead;
 	private long runtimeTargetGeneration;
+	/**
+	 * Set when a reset exits abruptly and cleared by the next reset that completes. While set, the retained state is
+	 * withheld from every reader, publisher and persistence. Written only while holding this monitor, in the same
+	 * critical section as the generation and epoch advances of the failed reset. Every reader or publisher that can
+	 * expose learned state consults it under this monitor; it is volatile only because unsynchronized admission checks
+	 * also read it through {@link #adaptiveEvidenceAllowed()}. Those checks are advisory: anything recorded past a
+	 * stale check stays withheld and is cleared by the reset that reconciles the provider.
+	 */
+	private volatile boolean learnedStateUnavailable;
 	private long ruleSteeringCooldownUntilEpoch;
 	private int ruleSteeringBadMisses;
 	private long appliedStatementMutationStamp;
@@ -310,8 +347,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	/**
-	 * A verified legacy owner cannot authenticate a prior owner's data-dependent operator payload from its logical
-	 * UUID or newer mutation journal: compatible older writers do not update that journal. Withholding this load is
+	 * A verified legacy owner cannot authenticate a prior owner's data-dependent operator payload from its logical UUID
+	 * or newer mutation journal: compatible older writers do not update that journal. Withholding this load is
 	 * invocation-independent; current-owner, source-qualified observations can still populate and persist every cell.
 	 */
 	LmdbOperatorFeedbackStats(Path estimatorPath,
@@ -369,6 +406,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			LmdbFilterSelectivityStats.ResolvedFilterCells filterCells,
 			LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome,
 			LmdbFeedbackReadAuthority.Publication publication) {
+		return resolveRuntimeFeedbackTarget(contract, filterStatistics, filterCells, learnedOutcome, publication,
+				null);
+	}
+
+	/**
+	 * @param openInputNames the planned node's own variable names; an open whose input binds any of them did not
+	 *                       evaluate the unbound population of an unconditioned key. {@code null} when unknown.
+	 */
+	synchronized RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(RuntimeFeedbackContract contract,
+			LmdbFilterSelectivityStats filterStatistics,
+			LmdbFilterSelectivityStats.ResolvedFilterCells filterCells,
+			LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome,
+			LmdbFeedbackReadAuthority.Publication publication, String[] openInputNames) {
 		if (adaptiveEvidenceAllowed() && contract != null
 				&& contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor) {
 			if (contract.admissionFlags() != RuntimeFeedbackContract.ADMIT_FILTER || learnedOutcome == null
@@ -446,7 +496,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		BoundRuntimeFeedbackDestination destination = new BoundRuntimeFeedbackDestination(this, contract,
 				learningModel, learningCells, lifecycleStore, lifecycle, exactFact,
-				filterStatistics, filterCells, runtimeTargetGeneration, learnedOutcome, publication);
+				filterStatistics, filterCells, runtimeTargetGeneration, learnedOutcome, publication, openInputNames);
 		return new BoundRuntimeFeedbackTarget(contract, destination);
 	}
 
@@ -568,8 +618,17 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		PlanLifecycleStore.ObjectiveEnvelope envelope = new PlanLifecycleStore.ObjectiveEnvelope(
 				contract.objectiveLower(), contract.objectivePoint(), contract.objectiveUpper());
-		PlanLifecycleStore.Decision decision = planLifecycleDecision(descriptor.logicalKey(), descriptor.physicalKey(),
-				descriptor.applicability(), envelope);
+		// Publication path, not planning: whatever this decision changes (admission, eviction, a planned envelope that
+		// differs, a STALE entry resumed) is versioned like a feedback observation.
+		PlanLifecycleStore lifecycleStore = planLifecycle;
+		long lifecycleVersion = lifecycleStore.decisionInputVersion();
+		PlanLifecycleStore.Decision decision;
+		try {
+			decision = planLifecycleDecision(descriptor.logicalKey(), descriptor.physicalKey(),
+					descriptor.applicability(), envelope);
+		} finally {
+			lifecycleObservedMutations += lifecycleStore.decisionInputVersion() - lifecycleVersion;
+		}
 		return decision.state() == PlanLifecycleStore.State.BLOCKED
 				|| decision.state() == PlanLifecycleStore.State.QUARANTINED;
 	}
@@ -636,13 +695,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		boolean previousApplying = applyingPreparedFeedback;
 		preparedFeedback = null;
 		applyingPreparedFeedback = false;
+		/*
+		 * The destination itself is the publication callback, so a publication allocates no capturing lambda. Every
+		 * Publication runs its callback synchronously on this thread, at most once, before publish returns, so the
+		 * pending observation is only ever read while this monitor is held.
+		 */
+		destination.pendingObservation = observation;
 		try {
-			destination.publication.publish(() -> {
-				if (publishInScope(destination, observation)) {
-					destination.publicationCount++;
-				}
-			});
+			destination.publication.publish(destination);
 		} finally {
+			destination.pendingObservation = null;
 			preparedFeedback = previous;
 			applyingPreparedFeedback = previousApplying;
 		}
@@ -650,7 +712,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private boolean publishInScope(BoundRuntimeFeedbackDestination destination,
 			InvocationAggregateView observation) {
-		if (destination.generation != runtimeTargetGeneration || observation == null
+		if (learnedStateUnavailable || destination.generation != runtimeTargetGeneration || observation == null
 				|| observation.statisticalSampleWeight() != 1L) {
 			if (estimateTraceEnabled) {
 				System.err.println("[lmdb-operator-feedback-trace] event=publish-runtime-observation-rejected"
@@ -675,7 +737,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					+ " opens=" + observation.opens()
 					+ " exhausted=" + observation.exhaustedOpens()
 					+ " rootCompleted=" + observation.rootCompleted()
-					+ " exactLogical=" + observation.exactLogicalCardinality());
+					+ " exactLogical=" + observation.exactLogicalCardinality()
+					+ " boundInput=" + destination.openedWithBoundInput);
 		}
 		if (destination.learnedOutcome != null && destination.inputQualified
 				&& destination.inputOpens == observation.opens() && observation.rootCompleted()
@@ -688,25 +751,48 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			// This channel owns no persistent operator/model/lifecycle/exact sidecar cells.
 			return true;
 		}
-		long epoch = nextFeedbackEpoch();
+		long epoch = advanceObservationClock();
+		/*
+		 * An unconditioned key describes the planner's unbound population. An open that bound one of the node's own
+		 * variables (an enclosing bind join reopening it per outer row) observed a conditional population instead, so
+		 * it may teach neither the exact fact, the unconditioned row posterior, the physical residuals of that key nor
+		 * its plan lifecycle entry.
+		 */
+		boolean unboundPopulationObserved = !destination.openedWithBoundInput
+				|| !(destination.contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor keyed)
+				|| !LmdbMappedFrontierLearningSession.unconditioned(keyed.applicability());
 		boolean changed = destination.learningModel.observeResolved(
-				destination.learningCells, destination.contract, observation, epoch);
+				destination.learningCells, destination.contract, observation, epoch, unboundPopulationObserved);
 		boolean matchingPhysicalImplementation = destination.contract.physicalImplementationId() != 0
 				&& observation.actualPhysicalImplementationId() == destination.contract.physicalImplementationId();
 		boolean semanticallyValid = observation.rootCompleted() && observation.cancellations() == 0L
 				&& observation.failures() == 0L && observation.partialCloses() == 0L;
-		if (destination.lifecycle != null) {
+		if (destination.lifecycle != null && unboundPopulationObserved) {
 			double actualObjective = observation.actualWork(InvocationAggregateView.WORK_ROWS);
 			if (!isFiniteNonNegative(actualObjective)) {
 				actualObjective = observation.actualRowsSum();
 			}
-			changed |= destination.lifecycleStore.observeResolved(destination.lifecycle, actualObjective,
-					semanticallyValid && matchingPhysicalImplementation, destination.contract.regressionLimit(), epoch);
+			// The lifecycle store's revision advances exactly when something its decision reads changed.
+			long lifecycleRevision = destination.lifecycleStore.revision();
+			try {
+				changed |= destination.lifecycleStore.observeResolved(destination.lifecycle, actualObjective,
+						semanticallyValid && matchingPhysicalImplementation, destination.contract.regressionLimit(),
+						epoch);
+			} finally {
+				lifecycleObservedMutations += destination.lifecycleStore.revision() - lifecycleRevision;
+			}
 		}
 		if (destination.exactFact != null && observation.exactLogicalCardinality()
-				&& observation.opens() == 1L) {
-			destination.exactFact.rows = observation.actualRowsSum();
-			destination.exactFact.statementMutationStamp = appliedStatementMutationStamp;
+				&& observation.opens() == 1L && !destination.openedWithBoundInput) {
+			ExactCardinalityCell fact = destination.exactFact;
+			double rows = observation.actualRowsSum();
+			if (!fact.hasFact() || fact.statementMutationStamp != appliedStatementMutationStamp
+					|| Double.compare(fact.rows, rows) != 0) {
+				// Changed rows, or a fact that becomes current; rewriting a current fact with its rows changes nothing.
+				exactFactMutations++;
+			}
+			fact.rows = rows;
+			fact.statementMutationStamp = appliedStatementMutationStamp;
 			if (estimateTraceEnabled
 					&& destination.contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
 				System.err.println("[lmdb-operator-feedback-trace] event=publish-runtime-exact-fact"
@@ -729,6 +815,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				&& destination.contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
 			DistinctBindingFeedback distinctFeedback = observation.distinctBindingFeedback();
 			if (distinctFeedback.available()) {
+				if (typedSemiAntiDistinctRead) {
+					structuralMutations++;
+				}
 				TypedSemiAntiDistinctKey key = new TypedSemiAntiDistinctKey(descriptor.logicalKey(),
 						descriptor.physicalKey(), descriptor.applicability());
 				typedSemiAntiDistinct.computeIfAbsent(key, ignored -> new TypedSemiAntiDistinctCounts())
@@ -768,7 +857,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
-	private static final class BoundRuntimeFeedbackDestination implements RuntimeFeedbackAccumulator.Destination {
+	private static final class BoundRuntimeFeedbackDestination
+			implements RuntimeFeedbackAccumulator.Destination, Runnable {
 		private final LmdbOperatorFeedbackStats owner;
 		private final RuntimeFeedbackContract contract;
 		private final FrontierLearningModel learningModel;
@@ -781,10 +871,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		private final long generation;
 		private final LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome;
 		private final LmdbFeedbackReadAuthority.Publication publication;
+		/** The planned node's own variable names, or {@code null} when unknown; checked once per open. */
+		private final String[] openInputNames;
 		private long publicationCount;
 		private boolean inputQualified = true;
 		private long inputOpens;
+		/** Whether any open's input bound one of {@link #openInputNames}. */
+		private boolean openedWithBoundInput;
 		private boolean released;
+		/** Set and cleared by the owner's {@code publish} under the owner's monitor; read only by {@link #run()}. */
+		private InvocationAggregateView pendingObservation;
 
 		private BoundRuntimeFeedbackDestination(LmdbOperatorFeedbackStats owner, RuntimeFeedbackContract contract,
 				FrontierLearningModel learningModel, FrontierLearningModel.ResolvedCells learningCells,
@@ -803,7 +899,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				LmdbFilterSelectivityStats.ResolvedFilterCells filterCells, long generation,
 				LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome,
 				LmdbFeedbackReadAuthority.Publication publication) {
+			this(owner, contract, learningModel, learningCells, lifecycleStore, lifecycle, exactFact,
+					filterStatistics, filterCells, generation, learnedOutcome, publication, null);
+		}
+
+		private BoundRuntimeFeedbackDestination(LmdbOperatorFeedbackStats owner, RuntimeFeedbackContract contract,
+				FrontierLearningModel learningModel, FrontierLearningModel.ResolvedCells learningCells,
+				PlanLifecycleStore lifecycleStore, PlanLifecycleStore.ResolvedEntry lifecycle,
+				ExactCardinalityCell exactFact, LmdbFilterSelectivityStats filterStatistics,
+				LmdbFilterSelectivityStats.ResolvedFilterCells filterCells, long generation,
+				LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome,
+				LmdbFeedbackReadAuthority.Publication publication, String[] openInputNames) {
 			this.owner = owner;
+			this.openInputNames = openInputNames;
 			this.contract = contract;
 			this.learningModel = learningModel;
 			this.learningCells = learningCells;
@@ -819,6 +927,14 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 		@Override
 		public void open(BindingSet input) {
+			if (!openedWithBoundInput && openInputNames != null && input != null) {
+				for (String name : openInputNames) {
+					if (input.hasBinding(name)) {
+						openedWithBoundInput = true;
+						break;
+					}
+				}
+			}
 			if (learnedOutcome != null) {
 				inputQualified &= learnedOutcome.acceptsInput(input);
 				if (inputOpens < Long.MAX_VALUE) {
@@ -832,13 +948,51 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			owner.publish(this, observation);
 		}
 
+		/** The publication callback of {@link LmdbOperatorFeedbackStats#publish}; consumes the pending observation. */
+		@Override
+		public void run() {
+			InvocationAggregateView observation = pendingObservation;
+			pendingObservation = null;
+			if (owner.publishInScope(this, observation)) {
+				publicationCount++;
+			}
+		}
+
 		@Override
 		public void release() {
 			owner.release(this);
 		}
 	}
 
+	/**
+	 * Clears all learned operator evidence. A reset that exits abruptly (for example because the reset observer throws)
+	 * fails closed: the uncleared state stays withheld from readers, already issued targets and persistence until a
+	 * later reset completes. The original throwable propagates unchanged.
+	 */
 	synchronized void reset() {
+		boolean withheld = learnedStateUnavailable;
+		boolean completed = false;
+		try {
+			clearLearnedState();
+			completed = true;
+		} finally {
+			if (completed) {
+				if (withheld) {
+					// Reads withheld since a failed reset answer again, even when nothing was cleared.
+					structuralMutations++;
+				}
+				learnedStateUnavailable = false;
+			} else {
+				learnedStateUnavailable = true;
+				// Withdraw targets resolved before the failure and invalidate plans that consumed the retained state.
+				runtimeTargetGeneration++;
+				feedbackEpoch++;
+				legacyClockTicks++;
+			}
+		}
+	}
+
+	private void clearLearnedState() {
 		LearnedStateObserver observer = learnedStateObserver;
 		if (observer != null) {
 			observer.learnedStateReset();
@@ -856,6 +1010,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		// that coordinate space can no longer be trusted (store identity changed), so they are dropped as well; cells
 		// still leased by in-flight runtime targets keep working on their own object and simply never land here.
 		exactCardinalityFacts.clear();
+		exactFactsByDigest.clear();
 		learnedByOperator.clear();
 		learnedMultipliers.clear();
 		shadowByOperator.clear();
@@ -871,6 +1026,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		ruleSteeringBadMisses = 0;
 		ruleSteeringCooldownUntilEpoch = 0L;
 		feedbackEpoch++;
+		legacyClockTicks++;
 		dirty |= hadOperatorEvidence;
 		surfaceDirty |= hadSurfaceEvidence;
 	}
@@ -935,7 +1091,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		long lifecycleRevision = planLifecycle.revision();
 		planLifecycle.markAllStale();
-		boolean lifecycleChanged = lifecycleRevision != planLifecycle.revision();
+		long lifecycleMutations = planLifecycle.revision() - lifecycleRevision;
+		lifecycleObservedMutations += lifecycleMutations;
+		boolean lifecycleChanged = lifecycleMutations != 0L;
 		boolean hasLegacyEvidence = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty()
 				|| !shadowByOperator.isEmpty() || !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty()
 				|| !typedSemiAntiDistinct.isEmpty()
@@ -946,6 +1104,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		// Runtime distinct totals are dataset observations, not theorem-safe identities. The typed key does not retain
 		// predicate membership, so a mutation cannot selectively decay them without pretending stale points are safe.
+		if (typedSemiAntiDistinctRead && !typedSemiAntiDistinct.isEmpty()) {
+			structuralMutations++;
+		}
 		typedSemiAntiDistinct.clear();
 		/*
 		 * Regression-safe learning: the evidence weight a commit removes is proportional to the share of the store it
@@ -974,6 +1135,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return;
 		}
 		feedbackEpoch = nextEpoch;
+		legacyClockTicks += decayEpochs;
 		dirty |= hasLegacyEvidence || lifecycleChanged;
 		surfaceDirty |= surfaceChanged;
 	}
@@ -1517,6 +1679,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(filter)) {
 			return null;
 		}
+		if (LmdbPlanningReadLog.recording()) {
+			// The semi/anti surfaces change only through the legacy observation path, which the legacy version counts.
+			LmdbPlanningReadLog.legacy(this, legacyPlanningVersion());
+		}
 		SemiAntiSurfaceKey key = SemiAntiSurfaceKey.from(filter, semanticKind, physicalAlgorithm);
 		if (key == null) {
 			return null;
@@ -1553,6 +1719,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized TypedSemiAntiDistinctEstimate typedSemiAntiDistinctEstimate(LogicalLearningKey logicalKey,
 			PhysicalResidualKey physicalKey, LearningApplicability applicability) {
+		// From the first read on, these counts are planning evidence (see planningRevision()).
+		typedSemiAntiDistinctRead = true;
+		if (learnedStateUnavailable) {
+			return null;
+		}
 		TypedSemiAntiDistinctCounts counts = typedSemiAntiDistinct.get(
 				new TypedSemiAntiDistinctKey(logicalKey, physicalKey, applicability));
 		return counts == null ? null : counts.estimate();
@@ -1680,8 +1851,14 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				&& !"none".equals(physicalKey.indexName())
 				&& !physicalKey.indexName().equalsIgnoreCase(runtimeIndexName.trim());
 		boolean databaseExact = "database_exact".equalsIgnoreCase(node.getStringMetricPlanned(FRONTIER_GUARANTEE));
-		if (logicalAllowed && rowLearningAllowed && !databaseExact && !(accessDrift && outputRowsDriftSkipEnabled())
-				&& aggregate.exactLogicalCardinality()) {
+		/*
+		 * A typed runtime contract owns its node's logical learning: only the typed runtime path sees whether an open
+		 * bound one of the node's own variables, and it publishes only on root completion. This pass therefore writes
+		 * neither the exact fact nor the row posterior of a typed node.
+		 */
+		boolean typedLogicalOwner = runtimeFeedbackDescriptor(node) != null;
+		if (logicalAllowed && !typedLogicalOwner && rowLearningAllowed && !databaseExact
+				&& !(accessDrift && outputRowsDriftSkipEnabled()) && aggregate.exactLogicalCardinality()) {
 			double predictedRows = aggregate.rawPredictedRowsSum();
 			if (productionKeysValid) {
 				observeLogicalDimension(logicalKey, applicability, FrontierCostDimension.OUTPUT_ROWS,
@@ -1704,13 +1881,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return true;
 		}
 		/*
-		 * Cardinality facts require a run-to-completion certification plus a single-invocation basis — a re-invoked
-		 * node observes per-binding conditional relations, never the standalone one the planning-side stamp describes.
-		 * Both recording paths qualify: the direct path already enforced the strict isCompleted (every close exhausted)
-		 * and the poison guards before reaching this point, and the completed-tree pass is abort-guarded with final
-		 * cumulative counters. Nodes without a close counter (cost-feedback tracking is source-gated) qualify when they
-		 * are structurally non-re-invocable: such a node runs exactly once per query evaluation, and only the first
-		 * completion reaches this point (later passes dedup on isFeedbackRecorded).
+		 * Cardinality facts require the completion of the whole query, a single-invocation basis and a position that is
+		 * not re-invocable. A node's own completed close does not certify the run: an execution cut by its time limit
+		 * still closes the leaves that drained their own open, so only the completed-tree pass (reached after the
+		 * root's completion and abort guards, with final cumulative counters) qualifies. A node in a re-invocable
+		 * position (a join's right side, a path body, a subquery value) is opened with the outer row's bindings, so
+		 * even a single open there observes a per-binding conditional relation, never the standalone relation the
+		 * planning-side stamp describes. Typed nodes are left to the typed runtime path (see typedLogicalOwner).
 		 */
 		String logicalGroupKey = node.getStringMetricPlanned(FRONTIER_LOGICAL_GROUP_KEY);
 		String exactFactKey = productionKeysValid
@@ -1719,6 +1896,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		boolean singleInvocationBasis = aggregate.opens() == 1L;
 		if (exactCardinalityFactsEnabled()
 				&& exactAllowed
+				&& !typedLogicalOwner
+				&& completedRoot
+				&& !LmdbReinvocablePositions.isReinvocable(node)
 				&& exactFactKey != null && !exactFactKey.isBlank()
 				&& singleInvocationBasis
 				&& aggregate.exactLogicalCardinality()
@@ -2034,24 +2214,43 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	synchronized FrontierLearningModel.DimensionDecision logicalDimensionDecision(LogicalLearningKey key,
 			LearningApplicability applicability, FrontierCostDimension dimension, LearningFeatureEnvelope features,
 			double predicted) {
-		return adaptiveEvidenceAllowed()
+		boolean adaptive = adaptiveEvidenceAllowed();
+		FrontierLearningModel.DimensionDecision decision = adaptive
 				? frontierLearning.logicalDecision(key, applicability, dimension, features, predicted)
 				: new FrontierLearningModel.DimensionDecision(
 						new LearningGateDecision(LearningGateDecision.Outcome.INAPPLICABLE, 0L, 0L,
 								Double.NaN, Double.NaN),
 						null);
+		LmdbPlanningReadLog.model(this, LmdbPlanningReadLog.LOGICAL, key, null, applicability, dimension, features,
+				predicted, decision, exactCellBelowGateMinimum(adaptive, decision));
+		return decision;
 	}
 
 	synchronized FrontierLearningModel.DimensionDecision physicalDimensionDecision(LogicalLearningKey logicalKey,
 			PhysicalResidualKey physicalKey, LearningApplicability applicability, FrontierCostDimension dimension,
 			LearningFeatureEnvelope features, double predicted) {
-		return adaptiveEvidenceAllowed()
+		boolean adaptive = adaptiveEvidenceAllowed();
+		FrontierLearningModel.DimensionDecision decision = adaptive
 				? frontierLearning.physicalDecision(logicalKey, physicalKey, applicability, dimension, features,
 						predicted)
 				: new FrontierLearningModel.DimensionDecision(
 						new LearningGateDecision(LearningGateDecision.Outcome.INAPPLICABLE, 0L, 0L,
 								Double.NaN, Double.NaN),
 						null);
+		LmdbPlanningReadLog.model(this, LmdbPlanningReadLog.PHYSICAL, logicalKey, physicalKey, applicability,
+				dimension, features, predicted, decision, exactCellBelowGateMinimum(adaptive, decision));
+		return decision;
+	}
+
+	/**
+	 * Whether the model's decision found fewer than the gate's minimum of exact observations in the exact cell of its
+	 * posterior key: the model reports that count in its gate. Without adaptive evidence the decision is not the
+	 * model's, and its count says nothing about the cell.
+	 */
+	private static boolean exactCellBelowGateMinimum(boolean adaptive,
+			FrontierLearningModel.DimensionDecision decision) {
+		return adaptive && decision.estimate() == null
+				&& decision.gate().exactCellObservations() < FrontierLearningModel.minimumExactObservations();
 	}
 
 	/**
@@ -2060,7 +2259,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	 * served.
 	 */
 	synchronized double exactCardinalityFact(String groupKey) {
-		if (groupKey == null || !exactCardinalityFactsEnabled()) {
+		if (groupKey == null || learnedStateUnavailable || !exactCardinalityFactsEnabled()) {
 			return Double.NaN;
 		}
 		ExactCardinalityCell fact = exactCardinalityFacts.get(groupKey);
@@ -2078,7 +2277,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized double exactCardinalityFact(LogicalLearningKey logicalKey,
 			LearningApplicability applicability) {
-		return exactCardinalityFact(exactCardinalityFactKey(logicalKey, applicability));
+		String groupKey = exactCardinalityFactKey(logicalKey, applicability);
+		double rows = exactCardinalityFact(groupKey);
+		LmdbPlanningReadLog.exactFact(this, logicalKey, applicability, groupKey, rows);
+		return rows;
 	}
 
 	private static String exactCardinalityFactKey(LogicalLearningKey logicalKey,
@@ -2101,6 +2303,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			}
 			cell = new ExactCardinalityCell();
 			exactCardinalityFacts.put(groupKey, cell);
+			indexExactFact(groupKey, cell);
 		}
 		if (lease) {
 			cell.leases++;
@@ -2111,22 +2314,106 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private boolean evictExactCardinalityCell() {
 		var iterator = exactCardinalityFacts.entrySet().iterator();
 		while (iterator.hasNext()) {
-			ExactCardinalityCell candidate = iterator.next().getValue();
+			Map.Entry<String, ExactCardinalityCell> entry = iterator.next();
+			ExactCardinalityCell candidate = entry.getValue();
 			if (candidate.leases == 0
 					&& (!candidate.hasFact()
 							|| candidate.statementMutationStamp != appliedStatementMutationStamp)) {
-				iterator.remove();
+				evictExactCardinalityCell(iterator, entry.getKey(), candidate);
 				return true;
 			}
 		}
 		iterator = exactCardinalityFacts.entrySet().iterator();
 		while (iterator.hasNext()) {
-			if (iterator.next().getValue().leases == 0) {
-				iterator.remove();
+			Map.Entry<String, ExactCardinalityCell> entry = iterator.next();
+			ExactCardinalityCell candidate = entry.getValue();
+			if (candidate.leases == 0) {
+				evictExactCardinalityCell(iterator, entry.getKey(), candidate);
 				return true;
 			}
 		}
 		return false;
+	}
+
+	private void evictExactCardinalityCell(Iterator<Map.Entry<String, ExactCardinalityCell>> iterator,
+			String groupKey, ExactCardinalityCell candidate) {
+		// A stale fact is readable again whenever the live stamp matches it, so any fact-bearing eviction can change a
+		// read; evictions happen only at the cell cap and prefer cells without a current fact, so only there it costs.
+		if (candidate.hasFact()) {
+			exactFactMutations++;
+		}
+		iterator.remove();
+		unindexExactFact(groupKey, candidate);
+	}
+
+	private void indexExactFact(String groupKey, ExactCardinalityCell cell) {
+		exactFactsByDigest.merge(exactFactDigest(groupKey), cell, (present, added) -> {
+			List<Object> collided = present instanceof List<?> list ? new ArrayList<>(list) : new ArrayList<>();
+			if (!(present instanceof List<?>)) {
+				collided.add(present);
+			}
+			collided.add(added);
+			return collided;
+		});
+	}
+
+	private void unindexExactFact(String groupKey, ExactCardinalityCell cell) {
+		exactFactsByDigest.computeIfPresent(exactFactDigest(groupKey), (ignored, present) -> {
+			if (present == cell) {
+				return null;
+			}
+			if (!(present instanceof List<?> list)) {
+				return present;
+			}
+			List<Object> remaining = new ArrayList<>(list);
+			remaining.remove(cell);
+			return remaining.size() == 1 ? remaining.get(0) : remaining;
+		});
+	}
+
+	private static LearningKeyDigests.Digest exactFactDigest(String groupKey) {
+		long[] digest = new long[2];
+		LearningKeyDigests.string(groupKey, digest);
+		return LearningKeyDigests.Digest.of(digest);
+	}
+
+	/**
+	 * Whether {@link #exactCardinalityFact(String)} would answer anything but NaN now for some key with this digest
+	 * ({@link LearningKeyDigests#string}): the same currency rule (a cell answers its rows while its stamp is the live
+	 * one, so a stale fact whose stamp matches again answers again). Reads only.
+	 */
+	synchronized boolean exactFactAnswersNow(long hi, long lo) {
+		if (learnedStateUnavailable || !exactCardinalityFactsEnabled()) {
+			return false;
+		}
+		Object listed = exactFactsByDigest.get(new LearningKeyDigests.Digest(hi, lo));
+		if (listed == null) {
+			return false;
+		}
+		long currentStatementMutationStamp = requireStatementMutationStamp(statementMutationStampSupplier.getAsLong());
+		if (listed instanceof ExactCardinalityCell cell) {
+			return answers(cell, currentStatementMutationStamp);
+		}
+		for (Object cell : (List<?>) listed) {
+			if (answers((ExactCardinalityCell) cell, currentStatementMutationStamp)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean answers(ExactCardinalityCell cell, long currentStatementMutationStamp) {
+		return cell.statementMutationStamp == currentStatementMutationStamp && !Double.isNaN(cell.rows);
+	}
+
+	/** The most exact observations under a logical posterior digest ({@link FrontierLearningModel}). Reads only. */
+	synchronized long logicalExactObservations(long hi, long lo, FrontierCostDimension dimension) {
+		return frontierLearning.logicalExactObservations(hi, lo, dimension);
+	}
+
+	/** The most exact observations under a physical posterior digest ({@link FrontierLearningModel}). Reads only. */
+	synchronized long physicalExactObservations(long hi, long lo, FrontierCostDimension dimension) {
+		return frontierLearning.physicalExactObservations(hi, lo, dimension);
 	}
 
 	private static boolean exactCardinalityFactsEnabled() {
@@ -2137,13 +2424,17 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	synchronized FrontierLearningModel.DimensionDecision physicalDimensionDecision(PhysicalEventKey eventKey,
 			PhysicalResidualKey physicalKey, LearningApplicability applicability, FrontierCostDimension dimension,
 			LearningFeatureEnvelope features, double predicted) {
-		return adaptiveEvidenceAllowed()
+		boolean adaptive = adaptiveEvidenceAllowed();
+		FrontierLearningModel.DimensionDecision decision = adaptive
 				? frontierLearning.physicalDecision(eventKey, physicalKey, applicability, dimension, features,
 						predicted)
 				: new FrontierLearningModel.DimensionDecision(
 						new LearningGateDecision(LearningGateDecision.Outcome.INAPPLICABLE, 0L, 0L,
 								Double.NaN, Double.NaN),
 						null);
+		LmdbPlanningReadLog.model(this, LmdbPlanningReadLog.EVENT, eventKey, physicalKey, applicability, dimension,
+				features, predicted, decision, exactCellBelowGateMinimum(adaptive, decision));
+		return decision;
 	}
 
 	synchronized FrontierLearningModel.PosteriorSnapshot physicalPosterior(PhysicalEventKey eventKey,
@@ -2393,6 +2684,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(node)) {
 			return null;
 		}
+		if (LmdbPlanningReadLog.recording()) {
+			LmdbPlanningReadLog.legacy(this, legacyPlanningVersion());
+		}
 		OperatorEstimate frontierEstimate = frontierOperatorEstimate(node, baseRows, baseWorkRows);
 		if (frontierEstimate != null) {
 			return frontierEstimate;
@@ -2521,13 +2815,60 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	/**
-	 * Monotonic version for planning artifacts that consume learned operator evidence. Lifecycle registry admissions
-	 * are deliberately excluded: compiling a plan may register monitoring envelopes, but that bookkeeping supplies no
-	 * new execution evidence and must not invalidate the plan being compiled. Every completed runtime observation and
-	 * every actionable lifecycle transition advances {@link #feedbackEpoch} before it can affect a subsequent plan.
+	 * Version of the learned state planning reads, not the observation clock. If a planning read of this provider (the
+	 * model, exact-fact and lifecycle decisions and the legacy operator estimate) could answer differently than at an
+	 * earlier instant for the same arguments, data revision and provider objects, this value differs too; a runtime
+	 * publication that changed nothing a planner reads leaves it unchanged. It is the sum of component counters, each
+	 * advanced in the critical section of the mutation it versions, so it never decreases and never repeats a value
+	 * after a change. Lifecycle registry admissions and planned-envelope overwrites made by planning and precompilation
+	 * are deliberately excluded: that bookkeeping supplies no execution evidence and must not invalidate the plan being
+	 * compiled. The exclusion covers planning and precompilation only, including the eviction of a sibling alternative
+	 * that a planning admission makes; the lifecycle decision a runtime feedback publication makes is counted.
 	 */
 	synchronized long planningRevision() {
+		return planningRevisionBase + legacyClockTicks + frontierLearning.planningVisibleMutations()
+				+ exactFactMutations + lifecycleObservedMutations + structuralMutations;
+	}
+
+	/** The observation clock: the recency stamp of observations and the time base of their decay. */
+	synchronized long observationClock() {
 		return feedbackEpoch;
+	}
+
+	synchronized long learningModelRevision() {
+		return frontierLearning.revision();
+	}
+
+	synchronized long planLifecycleRevision() {
+		return planLifecycle.revision();
+	}
+
+	synchronized long planLifecycleDecisionInputVersion() {
+		return planLifecycle.decisionInputVersion();
+	}
+
+	/**
+	 * The version a replay captures beside the planning revisions: it moves on every change to the lifecycle state a
+	 * lifecycle peek reads, including lease counts and admissions that {@link #planningRevision()} deliberately leaves
+	 * out (a planning's own admission must not invalidate it).
+	 */
+	synchronized long planLifecyclePeekVersion() {
+		return planLifecycle.peekInputVersion();
+	}
+
+	synchronized int learningModelKeyCount() {
+		return frontierLearning.keyCount();
+	}
+
+	/**
+	 * Version of the legacy learned state planning reads: the legacy operator estimate (learned operators, which decay
+	 * with the observation clock, and the legacy Frontier posterior) and the semi/anti surfaces. It is the
+	 * clock-coupled and legacy components of {@link #planningRevision()} plus the model's legacy posterior version,
+	 * which also moves when a typed observation advances the decay clock of a held legacy posterior. While no legacy
+	 * state is held, a typed publication leaves it unchanged.
+	 */
+	synchronized long legacyPlanningVersion() {
+		return legacyClockTicks + structuralMutations + frontierLearning.legacyPosteriorMutations();
 	}
 
 	synchronized PlanLifecycleStore.Decision planLifecycleDecision(LogicalLearningKey logicalKey,
@@ -2537,17 +2878,40 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		Objects.requireNonNull(physicalKey, "physical key");
 		Objects.requireNonNull(applicability, "learning applicability");
 		Objects.requireNonNull(envelope, "objective envelope");
+		PlanLifecycleStore.Decision decision;
+		// One rollout read decides the store's branch and what the planning read log keeps of it (rule 3').
+		boolean enforced = rollout().planLifecycleEnforced();
 		if (!adaptiveEvidenceAllowed()) {
-			return new PlanLifecycleStore.Decision(PlanLifecycleStore.State.MONITORING, true, false,
-					envelope.point(), envelope, "", Double.NaN, Double.POSITIVE_INFINITY, "snapshot-only");
+			decision = snapshotOnlyLifecycleDecision(envelope);
+		} else {
+			long priorRevision = planLifecycle.revision();
+			decision = planLifecycle.decision(logicalKey, physicalKey, applicability, envelope, enforced);
+			if (planLifecycle.revision() != priorRevision) {
+				dirty = true;
+			}
 		}
-		long priorRevision = planLifecycle.revision();
-		PlanLifecycleStore.Decision decision = planLifecycle.decision(logicalKey, physicalKey, applicability,
-				envelope, rollout().planLifecycleEnforced());
-		if (planLifecycle.revision() != priorRevision) {
-			dirty = true;
-		}
+		LmdbPlanningReadLog.lifecycle(this, logicalKey, physicalKey, applicability, envelope, decision, enforced);
 		return decision;
+	}
+
+	/**
+	 * What {@link #planLifecycleDecision} would return now for these arguments, without any side effect: no admission,
+	 * eviction, planned-envelope overwrite, group cell or transition (see {@link PlanLifecycleStore#peekDecision}).
+	 */
+	synchronized PlanLifecycleStore.Decision peekPlanLifecycleDecision(LogicalLearningKey logicalKey,
+			PhysicalResidualKey physicalKey, LearningApplicability applicability,
+			PlanLifecycleStore.ObjectiveEnvelope envelope) {
+		if (!adaptiveEvidenceAllowed()) {
+			return snapshotOnlyLifecycleDecision(envelope);
+		}
+		return planLifecycle.peekDecision(logicalKey, physicalKey, applicability, envelope,
+				rollout().planLifecycleEnforced());
+	}
+
+	private static PlanLifecycleStore.Decision snapshotOnlyLifecycleDecision(
+			PlanLifecycleStore.ObjectiveEnvelope envelope) {
+		return new PlanLifecycleStore.Decision(PlanLifecycleStore.State.MONITORING, true, false, envelope.point(),
+				envelope, "", Double.NaN, Double.POSITIVE_INFINITY, "snapshot-only");
 	}
 
 	boolean planLifecycleEnforced() {
@@ -2721,6 +3085,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	public synchronized void persistIfDirty() {
+		// Also refuses to write the retained state of a failed reset; the reconciling reset persists the cleared state.
 		if (!adaptiveEvidenceAllowed()) {
 			return;
 		}
@@ -3033,11 +3398,15 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			frontierOriginSemiAntiSurfaces.clear();
 			exactCardinalityFacts.clear();
 			exactCardinalityFacts.putAll(loadedExactFacts);
+			// Loading runs once, from the constructor, so the digest index is empty here.
+			loadedExactFacts.forEach(this::indexExactFact);
 			frontierLearning = loadedFrontierLearning;
 			planLifecycle = loadedPlanLifecycle;
 			nullModeKeyCache.clear();
 			planningLeoKeyCache.clear();
 			feedbackEpoch = Math.max(feedbackEpoch, loadedEpoch);
+			// Loading runs once, from the constructor, before any reader: the restored clock is the revision's base.
+			planningRevisionBase = Math.max(planningRevisionBase, feedbackEpoch);
 			ruleSteeringCooldownUntilEpoch = Math.max(ruleSteeringCooldownUntilEpoch,
 					loadedSteeringCooldownUntilEpoch);
 			ruleSteeringBadMisses = loadedSteeringBadMisses;
@@ -3869,11 +4238,31 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
+	/** Ticks the clock for a legacy (untyped) observation; the planning revision advances with it, one for one. */
 	private long nextFeedbackEpoch() {
 		if (preparedFeedback != null) {
 			long epoch = ++preparedFeedback.nextEpoch;
-			publishPrepared(() -> feedbackEpoch++);
+			publishPrepared(() -> {
+				feedbackEpoch++;
+				legacyClockTicks++;
+			});
 			return epoch;
+		}
+		legacyClockTicks++;
+		return ++feedbackEpoch;
+	}
+
+	/**
+	 * Ticks the clock for an accepted typed publication. The tick is not planning evidence by itself: whatever the
+	 * publication changes advances the planning revision through its own counter. The exceptions are the readers that
+	 * take this clock as "now": the learned operator and multiplier confidences and the plan-candidate confidence decay
+	 * with it, and a pending rule-steering cooldown expires on it, so while any of them holds state every tick is
+	 * planning evidence.
+	 */
+	private long advanceObservationClock() {
+		if (!learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty() || !planCandidates.isEmpty()
+				|| ruleSteeringCooldownUntilEpoch > feedbackEpoch) {
+			structuralMutations++;
 		}
 		return ++feedbackEpoch;
 	}
@@ -4265,6 +4654,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	private boolean adaptiveEvidenceAllowed() {
+		if (learnedStateUnavailable) {
+			return false;
+		}
 		try {
 			return adaptiveEvidenceAllowedSupplier.getAsBoolean();
 		} catch (RuntimeException e) {

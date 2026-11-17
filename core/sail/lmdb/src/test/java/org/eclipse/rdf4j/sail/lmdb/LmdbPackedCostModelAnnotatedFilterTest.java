@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -118,9 +120,11 @@ class LmdbPackedCostModelAnnotatedFilterTest {
 				defaultGraph(), provider, connected, condition);
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		when(runtime.exactAlternativeSurface(any())).thenReturn(Optional.empty());
-		when(runtime.patternFilterPass(any(), any())).thenReturn(Optional.of(
-				new EvaluationStatistics.FilterPassEstimate(0.25d,
-						EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, 256L)));
+		// Pattern-local refinement asks the runtime with its filter read context and the externally bound names.
+		when(runtime.patternFilterPass(any(), any(), nullable(LmdbFilterReadContext.class), anySet())).thenReturn(
+				Optional.of(
+						new EvaluationStatistics.FilterPassEstimate(0.25d,
+								EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, 256L)));
 		PackedCostEstimate estimate = new PackedCostEstimate();
 		estimate.setRows(5.0d, 17.0d);
 

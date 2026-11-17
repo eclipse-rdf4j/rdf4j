@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.WINF;
@@ -358,6 +359,43 @@ public class TupleExprsTest {
 	}
 
 	/** Each subclass inherits the built-in visit method but exposes a custom binding contract. */
+	@Test
+	public void constantVarSubclassWithAValueIsKnownLikeAPlainConstantVar() {
+		StatementPattern plain = new StatementPattern(Var.of("s"), new Var("_const_p", f.createIRI("urn:p"), true, true),
+				Var.of("o"));
+		StatementPattern subclassed = new StatementPattern(Var.of("s"),
+				new ValuedVarSubclass("_const_p", f.createIRI("urn:p"), true, true), Var.of("o"));
+		TupleExprs.ConditionBindingDomain expected = TupleExprs.tupleBindingObservationDomain(plain);
+		TupleExprs.ConditionBindingDomain actual = TupleExprs.tupleBindingObservationDomain(subclassed);
+		assertThat(actual.known()).isTrue();
+		assertThat(actual.names()).isEqualTo(expected.names()).containsExactlyInAnyOrder("s", "o");
+	}
+
+	@Test
+	public void varSubclassesThatAreNotValuedConstantsAndUnrelatedNodesStayUnknown() {
+		assertThat(TupleExprs.tupleBindingObservationDomain(new StatementPattern(Var.of("s"),
+				new ValuedVarSubclass("named", f.createIRI("urn:p"), false, false), Var.of("o"))).known())
+						.as("a non-constant Var subclass is not trusted even with a value")
+						.isFalse();
+		assertThat(TupleExprs.tupleBindingObservationDomain(new StatementPattern(Var.of("s"),
+				new ValuedVarSubclass("_const_p", null, true, true), Var.of("o"))).known())
+						.as("a constant without a value is not trusted")
+						.isFalse();
+		assertThat(TupleExprs.tupleBindingObservationDomain(new Join(new SingletonSet(), new SingletonSet()) {
+		}).known())
+				.as("an unrelated unlisted node class is not trusted")
+				.isFalse();
+	}
+
+	/** Stands in for a store's own Var subclass, which the exact-class table does not list. */
+	private static final class ValuedVarSubclass extends Var {
+		private static final long serialVersionUID = 1L;
+
+		ValuedVarSubclass(String name, Value value, boolean anonymous, boolean constant) {
+			super(name, value, anonymous, constant);
+		}
+	}
+
 	private static List<TupleExpr> opaqueTupleObservationVariants() {
 		StatementPattern statement = new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object")) {
 			@Override

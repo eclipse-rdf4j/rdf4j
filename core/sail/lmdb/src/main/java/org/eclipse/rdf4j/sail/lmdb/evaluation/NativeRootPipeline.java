@@ -118,6 +118,7 @@ final class NativeRootPipeline {
 			step = planner.compileMultiProjectionRoot(node);
 		}
 		if (step == null) {
+			planner = planner.forNextRootAttempt();
 			step = planner.compileRowRoot(node);
 		}
 		if (step == null || planner.slotNames.size() > LmdbNativeAggregateCompiler.MAX_NATIVE_SLOTS) {
@@ -150,6 +151,7 @@ final class NativeRootPipeline {
 			return null;
 		}
 		Map<Order, OrderSpec> keys = new IdentityHashMap<>();
+		boolean scopedKeys = false;
 		for (TupleExpr wrapper : wrappers) {
 			if (wrapper instanceof Order order) {
 				OrderSpec compiled = compileOrderKeys(order, strategy, context);
@@ -157,10 +159,13 @@ final class NativeRootPipeline {
 					return null;
 				}
 				keys.put(order, compiled);
+				for (OrderElem element : order.getElements()) {
+					scopedKeys |= !GenericSubplanDescriptor.create(element.getExpr()).shareableAcrossEvaluations();
+				}
 			}
 		}
-		QueryEvaluationStep child = strategy.exactOriginView(source)
-				.precompileRuntimeSubtree(projection.getArg(), context);
+		QueryEvaluationStep child = EvaluationScopedSubtree.prepare(projection.getArg(),
+				strategy.exactOriginView(source), context, scopedKeys);
 		QueryEvaluationStep projected = new NativeBindingSetProjectionStep(child, projection, context);
 		projected = NativeSealedProjection.tryCompile(expression, projection, context, strategy, source, projected);
 		QueryEvaluationStep result = wrappers.isEmpty() ? projected : compose(projected, wrappers, keys, strategy);
@@ -206,6 +211,75 @@ final class NativeRootPipeline {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * The argument of a semantic projection boundary. A share-safe argument is prepared once, against the compile-time
+	 * context, as before. An argument with query-scope state ({@code NOW()}, blank-node allocation) or non-repeatable
+	 * evaluation must not be: generic preparation folds {@code NOW()} and captures the blank-node scope of the context
+	 * it is prepared against, and a native evaluation owns its own query scope. It is therefore prepared on first use
+	 * in each evaluation, against that evaluation's shared generic context, the way {@link GenericEvalPlan} islands
+	 * are, and shared by every frame of that evaluation. Its rows carry that evaluation's context, so ORDER and TopK
+	 * keys above the argument evaluate in the scope the rows were produced in rather than in the compile-time one.
+	 */
+	private static final class EvaluationScopedSubtree implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+		/** Null when the argument itself is share-safe and only its ORDER keys need the evaluation's scope. */
+		private final GenericSubplanDescriptor descriptor;
+		private final QueryEvaluationStep shared;
+		private final LmdbNativeEvaluationStrategy strategy;
+		private final QueryEvaluationContext compileContext;
+		private final String nodeName;
+
+		private EvaluationScopedSubtree(GenericSubplanDescriptor descriptor, QueryEvaluationStep shared,
+				LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext compileContext, String nodeName) {
+			this.descriptor = descriptor;
+			this.shared = shared;
+			this.strategy = strategy;
+			this.compileContext = compileContext;
+			this.nodeName = nodeName;
+		}
+
+		/**
+		 * Share-safety is classified on the pinned snapshot, as for every other generic subtree: an unpinned call
+		 * outside a preparation phase is a conservative barrier, which would needlessly re-prepare share-safe calls.
+		 */
+		static QueryEvaluationStep prepare(TupleExpr expression, LmdbNativeEvaluationStrategy strategy,
+				QueryEvaluationContext context, boolean scopedKeys) {
+			String nodeName = expression.getClass().getSimpleName();
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expression, strategy);
+			if (!descriptor.shareableAcrossEvaluations()) {
+				return new EvaluationScopedSubtree(descriptor, null, strategy, context, nodeName);
+			}
+			QueryEvaluationStep step = strategy.precompileRuntimeSubtree(expression, context);
+			return scopedKeys ? new EvaluationScopedSubtree(null, step, strategy, context, nodeName) : step;
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+			SyntheticValueSource active = SyntheticValueSource.activeEvaluation();
+			NativeExecutionContext execution = active == null ? null : active.executionContext();
+			if (execution == null) {
+				// No native evaluation owns this call, so it is its own query scope: never the compile-time one.
+				return (shared != null ? shared
+						: descriptor.precompileRuntimeSubtree(strategy,
+								EvaluationScopedQueryEvaluationContext.create(compileContext, strategy)))
+										.evaluate(bindings);
+			}
+			QueryEvaluationStep step = shared != null ? shared
+					: execution.queryScopedGenericStep(descriptor, () -> descriptor.precompileRuntimeSubtree(strategy,
+							execution.genericContext(compileContext, strategy)));
+			// The boundary owns the context's lifetime; these rows only expose it to the keys that consume them.
+			return new NativeContextClosingIteration(step.evaluate(bindings), execution, false, active);
+		}
+
+		@Override
+		public String nativePhysicalPlan() {
+			if (shared != null) {
+				return shared instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+						: shared.getClass().getSimpleName();
+			}
+			return "EvaluationScopedSubtree(" + nodeName + ")";
+		}
 	}
 
 	private record ProjectionBoundary(QueryEvaluationStep arg, TupleExpr expression, NativeLmdbQuerySource source,

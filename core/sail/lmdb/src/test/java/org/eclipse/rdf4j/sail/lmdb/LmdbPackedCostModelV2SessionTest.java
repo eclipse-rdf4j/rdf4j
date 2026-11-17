@@ -69,6 +69,7 @@ import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
@@ -89,6 +90,7 @@ import org.mockito.stubbing.Answer;
 class LmdbPackedCostModelV2SessionTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final long SNAPSHOT_EPOCH = 17L;
 
 	@Test
 	void constructionBridgeKeepsUnprovedAndActiveSourcesOutsideMappedStorageEvidence() {
@@ -111,8 +113,7 @@ class LmdbPackedCostModelV2SessionTest {
 			for (int relation = 1; relation <= call.query().relationCount(); relation++) {
 				assertEquals(expected, call.query().graphDomain(relation).kind());
 			}
-			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-					.openSession(call.query())) {
+			try (PackedCostSession session = ownedModel(runtime, null).openSession(call.query())) {
 				assertFalse(session.supportsPhysicalJoinRefinement(),
 						"graph-domain refusal must retain the conventional scalar session contract");
 				PackedCostEstimate declined = new PackedCostEstimate();
@@ -124,6 +125,7 @@ class LmdbPackedCostModelV2SessionTest {
 				assertEquals(0, declined.evidenceStateId(), "a refusal must not manufacture a population state");
 			}
 			verify(statistics, never()).openCurrentView();
+			verify(statistics, never()).openView(anyLong());
 		}
 	}
 
@@ -192,10 +194,32 @@ class LmdbPackedCostModelV2SessionTest {
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)));
 		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(), filter);
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime).openSession(call.query())) {
+		try (PackedCostSession session = unownedModel(runtime).openSession(call.query())) {
 			assertEquals("ScalarPackedCostSession", session.getClass().getSimpleName(),
 					"V2 must not create the legacy payload/query-index session");
 		}
+	}
+
+	@Test
+	void authoritativeModelCannotUseAnEpochWithoutAnOwnedSource() {
+		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
+		LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
+		when(runtime.frontierPlanningReadSelection(null)).thenReturn(LmdbFrontierReadSelection.UNAVAILABLE);
+		when(runtime.statisticsService()).thenReturn(statistics);
+		when(runtime.frontierSettings()).thenReturn(LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
+				new Filter(pattern, new ValueConstant(VF.createLiteral(true))));
+
+		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.of(SNAPSHOT_EPOCH), true)
+				.openSession(call.query())) {
+			assertFalse(session instanceof LmdbFrontierStatisticsCostSession);
+			assertFalse(session.supportsPhysicalJoinRefinement());
+		}
+		verify(statistics, never()).status();
+		verify(statistics, never()).openCurrentView();
+		verify(statistics, never()).openView(anyLong());
 	}
 
 	@Test
@@ -211,16 +235,17 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
 				new Filter(pattern,
 						new ValueConstant(VF.createLiteral(true))));
 
-		try (PackedCostSession ignored = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
-			verify(statistics).openCurrentView();
+		try (PackedCostSession ignored = ownedModel(runtime, view).openSession(call.query())) {
+			verify(statistics).openView(SNAPSHOT_EPOCH);
+			verify(statistics, never()).openCurrentView();
 		}
 
 		verify(view).close();
@@ -244,7 +269,7 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
 		when(view.generationId()).thenReturn(23L);
 		when(view.coveredEpoch()).thenReturn(17L);
@@ -258,8 +283,7 @@ class LmdbPackedCostModelV2SessionTest {
 				new Filter(pattern,
 						new ValueConstant(VF.createLiteral(true))));
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			PackedCostEstimate leaf = new PackedCostEstimate();
 			session.estimateLeaf(call.inputRelationId(), call.emptyContext(), leaf);
 
@@ -291,8 +315,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		when(view.estimateLeaf(any())).thenReturn(new FrontierLeafEstimate(
 				100.0d, 80.0d, 120.0d, 0.95d, "frontier-v2-omni-leaf", FrontierFallbackReason.NONE));
 		var leftPredicate = VF.createIRI("urn:test:mapped-minus:left");
@@ -305,8 +330,7 @@ class LmdbPackedCostModelV2SessionTest {
 				Var.of("shared"), Var.of("rightPredicate", rightPredicate), Var.of("rightObject"));
 		var call = PackedCostTestSupport.difference(defaultGraph(), left, right);
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			PackedCostEstimate leftEstimate = new PackedCostEstimate();
 			PackedCostEstimate rightEstimate = new PackedCostEstimate();
 			session.estimateLeaf(call.leftRelationId(), call.emptyContext(), leftEstimate);
@@ -344,7 +368,7 @@ class LmdbPackedCostModelV2SessionTest {
 	@Test
 	void mappedV2SemiAntiUsesFrontierSurfaceFeedbackAcrossPrefixLayouts() {
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
-		LmdbPackedCostModel costModel = new LmdbPackedCostModel(runtime);
+		LmdbPackedCostModel costModel = unownedModel(runtime);
 		var query = mock(org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.class);
 		StatementPattern left = new StatementPattern(
 				Var.of("node"), Var.of("leftPredicate", VF.createIRI("urn:test:left")), Var.of("value"));
@@ -415,8 +439,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		var outerPredicate = VF.createIRI("urn:test:mapped-anti:outer");
 		var blockerPredicate = VF.createIRI("urn:test:mapped-anti:blocker");
 		when(valueStore.getId(outerPredicate)).thenReturn(501L);
@@ -438,8 +463,7 @@ class LmdbPackedCostModelV2SessionTest {
 		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
 				new Filter(outer, new Not(new Exists(blocker))));
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			PackedCostEstimate outerEstimate = new PackedCostEstimate();
 			session.estimateLeaf(call.inputRelationId(), call.emptyContext(), outerEstimate);
 			int alternatives = 0;
@@ -543,8 +567,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		var outerPredicate = VF.createIRI("urn:test:uncertain-domain:outer");
 		var blockerPredicate = VF.createIRI("urn:test:uncertain-domain:blocker");
 		when(valueStore.getId(outerPredicate)).thenReturn(601L);
@@ -571,8 +596,7 @@ class LmdbPackedCostModelV2SessionTest {
 		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
 				new Filter(outer, new Not(new Exists(blocker))));
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			PackedCostEstimate outerEstimate = new PackedCostEstimate();
 			session.estimateLeaf(call.inputRelationId(), call.emptyContext(), outerEstimate);
 			for (int relationId = 1; relationId <= call.query().relationCount(); relationId++) {
@@ -669,8 +693,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		var leftPredicate = VF.createIRI("urn:test:session-cache:left");
 		var rightPredicate = VF.createIRI("urn:test:session-cache:right");
 		when(valueStore.getId(leftPredicate)).thenReturn(71L);
@@ -686,8 +711,7 @@ class LmdbPackedCostModelV2SessionTest {
 		PackedCostTestSupport.BinaryCostCall call = PackedCostTestSupport.binaryOperator(defaultGraph(),
 				new Join(leftPattern, rightPattern));
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			PackedCostEstimate left = new PackedCostEstimate();
 			PackedCostEstimate right = new PackedCostEstimate();
 			session.estimateLeaf(call.leftRelationId(), call.emptyContext(), left);
@@ -720,8 +744,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		var leftPredicate = VF.createIRI("urn:test:hash-cost-order:left");
 		var rightPredicate = VF.createIRI("urn:test:hash-cost-order:right");
 		when(valueStore.getId(leftPredicate)).thenReturn(81L);
@@ -737,8 +762,7 @@ class LmdbPackedCostModelV2SessionTest {
 		PackedCostTestSupport.BinaryCostCall call = PackedCostTestSupport.binaryOperator(defaultGraph(),
 				new Join(leftPattern, rightPattern));
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			PackedCostEstimate left = new PackedCostEstimate();
 			PackedCostEstimate right = new PackedCostEstimate();
 			session.estimateLeaf(call.leftRelationId(), call.emptyContext(), left);
@@ -854,8 +878,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		Answer<?> factorCostAnswer = invocation -> {
 			BindingSetAssignment assignment = invocation.getArgument(0);
 			double count = 0.0d;
@@ -867,6 +892,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(factorCostAnswer);
 		when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class)))
 				.thenAnswer(factorCostAnswer);
+		when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class),
+				any(LmdbAdmittedFrontierRead.class))).thenAnswer(factorCostAnswer);
 		var predicate = VF.createIRI("urn:test:sparse-finite-prefix:name");
 		when(valueStore.getId(predicate)).thenReturn(101L);
 		List<BindingSet> rows = new ArrayList<>();
@@ -893,8 +920,7 @@ class LmdbPackedCostModelV2SessionTest {
 		});
 		when(view.estimateProjectedDistinct(any(), anyInt())).thenReturn(816.0d);
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			PackedCostEstimate assignment = new PackedCostEstimate();
 			session.estimateLeaf(call.factorRelationId(), call.emptyContext(), assignment);
 			PackedCostEstimate statement = new PackedCostEstimate();
@@ -954,8 +980,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		Answer<?> factorCostAnswer = invocation -> {
 			BindingSetAssignment assignment = invocation.getArgument(0);
 			double count = 0.0d;
@@ -967,6 +994,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(factorCostAnswer);
 		when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class)))
 				.thenAnswer(factorCostAnswer);
+		when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class),
+				any(LmdbAdmittedFrontierRead.class))).thenAnswer(factorCostAnswer);
 		var predicate = VF.createIRI("urn:test:restricted-finite-prefix:name");
 		when(valueStore.getId(predicate)).thenReturn(101L);
 		List<BindingSet> rows = new ArrayList<>();
@@ -1016,8 +1045,7 @@ class LmdbPackedCostModelV2SessionTest {
 		});
 		when(view.estimateProjectedDistinct(any(), anyInt())).thenReturn(100.0d);
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			PackedCostEstimate assignment = new PackedCostEstimate();
 			session.estimateLeaf(assignmentId, call.emptyContext(), assignment);
 			assertEquals(4.0d, assignment.outputRows(), 0.0d);
@@ -1073,8 +1101,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		when(view.estimateLeaf(any())).thenReturn(new FrontierLeafEstimate(
 				100.0d, 80.0d, 120.0d, 0.95d, "frontier-v2-omni-leaf", FrontierFallbackReason.NONE));
 		when(view.estimateJoin(any())).thenReturn(new FrontierJoinEstimate(
@@ -1096,8 +1125,7 @@ class LmdbPackedCostModelV2SessionTest {
 		PackedCostTestSupport.StatementOnlyChainCostCall call = PackedCostTestSupport
 				.statementOnlyFactorChain(defaultGraph(), patterns);
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			for (int prefix = 1; prefix < patternCount; prefix++) {
 				PackedCostEstimate estimate = new PackedCostEstimate();
 				estimate.setRows(100.0d, 100.0d);
@@ -1132,8 +1160,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		when(view.estimateLeaf(any())).thenReturn(new FrontierLeafEstimate(
 				100.0d, 80.0d, 120.0d, 0.95d, "frontier-v2-omni-leaf", FrontierFallbackReason.NONE));
 		when(view.estimateSubgraph(any())).thenReturn(new FrontierJoinEstimate(
@@ -1157,8 +1186,7 @@ class LmdbPackedCostModelV2SessionTest {
 		int firstId = call.query().childRelationId(call.leftRelationId(), 0);
 		int secondId = call.query().childRelationId(call.leftRelationId(), 1);
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			var firstEstimate = new PackedCostEstimate();
 			var secondEstimate = new PackedCostEstimate();
 			session.estimateLeaf(firstId, call.emptyContext(), firstEstimate);
@@ -1192,8 +1220,7 @@ class LmdbPackedCostModelV2SessionTest {
 			PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
 					new Filter(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 							new ValueConstant(VF.createLiteral(true))));
-			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-					.openSession(call.query())) {
+			try (PackedCostSession session = ownedModel(runtime, null).openSession(call.query())) {
 				assertEquals("ScalarPackedCostSession", session.getClass().getSimpleName());
 				PackedCostEstimate retained = new PackedCostEstimate();
 				retained.setRows(3.0d, 7.0d);
@@ -1234,8 +1261,7 @@ class LmdbPackedCostModelV2SessionTest {
 		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
 				new Filter(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 						new ValueConstant(VF.createLiteral(true))));
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, null).openSession(call.query())) {
 			PackedCostEstimate retained = new PackedCostEstimate();
 			retained.setRows(3.0d, 7.0d);
 			session.refineIntermediateJoin(call.emptyContext(), retained);
@@ -1272,7 +1298,7 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(false);
 		when(view.fallbackReason()).thenReturn(viewReason);
 		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
@@ -1280,8 +1306,7 @@ class LmdbPackedCostModelV2SessionTest {
 				new Filter(pattern,
 						new ValueConstant(VF.createLiteral(true))));
 
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			assertFalse(session instanceof LmdbFrontierStatisticsCostSession,
 					"an unavailable view must degrade to the conventional scalar estimator");
 			PackedCostEstimate retained = new PackedCostEstimate();
@@ -1313,9 +1338,9 @@ class LmdbPackedCostModelV2SessionTest {
 		var rightPredicate = VF.createIRI("urn:test:packed-omni:right");
 		when(valueStore.getId(leftPredicate)).thenReturn(11L);
 		when(valueStore.getId(rightPredicate)).thenReturn(22L);
-		when(statistics.estimateLeafCurrent(any())).thenReturn(new FrontierLeafEstimate(
+		when(statistics.estimateLeaf(eq(SNAPSHOT_EPOCH), any())).thenReturn(new FrontierLeafEstimate(
 				100.0d, 80.0d, 120.0d, 0.95d, "frontier-v2-omni-leaf", FrontierFallbackReason.NONE));
-		when(statistics.estimateJoinCurrent(any())).thenReturn(new FrontierJoinEstimate(
+		when(statistics.estimateJoin(eq(SNAPSHOT_EPOCH), any())).thenReturn(new FrontierJoinEstimate(
 				37.0d, 31.0d, 43.0d, 0.90d, "frontier-v2-omni-composite-bridge", FrontierFallbackReason.NONE));
 		when(runtime.packedTransitionRows(any(), any(), any(Double.class), any(Double.class))).thenReturn(999.0d);
 
@@ -1326,7 +1351,7 @@ class LmdbPackedCostModelV2SessionTest {
 				right);
 		PackedCostEstimate estimate = new PackedCostEstimate();
 
-		new LmdbPackedCostModel(runtime, OptionalLong.empty(), true).estimate(
+		ownedModel(runtime, null).estimate(
 				call.query(), call.factorRelationId(), call.prefixContext(100.0d, 0), estimate);
 
 		assertEquals(37.0d, estimate.outputRows(), 0.0d);
@@ -1334,7 +1359,7 @@ class LmdbPackedCostModelV2SessionTest {
 		assertEquals(31.0d, estimate.plannedDoubleMetric("plannedFrontierLowerRows", Double.NaN), 0.0d);
 		assertEquals(43.0d, estimate.plannedDoubleMetric("plannedFrontierUpperRows", Double.NaN), 0.0d);
 		ArgumentCaptor<FrontierJoinProbe> probe = ArgumentCaptor.forClass(FrontierJoinProbe.class);
-		verify(statistics).estimateJoinCurrent(probe.capture());
+		verify(statistics).estimateJoin(eq(SNAPSHOT_EPOCH), probe.capture());
 		assertEquals(FrontierJoinProbe.componentPairMask(0, 0)
 				| FrontierJoinProbe.componentPairMask(2, 2), probe.getValue().crossComponentPairMask());
 	}
@@ -1355,9 +1380,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(valueStore.getId(firstPredicate)).thenReturn(31L);
 		when(valueStore.getId(secondPredicate)).thenReturn(32L);
 		when(valueStore.getId(thirdPredicate)).thenReturn(33L);
-		when(statistics.estimateLeafCurrent(any())).thenReturn(new FrontierLeafEstimate(
+		when(statistics.estimateLeaf(eq(SNAPSHOT_EPOCH), any())).thenReturn(new FrontierLeafEstimate(
 				100.0d, 80.0d, 120.0d, 0.95d, "frontier-v2-omni-leaf", FrontierFallbackReason.NONE));
-		when(statistics.estimateSubgraphCurrent(any())).thenReturn(new FrontierJoinEstimate(
+		when(statistics.estimateSubgraph(eq(SNAPSHOT_EPOCH), any())).thenReturn(new FrontierJoinEstimate(
 				20.0d, 16.0d, 25.0d, 0.90d, "frontier-v2-omni-star", FrontierFallbackReason.NONE));
 		when(runtime.packedTransitionRows(any(), any(), any(Double.class), any(Double.class))).thenReturn(999.0d);
 		StatementPattern first = new StatementPattern(
@@ -1371,13 +1396,13 @@ class LmdbPackedCostModelV2SessionTest {
 				first, second, third);
 		PackedCostEstimate estimate = new PackedCostEstimate();
 
-		new LmdbPackedCostModel(runtime, OptionalLong.empty(), true).estimate(
+		ownedModel(runtime, null).estimate(
 				call.query(), call.relationId(2), call.prefixContext(2, 300.0d), estimate);
 
 		assertEquals(20.0d, estimate.outputRows(), 0.0d);
 		assertEquals("frontier-v2-omni-star", estimate.estimateSource());
 		ArgumentCaptor<FrontierJoinProgram> program = ArgumentCaptor.forClass(FrontierJoinProgram.class);
-		verify(statistics).estimateSubgraphCurrent(program.capture());
+		verify(statistics).estimateSubgraph(eq(SNAPSHOT_EPOCH), program.capture());
 		int centerClass = program.getValue().variableClass(0, 0);
 		assertTrue(centerClass > 0);
 		assertEquals(centerClass, program.getValue().variableClass(1, 0));
@@ -1399,8 +1424,9 @@ class LmdbPackedCostModelV2SessionTest {
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-		when(statistics.openCurrentView()).thenReturn(view);
+		when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 		when(view.ready()).thenReturn(true);
+		when(view.generationId()).thenReturn(23L);
 		when(view.estimateProjectedDistinct(any(), anyInt())).thenReturn(Double.NaN);
 		var reviewPredicate = VF.createIRI("urn:test:packed-omni:review");
 		var aboutPredicate = VF.createIRI("urn:test:packed-omni:about");
@@ -1423,8 +1449,7 @@ class LmdbPackedCostModelV2SessionTest {
 
 		assertTrue(call.query().isPureBindingAlias(call.prefixRelationId()),
 				"the encoded alias must be a captured pure binding relation");
-		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = ownedModel(runtime, view).openSession(call.query())) {
 			assertTrue(session instanceof LmdbFrontierStatisticsCostSession);
 			int reviewRelationId = call.query().childRelationId(call.prefixRelationId(), 0);
 			PackedCostEstimate reviewEstimate = new PackedCostEstimate();
@@ -1456,5 +1481,42 @@ class LmdbPackedCostModelV2SessionTest {
 		assertTrue(aliasPair == FrontierJoinProbe.componentPairMask(2, 0)
 				|| aliasPair == FrontierJoinProbe.componentPairMask(0, 2),
 				"a symmetric total-join probe may orient the alias edge from either input");
+	}
+
+	/** Models the paired read owner; real-store tests independently exercise the ownership checks. */
+	private static LmdbPackedCostModel ownedModel(LmdbEstimatorRuntime runtime, FrontierStatisticsView view) {
+		SailDatasetTripleTermSource source = mock(SailDatasetTripleTermSource.class);
+		LmdbFrontierReadSelection selection = mock(LmdbFrontierReadSelection.class);
+		when(runtime.frontierPlanningReadSelection(source)).thenReturn(selection);
+		when(selection.matchesSource(source)).thenReturn(true);
+		when(selection.isCurrent()).thenReturn(true);
+		when(selection.isCurrentForSharedEvidence()).thenReturn(true);
+		when(selection.snapshotEpoch()).thenReturn(SNAPSHOT_EPOCH);
+		when(selection.population()).thenReturn(LmdbFrontierReadPopulation.STORE_DEFAULTS);
+		when(selection.planeMask()).thenReturn(FrontierLeafProbe.BOTH_PLANES);
+
+		ValueStore values = runtime.valueStore();
+		if (values == null) {
+			values = mock(ValueStore.class);
+			when(runtime.valueStore()).thenReturn(values);
+		}
+		TripleStore triples = mock(TripleStore.class);
+		when(runtime.physicalTripleStore()).thenReturn(triples);
+		when(selection.matchesStores(values, triples)).thenReturn(true);
+		if (view != null) {
+			LmdbStatisticsService statistics = runtime.statisticsService();
+			when(selection.ownsAdmittedView(view)).thenReturn(true);
+			when(selection.openAdmittedView(statistics)).thenAnswer(invocation -> {
+				FrontierStatisticsView opened = statistics.openView(SNAPSHOT_EPOCH);
+				return new LmdbFrontierReadSelection.AdmittedView(opened,
+						opened.ready() ? selection : LmdbFrontierReadSelection.UNAVAILABLE);
+			});
+		}
+		return new LmdbPackedCostModel(runtime, OptionalLong.of(SNAPSHOT_EPOCH), true, source, null);
+	}
+
+	private static LmdbPackedCostModel unownedModel(LmdbEstimatorRuntime runtime) {
+		when(runtime.frontierPlanningReadSelection(null)).thenReturn(LmdbFrontierReadSelection.UNAVAILABLE);
+		return new LmdbPackedCostModel(runtime);
 	}
 }

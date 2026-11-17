@@ -83,6 +83,18 @@ final class LmdbEstimatorStorageAccess {
 		return Math.max(0L, tripleStore == null ? 0L : tripleStore.planningDataRevision());
 	}
 
+	/**
+	 * No present or future planning presents a data revision below this one: every live pinned reader is at or above
+	 * it, and an unpinned or new reader plans at the committed revision. {@link Long#MIN_VALUE} when unknown.
+	 */
+	long oldestLivePlanningDataRevision() {
+		if (tripleStore == null) {
+			return Long.MIN_VALUE;
+		}
+		long committed = tripleStore.getDataRevision();
+		return Math.min(tripleStore.getTxnManager().minPinnedSnapshotRevision(), committed);
+	}
+
 	boolean mayHaveInferred() {
 		return mayHaveInferred.getAsBoolean();
 	}
@@ -250,7 +262,8 @@ final class LmdbEstimatorStorageAccess {
 			int repeatedComponentPairMask, LmdbFrontierReadSelection selection,
 			org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView ownedView) {
 		if (selection == null || !selection.matchesStores(valueStore, tripleStore) || !selection.isCurrent()
-				|| selection.population() != LmdbFrontierReadPopulation.STORE_DEFAULTS) {
+				|| selection.population() != LmdbFrontierReadPopulation.STORE_DEFAULTS
+				|| ownedView != null && !selection.ownsAdmittedView(ownedView)) {
 			return null;
 		}
 		// Query context aliases denote physical null, while this raw API's null denotes ANY. Without a qualified
@@ -284,10 +297,13 @@ final class LmdbEstimatorStorageAccess {
 				}
 			}
 		}
+		if (!selection.isCurrentForSharedEvidence()) {
+			return null;
+		}
 		LmdbPlanningCardinality physical = cardinalities == null ? null
 				: cardinalities.estimateForPlanningQualified(subject, predicate, object, context,
 						repeatedComponentPairMask);
-		if (!selection.isCurrent() || physical == null) {
+		if (!selection.isCurrentForSharedEvidence() || physical == null) {
 			return null;
 		}
 		// This legacy estimator explicitly counts BOTH planes. Its certified empty superset is also empty in either

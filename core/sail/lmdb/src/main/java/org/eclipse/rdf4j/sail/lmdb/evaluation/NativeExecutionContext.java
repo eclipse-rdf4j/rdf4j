@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.NativeExecutionObservation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
@@ -221,8 +222,8 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 
 		/**
-		 * Transfers an owning cursor's cleanup to this exact group once its workers and captured scopes settle.
-		 * An existing context owner runs afterwards, including when the cursor's cleanup fails.
+		 * Transfers an owning cursor's cleanup to this exact group once its workers and captured scopes settle. An
+		 * existing context owner runs afterwards, including when the cursor's cleanup fails.
 		 *
 		 * Without an existing owner, the handoff occupies the sole notification-owner slot. Later owner admission is
 		 * rejected both before and after settlement. A scoped {@link LmdbNativeParallelPipelines.ParallelRowCursor}
@@ -642,6 +643,9 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** Admission closes before resources; terminal outcome is published only after every cleanup attempt. */
 	private volatile boolean closeCompleted;
 	private Throwable closeFailure;
+	/** At most one fresh row owner observes this context; borrowed contexts do not install a hook. */
+	private NativeExecutionObservation.RowRegion observedRow;
+	private boolean rowObservationAssigned;
 	/** Instance-local reentrant resource owner; never grants execution/source authority. */
 	private volatile Thread closingThread;
 	/** Number of active consumers that may still evaluate against this context after an inner close request. */
@@ -664,6 +668,27 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	private final Object filterCleanupLock = new Object();
 	private Throwable filterWorkerCleanup;
+
+	/** Registers the sole fresh row owner, including the race where terminal context cleanup already finished. */
+	boolean observeRowSettlement(NativeExecutionObservation.RowRegion region) {
+		boolean finished;
+		boolean failed;
+		synchronized (this) {
+			if (queryScopeOwner != this || rowObservationAssigned) {
+				return false;
+			}
+			rowObservationAssigned = true;
+			finished = closeCompleted;
+			failed = finished && closeFailure != null;
+			if (!finished) {
+				observedRow = region;
+			}
+		}
+		if (finished) {
+			region.contextFinished(failed);
+		}
+		return true;
+	}
 
 	void registerFilterWorkers(WorkerTasks tasks) {
 		localFilterWorkers.put(tasks, Boolean.TRUE);
@@ -1111,6 +1136,15 @@ final class NativeExecutionContext implements AutoCloseable {
 				scoped.installQueryScopedValueRegistrar(registrar);
 			}
 		}
+	}
+
+	/**
+	 * A generic step whose only dependence on its evaluation is query-scope state ({@code NOW()}, blank-node labels):
+	 * prepared once per query scope and shared by every frame and invocation of that evaluation, exactly like the
+	 * compile-time step it replaces is shared, but against this evaluation's scope.
+	 */
+	<T> T queryScopedGenericStep(GenericSubplanDescriptor descriptor, Supplier<T> factory) {
+		return queryScopeOwner.genericStep(descriptor, factory);
 	}
 
 	/**
@@ -1854,6 +1888,7 @@ final class NativeExecutionContext implements AutoCloseable {
 			return;
 		}
 		Throwable failure = null;
+		NativeExecutionObservation.RowRegion notification = null;
 		synchronized (this) {
 			if (leaseCount != 0) {
 				return;
@@ -1873,8 +1908,13 @@ final class NativeExecutionContext implements AutoCloseable {
 					closeFailure = failure;
 					closeCompleted = true;
 					closingThread = null;
+					notification = observedRow;
+					observedRow = null;
 				}
 			}
+		}
+		if (notification != null) {
+			notification.contextFinished(failure != null);
 		}
 		if (failure != null) {
 			NativeContextClosingIteration.throwFailure(failure);

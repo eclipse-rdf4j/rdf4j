@@ -59,9 +59,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -231,6 +233,53 @@ class QueryPlanSnapshotCliTest {
 			try (QueryPlanSnapshotStoreSupport.StoreRuntime runtime = QueryPlanSnapshotStoreSupport
 					.createStoreRuntime(options)) {
 				assertEquals("snapshot-only", runtime.lmdbStoreConfig.getSketchEstimatorEvidenceMode());
+			}
+		} finally {
+			deleteDir(lmdbDataDirectory);
+		}
+	}
+
+	@Test
+	void lmdbCaptureOfACachedPlanKeepsItsOptimizerTrace() throws Exception {
+		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-capture-");
+		try {
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--theme-query", "ELECTRICAL_GRID:7",
+					"--persist", "false"
+			});
+			try (QueryPlanSnapshotStoreSupport.StoreRuntime runtime = QueryPlanSnapshotStoreSupport
+					.createStoreRuntime(options)) {
+				assertTrue(runtime.lmdbStoreConfig.getRetainCachedPlanDiagnostics(),
+						"plan capture reads the optimizer trace of plans the pipeline plan cache serves");
+				ValueFactory values = SimpleValueFactory.getInstance();
+				String query = "SELECT ?o ?other WHERE { ?s <urn:capture:p> ?o . ?s <urn:capture:q> ?other }";
+				try (var connection = runtime.repository.getConnection()) {
+					IRI subject = values.createIRI("urn:capture:s");
+					connection.add(subject, values.createIRI("urn:capture:p"), values.createLiteral("left"));
+					connection.add(subject, values.createIRI("urn:capture:q"), values.createLiteral("right"));
+					QueryPlanCapture capture = new QueryPlanCapture();
+					QueryPlanCaptureContext context = QueryPlanCaptureContext.builder()
+							.outputDirectory(lmdbDataDirectory.resolve("captures"))
+							.queryId("cached-trace")
+							.queryString(query)
+							.levels(List.of(Explanation.Level.Optimized))
+							.irRenderedLevels(Set.of())
+							.build();
+					QueryPlanSnapshot fresh = capture.capture(context, () -> connection.prepareTupleQuery(query));
+					QueryPlanSnapshot cached = capture.capture(context, () -> connection.prepareTupleQuery(query));
+					TupleExpr served = (TupleExpr) connection.prepareTupleQuery(query)
+							.explain(Explanation.Level.Optimized)
+							.tupleExpr();
+					assertEquals("true", served.getStringMetricPlanned("optimizer.pipelinePlanCacheHit"),
+							"the query is served from the pipeline plan cache");
+					assertFalse(fresh.getOptimizerTrace().isEmpty());
+					assertNull(fresh.getOptimizerTrace().get("parseError"));
+					assertEquals(fresh.getOptimizerTrace(), cached.getOptimizerTrace(),
+							"a capture of the cached plan reads the same optimizer trace as the fresh capture");
+				}
 			}
 		} finally {
 			deleteDir(lmdbDataDirectory);

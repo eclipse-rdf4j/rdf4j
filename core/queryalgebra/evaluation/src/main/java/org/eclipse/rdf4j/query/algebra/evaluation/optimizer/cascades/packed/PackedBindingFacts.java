@@ -372,7 +372,10 @@ final class PackedBindingFacts {
 			default -> {
 			}
 			}
-			relationOutputMaskIds[groupId] = masks.intern(scratch, 0);
+			// Parents consume group masks during this pass. Propagate an unknown child before deriving them, rather
+			// than widening only the final per-relation view after the parent mask has already been captured.
+			relationOutputMaskIds[groupId] = (query.relMetadataFlags(relationId)
+					& PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0 ? allSymbolMaskId : masks.intern(scratch, 0);
 			derivedRelationGroupWords[groupId >>> 6] |= 1L << groupId;
 			bindingValueCount = Math.addExact(bindingValueCount,
 					masks.cardinality(relationOutputMaskIds[groupId]));

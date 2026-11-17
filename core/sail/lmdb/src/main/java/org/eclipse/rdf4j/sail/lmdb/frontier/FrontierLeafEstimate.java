@@ -13,18 +13,51 @@ package org.eclipse.rdf4j.sail.lmdb.frontier;
 
 import java.util.Objects;
 
-/** Calibratable interval returned from persisted V2 leaf evidence. */
+/** A leaf estimate and its producer-declared coverage guarantee for the selected statistics view. */
 public record FrontierLeafEstimate(double pointRows, double lowerRows, double upperRows, double confidence,
-		String source, FrontierFallbackReason fallbackReason) {
+		String source, FrontierFallbackReason fallbackReason, Guarantee guarantee) {
+
+	/** A statistical interval is never a semantic proof, even if its endpoints happen to coincide. */
+	public enum Guarantee {
+		EXACT,
+		CERTIFIED_BOUNDS,
+		ESTIMATE,
+		UNAVAILABLE
+	}
+
+	/** Existing providers carry no hard guarantee unless they explicitly declare one. */
+	public FrontierLeafEstimate(double pointRows, double lowerRows, double upperRows, double confidence,
+			String source, FrontierFallbackReason fallbackReason) {
+		this(pointRows, lowerRows, upperRows, confidence, source, fallbackReason,
+				fallbackReason == FrontierFallbackReason.NONE ? Guarantee.ESTIMATE : Guarantee.UNAVAILABLE);
+	}
 
 	public FrontierLeafEstimate {
 		Objects.requireNonNull(source, "source");
 		Objects.requireNonNull(fallbackReason, "fallbackReason");
+		Objects.requireNonNull(guarantee, "guarantee");
 		if (Double.isNaN(pointRows) || lowerRows < 0.0d || Double.isNaN(upperRows)
 				|| pointRows < lowerRows || pointRows > upperRows
 				|| !Double.isFinite(confidence) || confidence < 0.0d || confidence > 1.0d) {
 			throw new IllegalArgumentException("Frontier leaf estimate interval is invalid");
 		}
+		if ((fallbackReason == FrontierFallbackReason.NONE) == (guarantee == Guarantee.UNAVAILABLE)) {
+			throw new IllegalArgumentException("Frontier leaf guarantee must match its coverage status");
+		}
+		if (guarantee == Guarantee.EXACT
+				&& (!Double.isFinite(pointRows) || lowerRows != pointRows || upperRows != pointRows
+						|| confidence != 1.0d)) {
+			throw new IllegalArgumentException("an exact Frontier leaf must carry one certified value");
+		}
+		if (guarantee == Guarantee.CERTIFIED_BOUNDS
+				&& (!Double.isFinite(pointRows) || Double.isNaN(lowerRows))) {
+			throw new IllegalArgumentException("certified Frontier bounds must be valid physical quantities");
+		}
+	}
+
+	static FrontierLeafEstimate exact(double rows, String source) {
+		return new FrontierLeafEstimate(rows, rows, rows, 1.0d, source, FrontierFallbackReason.NONE,
+				Guarantee.EXACT);
 	}
 
 	static FrontierLeafEstimate unavailable(FrontierFallbackReason reason) {

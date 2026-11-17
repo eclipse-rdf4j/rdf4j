@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.config;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -69,6 +70,22 @@ class LmdbStoreConfigFrontierTest {
 		Model exported = new LinkedHashModel();
 		restored.export(exported);
 		assertEquals(model.size(), exported.size());
+	}
+
+	@Test
+	void retainCachedPlanDiagnosticsIsOptInAndRoundTrips() throws Exception {
+		LmdbStoreConfig defaults = new LmdbStoreConfig();
+		assertFalse(defaults.getRetainCachedPlanDiagnostics());
+		Model defaultModel = new LinkedHashModel();
+		defaults.export(defaultModel);
+		assertFalse(defaultModel.contains(null, LmdbStoreSchema.RETAIN_CACHED_PLAN_DIAGNOSTICS, null),
+				"the default is not exported");
+
+		Model model = new LinkedHashModel();
+		Resource node = new LmdbStoreConfig().setRetainCachedPlanDiagnostics(true).export(model);
+		LmdbStoreConfig restored = new LmdbStoreConfig();
+		restored.parse(model, node);
+		assertTrue(restored.getRetainCachedPlanDiagnostics());
 	}
 
 	@Test

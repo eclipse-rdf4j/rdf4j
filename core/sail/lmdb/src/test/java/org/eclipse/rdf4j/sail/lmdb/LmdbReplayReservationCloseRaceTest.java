@@ -48,7 +48,8 @@ class LmdbReplayReservationCloseRaceTest {
 		AtomicReference<LmdbSailStore.ReadAttemptLease> closeOnReservation = new AtomicReference<>();
 		AtomicReference<Thread> driver = new AtomicReference<>();
 		AtomicInteger closedDuringReservation = new AtomicInteger();
-		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(), new StoreProperties(dataDir.toFile()), config,
+		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(),
+				LmdbOwningTestStoreMetadata.open(dataDir.toFile(), config), config,
 				false, ValueStore::new, TripleStore::new) {
 			@Override
 			void beforeGrowthAdmissionCheck() {

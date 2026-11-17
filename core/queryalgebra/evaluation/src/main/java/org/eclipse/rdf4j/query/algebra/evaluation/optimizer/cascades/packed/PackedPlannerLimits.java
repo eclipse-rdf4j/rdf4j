@@ -16,16 +16,26 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
  * Immutable limits for one deterministic packed-planner search. {@code deadlineNanos} is an absolute
  * {@link System#nanoTime()} value; because that clock has an arbitrary origin, any value is a real deadline except
  * {@link Long#MAX_VALUE}, which means "no deadline".
+ * <p>
+ * {@code workLimit} bounds search steps only. Provider callbacks and the bounded batches a provider performs inside
+ * them are counted against the separate {@code providerWorkLimit} of the same budget owner; {@link Long#MAX_VALUE}
+ * leaves provider work unbounded.
  */
-public record PackedPlannerLimits(long workLimit, long deadlineNanos, long maxRetainedBytes) {
+public record PackedPlannerLimits(long workLimit, long deadlineNanos, long maxRetainedBytes, long providerWorkLimit) {
 
 	public static final long DEFAULT_MAX_RETAINED_BYTES = 64L * 1024L * 1024L;
 
 	public PackedPlannerLimits {
 		workLimit = Math.max(0L, workLimit);
+		providerWorkLimit = Math.max(0L, providerWorkLimit);
 		if (maxRetainedBytes < 0L) {
 			throw new IllegalArgumentException("packed planner retained-byte limit must be nonnegative");
 		}
+	}
+
+	/** Search-step, deadline and retained-byte limits with unbounded provider work. */
+	public PackedPlannerLimits(long workLimit, long deadlineNanos, long maxRetainedBytes) {
+		this(workLimit, deadlineNanos, maxRetainedBytes, Long.MAX_VALUE);
 	}
 
 	public PackedPlannerLimits(long workLimit, long deadlineNanos) {
@@ -33,6 +43,6 @@ public record PackedPlannerLimits(long workLimit, long deadlineNanos, long maxRe
 	}
 
 	public static PackedPlannerLimits unbounded() {
-		return new PackedPlannerLimits(Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		return new PackedPlannerLimits(Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
 	}
 }

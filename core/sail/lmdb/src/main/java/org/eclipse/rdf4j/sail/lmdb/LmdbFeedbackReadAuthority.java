@@ -120,6 +120,15 @@ final class LmdbFeedbackReadAuthority {
 	}
 
 	boolean isCurrent() {
+		return isCurrent(false);
+	}
+
+	/** Only a previously admitted immutable mapped view may use this narrower snapshot-lifetime check. */
+	boolean isCurrentForAdmittedFrontierView() {
+		return isCurrent(true);
+	}
+
+	private boolean isCurrent(boolean admittedFrontierView) {
 		if (!transaction.isLive(lease) || transaction.version() != version
 				|| transaction.nativeTransactionId() != nativeEpoch || transaction.snapshotRevision() != logicalRevision
 				|| runtime.physicalTripleStore() == null
@@ -131,7 +140,8 @@ final class LmdbFeedbackReadAuthority {
 			try {
 				if (owner.pinnedReadTxn().orElse(null) != transaction
 						|| owner.pinnedValueSnapshot().orElse(null) != dictionary
-						|| !owner.isCurrentForPhysicalCost()) {
+						|| !(admittedFrontierView ? owner.isLiveForAdmittedFrontierView()
+								: owner.isCurrentForPhysicalCost())) {
 					return false;
 				}
 			} catch (LmdbSailStore.MapResizeConflictException invalidated) {

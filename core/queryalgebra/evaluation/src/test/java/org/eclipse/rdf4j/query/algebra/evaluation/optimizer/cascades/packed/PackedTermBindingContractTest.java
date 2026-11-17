@@ -17,9 +17,11 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -29,15 +31,113 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PackedTermBindingContractTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI P = VF.createIRI("urn:mask:predicate");
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void rowOnlyValuesNamesRemainPossibleThroughNestedJoin(boolean mixed) {
+		BindingSetAssignment values = rowOnlyValues(mixed);
+		StatementPattern independent = new StatementPattern(Var.of("a"), Var.of("constant", P, true, true),
+				Var.of("b"));
+		StatementPattern target = new StatementPattern(Var.of("rowOnly"), Var.of("predicate", P, true, true),
+				Var.of("object"));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(new Join(values, independent), target));
+		int nested = query.relChild(query.rootRelId(), 0);
+		int assignment = query.relChild(nested, 0);
+		int statement = query.relChild(query.rootRelId(), 1);
+		PackedQueryView view = new PackedQueryView(query);
+
+		assertThat(((BindingSetAssignment) view.materializeRelation(assignment)).getDeclaredBindingNames())
+				.containsExactly("declared");
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertThat(view.outputBindingNames(assignment)).contains("rowOnly"),
+				() -> assertThat(view.outputBindingNames(nested)).contains("rowOnly"),
+				() -> assertThat(view.relationBindsStatementComponent(assignment, statement, 0)).isTrue(),
+				() -> assertThat(view.relationBindsStatementComponent(nested, statement, 0)).isTrue());
+	}
+
+	@Test
+	void projectionCanRemoveRowOnlyValuesNamesFromItsOwnOutput() {
+		Projection projection = new Projection(rowOnlyValues(true),
+				new ProjectionElemList(new ProjectionElem("declared")));
+		StatementPattern target = new StatementPattern(Var.of("rowOnly"), Var.of("predicate", P, true, true),
+				Var.of("object"));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(projection, target));
+		int projected = query.relChild(query.rootRelId(), 0);
+		int statement = query.relChild(query.rootRelId(), 1);
+		PackedQueryView view = new PackedQueryView(query);
+		assertThat(view.outputBindingNames(projected)).containsExactly("declared");
+		assertThat(view.relationBindsStatementComponent(projected, statement, 0)).isFalse();
+	}
+
+	@Test
+	void nestedValuesWithRowOnlyBindingsPreserveTheResultBag() {
+		IRI independentPredicate = VF.createIRI("urn:mask:independent");
+		IRI a = VF.createIRI("urn:mask:a");
+		IRI b = VF.createIRI("urn:mask:b");
+		IRI other = VF.createIRI("urn:mask:other");
+		IRI first = VF.createIRI("urn:mask:first");
+		IRI second = VF.createIRI("urn:mask:second");
+		var data = new LinkedHashModel();
+		data.add(P, P, first);
+		data.add(other, P, second);
+		data.add(a, independentPredicate, b);
+		StatementPattern independent = new StatementPattern(Var.of("a"),
+				Var.of("independent", independentPredicate, true, true), Var.of("b"));
+		StatementPattern target = new StatementPattern(Var.of("rowOnly"), Var.of("predicate", P, true, true),
+				Var.of("object"));
+		TupleExpr source = new Join(new Join(rowOnlyValues(true), independent), target);
+		PlanningGraphDomains.capture(source, PlanningGraphDomain.defaultGraph());
+		String prefix = "a=urn:mask:a|b=urn:mask:b|declared=urn:mask:predicate|object=";
+		String suffix = "|rowOnly=urn:mask:predicate";
+		PackedPlanDifferentialSupport.assertPackedPlanPreservesResults(data, source,
+				PackedPlanDifferentialSupport.SUBJECT_LOOKUP_COSTS, null,
+				List.of(prefix + "urn:mask:first" + suffix, prefix + "urn:mask:first" + suffix,
+						prefix + "urn:mask:second|rowOnly=urn:mask:other"));
+	}
+
+	@Test
+	void finiteFilterDoesNotIgnoreAValuesRowOnlyBinding() {
+		StatementPattern target = new StatementPattern(Var.of("rowOnly"), Var.of("predicate", P, true, true),
+				Var.of("object"));
+		Filter withoutValues = new Filter(target.clone(),
+				new Compare(Var.of("rowOnly"), new ValueConstant(P), Compare.CompareOp.EQ));
+		withoutValues.setConditionBindingScope(ConditionBindingScope.ALL);
+		assertThat(PackedPlanDifferentialSupport.generates(withoutValues, PackedRuleProofs.FINITE_FILTER_VALUES))
+				.as("the ordinary finite-filter rule must be applicable without an existing assignment")
+				.isTrue();
+		Filter filter = new Filter(new Join(rowOnlyValues(true), target),
+				new Compare(Var.of("rowOnly"), new ValueConstant(P), Compare.CompareOp.EQ));
+		filter.setConditionBindingScope(ConditionBindingScope.ALL);
+		assertThat(PackedPlanDifferentialSupport.generates(filter, PackedRuleProofs.FINITE_FILTER_VALUES)).isFalse();
+	}
+
+	private static BindingSetAssignment rowOnlyValues(boolean mixed) {
+		QueryBindingSet first = new QueryBindingSet();
+		first.addBinding("declared", P);
+		first.addBinding("rowOnly", P);
+		QueryBindingSet second = new QueryBindingSet();
+		second.addBinding("declared", P);
+		if (!mixed) {
+			second.addBinding("rowOnly", P);
+		}
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("declared"));
+		values.setBindingSets(List.of(first, second));
+		return values;
+	}
 
 	@Test
 	void valuedTupleParameterRemainsAnAssuredOutputInTheProviderView() {

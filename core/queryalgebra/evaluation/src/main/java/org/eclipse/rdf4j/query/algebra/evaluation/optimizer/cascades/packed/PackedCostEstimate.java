@@ -105,6 +105,9 @@ public final class PackedCostEstimate {
 	private double objectiveLower;
 	private double objectivePoint;
 	private double objectiveUpper;
+	/** The retained objective still describes a source event while an added child has not yet been priced. */
+	private boolean partialObjective;
+	private double partialLifecycleComparison;
 	private RuntimeFeedbackContract runtimeFeedbackContract;
 	private String[] plannedStringMetricNames;
 	private String[] plannedStringMetricValues;
@@ -189,6 +192,8 @@ public final class PackedCostEstimate {
 		objectiveLower = Double.NaN;
 		objectivePoint = Double.NaN;
 		objectiveUpper = Double.NaN;
+		partialObjective = false;
+		partialLifecycleComparison = Double.NaN;
 		runtimeFeedbackContract = null;
 	}
 
@@ -213,6 +218,8 @@ public final class PackedCostEstimate {
 
 	/** A complete weighted price with genuinely unavailable resource quantities. */
 	void setLocalScalarPrice(double rows, double price) {
+		partialObjective = false;
+		partialLifecycleComparison = Double.NaN;
 		outputRows = rows;
 		restorePhysicalCostAxes(price, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
 				Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, CostScope.LOCAL, false);
@@ -229,8 +236,73 @@ public final class PackedCostEstimate {
 		if (!Double.isFinite(price) || price < 0.0d) {
 			throw new IllegalArgumentException("objective price must be finite and non-negative");
 		}
+		if (partialObjective) {
+			rebaseObjective(price);
+		} else {
+			workRows = price;
+			setObjectiveInterval(price, price, price);
+		}
+	}
+
+	/** Retains known resource quantities while marking their complete objective as unavailable. */
+	void setUnavailableObjectivePreservingPhysicalCost() {
+		discardPartialObjective();
+		workRows = Double.NaN;
+		objectiveLower = objectivePoint = objectiveUpper = Double.NaN;
+		removePhysicalObjectiveMetrics();
+	}
+
+	/**
+	 * A child whose quantities were not supplied makes the enclosing physical vector unknown. Keep a separately
+	 * composed price only when it exists; NaN preserves an unavailable objective in the original scope.
+	 */
+	void setPhysicalCostWithUnknownChild(double price) {
+		if (!explicitPhysicalCost || !Double.isNaN(price) && (!Double.isFinite(price) || price < 0.0d)) {
+			throw new IllegalArgumentException(
+					"an unknown physical child requires a finite or unavailable composed price");
+		}
+		if (Double.isNaN(price)) {
+			discardPartialObjective();
+			workRows = Double.NaN;
+			objectiveLower = objectivePoint = objectiveUpper = Double.NaN;
+			removePhysicalObjectiveMetrics();
+		} else {
+			rebaseObjective(price);
+		}
+		discardDependentCostProfile();
+		restorePhysicalCostAxes(price, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+				Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, costScope, true);
+	}
+
+	void rebaseObjective(double price) {
+		if (Double.isNaN(price)) {
+			setUnavailableObjectivePreservingPhysicalCost();
+			return;
+		}
+		boolean hadInterval = Double.isFinite(objectiveLower) && Double.isFinite(objectivePoint)
+				&& Double.isFinite(objectiveUpper);
+		double sourcePoint = partialObjective ? objectivePoint : objectivePoint();
+		double sourceLower = partialObjective ? objectiveLower : objectiveLower();
+		double sourceUpper = partialObjective ? objectiveUpper : objectiveUpper();
+		double comparison = partialObjective ? partialLifecycleComparison
+				: plannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.NaN);
+		partialObjective = false;
+		partialLifecycleComparison = Double.NaN;
 		workRows = price;
-		setObjectiveInterval(price, price, price);
+		if (hadInterval) {
+			// Only the already-priced child has been added. Preserve the originating event's risk spread.
+			double lower = Math.max(0.0d, price - (sourcePoint - sourceLower));
+			double upper = saturatedAdd(price, sourceUpper - sourcePoint);
+			setObjectiveInterval(lower, price, upper);
+		} else {
+			setObjectiveInterval(price, price, price);
+		}
+		if (Double.isFinite(sourcePoint) && Double.isFinite(comparison)) {
+			// MAX_VALUE is the existing exclusion sentinel and cannot become an eligible finite comparison.
+			double translated = comparison == Double.MAX_VALUE ? Double.MAX_VALUE
+					: saturatedAdd(price, Math.max(0.0d, comparison - sourcePoint));
+			putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", translated);
+		}
 	}
 
 	void restorePhysicalCostAxes(double work, double sequential, double seeks, double opens, double expressions,
@@ -434,6 +506,14 @@ public final class PackedCostEstimate {
 				|| lower < 0.0d || lower > point || point > upper) {
 			throw new IllegalArgumentException("objective interval must be finite, non-negative, and ordered");
 		}
+		if (partialObjective) {
+			double translated = translatedComparison(point);
+			partialObjective = false;
+			partialLifecycleComparison = Double.NaN;
+			if (Double.isFinite(translated)) {
+				putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", translated);
+			}
+		}
 		objectiveLower = lower;
 		objectivePoint = point;
 		objectiveUpper = upper;
@@ -450,6 +530,7 @@ public final class PackedCostEstimate {
 	private void setPhysicalCost(CostScope costScope, double sequentialRows, double randomSeeks,
 			double iteratorOpens, double expressionEvaluations, double hashBuildRows, double hashProbeRows,
 			double pathExpansions, double resultRows, double remoteCalls, double peakMemoryRows) {
+		discardPartialObjective();
 		this.sequentialRows = physicalDimension(sequentialRows, "sequential rows");
 		this.randomSeeks = physicalDimension(randomSeeks, "random seeks");
 		this.iteratorOpens = physicalDimension(iteratorOpens, "iterator opens");
@@ -476,6 +557,7 @@ public final class PackedCostEstimate {
 	}
 
 	private void setScalarPhysicalCost(double workRows) {
+		discardPartialObjective();
 		contextualScalarWork = false;
 		if (!Double.isFinite(workRows) || workRows < 0.0d) {
 			this.workRows = workRows;
@@ -522,30 +604,55 @@ public final class PackedCostEstimate {
 	void addChildPhysicalCost(double sequentialRows, double randomSeeks, double iteratorOpens,
 			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
 			double resultRows, double remoteCalls, double peakMemoryRows) {
-		this.sequentialRows = saturatedAdd(finiteOrZero(this.sequentialRows),
+		// A producer's independently calibrated price cannot price a newly added child without its pricing policy.
+		double previousPhysicalWork = physicalWorkRows();
+		double sourceComparison = plannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.NaN);
+		boolean independentPrice = Double.isFinite(objectivePoint) || Double.isFinite(sourceComparison)
+				|| !Double.isFinite(workRows)
+				|| Double.compare(workRows, previousPhysicalWork) != 0;
+		if (independentPrice && !partialObjective && Double.isFinite(objectivePoint())) {
+			if (!hasObjectiveInterval()) {
+				objectivePoint = objectivePoint();
+				objectiveLower = objectiveUpper = Double.NaN;
+			}
+			partialLifecycleComparison = sourceComparison;
+			partialObjective = true;
+		}
+		this.sequentialRows = addKnownPhysicalDimension(this.sequentialRows,
 				physicalDimension(sequentialRows, "child sequential rows"));
-		this.randomSeeks = saturatedAdd(finiteOrZero(this.randomSeeks),
+		this.randomSeeks = addKnownPhysicalDimension(this.randomSeeks,
 				physicalDimension(randomSeeks, "child random seeks"));
-		this.iteratorOpens = saturatedAdd(finiteOrZero(this.iteratorOpens),
+		this.iteratorOpens = addKnownPhysicalDimension(this.iteratorOpens,
 				physicalDimension(iteratorOpens, "child iterator opens"));
-		this.expressionEvaluations = saturatedAdd(finiteOrZero(this.expressionEvaluations),
+		this.expressionEvaluations = addKnownPhysicalDimension(this.expressionEvaluations,
 				physicalDimension(expressionEvaluations, "child expression evaluations"));
-		this.hashBuildRows = saturatedAdd(finiteOrZero(this.hashBuildRows),
+		this.hashBuildRows = addKnownPhysicalDimension(this.hashBuildRows,
 				physicalDimension(hashBuildRows, "child hash build rows"));
-		this.hashProbeRows = saturatedAdd(finiteOrZero(this.hashProbeRows),
+		this.hashProbeRows = addKnownPhysicalDimension(this.hashProbeRows,
 				physicalDimension(hashProbeRows, "child hash probe rows"));
-		this.pathExpansions = saturatedAdd(finiteOrZero(this.pathExpansions),
+		this.pathExpansions = addKnownPhysicalDimension(this.pathExpansions,
 				physicalDimension(pathExpansions, "child path expansions"));
-		this.resultRows = saturatedAdd(finiteOrZero(this.resultRows),
+		this.resultRows = addKnownPhysicalDimension(this.resultRows,
 				physicalDimension(resultRows, "child result rows"));
-		this.remoteCalls = saturatedAdd(finiteOrZero(this.remoteCalls),
+		this.remoteCalls = addKnownPhysicalDimension(this.remoteCalls,
 				physicalDimension(remoteCalls, "child remote calls"));
-		this.peakMemoryRows = Math.max(finiteOrZero(this.peakMemoryRows),
+		this.peakMemoryRows = Math.max(this.peakMemoryRows,
 				physicalDimension(peakMemoryRows, "child peak memory rows"));
+		discardDependentCostProfile();
 		costScope = CostScope.INCLUSIVE;
 		explicitPhysicalCost = true;
 		replacesChildWork = true;
 		recomputeWorkRows();
+		if (independentPrice) {
+			workRows = Double.NaN;
+		}
+		if (Double.isNaN(workRows)) {
+			// The former price described only the pre-composition event and cannot price the new child.
+			if (!partialObjective) {
+				objectiveLower = objectivePoint = objectiveUpper = Double.NaN;
+			}
+			removePhysicalObjectiveMetrics();
+		}
 		publishPhysicalCostMetrics();
 	}
 
@@ -587,6 +694,25 @@ public final class PackedCostEstimate {
 	public void setInclusivePhysicalCostPreservingUnknown(double sequentialRows, double randomSeeks,
 			double iteratorOpens, double expressionEvaluations, double hashBuildRows, double hashProbeRows,
 			double pathExpansions, double resultRows, double remoteCalls, double peakMemoryRows, double price) {
+		setPhysicalCostPreservingUnknown(CostScope.INCLUSIVE, sequentialRows, randomSeeks, iteratorOpens,
+				expressionEvaluations, hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls,
+				peakMemoryRows, price);
+	}
+
+	/** Declares local resource quantities without filling unavailable axes from a separate price. */
+	@InternalUseOnly
+	public void setLocalPhysicalCostPreservingUnknown(double sequentialRows, double randomSeeks,
+			double iteratorOpens, double expressionEvaluations, double hashBuildRows, double hashProbeRows,
+			double pathExpansions, double resultRows, double remoteCalls, double peakMemoryRows, double price) {
+		setPhysicalCostPreservingUnknown(CostScope.LOCAL, sequentialRows, randomSeeks, iteratorOpens,
+				expressionEvaluations, hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls,
+				peakMemoryRows, price);
+	}
+
+	private void setPhysicalCostPreservingUnknown(CostScope scope, double sequentialRows, double randomSeeks,
+			double iteratorOpens, double expressionEvaluations, double hashBuildRows, double hashProbeRows,
+			double pathExpansions, double resultRows, double remoteCalls, double peakMemoryRows, double price) {
+		discardPartialObjective();
 		if (!Double.isNaN(price)) {
 			physicalDimension(price, "independent physical price");
 		}
@@ -621,9 +747,9 @@ public final class PackedCostEstimate {
 		work = saturatedAdd(work, remoteCalls);
 		restorePhysicalCostAxes(unknownWork ? price : work, sequentialRows, randomSeeks, iteratorOpens,
 				expressionEvaluations, hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls,
-				peakMemoryRows, CostScope.INCLUSIVE, true);
+				peakMemoryRows, scope, true);
 		contextualScalarWork = false;
-		replacesChildWork = true;
+		replacesChildWork = scope == CostScope.INCLUSIVE;
 		if (Double.isNaN(price)) {
 			objectiveLower = objectivePoint = objectiveUpper = Double.NaN;
 			removePhysicalObjectiveMetrics();
@@ -667,7 +793,7 @@ public final class PackedCostEstimate {
 		copyDependentComponentsFrom(declared);
 		// Objective fields and their immutable metric transport belong to the same physical declaration.
 		removePhysicalObjectiveMetrics();
-		if (Double.isFinite(objectivePoint)) {
+		if (!partialObjective && Double.isFinite(objectivePoint)) {
 			setObjectiveInterval(objectiveLower, objectivePoint, objectiveUpper);
 		}
 		publishPhysicalCostMetrics();
@@ -733,6 +859,14 @@ public final class PackedCostEstimate {
 		this.objectiveLower = objectiveLower;
 		this.objectivePoint = objectivePoint;
 		this.objectiveUpper = objectiveUpper;
+	}
+
+	void restoreCostingTracePartialObjective(double lower, double point, double upper, double comparison) {
+		objectiveLower = lower;
+		objectivePoint = point;
+		objectiveUpper = upper;
+		partialLifecycleComparison = comparison;
+		partialObjective = true;
 	}
 
 	void prepareCostingTraceMetrics(int stringCount, int doubleCount) {
@@ -964,17 +1098,29 @@ public final class PackedCostEstimate {
 		objectiveLower = source.objectiveLower;
 		objectivePoint = source.objectivePoint;
 		objectiveUpper = source.objectiveUpper;
+		partialObjective = source.partialObjective;
+		partialLifecycleComparison = source.partialLifecycleComparison;
+	}
+
+	private void discardPartialObjective() {
+		if (partialObjective) {
+			objectiveLower = objectivePoint = objectiveUpper = Double.NaN;
+			removePhysicalObjectiveMetrics();
+		}
+		partialObjective = false;
+		partialLifecycleComparison = Double.NaN;
+	}
+
+	private void discardDependentCostProfile() {
+		if (explicitDependentCostComponents) {
+			// A source event's reopen profile does not cover an independently composed child.
+			clearDependentComponents();
+			compactPlannedMetrics(null, false, true);
+		}
 	}
 
 	private void recomputeWorkRows() {
-		workRows = saturatedAdd(sequentialRows, randomSeeks);
-		workRows = saturatedAdd(workRows, iteratorOpens);
-		workRows = saturatedAdd(workRows, expressionEvaluations);
-		workRows = saturatedAdd(workRows, hashBuildRows);
-		workRows = saturatedAdd(workRows, hashProbeRows);
-		workRows = saturatedAdd(workRows, pathExpansions);
-		workRows = saturatedAdd(workRows, resultRows);
-		workRows = saturatedAdd(workRows, remoteCalls);
+		workRows = physicalWorkRows();
 	}
 
 	private void publishPhysicalCostMetrics() {
@@ -1141,18 +1287,20 @@ public final class PackedCostEstimate {
 		if (names.isEmpty()) {
 			return;
 		}
-		compactPlannedMetrics(names, false);
+		compactPlannedMetrics(names, false, false);
 	}
 
 	private void removePhysicalObjectiveMetrics() {
-		compactPlannedMetrics(null, true);
+		compactPlannedMetrics(null, true, false);
 	}
 
-	private void compactPlannedMetrics(Set<String> names, boolean physicalObjectiveMetrics) {
+	private void compactPlannedMetrics(Set<String> names, boolean physicalObjectiveMetrics,
+			boolean dependentComponentMetrics) {
 		boolean removed = false;
 		int retained = 0;
 		for (int index = 0; index < plannedStringMetricCount; index++) {
-			if (!shouldRemovePlannedMetric(plannedStringMetricNames[index], names, physicalObjectiveMetrics)) {
+			if (!shouldRemovePlannedMetric(plannedStringMetricNames[index], names, physicalObjectiveMetrics,
+					dependentComponentMetrics)) {
 				plannedStringMetricNames[retained] = plannedStringMetricNames[index];
 				plannedStringMetricValues[retained++] = plannedStringMetricValues[index];
 			}
@@ -1166,7 +1314,8 @@ public final class PackedCostEstimate {
 		}
 		retained = 0;
 		for (int index = 0; index < plannedDoubleMetricCount; index++) {
-			if (!shouldRemovePlannedMetric(plannedDoubleMetricNames[index], names, physicalObjectiveMetrics)) {
+			if (!shouldRemovePlannedMetric(plannedDoubleMetricNames[index], names, physicalObjectiveMetrics,
+					dependentComponentMetrics)) {
 				plannedDoubleMetricNames[retained] = plannedDoubleMetricNames[index];
 				plannedDoubleMetricValues[retained++] = plannedDoubleMetricValues[index];
 			}
@@ -1192,7 +1341,23 @@ public final class PackedCostEstimate {
 		}
 	}
 
-	private static boolean shouldRemovePlannedMetric(String name, Set<String> names, boolean physicalObjectiveMetrics) {
+	private static boolean shouldRemovePlannedMetric(String name, Set<String> names, boolean physicalObjectiveMetrics,
+			boolean dependentComponentMetrics) {
+		if (dependentComponentMetrics) {
+			return switch (name) {
+			case "optimizer.dependentStartupOnce", "optimizer.dependentInvocationCount",
+					"optimizer.dependentHitProbability", "optimizer.dependentFirstMatchWork",
+					"optimizer.dependentExhaustionWork", "optimizer.dependentRebindWork",
+					"optimizer.dependentCloseWork",
+					"optimizer.dependentOutputWork", "optimizer.dependentDistinctKeyMisses",
+					"optimizer.dependentCacheHits",
+					"optimizer.dependentCacheMisses", "optimizer.dependentCacheEvictions",
+					"optimizer.dependentMaterializationBuilds", "optimizer.dependentMaterializationLookups",
+					"optimizer.dependentMemorySpillWork", "optimizer.dependentCostSource" ->
+				true;
+			default -> false;
+			};
+		}
 		if (!physicalObjectiveMetrics) {
 			return names.contains(name);
 		}
@@ -1549,19 +1714,55 @@ public final class PackedCostEstimate {
 	}
 
 	boolean hasObjectiveInterval() {
-		return Double.isFinite(objectivePoint);
+		return !partialObjective && Double.isFinite(objectivePoint);
+	}
+
+	boolean hasPartialObjective() {
+		return partialObjective;
+	}
+
+	double partialObjectiveLower() {
+		return objectiveLower;
+	}
+
+	double partialObjectivePoint() {
+		return objectivePoint;
+	}
+
+	double partialObjectiveUpper() {
+		return objectiveUpper;
+	}
+
+	double partialLifecycleComparison() {
+		return partialLifecycleComparison;
+	}
+
+	double completedObjectiveLower(double price) {
+		return Double.isFinite(objectiveLower) ? Math.max(0.0d, price - (objectivePoint - objectiveLower)) : price;
+	}
+
+	double completedObjectiveUpper(double price) {
+		return Double.isFinite(objectiveUpper) ? saturatedAdd(price, objectiveUpper - objectivePoint) : price;
+	}
+
+	double translatedComparison(double price) {
+		if (!partialObjective || !Double.isFinite(partialLifecycleComparison)) {
+			return Double.NaN;
+		}
+		return partialLifecycleComparison == Double.MAX_VALUE ? Double.MAX_VALUE
+				: saturatedAdd(price, Math.max(0.0d, partialLifecycleComparison - objectivePoint));
 	}
 
 	public double objectiveLower() {
-		return Double.isFinite(objectiveLower) ? objectiveLower : objectivePoint();
+		return partialObjective ? Double.NaN : Double.isFinite(objectiveLower) ? objectiveLower : objectivePoint();
 	}
 
 	public double objectivePoint() {
-		return Double.isFinite(objectivePoint) ? objectivePoint : workRows;
+		return partialObjective ? Double.NaN : Double.isFinite(objectivePoint) ? objectivePoint : workRows;
 	}
 
 	public double objectiveUpper() {
-		return Double.isFinite(objectiveUpper) ? objectiveUpper : objectivePoint();
+		return partialObjective ? Double.NaN : Double.isFinite(objectiveUpper) ? objectiveUpper : objectivePoint();
 	}
 
 	public RuntimeFeedbackContract runtimeFeedbackContract() {
@@ -1835,7 +2036,7 @@ public final class PackedCostEstimate {
 		return Double.isFinite(product) ? product : Double.MAX_VALUE;
 	}
 
-	private static double finiteOrZero(double value) {
-		return Double.isFinite(value) && value >= 0.0d ? value : 0.0d;
+	private static double addKnownPhysicalDimension(double left, double right) {
+		return Double.isNaN(left) ? Double.NaN : saturatedAdd(left, right);
 	}
 }

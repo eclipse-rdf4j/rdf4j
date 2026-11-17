@@ -27,7 +27,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -65,9 +64,10 @@ import org.mockito.stubbing.Answer;
  * A statement pattern whose subject, predicate and object are all bound (constants, or bindings supplied by the prefix)
  * can match at most one statement per prefix row in a single context. The mapped V2 transition conditions a probe on
  * the statement lineage of the prefix (here {@code ?b knows ?c} binds {@code ?c}) and does not see bindings that arrive
- * without statement lineage (here {@code VALUES ?d}), so it prices the fan-out of a {@code [S, P]} scan. The cost model
- * must still respect the structural bound, otherwise a fully bound cycle edge is planned as a prefix scan with a
- * residual object filter instead of a direct lookup.
+ * without statement lineage (here {@code VALUES ?d}). The structural bound applies only to rows that a transition
+ * already describes per prefix row; an isolated factor population is never reinterpreted as contextual rows.
+ * {@link LmdbFullyBoundEdgeBehindOpaqueFilterPlanningTest} guards the planner-level outcome on a real store: a fully
+ * bound edge behind an opaque filter stays a priced direct lookup.
  */
 class LmdbPackedCostModelFullyBoundLookupTest {
 
@@ -79,6 +79,7 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 	private static final double PREFIX_ROWS = 100.0d;
 	private static final double LEAF_ROWS = 100_000.0d;
 	private static final double FANOUT_PER_LEFT = 8.7d;
+	private static final long SNAPSHOT_EPOCH = 41L;
 
 	private static final class AccessPath {
 		int lookupMask = -1;
@@ -87,7 +88,7 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 	}
 
 	@Test
-	void fullyBoundEdgeBehindLineageAndFiniteDomainYieldsAtMostOneRowPerInvocation() throws Exception {
+	void fullyBoundEdgeBehindOpaquePrefixWithoutTransitionKeepsItsIsolatedPopulation() throws Exception {
 		Fixture fixture = new Fixture();
 		StatementPattern knows = new StatementPattern(Var.of("b"), Var.of("knows", fixture.knows), Var.of("c"));
 		StatementPattern follows = new StatementPattern(Var.of("c"), Var.of("follows", fixture.follows),
@@ -98,14 +99,15 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 
 		assertEquals(SUBJECT_BIT | PREDICATE_BIT | OBJECT_BIT, fixture.accessPath.lookupMask,
 				"the fixture must bind the subject through statement lineage and the object through VALUES");
-		assertTrue(estimate.outputRows() <= PREFIX_ROWS,
-				() -> "a statement pattern whose subject, predicate and object are all bound can match at most one "
-						+ "statement per invocation, but " + PREFIX_ROWS + " prefix rows were estimated to yield "
-						+ estimate.outputRows() + " rows (" + estimate.estimateSource() + ")");
-		assertTrue(fixture.accessPath.accessRows <= 1.0d,
-				() -> "a fully bound lookup reads at most one statement per invocation, but the access path was "
-						+ "described with " + fixture.accessPath.accessRows + " access rows over "
-						+ fixture.accessPath.invocations + " invocations");
+		assertEquals(0, fixture.conditionalEstimateCalls, "the opaque filter leaves no lineage-conditioned transition");
+		assertFalse(estimate.hasContextualOutputRows(),
+				"an isolated factor population is not reinterpreted as rows of the prefix context");
+		assertEquals(LEAF_ROWS, estimate.outputRows(),
+				"the structural bound applies to rows per prefix row, never to the isolated population");
+		assertTrue(Double.isNaN(fixture.accessPath.accessRows),
+				"an isolated cardinality cannot certify the rows one bound invocation reads");
+		assertTrue(Double.isNaN(estimate.workRows()),
+				"an isolated cardinality cannot certify per-invocation work for a factor whose terms the prefix binds");
 	}
 
 	@Test
@@ -120,7 +122,9 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 
 		assertEquals(SUBJECT_BIT | PREDICATE_BIT, fixture.accessPath.lookupMask,
 				"only the subject is bound when the object has no finite domain");
-		assertEquals(CONTEXT_BIT, fixture.lastFollowsProbe().boundMask() & CONTEXT_BIT);
+		assertEquals(0, fixture.lastFollowsProbe().boundMask() & CONTEXT_BIT,
+				"a mapped session reads the store-default population, the union of all contexts, so a default-graph "
+						+ "probe binds no context");
 		assertFalse(fixture.lastFollowsProbe().namedContextsOnly());
 		assertEquals(PREFIX_ROWS * FANOUT_PER_LEFT, estimate.outputRows(), 1.0e-6d,
 				"a partially bound lookup keeps the lineage-conditioned fan-out estimate");
@@ -154,7 +158,8 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 		PackedCostTestSupport.BinaryCostCall call = filteredPrefix(finiteValues("unrelated", 5), knows, follows);
 		PackedCostEstimate estimate = fixture.appendUnderFilteredPrefix(call);
 		assertEquals(LEAF_ROWS, estimate.outputRows());
-		assertEquals(LEAF_ROWS, estimate.workRows());
+		assertTrue(Double.isNaN(estimate.workRows()),
+				"an isolated cardinality cannot certify per-invocation work for a factor whose terms the prefix binds");
 		assertEquals(SUBJECT_BIT | PREDICATE_BIT, fixture.accessPath.lookupMask);
 		assertEquals(0, fixture.conditionalEstimateCalls);
 		assertEquals(0, estimate.evidenceStateId());
@@ -165,7 +170,7 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 	}
 
 	@Test
-	void defaultDomainWithSyntacticallyUnboundContextStillHasDefaultContextProbe() throws Exception {
+	void defaultDomainWithSyntacticallyUnboundContextProbesTheStoreDefaultUnion() throws Exception {
 		Fixture fixture = new Fixture();
 		StatementPattern knows = new StatementPattern(Var.of("b"), Var.of("knows", fixture.knows), Var.of("c"));
 		StatementPattern follows = new StatementPattern(Var.of("c"), Var.of("follows", fixture.follows),
@@ -173,12 +178,15 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 		PackedCostTestSupport.BinaryCostCall call = filteredPrefix(finiteValues("d", 5), knows, follows);
 		PackedCostEstimate estimate = fixture.appendUnderFilteredPrefix(call);
 		assertEquals(SUBJECT_BIT | PREDICATE_BIT | OBJECT_BIT, fixture.accessPath.lookupMask);
-		assertEquals(CONTEXT_BIT, fixture.lastFollowsProbe().boundMask() & CONTEXT_BIT);
-		assertEquals(0L, fixture.lastFollowsProbe().contextId());
+		assertEquals(0, fixture.lastFollowsProbe().boundMask() & CONTEXT_BIT,
+				"the default domain reads the store-default union of all contexts, not the single context 0");
 		assertFalse(fixture.lastFollowsProbe().namedContextsOnly());
 		assertEquals(0, fixture.conditionalEstimateCalls);
-		assertEquals(PREFIX_ROWS, estimate.outputRows());
-		assertTrue(fixture.accessPath.accessRows <= 1.0d);
+		assertFalse(estimate.hasContextualOutputRows(),
+				"an isolated factor population is not reinterpreted as rows of the prefix context");
+		assertEquals(LEAF_ROWS, estimate.outputRows());
+		assertTrue(Double.isNaN(fixture.accessPath.accessRows),
+				"an isolated cardinality cannot certify the rows one bound invocation reads");
 	}
 
 	private static BindingSetAssignment finiteValues(String name, int rows) {
@@ -217,8 +225,7 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 				? PackedCostTestSupport.prefixContext(rawPrefix, rawPrefix.length, PREFIX_ROWS, 0)
 				: PackedCostTestSupport.restrictedPrefixContext(rawPrefix, rawPrefix.length, PREFIX_ROWS, 0);
 		PackedCostEstimate output = new PackedCostEstimate();
-		try (PackedCostSession session = new LmdbPackedCostModel(fixture.runtime, OptionalLong.empty(), true)
-				.openSession(call.query())) {
+		try (PackedCostSession session = fixture.ownedModel().openSession(call.query())) {
 			session.estimateLeaf(call.rightRelationId(), call.emptyContext(), output);
 			assertEquals(LEAF_ROWS, output.outputRows());
 			double isolatedWork = output.workRows();
@@ -250,11 +257,11 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 		int conditionalEstimateCalls;
 		private final List<FrontierLeafProbe> followsProbes = new ArrayList<>();
 		private final LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
+		private final FrontierStatisticsView view = mock(FrontierStatisticsView.class);
 
 		Fixture() throws IOException {
 			LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
 			FrontierStatisticsStatus status = mock(FrontierStatisticsStatus.class);
-			FrontierStatisticsView view = mock(FrontierStatisticsView.class);
 			ValueStore valueStore = mock(ValueStore.class);
 			when(runtime.statisticsService()).thenReturn(statistics);
 			when(runtime.valueStore()).thenReturn(valueStore);
@@ -264,7 +271,7 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 			when(statistics.status()).thenReturn(status);
 			when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 			when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-			when(statistics.openCurrentView()).thenReturn(view);
+			when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 			when(view.ready()).thenReturn(true);
 			Answer<?> factorCostAnswer = invocation -> {
 				BindingSetAssignment assignment = invocation.getArgument(0);
@@ -277,6 +284,9 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 			when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(factorCostAnswer);
 			when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class)))
 					.thenAnswer(factorCostAnswer);
+			// The admitted scoped model prices every factor through the admitted-read overload.
+			when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class),
+					nullable(LmdbAdmittedFrontierRead.class))).thenAnswer(factorCostAnswer);
 			when(view.generationId()).thenReturn(23L);
 			when(view.baseEpoch()).thenReturn(11L);
 			when(view.coveredEpoch()).thenReturn(17L);
@@ -306,6 +316,12 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 			}).when(runtime).describePackedAccessPath(anyInt(), anyDouble(), anyDouble(), any(), any());
 		}
 
+		/** A pinned model that owns its frontier read, as a real planning entry's model does. */
+		LmdbPackedCostModel ownedModel() {
+			return LmdbOwnedFrontierReadTestSupport.ownedModel(runtime, view, SNAPSHOT_EPOCH,
+					FrontierLeafProbe.BOTH_PLANES);
+		}
+
 		FrontierLeafProbe lastFollowsProbe() {
 			assertFalse(followsProbes.isEmpty(), "the appended statement must reach the mapped probe producer");
 			return followsProbes.getLast();
@@ -314,8 +330,7 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 		/** Supplies the original untransformed VALUES/statement bag through both actual child states. */
 		PackedCostEstimate appendUnderLineagePrefix(PackedCostTestSupport.BinaryCostCall call) {
 			PackedCostEstimate estimate = new PackedCostEstimate();
-			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-					.openSession(call.query())) {
+			try (PackedCostSession session = ownedModel().openSession(call.query())) {
 				int joinedId = call.leftRelationId();
 				assertTrue(call.query().isInnerJoin(joinedId));
 				int bindingId = call.query().childRelationId(joinedId, 0);
@@ -350,8 +365,7 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 		 */
 		PackedCostEstimate appendUnderFilteredPrefix(PackedCostTestSupport.BinaryCostCall call) {
 			PackedCostEstimate estimate = new PackedCostEstimate();
-			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
-					.openSession(call.query())) {
+			try (PackedCostSession session = ownedModel().openSession(call.query())) {
 				int filteredId = call.leftRelationId();
 				assertTrue(call.query().isFilter(filteredId));
 				int joinedId = call.query().childRelationId(filteredId, 0);

@@ -426,6 +426,10 @@ final class LmdbNativeParallelPipelines {
 		if (plan.children.length < 2) {
 			return reject(step, "short-join");
 		}
+		if (plan.containsOrderedScan()) {
+			// workers interleave morsels of a root taken from the reordered factorized selection
+			return reject(step, "ordered-scan");
+		}
 		for (SlotPlan child : plan.children) {
 			if (!parallelChildSupported(child)) {
 				return reject(step, "non-pattern-child");

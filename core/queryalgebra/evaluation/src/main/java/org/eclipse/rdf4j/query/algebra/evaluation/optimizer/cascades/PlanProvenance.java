@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -29,14 +30,30 @@ public record PlanProvenance(int memoGroupId, int expressionId, String operator,
 		ruleId = ruleId == null || ruleId.isBlank() ? operator : ruleId;
 		ruleKind = ruleKind == null ? RuleKind.IMPLEMENTATION : ruleKind;
 		inputs = inputs == null || inputs.isEmpty() ? List.of() : List.copyOf(inputs);
-		cost = cost == null ? CostVector.INFINITE : cost;
-		estimate = estimate == null ? EstimateSnapshot.cascades(cost) : estimate.withCost(cost);
+		boolean unpriced = cost == null && estimate != null && !estimate.priceAvailable();
+		if (!unpriced) {
+			cost = cost == null ? CostVector.INFINITE : cost;
+			estimate = estimate == null ? EstimateSnapshot.cascades(cost) : estimate.withCost(cost);
+		}
 		requiredProperties = requiredProperties == null ? PhysicalProperties.ANY : requiredProperties;
 		deliveredProperties = deliveredProperties == null ? PhysicalProperties.ANY : deliveredProperties;
 		rejectedAlternatives = rejectedAlternatives == null || rejectedAlternatives.isEmpty() ? List.of()
 				: List.copyOf(rejectedAlternatives);
 		proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
 		reason = reason == null ? "" : reason;
+	}
+
+	/** Returns an absent price independently of whether the search itself completed. */
+	public Optional<CostVector> price() {
+		return Optional.ofNullable(cost);
+	}
+
+	@Override
+	public CostVector cost() {
+		if (cost == null) {
+			throw new IllegalStateException("plan provenance has no available price");
+		}
+		return cost;
 	}
 
 }

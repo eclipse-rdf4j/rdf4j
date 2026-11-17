@@ -18,11 +18,14 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -62,11 +65,12 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	private final String optimizedDiagnostics;
 	private final PreparedPlanSnapshot preparedPlanSnapshot;
 	private final TupleExpr capturedOptimizedExpression;
+	private final PlanningReceipt planningReceipt;
 
 	private LmdbBenchmarkQueryPlan(SailSource branch, SailDataset dataset, QueryEvaluationStep evaluationStep,
 			List<String> bindingNames, int maxExecutionTimeSeconds, String optimizedPlan,
 			String optimizedDiagnostics, PreparedPlanSnapshot preparedPlanSnapshot,
-			TupleExpr capturedOptimizedExpression) {
+			TupleExpr capturedOptimizedExpression, PlanningReceipt planningReceipt) {
 		this.branch = branch;
 		this.dataset = dataset;
 		this.evaluationStep = evaluationStep;
@@ -76,6 +80,7 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 		this.optimizedDiagnostics = optimizedDiagnostics == null ? "" : optimizedDiagnostics;
 		this.preparedPlanSnapshot = preparedPlanSnapshot;
 		this.capturedOptimizedExpression = capturedOptimizedExpression;
+		this.planningReceipt = planningReceipt;
 	}
 
 	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query) {
@@ -130,6 +135,35 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	private static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
 			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, OptimizationMode optimizationMode,
 			RuntimeTelemetryMode runtimeTelemetryMode) {
+		try (Preparation preparation = openPreparation(store, connection, query, maxExecutionTimeSeconds,
+				captureOptimizedPlan, optimizationMode, runtimeTelemetryMode)) {
+			// Preserve the eager API's single continuous timeout scope across both operations.
+			try {
+				withCascadesOptimizationTimeout(maxExecutionTimeSeconds, () -> {
+					preparation.optimizeWithinTimeout();
+					preparation.ready(receipt -> {
+					});
+					preparation.precompileWithinTimeout();
+					return null;
+				});
+			} catch (RuntimeException | Error failure) {
+				preparation.fail(failure);
+				throw failure;
+			}
+			return preparation.transfer();
+		}
+	}
+
+	/** Opens and parses a query while retaining ownership of its dataset and branch until transfer or close. */
+	public static Preparation openPreparation(LmdbStore store, SailRepositoryConnection connection, String query,
+			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, RuntimeTelemetryMode runtimeTelemetryMode) {
+		return openPreparation(store, connection, query, maxExecutionTimeSeconds, captureOptimizedPlan,
+				OptimizationMode.NORMAL, runtimeTelemetryMode);
+	}
+
+	private static Preparation openPreparation(LmdbStore store, SailRepositoryConnection connection, String query,
+			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, OptimizationMode optimizationMode,
+			RuntimeTelemetryMode runtimeTelemetryMode) {
 		SailTupleQuery tupleQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, query, null);
 		tupleQuery.setIncludeInferred(false);
 		tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
@@ -147,45 +181,175 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(sailStore.getValueFactory(),
 					dataset);
 			EvaluationStrategy strategy = store.getEvaluationStrategyFactory()
-					.createEvaluationStrategy(tupleQuery.getActiveDataset(),
-							tripleSource,
-							sailStore.getEvaluationStatistics());
-			TupleExpr optimizationInput = tupleExpr;
-			OptimizedQuery optimizedQuery = withCascadesOptimizationTimeout(maxExecutionTimeSeconds, () -> {
-				TupleExpr optimized = switch (optimizationMode) {
-				case NORMAL -> strategy.optimize(optimizationInput, sailStore.getEvaluationStatistics(),
-						tupleQuery.getBindings());
-				case EXACT_SEQUENCE -> optimizeExactSequence(strategy, tripleSource,
-						sailStore.getEvaluationStatistics(), optimizationInput, tupleQuery);
-				case NONE -> optimizationInput;
-				};
-				applyRuntimeTelemetryMode(optimized, runtimeTelemetryMode);
-				QueryEvaluationStep evaluationStep = strategy.precompile(optimized);
-				return new OptimizedQuery(optimized, evaluationStep);
-			});
-			TupleExpr optimized = optimizedQuery.tupleExpr();
-			QueryEvaluationStep evaluationStep = optimizedQuery.evaluationStep();
-			String optimizedDiagnostics = "";
-			String optimizedPlan = "";
-			PreparedPlanSnapshot preparedPlanSnapshot = null;
-			if (captureOptimizedPlan) {
-				optimizedDiagnostics = optimizedDiagnostics(optimized);
-				optimizedPlan = new QueryModelTreeToGenericPlanNode(optimized, tupleQuery.getBindings()
-						.getBindingNames(), Explanation.Level.Optimized)
-								.getGenericPlanNode()
-								.toString();
-				String renderedSparql = new TupleExprIRRenderer().render(optimized);
-				preparedPlanSnapshot = new PreparedPlanSnapshot(optimizedPlan, optimizedDiagnostics, renderedSparql,
-						structuralPlanFingerprint(renderedSparql), plannedEstimatorRevision(optimized),
-						tupleExprIdentity(optimized));
+					.createEvaluationStrategy(tupleQuery.getActiveDataset(), tripleSource,
+							sailStore.getEvaluationStatistics(), store.getQueryExecutionPolicy());
+			return new Preparation(branch, dataset, sailStore, tripleSource, strategy, tupleQuery, tupleExpr,
+					maxExecutionTimeSeconds, captureOptimizedPlan, optimizationMode, runtimeTelemetryMode);
+		} catch (RuntimeException | Error failure) {
+			closeAfterFailure(dataset, failure);
+			closeAfterFailure(branch, failure);
+			throw failure;
+		}
+	}
+
+	public enum PreparationState {
+		OPEN,
+		OPTIMIZED,
+		READY,
+		COMPILED,
+		TRANSFERRED,
+		CLOSED
+	}
+
+	/**
+	 * An invocation-owned, single-use preparation. An invalid transition or a failed stage closes the owned resources.
+	 * Each staged timeout scope is restored before the call returns; the eager API scopes both together.
+	 */
+	public static final class Preparation implements AutoCloseable {
+		private final SailSource branch;
+		private final SailDataset dataset;
+		private final SailStore sailStore;
+		private final SailDatasetTripleTermSource tripleSource;
+		private final EvaluationStrategy strategy;
+		private final SailTupleQuery tupleQuery;
+		private final TupleExpr optimizationInput;
+		private final int maxExecutionTimeSeconds;
+		private final boolean captureOptimizedPlan;
+		private final OptimizationMode optimizationMode;
+		private final RuntimeTelemetryMode runtimeTelemetryMode;
+		private PreparationState state = PreparationState.OPEN;
+		private TupleExpr optimized;
+		private PlanningReceipt receipt;
+		private QueryEvaluationStep evaluationStep;
+
+		private Preparation(SailSource branch, SailDataset dataset, SailStore sailStore,
+				SailDatasetTripleTermSource tripleSource, EvaluationStrategy strategy, SailTupleQuery tupleQuery,
+				TupleExpr optimizationInput, int maxExecutionTimeSeconds, boolean captureOptimizedPlan,
+				OptimizationMode optimizationMode, RuntimeTelemetryMode runtimeTelemetryMode) {
+			this.branch = branch;
+			this.dataset = dataset;
+			this.sailStore = sailStore;
+			this.tripleSource = tripleSource;
+			this.strategy = strategy;
+			this.tupleQuery = tupleQuery;
+			this.optimizationInput = optimizationInput;
+			this.maxExecutionTimeSeconds = maxExecutionTimeSeconds;
+			this.captureOptimizedPlan = captureOptimizedPlan;
+			this.optimizationMode = optimizationMode;
+			this.runtimeTelemetryMode = runtimeTelemetryMode;
+		}
+
+		public PreparationState state() {
+			return state;
+		}
+
+		/** Times optimization, timeout scope, and receipt capture; it does not precompile the selected tree. */
+		public PlanningReceipt optimize() {
+			try {
+				return withCascadesOptimizationTimeout(maxExecutionTimeSeconds, () -> {
+					optimizeWithinTimeout();
+					return receipt;
+				});
+			} catch (RuntimeException | Error failure) {
+				fail(failure);
+				throw failure;
 			}
-			return new LmdbBenchmarkQueryPlan(branch, dataset, evaluationStep,
-					new ArrayList<>(optimized.getBindingNames()), maxExecutionTimeSeconds, optimizedPlan,
-					optimizedDiagnostics, preparedPlanSnapshot, captureOptimizedPlan ? optimized : null);
-		} catch (RuntimeException e) {
-			closeQuietly(dataset);
-			closeQuietly(branch);
-			throw e;
+		}
+
+		private void optimizeWithinTimeout() {
+			requireState(PreparationState.OPEN);
+			optimized = switch (optimizationMode) {
+			case NORMAL -> strategy.optimize(optimizationInput, sailStore.getEvaluationStatistics(),
+					tupleQuery.getBindings());
+			case EXACT_SEQUENCE -> optimizeExactSequence(strategy, tripleSource,
+					sailStore.getEvaluationStatistics(), optimizationInput, tupleQuery);
+			case NONE -> optimizationInput;
+			};
+			receipt = PlanningReceipt.capture(optimized, optimizationMode == OptimizationMode.NORMAL);
+			state = PreparationState.OPTIMIZED;
+		}
+
+		/** Validates the receipt from this optimization and configures the selected tree before precompilation. */
+		public void ready(Consumer<PlanningReceipt> validator) {
+			try {
+				requireState(PreparationState.OPTIMIZED);
+				validator.accept(receipt);
+				applyRuntimeTelemetryMode(optimized, runtimeTelemetryMode);
+				state = PreparationState.READY;
+			} catch (RuntimeException | Error failure) {
+				fail(failure);
+				throw failure;
+			}
+		}
+
+		/** Times only final-tuple precompilation and the staged timeout bookkeeping. */
+		public void precompile() {
+			try {
+				withCascadesOptimizationTimeout(maxExecutionTimeSeconds, () -> {
+					precompileWithinTimeout();
+					return null;
+				});
+			} catch (RuntimeException | Error failure) {
+				fail(failure);
+				throw failure;
+			}
+		}
+
+		private void precompileWithinTimeout() {
+			requireState(PreparationState.READY);
+			evaluationStep = strategy.precompileFinalTupleResult(optimized);
+			state = PreparationState.COMPILED;
+		}
+
+		/** Transfers the compiled step and its resources exactly once to a closeable prepared plan. */
+		public LmdbBenchmarkQueryPlan transfer() {
+			try {
+				requireState(PreparationState.COMPILED);
+				String optimizedDiagnostics = "";
+				String optimizedPlan = "";
+				PreparedPlanSnapshot snapshot = null;
+				if (captureOptimizedPlan) {
+					optimizedDiagnostics = optimizedDiagnostics(optimized);
+					optimizedPlan = new QueryModelTreeToGenericPlanNode(optimized, tupleQuery.getBindings()
+							.getBindingNames(), Explanation.Level.Optimized).getGenericPlanNode().toString();
+					String renderedSparql = new TupleExprIRRenderer().render(optimized);
+					snapshot = new PreparedPlanSnapshot(optimizedPlan, optimizedDiagnostics, renderedSparql,
+							structuralPlanFingerprint(renderedSparql), plannedEstimatorRevision(optimized),
+							tupleExprIdentity(optimized));
+				}
+				LmdbBenchmarkQueryPlan plan = new LmdbBenchmarkQueryPlan(branch, dataset, evaluationStep,
+						new ArrayList<>(optimized.getBindingNames()), maxExecutionTimeSeconds, optimizedPlan,
+						optimizedDiagnostics, snapshot, captureOptimizedPlan ? optimized : null, receipt);
+				state = PreparationState.TRANSFERRED;
+				return plan;
+			} catch (RuntimeException | Error failure) {
+				fail(failure);
+				throw failure;
+			}
+		}
+
+		private void requireState(PreparationState expected) {
+			if (state != expected) {
+				throw new IllegalStateException("Preparation is " + state + "; expected " + expected);
+			}
+		}
+
+		private void fail(Throwable failure) {
+			if (state == PreparationState.CLOSED || state == PreparationState.TRANSFERRED) {
+				return;
+			}
+			state = PreparationState.CLOSED;
+			closeAfterFailure(dataset, failure);
+			closeAfterFailure(branch, failure);
+		}
+
+		@Override
+		public void close() {
+			if (state == PreparationState.CLOSED || state == PreparationState.TRANSFERRED) {
+				return;
+			}
+			state = PreparationState.CLOSED;
+			closeOwnedResources(dataset, branch);
 		}
 	}
 
@@ -224,11 +388,21 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 		String previousValue = System.getProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY);
 		long timeoutMillis = cascadesOptimizationTimeoutMillis(maxExecutionTimeSeconds, previousValue);
 		System.setProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, Long.toString(timeoutMillis));
+		T result;
 		try {
-			return supplier.get();
-		} finally {
-			restoreCascadesOptimizationTimeout(previousValue);
+			result = supplier.get();
+		} catch (RuntimeException | Error failure) {
+			try {
+				restoreCascadesOptimizationTimeout(previousValue);
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
 		}
+		restoreCascadesOptimizationTimeout(previousValue);
+		return result;
 	}
 
 	static long cascadesOptimizationTimeoutMillis(int maxExecutionTimeSeconds, String currentValue) {
@@ -253,15 +427,131 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	}
 
 	public CloseableIteration<BindingSet> evaluate() {
+		NativeExecutionObservation.Capture capture = NativeExecutionObservation.current();
 		CloseableIteration<BindingSet> result = evaluationStep.evaluate(EmptyBindingSet.getInstance());
+		if (capture != null && capture.enabled()) {
+			result = result instanceof CooperativeCancellation cancellation
+					? new CooperativeObservedIteration(result, capture, cancellation)
+					: new ObservedIteration(result, capture);
+		}
 		if (maxExecutionTimeSeconds > 0) {
 			return new QueryInterruptIteration(result, 1000L * maxExecutionTimeSeconds);
 		}
 		return result;
 	}
 
+	/** Starts a bounded observation for this evaluation only; the snapshot is independent of the prepared plan. */
+	public ObservedEvaluation evaluateObserved(int eventLimit, int labelCharacterLimit) {
+		NativeExecutionObservation.Capture capture = NativeExecutionObservation.begin(eventLimit, labelCharacterLimit);
+		try (var ignored = capture.enter()) {
+			return new ObservedEvaluation(evaluate(), capture);
+		}
+	}
+
+	/** Owns one result iterator and its detached, point-in-time native observation snapshots. */
+	public static final class ObservedEvaluation implements AutoCloseable {
+		private final CloseableIteration<BindingSet> result;
+		private final NativeExecutionObservation.Capture capture;
+
+		private ObservedEvaluation(CloseableIteration<BindingSet> result, NativeExecutionObservation.Capture capture) {
+			this.result = result;
+			this.capture = capture;
+		}
+
+		public CloseableIteration<BindingSet> result() {
+			return result;
+		}
+
+		/** A row terminal describes that region, not completion of the outer query. */
+		public NativeExecutionObservation.Receipt snapshot() {
+			return capture.snapshot();
+		}
+
+		@Override
+		public void close() {
+			result.close();
+		}
+	}
+
+	/** Re-enters the opening capture for each delegate call, including calls from timeout threads. */
+	private static class ObservedIteration implements CloseableIteration<BindingSet> {
+		final CloseableIteration<BindingSet> delegate;
+		final NativeExecutionObservation.Capture capture;
+
+		ObservedIteration(CloseableIteration<BindingSet> delegate, NativeExecutionObservation.Capture capture) {
+			this.delegate = delegate;
+			this.capture = capture;
+		}
+
+		@Override
+		public boolean hasNext() {
+			try (var ignored = capture.enter()) {
+				return delegate.hasNext();
+			}
+		}
+
+		@Override
+		public BindingSet next() {
+			try (var ignored = capture.enter()) {
+				return delegate.next();
+			}
+		}
+
+		@Override
+		public void remove() {
+			try (var ignored = capture.enter()) {
+				delegate.remove();
+			}
+		}
+
+		@Override
+		public void close() {
+			try (var ignored = capture.enter()) {
+				delegate.close();
+			}
+		}
+
+		@Override
+		public void seek(Value minimum, boolean minimumInclusive, Value maximum, boolean maximumInclusive) {
+			try (var ignored = capture.enter()) {
+				delegate.seek(minimum, minimumInclusive, maximum, maximumInclusive);
+			}
+		}
+
+		@Override
+		public boolean supportsSeek() {
+			try (var ignored = capture.enter()) {
+				return delegate.supportsSeek();
+			}
+		}
+	}
+
+	/** Advertises cooperative cancellation only when the actual delegate does. */
+	private static final class CooperativeObservedIteration extends ObservedIteration
+			implements CooperativeCancellation {
+		private final CooperativeCancellation cancellation;
+
+		CooperativeObservedIteration(CloseableIteration<BindingSet> delegate,
+				NativeExecutionObservation.Capture capture, CooperativeCancellation cancellation) {
+			super(delegate, capture);
+			this.cancellation = cancellation;
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			try (var ignored = capture.enter()) {
+				return cancellation.requestCancellation();
+			}
+		}
+	}
+
 	public int bindingCount() {
 		return bindingNames.size();
+	}
+
+	/** The selected plan's projected binding schema, detached from its mutable preparation state. */
+	public List<String> bindingNames() {
+		return List.copyOf(bindingNames);
 	}
 
 	public String optimizedPlan() {
@@ -274,6 +564,11 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 
 	public PreparedPlanSnapshot preparedPlanSnapshot() {
 		return preparedPlanSnapshot;
+	}
+
+	/** Outcome of the optimization that produced this prepared evaluation step. */
+	public PlanningReceipt planningReceipt() {
+		return planningReceipt;
 	}
 
 	/** Visits the same prepared tree for test diagnostics without preparing or executing another query. */
@@ -318,37 +613,194 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 
 	@Override
 	public void close() {
-		RuntimeException failure = null;
+		closeOwnedResources(dataset, branch);
+	}
+
+	private static void closeOwnedResources(SailDataset dataset, SailSource branch) {
+		Throwable failure = null;
 		try {
 			dataset.close();
-		} catch (RuntimeException e) {
+		} catch (RuntimeException | Error e) {
 			failure = e;
 		}
 		try {
 			branch.close();
-		} catch (RuntimeException e) {
+		} catch (RuntimeException | Error e) {
 			if (failure == null) {
 				failure = e;
-			} else {
+			} else if (failure != e) {
 				failure.addSuppressed(e);
 			}
 		}
-		if (failure != null) {
-			throw failure;
+		if (failure instanceof RuntimeException runtime) {
+			throw runtime;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 
-	private static void closeQuietly(AutoCloseable closeable) {
+	private static void closeAfterFailure(AutoCloseable closeable, Throwable failure) {
 		if (closeable == null) {
 			return;
 		}
 		try {
 			closeable.close();
-		} catch (Exception ignored) {
+		} catch (Throwable cleanup) {
+			if (cleanup != failure) {
+				failure.addSuppressed(cleanup);
+			}
 		}
 	}
 
-	private record OptimizedQuery(TupleExpr tupleExpr, QueryEvaluationStep evaluationStep) {
+	public enum PlanningPath {
+		FRESH,
+		PACKED_CACHE,
+		PIPELINE_CACHE,
+		UNOBSERVED
+	}
+
+	public enum PlanningCompletion {
+		COMPLETE,
+		BUDGET_EXHAUSTED,
+		DEADLINE_EXPIRED,
+		RESOURCE_LIMIT_REACHED,
+		UNSUPPORTED_SEMANTICS,
+		FALLBACK,
+		UNOBSERVED
+	}
+
+	/** Explicit validity expectation for a benchmark's planning lane. */
+	public enum PlanningExpectation {
+		COMPLETE,
+		FRESH_COMPLETE,
+		CACHED_COMPLETE,
+		BUDGET_EXHAUSTED,
+		DEADLINE_EXPIRED,
+		RESOURCE_LIMIT_REACHED,
+		UNSUPPORTED_SEMANTICS,
+		/** Observe any completion; a benchmark lane may still require a specific planning path. */
+		OBSERVE;
+
+		public void validate(PlanningReceipt receipt) {
+			switch (this) {
+			case COMPLETE -> receipt.requireComplete();
+			case FRESH_COMPLETE -> receipt.requireFresh();
+			case CACHED_COMPLETE -> receipt.requireCached();
+			case BUDGET_EXHAUSTED -> receipt.requireCompletion(PlanningCompletion.BUDGET_EXHAUSTED);
+			case DEADLINE_EXPIRED -> receipt.requireCompletion(PlanningCompletion.DEADLINE_EXPIRED);
+			case RESOURCE_LIMIT_REACHED -> receipt.requireCompletion(PlanningCompletion.RESOURCE_LIMIT_REACHED);
+			case UNSUPPORTED_SEMANTICS -> receipt.requireCompletion(PlanningCompletion.UNSUPPORTED_SEMANTICS);
+			case OBSERVE -> {
+				// The caller explicitly requested observation, including fallback or unavailable status.
+			}
+			}
+		}
+	}
+
+	/**
+	 * Detached invocation facts, captured before precompilation. Completeness on a cache hit describes the selected
+	 * retained plan; work and timing metrics on an outer pipeline hit belong to its original construction and are not
+	 * attributed to this invocation.
+	 */
+	public record PlanningReceipt(PlanningPath path, PlanningCompletion completion, String planMode,
+			String fallbackReason, String selectedRule, OptionalDouble searchNanos, OptionalDouble workUnits,
+			OptionalDouble candidateEvaluations) {
+
+		static PlanningReceipt capture(TupleExpr root, boolean normalOptimization) {
+			if (root == null || !normalOptimization) {
+				return unobserved();
+			}
+			String applied = root.getStringMetricPlanned("optimizer.cascadesApplied");
+			String fallback = root.getStringMetricPlanned("optimizer.cascadesFallback");
+			String reason = root.getStringMetricPlanned("optimizer.cascadesFallbackReason");
+			String pipelineHit = root.getStringMetricPlanned("optimizer.pipelinePlanCacheHit");
+			String packedHit = root.getStringMetricPlanned("optimizer.cascadesPlanCacheHit");
+			String planMode = root.getStringMetricPlanned("optimizer.cascadesMode");
+			String selectedRule = root.getStringMetricPlanned("optimizer.cascadesRule");
+			if (!validBoolean(applied) || !validBoolean(fallback) || !validBoolean(pipelineHit)
+					|| !validBoolean(packedHit)) {
+				return unobserved();
+			}
+			if ("true".equals(fallback)) {
+				return "true".equals(applied) ? unobserved()
+						: new PlanningReceipt(PlanningPath.UNOBSERVED, PlanningCompletion.FALLBACK, planMode, reason,
+								selectedRule, OptionalDouble.empty(), OptionalDouble.empty(), OptionalDouble.empty());
+			}
+			if (!"true".equals(applied) || reason != null) {
+				return unobserved();
+			}
+			PlanningPath path = "true".equals(pipelineHit)
+					? "true".equals(packedHit) ? PlanningPath.PIPELINE_CACHE : PlanningPath.UNOBSERVED
+					: "false".equals(pipelineHit)
+							? "true".equals(packedHit) ? PlanningPath.PACKED_CACHE
+									: "false".equals(packedHit) ? PlanningPath.FRESH : PlanningPath.UNOBSERVED
+							: PlanningPath.UNOBSERVED;
+			PlanningCompletion completion = switch (String.valueOf(
+					root.getStringMetricPlanned("optimizer.cascadesCompleteness"))) {
+			case "COMPLETE" -> PlanningCompletion.COMPLETE;
+			case "BUDGET_EXHAUSTED" -> PlanningCompletion.BUDGET_EXHAUSTED;
+			case "DEADLINE_EXPIRED" -> PlanningCompletion.DEADLINE_EXPIRED;
+			case "RESOURCE_LIMIT_REACHED" -> PlanningCompletion.RESOURCE_LIMIT_REACHED;
+			case "UNSUPPORTED_SEMANTICS" -> PlanningCompletion.UNSUPPORTED_SEMANTICS;
+			default -> PlanningCompletion.UNOBSERVED;
+			};
+			boolean currentWork = path == PlanningPath.FRESH || path == PlanningPath.PACKED_CACHE;
+			return new PlanningReceipt(path, completion, planMode, null, selectedRule,
+					currentWork ? metric(root, "optimizer.cascadesSearchNanos") : OptionalDouble.empty(),
+					currentWork ? metric(root, "optimizer.cascadesWorkUnits") : OptionalDouble.empty(),
+					currentWork ? metric(root, "optimizer.cascadesCandidateEvaluations") : OptionalDouble.empty());
+		}
+
+		private static boolean validBoolean(String value) {
+			return value == null || "true".equals(value) || "false".equals(value);
+		}
+
+		private static OptionalDouble metric(TupleExpr root, String name) {
+			Double value = root.getDoubleMetricsPlanned().get(name);
+			return value != null && Double.isFinite(value) && value >= 0.0d
+					? OptionalDouble.of(value)
+					: OptionalDouble.empty();
+		}
+
+		private static PlanningReceipt unobserved() {
+			return new PlanningReceipt(PlanningPath.UNOBSERVED, PlanningCompletion.UNOBSERVED, null, null, null,
+					OptionalDouble.empty(), OptionalDouble.empty(), OptionalDouble.empty());
+		}
+
+		/** Requires an observed, complete selected plan for a qualified benchmark measurement. */
+		public void requireComplete() {
+			requireCompletion(PlanningCompletion.COMPLETE);
+		}
+
+		private void requireCompletion(PlanningCompletion expected) {
+			if (completion != expected || path == PlanningPath.UNOBSERVED) {
+				throw new IllegalStateException("Benchmark planning receipt rejected: completion=" + completion
+						+ ", expected=" + expected + ", path=" + path
+						+ (fallbackReason == null ? "" : ", reason=" + fallbackReason));
+			}
+		}
+
+		/** Also requires this preparation to perform a fresh packed search. */
+		public void requireFresh() {
+			requireComplete();
+			requireFreshPath();
+		}
+
+		/** Requires a fresh search, including a deliberately bounded incomplete search. */
+		public void requireFreshPath() {
+			if (path != PlanningPath.FRESH) {
+				throw new IllegalStateException("Benchmark expected fresh planning but observed " + path);
+			}
+		}
+
+		/** Requires a real cache hit in this preparation, at either cache level. */
+		public void requireCached() {
+			requireComplete();
+			if (path != PlanningPath.PACKED_CACHE && path != PlanningPath.PIPELINE_CACHE) {
+				throw new IllegalStateException("Benchmark expected a cached plan but observed " + path);
+			}
+		}
 	}
 
 	public record PreparedPlanSnapshot(String optimizedPlan, String optimizedDiagnostics, String renderedSparql,

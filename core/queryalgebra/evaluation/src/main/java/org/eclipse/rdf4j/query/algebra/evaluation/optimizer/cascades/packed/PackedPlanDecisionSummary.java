@@ -35,7 +35,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public record PackedPlanDecisionSummary(String physicalFingerprint, CostInterval selectedCostInterval,
 		List<CandidateSummary> candidates, Set<SemanticDependency> semanticDependencies,
 		PackedSearchCompletionStatus searchCompletion, BoundKind boundKind, double searchLowerBound,
-		long evidenceEpoch, long deterministicWorkUnits, long retainedBytes) {
+		long evidenceEpoch, long deterministicWorkUnits, long providerWorkUnits, long retainedBytes,
+		ComparisonCompleteness comparisonCompleteness) {
 
 	public enum SemanticDependency {
 		PREDICATE_RANGE_DATA
@@ -46,13 +47,25 @@ public record PackedPlanDecisionSummary(String physicalFingerprint, CostInterval
 		BEST_KNOWN_UNBOUNDED
 	}
 
+	/** Price-comparison evidence is independent of the search's work, deadline and resource completion. */
+	public enum ComparisonCompleteness {
+		COMPLETE,
+		UNAVAILABLE_COST
+	}
+
 	public record CostInterval(double lower, double point, double upper) {
 
 		public CostInterval {
-			if (!finiteNonNegative(lower) || !finiteNonNegative(point) || !finiteNonNegative(upper)
-					|| lower > point || point > upper) {
+			boolean unavailable = Double.isNaN(lower) && Double.isNaN(point) && Double.isNaN(upper);
+			if (!unavailable && (!finiteNonNegative(lower) || !finiteNonNegative(point) || !finiteNonNegative(upper)
+					|| lower > point || point > upper)) {
 				throw new IllegalArgumentException("invalid packed plan decision cost interval");
 			}
+		}
+
+		/** NaN coordinates mean no price is available; they are never comparable bounds. */
+		public boolean available() {
+			return !Double.isNaN(point);
 		}
 	}
 
@@ -71,17 +84,50 @@ public record PackedPlanDecisionSummary(String physicalFingerprint, CostInterval
 		semanticDependencies = Set.copyOf(Objects.requireNonNull(semanticDependencies, "semanticDependencies"));
 		searchCompletion = Objects.requireNonNull(searchCompletion, "searchCompletion");
 		boundKind = Objects.requireNonNull(boundKind, "boundKind");
+		comparisonCompleteness = Objects.requireNonNull(comparisonCompleteness, "comparisonCompleteness");
 		if (candidates.isEmpty() || !physicalFingerprint.equals(candidates.get(0).physicalFingerprint())) {
 			throw new IllegalArgumentException("selected packed plan must be the first summarized candidate");
 		}
+		if (comparisonCompleteness == ComparisonCompleteness.COMPLETE
+				&& (!selectedCostInterval.available()
+						|| candidates.stream().anyMatch(candidate -> !candidate.costInterval().available()))) {
+			throw new IllegalArgumentException("complete packed comparison requires available candidate prices");
+		}
+		if (comparisonCompleteness == ComparisonCompleteness.UNAVAILABLE_COST && !Double.isNaN(searchLowerBound)) {
+			throw new IllegalArgumentException("an unavailable comparison has no supported search lower bound");
+		}
 		if (boundKind == BoundKind.VALID_LOWER_BOUND
-				&& (!finiteNonNegative(searchLowerBound) || searchLowerBound > selectedCostInterval.point())) {
+				&& (!selectedCostInterval.available() || comparisonCompleteness != ComparisonCompleteness.COMPLETE
+						|| !finiteNonNegative(searchLowerBound) || searchLowerBound > selectedCostInterval.point())) {
 			throw new IllegalArgumentException(
 					"packed search lower bound must be finite and no greater than the winner");
 		}
-		if (evidenceEpoch < 0L || deterministicWorkUnits < 0L || retainedBytes < 0L) {
+		if (evidenceEpoch < 0L || deterministicWorkUnits < 0L || providerWorkUnits < 0L || retainedBytes < 0L) {
 			throw new IllegalArgumentException("packed summary epochs, work, and retained bytes must be nonnegative");
 		}
+	}
+
+	/** Compatibility constructor for a summary that admitted no provider work. */
+	public PackedPlanDecisionSummary(String physicalFingerprint, CostInterval selectedCostInterval,
+			List<CandidateSummary> candidates, Set<SemanticDependency> semanticDependencies,
+			PackedSearchCompletionStatus searchCompletion, BoundKind boundKind, double searchLowerBound,
+			long evidenceEpoch, long deterministicWorkUnits, long retainedBytes,
+			ComparisonCompleteness comparisonCompleteness) {
+		this(physicalFingerprint, selectedCostInterval, candidates, semanticDependencies, searchCompletion, boundKind,
+				searchLowerBound, evidenceEpoch, deterministicWorkUnits, 0L, retainedBytes, comparisonCompleteness);
+	}
+
+	/** Compatibility constructor for existing callers supplying a complete finite comparison. */
+	public PackedPlanDecisionSummary(String physicalFingerprint, CostInterval selectedCostInterval,
+			List<CandidateSummary> candidates, Set<SemanticDependency> semanticDependencies,
+			PackedSearchCompletionStatus searchCompletion, BoundKind boundKind, double searchLowerBound,
+			long evidenceEpoch, long deterministicWorkUnits, long retainedBytes) {
+		this(physicalFingerprint, selectedCostInterval, candidates, semanticDependencies, searchCompletion, boundKind,
+				searchLowerBound, evidenceEpoch, deterministicWorkUnits, retainedBytes,
+				selectedCostInterval.available() && candidates.stream()
+						.allMatch(candidate -> candidate.costInterval().available())
+								? ComparisonCompleteness.COMPLETE
+								: ComparisonCompleteness.UNAVAILABLE_COST);
 	}
 
 	public Optional<CandidateSummary> candidate(String fingerprint) {
@@ -102,7 +148,9 @@ public record PackedPlanDecisionSummary(String physicalFingerprint, CostInterval
 					new CostInterval(interval.lower(), interval.point(), interval.upper())));
 		}
 		CostInterval selected = candidates.get(0).costInterval();
-		boolean complete = decision.completionStatus() == PackedSearchCompletionStatus.EXACT_COMPLETE;
+		boolean comparisonComplete = decision.costComparisonAvailable();
+		boolean complete = decision.completionStatus() == PackedSearchCompletionStatus.EXACT_COMPLETE
+				&& comparisonComplete && selected.available();
 		Set<SemanticDependency> semanticDependencies = PackedRuleProofs
 				.dependsOnPredicateRangeData(decision.selectedRuleProofMask())
 						? Set.of(SemanticDependency.PREDICATE_RANGE_DATA)
@@ -111,7 +159,9 @@ public record PackedPlanDecisionSummary(String physicalFingerprint, CostInterval
 				semanticDependencies, decision.completionStatus(),
 				complete ? BoundKind.VALID_LOWER_BOUND : BoundKind.BEST_KNOWN_UNBOUNDED,
 				complete ? selected.lower() : Double.NaN, evidenceEpoch, decision.deterministicWorkUnits(),
-				decision.retainedBytes());
+				decision.providerWorkUnits(), decision.retainedBytes(),
+				comparisonComplete ? ComparisonCompleteness.COMPLETE
+						: ComparisonCompleteness.UNAVAILABLE_COST);
 	}
 
 	private static String stableFingerprint(String canonicalForm) {

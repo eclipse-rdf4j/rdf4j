@@ -17,10 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,9 +34,16 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.OwnedStringDiagnostic;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.junit.jupiter.api.Test;
 
 class LmdbPlanDecisionCacheTest {
@@ -57,6 +66,127 @@ class LmdbPlanDecisionCacheTest {
 		assertEquals("object:IRI", source.getStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER));
 		assertEquals("object:LITERAL",
 				source.getObjectVar().getStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER));
+	}
+
+	@Test
+	void replayOnlyCertificateCarriesNoSearchBound() {
+		assertThrows(IllegalArgumentException.class, () -> new LmdbPlanDecisionCache.SearchCertificate(
+				LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
+				LmdbPlanDecisionCache.BoundKind.VALID_LOWER_BOUND,
+				1.0d, 1L, 1L, 0.0d, 10L, LmdbPlanDecisionCache.DecisionAuthority.REPLAY_ONLY));
+		assertThrows(IllegalArgumentException.class, () -> new LmdbPlanDecisionCache.SearchCertificate(
+				LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
+				LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, 1.0d, 1L, 1L, 0.0d, 10L,
+				LmdbPlanDecisionCache.DecisionAuthority.REPLAY_ONLY));
+		assertThrows(IllegalArgumentException.class, () -> new LmdbPlanDecisionCache.SearchCertificate(
+				LmdbPlanDecisionCache.SearchCompletion.INCOMPLETE_DEADLINE,
+				LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN, 1L, 1L, 0.0d, 10L,
+				LmdbPlanDecisionCache.DecisionAuthority.REPLAY_ONLY), "a deadline-cut search is not a replay");
+
+		assertTrue(replayOnlyCertificate(1L).replayOnly());
+		assertFalse(new LmdbPlanDecisionCache.SearchCertificate(LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
+				LmdbPlanDecisionCache.BoundKind.VALID_LOWER_BOUND, 1.0d, 1L, 1L, 0.0d, 10L).replayOnly(),
+				"the compatibility constructor keeps ranking authority");
+	}
+
+	@Test
+	void replayOnlyDecisionIsServedOnlyAsAnExactReplay() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		try {
+			Fixture fixture = fixture(1L);
+			assertTrue(cache.publishBuild(new LmdbPlanDecisionCache.BuildPublication(fixture.familyKey(),
+					fixture.exactKey(), fixture.dependencies(), fixture.evidence(), fixture.evidence(),
+					fixture.template(), "replay-only", LmdbPlanDecisionCache.EstimatedCostInterval.unbounded(),
+					replayOnlyCertificate(fixture.evidence().globalEpoch()), 1024L, 1L)));
+
+			LmdbPlanDecisionCache.Use replay = assertInstanceOf(LmdbPlanDecisionCache.Use.class,
+					cache.lookupExact(fixture.exactKey(), fixture.request(fixture.evidence())));
+			assertTrue(replay.searchCertificate().replayOnly());
+			assertReplan(cache.lookupFamily(fixture.familyKey(), fixture.request(fixture.evidence())),
+					"replay-only-not-identical");
+			assertReplan(cache.lookupExact(fixture.exactKey(), fixture.request(evidence(2L))),
+					"replay-only-not-identical");
+			assertEquals(0L, cache.statistics().refreshUses());
+
+			long version = replay.familyVersion();
+			assertFalse(cache.publishRefresh(refreshPublication(fixture, version, "refreshed", 1.0d, true)),
+					"a replay-only decision is never a refresh champion");
+			assertFalse(scheduleRefresh(cache, fixture, 1.0d, 1.0d, 1.0d, 1.0d, () -> {
+			}));
+			assertFalse(publishVariant(cache, fixture, version, 2L, guard(1.0d, 10.0d), "variant", 1.0d));
+			assertEquals(version, currentFamilyVersion(cache, fixture.familyKey()).version());
+		} finally {
+			cache.close();
+		}
+	}
+
+	@Test
+	void replayOnlyFamilyIsReplacedOnlyByItsOwnExactKeyOrARankedDecision() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		try {
+			Fixture fixture = fixture(1L);
+			assertTrue(cache.publishBuild(replayOnlyBuild(fixture, fixture.exactKey(), fixture.template(), "first")));
+			LmdbPlanDecisionCache.ExactInvocationKey other = new LmdbPlanDecisionCache.ExactInvocationKey(
+					fixture.familyKey(), "complete-source-2", "semantic-context");
+
+			// Another key's different replay-only decision never replaces this key's replay.
+			cache.publishBuild(replayOnlyBuild(fixture, other,
+					new StatementPattern(Var.of("other"), Var.of("predicate"), Var.of("object")), "second"));
+			assertUseFingerprint(cache.lookupExact(fixture.exactKey(), fixture.request(fixture.evidence())), "first",
+					1L);
+
+			// The same decision for another key becomes an alias: both keys replay it.
+			assertTrue(cache.publishBuild(replayOnlyBuild(fixture, other, fixture.template().clone(), "first")));
+			assertUseFingerprint(cache.lookupExact(other, fixture.request(fixture.evidence())), "first", 1L);
+			assertUseFingerprint(cache.lookupExact(fixture.exactKey(), fixture.request(fixture.evidence())), "first",
+					1L);
+
+			// A ranked decision replaces the replay-only family.
+			assertTrue(cache.publishBuild(buildPublication(fixture, "ranked", 10.0d)));
+			LmdbPlanDecisionCache.Use ranked = assertInstanceOf(LmdbPlanDecisionCache.Use.class,
+					cache.lookupExact(fixture.exactKey(), fixture.request(fixture.evidence())));
+			assertEquals("ranked", ranked.plan().physicalFingerprint());
+			assertFalse(ranked.searchCertificate().replayOnly());
+		} finally {
+			cache.close();
+		}
+	}
+
+	@Test
+	void replayOnlyBuildNeverJoinsARankedVariant() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		try {
+			Fixture fixture = fixture(1L);
+			assertTrue(cache.publishBuild(buildPublication(fixture, "physical-fingerprint", 10.0d)));
+			LmdbPlanDecisionCache.ExactInvocationKey unpriced = new LmdbPlanDecisionCache.ExactInvocationKey(
+					fixture.familyKey(), "complete-source-2", "semantic-context");
+			// Same plan, same dependencies, but no cost comparison behind it.
+			cache.publishBuild(replayOnlyBuild(fixture, unpriced, fixture.template().clone(), "physical-fingerprint"));
+
+			assertReplan(cache.lookupExact(unpriced, fixture.request(fixture.evidence())), "exact-alias-miss");
+			assertReplan(cache.lookupExact(unpriced, fixture.request(evidence(2L))), "exact-alias-miss");
+			assertEquals(0L, cache.statistics().refreshUses(), "an unpriced key gets no stale reuse");
+			assertEquals(0L, refreshExecutor(cache).getTaskCount(), "an unpriced key gets no detached refresh");
+			assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+					cache.lookupExact(fixture.exactKey(), fixture.request(evidence(2L))),
+					"the ranked key keeps its own stale reuse");
+		} finally {
+			cache.close();
+		}
+	}
+
+	private static LmdbPlanDecisionCache.BuildPublication replayOnlyBuild(Fixture fixture,
+			LmdbPlanDecisionCache.ExactInvocationKey exactKey, TupleExpr template, String fingerprint) {
+		return new LmdbPlanDecisionCache.BuildPublication(fixture.familyKey(), exactKey, fixture.dependencies(),
+				fixture.evidence(), fixture.evidence(), template, fingerprint,
+				LmdbPlanDecisionCache.EstimatedCostInterval.unbounded(),
+				replayOnlyCertificate(fixture.evidence().globalEpoch()), 1024L, 1L);
+	}
+
+	private static LmdbPlanDecisionCache.SearchCertificate replayOnlyCertificate(long epoch) {
+		return new LmdbPlanDecisionCache.SearchCertificate(LmdbPlanDecisionCache.SearchCompletion.INCOMPLETE_WORK_LIMIT,
+				LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN, epoch, epoch, 0.0d, 10L,
+				LmdbPlanDecisionCache.DecisionAuthority.REPLAY_ONLY);
 	}
 
 	@Test
@@ -686,6 +816,210 @@ class LmdbPlanDecisionCacheTest {
 				.get(0)
 				.challengers()
 				.isEmpty());
+	}
+
+	@Test
+	void familyRetainedBytesEqualTheSumOfItsRetainedObjectCharges() {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		try {
+			OwnedStringDiagnostic diagnostic = OwnedStringDiagnostic.builder()
+					.append("plan:")
+					.jsonString("trace")
+					.build();
+			publishPipelineTemplate(cache, "urn:accounted", diagnostic);
+			LmdbPlanDecisionCache decisions = pipelineDecisionCache(cache);
+			assertEquals(1L, decisions.statistics().families());
+
+			// An independent ledger of what the family retains: every object publication charges, plus the fixed
+			// entry-object charge. Nothing else (no estimate of a graph the family does not retain) may be charged.
+			assertEquals(retainedObjectCharges(decisions), decisions.statistics().retainedBytes());
+		} finally {
+			cache.close();
+		}
+	}
+
+	@Test
+	void cacheOwnedDiagnosticIsChargedOnlyForItsSnapshot() {
+		String text = "x".repeat(4_096);
+		OwnedStringDiagnostic small = OwnedStringDiagnostic.builder().append("y").build();
+		OwnedStringDiagnostic plain = OwnedStringDiagnostic.builder().append(text).build();
+		OwnedStringDiagnostic json = OwnedStringDiagnostic.builder().jsonString(text).build();
+		assertTrue(json.maximumRenderedCharacters() > 5L * plain.maximumRenderedCharacters(),
+				"precondition: equal snapshots whose maximum renderings differ");
+		assertEquals(snapshotBytes(plain), snapshotBytes(json), "precondition: equal snapshots");
+
+		long smallBytes = pipelineFamilyBytes(small);
+		long plainBytes = pipelineFamilyBytes(plain);
+		long jsonBytes = pipelineFamilyBytes(json);
+
+		assertEquals(plainBytes, jsonBytes,
+				"the cache never renders its diagnostic, so its maximum rendering must not be charged");
+		assertEquals(snapshotBytes(plain) - snapshotBytes(small), plainBytes - smallBytes,
+				"a cache-owned diagnostic is charged for its data snapshot only");
+	}
+
+	@Test
+	void cacheOwnedTemplateIsNeverResolvedInPlace() {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		try {
+			OwnedStringDiagnostic diagnostic = OwnedStringDiagnostic.builder()
+					.append("plan:")
+					.jsonString("x".repeat(512))
+					.build();
+			publishPipelineTemplate(cache, "urn:in-place", diagnostic);
+			LmdbPlanDecisionCache decisions = pipelineDecisionCache(cache);
+			long published = decisions.statistics().retainedBytes();
+			long recomputed = recomputedRecipeBytes(decisions);
+			LmdbPipelinePlanCache.Context context = pipelineContext();
+
+			for (int hit = 0; hit < 2; hit++) {
+				LmdbPipelinePlanCache.Result result = cache.getOrCompute(pipelineQuery("urn:in-place"), context,
+						context::revision, () -> {
+							throw new AssertionError("an exact repeat must be served from the cache");
+						});
+				assertTrue(result.cacheHit());
+				assertEquals(diagnostic.get(), result.plan().getStringMetricPlanned(DEFERRED_DIAGNOSTIC));
+				assertEquals(diagnostic.get(), result.plan().getStringMetricsPlanned().get(DEFERRED_DIAGNOSTIC));
+			}
+
+			assertEquals(published, decisions.statistics().retainedBytes());
+			assertEquals(recomputed, recomputedRecipeBytes(decisions),
+					"rendering a hit must not grow the template the cache retains");
+			assertEquals(retainedObjectCharges(decisions), decisions.statistics().retainedBytes());
+		} finally {
+			cache.close();
+		}
+	}
+
+	private static final String DEFERRED_DIAGNOSTIC = "test.deferredDiagnostic";
+
+	private static long pipelineFamilyBytes(OwnedStringDiagnostic diagnostic) {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		try {
+			publishPipelineTemplate(cache, "urn:diagnostic", diagnostic);
+			LmdbPlanDecisionCache decisions = pipelineDecisionCache(cache);
+			assertEquals(1L, decisions.statistics().families());
+			return decisions.statistics().retainedBytes();
+		} finally {
+			cache.close();
+		}
+	}
+
+	private static long snapshotBytes(OwnedStringDiagnostic diagnostic) {
+		FactorCostCacheKey.ProviderRetainedMemory ledger = new FactorCostCacheKey.ProviderRetainedMemory();
+		assertTrue(diagnostic.accountRetainedMemory(ledger));
+		return ledger.bytes();
+	}
+
+	/** A real pipeline publication of a template with metrics, a deferred diagnostic and a feedback contract. */
+	private static void publishPipelineTemplate(LmdbPipelinePlanCache cache, String predicate,
+			OwnedStringDiagnostic diagnostic) {
+		LmdbPipelinePlanCache.Context context = pipelineContext();
+		LmdbPipelinePlanCache.Result cold = cache.getOrCompute(pipelineQuery(predicate), context, context::revision,
+				() -> {
+					QueryRoot plan = pipelineQuery(predicate);
+					plan.setStringMetricPlanned(LmdbCascadesOptimizer.APPLIED_METRIC, "true");
+					plan.setStringMetricPlannedDeferred(DEFERRED_DIAGNOSTIC, diagnostic);
+					StatementPattern pattern = (StatementPattern) ((Projection) plan.getArg()).getArg();
+					pattern.setRuntimeFeedbackContract(feedbackContract());
+					pattern.setLongMetricPlanned("plannedWorkRows", 1_234L);
+					pattern.setDoubleMetricPlanned("plannedCardinalityRows", 17.5d);
+					pattern.setStringMetricPlanned("plannedIndexAccessMode", "scan");
+					plan.getArg().setDoubleMetricPlanned("plannedCostWorkRows", 2.5d);
+					return plan;
+				});
+		assertFalse(cold.cacheHit());
+	}
+
+	private static QueryRoot pipelineQuery(String predicate) {
+		StatementPattern pattern = new StatementPattern(Var.of("_anon_1", true),
+				Var.of("predicate", SimpleValueFactory.getInstance().createIRI(predicate)), Var.of("object"));
+		return new QueryRoot(new Projection(pattern, new ProjectionElemList(new ProjectionElem("object"))));
+	}
+
+	private static LmdbPipelinePlanCache.Context pipelineContext() {
+		LmdbEstimatorRuntime.PlanningRevisions planning = new LmdbEstimatorRuntime.PlanningRevisions(17L, 2L, 3L,
+				4L);
+		return new LmdbPipelinePlanCache.Context(new LmdbPipelinePlanCache.Revision(planning, true), false, 0L,
+				LmdbPipelinePlanCache.DatasetIdentity.of(null), LmdbPipelinePlanCache.BindingIdentity.of(null), "",
+				false, false, false, "STANDARD", false);
+	}
+
+	private static RuntimeFeedbackContract feedbackContract() {
+		LogicalLearningKey logical = LogicalLearningKey.of("statement-pattern", "expression", "children",
+				"predicates", "v0", "none", "bag", "default");
+		LearningApplicability applicability = new LearningApplicability(1L, 0L, "unconditional", 1L, 1L, 1L);
+		PhysicalResidualKey physical = PhysicalResidualKey.of("scan", "statement-pattern", "spoc", "scan", "none",
+				"none", "none", "unbound");
+		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(1.0d,
+				1.0d, 1.0d, 1.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		return new RuntimeFeedbackContract(new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability,
+				physical), prediction, prediction, 1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY,
+				RuntimeFeedbackContract.SemanticKind.ORDINARY, RuntimeFeedbackContract.Algorithm.SCAN,
+				RuntimeFeedbackContract.Access.FULL_SCAN, 1, 1L, 1L, 1L, RuntimeFeedbackContract.ADMIT_LOGICAL);
+	}
+
+	private static LmdbPlanDecisionCache pipelineDecisionCache(LmdbPipelinePlanCache cache) {
+		try {
+			var field = LmdbPipelinePlanCache.class.getDeclaredField("decisionCache");
+			field.setAccessible(true);
+			return (LmdbPlanDecisionCache) field.get(cache);
+		} catch (ReflectiveOperationException failure) {
+			throw new AssertionError("could not inspect the store-owned decision cache", failure);
+		}
+	}
+
+	private static List<LmdbPlanDecisionCache.PlanVersion> planVersions(LmdbPlanDecisionCache.FamilyVersion family) {
+		List<LmdbPlanDecisionCache.PlanVersion> versions = new ArrayList<>();
+		for (LmdbPlanDecisionCache.PlanVariant variant : family.dispatcher().variants()) {
+			versions.add(variant.champion());
+			versions.addAll(variant.challengers());
+			versions.addAll(variant.rollbackVersions());
+		}
+		return versions;
+	}
+
+	/**
+	 * Sums, independently of the cache's stored charges, what the resident families retain: each plan version's
+	 * template, semantic dependencies, family key, exact keys and refresh identity (in publication order, de-duplicated
+	 * by identity), each refresh work's own bytes and one fixed entry-object charge per family.
+	 */
+	private static long retainedObjectCharges(LmdbPlanDecisionCache decisions) {
+		long total = 0L;
+		for (Map.Entry<LmdbPlanDecisionCache.PlanFamilyKey, LmdbPlanDecisionCache.FamilyVersion> family : decisions
+				.residentFamiliesForTest()
+				.entrySet()) {
+			FactorCostCacheKey.ProviderRetainedMemory ledger = new FactorCostCacheKey.ProviderRetainedMemory();
+			List<LmdbPlanDecisionCache.PlanVersion> versions = planVersions(family.getValue());
+			for (LmdbPlanDecisionCache.PlanVersion version : versions) {
+				assertInstanceOf(LmdbPlanDecisionCache.ExactTupleRecipe.class, version.physicalRecipe())
+						.accountTo(ledger);
+			}
+			ledger.account(family.getValue().semanticDependencies());
+			ledger.account(family.getKey());
+			for (LmdbPlanDecisionCache.ExactInvocationKey exact : family.getValue().exactAliases().keySet()) {
+				ledger.account(exact);
+			}
+			long fixed = LmdbPipelinePlanCache.ENTRY_OBJECT_BYTES;
+			for (LmdbPlanDecisionCache.PlanVersion version : versions) {
+				if (version.detachedRefreshWork() != null) {
+					version.detachedRefreshWork().accountCacheIdentity(ledger);
+					fixed += version.detachedRefreshWork().retainedBytes();
+				}
+			}
+			total += fixed + ledger.bytes();
+		}
+		return total;
+	}
+
+	private static long recomputedRecipeBytes(LmdbPlanDecisionCache decisions) {
+		long total = 0L;
+		for (LmdbPlanDecisionCache.FamilyVersion family : decisions.residentFamiliesForTest().values()) {
+			for (LmdbPlanDecisionCache.PlanVersion version : planVersions(family)) {
+				total += version.physicalRecipe().retainedBytes();
+			}
+		}
+		return total;
 	}
 
 	private static LmdbPlanDecisionCache canaryCache(double maximumCanaryFraction) throws Exception {

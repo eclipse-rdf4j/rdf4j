@@ -90,6 +90,17 @@ final class PackedQueryCacheIdentity {
 		return surface.safeToCanonicalize(source) ? Map.copyOf(surface.anonymousNames) : null;
 	}
 
+	/** The plan identity's canonical names of {@code source}; empty where the identity keeps every name exact. */
+	static Map<String, Integer> canonicalNamesForPlanning(TupleExpr source) {
+		IdentitySurface surface = IdentitySurface.collect(source);
+		return surface.safeToCanonicalize(source) ? surface.anonymousNames : Map.of();
+	}
+
+	/** The canonical names this identity substituted; a planning encoding of the same source records them. */
+	Map<String, Integer> canonicalNames() {
+		return canonicalNames;
+	}
+
 	static void appendPackedIdentity(PackedQuery query, IdentitySink sink) {
 		new PackedQueryCacheIdentity(query, Map.of()).appendTo(sink);
 	}
@@ -128,6 +139,7 @@ final class PackedQueryCacheIdentity {
 		sink.append(0x52454c4154494f4eL);
 		sink.append(query.relationCount());
 		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			sink.beforeStep();
 			sink.append(query.relOperator(relationId));
 			sink.append(query.relGroup(relationId));
 			sink.append(query.relPayload(relationId));
@@ -158,6 +170,7 @@ final class PackedQueryCacheIdentity {
 		sink.append(0x5343414c415253L);
 		sink.append(query.scalarCount());
 		for (int scalarId = 1; scalarId <= query.scalarCount(); scalarId++) {
+			sink.beforeStep();
 			sink.append(query.scalarOperator(scalarId));
 			sink.append(query.scalarPayload(scalarId));
 			sink.append(query.scalarSemanticScope(scalarId));
@@ -169,6 +182,7 @@ final class PackedQueryCacheIdentity {
 		sink.append(0x5041594c4f414453L);
 		sink.append(query.payloadCount());
 		for (int payloadId = 1; payloadId <= query.payloadCount(); payloadId++) {
+			sink.beforeStep();
 			sink.append(query.payloadOperator(payloadId));
 			sink.append(query.payloadPrimary(payloadId));
 			sink.append(query.payloadSecondary(payloadId));
@@ -185,9 +199,11 @@ final class PackedQueryCacheIdentity {
 		sink.append(0x42494e44494e4753L);
 		sink.append(query.bindingRowCount());
 		for (int rowId = 1; rowId <= query.bindingRowCount(); rowId++) {
+			sink.beforeStep();
 			int bindingCount = query.bindingCount(rowId);
 			sink.append(bindingCount);
 			for (int ordinal = 0; ordinal < bindingCount; ordinal++) {
+				sink.beforeStep();
 				sink.append(query.bindingNameId(rowId, ordinal));
 				sink.append(query.bindingValueId(rowId, ordinal));
 			}
@@ -196,12 +212,14 @@ final class PackedQueryCacheIdentity {
 		sink.append(0x4f424a45435453L);
 		sink.append(query.objectCount());
 		for (int objectId = 1; objectId <= query.objectCount(); objectId++) {
-			sink.appendObject(query.rawObjectValue(objectId));
+			sink.beforeStep();
+			sink.appendQueryObject(query, objectId);
 		}
 
 		sink.append(0x53594d424f4c53L);
 		sink.append(query.symbolCount());
 		for (int symbolId = 1; symbolId <= query.symbolCount(); symbolId++) {
+			sink.beforeStep();
 			sink.append(query.symbolObjectId(symbolId));
 		}
 	}
@@ -214,6 +232,7 @@ final class PackedQueryCacheIdentity {
 		};
 		sink.append(count);
 		for (int ordinal = 0; ordinal < count; ordinal++) {
+			sink.beforeStep();
 			int child = switch (kind) {
 			case RELATION -> query.relChild(rowId, ordinal);
 			case SCALAR -> query.scalarChild(rowId, ordinal);
@@ -228,6 +247,7 @@ final class PackedQueryCacheIdentity {
 			sink.append("statement-semantic-content");
 			sink.append(content.size());
 			for (int index = 0; index < content.size(); index++) {
+				sink.beforeStep();
 				sink.append(content.word(index));
 			}
 		} else if (object instanceof PlanningGraphDomain domain) {
@@ -290,9 +310,17 @@ final class PackedQueryCacheIdentity {
 	}
 
 	interface IdentitySink {
+		default void beforeStep() {
+		}
+
 		/** Existing consumers keep precisely the existing typed object stream. */
 		default void appendObject(Object object) {
 			PackedQueryCacheIdentity.appendObject(this, object);
+		}
+
+		/** One entry of the query's object table; a learning sink may substitute a recorded canonical name. */
+		default void appendQueryObject(PackedQuery query, int objectId) {
+			appendObject(query.rawObjectValue(objectId));
 		}
 
 		void append(long value);

@@ -80,6 +80,7 @@ final class PackedMemo implements AutoCloseable {
 	private int[] evidenceContextScratch = new int[32];
 	private int unknownCostVectorId;
 	private int groupCount;
+	private boolean closed;
 
 	PackedMemo(PackedQuery query, int symbolCount, int expectedLogicalAlternatives, int expectedPhysicalAlternatives,
 			int expectedProperties, int expectedWinners, int expectedChildLinks) {
@@ -187,7 +188,10 @@ final class PackedMemo implements AutoCloseable {
 
 	@Override
 	public void close() {
-		physicalMetadata.recycle();
+		if (!closed) {
+			closed = true;
+			physicalMetadata.recycle();
+		}
 	}
 
 	int logicalGroupId(int logicalExpressionId) {
@@ -607,14 +611,14 @@ final class PackedMemo implements AutoCloseable {
 			int sourceLogicalExpressionId = sourceLogicalExpressionIds[recipeId];
 			int groupId = seed.groupId(recipeId);
 			if (sourceLogicalExpressionId == 0 || logicalGroupId(sourceLogicalExpressionId) != groupId) {
-				throw new PackedMemoInvariantException(
+				throw new PackedCheckpointRejectedException(
 						"checkpoint scalar source group changed at recipe row " + recipeId);
 			}
 			int childCount = recipe.childCount(recipeId);
 			for (int child = 0; child < childCount; child++) {
 				int childRecipeId = recipe.childRecipeId(recipeId, child);
 				if (childRecipeId <= 0 || childRecipeId >= recipeId || winnerIds[childRecipeId] == 0) {
-					throw new PackedMemoInvariantException(
+					throw new PackedCheckpointRejectedException(
 							"checkpoint scalar child topology changed at recipe row " + recipeId);
 				}
 				childGroupIds[child] = seed.groupId(childRecipeId);
@@ -656,14 +660,14 @@ final class PackedMemo implements AutoCloseable {
 			int sourceLogicalExpressionId = sourceLogicalExpressionIds[recipeId];
 			int groupId = seed.groupId(recipeId);
 			if (sourceLogicalExpressionId == 0 || logicalGroupId(sourceLogicalExpressionId) != groupId) {
-				throw new PackedMemoInvariantException(
+				throw new PackedCheckpointRejectedException(
 						"checkpoint provider source group changed at recipe row " + recipeId);
 			}
 			int childCount = recipe.childCount(recipeId);
 			for (int child = 0; child < childCount; child++) {
 				int childRecipeId = recipe.childRecipeId(recipeId, child);
 				if (childRecipeId <= 0 || childRecipeId >= recipeId || winnerIds[childRecipeId] == 0) {
-					throw new PackedMemoInvariantException(
+					throw new PackedCheckpointRejectedException(
 							"checkpoint provider child topology changed at recipe row " + recipeId);
 				}
 				childGroupIds[child] = seed.groupId(childRecipeId);
@@ -682,6 +686,10 @@ final class PackedMemo implements AutoCloseable {
 						recipe.workRows(recipeId));
 			}
 			if (metadataId == 0) {
+				if (budget.resourceLimitReached()) {
+					throw PackedCostSessionFailure.resourceLimit("checkpoint provider metadata exceeds retained memory",
+							null);
+				}
 				throw new PackedMemoInvariantException(
 						"checkpoint provider metadata could not be restored at recipe row " + recipeId);
 			}
@@ -732,7 +740,7 @@ final class PackedMemo implements AutoCloseable {
 			int detachedLogicalExpressionId = recipe.sourceLogicalExpressionId(recipeId);
 			if (detachedLogicalExpressionId <= 0 || detachedLogicalExpressionId > logicalExpressionCount()
 					|| !continuationLogicalDefinitionMatches(detachedLogicalExpressionId, seed, recipeId)) {
-				throw new PackedMemoInvariantException(
+				throw new PackedCheckpointRejectedException(
 						"checkpoint recipe logical definition does not match restored structure at " + recipeId);
 			}
 			restored[recipeId] = detachedLogicalExpressionId;
@@ -743,52 +751,51 @@ final class PackedMemo implements AutoCloseable {
 	private void restoreContinuationLogicalOverlay(PackedPlanContinuationSeed seed) {
 		int maximumChildCount = 0;
 		for (int ordinal = 1; ordinal <= seed.structuralLogicalCount(); ordinal++) {
-			maximumChildCount = Math.max(maximumChildCount, seed.structuralLogicalChildCount(ordinal));
+			int childCount = seed.structuralLogicalChildCount(ordinal);
+			if (childCount > 0xffff) {
+				throw new PackedCheckpointRejectedException(
+						"checkpoint structural logical child count exceeds the interner limit at " + ordinal);
+			}
+			maximumChildCount = Math.max(maximumChildCount, childCount);
 		}
 		int[] childGroupIds = new int[Math.max(1, maximumChildCount)];
 		for (int ordinal = 1; ordinal <= seed.structuralLogicalCount(); ordinal++) {
 			int childCount = seed.structuralLogicalChildCount(ordinal);
 			for (int child = 0; child < childCount; child++) {
 				childGroupIds[child] = seed.structuralLogicalChildGroupId(ordinal, child);
+				if (childGroupIds[child] <= 0 || childGroupIds[child] > groupCount) {
+					throw new PackedCheckpointRejectedException(
+							"checkpoint logical child references an unknown group at " + ordinal);
+				}
 			}
 			int targetGroupId = seed.structuralLogicalGroupId(ordinal);
+			if (targetGroupId <= 0 || targetGroupId > groupCount + 1) {
+				throw new PackedCheckpointRejectedException("checkpoint logical group topology skips group "
+						+ targetGroupId);
+			}
 			int logicalExpressionId;
-			try {
-				if (targetGroupId <= groupCount) {
-					logicalExpressionId = addLogicalAlternative(targetGroupId,
-							seed.structuralLogicalOperatorTag(ordinal),
-							seed.structuralLogicalPayloadId(ordinal),
-							seed.structuralLogicalSemanticScopeId(ordinal),
-							seed.structuralLogicalExecutionDomainId(ordinal),
-							seed.structuralLogicalOccurrenceId(ordinal),
-							seed.structuralLogicalGraphDomainId(ordinal),
-							childGroupIds, 0, childCount);
-				} else if (targetGroupId == groupCount + 1) {
-					logicalExpressionId = addCanonicalLogical(seed.structuralLogicalOperatorTag(ordinal),
-							seed.structuralLogicalPayloadId(ordinal),
-							seed.structuralLogicalSemanticScopeId(ordinal),
-							seed.structuralLogicalExecutionDomainId(ordinal),
-							seed.structuralLogicalOccurrenceId(ordinal),
-							seed.structuralLogicalGraphDomainId(ordinal),
-							childGroupIds, 0, childCount);
-				} else {
-					throw new PackedMemoInvariantException(
-							"checkpoint logical group topology skips group " + targetGroupId);
-				}
-			} catch (IllegalArgumentException | IndexOutOfBoundsException corruptDefinition) {
-				throw new PackedMemoInvariantException(
-						"checkpoint structural logical definition could not be interned at " + ordinal + ": "
-								+ corruptDefinition.getMessage());
+			if (targetGroupId <= groupCount) {
+				logicalExpressionId = addLogicalAlternative(targetGroupId,
+						seed.structuralLogicalOperatorTag(ordinal), seed.structuralLogicalPayloadId(ordinal),
+						seed.structuralLogicalSemanticScopeId(ordinal),
+						seed.structuralLogicalExecutionDomainId(ordinal),
+						seed.structuralLogicalOccurrenceId(ordinal), seed.structuralLogicalGraphDomainId(ordinal),
+						childGroupIds, 0, childCount);
+			} else {
+				logicalExpressionId = addCanonicalLogical(seed.structuralLogicalOperatorTag(ordinal),
+						seed.structuralLogicalPayloadId(ordinal), seed.structuralLogicalSemanticScopeId(ordinal),
+						seed.structuralLogicalExecutionDomainId(ordinal), seed.structuralLogicalOccurrenceId(ordinal),
+						seed.structuralLogicalGraphDomainId(ordinal), childGroupIds, 0, childCount);
 			}
 			int expectedLogicalExpressionId = baseLogicalExpressionCount + ordinal;
 			if (logicalExpressionId != expectedLogicalExpressionId
 					|| logicalGroupId(logicalExpressionId) != targetGroupId) {
-				throw new PackedMemoInvariantException(
+				throw new PackedCheckpointRejectedException(
 						"checkpoint structural logical identity changed at " + ordinal);
 			}
 			addLogicalRuleMask(logicalExpressionId, seed.structuralLogicalRuleMask(ordinal));
 			if (!structuralLogicalDefinitionMatches(logicalExpressionId, seed, ordinal)) {
-				throw new PackedMemoInvariantException(
+				throw new PackedCheckpointRejectedException(
 						"checkpoint structural logical definition changed after interning at " + ordinal);
 			}
 		}
@@ -1319,8 +1326,12 @@ final class PackedMemo implements AutoCloseable {
 
 	private int legacyScalarCarrierVectorId(double startupCost, double totalCost) {
 		costVectors.resetBuilderToUnknown();
-		costVectors.setBuilderExact(PackedCostDimensionRegistry.STARTUP_WORK, startupCost);
-		costVectors.setBuilderExact(PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK, totalCost);
+		if (Double.isFinite(startupCost)) {
+			costVectors.setBuilderExact(PackedCostDimensionRegistry.STARTUP_WORK, startupCost);
+		}
+		if (Double.isFinite(totalCost)) {
+			costVectors.setBuilderExact(PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK, totalCost);
+		}
 		return costVectors.internBuilder();
 	}
 
@@ -1354,6 +1365,15 @@ final class PackedMemo implements AutoCloseable {
 	PackedCostVectorArena costVectors() {
 		requirePlanQualityState();
 		return costVectors;
+	}
+
+	PackedCostAlgebra costAlgebra() {
+		requirePlanQualityState();
+		return costAlgebra;
+	}
+
+	boolean ownsRegionGeneration(PackedQueryView view, PackedSearchBudget owner) {
+		return !closed && budget == owner && view.views(query);
 	}
 
 	PackedContinuationKeyArena continuationKeys() {
@@ -1814,6 +1834,10 @@ final class PackedMemo implements AutoCloseable {
 
 	private double lifecycleComparisonCost(int physicalMetadataId, double totalCost, double fallbackComparisonCost,
 			int[] candidateChildWinnerIds, int childOffset, int childCount) {
+		if (Double.isNaN(totalCost)) {
+			// Lifecycle exclusion is retained separately; it cannot supply a comparable price for unknown work.
+			return Double.NaN;
+		}
 		if (physicalMetadataId == 0 || !physicalMetadata.lifecycleEnforced(physicalMetadataId)) {
 			return fallbackComparisonCost;
 		}
@@ -1849,6 +1873,14 @@ final class PackedMemo implements AutoCloseable {
 
 	double winnerComparisonCost(int winnerId) {
 		return winners.comparisonCost(winnerId);
+	}
+
+	boolean winnerEnforcesLifecycle(int winnerId) {
+		return winners.robustComparisonPrimary(winnerId);
+	}
+
+	boolean winnerUsesExecutableFallback(int winnerId) {
+		return winners.comparisonTier(winnerId) == PackedWinnerTable.EXECUTABLE_FALLBACK;
 	}
 
 	double winnerStartupCost(int winnerId) {
@@ -2224,7 +2256,7 @@ final class PackedMemo implements AutoCloseable {
 
 	private static double saturatedAdd(double left, double right) {
 		double sum = left + right;
-		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
+		return Double.isNaN(sum) ? Double.NaN : Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
 	}
 
 	private static void addDependentMetric(PackedCostEstimate destination, String name, double value) {
@@ -2519,6 +2551,10 @@ final class PackedMemo implements AutoCloseable {
 
 		int[] rootTraceIndexes = new int[decisionTrace.size()];
 		int rootCandidateCount = 0;
+		int comparableCandidateCount = 0;
+		int unrankedCandidateCount = 0;
+		int includedUnrankedCount = 0;
+		boolean permitsUnranked = budget.permitsUnrankedAuditMaterialization();
 		int paretoSurvivorCount = 0;
 		int dominatedCandidateCount = 0;
 		int selectedTraceIndex = -1;
@@ -2534,9 +2570,8 @@ final class PackedMemo implements AutoCloseable {
 			if (!decisionTrace.sameDecision(index, representative)) {
 				continue;
 			}
-			rootTraceIndexes[rootCandidateCount++] = index;
+			rootCandidateCount++;
 			boolean selectedByPolicy = decisionMatchesWinner(index, selectedDecisionWinnerId);
-			boolean paretoSurvivor = isFinalParetoCandidate(decisionTrace.candidateId(index));
 			if (selectedByPolicy) {
 				if (selectedTraceIndex >= 0) {
 					throw new PackedMemoInvariantException("root decision trace has multiple final policy choices");
@@ -2545,6 +2580,32 @@ final class PackedMemo implements AutoCloseable {
 				selected[index] = 1;
 				included[index] = 1;
 			}
+			double candidateCost = decisionTrace.candidateCost(index);
+			double lowerBound = decisionTrace.lowerBound(index);
+			if (!Double.isFinite(candidateCost) || candidateCost < 0.0d
+					|| !Double.isFinite(lowerBound) || lowerBound < 0.0d) {
+				budget.markUnavailableCostComparison();
+				if (selectedByPolicy) {
+					// The complete selected root can have an independently priced enclosing operator. Do not sort
+					// its unpriced inner decision against the other candidates.
+					stratumFingerprints[index] = planQualityStratum(index);
+					stratumOrdinals[index] = 0;
+					stratumPopulations[index] = 1;
+				} else {
+					unrankedCandidateCount++;
+					if (permitsUnranked && includedUnrankedCount < dominatedSamplesPerStratum) {
+						// A caller-limited sample stays in trace order, separate from the cost-ordered strata.
+						rootTraceIndexes[rootTraceIndexes.length - ++includedUnrankedCount] = index;
+						sampled[index] = 2;
+						stratumFingerprints[index] = planQualityStratum(index);
+						stratumOrdinals[index] = 0;
+						stratumPopulations[index] = 1;
+					}
+				}
+				continue;
+			}
+			rootTraceIndexes[comparableCandidateCount++] = index;
+			boolean paretoSurvivor = isFinalParetoCandidate(decisionTrace.candidateId(index));
 			if (paretoSurvivor) {
 				pareto[index] = 1;
 				included[index] = 1;
@@ -2559,20 +2620,20 @@ final class PackedMemo implements AutoCloseable {
 			throw new PackedMemoInvariantException("root decision trace does not identify the final policy choice");
 		}
 
-		long[] distinctStrata = new long[rootCandidateCount];
-		for (int ordinal = 0; ordinal < rootCandidateCount; ordinal++) {
+		long[] distinctStrata = new long[comparableCandidateCount];
+		for (int ordinal = 0; ordinal < comparableCandidateCount; ordinal++) {
 			distinctStrata[ordinal] = stratumFingerprints[rootTraceIndexes[ordinal]];
 		}
-		Arrays.sort(distinctStrata, 0, rootCandidateCount);
-		int distinctStratumCount = compactDistinct(distinctStrata, rootCandidateCount);
+		Arrays.sort(distinctStrata, 0, comparableCandidateCount);
+		int distinctStratumCount = compactDistinct(distinctStrata, comparableCandidateCount);
 		int sampledDominatedCount = 0;
-		int[] stratumMembers = new int[rootCandidateCount];
-		int[] dominatedMembers = new int[rootCandidateCount];
+		int[] stratumMembers = new int[comparableCandidateCount];
+		int[] dominatedMembers = new int[comparableCandidateCount];
 		for (int stratum = 0; stratum < distinctStratumCount; stratum++) {
 			long fingerprint = distinctStrata[stratum];
 			int memberCount = 0;
 			int dominatedCount = 0;
-			for (int ordinal = 0; ordinal < rootCandidateCount; ordinal++) {
+			for (int ordinal = 0; ordinal < comparableCandidateCount; ordinal++) {
 				int traceIndex = rootTraceIndexes[ordinal];
 				if (stratumFingerprints[traceIndex] != fingerprint) {
 					continue;
@@ -2601,22 +2662,35 @@ final class PackedMemo implements AutoCloseable {
 			}
 		}
 
-		int includedCount = 0;
-		for (int ordinal = 0; ordinal < rootCandidateCount; ordinal++) {
-			includedCount += included[rootTraceIndexes[ordinal]];
+		int includedCount = 1 + includedUnrankedCount;
+		for (int ordinal = 0; ordinal < comparableCandidateCount; ordinal++) {
+			int traceIndex = rootTraceIndexes[ordinal];
+			if (traceIndex != selectedTraceIndex) {
+				includedCount += included[traceIndex];
+			}
 		}
 		int[] traceIndexes = new int[includedCount];
 		int next = 0;
 		traceIndexes[next++] = selectedTraceIndex;
-		for (int ordinal = 0; ordinal < rootCandidateCount; ordinal++) {
+		for (int ordinal = 0; ordinal < comparableCandidateCount; ordinal++) {
 			int traceIndex = rootTraceIndexes[ordinal];
 			if (traceIndex != selectedTraceIndex && included[traceIndex] != 0) {
 				traceIndexes[next++] = traceIndex;
 			}
 		}
+		for (int ordinal = 0; ordinal < includedUnrankedCount; ordinal++) {
+			traceIndexes[next++] = rootTraceIndexes[rootTraceIndexes.length - 1 - ordinal];
+		}
+		int omittedUnrankedCount = unrankedCandidateCount - includedUnrankedCount;
+		PackedPlanQualityAuditResult.UnrankedAdmission unrankedAdmission = omittedUnrankedCount == 0
+				? PackedPlanQualityAuditResult.UnrankedAdmission.COMPLETE
+				: dominatedSamplesPerStratum == 0 || permitsUnranked
+						? PackedPlanQualityAuditResult.UnrankedAdmission.SAMPLE_LIMIT
+						: PackedPlanQualityAuditResult.UnrankedAdmission.RESOURCE_PROOF_UNAVAILABLE;
 		return new PackedPlanQualityDraft(selectedDecisionWinnerId, traceIndexes, pareto, selected, sampled,
 				stratumFingerprints, stratumOrdinals, stratumPopulations, rootCandidateCount, paretoSurvivorCount,
-				dominatedCandidateCount, sampledDominatedCount);
+				dominatedCandidateCount, sampledDominatedCount, unrankedCandidateCount, omittedUnrankedCount,
+				unrankedAdmission);
 	}
 
 	double planQualityCandidateLowerBound(int traceIndex) {
@@ -2811,7 +2885,8 @@ final class PackedMemo implements AutoCloseable {
 	record PackedPlanQualityDraft(int selectedDecisionWinnerId, int[] traceIndexes, byte[] paretoOutcomes,
 			byte[] selectedByPolicy, byte[] sampledDominated, long[] stratumFingerprints, int[] stratumOrdinals,
 			int[] stratumPopulations, int rootCandidateCount, int paretoSurvivorCount, int dominatedCandidateCount,
-			int sampledDominatedCount) {
+			int sampledDominatedCount, int unrankedCandidateCount, int omittedUnrankedCandidateCount,
+			PackedPlanQualityAuditResult.UnrankedAdmission unrankedAdmission) {
 
 		boolean paretoSurvivor(int traceIndex) {
 			return paretoOutcomes[traceIndex] != 0;
@@ -2822,7 +2897,11 @@ final class PackedMemo implements AutoCloseable {
 		}
 
 		boolean sampled(int traceIndex) {
-			return sampledDominated[traceIndex] != 0;
+			return sampledDominated[traceIndex] == 1;
+		}
+
+		boolean unranked(int traceIndex) {
+			return sampledDominated[traceIndex] == 2;
 		}
 	}
 

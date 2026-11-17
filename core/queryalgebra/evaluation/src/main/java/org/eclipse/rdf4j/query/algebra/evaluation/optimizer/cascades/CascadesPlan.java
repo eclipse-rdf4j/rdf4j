@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.Objects;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -24,10 +25,34 @@ public record CascadesPlan(TupleExpr tupleExpr, CostVector cost, OptimizationSea
 
 	public CascadesPlan {
 		tupleExpr = Objects.requireNonNull(tupleExpr, "selected tuple expression");
-		cost = Objects.requireNonNull(cost, "final cost");
 		searchStatus = Objects.requireNonNull(searchStatus, "search status");
 		provenance = Objects.requireNonNull(provenance, "plan provenance");
+		if (cost == null && provenance.price().isPresent()) {
+			throw new NullPointerException("final cost");
+		}
+		if (cost != null && provenance.price().isEmpty()) {
+			throw new IllegalArgumentException("plan and provenance price availability must agree");
+		}
 		metrics = Objects.requireNonNull(metrics, "planning metrics");
+	}
+
+	/** The selected plan may be executable even when no supported physical price exists. */
+	public Optional<CostVector> price() {
+		return Optional.ofNullable(cost);
+	}
+
+	/** Existing finite-cost access fails explicitly when the selected plan is unpriced. */
+	@Override
+	public CostVector cost() {
+		if (cost == null) {
+			throw new IllegalStateException("selected plan has no available price");
+		}
+		return cost;
+	}
+
+	/** Logical output rows are independent of price availability. */
+	public double outputRows() {
+		return provenance.estimate().rows();
 	}
 
 }

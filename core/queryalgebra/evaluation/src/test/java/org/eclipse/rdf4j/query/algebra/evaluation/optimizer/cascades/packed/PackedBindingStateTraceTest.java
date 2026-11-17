@@ -229,7 +229,7 @@ class PackedBindingStateTraceTest {
 	}
 
 	@Test
-	void traceKeepsUnavailablePriceSeparateFromTheExistingConservativeOrderingScore() {
+	void tracePreservesUnavailablePriceWithoutANumericOrderingProxy() {
 		PackedCostEstimate declaration = unknownPriceDeclaration();
 		PackedCostSession provider = new PackedCostSession() {
 			@Override
@@ -250,13 +250,13 @@ class PackedBindingStateTraceTest {
 			output.copyCandidateFrom(declaration);
 			recording.estimateLeaf(1, new PackedCostContext(), output);
 			assertUnavailablePrice(output, 17.0d);
-			assertEquals(Double.MAX_VALUE, recording.objectiveScore(output),
-					"the unchanged provider boundary conservatively orders unknown costs");
+			assertTrue(Double.isNaN(recording.objectiveScore(output)),
+					"an unavailable objective cannot become a finite ordering score");
 			PackedCostingTrace trace = recording.snapshotTrace();
 			assertTrue(Double.isNaN(trace.workRows(1)));
 			assertTrue(Double.isNaN(trace.sequentialRows(1)));
 			assertEquals(2.0d, trace.randomSeeks(1));
-			assertEquals(Double.MAX_VALUE, trace.objectiveCost(1), "ordering score is not a resource counter");
+			assertTrue(Double.isNaN(trace.objectiveCost(1)), "the trace retains unavailable objective work");
 			PackedCostEstimate restored = new PackedCostEstimate();
 			restored.setObjectiveInterval(100.0d, 101.0d, 102.0d);
 			trace.restoreProviderInputCost(1, restored);

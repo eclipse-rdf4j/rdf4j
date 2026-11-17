@@ -24,7 +24,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -32,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalPro
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMetrics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +42,19 @@ import org.slf4j.LoggerFactory;
 public final class PackedCascadesPlanner {
 
 	private static final Logger logger = LoggerFactory.getLogger(PackedCascadesPlanner.class);
+	/** Nanoseconds a work-bounded search spent past its deadline because no priced root plan was retained yet. */
+	public static final String DEADLINE_OVERRUN_NANOS_METRIC = "optimizer.cascadesDeadlineOverrunNanos";
+	/**
+	 * Why that overrun stopped: {@code first-priced-plan}, {@code grace-expired}, {@code work-limit},
+	 * {@code provider-work-limit}, {@code resource-limit} or {@code search-complete} (a cancellation throws instead of
+	 * returning a plan).
+	 */
+	public static final String DEADLINE_OVERRUN_STOP_METRIC = "optimizer.cascadesDeadlineOverrunStop";
+	/**
+	 * On the plan of a request that waited for another request's in-flight planning of the same key and then planned
+	 * for itself: {@code owner-hard-stop} when it stopped waiting because the owner's hard stop passed first.
+	 */
+	public static final String FLIGHT_WAITER_FALLBACK_METRIC = "optimizer.planCacheFlightWaiterFallback";
 
 	private PackedCascadesPlanner() {
 	}
@@ -107,11 +123,8 @@ public final class PackedCascadesPlanner {
 	}
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, PackedPlannerLimits limits) {
-		Objects.requireNonNull(limits, "limits");
-		long encodeStart = System.nanoTime();
-		PackedQuery query = encodeSupportedForPlanning(tupleExpr, null);
-		long encodeNanos = System.nanoTime() - encodeStart;
-		return optimize(query, limits, true, null, encodeNanos, 0L, false).result();
+		return optimize(tupleExpr, Objects.requireNonNull(limits, "limits"), true, null, null,
+				PackedStatementPatternSemanticsCodec.NONE);
 	}
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal,
@@ -145,6 +158,8 @@ public final class PackedCascadesPlanner {
 	/**
 	 * Runs one normal packed planning session and materializes the selected root, every final root Pareto survivor, and
 	 * a deterministic stratified sample of dominated executable root candidates for measured plan-quality audits.
+	 * Unranked root candidates are additionally sampled in trace order, up to the same caller-supplied sample count,
+	 * only with explicitly unbounded work, deadline and retained-byte limits; otherwise their omission is reported.
 	 */
 	public static PackedPlanQualityAuditResult auditPlanQuality(TupleExpr tupleExpr, OptimizationGoal goal,
 			PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider, int dominatedSamplesPerStratum) {
@@ -173,11 +188,22 @@ public final class PackedCascadesPlanner {
 			throw new IllegalArgumentException("dominated samples per stratum must be non-negative");
 		}
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, null) : goal;
+		PackedSearchBudget budget = new PackedSearchBudget(limits);
+		PackedSearchBudget.checkCancellation();
+		if (useMandatoryFallback(budget)) {
+			return Objects.requireNonNull(fallbackComputation(tupleExpr, budget, semanticsCodec,
+					dominatedSamplesPerStratum).planQualityAudit(), "plan-quality audit result");
+		}
 		long encodeStart = System.nanoTime();
 		PackedQuery query = encodeSupportedForPlanning(tupleExpr, rangeProvider, semanticsCodec);
 		long encodeNanos = System.nanoTime() - encodeStart;
-		Computation computation = optimize(query, limits,
-				exploreReorderings(request), costModel, encodeNanos, 0L, false, dominatedSamplesPerStratum);
+		PackedSearchBudget.checkCancellation();
+		if (useMandatoryFallback(budget)) {
+			return Objects.requireNonNull(fallbackComputation(tupleExpr, budget, semanticsCodec,
+					dominatedSamplesPerStratum).planQualityAudit(), "plan-quality audit result");
+		}
+		Computation computation = optimize(query, budget, exploreReorderings(request), costModel, encodeNanos, 0L,
+				false, dominatedSamplesPerStratum, null);
 		return Objects.requireNonNull(computation.planQualityAudit(), "plan-quality audit result");
 	}
 
@@ -233,6 +259,11 @@ public final class PackedCascadesPlanner {
 		if (cache == null || context == null) {
 			return optimize(tupleExpr, limits, exploreReorderings, costModel, rangeProvider, semanticsCodec);
 		}
+		PackedSearchBudget budget = new PackedSearchBudget(limits);
+		PackedSearchBudget.checkCancellation();
+		if (!budget.sampleDeadline()) {
+			return fallback(tupleExpr, budget, semanticsCodec);
+		}
 		TupleExpr executionSource = tupleExpr;
 		PackedStatementPatternSemanticsCodec executionCodec = semanticsCodec;
 		PackedStatementPatternSemanticsCodec cacheCodec = semanticsCodec.cacheOwnershipCodec();
@@ -263,38 +294,54 @@ public final class PackedCascadesPlanner {
 		if (familyHit != null) {
 			return cachedResult(familyHit, familyIdentity.concreteQuery(), System.nanoTime() - cacheStart, false);
 		}
+		// A flight this request owns carries its hard stop; a flight it joins carries the owner's.
+		long hardStopNanos = budget.hardStopNanos();
 		PackedPlanCache.FlightClaim claim = cache.beginFlight(fingerprint, context, tupleExpr, sourceIdentity,
-				familyIdentity, limits);
+				familyIdentity, limits, hardStopNanos);
 		for (int abandonedFlights = 0;; abandonedFlights++) {
 			if (claim == null) {
 				return optimize(executionSource, limits, exploreReorderings, costModel, rangeProvider, executionCodec);
 			}
 			if (claim.hit() != null) {
-				return familyIdentity == null
-						? cachedResult(claim.hit(), tupleExpr, System.nanoTime() - cacheStart)
-						: cachedResult(claim.hit(), familyIdentity.concreteQuery(), System.nanoTime() - cacheStart,
-								false);
+				PackedPlanningResult replay = claimedCachedResult(claim.hit(), tupleExpr, sourceIdentity,
+						familyIdentity,
+						context, System.nanoTime() - cacheStart);
+				return replay != null ? replay
+						: optimize(executionSource, limits, exploreReorderings, costModel, rangeProvider,
+								executionCodec);
 			}
 			if (claim.owner()) {
 				break;
 			}
-			PackedPlanCache.PlanEntry awaited = claim.await();
+			PackedPlanCache.FlightWait waited = claim.await(budget);
+			PackedPlanCache.PlanEntry awaited = waited.plan();
 			if (awaited != null) {
-				return familyIdentity == null
-						? cachedResult(awaited, tupleExpr, System.nanoTime() - cacheStart)
-						: cachedResult(awaited, familyIdentity.concreteQuery(), System.nanoTime() - cacheStart, false);
+				PackedPlanningResult replay = claimedCachedResult(awaited, tupleExpr, sourceIdentity, familyIdentity,
+						context, System.nanoTime() - cacheStart);
+				return replay != null ? replay
+						: optimize(executionSource, limits, exploreReorderings, costModel, rangeProvider,
+								executionCodec);
 			}
-			// The owner's flight failed (that failure belongs to the owner's query, never to a bystander) or the
-			// wait reached this request's planning deadline. A failed flight is already gone, so re-entering once
-			// lets this thread take over ownership or pick up a plan published meanwhile; after a second abandoned
-			// flight, or while the owner is still blocked at the deadline, plan independently and publish nothing.
+			// The owner's flight failed or published nothing (that belongs to the owner's query, never to a bystander),
+			// or the owner's hard stop passed while it was still planning. A failed flight is already gone, so
+			// re-entering once lets this thread take over ownership or pick up a plan published meanwhile; after a
+			// second abandoned flight, or while the owner is still planning past its hard stop, plan independently and
+			// publish nothing. Past the owner's hard stop this request's own deadline has expired too (both requests
+			// share one deadline), so its planning returns the mandatory fallback; the plan says so.
 			if (abandonedFlights >= 1) {
-				return optimize(executionSource, limits, exploreReorderings, costModel, rangeProvider, executionCodec);
+				PackedPlanningResult independent = optimize(executionSource, limits, exploreReorderings, costModel,
+						rangeProvider, executionCodec);
+				if (waited.ownerHardStopPassed()) {
+					independent.selectedPlan().setStringMetricPlanned(FLIGHT_WAITER_FALLBACK_METRIC, "owner-hard-stop");
+				}
+				return independent;
 			}
-			claim = cache.beginFlight(fingerprint, context, tupleExpr, sourceIdentity, familyIdentity, limits);
+			claim = cache.beginFlight(fingerprint, context, tupleExpr, sourceIdentity, familyIdentity, limits,
+					hardStopNanos);
 		}
 		try {
 			PackedStalePlanValidation staleValidation = null;
+			boolean staleReplayRefused = false;
 			PackedPlanValidationRequest validationRequest = null;
 			PackedPlanRecipe auditedValidatedRecipe = null;
 			boolean shadowAudit = false;
@@ -304,20 +351,29 @@ public final class PackedCascadesPlanner {
 			PackedQuery query = familyIdentity != null
 					? familyIdentity.concreteQuery()
 					: queryEntry == null
-							? encodeSupportedForPlanning(tupleExpr, rangeProvider, semanticsCodec)
+							? encodeSupportedForPlanning(tupleExpr, rangeProvider, semanticsCodec, sourceIdentity)
 							: PackedQueryCodec.rebindOriginalBindingSets(queryEntry.query(), tupleExpr);
 			long encodeNanos = queryEntry == null && familyIdentity == null ? System.nanoTime() - encodeStart : 0L;
 			PackedPlanCache.PlanEntry structural = cache.findStructuralPlan(fingerprint, context, tupleExpr,
 					sourceIdentity);
-			if (!detachedRefresh && structural != null && structural.supportsStaleValidation()
+			boolean compatibleStructuralOwner = structural != null && structural.query().hasSameCacheIdentity(query);
+			if (!detachedRefresh && compatibleStructuralOwner && structural.supportsStaleValidation()
 					&& costModel instanceof PackedStalePlanValidator validator) {
 				validationRequest = new PackedPlanValidationRequest(
 						new PackedQueryView(query),
 						structural.recipe(), structural.context(), context, fingerprint);
-				PackedStalePlanValidation validation = Objects.requireNonNull(
-						validator.validateStalePlan(validationRequest), "packed stale-plan validation");
+				PackedStalePlanValidation validation;
+				try {
+					validation = Objects.requireNonNull(validator.validateStalePlan(validationRequest),
+							"packed stale-plan validation");
+				} catch (PackedCostingReplay.UnavailablePriceException unavailable) {
+					// No validation result exists to account as a completed certificate. Replan without reusing its
+					// detached continuation, and do not invent a comparable price or validation measurements.
+					validation = null;
+					staleReplayRefused = true;
+				}
 				staleValidation = validation;
-				if (validation.outcome() == PackedStalePlanValidation.Outcome.CERTIFIED_REUSE) {
+				if (validation != null && validation.outcome() == PackedStalePlanValidation.Outcome.CERTIFIED_REUSE) {
 					try {
 						PackedPlanRecipe validatedRecipe = structural.recipe().withCacheValidation(validation, context);
 						double validatedCost = validatedRecipe.decisionCertificate().selectedCost();
@@ -347,28 +403,27 @@ public final class PackedCascadesPlanner {
 				}
 			}
 			Computation computation = null;
-			PackedSearchCheckpoint checkpoint = structural == null
+			PackedSearchCheckpoint checkpoint = staleReplayRefused || !compatibleStructuralOwner
 					|| detachedRefresh && !structural.context().equals(context)
 							? null
 							: structural.optimizationDecision().searchCheckpoint();
-			if (checkpoint != null && familyIdentity != null) {
-				try {
-					computation = resumeComputation(checkpoint, familyIdentity, limits, costModel);
-				} catch (IllegalArgumentException | IllegalStateException rejectedCheckpoint) {
-					logger.debug("Packed detached checkpoint rejected; restarting from a fresh memo",
-							rejectedCheckpoint);
-				}
+			if (checkpoint != null && familyIdentity != null && checkpoint.matches(familyIdentity)) {
+				computation = resumeComputation(checkpoint, familyIdentity, limits, costModel);
 			}
 			if (computation == null) {
-				computation = optimize(query, limits, exploreReorderings, costModel, encodeNanos, cacheNanos,
-						queryEntry != null);
+				computation = optimize(query, budget, exploreReorderings, costModel, encodeNanos, cacheNanos,
+						queryEntry != null, -1, null);
 			}
 			PackedPlanningResult result = computation.result()
 					.withDecisionSummary(PackedPlanDecisionSummary.from(computation.optimizationDecision(),
 							evidenceEpoch(context)));
-			computation = new Computation(result, computation.recipe(), computation.optimizationDecision(),
-					computation.planQualityAudit());
+			computation = new Computation(result, computation.recipeOwner(), computation.recipe(),
+					computation.optimizationDecision(),
+					computation.planQualityAudit(), computation.cacheable());
 			if (staleValidation != null && validationRequest != null && structural != null
+					&& result.totalPrice().isPresent()
+					&& result.decisionSummary()
+							.comparisonCompleteness() == PackedPlanDecisionSummary.ComparisonCompleteness.COMPLETE
 					&& costModel instanceof PackedStalePlanValidator validator) {
 				PackedPlanRecipe.PhysicalIdentity cachedPhysical = structural.recipe()
 						.physicalIdentity(PackedPlanMaterializer.materialize(structural.query(), structural.recipe()));
@@ -404,27 +459,35 @@ public final class PackedCascadesPlanner {
 								staleValidation.workUnits());
 			}
 			PackedPlanningResult emission = emitCacheResult(result, semanticsCodec);
+			if (!computation.cacheable()) {
+				cache.decline(claim);
+				return emission == null ? result : emission;
+			}
 			if (emission == null) {
 				cache.decline(claim); // complete search result remains executable; unsupported retention is optional
 				return result;
 			}
 			PackedQuery cachedQuery = query.withoutOriginalBindingSets();
+			PackedQuery cachedRecipeOwner = computation.recipeOwner().withoutOriginalBindingSets();
 			PackedPlanCache.QueryEntry publishedQuery = queryEntry == null
 					? new PackedPlanCache.QueryEntry(fingerprint, context, tupleExpr, sourceIdentity, cachedQuery)
 					: queryEntry;
 			PackedPlanCache.PlanEntry publishedPlan = new PackedPlanCache.PlanEntry(fingerprint, context, tupleExpr,
-					sourceIdentity, familyIdentity, cachedQuery, computation.recipe(),
+					sourceIdentity, familyIdentity, cachedRecipeOwner, computation.recipe(),
 					computation.optimizationDecision(),
 					result.outputRows(),
 					result.totalCost(),
 					result.completionStatus(), result.retainedBytes(), limits);
-			if (result.exactComplete() || reusableWorkLimitedResult(result, limits)) {
+			boolean comparable = result.totalPrice().isPresent() && result.decisionSummary()
+					.comparisonCompleteness() == PackedPlanDecisionSummary.ComparisonCompleteness.COMPLETE;
+			if (reusableWorkLimitedResult(result, limits)
+					|| result.exactComplete() && (comparable || limits.deadlineNanos() == Long.MAX_VALUE)) {
 				cache.publish(claim, publishedPlan, publishedQuery);
 			} else {
 				cache.publishTransient(claim, publishedPlan, publishedQuery);
 			}
 			return emission;
-		} catch (RuntimeException | Error failure) {
+		} catch (Throwable failure) {
 			cache.fail(claim, failure);
 			throw failure;
 		}
@@ -522,11 +585,57 @@ public final class PackedCascadesPlanner {
 	private static PackedPlanningResult optimize(TupleExpr tupleExpr, PackedPlannerLimits limits,
 			boolean exploreReorderings, PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider,
 			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		PackedSearchBudget budget = new PackedSearchBudget(limits);
+		PackedSearchBudget.checkCancellation();
+		if (useMandatoryFallback(budget)) {
+			return fallback(tupleExpr, budget, semanticsCodec);
+		}
 		long encodeStart = System.nanoTime();
 		PackedQuery query = encodeSupportedForPlanning(tupleExpr, rangeProvider, semanticsCodec);
 		long encodeNanos = System.nanoTime() - encodeStart;
-		return optimize(query, limits, exploreReorderings, costModel, encodeNanos, 0L, false)
+		PackedSearchBudget.checkCancellation();
+		if (useMandatoryFallback(budget)) {
+			return fallback(tupleExpr, budget, semanticsCodec);
+		}
+		return optimize(query, budget, exploreReorderings, costModel, encodeNanos, 0L, false, -1, null)
 				.result();
+	}
+
+	private static boolean useMandatoryFallback(PackedSearchBudget budget) {
+		if (!budget.sampleDeadline()) {
+			return true;
+		}
+		if (budget.exhausted()) {
+			budget.recordExhaustedWorkStop();
+			return true;
+		}
+		if (budget.retainedByteLimit() == 0L) {
+			budget.markResourceLimitReached();
+			return true;
+		}
+		return false;
+	}
+
+	private static PackedPlanningResult fallback(TupleExpr tupleExpr, PackedSearchBudget budget,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		return fallbackComputation(tupleExpr, budget, semanticsCodec, -1).result();
+	}
+
+	private static Computation fallbackComputation(TupleExpr tupleExpr, PackedSearchBudget budget,
+			PackedStatementPatternSemanticsCodec semanticsCodec, int dominatedSamplesPerStratum) {
+		return fallbackComputation(tupleExpr, budget, semanticsCodec, dominatedSamplesPerStratum, 0L, false);
+	}
+
+	private static Computation fallbackComputation(TupleExpr tupleExpr, PackedSearchBudget budget,
+			PackedStatementPatternSemanticsCodec semanticsCodec, int dominatedSamplesPerStratum, long cacheNanos,
+			boolean queryTemplateCacheHit) {
+		budget.beginFallback();
+		long encodeStart = System.nanoTime();
+		PackedQuery query = requireSupported(PackedQueryCodec.encodeForFallback(tupleExpr, semanticsCodec));
+		PackedSearchBudget.checkCancellation();
+		long encodeNanos = System.nanoTime() - encodeStart;
+		return compute(query, budget, false, null, null, encodeNanos, cacheNanos, queryTemplateCacheHit,
+				dominatedSamplesPerStratum, null);
 	}
 
 	/**
@@ -543,6 +652,15 @@ public final class PackedCascadesPlanner {
 	private static PackedQuery encodeSupportedForPlanning(TupleExpr tupleExpr,
 			PackedPredicateRangeProvider rangeProvider, PackedStatementPatternSemanticsCodec semanticsCodec) {
 		return requireSupported(PackedQueryCodec.encodeForPlanning(tupleExpr, rangeProvider, semanticsCodec));
+	}
+
+	/** Reuses the canonical names the plan identity already collected for this source instead of a second visit. */
+	private static PackedQuery encodeSupportedForPlanning(TupleExpr tupleExpr,
+			PackedPredicateRangeProvider rangeProvider, PackedStatementPatternSemanticsCodec semanticsCodec,
+			PackedQueryCacheIdentity sourceIdentity) {
+		return sourceIdentity == null ? encodeSupportedForPlanning(tupleExpr, rangeProvider, semanticsCodec)
+				: requireSupported(PackedQueryCodec.encodeForPlanning(tupleExpr, rangeProvider, semanticsCodec,
+						sourceIdentity.canonicalNames()));
 	}
 
 	static PackedQuery requireSupported(PackedQuery query) {
@@ -574,12 +692,13 @@ public final class PackedCascadesPlanner {
 		PackedPlanningResult resumed = computation.result();
 		long resumedWorkUnits = resumed.metrics().workUnits();
 		TupleExpr selectedPlan = resumed.selectedPlan();
-		double recostMetric = selectedPlan.getDoubleMetricPlanned("optimizer.planCacheRecostWorkUnits");
-		long recostWorkUnits = Double.isFinite(recostMetric) && recostMetric >= 0.0d
-				&& recostMetric < Long.MAX_VALUE ? (long) recostMetric : 0L;
 		selectedPlan.setDoubleMetricPlanned("optimizer.planCacheResumedWorkUnits", resumedWorkUnits);
+		/*
+		 * Search units only: the replay re-costs provider events, which optimizer.planCacheRecostWorkUnits reports on
+		 * the provider dimension.
+		 */
 		selectedPlan.setDoubleMetricPlanned("optimizer.planCacheCumulativeWorkUnits",
-				saturatedAdd(checkpoint.cumulativeWorkUnits(), saturatedAdd(recostWorkUnits, resumedWorkUnits)));
+				saturatedAdd(checkpoint.cumulativeWorkUnits(), resumedWorkUnits));
 		return computation;
 	}
 
@@ -600,37 +719,401 @@ public final class PackedCascadesPlanner {
 	private static Computation optimize(PackedQuery query, PackedPlannerLimits limits,
 			boolean exploreReorderings, PackedCostModel costModel, long encodeNanos, long cacheNanos,
 			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum, PackedSearchCheckpoint checkpoint) {
+		return optimize(query, new PackedSearchBudget(limits), exploreReorderings, costModel, encodeNanos, cacheNanos,
+				queryTemplateCacheHit, dominatedSamplesPerStratum, checkpoint);
+	}
+
+	private static Computation optimize(PackedQuery query, PackedSearchBudget budget,
+			boolean exploreReorderings, PackedCostModel costModel, long encodeNanos, long cacheNanos,
+			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum, PackedSearchCheckpoint checkpoint) {
 		if (costModel == null) {
-			return compute(query, new PackedSearchBudget(limits), exploreReorderings, null, null, encodeNanos,
+			return compute(query, budget, exploreReorderings, null, null, encodeNanos,
 					cacheNanos, queryTemplateCacheHit, dominatedSamplesPerStratum, checkpoint);
 		}
 		PackedQueryView queryView = new PackedQueryView(query);
-		PackedSearchBudget budget = new PackedSearchBudget(limits);
-		PackedCostSession openedSession = Objects.requireNonNull(
-				costModel.openSession(queryView), "packed cost session");
-		ProviderMemoryBinding providerMemory = new ProviderMemoryBinding(budget);
-		try {
-			openedSession.bindProviderMemory(providerMemory);
-		} catch (RuntimeException | Error failure) {
-			providerMemory.close();
+		PackedSearchBudget.checkCancellation();
+		if (useMandatoryFallback(budget)) {
+			return fallbackFromQuery(query, budget, dominatedSamplesPerStratum, cacheNanos, queryTemplateCacheHit);
+		}
+		boolean closeFailed = false;
+		try (ProviderMemoryBinding providerMemory = new ProviderMemoryBinding(budget);
+				ProviderWorkBinding providerWork = new ProviderWorkBinding(budget, providerMemory)) {
+			providerWork.require(1L);
+			PackedCostSession openedSession = Objects.requireNonNull(
+					costModel.openSession(queryView, providerWork, providerMemory), "packed cost session");
 			try {
-				openedSession.close();
-			} catch (RuntimeException | Error closeFailure) {
+				openedSession.bindProviderMemory(providerMemory);
+				openedSession.bindProviderWork(providerWork);
+				providerWork.reserveCompletion();
+				if (budget.exhausted()) {
+					budget.recordExhaustedWorkStop();
+					throw new PackedProviderWork.Exhausted();
+				}
+			} catch (Throwable failure) {
+				closeFailed = closeAfterFailure(openedSession, failure);
+				throw failure;
+			}
+			PackedCostSession admitted = new WorkAdmittedPackedCostSession(openedSession, providerWork);
+			PackedCostSession proofAware = new ProofAwarePackedCostSession(query, admitted);
+			PackedCostSession costSession = new EventSourcingPackedCostSession(proofAware, query, budget);
+			Computation result;
+			try {
+				result = compute(query, budget, exploreReorderings, costSession, costModel, encodeNanos,
+						cacheNanos, queryTemplateCacheHit, dominatedSamplesPerStratum, checkpoint, providerWork,
+						providerMemory, openedSession, queryView);
+			} catch (Throwable failure) {
+				closeFailed = closeAfterFailure(costSession, failure);
+				throw failure;
+			}
+			try {
+				costSession.close();
+			} catch (Throwable closeFailure) {
+				closeFailed = true;
+				throw closeFailure;
+			}
+			return result;
+		} catch (RuntimeException providerFailure) {
+			if (closeFailed || !recordProviderStop(providerFailure, budget)) {
+				throw providerFailure;
+			}
+			return fallbackFromQuery(query, budget, dominatedSamplesPerStratum, cacheNanos, queryTemplateCacheHit);
+		}
+	}
+
+	private static boolean closeAfterFailure(PackedCostSession session, Throwable failure) {
+		try {
+			session.close();
+			return false;
+		} catch (Throwable closeFailure) {
+			if (closeFailure != failure) {
 				failure.addSuppressed(closeFailure);
 			}
-			throw failure;
+			return true;
 		}
-		PackedCostSession proofAware = new ProofAwarePackedCostSession(query, openedSession);
-		try (providerMemory;
-				PackedCostSession costSession = new EventSourcingPackedCostSession(proofAware, query, budget)) {
-			return compute(query, budget, exploreReorderings, costSession, costModel, encodeNanos,
-					cacheNanos, queryTemplateCacheHit, dominatedSamplesPerStratum, checkpoint);
+	}
+
+	/**
+	 * Records a typed budget/resource stop that truncated the search; cancellation and cleanup failures must propagate.
+	 */
+	private static boolean recordProviderStop(RuntimeException failure, PackedSearchBudget budget) {
+		if (!acceptTypedProviderStop(failure, budget)) {
+			return false;
+		}
+		if (failure instanceof PackedProviderWork.Exhausted) {
+			budget.recordAbsorbedProviderStop();
+		}
+		return true;
+	}
+
+	/**
+	 * Accepts a typed budget/resource stop without recording a truncated search; cancellation and cleanup failures must
+	 * propagate. The steps after the search (recipe extraction, the challenger portfolio and the quality audit) use it
+	 * directly: the completion status describes the search, so such a step reports its own outcome. A stop caused by a
+	 * budget limit has already marked that limit.
+	 */
+	private static boolean acceptTypedProviderStop(RuntimeException failure, PackedSearchBudget budget) {
+		if (budget.isStrategyFailure(failure) || failure.getSuppressed().length != 0) {
+			return false;
+		}
+		if (failure instanceof PackedProviderWork.Exhausted) {
+			return true;
+		}
+		if (failure instanceof PackedCostSessionFailure providerFailure && providerFailure.isResourceLimit()) {
+			budget.markResourceLimitReached();
+			return true;
+		}
+		return false;
+	}
+
+	private static Computation fallbackFromQuery(PackedQuery query, PackedSearchBudget budget,
+			int dominatedSamplesPerStratum, long cacheNanos, boolean queryTemplateCacheHit) {
+		PackedSearchBudget.checkCancellation();
+		TupleExpr canonical = PackedPlanMaterializer.materialize(query, query.rootRelId());
+		return fallbackComputation(canonical, budget, query.semanticsCodec(), dominatedSamplesPerStratum, cacheNanos,
+				queryTemplateCacheHit);
+	}
+
+	/**
+	 * One search's borrowed provider-work authority; it is revoked with its provider session. It admits provider
+	 * callbacks and provider-internal batches against the budget owner's provider-work limit, never against search
+	 * work.
+	 */
+	static final class ProviderWorkBinding implements PackedPhysicalRegion.Authority, AutoCloseable {
+		private PackedSearchBudget budget;
+		private final ProviderMemoryBinding sessionMemory;
+		private long completionCredit;
+		private boolean completing;
+		private boolean mandatoryCompletion;
+		private long regionGeneration;
+		private PackedQueryView regionQuery;
+		private PackedCostVectorArena regionVectors;
+		private PackedCostAlgebra regionAlgebra;
+		private ProviderMemoryBinding regionMemory;
+		PackedCostContext activeContext;
+		long activeCallback;
+		PackedCostingPhase activePhase;
+		int activeRelation;
+		private long nextCallback;
+		boolean strategyTouched;
+		PackedStrategyRequestImpl activeRequest;
+		PackedProviderWork.Exhausted ownedStrategyStop;
+
+		ProviderWorkBinding(PackedSearchBudget budget, ProviderMemoryBinding memory) {
+			this.budget = Objects.requireNonNull(budget, "budget");
+			this.sessionMemory = Objects.requireNonNull(memory, "memory");
+			if (memory.budget != budget || memory.sessionOwner != null) {
+				throw new IllegalArgumentException("provider memory already belongs to another session or search");
+			}
+			memory.sessionOwner = this;
+		}
+
+		@Override
+		public boolean tryReserve(long units) {
+			PackedSearchBudget owner = requireOwner();
+			PackedSearchBudget.checkCancellation();
+			if (activeRequest != null && activeRequest.stopped()) {
+				return false;
+			}
+			if (completing && units >= 0L && units <= completionCredit) {
+				completionCredit -= units;
+				return true;
+			}
+			boolean accepted = mandatoryCompletion
+					? owner.tryReserveMandatoryProviderWork(units)
+					: owner.tryReserveProviderWork(units);
+			if (!accepted && units >= 0L && activeRequest != null) {
+				activeRequest.refuse(workRefusal(regionGeneration));
+			}
+			return accepted;
+		}
+
+		@Override
+		public void require(long units) {
+			if (units < 0L) {
+				throw new IllegalArgumentException("provider work must be non-negative");
+			}
+			if (!tryReserve(units)) {
+				PackedProviderWork.Exhausted failure = new PackedProviderWork.Exhausted();
+				if (activeRequest != null && activeRequest.stopped()) {
+					ownedStrategyStop = failure;
+				}
+				requireOwner().recordProviderRefusal(failure);
+				throw failure;
+			}
+		}
+
+		void enterStrategyContext(PackedCostingPhase phase, int relation, PackedCostContext context) {
+			if (nextCallback == Long.MAX_VALUE) {
+				throw new IllegalStateException("provider callback generation exhausted");
+			}
+			activeContext = context;
+			activeCallback = ++nextCallback;
+			activePhase = phase;
+			activeRelation = relation;
+			strategyTouched = false;
+			activeRequest = null;
+			ownedStrategyStop = null;
+		}
+
+		void leaveStrategyContext(PackedCostContext previousContext, long previousCallback,
+				PackedCostingPhase previousPhase,
+				int previousRelation, boolean previousTouched,
+				PackedStrategyRequestImpl previousRequest, PackedProviderWork.Exhausted previousStop) {
+			activeContext = previousContext;
+			activeCallback = previousCallback;
+			activePhase = previousPhase;
+			activeRelation = previousRelation;
+			strategyTouched = previousTouched;
+			activeRequest = previousRequest;
+			ownedStrategyStop = previousStop;
+		}
+
+		void recordStrategyFailure(Throwable failure) {
+			if (strategyTouched && (failure != ownedStrategyStop || failure.getSuppressed().length != 0)) {
+				requireOwner().recordStrategyFailure(failure);
+			}
+		}
+
+		void requireStrategyContext(PackedCostContext context) {
+			requireOwner();
+			if (activeCallback == 0L || activeContext != context) {
+				throw new IllegalArgumentException("strategy request requires the active provider context");
+			}
+		}
+
+		boolean hasSourceRootOperatorContext(long generation, PackedPhysicalRegion region,
+				PackedPhysicalRegion.Occurrence anchor) {
+			PackedQueryView source = query(generation);
+			return activePhase == PackedCostingPhase.OPERATOR && anchor == region.root()
+					&& activeRelation == source.rootRelationId() && anchor.relationId() == activeRelation;
+		}
+
+		void reserveCompletion() {
+			require(1L);
+			completionCredit = 1L;
+		}
+
+		void beginCompletion() {
+			PackedSearchBudget.checkCancellation();
+			completing = true;
+		}
+
+		/**
+		 * Opens the scope in which provider callbacks complete the mandatory incumbent of a parent whose children
+		 * already have winners. Inside it the optional-search deadline does not refuse provider work; the provider-work
+		 * limit stays authoritative. Returns the previous scope for {@link #leaveMandatoryCompletion(boolean)}.
+		 */
+		boolean enterMandatoryCompletion() {
+			requireOwner();
+			boolean previous = mandatoryCompletion;
+			mandatoryCompletion = true;
+			return previous;
+		}
+
+		void leaveMandatoryCompletion(boolean previous) {
+			mandatoryCompletion = previous;
+		}
+
+		/**
+		 * Suspends the mandatory-completion scope for optional work (contextual sub-searches and alternative offers)
+		 * that runs while a mandatory incumbent is being completed. Inside the suspension the optional-search deadline
+		 * refuses provider work again. Returns the previous scope for {@link #leaveMandatoryCompletion(boolean)}.
+		 */
+		boolean suspendMandatoryCompletion() {
+			requireOwner();
+			boolean previous = mandatoryCompletion;
+			mandatoryCompletion = false;
+			return previous;
+		}
+
+		@Override
+		public long remainingWorkUnits() {
+			PackedSearchBudget owner = requireOwner();
+			return mandatoryCompletion
+					? owner.remainingMandatoryProviderWorkUnits()
+					: owner.remainingProviderWorkUnits();
+		}
+
+		PackedPhysicalRegion.Factory bindRegionGeneration(PackedQueryView query, PackedMemo memo,
+				ProviderMemoryBinding memory) {
+			PackedSearchBudget owner = requireOwner();
+			Objects.requireNonNull(query, "query");
+			Objects.requireNonNull(memo, "memo");
+			Objects.requireNonNull(memory, "memory");
+			if (memory != sessionMemory || memory.sessionOwner != this || memory.budget != owner
+					|| !memo.ownsRegionGeneration(query, owner)
+					|| regionQuery != null && !regionQuery.sameQuery(query)) {
+				throw new IllegalArgumentException("region query, memory and memo must belong to this search");
+			}
+			if (regionGeneration == Long.MAX_VALUE) {
+				throw new IllegalStateException("region session generation exhausted");
+			}
+			regionGeneration++;
+			regionQuery = query;
+			regionVectors = memo.costVectors();
+			regionAlgebra = memo.costAlgebra();
+			regionMemory = memory;
+			return new RegionFactoryHandle(this, regionGeneration);
+		}
+
+		@Override
+		public void requireGeneration(long generation) {
+			if (budget == null || regionQuery == null || generation != regionGeneration
+					|| regionMemory != sessionMemory || regionMemory.sessionOwner != this
+					|| regionMemory.budget != budget) {
+				throw new IllegalStateException("region session generation is closed or stale");
+			}
+		}
+
+		@Override
+		public PackedQueryView query(long generation) {
+			requireGeneration(generation);
+			return regionQuery;
+		}
+
+		@Override
+		public PackedProviderMemory memory(long generation) {
+			requireGeneration(generation);
+			return regionMemory;
+		}
+
+		@Override
+		public PackedCostVectorArena vectors(long generation) {
+			requireGeneration(generation);
+			return regionVectors;
+		}
+
+		@Override
+		public PackedCostAlgebra algebra(long generation) {
+			requireGeneration(generation);
+			return regionAlgebra;
+		}
+
+		/**
+		 * Classifies a refused work reservation by the dimension that refused it. Work admission does not consult the
+		 * retained-byte limit, so a latched memory stop never explains a work refusal. The mandatory-completion scope
+		 * never refuses for the deadline, so a latched deadline explains a refusal only outside that scope.
+		 */
+		@Override
+		public PackedPhysicalRegion.Status workRefusal(long generation) {
+			requireGeneration(generation);
+			if (!mandatoryCompletion && budget.deadlineReached()) {
+				return PackedPhysicalRegion.Status.DEADLINE_EXPIRED;
+			}
+			if (budget.completionStatus() == PackedSearchCompletionStatus.UNSUPPORTED_SEMANTICS) {
+				return PackedPhysicalRegion.Status.UNSUPPORTED;
+			}
+			return PackedPhysicalRegion.Status.WORK_REFUSED;
+		}
+
+		/** Classifies a refused retained-byte reservation. */
+		PackedPhysicalRegion.Status memoryRefusal(long generation) {
+			requireGeneration(generation);
+			return budget.completionStatus() == PackedSearchCompletionStatus.UNSUPPORTED_SEMANTICS
+					? PackedPhysicalRegion.Status.UNSUPPORTED
+					: PackedPhysicalRegion.Status.RESOURCE_REFUSED;
+		}
+
+		private PackedSearchBudget requireOwner() {
+			if (budget == null) {
+				throw new IllegalStateException("provider work handle is closed");
+			}
+			return budget;
+		}
+
+		@Override
+		public void close() {
+			if (budget != null && completionCredit != 0L) {
+				budget.returnUnusedCompletionWork(completionCredit);
+				completionCredit = 0L;
+			}
+			budget = null;
+			regionQuery = null;
+			regionVectors = null;
+			regionAlgebra = null;
+			regionMemory = null;
+		}
+	}
+
+	/** One immutable factory handle cannot be reopened against a replacement memo generation. */
+	private record RegionFactoryHandle(ProviderWorkBinding owner, long generation)
+			implements PackedPhysicalRegion.Factory {
+		@Override
+		public PackedPhysicalRegion.Result<PackedPhysicalRegion> open() {
+			return PackedPhysicalRegion.open(owner, generation);
+		}
+
+		@Override
+		public PackedPhysicalRegion.Result<PackedStrategyRequest> openStrategyRequest(PackedPhysicalRegion region,
+				PackedPhysicalRegion.Occurrence anchor, PackedCostContext context) {
+			return PackedStrategyRequestImpl.open(owner, generation, region, anchor, context);
 		}
 	}
 
 	/** One actual search's borrowed view; even an accidentally retained old callback loses authority on close. */
-	private static final class ProviderMemoryBinding implements PackedProviderMemory, AutoCloseable {
+	static final class ProviderMemoryBinding implements PackedProviderMemory, AutoCloseable {
 		private PackedSearchBudget budget;
+		private ProviderWorkBinding sessionOwner;
 
 		ProviderMemoryBinding(PackedSearchBudget budget) {
 			this.budget = budget;
@@ -639,12 +1122,29 @@ public final class PackedCascadesPlanner {
 		@Override
 		public boolean tryReserve(long bytes) {
 			PackedSearchBudget owner = budget;
-			return owner != null && owner.canReserveBytes(bytes) && owner.tryReserveBytes(bytes);
+			if (owner == null) {
+				throw new IllegalStateException("provider memory handle is closed");
+			}
+			if (sessionOwner != null && sessionOwner.activeRequest != null) {
+				PackedSearchBudget.checkCancellation();
+				if (bytes < 0L) {
+					throw new IllegalArgumentException("provider memory must be non-negative");
+				}
+				if (sessionOwner.activeRequest.stopped()) {
+					return false;
+				}
+				if (!owner.canReserveBytes(bytes)) {
+					sessionOwner.activeRequest.refuse(sessionOwner.memoryRefusal(sessionOwner.regionGeneration));
+					return false;
+				}
+			}
+			return owner.canReserveBytes(bytes) && owner.tryReserveBytes(bytes);
 		}
 
 		@Override
 		public void close() {
 			budget = null;
+			sessionOwner = null;
 		}
 	}
 
@@ -652,51 +1152,92 @@ public final class PackedCascadesPlanner {
 			boolean exploreReorderings, PackedCostSession costSession, PackedCostModel costModel,
 			long encodeNanos, long cacheNanos,
 			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum, PackedSearchCheckpoint checkpoint) {
+		return compute(query, budget, exploreReorderings, costSession, costModel, encodeNanos, cacheNanos,
+				queryTemplateCacheHit, dominatedSamplesPerStratum, checkpoint, null, null, null, null);
+	}
+
+	private static Computation compute(PackedQuery query, PackedSearchBudget budget,
+			boolean exploreReorderings, PackedCostSession costSession, PackedCostModel costModel,
+			long encodeNanos, long cacheNanos,
+			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum, PackedSearchCheckpoint checkpoint,
+			ProviderWorkBinding providerWork, ProviderMemoryBinding providerMemory, PackedCostSession openedSession,
+			PackedQueryView queryView) {
 		long searchStart = System.nanoTime();
 		int relationCount = query.relationCount();
 		PackedMemo memo = newQueryLocalMemo(query, budget, costSession, relationCount, dominatedSamplesPerStratum >= 0);
 		try {
+			if (providerWork != null) {
+				openedSession.bindPhysicalRegions(providerWork.bindRegionGeneration(queryView, memo, providerMemory));
+			}
 			long checkpointReplayWorkUnits = 0L;
 			PackedMemo.RestoredContinuationSeed restored = null;
 			if (checkpoint != null) {
+				// A rejected replay is a separate attempt; the fresh search must not inherit its incompleteness.
+				int attemptFlags = budget.attemptFlags();
 				try {
 					PackedPlanRecipe continuationRecipe = checkpoint.continuationRecipe();
 					if (costSession == null) {
 						restored = memo.restoreScalarContinuation(continuationRecipe);
 					} else if (continuationRecipe.hasDetachedEvidence()) {
-						int replayWorkUnits = continuationRecipe.costingTrace().eventCount();
-						if (budget.canBeginMandatoryCompletion(replayWorkUnits)
-								&& budget.tryReserveMandatoryCompletion(replayWorkUnits)) {
-							PackedPlanValidationRequest replayRequest = PackedPlanValidationRequest
-									.detachedContinuation(new PackedQueryView(query), continuationRecipe);
-							PackedCostingReplay.Result replay = PackedCostingReplay.replay(replayRequest, costSession);
-							checkpointReplayWorkUnits = replay.workUnits();
-							if (replay.matchesCachedTrace(continuationRecipe.costingTrace())) {
-								restored = memo.restoreProviderContinuation(continuationRecipe, replay);
-							}
+						/*
+						 * Replay re-costs recorded provider events: it is provider work, admitted callback by callback
+						 * on the provider dimension, and it consumes no search work. Its provider-work refusal (limit,
+						 * deadline or a stopped strategy request) is the guard: it rejects the checkpoint below.
+						 */
+						PackedPlanValidationRequest replayRequest = PackedPlanValidationRequest
+								.detachedContinuation(new PackedQueryView(query), continuationRecipe);
+						PackedCostingReplay.Result replay = PackedCostingReplay.replay(replayRequest,
+								new ReplayProviderBoundary(costSession));
+						checkpointReplayWorkUnits = replay.workUnits();
+						if (replay.matchesCachedTrace(continuationRecipe.costingTrace())) {
+							restored = memo.restoreProviderContinuation(continuationRecipe, replay);
 						}
 					}
-				} catch (IllegalArgumentException | IllegalStateException corruptCheckpoint) {
+				} catch (ReplayProviderFailure providerFailure) {
+					for (Throwable cleanupFailure : providerFailure.getSuppressed()) {
+						if (cleanupFailure != providerFailure.failure) {
+							providerFailure.failure.addSuppressed(cleanupFailure);
+						}
+					}
+					throw providerFailure.failure;
+				} catch (PackedCheckpointRejectedException | PackedProviderWork.Exhausted rejectedCheckpoint) {
+					if (rejectedCheckpoint instanceof PackedProviderWork.Exhausted refused
+							&& !budget.isProviderRefusal(refused)) {
+						throw refused;
+					}
+					// A refused replay is a rejected checkpoint; its partly replayed memo and its stops are discarded.
 					logger.debug("Packed checkpoint could not be rehydrated; restarting ordinary search",
-							corruptCheckpoint);
+							rejectedCheckpoint);
+					budget.restoreAttemptFlags(attemptFlags);
 					memo.close();
 					memo = newQueryLocalMemo(query, budget, costSession, relationCount,
 							dominatedSamplesPerStratum >= 0);
+					if (providerWork != null) {
+						openedSession.bindPhysicalRegions(
+								providerWork.bindRegionGeneration(queryView, memo, providerMemory));
+					}
 					restored = null;
 				}
 			}
 			PackedIncumbentSearch search = PackedIncumbentSearch.forSession(query, memo, budget, exploreReorderings,
 					costSession);
+			if (providerWork != null) {
+				search.bindProviderWork(providerWork);
+			}
+			if (costModel == null || costSession != null) {
+				// The deadline stops a work-bounded search only once this probe reports a priced root plan. A cost
+				// model without a session can never price the result, so its search is not watched.
+				budget.watchPricedRoot(search::retainsPricedRootPlan, search::retainsPricedRootOnceRegionPublishes);
+			}
 			int rootWinnerId;
 			try {
 				rootWinnerId = restored == null ? search.build() : search.resumeEnumeration(restored);
-			} catch (PackedCostSessionFailure providerFailure) {
-				if (!providerFailure.isResourceLimit()) {
+			} catch (RuntimeException providerFailure) {
+				if (!recordProviderStop(providerFailure, budget)) {
 					throw providerFailure;
 				}
-				budget.markResourceLimitReached();
 				rootWinnerId = search.retainedRootWinnerId();
-				if (rootWinnerId == 0) {
+				if (rootWinnerId == 0 || providerWork == null) {
 					throw providerFailure;
 				}
 			}
@@ -712,8 +1253,22 @@ public final class PackedCascadesPlanner {
 				outputRows = contextualizer.rootRows();
 				dependentPlans = contextualizer.dependentPlans();
 			}
+			budget.endSearch();
 			long extractionStart = System.nanoTime();
-			PackedPlanRecipe recipe = memo.extractPlanRecipe(rootWinnerId, dependentPlans, costSession);
+			if (providerWork != null) {
+				providerWork.beginCompletion();
+			}
+			PackedPlanRecipe recipe;
+			boolean providerEvidenceDetached = true;
+			try {
+				recipe = memo.extractPlanRecipe(rootWinnerId, dependentPlans, costSession);
+			} catch (RuntimeException providerFailure) {
+				if (costSession == null || !acceptTypedProviderStop(providerFailure, budget)) {
+					throw providerFailure;
+				}
+				recipe = memo.extractPlanRecipe(rootWinnerId, dependentPlans, null).withoutProviderRuntimeState();
+				providerEvidenceDetached = false;
+			}
 			if (logger.isDebugEnabled()) {
 				logger.debug("Packed candidate-costing decisions:{}{}", System.lineSeparator(),
 						recipe.describeCostingDecisions());
@@ -724,10 +1279,28 @@ public final class PackedCascadesPlanner {
 			}
 			long materializationStart = System.nanoTime();
 			TupleExpr selectedPlan = PackedPlanMaterializer.materialize(query, recipe);
-			PortfolioBuild portfolio = buildOptimizationDecision(query, memo, budget, costSession,
-					search.selectedRowsByGroup(), rootWinnerId, recipe, selectedPlan,
-					memo.winnerTotalCost(rootWinnerId));
-			outputRows = certifiedRootRows(costModel, selectedPlan, outputRows, recipe.rootEvidenceSummary());
+			if (budget.mandatoryFallbackWorkUnits() != 0L) {
+				selectedPlan.setDoubleMetricPlanned("optimizer.mandatoryFallbackWorkUnits",
+						budget.mandatoryFallbackWorkUnits());
+			}
+			if (budget.deadlineOverrun()) {
+				selectedPlan.setDoubleMetricPlanned(DEADLINE_OVERRUN_NANOS_METRIC, budget.deadlineOverrunNanos());
+				selectedPlan.setStringMetricPlanned(DEADLINE_OVERRUN_STOP_METRIC, budget.deadlineOverrunStop());
+			}
+			double selectedCost = budget.mandatoryFallbackWorkUnits() != 0L || costModel != null && costSession == null
+					? Double.NaN
+					: memo.winnerTotalCost(rootWinnerId);
+			if (Double.isNaN(selectedCost)) {
+				budget.markUnavailableCostComparison();
+			}
+			PortfolioBuild portfolio = providerEvidenceDetached
+					? buildOptimizationDecision(query, memo, budget, costSession, search.selectedRowsByGroup(),
+							rootWinnerId, recipe, selectedPlan, selectedCost)
+					: new PortfolioBuild(PackedOptimizationDecision.champion(recipe, selectedPlan,
+							selectedCost, budget.completionStatus(), 0L), 0L);
+			if (providerEvidenceDetached) {
+				outputRows = certifiedRootRows(costModel, selectedPlan, outputRows, recipe.rootEvidenceSummary());
+			}
 			selectedPlan.setDoubleMetricPlanned("optimizer.cascadesCorrelatedLatticeBuilds",
 					search.correlatedLatticeBuilds());
 			selectedPlan.setDoubleMetricPlanned("optimizer.cascadesCorrelatedLatticeReuses",
@@ -740,33 +1313,193 @@ public final class PackedCascadesPlanner {
 			long end = System.nanoTime();
 			long deterministicWorkUnits = saturatedAdd(search.workUnits(),
 					saturatedAdd(contextualWorkUnits, portfolio.workUnits()));
+			long providerWorkUnits = budget.providerWorkUnits();
 			PlanningMetrics metrics = new PlanningMetrics(encodeNanos, extractionStart - searchStart,
 					materializationStart - extractionStart, end - materializationStart, cacheNanos,
-					deterministicWorkUnits,
+					deterministicWorkUnits, providerWorkUnits,
 					memo.groupCount(), memo.logicalExpressionCount(), memo.physicalExpressionCount(),
 					memo.winnerCount(),
 					false, queryTemplateCacheHit);
-			PackedOptimizationDecision decision = portfolio.decision()
-					.withDeterministicWorkUnits(deterministicWorkUnits);
 			/*
 			 * A non-latching budget can record both a refused deterministic block and a later deadline; the legacy
 			 * flags must agree with the single completion status, which ranks the deterministic limit first.
 			 */
 			PackedSearchCompletionStatus completionStatus = budget.completionStatus();
+			PackedOptimizationDecision decision = portfolio.decision()
+					.withCompletionStatus(completionStatus)
+					.withDeterministicWorkUnits(deterministicWorkUnits)
+					.withProviderWorkUnits(providerWorkUnits);
+			if (budget.hasUnavailableCostComparison()) {
+				decision = decision.withoutCompleteCostComparison();
+			}
 			PackedPlanningResult result = new PackedPlanningResult(selectedPlan, outputRows,
-					memo.winnerTotalCost(rootWinnerId), metrics,
+					selectedCost, metrics,
 					completionStatus == PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT,
 					completionStatus == PackedSearchCompletionStatus.INCOMPLETE_DEADLINE,
 					recipe.ruleProofMask(), completionStatus, budget.retainedBytes(),
 					PackedPlanDecisionSummary.from(decision, 0L));
-			PackedPlanQualityAuditResult planQualityAudit = dominatedSamplesPerStratum < 0
-					? null
-					: buildPlanQualityAudit(query, memo, budget, costSession, search.selectedRowsByGroup(),
-							rootWinnerId,
-							recipe, result, dominatedSamplesPerStratum);
-			return new Computation(result, recipe, decision, planQualityAudit);
+			PackedPlanQualityAuditResult planQualityAudit = null;
+			if (dominatedSamplesPerStratum >= 0) {
+				if (budget.mandatoryFallbackWorkUnits() != 0L || !providerEvidenceDetached
+						|| !result.totalPrice().isPresent()) {
+					planQualityAudit = fallbackPlanQualityAudit(recipe, result);
+				} else {
+					try {
+						planQualityAudit = buildPlanQualityAudit(query, memo, budget, costSession,
+								search.selectedRowsByGroup(), rootWinnerId, recipe, result, dominatedSamplesPerStratum);
+					} catch (RuntimeException providerFailure) {
+						if (!acceptTypedProviderStop(providerFailure, budget)) {
+							throw providerFailure;
+						}
+						planQualityAudit = fallbackPlanQualityAudit(recipe, result);
+					}
+				}
+			}
+			PackedSearchCompletionStatus finalStatus = budget.completionStatus();
+			if (finalStatus != completionStatus
+					|| budget.hasUnavailableCostComparison() && decision.costComparisonAvailable()) {
+				decision = decision.withCompletionStatus(finalStatus);
+				if (budget.hasUnavailableCostComparison()) {
+					decision = decision.withoutCompleteCostComparison();
+				}
+				result = new PackedPlanningResult(selectedPlan, outputRows, selectedCost, metrics,
+						finalStatus == PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT,
+						finalStatus == PackedSearchCompletionStatus.INCOMPLETE_DEADLINE,
+						recipe.ruleProofMask(), finalStatus, budget.retainedBytes(),
+						PackedPlanDecisionSummary.from(decision, 0L));
+				if (planQualityAudit != null) {
+					planQualityAudit = new PackedPlanQualityAuditResult(result, planQualityAudit.alternatives(),
+							planQualityAudit.samplingAlgorithm(), planQualityAudit.rootCandidateCount(),
+							planQualityAudit.paretoSurvivorCount(), planQualityAudit.dominatedCandidateCount(),
+							planQualityAudit.sampledDominatedCount(), planQualityAudit.unrankedCandidateCount(),
+							planQualityAudit.unavailableCandidateCount(),
+							planQualityAudit.omittedUnrankedCandidateCount(),
+							planQualityAudit.unrankedAdmission());
+				}
+			}
+			// Read last: portfolio and audit work above can still call the provider. An unreproducible planning (a read
+			// cut by a wall-clock limit) keeps everything above for its own request but is neither published nor
+			// handed to waiters; a session-less search is reproducible.
+			boolean reproducible = costSession == null || costSession.reproducible();
+			return new Computation(result, query, recipe, decision, planQualityAudit,
+					providerEvidenceDetached && reproducible);
 		} finally {
 			memo.close();
+		}
+	}
+
+	/** Distinguishes a provider throwing the rejection type from a rejection produced by replay itself. */
+	private static final class ReplayProviderBoundary implements PackedCostSession {
+		private final PackedCostSession delegate;
+
+		ReplayProviderBoundary(PackedCostSession delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			try {
+				delegate.estimateLeaf(relationId, context, output);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			try {
+				delegate.appendFactor(relationId, context, output);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			try {
+				delegate.refineOperator(relationId, context, output);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+			try {
+				delegate.refineIntermediateJoin(context, output);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public boolean supportsPhysicalJoinRefinement() {
+			try {
+				return delegate.supportsPhysicalJoinRefinement();
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public double objectiveScore(PackedCostEstimate estimate) {
+			try {
+				return delegate.objectiveScore(estimate);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public int exactContinuationIdentity(PackedCostEstimate estimate) {
+			try {
+				return delegate.exactContinuationIdentity(estimate);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public int realizeEvidenceState(int stateId) {
+			try {
+				return delegate.realizeEvidenceState(stateId);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public void realizeEvidenceState(PackedCostEstimate estimate) {
+			try {
+				delegate.realizeEvidenceState(estimate);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public FrontierEvidenceBundle detachEvidence(int[] stateIds) {
+			try {
+				return delegate.detachEvidence(stateIds);
+			} catch (PackedCheckpointRejectedException failure) {
+				throw new ReplayProviderFailure(failure);
+			}
+		}
+
+		@Override
+		public boolean reproducible() {
+			return delegate.reproducible();
+		}
+	}
+
+	/** Unwrapped before closing the owning session so suppression attaches to the exact provider exception. */
+	private static final class ReplayProviderFailure extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+		private final PackedCheckpointRejectedException failure;
+
+		ReplayProviderFailure(PackedCheckpointRejectedException failure) {
+			super(null, null, true, false);
+			this.failure = failure;
 		}
 	}
 
@@ -788,7 +1521,8 @@ public final class PackedCascadesPlanner {
 			PackedPlanRecipe selectedRecipe, TupleExpr selectedPlan, double selectedCost) {
 		PackedOptimizationDecision champion = PackedOptimizationDecision.champion(selectedRecipe, selectedPlan,
 				selectedCost, budget.completionStatus(), 0L);
-		if (costSession == null || budget.resourceLimitReached()) {
+		if (costSession == null || budget.resourceLimitReached() || !Double.isFinite(selectedCost)
+				|| budget.hasUnavailableCostComparison()) {
 			return new PortfolioBuild(champion, 0L);
 		}
 		try {
@@ -798,6 +1532,9 @@ public final class PackedCascadesPlanner {
 			 * still prefers distinct strata and then the cheapest remaining executable candidates.
 			 */
 			PackedMemo.PackedPlanQualityDraft draft = memo.planQualityDraft(rootWinnerId, 1);
+			if (budget.hasUnavailableCostComparison()) {
+				return new PortfolioBuild(champion, 0L);
+			}
 			int[] traceIndexes = draft.traceIndexes();
 			if (traceIndexes.length <= 1) {
 				return new PortfolioBuild(champion, 0L);
@@ -828,6 +1565,10 @@ public final class PackedCascadesPlanner {
 					continue;
 				}
 				double point = memo.winnerTotalCost(alternativeWinnerId);
+				if (!Double.isFinite(point) || point < 0.0d) {
+					budget.markUnavailableCostComparison();
+					continue;
+				}
 				double lower = memo.planQualityCandidateLowerBound(traceIndex);
 				if (!Double.isFinite(lower) || lower < 0.0d || lower > point) {
 					lower = point;
@@ -840,8 +1581,19 @@ public final class PackedCascadesPlanner {
 			return new PortfolioBuild(new PackedOptimizationDecision(null, retained, budget.completionStatus(),
 					workUnits), workUnits);
 		} catch (RuntimeException portfolioFailure) {
+			if (budget.isStrategyFailure(portfolioFailure) || portfolioFailure instanceof QueryInterruptedException
+					|| portfolioFailure instanceof CancellationException || Thread.currentThread().isInterrupted()) {
+				throw portfolioFailure;
+			}
+			if ((portfolioFailure instanceof PackedProviderWork.Exhausted
+					|| portfolioFailure instanceof PackedCostSessionFailure providerFailure
+							&& providerFailure.isResourceLimit())
+					&& !acceptTypedProviderStop(portfolioFailure, budget)) {
+				throw portfolioFailure;
+			}
 			logger.debug("Packed challenger portfolio capture failed closed to the selected champion",
 					portfolioFailure);
+			budget.markUnavailableCostComparison();
 			return new PortfolioBuild(champion, 0L);
 		}
 	}
@@ -932,8 +1684,17 @@ public final class PackedCascadesPlanner {
 		PackedMemo.PackedPlanQualityDraft draft = memo.planQualityDraft(rootWinnerId, dominatedSamplesPerStratum);
 		List<PackedPlanQualityAlternative> alternatives = new ArrayList<>(draft.traceIndexes().length);
 		List<PackedPlanRecipe.PhysicalIdentity> physicalIdentities = new ArrayList<>(draft.traceIndexes().length);
+		int paretoCount = draft.paretoSurvivorCount();
+		int dominatedCount = draft.dominatedCandidateCount();
+		int sampledCount = draft.sampledDominatedCount();
+		int unrankedCount = draft.unrankedCandidateCount();
+		int unavailableCount = 0;
 		for (int traceIndex : draft.traceIndexes()) {
 			boolean selectedByPolicy = draft.selected(traceIndex);
+			boolean unranked = draft.unranked(traceIndex);
+			if (unranked) {
+				PackedSearchBudget.checkCancellation();
+			}
 			PackedPlanRecipe alternativeRecipe;
 			TupleExpr alternativePlan;
 			double estimatedCost;
@@ -950,20 +1711,36 @@ public final class PackedCascadesPlanner {
 						memo,
 						budget, costSession, Arrays.copyOf(selectedRowsByGroup, selectedRowsByGroup.length));
 				alternativeWinnerId = contextualizer.contextualize(alternativeWinnerId);
+				estimatedCost = memo.winnerTotalCost(alternativeWinnerId);
+				comparisonCost = memo.winnerComparisonCost(alternativeWinnerId);
+				if (!Double.isFinite(estimatedCost) || estimatedCost < 0.0d
+						|| !Double.isFinite(comparisonCost) || comparisonCost < 0.0d) {
+					budget.markUnavailableCostComparison();
+					if (!unranked) {
+						unrankedCount++;
+						if (draft.paretoSurvivor(traceIndex)) {
+							paretoCount--;
+						} else if (draft.sampled(traceIndex)) {
+							dominatedCount--;
+							sampledCount--;
+						}
+						unranked = true;
+					}
+					unavailableCount++;
+				}
 				alternativeRecipe = memo.extractPlanRecipe(alternativeWinnerId, contextualizer.dependentPlans(),
 						costSession);
 				alternativePlan = PackedPlanMaterializer.materialize(query, alternativeRecipe);
-				estimatedCost = memo.winnerTotalCost(alternativeWinnerId);
-				comparisonCost = memo.winnerComparisonCost(alternativeWinnerId);
 			}
 			PackedPlanRecipe.PhysicalIdentity physicalIdentity = alternativeRecipe.portfolioIdentity(alternativePlan);
 			long physicalFingerprint = physicalIdentity.fingerprint();
 			PackedPlanQualityAlternative alternative = new PackedPlanQualityAlternative(
 					planQualityStableId(physicalIdentity), alternativePlan,
 					estimatedCost, comparisonCost,
-					physicalFingerprint, selectedByPolicy, draft.paretoSurvivor(traceIndex), draft.sampled(traceIndex),
+					physicalFingerprint, selectedByPolicy, !unranked && draft.paretoSurvivor(traceIndex),
+					!unranked && draft.sampled(traceIndex),
 					draft.stratumFingerprints()[traceIndex], draft.stratumOrdinals()[traceIndex],
-					draft.stratumPopulations()[traceIndex], alternativeRecipe.describeCostingDecisionsJson());
+					draft.stratumPopulations()[traceIndex], alternativeRecipe.describeCostingDecisionsJson(), unranked);
 			int equivalentIndex = equivalentPlanIndex(physicalIdentities, physicalIdentity);
 			if (equivalentIndex < 0) {
 				physicalIdentities.add(physicalIdentity);
@@ -976,8 +1753,18 @@ public final class PackedCascadesPlanner {
 		}
 		return new PackedPlanQualityAuditResult(selectedResult, alternatives,
 				"root-v2:tier/operator/form;cost-ordered;even-quantiles;exact-executable-dedup",
-				draft.rootCandidateCount(),
-				draft.paretoSurvivorCount(), draft.dominatedCandidateCount(), draft.sampledDominatedCount());
+				draft.rootCandidateCount(), paretoCount, dominatedCount, sampledCount, unrankedCount, unavailableCount,
+				draft.omittedUnrankedCandidateCount(), draft.unrankedAdmission());
+	}
+
+	private static PackedPlanQualityAuditResult fallbackPlanQualityAudit(PackedPlanRecipe recipe,
+			PackedPlanningResult result) {
+		PackedPlanRecipe.PhysicalIdentity identity = recipe.portfolioIdentity(result.selectedPlan());
+		PackedPlanQualityAlternative alternative = new PackedPlanQualityAlternative(planQualityStableId(identity),
+				result.selectedPlan(), result.totalCost(), result.totalCost(), identity.fingerprint(), true, false,
+				false,
+				identity.fingerprint(), 0, 1, recipe.describeCostingDecisionsJson());
+		return new PackedPlanQualityAuditResult(result, List.of(alternative), "selected-incumbent-only", 1, 0, 0, 0);
 	}
 
 	private static int equivalentPlanIndex(List<PackedPlanRecipe.PhysicalIdentity> retained,
@@ -992,12 +1779,12 @@ public final class PackedCascadesPlanner {
 
 	private static int planQualityRetentionPriority(PackedPlanQualityAlternative alternative) {
 		if (alternative.selectedByPolicy()) {
-			return 3;
+			return 4;
 		}
 		if (alternative.paretoSurvivor()) {
-			return 2;
+			return 3;
 		}
-		return 1;
+		return alternative.sampledDominated() ? 2 : 1;
 	}
 
 	private static String planQualityStableId(PackedPlanRecipe.PhysicalIdentity physicalIdentity) {
@@ -1008,6 +1795,21 @@ public final class PackedCascadesPlanner {
 		} catch (NoSuchAlgorithmException e) {
 			throw new IllegalStateException("SHA-256 is required for plan-quality identity", e);
 		}
+	}
+
+	/**
+	 * A flight may finish with either an exact-source or family entry; authenticate the actual recipe owner for each.
+	 */
+	private static PackedPlanningResult claimedCachedResult(PackedPlanCache.PlanEntry entry, TupleExpr source,
+			PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity,
+			PackedPlanCache.Context context, long cacheNanos) {
+		if (entry.matchesSource(source, sourceIdentity, context)) {
+			return cachedResult(entry, source, cacheNanos);
+		}
+		if (entry.matchesFamily(familyIdentity)) {
+			return cachedResult(entry, familyIdentity.concreteQuery(), cacheNanos, false);
+		}
+		return null;
 	}
 
 	private static PackedPlanningResult cachedResult(PackedPlanCache.PlanEntry entry, TupleExpr source,
@@ -1049,8 +1851,12 @@ public final class PackedCascadesPlanner {
 	private record PortfolioBuild(PackedOptimizationDecision decision, long workUnits) {
 	}
 
-	private record Computation(PackedPlanningResult result, PackedPlanRecipe recipe,
+	private record Computation(PackedPlanningResult result, PackedQuery recipeOwner, PackedPlanRecipe recipe,
 			PackedOptimizationDecision optimizationDecision,
-			PackedPlanQualityAuditResult planQualityAudit) {
+			PackedPlanQualityAuditResult planQualityAudit, boolean cacheable) {
+		private Computation(PackedPlanningResult result, PackedQuery recipeOwner, PackedPlanRecipe recipe,
+				PackedOptimizationDecision optimizationDecision, PackedPlanQualityAuditResult planQualityAudit) {
+			this(result, recipeOwner, recipe, optimizationDecision, planQualityAudit, true);
+		}
 	}
 }

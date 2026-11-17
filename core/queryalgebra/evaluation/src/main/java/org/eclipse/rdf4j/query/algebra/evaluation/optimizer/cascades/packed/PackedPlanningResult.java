@@ -12,11 +12,15 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Objects;
+import java.util.OptionalDouble;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMetrics;
 
-/** Detached boundary result from one query-local packed planning call. */
+/**
+ * Detached boundary result from one query-local packed planning call. {@code totalCost} is NaN when the selected plan
+ * has no supported price; {@link #totalPrice()} exposes that distinction without using a numeric comparison proxy.
+ */
 public record PackedPlanningResult(TupleExpr selectedPlan, double outputRows, double totalCost,
 		PlanningMetrics metrics, boolean workLimitReached, boolean deadlineReached, long ruleProofMask,
 		PackedSearchCompletionStatus completionStatus, long retainedBytes, PackedPlanDecisionSummary decisionSummary) {
@@ -25,7 +29,10 @@ public record PackedPlanningResult(TupleExpr selectedPlan, double outputRows, do
 		if (selectedPlan == null) {
 			throw new NullPointerException("selected packed plan must not be null");
 		}
-		if (!Double.isFinite(outputRows) || outputRows < 0.0d || !Double.isFinite(totalCost) || totalCost < 0.0d) {
+		boolean unavailablePrice = Double.isNaN(totalCost) && decisionSummary != null
+				&& !decisionSummary.selectedCostInterval().available();
+		if (!Double.isFinite(outputRows) || outputRows < 0.0d
+				|| !unavailablePrice && (!Double.isFinite(totalCost) || totalCost < 0.0d)) {
 			throw new IllegalArgumentException("packed plan costs must be finite and non-negative: outputRows="
 					+ outputRows + ", totalCost=" + totalCost);
 		}
@@ -57,6 +64,11 @@ public record PackedPlanningResult(TupleExpr selectedPlan, double outputRows, do
 
 	public boolean exactComplete() {
 		return completionStatus == PackedSearchCompletionStatus.EXACT_COMPLETE;
+	}
+
+	/** A missing total price is distinct from the independent search completion status. */
+	public OptionalDouble totalPrice() {
+		return Double.isNaN(totalCost) ? OptionalDouble.empty() : OptionalDouble.of(totalCost);
 	}
 
 	PackedPlanningResult withDecisionSummary(PackedPlanDecisionSummary summary) {

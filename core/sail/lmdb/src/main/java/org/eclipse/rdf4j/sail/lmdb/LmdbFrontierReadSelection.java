@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.base.SailDatasetReadComposition;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 
 /** Scoped borrowed reader selection; neither a Dataset flag nor an epoch can construct an owned selection. */
 final class LmdbFrontierReadSelection {
@@ -36,6 +38,9 @@ final class LmdbFrontierReadSelection {
 	private final LmdbFrontierReadPopulation mappedPopulation;
 	private final NativeLmdbQuerySource adjacencySource;
 	private final LmdbPinnedReadTxnSource adjacencyOwner;
+	/** Null for a fresh admission; otherwise bound to the exact immutable view owned by one session. */
+	private final FrontierStatisticsView admittedView;
+	private final LmdbFrontierReadSelection activeSelection;
 	// This selection belongs to a thread-local planning scope; recheck its authority even for cached facts.
 	private final Map<Long, AdjacencyKeyDomains> adjacencyKeyDomains = new HashMap<>();
 
@@ -46,6 +51,15 @@ final class LmdbFrontierReadSelection {
 			ValueStore.ReadSnapshot dictionary, LmdbFeedbackReadAuthority authority, int planeMask,
 			LmdbFrontierReadPopulation mappedPopulation, NativeLmdbQuerySource adjacencySource,
 			LmdbPinnedReadTxnSource adjacencyOwner) {
+		this(runtime, source, transaction, dictionary, authority, planeMask, mappedPopulation, adjacencySource,
+				adjacencyOwner, null, null);
+	}
+
+	private LmdbFrontierReadSelection(LmdbEstimatorRuntime runtime, TripleSource source, TxnManager.Txn transaction,
+			ValueStore.ReadSnapshot dictionary, LmdbFeedbackReadAuthority authority, int planeMask,
+			LmdbFrontierReadPopulation mappedPopulation, NativeLmdbQuerySource adjacencySource,
+			LmdbPinnedReadTxnSource adjacencyOwner, FrontierStatisticsView admittedView,
+			LmdbFrontierReadSelection activeSelection) {
 		this.runtime = runtime;
 		this.source = source;
 		this.transaction = transaction;
@@ -55,6 +69,8 @@ final class LmdbFrontierReadSelection {
 		this.mappedPopulation = mappedPopulation;
 		this.adjacencySource = adjacencySource;
 		this.adjacencyOwner = adjacencyOwner;
+		this.admittedView = admittedView;
+		this.activeSelection = activeSelection == null ? this : activeSelection;
 	}
 
 	/** Called only inside the entry's existing paired planning pin. No source lease or statements are acquired. */
@@ -121,9 +137,45 @@ final class LmdbFrontierReadSelection {
 	}
 
 	boolean isCurrent() {
-		return authority != null && runtime.frontierReadSelectionIsActive(this)
+		return authority != null && runtime.frontierReadSelectionIsActive(activeSelection)
 				&& runtime.physicalTripleStore().borrowedPlanningTxn() == transaction
-				&& runtime.valueStore().borrowedPlanningSnapshot() == dictionary && authority.isCurrent();
+				&& runtime.valueStore().borrowedPlanningSnapshot() == dictionary
+				&& (admittedView == null ? authority.isCurrent()
+						: admittedView.ready() && authority.isCurrentForAdmittedFrontierView());
+	}
+
+	record AdmittedView(FrontierStatisticsView view, LmdbFrontierReadSelection selection) {
+	}
+
+	/** Open the generation for this exact owner, then strictly recheck admission after the open. */
+	AdmittedView openAdmittedView(LmdbStatisticsService statistics) {
+		if (admittedView != null || runtime == null || statistics == null
+				|| statistics != runtime.statisticsService() || !isCurrent()) {
+			return null;
+		}
+		FrontierStatisticsView view = statistics.openView(transaction.nativeTransactionId());
+		try {
+			LmdbFrontierReadSelection admitted = view.ready() && isCurrent()
+					? new LmdbFrontierReadSelection(runtime, source, transaction, dictionary, authority, planeMask,
+							mappedPopulation, adjacencySource, adjacencyOwner, view, this)
+					: UNAVAILABLE;
+			return new AdmittedView(view, admitted);
+		} catch (RuntimeException | Error failure) {
+			try {
+				view.close();
+			} catch (RuntimeException | Error cleanup) {
+				failure.addSuppressed(cleanup);
+			}
+			throw failure;
+		}
+	}
+
+	boolean ownsAdmittedView(FrontierStatisticsView view) {
+		return admittedView != null && admittedView == view && isCurrent();
+	}
+
+	boolean isCurrentForSharedEvidence() {
+		return activeSelection.isCurrent();
 	}
 
 	LmdbFrontierReadPopulation population() {

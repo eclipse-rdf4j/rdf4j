@@ -209,6 +209,12 @@ class LmdbNativeServiceQueryCompletenessTest {
 		}
 		long before = binds(compiled, aggregate);
 		String route = routeFor(routeFamily, aggregate, compiled);
+		if (name.equals("rows-limit-zero")) {
+			// LIMIT 0 never binds a kernel (see the exemption below); the only native dispatch left is the
+			// single-scan leaf before the SERVICE, which a kernel tier cannot fuse. The preference list leaves that
+			// leaf to the batch route instead of failing the forced dispatch.
+			route = route + ",batch";
+		}
 		List<BindingSet> nativeRows = evaluate(text, true, route);
 		assertEquals(bag(oracle), bag(nativeRows), name);
 		if ("scan".equals(routeFamily)) {

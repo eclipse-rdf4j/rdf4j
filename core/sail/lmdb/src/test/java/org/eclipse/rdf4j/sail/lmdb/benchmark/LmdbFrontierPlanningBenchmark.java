@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.PlanningExpectation;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.PlanningReceipt;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -37,6 +39,7 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -73,14 +76,17 @@ public class LmdbFrontierPlanningBenchmark {
 	public int estimateMultiBridge(PlanningState state) {
 		try (LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(
 				state.store, state.connection, MULTI_BRIDGE_QUERY, 30, false)) {
+			state.observePlanning(plan.planningReceipt(), false);
 			return plan.bindingCount();
 		}
 	}
 
+	/** Requires an observed fresh search even when the completion expectation is {@code OBSERVE}. */
 	@Benchmark
 	public int estimateUncachedMultiBridge(PlanningState state) {
 		try (LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(
 				state.store, state.connection, state.nextUncachedQuery(), 30, false)) {
+			state.observePlanning(plan.planningReceipt(), true);
 			return plan.bindingCount();
 		}
 	}
@@ -88,11 +94,28 @@ public class LmdbFrontierPlanningBenchmark {
 	@State(Scope.Benchmark)
 	public static class PlanningState {
 
+		@Param({ "COMPLETE" })
+		public PlanningExpectation planningExpectation = PlanningExpectation.COMPLETE;
+
 		private File storeDirectory;
 		private LmdbStore store;
 		private SailRepository repository;
 		private SailRepositoryConnection connection;
 		private long uncachedQueryOrdinal;
+		private final PlanningReceiptCounts planningReceipts = new PlanningReceiptCounts();
+
+		private void observePlanning(PlanningReceipt receipt, boolean freshPathRequired) {
+			planningReceipts.record(receipt);
+			planningExpectation.validate(receipt);
+			if (freshPathRequired) {
+				receipt.requireFreshPath();
+			}
+		}
+
+		@TearDown(Level.Iteration)
+		public void reportPlanningReceipts() {
+			planningReceipts.reportAndReset(getClass().getSimpleName());
+		}
 
 		@Setup(Level.Trial)
 		public void setup() throws IOException {

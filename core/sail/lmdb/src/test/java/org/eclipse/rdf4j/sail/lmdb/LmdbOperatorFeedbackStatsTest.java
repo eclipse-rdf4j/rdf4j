@@ -337,6 +337,8 @@ class LmdbOperatorFeedbackStatsTest {
 		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-typed-contract");
 		observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-typed-contract");
 		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		// The physical result-row prediction the legacy pass pairs with the observed result rows.
+		observed.setDoubleMetricPlanned("plannedCostResultRows", 100.0d);
 		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
 				100.0d, 200.0d, 100.0d, 100.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
 		observed.setRuntimeFeedbackContract(new RuntimeFeedbackContract(
@@ -351,12 +353,19 @@ class LmdbOperatorFeedbackStatsTest {
 
 		stats.recordOperatorOutcome(observed);
 
-		assertNotNull(stats.logicalPosterior(
-				typedLogical, typedApplicability, FrontierCostDimension.OUTPUT_ROWS),
+		// The legacy pass still writes a typed node's physical residuals; it routes them by the typed contract.
+		assertNotNull(stats.physicalPosterior(
+				typedLogical, typedPhysical, typedApplicability, FrontierCostDimension.RESULT_ROWS),
 				"The typed runtime contract is the authoritative production identity");
+		assertNull(stats.physicalPosterior(
+				staleLogical, stalePhysical, staleApplicability, FrontierCostDimension.RESULT_ROWS),
+				"Explanation telemetry must not redirect a typed runtime observation");
 		assertNull(stats.logicalPosterior(
 				staleLogical, staleApplicability, FrontierCostDimension.OUTPUT_ROWS),
 				"Explanation telemetry must not redirect a typed runtime observation");
+		assertNull(stats.logicalPosterior(
+				typedLogical, typedApplicability, FrontierCostDimension.OUTPUT_ROWS),
+				"The legacy pass leaves a typed node's logical rows to the typed runtime path");
 	}
 
 	@Test
@@ -1077,7 +1086,8 @@ class LmdbOperatorFeedbackStatsTest {
 		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
 		observed.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "difference@1fad0aa0");
 
-		stats.recordOperatorOutcome(observed);
+		// The observed join is the query root, so its close is the completed-root observation.
+		stats.observe(observed, true);
 
 		assertEquals(65_346.0d, stats.exactCardinalityFact("difference@1fad0aa0"), 0.0d,
 				"A single-invocation completed observation mints an exact cardinality fact for its logical group");
@@ -1115,7 +1125,8 @@ class LmdbOperatorFeedbackStatsTest {
 			observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-failed-reset");
 			observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
 			observed.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", groupKey);
-			stats.recordOperatorOutcome(observed);
+			// The observed join is the query root, so its close is the completed-root observation.
+			stats.observe(observed, true);
 			assertEquals(65_346.0d, stats.exactCardinalityFact(groupKey), 0.0d,
 					"the owning provider first exposes its current-stamp exact fact");
 
@@ -1271,6 +1282,127 @@ class LmdbOperatorFeedbackStatsTest {
 		assertTrue(Double.isNaN(stats.exactCardinalityFact("difference@2df90bb0")),
 				"A multi-invocation cumulative total observes per-binding conditional relations, never the"
 						+ " standalone relation a fact would describe");
+	}
+
+	/*
+	 * LIBRARY q11 on the legacy completed-tree path (trackResultSize, trackTime or runtime telemetry): the OPTIONAL
+	 * side carries the standalone typed key but is opened once with the left row's ?member bound. Only the typed
+	 * runtime path can see that the open was bound, so the typed contract owns the node's logical learning.
+	 */
+	@Test
+	void completedTreePassLeavesTheLogicalLearningOfTypedOperatorsToTheTypedPath(@TempDir Path tempDir)
+			throws Exception {
+		String previous = System.getProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+		try {
+			LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir),
+					() -> TEST_SNAPSHOT_IDENTITY, () -> true, () -> 41L);
+			FrontierLearningKey frontierKey = FrontierLearningKey.of(
+					"statement-pattern", "OPTIONAL_SIDE@typed", 17L, 0L, "lmdb-frontier", "posc", "prefixscan");
+			LogicalLearningKey logical = LogicalLearningKey.of("statement-pattern", "typed-optional-side",
+					"children", "predicates", "member,memberName", "none", "bag|duplicate-sensitive|sparql-unbound",
+					"default");
+			LearningApplicability applicability = new LearningApplicability(
+					31L, 0L, "input:unbound|range:unknown|guarantee:measure_unbiased", 19L, 23L, 1L);
+			PhysicalResidualKey physical = PhysicalResidualKey.of("scan", "statement-pattern", "posc",
+					"single-open", "none", "none", "none", "unbound");
+			LeftJoin root = defaultGraphOptional(sp("loan", P1, "member"), sp("member", P2, "memberName"));
+			TupleExpr optionalSide = root.getRightArg();
+			// One left row: the side is opened once, with ?member bound, and returns that member's single name.
+			completeCostFeedback(optionalSide, 1L, 5_000.0d, 5_000.0d, 1.0d);
+			optionalSide.setStringMetricPlanned("optimizer.frontierLearningKey", frontierKey.externalForm());
+			optionalSide.setStringMetricPlanned("optimizer.costEventDigest", "event-typed-optional-side");
+			optionalSide.setStringMetricPlanned("optimizer.frontierStateDigest", "state-typed-optional-side");
+			optionalSide.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+			RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
+					5_000.0d, 5_000.0d, 5_000.0d, 5_000.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+			optionalSide.setRuntimeFeedbackContract(new RuntimeFeedbackContract(
+					new LmdbRuntimeFeedbackDescriptor(frontierKey, frontierKey, logical, applicability, physical,
+							new LmdbRuntimeFeedbackDescriptor.LogicalGroupOrigin(41L, 43L, 2),
+							LearningFeatureEnvelope.conventionalRows(5_000.0d)),
+					prediction, prediction, 5_000.0d, 5_000.0d, 5_000.0d, Double.POSITIVE_INFINITY,
+					RuntimeFeedbackContract.SemanticKind.ORDINARY, RuntimeFeedbackContract.Algorithm.SCAN,
+					RuntimeFeedbackContract.Access.PREFIX_SCAN, physical.hashCode(), 19L, 23L, 1L,
+					RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.EXACT_FACT_ELIGIBLE));
+			completeCostFeedback(root, 1L, 1.0d, 5_001.0d, 2.0d);
+
+			stats.observe(root, true);
+
+			assertAll(
+					() -> assertTrue(Double.isNaN(stats.exactCardinalityFact(logical, applicability)),
+							"the legacy pass must not write the typed key's exact fact; it was "
+									+ stats.exactCardinalityFact(logical, applicability)),
+					() -> assertNull(stats.logicalPosterior(logical, applicability, FrontierCostDimension.OUTPUT_ROWS),
+							"the legacy pass must not teach the typed key's row posterior"));
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+		}
+	}
+
+	/*
+	 * A cut execution never completes its root, but a leaf that drained its own single open before the cut still
+	 * reports a completed close. Only the root's completion vouches that the run was not cut.
+	 */
+	@Test
+	void exactFactRequiresRootCompletionNotTheLeafsOwnCompletedClose(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+		try {
+			LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir),
+					() -> TEST_SNAPSHOT_IDENTITY, () -> true, () -> 41L);
+			FrontierLearningKey key = FrontierLearningKey.of(
+					"statement-pattern", "SCAN@cut-run", 37L, 0L, "lmdb-frontier", "psoc", "prefixscan");
+			Join root = join("s", "x", "o");
+			TupleExpr leftScan = root.getLeftArg();
+			completeCostFeedback(leftScan, 65_346L, 65_346.0d, 65_346.0d, 65_346.0d);
+			leftScan.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+			leftScan.setStringMetricPlanned("optimizer.costEventDigest", "event-cut-run");
+			leftScan.setStringMetricPlanned("optimizer.frontierStateDigest", "state-cut-run");
+			leftScan.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+			leftScan.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "statement-pattern@cut-run");
+
+			// The leaf's own close publishes; the root was cut and never runs the completed-tree pass.
+			stats.recordOperatorOutcome(leftScan);
+
+			assertTrue(Double.isNaN(stats.exactCardinalityFact("statement-pattern@cut-run")),
+					"a leaf close without root completion must not mint an exact fact; it was "
+							+ stats.exactCardinalityFact("statement-pattern@cut-run"));
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+		}
+	}
+
+	/*
+	 * A node in a re-invocable position is opened with the outer row's bindings, even when there is only one outer row
+	 * and its cumulative counters therefore show a single open.
+	 */
+	@Test
+	void exactFactRequiresAPositionThatIsNotReinvocable(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+		try {
+			LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir),
+					() -> TEST_SNAPSHOT_IDENTITY, () -> true, () -> 41L);
+			FrontierLearningKey key = FrontierLearningKey.of(
+					"statement-pattern", "SCAN@one-outer-row", 39L, 0L, "lmdb-frontier", "psoc", "prefixscan");
+			Join root = join("s", "x", "o");
+			TupleExpr rightScan = root.getRightArg();
+			completeCostFeedback(rightScan, 1L, 5_000.0d, 5_000.0d, 1.0d);
+			rightScan.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+			rightScan.setStringMetricPlanned("optimizer.costEventDigest", "event-one-outer-row");
+			rightScan.setStringMetricPlanned("optimizer.frontierStateDigest", "state-one-outer-row");
+			rightScan.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+			rightScan.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "statement-pattern@one-outer-row");
+			completeCostFeedback(root, 1L, 1.0d, 5_001.0d, 2.0d);
+
+			stats.observe(root, true);
+
+			assertTrue(Double.isNaN(stats.exactCardinalityFact("statement-pattern@one-outer-row")),
+					"a single open in a re-invocable position is a conditional count; it was "
+							+ stats.exactCardinalityFact("statement-pattern@one-outer-row"));
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+		}
 	}
 
 	@Test
@@ -1542,11 +1674,16 @@ class LmdbOperatorFeedbackStatsTest {
 		typed.setAlgorithm("JoinIterator");
 		var descriptor = declareSourceObservation(typed, 100.0d, 100.0d, 1_000.0d, 1_000.0d, true);
 		stats.recordOperatorOutcome(typed);
+		// What the legacy pass still writes for a typed node, its physical residuals, is skipped under the drift.
 		assertNull(stats.physicalPosterior(descriptor.logicalKey(), descriptor.physicalKey(),
-				descriptor.applicability(), FrontierCostDimension.SOURCE_ROWS_SCANNED));
-		assertNotNull(stats.logicalPosterior(descriptor.logicalKey(), descriptor.applicability(),
-				FrontierCostDimension.OUTPUT_ROWS));
-
+				descriptor.applicability(), FrontierCostDimension.SOURCE_ROWS_SCANNED),
+				"A planned hash join executed as a nested loop must not record the typed physical source rows");
+		assertNull(stats.physicalPosterior(descriptor.logicalKey(), descriptor.physicalKey(),
+				descriptor.applicability(), FrontierCostDimension.RESULT_ROWS),
+				"A planned hash join executed as a nested loop must not record the typed physical result rows");
+		assertNull(stats.logicalPosterior(descriptor.logicalKey(), descriptor.applicability(),
+				FrontierCostDimension.OUTPUT_ROWS),
+				"The legacy pass leaves a typed node's logical rows to the typed runtime path");
 	}
 
 	@Test
@@ -3092,7 +3229,7 @@ class LmdbOperatorFeedbackStatsTest {
 				() -> TEST_SNAPSHOT_IDENTITY, () -> true, liveStatementMutationStamp::get);
 		FrontierLearningKey key = FrontierLearningKey.of(
 				"difference", "DIFFERENCE@3fad0aa1", 29L, 0L, "difference", "none", "none");
-		stats.recordOperatorOutcome(exactFactObservation(key, "difference@3fad0aa1", 65_346L));
+		stats.observe(exactFactObservation(key, "difference@3fad0aa1", 65_346L), true);
 		assertEquals(65_346.0d, stats.exactCardinalityFact("difference@3fad0aa1"), 0.0d);
 
 		liveStatementMutationStamp.set(42L);
@@ -3103,7 +3240,7 @@ class LmdbOperatorFeedbackStatsTest {
 		assertTrue(Double.isNaN(stats.exactCardinalityFact("difference@3fad0aa1")),
 				"Applying the commit must not relabel a fact observed at the older coordinate");
 
-		stats.recordOperatorOutcome(exactFactObservation(key, "difference@3fad0aa1", 65_347L));
+		stats.observe(exactFactObservation(key, "difference@3fad0aa1", 65_347L), true);
 		assertEquals(65_347.0d, stats.exactCardinalityFact("difference@3fad0aa1"), 0.0d,
 				"A fresh single-invocation observation at the applied coordinate mints a fact at the live stamp");
 
@@ -3119,11 +3256,12 @@ class LmdbOperatorFeedbackStatsTest {
 		assertTrue(Double.isNaN(stats.exactCardinalityFact("difference@3fad0aa1")),
 				"Evidence minted for a different store identity is dropped when the stamp regresses");
 		liveStatementMutationStamp.set(41L);
-		stats.recordOperatorOutcome(exactFactObservation(key, "difference@3fad0aa1", 65_348L));
+		stats.observe(exactFactObservation(key, "difference@3fad0aa1", 65_348L), true);
 		assertEquals(65_348.0d, stats.exactCardinalityFact("difference@3fad0aa1"), 0.0d,
 				"Learning resumes at the adopted (regressed) coordinate");
 	}
 
+	/** A completed query root: its observation is the completed-root pass (see LmdbEvaluationStatistics). */
 	private static Join exactFactObservation(FrontierLearningKey key, String logicalGroupKey, long actualRows) {
 		Join observed = join("s", "x", "o");
 		completeCostFeedback(observed, actualRows, 100, 1_100, 650);

@@ -276,6 +276,76 @@ class PackedScalarWorkDomainTest {
 	}
 
 	@ParameterizedTest
+	@CsvSource({ "1,false,join", "2,false,join", "3,false,join", "2,true,join", "3,true,join",
+			"2,true,union", "2,true,optional" })
+	void inheritedUnknownFactorWorkCannotReuseAnIsolatedWinner(int factorCount, boolean afterRetainedPrefix,
+			String parent) {
+		StatementPattern outer = pattern(-1);
+		TupleExpr child = connectedSource(factorCount);
+		TupleExpr nested = switch (parent) {
+		case "join" -> child;
+		case "union" -> new Union(child, pattern(factorCount));
+		case "optional" -> new LeftJoin(child, pattern(factorCount));
+		default -> throw new AssertionError(parent);
+		};
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Union(outer, nested));
+		PackedQueryView view = new PackedQueryView(query);
+		int count = query.relationCount();
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		AtomicInteger contextualCalls = new AtomicInteger();
+		PackedCostSession session = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (view.isStatementPattern(relationId)) {
+					output.setRows(10.0d, 10.0d);
+					output.setLocalPhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+				}
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (afterRetainedPrefix && context.prefixRelationCount() == 1) {
+					output.setContextualRows(context.prefixRows(), context.prefixRows());
+					output.setLocalPhysicalCost(context.prefixRows(), 0.0d, 0.0d, 0.0d, 0.0d,
+							0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+					output.setInvocations(context.prefixRows());
+					return;
+				}
+				contextualCalls.incrementAndGet();
+				output.setContextualRows(context.prefixRows(), Double.NaN);
+				output.setLocalPhysicalCostPreservingUnknown(Double.NaN, Double.NaN, context.prefixRows(), 0.0d,
+						0.0d, 0.0d, 0.0d, Double.NaN, 0.0d, 0.0d, Double.NaN);
+				output.setInvocations(context.prefixRows());
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+		};
+		try (PackedMemo memo = new PackedMemo(query, query.symbolCount(), count, count, 4, count, count * 2, budget);
+				session) {
+			PackedIncumbentSearch search = PackedIncumbentSearch.forSession(query, memo, budget, false, session);
+			search.build();
+			contextualCalls.set(0);
+			PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo,
+					search.selectedRowsByGroup(), budget, session);
+			int winner = enumerator.optimizeWithInheritedPrefix(relationId(view, nested),
+					new int[] { relationId(view, outer) }, 1, 10.0d);
+			assertTrue(contextualCalls.get() > 0, "the actual inherited input reached the provider");
+			// A context-free incumbent is an explicit refusal to supply a contextual winner; callers reject it.
+			assertTrue(winner == 0 || memo.winnerInputContextId(winner) == 0
+					|| Double.isNaN(memo.winnerTotalCost(winner)),
+					() -> "unknown work acquired a contextual price " + memo.winnerTotalCost(winner)
+							+ ", input context " + memo.winnerInputContextId(winner)
+							+ ", operator " + memo.physicalOperatorTag(memo.winnerPhysicalExpressionId(winner))
+							+ ", implementation "
+							+ memo.physicalImplementationForm(memo.winnerPhysicalExpressionId(winner)));
+			assertTrue(budget.hasUnavailableCostComparison());
+		}
+	}
+
+	@ParameterizedTest
 	@MethodSource("contextualOperators")
 	void completeOperatorsPriceActualChildrenBeforeCertifyingTheirInvocationDomain(String operator, Price price) {
 		StatementPattern outer = pattern(-1);

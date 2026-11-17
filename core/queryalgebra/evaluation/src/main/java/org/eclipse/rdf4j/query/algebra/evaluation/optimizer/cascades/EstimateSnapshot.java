@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -22,7 +23,8 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
  */
 @Experimental
 public record EstimateSnapshot(String plannerId, String source, String usage, double rows, double workRows,
-		CostVector cost, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics) {
+		CostVector cost, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics,
+		boolean priceAvailable) {
 
 	private static final String DEFAULT_PLANNER_ID = "cascades";
 	private static final String DEFAULT_SOURCE = "cascades";
@@ -31,11 +33,43 @@ public record EstimateSnapshot(String plannerId, String source, String usage, do
 		plannerId = blankToDefault(plannerId, DEFAULT_PLANNER_ID);
 		source = blankToDefault(source, DEFAULT_SOURCE);
 		usage = blankToDefault(usage, TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
-		cost = cost == null ? CostVector.ZERO : cost;
-		rows = finiteOr(rows, cost.rows());
-		workRows = finiteOr(workRows, cost.workRows());
+		if (priceAvailable) {
+			cost = cost == null ? CostVector.ZERO : cost;
+			rows = finiteOr(rows, cost.rows());
+			workRows = finiteOr(workRows, cost.workRows());
+		} else if (cost != null || !Double.isFinite(rows) || rows < 0.0d
+				|| !(Double.isNaN(workRows) || Double.isFinite(workRows) && workRows >= 0.0d)) {
+			throw new IllegalArgumentException("unpriced estimate must retain valid independent row estimates");
+		}
 		stringMetrics = stringMetrics == null || stringMetrics.isEmpty() ? Map.of() : Map.copyOf(stringMetrics);
 		doubleMetrics = doubleMetrics == null || doubleMetrics.isEmpty() ? Map.of() : Map.copyOf(doubleMetrics);
+	}
+
+	/** Preserves the existing finite-cost constructor and its null-cost default. */
+	public EstimateSnapshot(String plannerId, String source, String usage, double rows, double workRows,
+			CostVector cost, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics) {
+		this(plannerId, source, usage, rows, workRows, cost, stringMetrics, doubleMetrics, true);
+	}
+
+	/** An independently known row count does not imply a supported physical price. */
+	public static EstimateSnapshot unpriced(double rows) {
+		return new EstimateSnapshot(DEFAULT_PLANNER_ID, DEFAULT_SOURCE,
+				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING,
+				rows, Double.NaN, null, Map.of(), Map.of(), false);
+	}
+
+	/** Returns the complete price if one was actually estimated. */
+	public Optional<CostVector> price() {
+		return Optional.ofNullable(cost);
+	}
+
+	/** Existing finite-cost access fails explicitly if no price exists. */
+	@Override
+	public CostVector cost() {
+		if (!priceAvailable) {
+			throw new IllegalStateException("estimate has no available price");
+		}
+		return cost;
 	}
 
 	public static EstimateSnapshot fromCost(String plannerId, String source, CostVector cost) {
@@ -49,6 +83,9 @@ public record EstimateSnapshot(String plannerId, String source, String usage, do
 	}
 
 	public EstimateSnapshot withCost(CostVector newCost) {
+		if (!priceAvailable && newCost == null) {
+			return this;
+		}
 		CostVector safeCost = newCost == null ? cost : newCost;
 		return new EstimateSnapshot(plannerId, source, usage, safeCost.rows(), safeCost.workRows(), safeCost,
 				stringMetrics, doubleMetrics);

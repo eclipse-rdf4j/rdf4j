@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPredicateRangeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRuleProofs;
@@ -85,35 +86,49 @@ public final class CascadesPlanner {
 	}
 
 	private static CascadesPlan plan(OptimizationGoal goal, PackedPlanningResult result) {
-		CostVector cost = new CostVector(result.outputRows(), result.totalCost(), 0.0d, 0.0d, 0.0d,
-				1.0d, 1.0d, 1.0d, 1.0d, 0.0d, 1.0d, 0.0d);
+		CostVector cost = result.totalPrice().isPresent()
+				? new CostVector(result.outputRows(), result.totalCost(), 0.0d, 0.0d, 0.0d,
+						1.0d, 1.0d, 1.0d, 1.0d, 0.0d, 1.0d, 0.0d)
+				: null;
 		OptimizationSearchStatus status = searchStatus(result);
-		String reason = result.deadlineReached()
-				? "packed search deadline reached"
-				: result.workLimitReached() ? "packed search work limit reached" : "packed search complete";
+		String reason = switch (result.completionStatus()) {
+		case EXACT_COMPLETE -> "packed search complete";
+		case INCOMPLETE_WORK_LIMIT -> "packed search work limit reached";
+		case INCOMPLETE_DEADLINE -> "packed search deadline reached";
+		case INCOMPLETE_RESOURCE_LIMIT -> "packed search retained-state limit reached";
+		case UNSUPPORTED_SEMANTICS -> "packed search unsupported semantics";
+		};
+		boolean incompleteComparison = result.decisionSummary() != null
+				&& result.decisionSummary()
+						.comparisonCompleteness() != PackedPlanDecisionSummary.ComparisonCompleteness.COMPLETE;
 		PlanProvenance provenance = new PlanProvenance(0, 0,
 				result.selectedPlan().getClass().getSimpleName(), "packed-selected-plan", RuleKind.IMPLEMENTATION,
-				List.of(), null, cost, goal.requiredProperties(), goal.requiredProperties(), List.of(),
+				List.of(), cost == null ? EstimateSnapshot.unpriced(result.outputRows()) : null,
+				cost, goal.requiredProperties(), goal.requiredProperties(), List.of(),
 				PackedRuleProofs.materialize(result.ruleProofMask()),
-				status.approximate(), reason);
+				status.approximate() || incompleteComparison,
+				incompleteComparison && !status.approximate() ? reason + "; cost comparison unavailable" : reason);
 		return new CascadesPlan(result.selectedPlan(), cost, status, provenance, result.metrics(),
 				result.decisionSummary());
 	}
 
 	private static OptimizationSearchStatus searchStatus(PackedPlanningResult result) {
 		PlanningMetrics metrics = result.metrics();
-		SearchCounterSnapshot counters = new SearchCounterSnapshot(0L, 0L, 0L, metrics.workUnits(), 0L);
+		SearchCounterSnapshot counters = new SearchCounterSnapshot(0L, 0L, 0L, metrics.workUnits(), 0L,
+				metrics.providerWorkUnits());
 		SearchRetentionSnapshot retention = new SearchRetentionSnapshot(metrics.winners(), metrics.winners(),
 				metrics.physicalExpressions());
-		if (result.deadlineReached()) {
-			return new OptimizationSearchStatus(OptimizationCompleteness.DEADLINE_EXPIRED,
-					EnumSet.of(OptimizationLimitCause.DEADLINE), counters, retention);
-		}
-		if (result.workLimitReached()) {
-			return new OptimizationSearchStatus(OptimizationCompleteness.BUDGET_EXHAUSTED,
-					EnumSet.of(OptimizationLimitCause.CANDIDATE_EVALUATIONS), counters, retention);
-		}
-		return new OptimizationSearchStatus(OptimizationCompleteness.COMPLETE,
+		return switch (result.completionStatus()) {
+		case EXACT_COMPLETE -> new OptimizationSearchStatus(OptimizationCompleteness.COMPLETE,
 				EnumSet.noneOf(OptimizationLimitCause.class), counters, retention);
+		case INCOMPLETE_WORK_LIMIT -> new OptimizationSearchStatus(OptimizationCompleteness.BUDGET_EXHAUSTED,
+				EnumSet.of(OptimizationLimitCause.CANDIDATE_EVALUATIONS), counters, retention);
+		case INCOMPLETE_DEADLINE -> new OptimizationSearchStatus(OptimizationCompleteness.DEADLINE_EXPIRED,
+				EnumSet.of(OptimizationLimitCause.DEADLINE), counters, retention);
+		case INCOMPLETE_RESOURCE_LIMIT -> new OptimizationSearchStatus(OptimizationCompleteness.RESOURCE_LIMIT_REACHED,
+				EnumSet.of(OptimizationLimitCause.RETAINED_STATE), counters, retention);
+		case UNSUPPORTED_SEMANTICS -> new OptimizationSearchStatus(OptimizationCompleteness.UNSUPPORTED_SEMANTICS,
+				EnumSet.of(OptimizationLimitCause.UNSUPPORTED_REPRESENTATION), counters, retention);
+		};
 	}
 }

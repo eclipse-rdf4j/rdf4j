@@ -63,6 +63,17 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	private volatile long latestStoreSequence = -1L;
 	private volatile long firstUncoveredMutationMillis = -1L;
 	private volatile FrontierMutationTail mutationTail = FrontierMutationTail.EMPTY;
+
+	/**
+	 * Commits after a covered snapshot that each changed nothing a generation describes, recorded as an unbroken run of
+	 * immediate successors through {@code throughEpoch}. Keyed by the snapshot it starts from, so it applies only to a
+	 * generation covering exactly that snapshot.
+	 */
+	private record MetadataOnlyCommits(long coveredEpoch, long coveredSequence, long throughEpoch) {
+	}
+
+	private volatile MetadataOnlyCommits metadataOnlyCommits;
+
 	private record OwnerFreshness(boolean requiresBase, long minimumTrustedGeneration) {
 		boolean trusts(FrontierStatisticsGeneration generation) {
 			return !requiresBase && generation != null
@@ -350,8 +361,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				return lease.estimateLeaf(probe);
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-				return FrontierLeafEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
+				return failedLeafEstimate(failure);
 			}
 		}
 	}
@@ -391,8 +401,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				return lease.estimateLeaf(probe);
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-				return FrontierLeafEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
+				return failedLeafEstimate(failure);
 			}
 		}
 	}
@@ -417,8 +426,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				return lease.estimateProjectedDistinct(probe, component);
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-				return Double.NaN;
+				return failedDistinctEstimate(failure);
 			}
 		}
 	}
@@ -439,8 +447,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				return lease.estimateJoin(probe);
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-				return FrontierJoinEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
+				return failedJoinEstimate(failure);
 			}
 		}
 	}
@@ -483,8 +490,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				return lease.estimateJoin(probe);
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-				return FrontierJoinEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
+				return failedJoinEstimate(failure);
 			}
 		}
 	}
@@ -505,8 +511,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				return lease.estimateSubgraph(program);
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-				return FrontierJoinEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
+				return failedJoinEstimate(failure);
 			}
 		}
 	}
@@ -544,8 +549,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				return lease.estimateSubgraph(program);
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-				return FrontierJoinEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
+				return failedJoinEstimate(failure);
 			}
 		}
 	}
@@ -574,8 +578,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				return overlay.tail.projectedDistinct(probe, component, baseDistinct,
 						baseRows.upperRows(), adjustedRows.pointRows());
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failureMessage(failure);
-				return Double.NaN;
+				return failedDistinctEstimate(failure);
 			}
 		}
 		if (currentFallbackReason() != FrontierFallbackReason.NONE) {
@@ -593,8 +596,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				return lease.estimateProjectedDistinct(probe, component);
 			} catch (IOException | RuntimeException failure) {
-				lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-				return Double.NaN;
+				return failedDistinctEstimate(failure);
 			}
 		}
 	}
@@ -630,6 +632,61 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		}
 		latestStoreEpoch = Math.max(latestStoreEpoch, epoch);
 		return true;
+	}
+
+	/**
+	 * Records one committed LMDB write transaction, identified by its own transaction ID, that changed nothing the
+	 * statistics describe, such as the acknowledgement that prunes mutation-journal rows after a publication. Like
+	 * {@link #recordMetadataOnlySnapshotAdvance(long, long)} it is refused for any journal sequence but the latest
+	 * recorded one. A commit that immediately follows the current generation's covered epoch, or the last such commit
+	 * recorded for it, extends the snapshots the generation describes ({@link #describesSnapshot(long, long)}). The
+	 * published generation and its covered epoch, and so every planning identity derived from {@link #status()}, stay
+	 * unchanged.
+	 *
+	 * @return {@code true} when the commit was accepted for the supplied unchanged journal sequence
+	 */
+	public synchronized boolean recordMetadataOnlyCommit(long commitEpoch, long unchangedSequence) {
+		if (commitEpoch < 0L || unchangedSequence < 0L) {
+			throw new IllegalArgumentException("Frontier metadata-only commit coordinates must be nonnegative");
+		}
+		if (unchangedSequence != latestStoreSequence) {
+			return false;
+		}
+		latestStoreEpoch = Math.max(latestStoreEpoch, commitEpoch);
+		FrontierStatisticsGeneration observed = current;
+		if (observed != null) {
+			FrontierStatisticsManifest manifest = observed.manifest();
+			if (unchangedSequence == manifest.coveredSequence()
+					&& commitEpoch == metadataOnlyThroughEpoch(manifest) + 1L) {
+				metadataOnlyCommits = new MetadataOnlyCommits(manifest.coveredEpoch(), manifest.coveredSequence(),
+						commitEpoch);
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Whether the published generation describes the LMDB snapshot with these coordinates exactly: its own snapshot, or
+	 * a later one separated from it only by commits recorded through {@link #recordMetadataOnlyCommit(long, long)}
+	 * without a gap. An equal journal sequence alone is no such proof, because an initial run import writes statements
+	 * without advancing it.
+	 */
+	public boolean describesSnapshot(long snapshotEpoch, long snapshotSequence) {
+		FrontierStatisticsGeneration observed = current;
+		if (!ownerFreshness.trusts(observed)) {
+			return false;
+		}
+		FrontierStatisticsManifest manifest = observed.manifest();
+		return snapshotSequence == manifest.coveredSequence() && snapshotEpoch >= manifest.coveredEpoch()
+				&& snapshotEpoch <= metadataOnlyThroughEpoch(manifest);
+	}
+
+	private long metadataOnlyThroughEpoch(FrontierStatisticsManifest manifest) {
+		MetadataOnlyCommits commits = metadataOnlyCommits;
+		return commits != null && commits.coveredEpoch() == manifest.coveredEpoch()
+				&& commits.coveredSequence() == manifest.coveredSequence()
+						? commits.throughEpoch()
+						: manifest.coveredEpoch();
 	}
 
 	/** Replaces the fixed-size committed overlay used until the next immutable delta publication. */
@@ -1023,13 +1080,21 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	}
 
 	private FrontierLeafEstimate failedLeafEstimate(Throwable failure) {
+		FrontierCancellation.rethrowIfCancelled(failure);
 		lastFailure = failureMessage(failure);
 		return FrontierLeafEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
 	}
 
 	private FrontierJoinEstimate failedJoinEstimate(Throwable failure) {
+		FrontierCancellation.rethrowIfCancelled(failure);
 		lastFailure = failureMessage(failure);
 		return FrontierJoinEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
+	}
+
+	private double failedDistinctEstimate(Throwable failure) {
+		FrontierCancellation.rethrowIfCancelled(failure);
+		lastFailure = failureMessage(failure);
+		return Double.NaN;
 	}
 
 	private static String failureMessage(Throwable failure) {
@@ -1037,8 +1102,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	}
 
 	private static FrontierLeafEstimate emptyBaseLeaf() {
-		return new FrontierLeafEstimate(0.0d, 0.0d, 0.0d, 1.0d,
-				"frontier-v2-empty-base", FrontierFallbackReason.NONE);
+		return FrontierLeafEstimate.exact(0.0d, "frontier-v2-empty-base");
 	}
 
 	private static boolean emptyBase(FrontierStatisticsLease lease, FrontierJoinProgram program) throws IOException {

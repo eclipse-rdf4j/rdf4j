@@ -64,6 +64,15 @@ final class LmdbMappedFilterEvidence {
 		}
 	}
 
+	Optional<FilterEvidence> estimate(StatementPattern pattern, ValueExpr condition,
+			LmdbFrontierReadPopulation population, int planeMask, LmdbAdmittedFrontierRead admittedRead) {
+		admittedRead.requireCurrent();
+		if (population != admittedRead.population() || planeMask != admittedRead.planeMask()) {
+			throw new IllegalArgumentException("Mapped filter evidence has a different read population");
+		}
+		return estimate(pattern, condition, population, planeMask, admittedRead::estimateLeaf);
+	}
+
 	private Optional<FilterEvidence> estimate(StatementPattern pattern, ValueExpr condition,
 			LmdbFrontierReadPopulation population, int planeMask,
 			java.util.function.Function<FrontierLeafProbe, FrontierLeafEstimate> estimates) {

@@ -1,0 +1,152 @@
+{
+  "format" : "rdf4j-theme-solution-bag-oracle",
+  "version" : 1,
+  "theme" : "ADAPTIVE_FILTER_PLACEMENT",
+  "codec" : {
+    "format" : "rdf4j-exact-solution-bag",
+    "version" : 1
+  },
+  "comparisonPolicy" : {
+    "id" : "rdf4j-proven-computed-numeric-bag",
+    "version" : 1
+  },
+  "jena" : {
+    "artifact" : "org.apache.jena:jena-arq",
+    "version" : "6.1.0",
+    "jarSha256" : "bc0fac2551db4b8616c861aab5b3bb5c7a3897e4516e8990bbab234a5a8f904c"
+  },
+  "fixture" : {
+    "profile" : "adaptive-filter-witness-v1",
+    "scope" : {
+      "graphs" : "default-graph-only",
+      "directionalLiterals" : false,
+      "tripleTerms" : false
+    },
+    "statementCount" : 29
+  },
+  "dataset" : {
+    "file" : "dataset.nq",
+    "format" : "N-Quads",
+    "sha256" : "92d7317c8c3bd2fb29167b4063f9271d8be1638303a8b41dad96e26d0831a9d4",
+    "bytes" : 4266,
+    "statements" : 29
+  },
+  "queries" : [ {
+    "index" : 0,
+    "name" : "Adaptive filter: regex payload",
+    "querySha256" : "70b8fa8055897691f952e041133a71276adca24058f5d5c115b5947ec8c39107",
+    "bagFile" : "query-00.json",
+    "bagSha256" : "6ea7ef6b6201f856c01908bb082749845a69fac15088bb54bb1d7d06dbeb2edb",
+    "distinctRows" : 3,
+    "rows" : 4,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 1,
+    "name" : "Adaptive filter: lower-case contains",
+    "querySha256" : "35b9e2d54ee8d176a1bfc7bd4de773e5c718d5b0c77113ea0f3e240889f94034",
+    "bagFile" : "query-01.json",
+    "bagSha256" : "d4acfed6b61e73e66b3b33a514dd02118c3d0ae917245488e8f89591a23ec3df",
+    "distinctRows" : 7,
+    "rows" : 8,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 2,
+    "name" : "Adaptive filter: string prefix",
+    "querySha256" : "80100903da02441bd12411a55e60e630f2b486a3311a25f0a8d00cac343011e1",
+    "bagFile" : "query-02.json",
+    "bagSha256" : "33fa05ebd94bb7d905cf4c986453e96fad5738cd49c4d1760b4cbc4c3db7e97b",
+    "distinctRows" : 4,
+    "rows" : 5,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 3,
+    "name" : "Adaptive filter: suffix or prefix",
+    "querySha256" : "f28431fa6aa76257d06cdb3e27df03b040d61f770e46489e7162142ed9ee50c1",
+    "bagFile" : "query-03.json",
+    "bagSha256" : "f7b73b0b64c3cce89f3d00d5e0518619095ef0006bc3650f507b505aadb0fe28",
+    "distinctRows" : 5,
+    "rows" : 6,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 4,
+    "name" : "Adaptive filter: nonempty length",
+    "querySha256" : "6a7c729095470ae5d71908158cb5493090ccc24d0986be1c91946e64e4a4a78f",
+    "bagFile" : "query-04.json",
+    "bagSha256" : "1385c7de9831e393504ebff1f5e85e603c3d8297d710331f4ab26c8c9eea50e6",
+    "distinctRows" : 10,
+    "rows" : 11,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 5,
+    "name" : "Adaptive filter: URI encoding",
+    "querySha256" : "e5147c46617dde785725069ad19cb124e0cac940c31778ee96bcaaba13dabf67",
+    "bagFile" : "query-05.json",
+    "bagSha256" : "1385c7de9831e393504ebff1f5e85e603c3d8297d710331f4ab26c8c9eea50e6",
+    "distinctRows" : 10,
+    "rows" : 11,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 6,
+    "name" : "Adaptive filter: prefix replacement",
+    "querySha256" : "c3841eb7b98b6c6e5bfe502cb2918d614db63cb2846305c5959db542303c5937",
+    "bagFile" : "query-06.json",
+    "bagSha256" : "7cf2273d24f5724b7ec70db99115e8c358535dd460ba487f69743f3cd9fe3cfd",
+    "distinctRows" : 9,
+    "rows" : 10,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 7,
+    "name" : "Adaptive filter: upper-case payload",
+    "querySha256" : "772fc436171f16f230ac0271f207ff2d930d05862f9f326dd0a881548bd8ab08",
+    "bagFile" : "query-07.json",
+    "bagSha256" : "1385c7de9831e393504ebff1f5e85e603c3d8297d710331f4ab26c8c9eea50e6",
+    "distinctRows" : 10,
+    "rows" : 11,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 8,
+    "name" : "Adaptive filter: plain literal language",
+    "querySha256" : "d8329baa861329f9d1013b9ce1e0509f975b7b5ce8246977bdd28ca850216436",
+    "bagFile" : "query-08.json",
+    "bagSha256" : "dbfdff0449972381045c54b2edaf0f730eef65695f181a2af85dd04779adc99d",
+    "distinctRows" : 9,
+    "rows" : 10,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 9,
+    "name" : "Adaptive filter: string datatype",
+    "querySha256" : "d8d981aab3c783cc1db319b8bb1785659d293851d64f2ed13b5820e1183b0168",
+    "bagFile" : "query-09.json",
+    "bagSha256" : "df24e057f643be29d9ebcc8e47f4cca16275bfdcd2a64f9250af90cd57e4d6bd",
+    "distinctRows" : 8,
+    "rows" : 9,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 10,
+    "name" : "Adaptive filter: accepted substring",
+    "querySha256" : "e88565bc70142cfb8e8ceaa39e3cd308dcb8e005ca44de17a22a0efa13afe7ef",
+    "bagFile" : "query-10.json",
+    "bagSha256" : "5ade39f91801a3fdf9f4531c764b494f86320069c9ff245a11bf6ab414ddae63",
+    "distinctRows" : 5,
+    "rows" : 6,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 11,
+    "name" : "Adaptive filter: prefix before separator",
+    "querySha256" : "86a4096f568532c9498f478537efa8c61b644963b0ef00d244e83d978db5ce2b",
+    "bagFile" : "query-11.json",
+    "bagSha256" : "33fa05ebd94bb7d905cf4c986453e96fad5738cd49c4d1760b4cbc4c3db7e97b",
+    "distinctRows" : 4,
+    "rows" : 5,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 12,
+    "name" : "Adaptive filter: suffix after prefix",
+    "querySha256" : "ef2c1d94455d7ba1305b1afcffcfeebad2b3d8eb64fff15aa1c66d98447f6e98",
+    "bagFile" : "query-12.json",
+    "bagSha256" : "7b6b0e8a73519280a2395cf4b35cd3e8fef8b3bc122bac817373850dbd1efce1",
+    "distinctRows" : 5,
+    "rows" : 6,
+    "computedNumericVariables" : [ ]
+  } ]
+}

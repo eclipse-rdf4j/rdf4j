@@ -23,6 +23,7 @@ final class PackedCostOrderedStateQueue {
 	private int[] revisions;
 	private double[] costs;
 	private int size;
+	private int unavailableCount;
 	private int polledRevision;
 	private double polledCost;
 
@@ -48,11 +49,15 @@ final class PackedCostOrderedStateQueue {
 	}
 
 	void offer(int stateId, int revision, double cost) {
-		if (stateId <= 0 || revision <= 0 || !Double.isFinite(cost) || cost < 0.0d) {
+		if (stateId <= 0 || revision <= 0 || !Double.isNaN(cost) && (!Double.isFinite(cost) || cost < 0.0d)) {
 			throw new IllegalArgumentException("invalid cost-ordered planner state");
 		}
 		if (!ensureCapacity(size + 1)) {
 			return;
+		}
+		if (Double.isNaN(cost)) {
+			unavailableCount++;
+			budget.markUnavailableCostComparison();
 		}
 		int destination = size++;
 		while (destination > 0) {
@@ -71,7 +76,11 @@ final class PackedCostOrderedStateQueue {
 	}
 
 	double minimumCost() {
-		return size == 0 ? Double.POSITIVE_INFINITY : costs[0];
+		return unavailableCount != 0 ? Double.NaN : size == 0 ? Double.POSITIVE_INFINITY : costs[0];
+	}
+
+	boolean hasUnavailableCost() {
+		return unavailableCount != 0;
 	}
 
 	int pollStateId() {
@@ -81,6 +90,9 @@ final class PackedCostOrderedStateQueue {
 		int resultStateId = stateIds[0];
 		polledRevision = revisions[0];
 		polledCost = costs[0];
+		if (Double.isNaN(polledCost)) {
+			unavailableCount--;
+		}
 		int source = --size;
 		if (source == 0) {
 			return resultStateId;
@@ -120,7 +132,13 @@ final class PackedCostOrderedStateQueue {
 
 	private static boolean precedes(double leftCost, int leftStateId, int leftRevision, double rightCost,
 			int rightStateId, int rightRevision) {
-		int comparison = Double.compare(leftCost, rightCost);
+		boolean leftUnavailable = Double.isNaN(leftCost);
+		boolean rightUnavailable = Double.isNaN(rightCost);
+		if (leftUnavailable != rightUnavailable) {
+			// This is expansion priority only; it does not establish that either state is cheaper.
+			return !leftUnavailable;
+		}
+		int comparison = leftUnavailable ? 0 : Double.compare(leftCost, rightCost);
 		if (comparison != 0) {
 			return comparison < 0;
 		}

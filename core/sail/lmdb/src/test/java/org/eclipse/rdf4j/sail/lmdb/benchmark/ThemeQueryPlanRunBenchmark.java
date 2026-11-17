@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
@@ -39,8 +40,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.PlanningExpectation;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.PlanningReceipt;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.Preparation;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.PreparationState;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.RuntimeTelemetryMode;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
@@ -79,6 +85,7 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String EXPLANATION_LOGGING_PROPERTY = "rdf4j.benchmark.themeQueryPlanRun.explanationLogging";
 	private static final String PLAN_LIFECYCLE_PROPERTY = "rdf4j.benchmark.themeQueryPlanRun.planLifecycle";
+	private static final String FIXTURE_MANIFEST_PROPERTY = "rdf4j.benchmark.themeQueryPlanRun.fixtureManifest";
 	private static final String COUNT_BINDING_NAME = "count";
 	private static final int QUERY_TIMEOUT_SECONDS = 60;
 	private static final long OPTIMIZATION_TIMEOUT_MILLIS = 30_000L;
@@ -93,16 +100,50 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String QUERY_VARIANT_SOCIAL_Q5_BRANCH_LOCAL_NAME = "social-q5-branch-local-name";
 	private static final String QUERY_VARIANT_SOCIAL_Q5_FILTER_EXISTS_NAME = "social-q5-filter-exists-name";
 
-	@Benchmark
-	public int planQuery(PlanningState state) {
-		try (LmdbBenchmarkQueryPlan plan = state.preparePlan(false)) {
-			return plan.bindingCount();
+	private static Throwable attemptCleanup(Throwable primary, Runnable action) {
+		try {
+			action.run();
+		} catch (RuntimeException | Error cleanup) {
+			if (primary == null) {
+				return cleanup;
+			}
+			if (primary != cleanup) {
+				primary.addSuppressed(cleanup);
+			}
+		}
+		return primary;
+	}
+
+	private static void rethrowFailure(Throwable failure) {
+		if (failure instanceof RuntimeException runtime) {
+			throw runtime;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+	}
+
+	private static void restoreProperty(String name, String previous) {
+		if (previous == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, previous);
 		}
 	}
 
 	@Benchmark
+	public int planQuery(PlanningState state) {
+		try (LmdbBenchmarkQueryPlan plan = state.preparePlan(false)) {
+			state.observePlanning(plan.planningReceipt(), false);
+			return plan.bindingCount();
+		}
+	}
+
+	/** Requires an observed fresh search even when the completion expectation is {@code OBSERVE}. */
+	@Benchmark
 	public int planUncachedQuery(UncachedPlanningState state) {
 		try (LmdbBenchmarkQueryPlan plan = state.prepareUncachedPlan()) {
+			state.observePlanning(plan.planningReceipt(), true);
 			return plan.bindingCount();
 		}
 	}
@@ -112,6 +153,67 @@ public class ThemeQueryPlanRunBenchmark {
 		QueryResultSummary result = state.evaluatePlannedQuery();
 		state.assertExpectedResult(result);
 		return state.benchmarkResult(result);
+	}
+
+	/** Optimization, its timeout scope, and receipt capture; setup and final precompilation are untimed. */
+	@Benchmark
+	public PlanningReceipt optimizeOnlyQuery(OptimizeOnlyState state) {
+		try {
+			return state.preparation.optimize();
+		} catch (RuntimeException | Error failure) {
+			state.abortTrial(failure);
+			throw failure;
+		}
+	}
+
+	/** Final-tuple precompilation of the tree selected and validated in setup, with timeout bookkeeping. */
+	@Benchmark
+	public void precompileSelectedQuery(PrecompileSelectedState state) {
+		try {
+			state.preparation.precompile();
+		} catch (RuntimeException | Error failure) {
+			state.abortTrial(failure);
+			throw failure;
+		}
+	}
+
+	/** Reuses a prepared step; evaluation may still select, bind, or generate native work lazily. */
+	@Benchmark
+	public long evaluatePreparedStep(PreparedStepState state) {
+		try {
+			state.result = state.evaluate(state.plan);
+			return state.benchmarkResult(state.result);
+		} catch (RuntimeException | Error failure) {
+			state.abortTrial(failure);
+			throw failure;
+		}
+	}
+
+	/** Parse, open, optimize, precompile, evaluate, drain, and close; trial store creation is excluded. */
+	@Benchmark
+	public long queryEndToEnd(EndToEndState state) {
+		LmdbBenchmarkQueryPlan plan = null;
+		long result;
+		try {
+			plan = state.preparePlan(false);
+			state.receipt = plan.planningReceipt();
+			state.result = state.evaluate(plan);
+			result = state.benchmarkResult(state.result);
+		} catch (RuntimeException | Error failure) {
+			if (plan != null) {
+				LmdbBenchmarkQueryPlan owned = plan;
+				attemptCleanup(failure, owned::close);
+			}
+			state.abortTrial(failure);
+			throw failure;
+		}
+		try {
+			plan.close();
+		} catch (RuntimeException | Error failure) {
+			state.abortTrial(failure);
+			throw failure;
+		}
+		return result;
 	}
 
 	@State(Scope.Benchmark)
@@ -162,6 +264,9 @@ public class ThemeQueryPlanRunBenchmark {
 		@Param({ "disabled" })
 		public String runtimeTelemetryMode;
 
+		@Param({ "COMPLETE" })
+		public PlanningExpectation planningExpectation = PlanningExpectation.COMPLETE;
+
 		public boolean rebuildStoreBeforeSetup;
 
 		/** Negative leaves the deprecated V1 query-memory setting absent so V2 uses its global heap default. */
@@ -175,24 +280,35 @@ public class ThemeQueryPlanRunBenchmark {
 		private LmdbStoreConfig storeConfig;
 		private File resolvedStoreDirectory;
 		private Theme theme;
+		private ExplicitBenchmarkFixture explicitFixture;
 		protected String query;
 		private long expectedRows;
-		private OptionalLong expectedCountBindingValue;
+		private OptionalLong expectedCountBindingValue = OptionalLong.empty();
 		protected SailRepositoryConnection connection;
 		private LmdbBenchmarkQueryPlan.PreparedPlanSnapshot firstPreparedPlanSnapshot;
 		private LmdbBenchmarkQueryPlan.PreparedPlanSnapshot lastPreparedPlanSnapshot;
 		private String previousDphypEnabled;
 		private String previousLeoRolloutProfile;
+		private boolean dphypPropertySet;
+		private boolean leoPropertySet;
+		private final PlanningReceiptCounts planningReceipts = new PlanningReceiptCounts();
 
 		@Setup(Level.Trial)
 		public void setup() throws IOException {
 			try {
 				previousDphypEnabled = System.setProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp",
 						Boolean.toString(dphypEnabled));
+				dphypPropertySet = true;
 				LeoRolloutProfile configuredLeoProfile = LeoRolloutProfile.parse(
 						leoRolloutProfile, LeoRolloutProfile.SAFE_CARDINALITY_CORRECTION);
 				previousLeoRolloutProfile = System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY,
 						configuredLeoProfile.externalName());
+				leoPropertySet = true;
+				String fixtureManifest = System.getProperty(FIXTURE_MANIFEST_PROPERTY);
+				if (fixtureManifest != null && !fixtureManifest.isBlank()) {
+					setupExplicitFixture(Path.of(fixtureManifest));
+					return;
+				}
 				theme = Theme.valueOf(themeName);
 				query = queryForVariant(theme, z_queryIndex, queryVariant);
 				expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
@@ -213,53 +329,118 @@ public class ThemeQueryPlanRunBenchmark {
 				waitForSketchesIfEnabled();
 				connection = repository.getConnection();
 			} catch (IOException | RuntimeException | Error failure) {
-				try {
-					closeResources();
-				} catch (RuntimeException | Error cleanupFailure) {
-					failure.addSuppressed(cleanupFailure);
-				}
+				closeResources(failure);
 				throw failure;
 			}
 		}
 
+		private void setupExplicitFixture(Path manifest) throws IOException {
+			if (rebuildStoreBeforeSetup) {
+				throw new IllegalArgumentException("an explicit fixture always uses a new isolated store");
+			}
+			explicitFixture = ExplicitBenchmarkFixture.load(manifest);
+			query = explicitFixture.query();
+			expectedRows = explicitFixture.expectedRows();
+			expectedCountBindingValue = OptionalLong.empty();
+			storeConfig = ConfigUtil.createConfig(explicitFixture.tripleIndexes());
+			storeConfig.setNativeEvaluationEnabled(explicitFixture.nativeEvaluationEnabled());
+			explicitFixture.frontierCacheEvidenceBudgetBytes()
+					.ifPresent(storeConfig::setFrontierCacheEvidenceBudgetBytes);
+			storeConfig.setSketchEstimatorEnabled(false);
+			storeConfig.setSketchEstimatorEvidenceMode("snapshot-only");
+			storeConfig.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
+			storeConfig.setBackgroundRawSamplingEnabled(false);
+			storeConfig.setOptimizerSamplingMaxMillis(OPTIMIZATION_TIMEOUT_MILLIS);
+			if (frontierHeapBudgetBytes >= 0L) {
+				storeConfig.setFrontierHeapBudgetBytes(frontierHeapBudgetBytes);
+			}
+			Files.createDirectories(STORE_DIRECTORY.toPath());
+			resolvedStoreDirectory = Files.createTempDirectory(STORE_DIRECTORY.toPath(), "explicit-fixture-").toFile();
+			store = new LmdbStore(resolvedStoreDirectory, storeConfig);
+			repository = new SailRepository(store);
+			repository.init();
+			explicitFixture.loadDataset(repository);
+			try {
+				LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IOException("interrupted while preparing explicit fixture store", interrupted);
+			}
+			connection = repository.getConnection();
+			PlanningReceipt receipt = explicitFixture.verify(store, connection, QUERY_TIMEOUT_SECONDS,
+					runtimeTelemetryMode());
+			explicitFixture.report(receipt, storeConfig.getFrontierCacheEvidenceBudgetBytes());
+		}
+
 		@TearDown(Level.Trial)
 		public void tearDown() {
+			Throwable failure = null;
 			try {
 				beforeTrialTearDown();
-				printTelemetryPlanAtTrialTeardown();
-			} finally {
-				closeResources();
+				if (trialTelemetryEnabled()) {
+					printTelemetryPlanAtTrialTeardown();
+				}
+			} catch (RuntimeException | Error e) {
+				failure = e;
 			}
+			rethrowFailure(closeResources(failure));
 		}
 
 		protected void beforeTrialTearDown() {
 			// Hook for execution states that own a prepared plan across the trial.
 		}
 
-		private void closeResources() {
+		protected boolean trialTelemetryEnabled() {
+			return true;
+		}
+
+		final void observePlanning(PlanningReceipt receipt, boolean freshPathRequired) {
+			planningReceipts.record(receipt);
+			planningExpectation.validate(receipt);
+			if (freshPathRequired) {
+				receipt.requireFreshPath();
+			}
+		}
+
+		@TearDown(Level.Iteration)
+		public void reportPlanningReceipts() {
+			planningReceipts.reportAndReset(getClass().getSimpleName());
+		}
+
+		private Throwable closeResources(Throwable failure) {
 			if (connection != null) {
-				connection.close();
+				SailRepositoryConnection owned = connection;
 				connection = null;
+				failure = attemptCleanup(failure, owned::close);
 			}
 			if (repository != null) {
-				repository.shutDown();
+				SailRepository owned = repository;
 				repository = null;
+				failure = attemptCleanup(failure, owned::shutDown);
 			}
 			store = null;
 			storeConfig = null;
 			resolvedStoreDirectory = null;
-			if (previousDphypEnabled == null) {
-				System.clearProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp");
-			} else {
-				System.setProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp", previousDphypEnabled);
+			if (dphypPropertySet) {
+				dphypPropertySet = false;
+				String previous = previousDphypEnabled;
+				failure = attemptCleanup(failure,
+						() -> restoreProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp", previous));
 			}
 			previousDphypEnabled = null;
-			if (previousLeoRolloutProfile == null) {
-				System.clearProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
-			} else {
-				System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousLeoRolloutProfile);
+			if (leoPropertySet) {
+				leoPropertySet = false;
+				String previous = previousLeoRolloutProfile;
+				failure = attemptCleanup(failure,
+						() -> restoreProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previous));
 			}
 			previousLeoRolloutProfile = null;
+			return failure;
+		}
+
+		final void abortTrial(Throwable failure) {
+			attemptCleanup(failure, this::beforeTrialTearDown);
+			closeResources(failure);
 		}
 
 		private void ensureDataLoadedAndValidated() throws IOException {
@@ -462,6 +643,11 @@ public class ThemeQueryPlanRunBenchmark {
 					QUERY_TIMEOUT_SECONDS, captureOptimizedPlan, runtimeTelemetryMode());
 			rememberPreparedPlan(plan.preparedPlanSnapshot());
 			return plan;
+		}
+
+		protected Preparation openPlanPreparation() {
+			return LmdbBenchmarkQueryPlan.openPreparation(store, connection, query, QUERY_TIMEOUT_SECONDS, false,
+					runtimeTelemetryMode());
 		}
 
 		private RuntimeTelemetryMode runtimeTelemetryMode() {
@@ -774,7 +960,8 @@ public class ThemeQueryPlanRunBenchmark {
 		protected QueryResultSummary evaluate(LmdbBenchmarkQueryPlan plan) {
 			long rowCount = 0L;
 			Long countBindingValue = null;
-			try (CloseableIteration<BindingSet> result = plan.evaluate()) {
+			CloseableIteration<BindingSet> result = plan.evaluate();
+			try {
 				while (result.hasNext()) {
 					BindingSet bindings = result.next();
 					rowCount++;
@@ -786,7 +973,11 @@ public class ThemeQueryPlanRunBenchmark {
 						countBindingValue = countBindingValue(bindings);
 					}
 				}
+			} catch (RuntimeException | Error failure) {
+				attemptCleanup(failure, result::close);
+				throw failure;
 			}
+			result.close();
 			return new QueryResultSummary(rowCount, countBindingValue);
 		}
 
@@ -826,6 +1017,9 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		private String queryDescription() {
+			if (explicitFixture != null) {
+				return explicitFixture.description();
+			}
 			String description = themeName + " query " + z_queryIndex + " ("
 					+ ThemeQueryCatalog.benchmarkQueryFor(theme, z_queryIndex).getName() + ")";
 			String variant = queryVariantOrDefault(queryVariant);
@@ -1099,6 +1293,186 @@ public class ThemeQueryPlanRunBenchmark {
 
 	@State(Scope.Benchmark)
 	public static class PlanningState extends BaseState {
+	}
+
+	@State(Scope.Benchmark)
+	public static class OptimizeOnlyState extends BaseState {
+		Preparation preparation;
+
+		@Setup(Level.Invocation)
+		public void openQuery() {
+			try {
+				if (preparation != null) {
+					throw new IllegalStateException("Previous optimization preparation is still open");
+				}
+				preparation = openPlanPreparation();
+			} catch (RuntimeException | Error failure) {
+				abortTrial(failure);
+				throw failure;
+			}
+		}
+
+		@TearDown(Level.Invocation)
+		public void finishOptimization() {
+			try {
+				if (preparation != null && preparation.state() == PreparationState.OPTIMIZED) {
+					preparation.ready(receipt -> observePlanning(receipt, false));
+					preparation.precompile();
+				}
+				closePreparation();
+			} catch (RuntimeException | Error failure) {
+				abortTrial(failure);
+				throw failure;
+			}
+		}
+
+		private void closePreparation() {
+			Preparation owned = preparation;
+			preparation = null;
+			if (owned != null) {
+				owned.close();
+			}
+		}
+
+		@Override
+		protected void beforeTrialTearDown() {
+			closePreparation();
+		}
+
+		@Override
+		protected boolean trialTelemetryEnabled() {
+			return false;
+		}
+	}
+
+	@State(Scope.Benchmark)
+	public static class PrecompileSelectedState extends BaseState {
+		Preparation preparation;
+
+		@Setup(Level.Invocation)
+		public void selectQuery() {
+			try {
+				if (preparation != null) {
+					throw new IllegalStateException("Previous precompilation preparation is still open");
+				}
+				preparation = openPlanPreparation();
+				preparation.optimize();
+				preparation.ready(receipt -> observePlanning(receipt, false));
+			} catch (RuntimeException | Error failure) {
+				abortTrial(failure);
+				throw failure;
+			}
+		}
+
+		@TearDown(Level.Invocation)
+		public void finishPrecompilation() {
+			try {
+				closePreparation();
+			} catch (RuntimeException | Error failure) {
+				abortTrial(failure);
+				throw failure;
+			}
+		}
+
+		private void closePreparation() {
+			Preparation owned = preparation;
+			preparation = null;
+			if (owned != null) {
+				owned.close();
+			}
+		}
+
+		@Override
+		protected void beforeTrialTearDown() {
+			closePreparation();
+		}
+
+		@Override
+		protected boolean trialTelemetryEnabled() {
+			return false;
+		}
+	}
+
+	@State(Scope.Benchmark)
+	public static class PreparedStepState extends BaseState {
+		LmdbBenchmarkQueryPlan plan;
+		private QueryResultSummary result;
+
+		@Setup(Level.Invocation)
+		public void prepareReusableStep() {
+			try {
+				if (result != null) {
+					throw new IllegalStateException("Previous prepared-step result was not checked");
+				}
+				if (plan == null) {
+					plan = preparePlan(false);
+					observePlanning(plan.planningReceipt(), false);
+				}
+			} catch (RuntimeException | Error failure) {
+				abortTrial(failure);
+				throw failure;
+			}
+		}
+
+		@TearDown(Level.Invocation)
+		public void checkResult() {
+			try {
+				if (result != null) {
+					assertExpectedResult(result);
+					result = null;
+				}
+			} catch (RuntimeException | Error failure) {
+				abortTrial(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		protected void beforeTrialTearDown() {
+			LmdbBenchmarkQueryPlan owned = plan;
+			plan = null;
+			if (owned != null) {
+				owned.close();
+			}
+		}
+
+		@Override
+		protected boolean trialTelemetryEnabled() {
+			return false;
+		}
+	}
+
+	@State(Scope.Benchmark)
+	public static class EndToEndState extends BaseState {
+		private PlanningReceipt receipt;
+		private QueryResultSummary result;
+
+		@Setup(Level.Invocation)
+		public void beginInvocation() {
+			receipt = null;
+			result = null;
+		}
+
+		@TearDown(Level.Invocation)
+		public void checkInvocation() {
+			try {
+				if (receipt != null && result != null) {
+					observePlanning(receipt, false);
+					assertExpectedResult(result);
+				}
+			} catch (RuntimeException | Error failure) {
+				abortTrial(failure);
+				throw failure;
+			} finally {
+				receipt = null;
+				result = null;
+			}
+		}
+
+		@Override
+		protected boolean trialTelemetryEnabled() {
+			return false;
+		}
 	}
 
 	@State(Scope.Benchmark)

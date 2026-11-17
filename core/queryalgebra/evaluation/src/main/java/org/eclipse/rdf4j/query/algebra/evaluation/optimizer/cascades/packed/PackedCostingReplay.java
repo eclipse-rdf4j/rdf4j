@@ -24,6 +24,12 @@ public final class PackedCostingReplay {
 	private PackedCostingReplay() {
 	}
 
+	/**
+	 * Replays a decision only while its current candidate prices are available.
+	 *
+	 * @throws UnavailablePriceException if current evidence cannot price a required event or candidate; a caller must
+	 *                                   decline reuse and may start a fresh search
+	 */
 	public static Result replay(PackedPlanValidationRequest request, PackedCostSession currentSession) {
 		Objects.requireNonNull(request, "request");
 		Objects.requireNonNull(currentSession, "currentSession");
@@ -31,12 +37,13 @@ public final class PackedCostingReplay {
 		FrontierEvidenceBundle cachedEvidence = request.evidenceBundle();
 		int eventCount = trace.eventCount();
 		if (eventCount == 0) {
-			throw new IllegalStateException("cached plan has no costing events to replay");
+			throw new PackedCheckpointRejectedException("cached plan has no costing events to replay");
 		}
 		int stateHandleCount = trace.stateHandleCount(cachedEvidence.stateCount());
+		trace.validateReplayInputs();
 		PackedCostSession proofAware = new ProofAwarePackedCostSession(request.query(), currentSession);
 		EventSourcingPackedCostSession replaySession = EventSourcingPackedCostSession.replaying(proofAware);
-		try {
+		try (replaySession) {
 			int[] currentStateByCachedOrdinal = new int[stateHandleCount + 1];
 			double[] currentRowsByCachedOrdinal = new double[currentStateByCachedOrdinal.length];
 			Arrays.fill(currentRowsByCachedOrdinal, Double.NaN);
@@ -108,6 +115,10 @@ public final class PackedCostingReplay {
 				boolean originallyUnmeasured = !finiteNonNegative(trace.outputRows(eventId))
 						&& !finiteNonNegative(trace.workRows(eventId));
 				if (!measured && !originallyUnmeasured) {
+					if (Double.isNaN(objective) && finiteNonNegative(estimate.outputRows())) {
+						throw new UnavailablePriceException(
+								"current objective is unavailable for replay event " + eventId);
+					}
 					throw new IllegalStateException(
 							"current provider returned an invalid replay estimate for event " + eventId
 									+ " [phase=" + trace.phase(eventId) + ", relation=" + trace.relationId(eventId)
@@ -143,6 +154,10 @@ public final class PackedCostingReplay {
 				candidateCosts[candidate] = replayCandidateCost(
 						request, eventCosts, candidateCosts, candidateStates, candidate);
 				if (!finiteNonNegative(candidateCosts[candidate])) {
+					if (Double.isNaN(candidateCosts[candidate])) {
+						throw new UnavailablePriceException("current objective is unavailable for replay candidate "
+								+ candidate);
+					}
 					throw new IllegalStateException(
 							"decision certificate references an unmeasured candidate event "
 									+ request.candidateEventId(candidate));
@@ -192,8 +207,15 @@ public final class PackedCostingReplay {
 					eventWorkRows, eventSequentialRows, eventRandomSeeks, eventIteratorOpens,
 					eventExpressionEvaluations, eventHashBuildRows, eventHashProbeRows, eventPathExpansions,
 					eventResultRows, eventRemoteCalls, eventPeakMemoryRows, eventAccessRows, eventInvocations);
-		} finally {
-			replaySession.close();
+		}
+	}
+
+	/** A current replay lacks a comparable price; callers may decline reuse without treating it as provider failure. */
+	public static final class UnavailablePriceException extends PackedCheckpointRejectedException {
+		private static final long serialVersionUID = 1L;
+
+		private UnavailablePriceException(String message) {
+			super(message);
 		}
 	}
 
@@ -223,7 +245,8 @@ public final class PackedCostingReplay {
 		candidateStates[candidate] = 1;
 		int eventId = request.candidateEventId(candidate);
 		if (eventId <= 0 || eventId >= eventCosts.length) {
-			throw new IllegalStateException("decision certificate references an unknown costing event " + eventId);
+			throw new PackedCheckpointRejectedException(
+					"decision certificate references an unknown costing event " + eventId);
 		}
 		double adjusted;
 		if (!request.composesChildCosts(candidate) || request.candidateChildCount(candidate) == 0) {
@@ -274,7 +297,7 @@ public final class PackedCostingReplay {
 
 	private static double saturatedAdd(double left, double right) {
 		double sum = left + right;
-		return Double.isFinite(sum) ? sum : Double.MAX_VALUE;
+		return Double.isNaN(sum) ? Double.NaN : Double.isFinite(sum) ? sum : Double.MAX_VALUE;
 	}
 
 	private static void restoreProviderInput(PackedCostingTrace trace, int eventId, PackedCostEstimate estimate,
@@ -309,11 +332,12 @@ public final class PackedCostingReplay {
 			return 0;
 		}
 		if (cachedOrdinal < 0 || cachedOrdinal >= currentStateByCachedOrdinal.length) {
-			throw new IllegalStateException("costing event " + eventId + " has an invalid " + role + " state ordinal");
+			throw new PackedCheckpointRejectedException(
+					"costing event " + eventId + " has an invalid " + role + " state ordinal");
 		}
 		int stateId = currentStateByCachedOrdinal[cachedOrdinal];
 		if (stateId == 0) {
-			throw new IllegalStateException("costing event " + eventId + " uses " + role
+			throw new PackedCheckpointRejectedException("costing event " + eventId + " uses " + role
 					+ " Frontier state before its originating event");
 		}
 		return stateId;
@@ -326,21 +350,23 @@ public final class PackedCostingReplay {
 			return 0;
 		}
 		if (cachedOrdinal < 0 || cachedOrdinal >= currentStateByCachedOrdinal.length) {
-			throw new IllegalStateException("costing event " + eventId + " has an invalid " + role + " state ordinal");
+			throw new PackedCheckpointRejectedException(
+					"costing event " + eventId + " has an invalid " + role + " state ordinal");
 		}
 		int stateId = currentStateByCachedOrdinal[cachedOrdinal];
 		if (stateId != 0) {
 			return stateId;
 		}
 		if (sourceOrdinal == 0 || sourceOrdinal == cachedOrdinal) {
-			throw new IllegalStateException("costing event " + eventId + " uses " + role
+			throw new PackedCheckpointRejectedException("costing event " + eventId + " uses " + role
 					+ " Frontier state before its originating event");
 		}
 		int sourceStateId = currentState(sourceOrdinal, currentStateByCachedOrdinal, eventId, role + " source");
 		int realizedStateId = currentSession.realizeEvidenceState(sourceStateId);
 		if (realizedStateId == sourceStateId) {
-			throw new IllegalStateException("costing event " + eventId + " did not reproduce its recorded " + role
-					+ " Frontier realization");
+			throw new PackedCheckpointRejectedException(
+					"costing event " + eventId + " did not reproduce its recorded " + role
+							+ " Frontier realization");
 		}
 		double rows = currentRows(sourceOrdinal, currentRowsByCachedOrdinal, fallbackRows);
 		bindCurrentState(cachedOrdinal, realizedStateId, rows, currentStateByCachedOrdinal,
@@ -351,6 +377,9 @@ public final class PackedCostingReplay {
 	private static double currentRows(int cachedOrdinal, double[] currentRowsByCachedOrdinal, double fallback) {
 		if (cachedOrdinal == 0) {
 			return fallback;
+		}
+		if (cachedOrdinal < 0 || cachedOrdinal >= currentRowsByCachedOrdinal.length) {
+			throw new PackedCheckpointRejectedException("cached row state ordinal is outside the replay");
 		}
 		double rows = currentRowsByCachedOrdinal[cachedOrdinal];
 		return Double.isFinite(rows) && rows >= 0.0d ? rows : fallback;
@@ -366,7 +395,7 @@ public final class PackedCostingReplay {
 		case INTERMEDIATE_JOIN, PHYSICAL_JOIN -> leftOrdinal;
 		case OPERATOR -> rightOrdinal == 0 ? inputOrdinal : leftOrdinal;
 		case LEAF -> 0;
-		case VALIDATION, PROVIDER_CHILD -> throw new IllegalStateException(
+		case VALIDATION, PROVIDER_CHILD -> throw new PackedCheckpointRejectedException(
 				"cached costing trace contains a non-replayable event phase " + trace.phase(eventId));
 		};
 		return currentRows(prefixStateOrdinal, currentRowsByCachedOrdinal, trace.prefixRows(eventId));
@@ -377,12 +406,16 @@ public final class PackedCostingReplay {
 		if (cachedOrdinal == 0) {
 			return;
 		}
+		if (cachedOrdinal < 0 || cachedOrdinal >= currentStateByCachedOrdinal.length) {
+			throw new PackedCheckpointRejectedException(
+					"costing event " + eventId + " has an invalid output state ordinal");
+		}
 		if (currentStateId <= 0) {
-			throw new IllegalStateException("costing event " + eventId + " lost its Frontier output state");
+			throw new PackedCheckpointRejectedException("costing event " + eventId + " lost its Frontier output state");
 		}
 		int existing = currentStateByCachedOrdinal[cachedOrdinal];
 		if (existing != 0 && existing != currentStateId) {
-			throw new IllegalStateException("costing event " + eventId
+			throw new PackedCheckpointRejectedException("costing event " + eventId
 					+ " replayed one cached Frontier state as two current states");
 		}
 		currentStateByCachedOrdinal[cachedOrdinal] = currentStateId;

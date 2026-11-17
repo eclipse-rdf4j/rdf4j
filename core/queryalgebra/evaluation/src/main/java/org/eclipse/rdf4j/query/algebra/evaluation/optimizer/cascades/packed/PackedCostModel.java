@@ -37,6 +37,16 @@ public interface PackedCostModel {
 		return PackedCostSession.scalar(this, query);
 	}
 
+	/**
+	 * Opens a session with the current query's borrowed work and retained-memory owners already available. Providers
+	 * that perform work or allocate during construction override this method and reserve before each bounded operation
+	 * or allocation. The default preserves legacy scalar providers; their opaque open is admitted as one operation.
+	 */
+	default PackedCostSession openSession(PackedQueryView query, PackedProviderWork work,
+			PackedProviderMemory memory) {
+		return openSession(query);
+	}
+
 	/** Returns local work in the same additive unit as rows, or {@link Double#NaN} when unknown. */
 	default double estimateLocalWork(PackedQueryView query, int relationId, double outputRows) {
 		return estimateRows(query, relationId);

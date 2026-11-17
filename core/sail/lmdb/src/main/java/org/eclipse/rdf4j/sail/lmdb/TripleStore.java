@@ -5158,11 +5158,13 @@ class TripleStore implements Closeable {
 			result = mdb_txn_commit(transaction);
 			completeScannedDomainWriter(transaction, committedTransactionId, result);
 			if (result == MDB_SUCCESS) {
-				if (expectedNativeTransactionId >= 0L) {
-					expectedNativeTransactionId = ownedTransaction;
-				}
 				nativeCommitGeneration.incrementAndGet();
 				try {
+					// LMDB publishes no transaction for a writer without dirty pages, such as a rebuild batch that
+					// finds nothing left to write. Only a commit that advanced the environment is this owner's.
+					if (expectedNativeTransactionId >= 0L && lastTransactionId() == committedTransactionId) {
+						expectedNativeTransactionId = ownedTransaction;
+					}
 					if (publishIndexGeneration) {
 						afterIndexManifestCommitBeforePublication();
 						publishCommittedIndexGeneration(indexBuild.target(), committedTransactionId);
@@ -9374,11 +9376,19 @@ class TripleStore implements Closeable {
 		return txnManager.doWithFreshReader(reader, this::readFrontierMutationJournalState);
 	}
 
-	void acknowledgeFrontierMutationsThrough(long coveredSequence) throws IOException {
-		acknowledgeFrontierMutationsThrough(coveredSequence, null);
+	FrontierAcknowledgementCommit acknowledgeFrontierMutationsThrough(long coveredSequence) throws IOException {
+		return acknowledgeFrontierMutationsThrough(coveredSequence, null);
 	}
 
-	void acknowledgeFrontierMutationsThrough(long coveredSequence, Txn reader) throws IOException {
+	/**
+	 * Prunes the journal rows a publication covers in an LMDB write transaction of its own. That commit changes only
+	 * the mutation journal, never a statement or the latest journal sequence.
+	 *
+	 * @return the acknowledgement's own commit, or {@code null} when the journal already reflected the coverage and
+	 *         nothing was committed
+	 */
+	FrontierAcknowledgementCommit acknowledgeFrontierMutationsThrough(long coveredSequence, Txn reader)
+			throws IOException {
 		if (coveredSequence < 0L) {
 			throw new IllegalArgumentException("Frontier publication coverage cannot be negative");
 		}
@@ -9389,7 +9399,7 @@ class TripleStore implements Closeable {
 			throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
 		}
 		if (!observed.acknowledgementChangesState(coveredSequence)) {
-			return;
+			return null;
 		}
 		/*
 		 * LMDB admits exactly one write transaction at a time. Starting this independent writer before taking the
@@ -9401,15 +9411,16 @@ class TripleStore implements Closeable {
 		 * waiting for the gate, can never be blocked by an acknowledgement that waits for the lock.
 		 */
 		acquireIndependentWriterGate();
+		FrontierAcknowledgementCommit acknowledgement;
 		try {
-			long ownedTransaction = writeTransaction(env, (stack, txn) -> {
+			acknowledgement = writeTransaction(env, (stack, txn) -> {
 				validateNativeWriterTransaction(txn);
 				FrontierMutationJournalState state = readFrontierMutationJournalState(stack, txn);
 				if (coveredSequence > state.latestSequence()) {
 					throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
 				}
 				if (!state.acknowledgementChangesState(coveredSequence)) {
-					return expectedNativeTransactionId;
+					return null;
 				}
 				state = compactLegacyFrontierMutationJournalToCapacity(txn, state);
 				long firstRetainedSequence = state.latestSequence() - state.retainedMutationCount() + 1L;
@@ -9423,15 +9434,16 @@ class TripleStore implements Closeable {
 						state.latestSequence(), gapThrough,
 						Math.max(state.acknowledgedThroughSequence(), coveredSequence),
 						state.retainedMutationCount() - pruned, false));
-				return expectedNativeTransactionId >= 0L ? mdb_txn_id(txn) : -1L;
+				return new FrontierAcknowledgementCommit(mdb_txn_id(txn), state.latestSequence());
 			});
-			if (expectedNativeTransactionId >= 0L) {
-				expectedNativeTransactionId = ownedTransaction;
+			if (acknowledgement != null && expectedNativeTransactionId >= 0L) {
+				expectedNativeTransactionId = acknowledgement.epoch();
 			}
 		} finally {
 			independentWriterGate.release();
 		}
 		resetReadersAfterIndependentWrite();
+		return acknowledgement;
 	}
 
 	private void acquireIndependentWriterGate() throws IOException {
@@ -12379,6 +12391,13 @@ class TripleStore implements Closeable {
 				throw error;
 			}
 		}
+	}
+
+	/**
+	 * The committed LMDB write transaction of a Frontier journal acknowledgement: its own transaction ID, which is the
+	 * snapshot epoch it produced, and the latest journal sequence it left unchanged.
+	 */
+	record FrontierAcknowledgementCommit(long epoch, long unchangedSequence) {
 	}
 
 	record FrontierMutationJournalState(long latestSequence, long gapThroughSequence,

@@ -81,7 +81,8 @@ final class PackedPlanRecipe {
 	private final long ruleProofMask;
 	private final PackedStatementPatternSemanticsCodec semanticsCodec;
 
-	private PackedPlanRecipe(int rootRecipeId, short[] operatorTags, int[] payloadIds, int[] deliveredPropertyIds,
+	/** Callers transfer detached, immutable backing data and must not mutate it after construction. */
+	PackedPlanRecipe(int rootRecipeId, short[] operatorTags, int[] payloadIds, int[] deliveredPropertyIds,
 			int[] implementationForms, int[] sourcePhysicalExpressionIds, int[] sourceLogicalExpressionIds,
 			int[] childStarts, int[] childCounts, int[] childRecipeIds, byte[] physicalMetadataPresent,
 			double[] outputRows, double[] workRows, double[] accessRows, double[] invocations, int[] lookupMasks,
@@ -1062,6 +1063,29 @@ final class PackedPlanRecipe {
 	boolean hasDetachedEvidence() {
 		return frontierEvidenceBundle.stateCount() > 0 && costingTrace.eventCount() > 0
 				&& decisionCertificate.hasCompleteState();
+	}
+
+	/** Keeps an executable winner while removing provider-owned runtime state that could not be detached. */
+	PackedPlanRecipe withoutProviderRuntimeState() {
+		Object[] safeObjects = providerObjects.clone();
+		for (int objectId = 1; objectId < safeObjects.length; objectId++) {
+			if (!(safeObjects[objectId] instanceof String)) {
+				safeObjects[objectId] = null;
+			}
+		}
+		return new PackedPlanRecipe(rootRecipeId, operatorTags, payloadIds, deliveredPropertyIds,
+				implementationForms, sourcePhysicalExpressionIds, sourceLogicalExpressionIds, childStarts, childCounts,
+				childRecipeIds, physicalMetadataPresent, outputRows, workRows, accessRows, invocations, lookupMasks,
+				missingLookupMasks, indexPrefixLengths, indexNameIds, estimateSourceIds, estimateFusionIds,
+				accessModeIds, new int[runtimeFeedbackContractIds.length], plannedStringMetricStarts,
+				plannedStringMetricCounts, plannedStringMetricNameIds, plannedStringMetricValueIds,
+				plannedDoubleMetricStarts, plannedDoubleMetricCounts, plannedDoubleMetricNameIds,
+				plannedDoubleMetricValues, dependentOwnerRecipeIds, dependentSubqueryPayloadIds, dependentRootRecipeIds,
+				FrontierEvidenceBundle.empty(frontierEvidenceBundle.requestedStateCount()), PackedCostingTrace.empty(),
+				PackedDecisionCertificate.empty(), PackedCacheValidationEvent.NONE, continuationSeed,
+				new int[frontierBundleOrdinals.length], new byte[evidenceGuarantees.length],
+				new byte[evidenceDispositions.length], new int[costEventIds.length], safeObjects, ruleProofMask,
+				semanticsCodec);
 	}
 
 	PackedPlanRecipe withoutDetachedEvidence() {

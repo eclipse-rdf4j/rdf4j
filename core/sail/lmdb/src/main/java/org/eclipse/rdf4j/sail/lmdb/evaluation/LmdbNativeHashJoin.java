@@ -265,6 +265,10 @@ final class LmdbNativeHashJoin {
 		if (!(plan.children[0] instanceof PatternPlan) || !(plan.children[1] instanceof PatternPlan)) {
 			return reject(row, "non-pattern-child");
 		}
+		if (plan.containsOrderedScan()) {
+			// rows follow the probe side, which is the larger pattern rather than the explicitly ordered scan
+			return reject(row, "ordered-scan");
+		}
 		if (row.source == null) {
 			return reject(row, "source-unavailable");
 		}

@@ -13,10 +13,32 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.List;
 
-/** Detached result of one opt-in, executable plan-quality audit. */
+/**
+ * Detached result of one opt-in, executable plan-quality audit. Unranked candidates are retained in trace order and are
+ * never compared numerically. Counts describe root trace candidates before executable-plan deduplication; the
+ * unavailable count covers unranked, non-selected candidates whose individual prices remain unavailable. Overall
+ * comparison completeness is reported by the selected planning result. Unranked materialization is capped by the
+ * caller's sample count and is refused under finite owner limits until per-plan resource admission is available.
+ */
 public record PackedPlanQualityAuditResult(PackedPlanningResult selectedPlanningResult,
 		List<PackedPlanQualityAlternative> alternatives, String samplingAlgorithm, int rootCandidateCount,
-		int paretoSurvivorCount, int dominatedCandidateCount, int sampledDominatedCount) {
+		int paretoSurvivorCount, int dominatedCandidateCount, int sampledDominatedCount,
+		int unrankedCandidateCount, int unavailableCandidateCount, int omittedUnrankedCandidateCount,
+		UnrankedAdmission unrankedAdmission) {
+
+	public enum UnrankedAdmission {
+		COMPLETE,
+		SAMPLE_LIMIT,
+		RESOURCE_PROOF_UNAVAILABLE,
+		NOT_EXAMINED
+	}
+
+	public PackedPlanQualityAuditResult(PackedPlanningResult selectedPlanningResult,
+			List<PackedPlanQualityAlternative> alternatives, String samplingAlgorithm, int rootCandidateCount,
+			int paretoSurvivorCount, int dominatedCandidateCount, int sampledDominatedCount) {
+		this(selectedPlanningResult, alternatives, samplingAlgorithm, rootCandidateCount, paretoSurvivorCount,
+				dominatedCandidateCount, sampledDominatedCount, 0, 0, 0, UnrankedAdmission.NOT_EXAMINED);
+	}
 
 	public PackedPlanQualityAuditResult {
 		if (selectedPlanningResult == null) {
@@ -29,8 +51,19 @@ public record PackedPlanQualityAuditResult(PackedPlanningResult selectedPlanning
 		if (samplingAlgorithm == null || samplingAlgorithm.isBlank()) {
 			throw new IllegalArgumentException("plan-quality sampling algorithm must not be blank");
 		}
+		if (unrankedAdmission == null) {
+			throw new NullPointerException("unranked audit admission");
+		}
 		if (rootCandidateCount < alternatives.size() || paretoSurvivorCount < 0 || dominatedCandidateCount < 0
-				|| sampledDominatedCount < 0 || sampledDominatedCount > dominatedCandidateCount) {
+				|| sampledDominatedCount < 0 || sampledDominatedCount > dominatedCandidateCount
+				|| unrankedCandidateCount < 0 || unrankedCandidateCount > rootCandidateCount
+				|| omittedUnrankedCandidateCount < 0 || omittedUnrankedCandidateCount > unrankedCandidateCount
+				|| unavailableCandidateCount < 0
+				|| unavailableCandidateCount > unrankedCandidateCount - omittedUnrankedCandidateCount
+				|| unrankedAdmission == UnrankedAdmission.COMPLETE && omittedUnrankedCandidateCount != 0
+				|| (unrankedAdmission == UnrankedAdmission.SAMPLE_LIMIT
+						|| unrankedAdmission == UnrankedAdmission.RESOURCE_PROOF_UNAVAILABLE)
+						&& omittedUnrankedCandidateCount == 0) {
 			throw new IllegalArgumentException("invalid plan-quality audit counts");
 		}
 		long selectedCount = alternatives.stream().filter(PackedPlanQualityAlternative::selectedByPolicy).count();

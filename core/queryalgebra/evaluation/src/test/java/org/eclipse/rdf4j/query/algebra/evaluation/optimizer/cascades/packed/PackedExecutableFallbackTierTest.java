@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -70,6 +71,28 @@ class PackedExecutableFallbackTierTest {
 
 	@Test
 	void physicallyRefinedWrittenJoinIsACostedCandidate() {
+		// One unit of search work pays for the contextual price of the right-hand factor under the left prefix.
+		SelectedWrittenJoin selected = searchWrittenJoin(1L);
+
+		assertEquals(PackedWinnerTable.COSTED, selected.tier(),
+				"a concrete join implementation with a physical costing event is not an executable-only fallback");
+		assertEquals(4.0d, selected.totalCost(), 0.0d,
+				"left scan 2.0 + contextual right-hand work 1.0 + one result row of the dependent join");
+	}
+
+	@Test
+	void writtenJoinWithoutWorkForItsContextualPriceStaysAnUnpricedExecutableFallback() {
+		// Without any work the right-hand factor only has its isolated price, which cannot price an input that the
+		// left prefix binds. The written order stays executable but unpriced.
+		SelectedWrittenJoin selected = searchWrittenJoin(0L);
+
+		assertEquals(PackedWinnerTable.EXECUTABLE_FALLBACK, selected.tier(),
+				"an isolated right-hand price must not turn the written join into a costed candidate");
+		assertTrue(Double.isNaN(selected.totalCost()),
+				"the unpriced written join reports an unavailable cost instead of the isolated right-hand price");
+	}
+
+	private static SelectedWrittenJoin searchWrittenJoin(long workLimit) {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern left = new StatementPattern(Var.of("person"),
 				Var.of("leftPredicate", values.createIRI("urn:left")), Var.of("leftValue"));
@@ -100,24 +123,24 @@ class PackedExecutableFallbackTierTest {
 			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
 			}
 		};
-		int selectedTier = -1;
 		try (EventSourcingPackedCostSession recordedCosts = new EventSourcingPackedCostSession(nativeCosts, query)) {
 			PackedIncumbentSearch search = PackedIncumbentSearch.forSession(query, memo,
-					new PackedSearchBudget(0L, Long.MAX_VALUE), false, recordedCosts);
+					new PackedSearchBudget(workLimit, Long.MAX_VALUE), false, recordedCosts);
 
 			int rootWinnerId = search.build();
 			PackedMemo.PackedDecisionDraft decisions = memo.decisionDraft(rootWinnerId);
 			for (int candidate = decisions.decisionStarts()[0]; candidate < decisions
 					.decisionStarts()[1]; candidate++) {
 				if (decisions.selectedByPolicy()[candidate] != 0) {
-					selectedTier = Byte.toUnsignedInt(decisions.comparisonTiers()[candidate]);
-					break;
+					return new SelectedWrittenJoin(Byte.toUnsignedInt(decisions.comparisonTiers()[candidate]),
+							memo.winnerTotalCost(rootWinnerId));
 				}
 			}
 		}
+		throw new AssertionError("the search selected no root candidate");
+	}
 
-		assertEquals(PackedWinnerTable.COSTED, selectedTier,
-				"a concrete join implementation with a physical costing event is not an executable-only fallback");
+	private record SelectedWrittenJoin(int tier, double totalCost) {
 	}
 
 	@Test

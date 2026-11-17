@@ -38,6 +38,18 @@ public interface PackedCostSession extends AutoCloseable {
 	default void bindProviderMemory(PackedProviderMemory memory) {
 	}
 
+	/** Binds the current query's borrowed optional-work owner for bounded operations inside provider callbacks. */
+	default void bindProviderWork(PackedProviderWork work) {
+	}
+
+	/**
+	 * Receives the current planner-owned physical-region factory before costing callbacks. A replacement memo receives
+	 * a new factory and revokes every handle from the old generation. The session must not retain it after close. The
+	 * default preserves scalar providers and performs no optional region work.
+	 */
+	default void bindPhysicalRegions(PackedPhysicalRegion.Factory factory) {
+	}
+
 	/**
 	 * Routes one estimate according to whether its context has a retained prefix.
 	 */
@@ -142,6 +154,17 @@ public interface PackedCostSession extends AutoCloseable {
 	}
 
 	/**
+	 * Whether everything this session returned is a function of the planning inputs alone. A session whose reads were
+	 * cut short by a wall-clock limit returns false. The planner then keeps the search result and its provider evidence
+	 * for the request that planned it, but neither publishes it to the plan cache nor hands it to requests waiting on
+	 * the same planning. Delegating sessions forward it; the default suits sessions whose reads have no wall-clock
+	 * limit.
+	 */
+	default boolean reproducible() {
+		return true;
+	}
+
+	/**
 	 * Closes query-local resources. The default is suitable for stateless adapters.
 	 */
 	@Override
@@ -206,6 +229,131 @@ final class ScalarPackedCostSession implements PackedCostSession {
 	}
 }
 
+/** Admits each opaque compatibility callback against the query's shared deterministic-work owner. */
+final class WorkAdmittedPackedCostSession implements PackedCostSession {
+	private final PackedCostSession delegate;
+	private final PackedProviderWork work;
+
+	WorkAdmittedPackedCostSession(PackedCostSession delegate, PackedProviderWork work) {
+		this.delegate = Objects.requireNonNull(delegate, "delegate");
+		this.work = Objects.requireNonNull(work, "provider work");
+	}
+
+	@Override
+	public void bindProviderMemory(PackedProviderMemory memory) {
+		delegate.bindProviderMemory(memory);
+	}
+
+	@Override
+	public void bindProviderWork(PackedProviderWork work) {
+		delegate.bindProviderWork(work);
+	}
+
+	@Override
+	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		invoke(PackedCostingPhase.LEAF, relationId, context, output);
+	}
+
+	@Override
+	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		invoke(PackedCostingPhase.PREFIX_EXTENSION, relationId, context, output);
+	}
+
+	@Override
+	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		invoke(PackedCostingPhase.OPERATOR, relationId, context, output);
+	}
+
+	@Override
+	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+		invoke(PackedCostingPhase.INTERMEDIATE_JOIN, 0, context, output);
+	}
+
+	private void invoke(PackedCostingPhase phase, int relationId, PackedCostContext context,
+			PackedCostEstimate output) {
+		work.require(1L);
+		PackedCascadesPlanner.ProviderWorkBinding owner = work instanceof PackedCascadesPlanner.ProviderWorkBinding binding
+				? binding
+				: null;
+		PackedCostContext previousContext = owner == null ? null : owner.activeContext;
+		long previousCallback = owner == null ? 0L : owner.activeCallback;
+		PackedCostingPhase previousPhase = owner == null ? null : owner.activePhase;
+		int previousRelation = owner == null ? 0 : owner.activeRelation;
+		boolean previousTouched = owner != null && owner.strategyTouched;
+		PackedStrategyRequestImpl previousRequest = owner == null ? null : owner.activeRequest;
+		PackedProviderWork.Exhausted previousStop = owner == null ? null : owner.ownedStrategyStop;
+		if (owner != null) {
+			owner.enterStrategyContext(phase, relationId, context);
+		}
+		try {
+			switch (phase) {
+			case LEAF -> delegate.estimateLeaf(relationId, context, output);
+			case PREFIX_EXTENSION -> delegate.appendFactor(relationId, context, output);
+			case OPERATOR -> delegate.refineOperator(relationId, context, output);
+			case INTERMEDIATE_JOIN -> delegate.refineIntermediateJoin(context, output);
+			default -> throw new IllegalArgumentException("unknown provider costing phase");
+			}
+		} catch (Throwable failure) {
+			if (owner != null) {
+				owner.recordStrategyFailure(failure);
+			}
+			throw failure;
+		} finally {
+			if (owner != null) {
+				owner.leaveStrategyContext(previousContext, previousCallback, previousPhase, previousRelation,
+						previousTouched, previousRequest,
+						previousStop);
+			}
+		}
+	}
+
+	@Override
+	public boolean supportsPhysicalJoinRefinement() {
+		work.require(1L);
+		return delegate.supportsPhysicalJoinRefinement();
+	}
+
+	@Override
+	public double objectiveScore(PackedCostEstimate estimate) {
+		work.require(1L);
+		return delegate.objectiveScore(estimate);
+	}
+
+	@Override
+	public int exactContinuationIdentity(PackedCostEstimate estimate) {
+		work.require(1L);
+		return delegate.exactContinuationIdentity(estimate);
+	}
+
+	@Override
+	public int realizeEvidenceState(int evidenceStateId) {
+		work.require(1L);
+		return delegate.realizeEvidenceState(evidenceStateId);
+	}
+
+	@Override
+	public void realizeEvidenceState(PackedCostEstimate evidence) {
+		work.require(1L);
+		delegate.realizeEvidenceState(evidence);
+	}
+
+	@Override
+	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+		work.require(1L);
+		return delegate.detachEvidence(evidenceStateIds);
+	}
+
+	@Override
+	public boolean reproducible() {
+		return delegate.reproducible();
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
+	}
+}
+
 /** Records each completed provider invocation before its estimate can enter winner metadata. */
 @PackedHotPath
 final class EventSourcingPackedCostSession implements PackedCostSession {
@@ -214,8 +362,14 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 		delegate.bindProviderMemory(Objects.requireNonNull(memory, "provider memory"));
 	}
 
+	@Override
+	public void bindProviderWork(PackedProviderWork work) {
+		delegate.bindProviderWork(Objects.requireNonNull(work, "provider work"));
+	}
+
 	private final PackedCostSession delegate;
 	private final PackedCostingTraceArena trace;
+	private final PackedSearchBudget budget;
 	private final boolean closeDelegate;
 	private final PackedCostEstimate providerInput = new PackedCostEstimate();
 	private final PackedCostContext realizedContext = new PackedCostContext();
@@ -238,7 +392,8 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 	private EventSourcingPackedCostSession(PackedCostSession delegate, PackedQuery query, PackedSearchBudget budget,
 			boolean closeDelegate) {
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
-		trace = PackedCostingTraceArena.borrow(Objects.requireNonNull(budget, "budget"));
+		this.budget = Objects.requireNonNull(budget, "budget");
+		trace = PackedCostingTraceArena.borrow(this.budget);
 		this.closeDelegate = closeDelegate;
 		canonicalContextualOperatorRelationIds = query == null
 				? null
@@ -420,14 +575,12 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 	}
 
 	/**
-	 * Projects the provider's scalar objective and enforces its contract at the provider boundary. Winner selection and
-	 * branch-and-bound pruning add objectives and assume each one is a finite, non-negative cost. A negative or
-	 * non-finite objective is not a cost, so it is treated as an unknown cost and saturates like every other unbounded
-	 * packed cost, instead of making a plan cheaper than free or failing the whole planning run.
+	 * Projects the provider's scalar objective at its boundary. A negative or non-finite objective is unavailable; it
+	 * must not become a numeric candidate for ordering, a fabricated bound, or a physical resource quantity.
 	 */
 	private double providerObjective(PackedCostEstimate estimate) {
 		double objective = delegate.objectiveScore(estimate);
-		return Double.isFinite(objective) && objective >= 0.0d ? objective : Double.MAX_VALUE;
+		return Double.isFinite(objective) && objective >= 0.0d ? objective : Double.NaN;
 	}
 
 	@Override
@@ -448,8 +601,14 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 		}
 	}
 
-	private static PackedCostSessionFailure resourceLimit(FrontierMemoryLimitException insufficientMemory) {
-		return PackedCostSessionFailure.resourceLimit(insufficientMemory.getMessage(), insufficientMemory);
+	@Override
+	public boolean reproducible() {
+		return delegate.reproducible();
+	}
+
+	private RuntimeException resourceLimit(FrontierMemoryLimitException insufficientMemory) {
+		return budget.isStrategyFailure(insufficientMemory) ? insufficientMemory
+				: PackedCostSessionFailure.resourceLimit(insufficientMemory.getMessage(), insufficientMemory);
 	}
 
 	PackedCostingTrace snapshotTrace() {
@@ -482,13 +641,21 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			return;
 		}
 		closed = true;
-		try {
-			if (closeDelegate) {
+		if (closeDelegate) {
+			try {
 				delegate.close();
+			} catch (Throwable failure) {
+				try {
+					trace.recycle();
+				} catch (Throwable cleanupFailure) {
+					if (cleanupFailure != failure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+				}
+				throw failure;
 			}
-		} finally {
-			trace.recycle();
 		}
+		trace.recycle();
 	}
 }
 
@@ -500,6 +667,11 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 	@Override
 	public void bindProviderMemory(PackedProviderMemory memory) {
 		delegate.bindProviderMemory(Objects.requireNonNull(memory, "provider memory"));
+	}
+
+	@Override
+	public void bindProviderWork(PackedProviderWork work) {
+		delegate.bindProviderWork(Objects.requireNonNull(work, "provider work"));
 	}
 
 	private final PackedQuery query;
@@ -607,6 +779,11 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 	@Override
 	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
 		return delegate.detachEvidence(evidenceStateIds);
+	}
+
+	@Override
+	public boolean reproducible() {
+		return delegate.reproducible();
 	}
 
 	@Override

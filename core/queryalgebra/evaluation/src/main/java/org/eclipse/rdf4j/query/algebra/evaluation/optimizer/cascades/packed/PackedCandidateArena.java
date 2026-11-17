@@ -57,7 +57,7 @@ final class PackedCandidateArena {
 				|| quantityVectorId <= 0 || quantityPopulation < 0.0d
 				|| !Double.isNaN(quantityPopulation) && !Double.isFinite(quantityPopulation)
 				|| evidenceStateId < 0 || parentCandidateId < 0 || parentCandidateId > size
-				|| implementationId < 0 || !Double.isFinite(objectiveScore) || objectiveScore < 0.0d) {
+				|| implementationId < 0 || Double.isInfinite(objectiveScore) || objectiveScore < 0.0d) {
 			throw new IllegalArgumentException("invalid packed candidate row");
 		}
 		int candidateId = size + 1;

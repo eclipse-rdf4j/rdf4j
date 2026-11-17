@@ -17,16 +17,16 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * Describes whether a Cascades search reached quiescence and, when it did not, why it stopped.
  *
  * <p>
- * {@code COMPLETE} is a structural guarantee, not a sampled observation: the packed search enumerates every encoded
- * logical expression exactly once and, in EXACT mode, runs the join enumerator with an unlimited work budget
- * ({@code workLimit = Long.MAX_VALUE}), so a result that reports neither {@code BUDGET_EXHAUSTED} nor
- * {@code DEADLINE_EXPIRED} has exhausted all enabled convergence-contracted work. Unsupported operators and plans
- * without a viable physical implementation fail fast with {@code CascadesPlanningException} rather than degrading into
- * a completeness state.
+ * {@code COMPLETE} means the packed search exhausted its enabled convergence-contracted work. An exact search has no
+ * deterministic work limit, but can still stop at a deadline, a retained-state limit, or an unsupported semantic
+ * boundary. An incomplete search may retain a valid executable incumbent; its completeness does not describe the
+ * accuracy of the available cardinality or cost evidence.
  */
 @Experimental
 public enum OptimizationCompleteness {
 	COMPLETE,
 	BUDGET_EXHAUSTED,
-	DEADLINE_EXPIRED
+	DEADLINE_EXPIRED,
+	RESOURCE_LIMIT_REACHED,
+	UNSUPPORTED_SEMANTICS
 }

@@ -99,7 +99,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Warmup(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "--add-modules=jdk.incubator.vector",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
@@ -142,7 +142,7 @@ public class ThemeQueryBenchmark {
 			"0",
 			"1",
 			"2",
-			"3",
+//			"3",
 //			"4",
 //			"5",
 //			"6",
@@ -157,17 +157,17 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA",
-			"ADAPTIVE_FILTER_PLACEMENT",
-			"ANALYTICS",
-			"EXPLORATION",
-			"DATA_TRANSFORMATION"
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA",
+//			"ADAPTIVE_FILTER_PLACEMENT",
+//			"ANALYTICS",
+//			"EXPLORATION",
+//			"DATA_TRANSFORMATION"
 			// "SPARSE",
 	})
 	public String themeName;
@@ -630,6 +630,8 @@ public class ThemeQueryBenchmark {
 		config.setSketchEstimatorEnabled(sketchProfile);
 		config.setValueOverlayEnabled(
 				Boolean.parseBoolean(System.getProperty(WAIT_FOR_VALUE_OVERLAY_PROPERTY, "false")));
+		// Only a run that captures plans keeps cached plans' optimizer diagnostics; timing runs use the store default.
+		config.setRetainCachedPlanDiagnostics(QueryPlanCapture.isCaptureEnabled());
 		return config;
 	}
 

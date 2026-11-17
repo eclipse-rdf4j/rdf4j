@@ -198,6 +198,8 @@ class MaterializedReplayJoinIteratorCancellationTest {
 			leftIteration.set(created);
 			// This is the same signal sent by InterruptTask, at the publication boundary of left.evaluate().
 			timeoutReference.get().interrupt();
+			// Timeout dispatch is asynchronous; prove the replay has accepted it before the operand returns.
+			await(timeoutReference.get().cancellationRequestCompleted, "timer cancellation dispatch");
 			return created;
 		};
 		MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(left, right, null,
@@ -226,10 +228,15 @@ class MaterializedReplayJoinIteratorCancellationTest {
 		AtomicReference<Throwable> outcome = new AtomicReference<>();
 		AtomicInteger leftOpened = new AtomicInteger();
 		AtomicReference<TrackingIteration> rightIteration = new AtomicReference<>();
+		CountDownLatch cancellationDelivered = new CountDownLatch(1);
 
 		QueryEvaluationStep right = bindings -> {
-			TrackingIteration iteration = new TrackingIteration(List.of(), null, null,
-					() -> timeoutReference.get().interrupt());
+			TrackingIteration iteration = new TrackingIteration(List.of(), null, null, () -> {
+				// Cancel after the right operand has been drained and closed, before its rows are published.
+				timeoutReference.get().interrupt();
+				// Timeout dispatch is asynchronous; prove the replay has accepted it before the right close returns.
+				await(cancellationDelivered, "replay cancellation before row publication");
+			});
 			rightIteration.set(iteration);
 			return iteration;
 		};
@@ -239,7 +246,16 @@ class MaterializedReplayJoinIteratorCancellationTest {
 		};
 		MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(left, right, null,
 				EmptyBindingSet.getInstance(), true, List.of(), DefaultCollectionFactory::new,
-				QueryExecutionPolicy.EXPERIMENTAL);
+				QueryExecutionPolicy.EXPERIMENTAL) {
+			@Override
+			public boolean requestCancellation() {
+				try {
+					return super.requestCancellation();
+				} finally {
+					cancellationDelivered.countDown();
+				}
+			}
+		};
 		TestTimeLimitIteration timeout = new TestTimeLimitIteration(replay, LONG_TIME_LIMIT_MILLIS);
 		timeoutReference.set(timeout);
 		Thread worker = startWorker(timeout, outcome);
@@ -385,6 +401,7 @@ class MaterializedReplayJoinIteratorCancellationTest {
 
 		try {
 			timeout.interrupt();
+			await(timeout.cancellationRequestCompleted, "timer cancellation dispatch");
 			assertThrows(TestTimeoutException.class, timeout::hasNext);
 			assertTrue(replay.isClosed());
 			assertEquals(0, leftOpened.get());
@@ -482,6 +499,7 @@ class MaterializedReplayJoinIteratorCancellationTest {
 		try {
 			assertTrue(factoryEntered.await(WAIT_SECONDS, TimeUnit.SECONDS));
 			timeout.interrupt();
+			await(timeout.cancellationRequestCompleted, "timer cancellation dispatch");
 			assertFalse(replay.isClosed(), "the in-flight creator owns unpublished resource cleanup");
 			assertEquals(0, factoryClosed.get());
 			releaseFactory.countDown();
@@ -539,6 +557,7 @@ class MaterializedReplayJoinIteratorCancellationTest {
 		QueryValueEvaluationStep condition = bindings -> {
 			if (conditionCalls.incrementAndGet() == 1) {
 				timeoutReference.get().interrupt();
+				await(timeoutReference.get().cancellationRequestCompleted, "timer cancellation dispatch");
 			}
 			return BooleanLiteral.FALSE;
 		};

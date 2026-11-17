@@ -589,6 +589,61 @@ class LmdbAsyncValueCleanupIntegrationTest {
 		}
 	}
 
+	/**
+	 * A pinned reader defers all cleanup, so an idle pass that finds one has nothing to publish. It must find that out
+	 * without registering a publication: an open publication makes every pinned reader transiently not current for
+	 * shared statistics, and a query that pins its planning reads at that moment plans without its Frontier read planes
+	 * and without plan-cache reuse.
+	 */
+	@Test
+	void idlePassLeavesAPinnedReaderCurrentForSharedStatistics(@TempDir File directory) throws Exception {
+		ObservedStore store = new ObservedStore(directory, configuration(true));
+		store.init();
+		AsyncValueRetirementCoordinator coordinator = null;
+		try {
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			add(store);
+			coordinator = store.getBackingStore().asyncValueCleanupCoordinator();
+			assertTrue(coordinator.awaitEmpty(10, TimeUnit.SECONDS), "fixture: no queued cleanup, only idle passes");
+			try (SailDataset pinned = pin(store)) {
+				LmdbPinnedReadTxnSource reader = pinned.unwrap(LmdbPinnedReadTxnSource.class).orElseThrow();
+				assertTrue(reader.isCurrentForPhysicalCost(), "fixture: the pinned reader starts current");
+				AtomicBoolean staleWhilePinned = new AtomicBoolean();
+				CountDownLatch checked = new CountDownLatch(1);
+				CountDownLatch passFinished = new CountDownLatch(1);
+				store.cleanupTransactionAccess = () -> {
+					if (!reader.isCurrentForPhysicalCost()) {
+						staleWhilePinned.set(true);
+					}
+					checked.countDown();
+				};
+				try {
+					coordinator.retryWaitStartedForTest(() -> {
+						if (checked.getCount() == 0L) {
+							passFinished.countDown();
+						}
+					});
+					coordinator.signal();
+					assertTrue(checked.await(10, TimeUnit.SECONDS), "an idle pass must look for pinned readers");
+					assertTrue(passFinished.await(10, TimeUnit.SECONDS), "the idle pass must finish");
+				} finally {
+					// The reader closes next; the worker must not observe it afterwards.
+					store.cleanupTransactionAccess = () -> {
+					};
+				}
+				assertFalse(staleWhilePinned.get(),
+						"an idle pass that defers to a pinned reader must not make it stale for shared statistics");
+				assertTrue(reader.isCurrentForPhysicalCost());
+			}
+		} finally {
+			if (coordinator != null) {
+				coordinator.retryWaitStartedForTest(() -> {
+				});
+			}
+			store.shutDown();
+		}
+	}
+
 	@Test
 	void transactionLargerThanTheQueueSpillsWithinTheWholeMemoryBudget(@TempDir File directory) throws Exception {
 		LmdbStoreConfig config = configuration(true).setAsyncValueCleanupMaxCandidates(16)
@@ -1226,6 +1281,9 @@ class LmdbAsyncValueCleanupIntegrationTest {
 		};
 		volatile Consumer<Object> afterCleanupAdmission = owner -> {
 		};
+		/** Runs whenever the cleanup worker reads the triple store's transactions, e.g. to look for pinned readers. */
+		volatile Runnable cleanupTransactionAccess = () -> {
+		};
 
 		ObservedStore(File directory, LmdbStoreConfig config) {
 			super(directory, config);
@@ -1275,7 +1333,16 @@ class LmdbAsyncValueCleanupIntegrationTest {
 							valuesClosed.set(true);
 							super.close();
 						}
-					}, TripleStore::new) {
+					}, (tripleDirectory, tripleProperties, tripleConfig, values) -> new TripleStore(tripleDirectory,
+							tripleProperties, tripleConfig, values) {
+						@Override
+						TxnManager getTxnManager() {
+							if (Thread.currentThread().getName().equals("LmdbValueCleanup")) {
+								cleanupTransactionAccess.run();
+							}
+							return super.getTxnManager();
+						}
+					}) {
 				@Override
 				void afterAsyncValueCleanupAdmissionForTest(Object owner) {
 					afterCleanupAdmission.accept(owner);

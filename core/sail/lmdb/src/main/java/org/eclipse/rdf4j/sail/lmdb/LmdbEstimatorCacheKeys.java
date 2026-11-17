@@ -214,7 +214,7 @@ record EstimationSessionContextKey(Object boundMask, Object finiteBindings,
 		Object evidencePolicy, Object graphDomain, Object estimationTier, Object snapshotIdentity,
 		long snapshotVersion,
 		boolean exactProbePermitted, LmdbFilterReadContext filterReadContext, LmdbFrontierReadPopulation readPopulation,
-		int frontierPlaneMask, long frontierSnapshotEpoch) {
+		int frontierPlaneMask, long frontierSnapshotEpoch, Object admittedCacheIdentity) {
 
 	static EstimationSessionContextKey from(EstimateContext context) {
 		return new EstimationSessionContextKey(context.boundMask(), context.finiteBindings(),
@@ -223,7 +223,8 @@ record EstimationSessionContextKey(Object boundMask, Object finiteBindings,
 				context.estimationTier(),
 				context.snapshotIdentity(),
 				context.snapshotVersion(), context.exactProbePermitted(), context.filterReadContext(),
-				context.readPopulation(), context.frontierPlaneMask(), context.frontierSnapshotEpoch());
+				context.readPopulation(), context.frontierPlaneMask(), context.frontierSnapshotEpoch(),
+				context.admittedCacheIdentity());
 	}
 }
 

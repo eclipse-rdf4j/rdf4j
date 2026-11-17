@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -23,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -83,8 +85,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String BUDGET_PROPERTY = "rdf4j.optimizer.lmdb.cascades.budget";
 	static final String TIMEOUT_MILLIS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.timeoutMillis";
 	static final String APPLIED_METRIC = "optimizer.cascadesApplied";
+	static final String PLAN_CACHE_HIT_METRIC = "optimizer.cascadesPlanCacheHit";
 	static final String SKIP_SKETCH_JOIN_ORDER_METRIC = "optimizer.cascadesSkipSketchJoinOrder";
 	static final String PLANNER_ID = "lmdb-packed-cascades";
+	private static final Set<String> INVOCATION_METRIC_NAMES = Arrays.stream(InvocationMetric.values())
+			.map(metric -> metric.name)
+			.collect(Collectors.toUnmodifiableSet());
+	private static final Predicate<String> INVOCATION_METRIC_FILTER = INVOCATION_METRIC_NAMES::contains;
 
 	/*
 	 * A four-pattern region with a finite access provider plus typed semi/anti alternatives needs 472 deterministic
@@ -101,6 +108,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String OPTIMIZER_GUARANTEE_OPTION_REASON = "optimizer.guaranteeOptionReason";
 	static final String OPTIMIZER_GUARANTEE_CANDIDATE = "optimizer.guaranteeCandidate";
 	static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE = "optimizer.guaranteeAnchorPredicate";
+	private static final String FALLBACK_GUARANTEE_REASON = "cascades-fallback";
+	private static final String FALLBACK_GUARANTEE_CANDIDATE = "not-observable-after-fallback";
 	/** Planned metric explaining why a query's runtime feedback is not published into the learned state. */
 	static final String PLANNED_FEEDBACK_PUBLICATION_METRIC = "plannedFeedbackPublication";
 	static final String FEEDBACK_PUBLICATION_SUPPRESSED_UNCOMMITTED = "suppressed:uncommitted-snapshot";
@@ -195,6 +204,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (tupleExpr == null) {
 			return new PlanningOutcome(null, null, null, null, null);
 		}
+		clearInvocationMetrics(tupleExpr);
 		LmdbValueIdFilter.preserveEffectiveKinds(tupleExpr);
 		TupleExpr installedRoot = tupleExpr;
 		boolean runtimeTelemetry = trackResultSize || tupleExpr.isRuntimeTelemetryEnabled();
@@ -277,6 +287,38 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private static TupleExpr observablePlanRoot(TupleExpr installedRoot) {
 		return installedRoot instanceof QueryRoot queryRoot ? queryRoot.getArg() : installedRoot;
+	}
+
+	/** Clear only invocation diagnostics, retaining provenance attached to a selected plan. */
+	static void clearInvocationMetrics(TupleExpr root) {
+		if (root == null) {
+			return;
+		}
+		clearInvocationMetricsOn(root);
+		TupleExpr observableRoot = observablePlanRoot(root);
+		if (observableRoot != null && observableRoot != root) {
+			clearInvocationMetricsOn(observableRoot);
+		}
+	}
+
+	private static void clearInvocationMetricsOn(TupleExpr root) {
+		boolean staleGuaranteeReason = FALLBACK_GUARANTEE_REASON
+				.equals(root.getStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION_REASON));
+		boolean staleGuaranteeCandidate = FALLBACK_GUARANTEE_CANDIDATE
+				.equals(root.getStringMetricPlanned(OPTIMIZER_GUARANTEE_CANDIDATE));
+		if (staleGuaranteeReason || staleGuaranteeCandidate) {
+			root.removeStringMetricsPlannedIf(name -> INVOCATION_METRIC_NAMES.contains(name)
+					|| staleGuaranteeReason && OPTIMIZER_GUARANTEE_OPTION_REASON.equals(name)
+					|| staleGuaranteeCandidate && OPTIMIZER_GUARANTEE_CANDIDATE.equals(name));
+		} else {
+			root.removeStringMetricsPlannedIf(INVOCATION_METRIC_FILTER);
+		}
+		if (!root.getDoubleMetricsPlanned().isEmpty()) {
+			root.getDoubleMetricsPlanned().keySet().removeAll(INVOCATION_METRIC_NAMES);
+		}
+		if (!root.getLongMetricsPlanned().isEmpty()) {
+			root.getLongMetricsPlanned().keySet().removeAll(INVOCATION_METRIC_NAMES);
+		}
 	}
 
 	private static void copyCacheValidationMetrics(TupleExpr source, TupleExpr target) {
@@ -385,6 +427,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (packedPlanCache == null) {
 			return planner.optimize(tupleExpr, goal, packedCostModel, rangeProvider);
 		}
+		// The plan-cache audit's independent planning (F3) runs the search of a miss against a private empty
+		// cache of the store's shape: it neither reads nor publishes the store's packed plan cache.
+		PackedPlanCache cache = LmdbPlanCacheRevalidation.planningIndependently()
+				? LmdbPlanCacheRevalidation.privatePackedPlanCache(runtime.frontierSettings()::newPackedPlanCache)
+				: packedPlanCache;
 		// An unavailable semantic observer uses the ordinary full search; it is never a hash0/empty cache key.
 		PackedPlanCache.Context context = LmdbCacheValueCopies.semanticIdentityReady(tupleExpr)
 				? cacheContext(dataset, bindings, goal, packedCostModel)
@@ -392,7 +439,12 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (context == null) {
 			return planner.optimize(tupleExpr, goal, packedCostModel, rangeProvider);
 		}
-		return planner.optimize(tupleExpr, goal, packedPlanCache, context, packedCostModel, rangeProvider);
+		CascadesPlan plan = planner.optimize(tupleExpr, goal, cache, context, packedCostModel, rangeProvider);
+		// A packed hit skips the cost session and its learned reads, and a resumed search continues an earlier
+		// planning's
+		// memo and budget: the planning log cannot cover either.
+		LmdbPlanningReadLog.markReusedPackedWork(plan.metrics().planCacheHit(), plan.tupleExpr());
+		return plan;
 	}
 
 	private OptimizationGoal configuredGoal(TupleExpr tupleExpr, BindingSet bindings, Mode mode) {
@@ -609,41 +661,41 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		var searchStatus = plan.searchStatus();
 		var counters = searchStatus.counters();
 		var retention = searchStatus.retention();
-		root.setStringMetricPlanned("optimizer.cascadesMode", mode.name().toLowerCase(Locale.ROOT));
-		root.setStringMetricPlanned(APPLIED_METRIC, "true");
-		root.setStringMetricPlanned(SKIP_SKETCH_JOIN_ORDER_METRIC, "false");
-		root.setStringMetricPlanned("optimizer.cascadesCompleteness", searchStatus.completeness().name());
-		root.setStringMetricPlanned("optimizer.cascadesApproximate",
-				Boolean.toString(searchStatus.approximate()));
-		root.setStringMetricPlanned("optimizer.cascadesLimitCauses", searchStatus.limitCauses()
+		InvocationMetric.MODE.set(root, mode.name().toLowerCase(Locale.ROOT));
+		InvocationMetric.APPLIED.set(root, "true");
+		InvocationMetric.SKIP_SKETCH_JOIN_ORDER.set(root, "false");
+		InvocationMetric.COMPLETENESS.set(root, searchStatus.completeness().name());
+		InvocationMetric.APPROXIMATE.set(root, Boolean.toString(searchStatus.approximate()));
+		InvocationMetric.LIMIT_CAUSES.set(root, searchStatus.limitCauses()
 				.stream()
 				.map(Enum::name)
 				.sorted()
 				.collect(Collectors.joining(",")));
-		root.setDoubleMetricPlanned("optimizer.cascadesRuleWork", counters.ruleWork());
-		root.setDoubleMetricPlanned("optimizer.cascadesDphypPairProbes", counters.dphypPairProbes());
-		root.setDoubleMetricPlanned("optimizer.cascadesPartitionProbes", counters.partitionProbes());
-		root.setDoubleMetricPlanned("optimizer.cascadesCandidateEvaluations", counters.candidateEvaluations());
-		root.setDoubleMetricPlanned("optimizer.cascadesPredicateProbes", counters.predicateProbes());
-		root.setDoubleMetricPlanned("optimizer.cascadesRetainedCandidates", retention.currentRetainedCandidates());
-		root.setDoubleMetricPlanned("optimizer.cascadesRetainedCandidateHighWaterMark",
-				retention.retainedCandidateHighWaterMark());
-		root.setDoubleMetricPlanned("optimizer.cascadesFrontierHighWaterMark", retention.frontierHighWaterMark());
-		root.setDoubleMetricPlanned("optimizer.cascadesRootCostWorkRows", plan.cost().workRows());
-		root.setDoubleMetricPlanned("optimizer.cascadesRootRows", plan.cost().rows());
-		root.setDoubleMetricPlanned("optimizer.cascadesEncodeNanos", metrics.encodeNanos());
-		root.setDoubleMetricPlanned("optimizer.cascadesSearchNanos", metrics.searchNanos());
-		root.setDoubleMetricPlanned("optimizer.cascadesExtractionNanos", metrics.extractionNanos());
-		root.setDoubleMetricPlanned("optimizer.cascadesMaterializationNanos", metrics.materializationNanos());
-		root.setDoubleMetricPlanned("optimizer.cascadesCacheNanos", metrics.cacheNanos());
-		root.setDoubleMetricPlanned("optimizer.cascadesWorkUnits", metrics.workUnits());
-		root.setDoubleMetricPlanned("optimizer.cascadesGroups", metrics.groups());
-		root.setDoubleMetricPlanned("optimizer.cascadesLogicalExpressions", metrics.logicalExpressions());
-		root.setDoubleMetricPlanned("optimizer.cascadesPhysicalExpressions", metrics.physicalExpressions());
-		root.setDoubleMetricPlanned("optimizer.cascadesWinners", metrics.winners());
-		root.setStringMetricPlanned("optimizer.cascadesPlanCacheHit", Boolean.toString(metrics.planCacheHit()));
-		root.setStringMetricPlanned("optimizer.cascadesQueryTemplateCacheHit",
-				Boolean.toString(metrics.queryTemplateCacheHit()));
+		InvocationMetric.RULE_WORK.set(root, counters.ruleWork());
+		InvocationMetric.DPHYP_PAIR_PROBES.set(root, counters.dphypPairProbes());
+		InvocationMetric.PARTITION_PROBES.set(root, counters.partitionProbes());
+		InvocationMetric.CANDIDATE_EVALUATIONS.set(root, counters.candidateEvaluations());
+		InvocationMetric.PREDICATE_PROBES.set(root, counters.predicateProbes());
+		InvocationMetric.RETAINED_CANDIDATES.set(root, retention.currentRetainedCandidates());
+		InvocationMetric.RETAINED_CANDIDATE_HIGH_WATER.set(root, retention.retainedCandidateHighWaterMark());
+		InvocationMetric.FRONTIER_HIGH_WATER.set(root, retention.frontierHighWaterMark());
+		InvocationMetric.ROOT_WORK_ROWS.set(root, plan.price().map(cost -> cost.workRows()).orElse(Double.NaN));
+		InvocationMetric.ROOT_ROWS.set(root, plan.outputRows());
+		InvocationMetric.PRICE_AVAILABILITY.set(root, plan.price().isPresent() ? "AVAILABLE" : "UNAVAILABLE");
+		InvocationMetric.COST_COMPARISON.set(root, plan.decisionSummary() == null ? "UNAVAILABLE_COST"
+				: plan.decisionSummary().comparisonCompleteness().name());
+		InvocationMetric.ENCODE_NANOS.set(root, metrics.encodeNanos());
+		InvocationMetric.SEARCH_NANOS.set(root, metrics.searchNanos());
+		InvocationMetric.EXTRACTION_NANOS.set(root, metrics.extractionNanos());
+		InvocationMetric.MATERIALIZATION_NANOS.set(root, metrics.materializationNanos());
+		InvocationMetric.CACHE_NANOS.set(root, metrics.cacheNanos());
+		InvocationMetric.WORK_UNITS.set(root, metrics.workUnits());
+		InvocationMetric.GROUPS.set(root, metrics.groups());
+		InvocationMetric.LOGICAL_EXPRESSIONS.set(root, metrics.logicalExpressions());
+		InvocationMetric.PHYSICAL_EXPRESSIONS.set(root, metrics.physicalExpressions());
+		InvocationMetric.WINNERS.set(root, metrics.winners());
+		InvocationMetric.PLAN_CACHE_HIT.set(root, Boolean.toString(metrics.planCacheHit()));
+		InvocationMetric.QUERY_TEMPLATE_CACHE_HIT.set(root, Boolean.toString(metrics.queryTemplateCacheHit()));
 	}
 
 	/**
@@ -695,7 +747,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	 * root certificate survives plan-cache replay, and a certified zero dominates stamped packed row heuristics.
 	 */
 	private static void annotateCertifiedExactZero(TupleExpr root, CascadesPlan plan) {
-		if (plan.cost().rows() != 0.0d) {
+		if (plan.outputRows() != 0.0d) {
 			return;
 		}
 		stampExactZero(root);
@@ -826,11 +878,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	static void annotateCascadesFallback(TupleExpr root, Throwable failure) {
 		CASCADES_FALLBACKS.incrementAndGet();
-		root.setStringMetricPlanned("optimizer.cascadesFallback", "true");
-		root.setStringMetricPlanned("optimizer.cascadesFallbackReason",
+		InvocationMetric.FALLBACK.set(root, "true");
+		InvocationMetric.FALLBACK_REASON.set(root,
 				failure.getClass().getSimpleName() + ": " + String.valueOf(failure.getMessage()));
-		root.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION_REASON, "cascades-fallback");
-		root.setStringMetricPlanned(OPTIMIZER_GUARANTEE_CANDIDATE, "not-observable-after-fallback");
+		root.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION_REASON, FALLBACK_GUARANTEE_REASON);
+		root.setStringMetricPlanned(OPTIMIZER_GUARANTEE_CANDIDATE, FALLBACK_GUARANTEE_CANDIDATE);
 	}
 
 	/**
@@ -1098,6 +1150,56 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		} catch (NumberFormatException error) {
 			throw new CascadesPlanningException("Invalid positive work budget in " + name + ": " + configured,
 					error);
+		}
+	}
+
+	/** Fields written for one search; selected-plan provenance lives outside this inventory. */
+	private enum InvocationMetric {
+		MODE("optimizer.cascadesMode"),
+		APPLIED(APPLIED_METRIC),
+		SKIP_SKETCH_JOIN_ORDER(SKIP_SKETCH_JOIN_ORDER_METRIC),
+		COMPLETENESS("optimizer.cascadesCompleteness"),
+		APPROXIMATE("optimizer.cascadesApproximate"),
+		LIMIT_CAUSES("optimizer.cascadesLimitCauses"),
+		PLAN_CACHE_HIT(PLAN_CACHE_HIT_METRIC),
+		QUERY_TEMPLATE_CACHE_HIT("optimizer.cascadesQueryTemplateCacheHit"),
+		FALLBACK("optimizer.cascadesFallback"),
+		FALLBACK_REASON("optimizer.cascadesFallbackReason"),
+		RULE_WORK("optimizer.cascadesRuleWork"),
+		DPHYP_PAIR_PROBES("optimizer.cascadesDphypPairProbes"),
+		PARTITION_PROBES("optimizer.cascadesPartitionProbes"),
+		CANDIDATE_EVALUATIONS("optimizer.cascadesCandidateEvaluations"),
+		PREDICATE_PROBES("optimizer.cascadesPredicateProbes"),
+		RETAINED_CANDIDATES("optimizer.cascadesRetainedCandidates"),
+		RETAINED_CANDIDATE_HIGH_WATER("optimizer.cascadesRetainedCandidateHighWaterMark"),
+		FRONTIER_HIGH_WATER("optimizer.cascadesFrontierHighWaterMark"),
+		ROOT_WORK_ROWS("optimizer.cascadesRootCostWorkRows"),
+		ROOT_ROWS("optimizer.cascadesRootRows"),
+		PRICE_AVAILABILITY("optimizer.cascadesPriceAvailability"),
+		COST_COMPARISON("optimizer.cascadesCostComparisonCompleteness"),
+		ENCODE_NANOS("optimizer.cascadesEncodeNanos"),
+		SEARCH_NANOS("optimizer.cascadesSearchNanos"),
+		EXTRACTION_NANOS("optimizer.cascadesExtractionNanos"),
+		MATERIALIZATION_NANOS("optimizer.cascadesMaterializationNanos"),
+		CACHE_NANOS("optimizer.cascadesCacheNanos"),
+		WORK_UNITS("optimizer.cascadesWorkUnits"),
+		GROUPS("optimizer.cascadesGroups"),
+		LOGICAL_EXPRESSIONS("optimizer.cascadesLogicalExpressions"),
+		PHYSICAL_EXPRESSIONS("optimizer.cascadesPhysicalExpressions"),
+		WINNERS("optimizer.cascadesWinners");
+
+		private final String name;
+
+		InvocationMetric(String name) {
+			this.name = name;
+		}
+
+		void set(TupleExpr root, String value) {
+			root.setStringMetricPlanned(name, value);
+		}
+
+		void set(TupleExpr root, double value) {
+			root.setDoubleMetricPlanned(name, value);
 		}
 	}
 

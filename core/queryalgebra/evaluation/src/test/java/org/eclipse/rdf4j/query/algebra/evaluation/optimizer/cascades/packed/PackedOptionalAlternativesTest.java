@@ -530,6 +530,14 @@ class PackedOptionalAlternativesTest {
 			}
 
 			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!estimateBoundBranchRows(query, relationId, context, output)) {
+					PackedCostModel.super.estimate(query, relationId, context, output);
+				}
+			}
+
+			@Override
 			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 					PackedCostEstimate output) {
 				if (query.operatorTag(relationId) == PackedRelOp.LEFT_JOIN
@@ -552,6 +560,14 @@ class PackedOptionalAlternativesTest {
 			}
 
 			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!estimateBoundBranchRows(query, relationId, context, output)) {
+					PackedCostModel.super.estimate(query, relationId, context, output);
+				}
+			}
+
+			@Override
 			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 					PackedCostEstimate output) {
 				int count = 0;
@@ -569,6 +585,22 @@ class PackedOptionalAlternativesTest {
 				}
 			}
 		};
+	}
+
+	/**
+	 * Supplies the measured contextual price of an OPTIONAL branch that is evaluated once per row of its prefix. An
+	 * isolated estimate cannot price that bound evaluation, so without this price a dependent alternative stays
+	 * unpriced and the cost preference could never decide between the competing orders.
+	 *
+	 * @return false when the relation has no prefix to be bound by and the isolated estimate applies
+	 */
+	private static boolean estimateBoundBranchRows(PackedQueryView query, int relationId, PackedCostContext context,
+			PackedCostEstimate output) {
+		if (context.prefixRelationCount() == 0 || !query.isStatementPattern(relationId)) {
+			return false;
+		}
+		output.setContextualRows(1.0d, 1.0d);
+		return true;
 	}
 
 	private static List<Integer> rootAlternatives(PackedQuery packed) {

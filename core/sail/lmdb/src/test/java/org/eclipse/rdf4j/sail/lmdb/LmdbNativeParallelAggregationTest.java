@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -39,6 +40,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -89,7 +91,7 @@ public class LmdbNativeParallelAggregationTest {
 	private Map<String, String> previousProperties;
 
 	@BeforeEach
-	public void setUp() {
+	public void setUp() throws Exception {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
 				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG,
 				PARALLEL_STARTUP_WORK_FLAG, PACKED_FTREE_FLAG, FACTORIZED_TAIL_FLAG, JANINO_FLAG,
@@ -138,6 +140,9 @@ public class LmdbNativeParallelAggregationTest {
 			}
 			conn.commit();
 		}
+		// Forced parallel aggregation needs sibling snapshots of the query's own LMDB snapshot. Startup maintenance
+		// (deferred RDF-term-domain publication) may still commit after this load and would make it decline.
+		LmdbTestUtil.awaitBackgroundMaintenance((LmdbStore) repository.getSail(), 30, TimeUnit.SECONDS);
 	}
 
 	private LmdbStoreConfig config(boolean experimental) {

@@ -20,12 +20,14 @@ final class PackedCostOrder {
 
 	static boolean equal(PackedCostVectorArena vectors, int left, double leftObjective, int right,
 			double rightObjective) {
-		return Double.compare(leftObjective, rightObjective) == 0 && vectors.equalVector(left, right);
+		return Double.isFinite(leftObjective) && Double.isFinite(rightObjective)
+				&& Double.compare(leftObjective, rightObjective) == 0 && vectors.equalVector(left, right);
 	}
 
 	static boolean dominates(PackedCostVectorArena vectors, int left, double leftObjective, int right,
 			double rightObjective) {
-		return leftObjective <= rightObjective && (vectors.dominates(left, right)
-				|| leftObjective < rightObjective && vectors.equalVector(left, right));
+		return Double.isFinite(leftObjective) && Double.isFinite(rightObjective)
+				&& leftObjective <= rightObjective && (vectors.dominates(left, right)
+						|| leftObjective < rightObjective && vectors.equalVector(left, right));
 	}
 }

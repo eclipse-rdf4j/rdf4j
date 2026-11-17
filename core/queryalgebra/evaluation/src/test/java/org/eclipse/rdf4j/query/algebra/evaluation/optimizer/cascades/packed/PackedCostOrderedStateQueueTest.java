@@ -12,10 +12,27 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 class PackedCostOrderedStateQueueTest {
+
+	@Test
+	void unpricedStatesRemainExplorableWithoutAComparableLowerBound() {
+		PackedCostOrderedStateQueue queue = new PackedCostOrderedStateQueue(2);
+		queue.offer(3, 1, Double.NaN);
+		queue.offer(2, 1, 10.0d);
+		queue.offer(1, 1, 5.0d);
+
+		assertTrue(Double.isNaN(queue.minimumCost()), "an unpriced state has no comparable lower bound");
+		assertEquals(1, queue.pollStateId());
+		assertTrue(Double.isNaN(queue.minimumCost()));
+		assertEquals(2, queue.pollStateId());
+		assertEquals(3, queue.pollStateId());
+		assertTrue(Double.isNaN(queue.polledCost()));
+		assertTrue(queue.isEmpty());
+	}
 
 	@Test
 	void equalCostsUseStableStateIdentityRatherThanPlanShape() {

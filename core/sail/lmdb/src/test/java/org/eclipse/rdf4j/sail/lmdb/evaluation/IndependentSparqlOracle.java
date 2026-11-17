@@ -30,11 +30,14 @@ import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.benchmark.common.oracle.SolutionBagCodec;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -68,15 +71,16 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
  * mutations must also use JUnit's {@code @ResourceLock(Resources.SYSTEM_PROPERTIES)}.
  *
  * <p>
- * Stable results can be compared as an unordered multiset or as an ordered sequence. Generated blank-node labels are
- * deliberately not normalized across repositories; BNODE and other volatile operations must instead be checked with
- * {@link #assertEachArm(String, QueryConfigurer, Consumer)}, which preserves identity within each evaluation without
- * pretending that implementation-generated labels are portable.
+ * Stable results can be compared as an unordered multiset or as an ordered sequence. Blank-node labels are compared
+ * modulo one bijection shared across the complete result, including nested triple terms. Volatile operations should
+ * instead be checked with {@link #assertEachArm(String, QueryConfigurer, Consumer)}, which preserves identity within
+ * each evaluation without pretending that independently generated labels are portable.
  */
 public final class IndependentSparqlOracle implements AutoCloseable {
 
 	private static final String NATIVE_ENGINE_PROPERTY = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final Object NATIVE_ENGINE_PROPERTY_LOCK = new Object();
+	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
 	private static final QueryConfigurer NO_QUERY_CONFIGURATION = query -> {
 	};
 
@@ -397,7 +401,7 @@ public final class IndependentSparqlOracle implements AutoCloseable {
 		}
 	}
 
-	private static void assertSameOutcome(String sparql, ResultOrder order, EvaluationResult expected,
+	static void assertSameOutcome(String sparql, ResultOrder order, EvaluationResult expected,
 			EvaluationResult actual) {
 		if (expected.succeeded() != actual.succeeded()) {
 			throw new AssertionError(actual.arm() + " success/failure differs from MemoryStore for:\n" + sparql
@@ -414,13 +418,88 @@ public final class IndependentSparqlOracle implements AutoCloseable {
 			throw new AssertionError(actual.arm() + " result binding names differ from MemoryStore for:\n" + sparql
 					+ "\nMemoryStore=" + expected.resultBindingNames() + "\nactual=" + actual.resultBindingNames());
 		}
-		Object expectedRows = order == ResultOrder.ORDERED ? expected.rows() : expected.multiset();
-		Object actualRows = order == ResultOrder.ORDERED ? actual.rows() : actual.multiset();
-		if (!expectedRows.equals(actualRows)) {
-			throw new AssertionError(actual.arm() + " " + order.name().toLowerCase(Locale.ROOT)
-					+ " answers differ from MemoryStore for:\n" + sparql + "\nMemoryStore=" + expectedRows
-					+ "\nactual=" + actualRows);
+		List<SolutionBagCodec.Row> expectedRows = codecRows(expected);
+		List<SolutionBagCodec.Row> actualRows = codecRows(actual);
+		boolean equivalent;
+		if (order == ResultOrder.ORDERED) {
+			equivalent = SolutionBagCodec.isomorphicOrdered(expected.resultBindingNames(), expectedRows,
+					actual.resultBindingNames(), actualRows);
+		} else {
+			SolutionBagCodec.Bag expectedBag = SolutionBagCodec.fromRows(expected.resultBindingNames(), expectedRows);
+			SolutionBagCodec.Bag actualBag = SolutionBagCodec.fromRows(actual.resultBindingNames(), actualRows);
+			equivalent = SolutionBagCodec.isomorphic(expectedBag, actualBag);
 		}
+		if (!equivalent) {
+			Object expectedDescription = order == ResultOrder.ORDERED ? expected.rows() : expected.multiset();
+			Object actualDescription = order == ResultOrder.ORDERED ? actual.rows() : actual.multiset();
+			throw new AssertionError(actual.arm() + " " + order.name().toLowerCase(Locale.ROOT)
+					+ " answers differ from MemoryStore for:\n" + sparql + "\nMemoryStore=" + expectedDescription
+					+ "\nactual=" + actualDescription);
+		}
+	}
+
+	private static List<SolutionBagCodec.Row> codecRows(EvaluationResult result) {
+		ArrayList<SolutionBagCodec.Row> rows = new ArrayList<>(result.rows().size());
+		for (CanonicalBindingSet row : result.rows()) {
+			TreeMap<String, CanonicalTerm> bindings = new TreeMap<>();
+			for (CanonicalBinding binding : row.bindings()) {
+				if (!result.resultBindingNames().contains(binding.name())
+						|| bindings.put(binding.name(), binding.value()) != null) {
+					throw new AssertionError("row has a duplicate or undeclared binding: " + binding.name());
+				}
+			}
+			ArrayList<Value> values = new ArrayList<>(result.resultBindingNames().size());
+			for (String name : result.resultBindingNames()) {
+				values.add(toValue(bindings.get(name)));
+			}
+			rows.add(new SolutionBagCodec.Row(values));
+		}
+		return List.copyOf(rows);
+	}
+
+	private static Value toValue(CanonicalTerm term) {
+		if (term == null) {
+			return null;
+		}
+		if (term instanceof CanonicalIri iri) {
+			return VALUE_FACTORY.createIRI(iri.iri());
+		}
+		if (term instanceof CanonicalBNode bNode) {
+			return VALUE_FACTORY.createBNode(bNode.id());
+		}
+		if (term instanceof CanonicalLiteral literal) {
+			Literal reconstructed;
+			if (literal.language().isPresent()) {
+				String language = literal.language().orElseThrow();
+				reconstructed = literal.baseDirection() == Literal.BaseDirection.NONE
+						? VALUE_FACTORY.createLiteral(literal.label(), language)
+						: VALUE_FACTORY.createLiteral(literal.label(), language, literal.baseDirection());
+			} else {
+				if (literal.baseDirection() != Literal.BaseDirection.NONE) {
+					throw new AssertionError("a directional literal must have a language tag");
+				}
+				reconstructed = VALUE_FACTORY.createLiteral(literal.label(),
+						VALUE_FACTORY.createIRI(literal.datatype()));
+			}
+			if (!literal.label().equals(reconstructed.getLabel())
+					|| !literal.datatype().equals(reconstructed.getDatatype().stringValue())
+					|| !literal.language()
+							.map(tag -> tag.toLowerCase(Locale.ROOT))
+							.equals(reconstructed.getLanguage().map(tag -> tag.toLowerCase(Locale.ROOT)))
+					|| literal.baseDirection() != reconstructed.getBaseDirection()) {
+				throw new AssertionError("canonical literal metadata changed during reconstruction: " + literal);
+			}
+			return reconstructed;
+		}
+		if (term instanceof CanonicalTripleTerm triple) {
+			Value subject = toValue(triple.subject());
+			if (!(subject instanceof Resource resource)) {
+				throw new AssertionError("RDF-star triple subject is not a resource: " + triple.subject());
+			}
+			return VALUE_FACTORY.createTripleTerm(resource, VALUE_FACTORY.createIRI(triple.predicate().iri()),
+					toValue(triple.object()));
+		}
+		throw new AssertionError("unsupported canonical RDF term: " + term.getClass().getName());
 	}
 
 	private static CanonicalBindingSet canonicalize(BindingSet bindingSet) {

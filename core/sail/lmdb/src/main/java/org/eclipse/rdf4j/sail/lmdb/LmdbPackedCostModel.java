@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -61,8 +62,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSessionFailure;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanValidationRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderMemory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderWork;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRootCardinalityCertifier;
@@ -126,6 +130,7 @@ final class LmdbPackedCostModel
 	private final PackedQueryView planningQuery;
 	private final boolean unpinnedMappedStatisticsAllowed;
 	private final MappedStatisticsSessionCache mappedStatisticsCache;
+	private final LmdbAdmittedFrontierRead admittedRead;
 	/** Lazily read store context count ({@link #contextMultiplicity()}); negative until read. */
 	private volatile double contextMultiplicity = -1.0d;
 
@@ -150,7 +155,7 @@ final class LmdbPackedCostModel
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed) {
 		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,
 				frontierPlanningAllowed, null, true, null, null,
-				runtime.frontierPlanningReadSelection(frontierStatementSource));
+				runtime.frontierPlanningReadSelection(frontierStatementSource), null);
 	}
 
 	LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
@@ -159,7 +164,7 @@ final class LmdbPackedCostModel
 			LmdbFilterReadContext filterReadContext) {
 		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,
 				frontierPlanningAllowed, null, true, null, filterReadContext,
-				runtime.frontierPlanningReadSelection(frontierStatementSource));
+				runtime.frontierPlanningReadSelection(frontierStatementSource), null);
 	}
 
 	PackedProviderCacheIdentity providerCacheIdentity() {
@@ -171,12 +176,13 @@ final class LmdbPackedCostModel
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed,
 			FrontierStatisticsView statisticsView, boolean unpinnedMappedStatisticsAllowed,
 			PackedQueryView planningQuery, LmdbFilterReadContext filterReadContext,
-			LmdbFrontierReadSelection readSelection) {
+			LmdbFrontierReadSelection readSelection, LmdbAdmittedFrontierRead admittedRead) {
 		this.filterReadContext = filterReadContext;
 		this.runtime = runtime;
 		this.executionSnapshotEpoch = executionSnapshotEpoch == null ? OptionalLong.empty() : executionSnapshotEpoch;
 		this.datasetUsesStoreDefaults = datasetUsesStoreDefaults;
 		this.readSelection = readSelection;
+		this.admittedRead = admittedRead;
 		this.frontierStatementSource = frontierStatementSource;
 		this.evaluationStrategy = evaluationStrategy;
 		this.frontierPlanningAllowed = frontierPlanningAllowed;
@@ -188,7 +194,24 @@ final class LmdbPackedCostModel
 
 	@Override
 	public PackedCostSession openSession(PackedQueryView query) {
-		if (!frontierPlanningAllowed || !mappedReadCurrent() || !allNativeGraphDomains(query)
+		return openSession(query, null, null, false);
+	}
+
+	@Override
+	public PackedCostSession openSession(PackedQueryView query, PackedProviderWork work,
+			PackedProviderMemory memory) {
+		Objects.requireNonNull(query, "query");
+		// Taken before any read of this session: a cut from here on, or since an enclosing planning began, makes the
+		// session unreproducible, so its search is retained by no plan cache.
+		long planningMark = LmdbPlanningWallClockCuts.planningMark();
+		Objects.requireNonNull(work, "provider work").require(1L);
+		reserveRequired(Objects.requireNonNull(memory, "provider memory"), 256L);
+		return new LmdbPlanningCutAwareCostSession(openSession(query, work, memory, true), planningMark);
+	}
+
+	private PackedCostSession openSession(PackedQueryView query, PackedProviderWork work,
+			PackedProviderMemory memory, boolean admitted) {
+		if (!frontierPlanningAllowed || !mappedReadCurrent() || !allNativeGraphDomains(query, work)
 				|| runtime.frontierSettings().mode() == FrontierEstimatorMode.OFF) {
 			PackedCostSession scalar = PackedCostSession.scalar(this, query);
 			return runtime.frontierSettings().mode() == FrontierEstimatorMode.AUTHORITATIVE
@@ -197,30 +220,64 @@ final class LmdbPackedCostModel
 		}
 		LmdbStatisticsService statistics = runtime.statisticsService();
 		// Eligibility and refusal share this immutable observation; a later publication cannot rewrite the decision.
+		if (work != null && runtime.frontierSettings().mode() == FrontierEstimatorMode.AUTHORITATIVE
+				&& statistics != null) {
+			work.require(1L);
+		}
 		FrontierStatisticsStatus decisionStatus = runtime.frontierSettings()
 				.mode() == FrontierEstimatorMode.AUTHORITATIVE
 				&& statistics != null ? statistics.status() : null;
 		if (decisionStatus != null && mappedStatisticsReady(decisionStatus)) {
-			FrontierStatisticsView view = executionSnapshotEpoch.isPresent()
-					? statistics.openView(executionSnapshotEpoch.getAsLong())
-					: statistics.openCurrentView();
-			if (!view.ready()) {
-				FrontierFallbackReason refusal = view.fallbackReason();
-				String reason = refusal == FrontierFallbackReason.NONE ? "view_not_ready"
-						: refusal.name().toLowerCase(Locale.ROOT);
-				view.close();
-				return new LmdbFrontierScalarCostSession(PackedCostSession.scalar(this, query), reason);
+			if (admitted) {
+				reserveRequired(memory, mappedOpenRetainedBytes(query.relationCount()));
+				work.require(1L);
 			}
-			LmdbPackedCostModel scoped = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
-					datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
-					view, true, query, filterReadContext, readSelection);
-			scoped.mappedStatisticsCache.initializeLineageWorkBudget(statementPatternCount(query));
-			return new LmdbFrontierStatisticsCostSession(PackedCostSession.scalar(scoped, query), scoped, view, query,
-					runtime, datasetUsesStoreDefaults, mappedPlaneMask());
+			LmdbFrontierReadSelection.AdmittedView opened = readSelection.openAdmittedView(statistics);
+			if (opened == null) {
+				return new LmdbFrontierScalarCostSession(PackedCostSession.scalar(this, query), "read_scope_changed");
+			}
+			FrontierStatisticsView view = opened.view();
+			boolean closeAttempted = false;
+			try {
+				if (!view.ready()) {
+					FrontierFallbackReason refusal = view.fallbackReason();
+					String reason = refusal == FrontierFallbackReason.NONE ? "view_not_ready"
+							: refusal.name().toLowerCase(Locale.ROOT);
+					closeAttempted = true;
+					view.close();
+					return new LmdbFrontierScalarCostSession(PackedCostSession.scalar(this, query), reason);
+				}
+				LmdbFrontierReadSelection admittedSelection = opened.selection();
+				int planeMask = admittedSelection.planeMask();
+				if (planeMask == 0) {
+					closeAttempted = true;
+					view.close();
+					return new LmdbFrontierScalarCostSession(PackedCostSession.scalar(this, query),
+							"read_scope_changed");
+				}
+				AtomicBoolean sessionClosed = new AtomicBoolean();
+				LmdbAdmittedFrontierRead admittedRead = new LmdbAdmittedFrontierRead(runtime, frontierStatementSource,
+						admittedSelection, view, sessionClosed, work);
+				LmdbPackedCostModel scoped = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
+						datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
+						view, true, query, filterReadContext, admittedSelection, admittedRead);
+				scoped.mappedStatisticsCache.initializeLineageWorkBudget(statementPatternCount(query, work));
+				return new LmdbFrontierStatisticsCostSession(PackedCostSession.scalar(scoped, query), scoped, view,
+						query, runtime, datasetUsesStoreDefaults, planeMask, sessionClosed);
+			} catch (RuntimeException | Error failure) {
+				if (!closeAttempted) {
+					try {
+						view.close();
+					} catch (RuntimeException | Error closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+				throw failure;
+			}
 		}
 		LmdbPackedCostModel conventional = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 				datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
-				null, false, query, filterReadContext, readSelection);
+				null, false, query, filterReadContext, readSelection, null);
 		if (runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE) {
 			return PackedCostSession.scalar(conventional, query);
 		}
@@ -231,8 +288,43 @@ final class LmdbPackedCostModel
 		return new LmdbFrontierScalarCostSession(PackedCostSession.scalar(conventional, query), reason);
 	}
 
-	private static boolean allNativeGraphDomains(PackedQueryView query) {
+	/** Conservative retained footprint for the fixed session objects and their initially allocated arrays. */
+	private static long mappedOpenRetainedBytes(int relationCount) {
+		long relationSlots = (long) relationCount + 1L;
+		return 40L * 128L + 512L
+				+ 2L * arrayBytes(64, 8) + 12L * arrayBytes(64, 4) + arrayBytes(64, 1)
+				+ arrayBytes(16, 8) + arrayBytes(16, 1)
+				+ 5L * arrayBytes(relationSlots, 8) + 2L * arrayBytes(relationSlots, 4)
+				+ 4L * arrayBytes(relationSlots, 1);
+	}
+
+	private static long arrayBytes(long length, long elementBytes) {
+		return (24L + length * elementBytes + 7L) & ~7L;
+	}
+
+	private static void reserveRequired(PackedProviderMemory memory, long bytes) {
+		if (!memory.tryReserve(bytes)) {
+			throw PackedCostSessionFailure.resourceLimit("LMDB provider session exceeds retained memory budget", null);
+		}
+	}
+
+	void bindAdmittedWork(PackedProviderWork work) {
+		if (admittedRead != null) {
+			admittedRead.bindWork(work);
+		}
+	}
+
+	void releaseAdmittedBudget() {
+		if (admittedRead != null) {
+			admittedRead.releaseBudget();
+		}
+	}
+
+	private static boolean allNativeGraphDomains(PackedQueryView query, PackedProviderWork work) {
 		for (int relation = 1; relation <= query.relationCount(); relation++) {
+			if (work != null) {
+				work.require(1L);
+			}
 			if (!query.graphDomain(relation).allowsNativeEvidence()) {
 				return false;
 			}
@@ -252,9 +344,12 @@ final class LmdbPackedCostModel
 		return true;
 	}
 
-	private static int statementPatternCount(PackedQueryView query) {
+	private static int statementPatternCount(PackedQueryView query, PackedProviderWork work) {
 		int patterns = 0;
 		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (work != null) {
+				work.require(1L);
+			}
 			patterns += query.isStatementPattern(relationId) ? 1 : 0;
 		}
 		return patterns;
@@ -299,6 +394,9 @@ final class LmdbPackedCostModel
 		if (!query.isStatementPattern(relationId) || !query.graphDomain(relationId).allowsNativeEvidence()) {
 			return Double.NaN;
 		}
+		if (hasImpossibleStatementConstant(query, relationId)) {
+			return 0.0d;
+		}
 		FrontierLeafEstimate mapped = mappedLeafEstimate(query, relationId);
 		if (mapped != null) {
 			return mapped.pointRows();
@@ -311,9 +409,7 @@ final class LmdbPackedCostModel
 		Value predicateValue = query.statementPatternValue(relationId, 1);
 		Value objectValue = query.statementPatternValue(relationId, 2);
 		Value contextValue = query.statementPatternValue(relationId, 3);
-		if (subjectValue != null && !(subjectValue instanceof Resource)
-				|| predicateValue != null && !(predicateValue instanceof IRI)
-				|| contextValue != null && !(contextValue instanceof Resource)) {
+		if (hasImpossibleStatementConstant(query, relationId)) {
 			return 0.0d;
 		}
 		if (runtime.statisticsService() != null) {
@@ -330,10 +426,36 @@ final class LmdbPackedCostModel
 		return physical == null ? Double.NaN : physical.rows();
 	}
 
+	private static boolean hasImpossibleStatementConstant(PackedQueryView query, int relationId) {
+		Value subject = query.statementPatternValue(relationId, 0);
+		Value predicate = query.statementPatternValue(relationId, 1);
+		Value context = query.statementPatternValue(relationId, 3);
+		return subject != null && !(subject instanceof Resource)
+				|| predicate != null && !(predicate instanceof IRI)
+				|| context != null && !(context instanceof Resource);
+	}
+
 	TupleExpr materializeRelation(PackedQueryView query, int relationId) {
 		TupleExpr expression = query.materializeRelation(relationId);
 		runtime.registerPackedFactor(query, relationId, expression);
 		return expression;
+	}
+
+	private Optional<JoinFactorCostModel.FactorCostEstimate> factorCost(TupleExpr expression,
+			JoinFactorCostModel.CostContext context) {
+		return admittedRead == null ? runtime.factorCost(expression, context, filterReadContext)
+				: runtime.factorCost(expression, context, filterReadContext, admittedRead);
+	}
+
+	private Optional<JoinFactorCostModel.FactorCostEstimate> accessFactorCost(TupleExpr expression,
+			JoinFactorCostModel.CostContext context) {
+		return admittedRead == null ? runtime.factorCost(expression, context)
+				: runtime.factorCost(expression, context, null, admittedRead);
+	}
+
+	private BagEstimate semanticEstimate(TupleExpr expression) {
+		return admittedRead == null ? runtime.estimate(expression, filterReadContext)
+				: runtime.estimate(expression, filterReadContext, admittedRead);
 	}
 
 	private PrefixMaterialization materializePrefix(PackedQueryView query, PackedCostContext context) {
@@ -347,7 +469,7 @@ final class LmdbPackedCostModel
 		if (!LmdbPlanningGraphEvidence.allows(selectedPlan)) {
 			return Double.NaN;
 		}
-		BagEstimate semantic = runtime.estimate(selectedPlan, filterReadContext);
+		BagEstimate semantic = semanticEstimate(selectedPlan);
 		return semantic.rows() == 0.0d ? 0.0d : Double.NaN;
 	}
 
@@ -378,6 +500,17 @@ final class LmdbPackedCostModel
 				return;
 			}
 			output.setRows(Double.NaN, Double.NaN);
+			return;
+		}
+		if (hasImpossibleStatementConstant(query, relationId)) {
+			// No RDF statement can satisfy an invalid constant in one of these roles. Evaluation rejects the
+			// pattern before opening a source, independently of statistics, index configuration, or outer rows.
+			output.clear();
+			output.setRows(0.0d, 0.0d);
+			output.setAccess(0, 0, 0, 0.0d, invocationCount(context), null, "invalid-rdf-term", "empty");
+			output.setLocalPhysicalCost(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+			output.setEstimateProvenance("invalid-rdf-term", "structural_empty");
+			output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
 			return;
 		}
 		/*
@@ -431,8 +564,10 @@ final class LmdbPackedCostModel
 			return;
 		}
 		double invocations = finiteLookup == null ? invocationCount(context) : finiteLookup.invocations();
+		boolean sameFactorInput = !contextualRows && sameStatementInputForEveryInvocation(query, relationId, context);
 		double unboundedFullyBoundRows = Double.NaN;
-		if (finiteLookup == null && rows > invocations && fullyBoundStatementLookup(query, relationId, context)) {
+		if (finiteLookup == null && (contextualRows || sameFactorInput)
+				&& fullyBoundStatementLookup(query, relationId, context)) {
 			/*
 			 * Structural bound: a statement pattern whose subject, predicate and object are all bound (constants or
 			 * prefix bindings) identifies at most one statement per prefix row and context. A bound context therefore
@@ -446,13 +581,18 @@ final class LmdbPackedCostModel
 			 */
 			double perInvocation = (lookupMask(query, relationId, context) & 0x8) != 0 ? 1.0d
 					: contextMultiplicity();
-			double bound = invocations * perInvocation;
+			// Context rows include the prefix invocations. An isolated factor is instead bounded per invocation;
+			// input-bound factors without a conditional model cannot apply this context bound to isolated rows.
+			double bound = (contextualRows ? invocations : 1.0d) * perInvocation;
 			if (rows > bound) {
 				unboundedFullyBoundRows = rows;
 				rows = bound;
 			}
 		}
-		double accessRows = rows == 0.0d ? 0.0d : Math.max(1.0d, rows / Math.max(1.0d, invocations));
+		boolean unknownFactorAccess = !contextualRows && !sameFactorInput;
+		double perInvocationRows = contextualRows ? rows / Math.max(1.0d, invocations)
+				: sameFactorInput ? rows : Double.NaN;
+		double accessRows = perInvocationRows == 0.0d ? 0.0d : Math.max(1.0d, perInvocationRows);
 		double workRows = Math.max(rows, invocations);
 		if (contextualRows) {
 			if (transitionRows) {
@@ -480,7 +620,13 @@ final class LmdbPackedCostModel
 				? FINITE_LOOKUP_SOURCE
 				: transitionRows ? TRANSITION_SOURCE : CARDINALITY_SOURCE;
 		runtime.describePackedAccessPath(accessLookupMask, accessRows, invocations, accessSource, output);
-		if (hasUnboundRepeatedComponents(query, relationId, accessLookupMask)) {
+		boolean residualEquality = hasUnboundRepeatedComponents(query, relationId, accessLookupMask);
+		boolean residualLookup = output.missingLookupComponentMask() != 0;
+		boolean residualNamedContext = (accessLookupMask & FrontierLeafProbe.CONTEXT) == 0
+				&& query.statementPatternUsesNamedContexts(relationId);
+		boolean partialNativeCost = false;
+		NativePrefixPopulation population = null;
+		if (residualLookup || residualEquality || residualNamedContext) {
 			int nativePrefixMask = output.lookupComponentMask();
 			int missingMask = output.missingLookupComponentMask();
 			int prefixLength = output.indexPrefixLength();
@@ -488,9 +634,10 @@ final class LmdbPackedCostModel
 			String accessMode = output.accessMode();
 			boolean componentRows = output.hasComponentOutputRows();
 			boolean scopedRows = output.hasContextualOutputRows();
-			double nativeRows = nativeStatementAccessRows(query, relationId, context, nativePrefixMask);
+			population = nativeStatementAccessPopulation(query, relationId, context, nativePrefixMask);
+			double nativeRows = population == null ? Double.NaN : population.cardinality().rows();
 			// Every produced solution must first occur in the scanned native population.
-			accessRows = finiteNonNegative(nativeRows) ? Math.max(accessRows, nativeRows) : Double.NaN;
+			accessRows = LmdbAccessQuantityQuote.candidateRows(accessRows, nativeRows);
 			if (!finiteNonNegative(accessRows)) {
 				// A copied event cannot retain old physical axes or an old price when this access is unavailable.
 				output.clear();
@@ -502,12 +649,23 @@ final class LmdbPackedCostModel
 					output.setRows(rows, Double.NaN);
 				}
 			}
-			output.setAccess(nativePrefixMask, missingMask, prefixLength, accessRows, invocations, indexName,
+			partialNativeCost = residualLookup && (finiteNonNegative(nativeRows) || mappedReadCurrent());
+			output.setAccess(nativePrefixMask, missingMask, prefixLength,
+					partialNativeCost ? Double.NaN : accessRows, invocations, indexName,
 					accessSource, accessMode);
+			if (population != null) {
+				annotateNativePrefixPopulation(output, population);
+			}
 			output.putPlannedStringMetric("optimizer.nativeAccessPopulation",
-					finiteNonNegative(accessRows) ? "native-prefix-before-equality" : "unavailable");
+					!finiteNonNegative(accessRows) ? "unavailable"
+							: residualEquality ? "native-prefix-before-equality"
+									: residualLookup ? "native-prefix-before-residual"
+											: "native-prefix-before-named-context");
 		}
-		setStatementAccessPhysicalCost(output);
+		// A residual skip scan cannot price visits or seeks from the prefix population; neither can an isolated
+		// cardinality certify the work of a factor whose input bindings may vary across invocations.
+		setStatementAccessPhysicalCost(output, population, accessRows, partialNativeCost || unknownFactorAccess,
+				sameFactorInput, partialNativeCost || unknownFactorAccess);
 		if (mappedLeaf != null && !transitionRows) {
 			output.setEstimateProvenance(mappedLeaf.source(), "frontier_v2_mapped_leaf");
 			output.setEvidenceGuarantee(EvidenceGuarantee.SCALAR_FALLBACK);
@@ -558,6 +716,38 @@ final class LmdbPackedCostModel
 			output.putPlannedDoubleMetric("plannedLookupDomainAverageOutputRows",
 					finiteLookup.lookupDomainAverageOutputRows());
 		}
+	}
+
+	/** The isolated factor cardinality describes each invocation only when no input can bind its terms. */
+	private static boolean sameStatementInputForEveryInvocation(PackedQueryView query, int relationId,
+			PackedCostContext context) {
+		boolean canObserveInput = false;
+		for (int component = 0; component < 4; component++) {
+			if (query.statementPatternValue(relationId, component) == null
+					&& query.statementPatternName(relationId, component) != null) {
+				canObserveInput = true;
+				break;
+			}
+		}
+		if (!canObserveInput) {
+			return true;
+		}
+		if (!context.prefixRelationsDescribeRows() || context.bindingLayoutId() != 0
+				|| context.correlationMaskId() != 0) {
+			return false;
+		}
+		int inherited = context.assuredBindingRelationId();
+		for (int component = 0; component < 4; component++) {
+			if (inherited != 0 && query.relationBindsStatementComponent(inherited, relationId, component)) {
+				return false;
+			}
+			for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+				if (query.relationBindsStatementComponent(context.prefixRelationId(ordinal), relationId, component)) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	private void annotateMappedStatistics(PackedCostEstimate output) {
@@ -1463,10 +1653,7 @@ final class LmdbPackedCostModel
 				return mappedStatisticsCache.boundLeafEstimate(probe);
 			}
 			FrontierLeafEstimate estimate = view.estimateLeaf(probe);
-			MappedRowsEstimate result = estimate.fallbackReason() == FrontierFallbackReason.NONE
-					? new MappedRowsEstimate(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
-							estimate.confidence(), estimate.source())
-					: null;
+			MappedRowsEstimate result = MappedRowsEstimate.fromLeaf(estimate);
 			if (mappedStatisticsCache != null) {
 				mappedStatisticsCache.storeBoundLeafEstimate(probe, result);
 			}
@@ -1809,10 +1996,7 @@ final class LmdbPackedCostModel
 					: executionSnapshotEpoch.isPresent()
 							? runtime.statisticsService().estimateLeaf(executionSnapshotEpoch.getAsLong(), probe)
 							: estimateOwnedLeaf(probe);
-			return estimate.fallbackReason() == FrontierFallbackReason.NONE
-					? new MappedRowsEstimate(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
-							estimate.confidence(), estimate.source())
-					: null;
+			return MappedRowsEstimate.fromLeaf(estimate);
 		}
 		if (expandedCount == 2) {
 			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
@@ -2828,7 +3012,7 @@ final class LmdbPackedCostModel
 
 	private boolean refineExactFilterIdentity(TupleExpr expression, PackedCostContext context,
 			PackedCostEstimate output) {
-		BagEstimate semantic = runtime.estimate(expression, filterReadContext);
+		BagEstimate semantic = semanticEstimate(expression);
 		double identityRatio;
 		if (exactFilterZero(semantic)) {
 			identityRatio = 0.0d;
@@ -2950,12 +3134,11 @@ final class LmdbPackedCostModel
 		Set<String> boundNames = prefix.bindingNames();
 		Map<String, Set<Value>> finiteBindings = prefix.finiteBindingValues();
 		boolean connected = connectedToPrefix(query, expression, boundNames);
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression,
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(), Double.NaN,
 						connected, true, finiteBindings, prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()),
-				filterReadContext);
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3015,8 +3198,7 @@ final class LmdbPackedCostModel
 				boundNames, context.prefixRows(), Double.NaN, hasPrefix, true, finiteBindings, prefixFactors)
 				.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
 				.withUnrelatedPrefixRows(context.unrelatedPrefixRows());
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression, factorContext,
-				filterReadContext);
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCost(expression, factorContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3083,8 +3265,7 @@ final class LmdbPackedCostModel
 			return;
 		}
 
-		JoinFactorCostModel.FactorCostEstimate accessEstimate = runtime
-				.factorCost(accessExpression, factorContext)
+		JoinFactorCostModel.FactorCostEstimate accessEstimate = accessFactorCost(accessExpression, factorContext)
 				.orElse(null);
 		if (accessEstimate == null || !finiteNonNegative(accessEstimate.getOutputRows())) {
 			return;
@@ -3106,7 +3287,7 @@ final class LmdbPackedCostModel
 			}
 			JoinFactorCostModel.FactorCostEstimate wrapperEstimate = wrapper == expression
 					? factorEstimate
-					: runtime.factorCost(wrapper, factorContext, filterReadContext).orElse(null);
+					: factorCost(wrapper, factorContext).orElse(null);
 			if (wrapperEstimate == null || !finiteNonNegative(wrapperEstimate.getOutputRows())) {
 				return;
 			}
@@ -3176,8 +3357,7 @@ final class LmdbPackedCostModel
 				assuredInputs, context.prefixRows(), Double.NaN, true, true, Map.of(), List.of())
 				.withPrefixFactorsDescribeCurrentRows(false)
 				.withUnrelatedPrefixRows(context.unrelatedPrefixRows());
-		JoinFactorCostModel.FactorCostEstimate estimate = runtime
-				.factorCost(expression, physicalContext, filterReadContext)
+		JoinFactorCostModel.FactorCostEstimate estimate = factorCost(expression, physicalContext)
 				.orElse(null);
 		if (estimate == null || !finiteNonNegative(estimate.getWorkRows())
 				&& !finiteNonNegative(estimate.getOutputRows())) {
@@ -3189,7 +3369,11 @@ final class LmdbPackedCostModel
 		}
 		boolean totalContext = estimate.isRepeatedInvocationsCosted();
 		PackedCostEstimate declared = new PackedCostEstimate();
-		declared.setRows(estimate.getOutputRows(), estimate.getWorkRows());
+		switch (estimate.getRowScope()) {
+		case FOR_CONTEXT -> declared.setContextualRows(estimate.getOutputRows(), estimate.getWorkRows());
+		case COMPONENT -> declared.setComponentRows(estimate.getOutputRows(), estimate.getWorkRows());
+		case PER_INVOCATION, UNKNOWN -> declared.setRows(estimate.getOutputRows(), estimate.getWorkRows());
+		}
 		if (expression instanceof StatementPattern) {
 			declared.setAccess(estimate.getLookupComponentMask(), estimate.getMissingLookupComponentMask(),
 					metricInt(estimate, TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH),
@@ -3284,12 +3468,11 @@ final class LmdbPackedCostModel
 		Set<String> boundNames = prefix.bindingNames();
 		Map<String, Set<Value>> finiteBindings = prefix.finiteBindingValues();
 		boolean connected = connectedToPrefix(query, expression, boundNames);
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression,
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(), Double.NaN,
 						connected, true, finiteBindings, prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()),
-				filterReadContext);
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3603,12 +3786,11 @@ final class LmdbPackedCostModel
 		if (!connectedToPrefix(query, expression, boundNames)) {
 			return false;
 		}
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression,
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(),
 						Double.NaN, true, true, prefix.finiteBindingValues(), prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()),
-				filterReadContext);
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3651,26 +3833,31 @@ final class LmdbPackedCostModel
 	}
 
 	private static void setStatementAccessPhysicalCost(PackedCostEstimate output) {
+		setStatementAccessPhysicalCost(output, null, output.accessRows(), false, true, false);
+	}
+
+	private static void setStatementAccessPhysicalCost(PackedCostEstimate output, NativePrefixPopulation population,
+			double candidateRowsPerInvocation, boolean unknownVisits, boolean sameFactorInput, boolean retainUnknown) {
 		if (!finiteNonNegative(output.outputRows())
-				|| !finiteNonNegative(output.accessRows())
+				|| !retainUnknown && !finiteNonNegative(candidateRowsPerInvocation)
 				|| !finiteNonNegative(output.invocations())) {
 			return;
 		}
 		boolean contextualRows = output.hasContextualOutputRows();
 		boolean componentRows = output.hasComponentOutputRows();
-		double resultRows = output.outputRows();
-		double scannedRows = saturatedMultiply(output.accessRows(), output.invocations());
-		output.setLocalPhysicalCost(
-				scannedRows,
-				output.invocations(),
-				output.invocations(),
-				0.0d,
-				0.0d,
-				0.0d,
-				0.0d,
-				resultRows,
-				0.0d,
-				0.0d);
+		LmdbAccessQuantityQuote quantities = statementAccessQuantities(output, population,
+				candidateRowsPerInvocation, unknownVisits);
+		double resultRows = quantities.emittedRows().point();
+		double resultWork = quantities.emittedRowsAcrossInvocations(sameFactorInput).point();
+		if (unknownVisits || !finiteNonNegative(resultWork)) {
+			output.setLocalPhysicalCostPreservingUnknown(quantities.visitedEntries().point(),
+					quantities.indexSeeks().point(), quantities.cursorOpens().point(), 0.0d, 0.0d,
+					0.0d, 0.0d, resultWork, 0.0d, 0.0d, Double.NaN);
+		} else {
+			output.setLocalPhysicalCost(quantities.visitedEntries().point(), quantities.indexSeeks().point(),
+					quantities.cursorOpens().point(), 0.0d, 0.0d, 0.0d, 0.0d, resultWork, 0.0d, 0.0d);
+		}
+		annotateStatementAccessCandidate(output, quantities);
 		if (componentRows) {
 			output.setComponentOutputRowsPreservingPhysicalCost(resultRows);
 		} else if (contextualRows) {
@@ -3678,6 +3865,27 @@ final class LmdbPackedCostModel
 		} else {
 			output.setOutputRowsPreservingPhysicalCost(resultRows);
 		}
+	}
+
+	private static LmdbAccessQuantityQuote statementAccessQuantities(PackedCostEstimate output,
+			NativePrefixPopulation population, double candidateRowsPerInvocation, boolean unknownVisits) {
+		int prefix = output.lookupComponentMask();
+		long features = LmdbIndexAccessFeatures.of(prefix | output.missingLookupComponentMask(), prefix);
+		LmdbAccessQuantityQuote.Scope outputScope = output.hasComponentOutputRows()
+				? LmdbAccessQuantityQuote.Scope.COMPONENT_OUTPUT
+				: output.hasContextualOutputRows() ? LmdbAccessQuantityQuote.Scope.CONTEXT_OUTPUT
+						: LmdbAccessQuantityQuote.Scope.FACTOR_OUTPUT;
+		return LmdbAccessQuantityQuote.packed(features, output.outputRows(), outputScope,
+				candidateRowsPerInvocation, output.invocations(),
+				unknownVisits, population == null ? null : population.cardinality(),
+				population != null && Double.isFinite(population.confidence()), output.indexName(),
+				output.accessMode());
+	}
+
+	private static void annotateStatementAccessCandidate(PackedCostEstimate output,
+			LmdbAccessQuantityQuote quantities) {
+		output.putPlannedDoubleMetric("plannedNativeCandidateRowsPerInvocation",
+				quantities.candidateRowsPerInvocation().point());
 	}
 
 	Optional<JoinFactorCostModel.FactorCostEstimate> estimateCorrelatedFactor(
@@ -3744,7 +3952,7 @@ final class LmdbPackedCostModel
 		}
 		BagEstimate outer = null;
 		for (TupleExpr prefixFactor : prefixFactors) {
-			BagEstimate factor = runtime.estimate(prefixFactor, filterReadContext);
+			BagEstimate factor = semanticEstimate(prefixFactor);
 			if (!finiteNonNegative(factor.rows())) {
 				return Optional.empty();
 			}
@@ -3759,7 +3967,7 @@ final class LmdbPackedCostModel
 		if (outer == null || !(outer.rows() > 0.0d)) {
 			return Optional.empty();
 		}
-		BagEstimate right = runtime.estimate(rhs, filterReadContext);
+		BagEstimate right = semanticEstimate(rhs);
 		if (!finiteNonNegative(right.rows())) {
 			return Optional.empty();
 		}
@@ -3793,10 +4001,9 @@ final class LmdbPackedCostModel
 			return Optional.empty();
 		}
 		Set<String> boundNames = bindingNames(boundBindingNames);
-		return runtime.factorCost(expression,
+		return factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(
-						boundNames, 1.0d, Double.NaN, true, true, Map.of(), List.of()),
-				filterReadContext);
+						boundNames, 1.0d, Double.NaN, true, true, Map.of(), List.of()));
 	}
 
 	private static Set<String> bindingNames(String[] names) {
@@ -4267,47 +4474,48 @@ final class LmdbPackedCostModel
 	}
 
 	/**
-	 * Native statement iterators receive concrete components, then the evaluation step checks equal unbound variables.
-	 * Price that prefix population independently of the equality-filtered logical rows. A mapped session must use its
-	 * owned generation, never an unpinned service observation or a query-snapshot enumeration.
+	 * Native statement iterators scan the selected index prefix before testing concrete components outside that prefix
+	 * and equal unbound variables. Price that prefix population independently of the residual-filtered logical rows. A
+	 * mapped session must use its owned generation, never an unpinned service observation or snapshot enumeration.
 	 */
-	private double nativeStatementAccessRows(PackedQueryView query, int relationId, PackedCostContext context,
+	private NativePrefixPopulation nativeStatementAccessPopulation(PackedQueryView query, int relationId,
+			PackedCostContext context,
 			int nativePrefixMask) {
-		if (query.statementPatternValue(relationId, 0) != null
-				&& !(query.statementPatternValue(relationId, 0) instanceof Resource)
-				|| query.statementPatternValue(relationId, 1) != null
-						&& !(query.statementPatternValue(relationId, 1) instanceof IRI)
-				|| query.statementPatternValue(relationId, 3) != null
-						&& !(query.statementPatternValue(relationId, 3) instanceof Resource)) {
-			return 0.0d;
+		if (hasImpossibleStatementConstant(query, relationId)) {
+			return new NativePrefixPopulation(LmdbPlanningCardinality.exact(0.0d, 0L), "invalid-rdf-term", 1.0d);
 		}
 		if (!datasetUsesStoreDefaults) {
-			return Double.NaN;
+			return null;
 		}
 		FiniteLookupEstimate finite = context.prefixRelationsDescribeRows()
 				? finiteLookupEstimate(query, relationId, context, nativePrefixMask)
 				: null;
 		if (finite != null) {
-			return finite.rows() / Math.max(1.0d, finite.invocations());
+			double invocations = Math.max(1.0d, finite.invocations());
+			LmdbPlanningCardinality cardinality = new LmdbPlanningCardinality(finite.rows() / invocations,
+					finite.exact(), finite.lowerRows() / invocations, finite.upperRows() / invocations,
+					finite.certifiedBounds(), 0L);
+			return new NativePrefixPopulation(cardinality, "finite-binding-prefix", Double.NaN);
 		}
 		FiniteLookupKey prefix = nativePrefix(new FiniteLookupKey(query.statementPatternValue(relationId, 0),
 				query.statementPatternValue(relationId, 1), query.statementPatternValue(relationId, 2),
 				query.statementPatternValue(relationId, 3)), nativePrefixMask);
-		LmdbPlanningCardinality estimate = nativePrefixRows(prefix);
-		if (estimate == null || !finiteNonNegative(estimate.rows())) {
-			return Double.NaN;
+		NativePrefixPopulation population = nativePrefixPopulation(prefix);
+		if (population == null || !finiteNonNegative(population.cardinality().rows())) {
+			return null;
 		}
+		LmdbPlanningCardinality estimate = population.cardinality();
 		double rows = estimate.rows();
 		int unknownBoundComponents = nativePrefixMask & ~constantLookupMask(query, relationId);
 		if (rows == 0.0d || unknownBoundComponents == 0) {
-			return rows;
+			return population;
 		}
 		if (statisticsView == null) {
-			return Double.NaN;
+			return null;
 		}
 		FrontierLeafProbe probe = nativePrefixProbe(prefix);
 		if (probe == null) {
-			return Double.NaN;
+			return null;
 		}
 		// Use the existing mapped projected-distinct conditioning rule in this same native-prefix population.
 		for (int component = 0; component < 4; component++) {
@@ -4316,22 +4524,32 @@ final class LmdbPackedCostModel
 			}
 			double distinct = mappedProjectedDistinct(probe, component);
 			if (!(distinct > 0.0d) || !Double.isFinite(distinct)) {
-				return Double.NaN;
+				return null;
 			}
 			rows = Math.min(rows, estimate.rows() / distinct);
 		}
-		return rows;
+		return new NativePrefixPopulation(LmdbPlanningCardinality.unqualified(rows),
+				"frontier-projected-distinct-prefix", Double.NaN);
 	}
 
 	private LmdbPlanningCardinality nativePrefixRows(FiniteLookupKey prefix) {
+		NativePrefixPopulation population = nativePrefixPopulation(prefix);
+		return population == null ? null : population.cardinality();
+	}
+
+	private NativePrefixPopulation nativePrefixPopulation(FiniteLookupKey prefix) {
 		if (prefix.subject() != null && !(prefix.subject() instanceof Resource)
 				|| prefix.predicate() != null && !(prefix.predicate() instanceof IRI)
 				|| prefix.graph() != null && !(prefix.graph() instanceof Resource)) {
-			return LmdbPlanningCardinality.exact(0.0d, 0L);
+			return new NativePrefixPopulation(LmdbPlanningCardinality.exact(0.0d, 0L), "invalid-rdf-term", 1.0d);
 		}
 		if (statisticsView == null) {
-			return runtime.packedReadRowsQualified((Resource) prefix.subject(), (IRI) prefix.predicate(),
+			LmdbPlanningCardinality cardinality = runtime.packedReadRowsQualified((Resource) prefix.subject(),
+					(IRI) prefix.predicate(),
 					prefix.object(), (Resource) prefix.graph(), 0, qualifiedReadSelection(), null);
+			return cardinality == null ? null
+					: new NativePrefixPopulation(cardinality, "lmdb-qualified-prefix",
+							Double.NaN);
 		}
 		FrontierLeafProbe probe = nativePrefixProbe(prefix);
 		if (probe == null) {
@@ -4342,16 +4560,47 @@ final class LmdbPackedCostModel
 			estimate = mappedStatisticsCache.boundLeafEstimate(probe);
 		} else {
 			FrontierLeafEstimate leaf = statisticsView.estimateLeaf(probe);
-			estimate = leaf.fallbackReason() == FrontierFallbackReason.NONE
-					? new MappedRowsEstimate(leaf.pointRows(), leaf.lowerRows(), leaf.upperRows(),
-							leaf.confidence(), leaf.source())
-					: null;
+			estimate = MappedRowsEstimate.fromLeaf(leaf);
 			if (mappedStatisticsCache != null) {
 				mappedStatisticsCache.storeBoundLeafEstimate(probe, estimate);
 			}
 		}
-		return estimate == null || !finiteNonNegative(estimate.pointRows()) ? null
-				: LmdbPlanningCardinality.calibrated(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows());
+		if (estimate == null || !finiteNonNegative(estimate.pointRows())) {
+			return null;
+		}
+		// The guarantee belongs to the producer and survives this query-local cache; source strings and coincident
+		// statistical endpoints are never used as proof.
+		LmdbPlanningCardinality cardinality = switch (estimate.leafGuarantee()) {
+		case EXACT -> LmdbPlanningCardinality.exact(estimate.pointRows(), 0L);
+		case CERTIFIED_BOUNDS -> new LmdbPlanningCardinality(estimate.pointRows(), false, estimate.lowerRows(),
+				estimate.upperRows(), true, 0L);
+		case ESTIMATE, UNAVAILABLE -> LmdbPlanningCardinality.calibrated(estimate.pointRows(), estimate.lowerRows(),
+				estimate.upperRows());
+		};
+		return new NativePrefixPopulation(cardinality, estimate.source(), estimate.confidence());
+	}
+
+	private static void annotateNativePrefixPopulation(PackedCostEstimate output, NativePrefixPopulation population) {
+		LmdbPlanningCardinality cardinality = population.cardinality();
+		output.putPlannedDoubleMetric("plannedNativePrefixPopulation", cardinality.rows());
+		output.putPlannedStringMetric("plannedNativePrefixPopulationSource", population.source());
+		output.putPlannedStringMetric("plannedNativePrefixPopulationQuality", cardinality.exact() ? "exact"
+				: cardinality.certifiedBounds() ? "certified-bounds"
+						: Double.isFinite(population.confidence()) ? "statistical" : "estimate");
+		String boundPrefix = cardinality.certifiedBounds() ? "plannedNativePrefixPopulation"
+				: "plannedNativePrefixPopulationStatistical";
+		if (cardinality.certifiedBounds() || Double.isFinite(population.confidence())) {
+			output.putPlannedDoubleMetric(boundPrefix + "Lower", cardinality.lowerRows());
+			if (Double.isFinite(cardinality.upperRows())) {
+				output.putPlannedDoubleMetric(boundPrefix + "Upper", cardinality.upperRows());
+			}
+		}
+		if (Double.isFinite(population.confidence())) {
+			output.putPlannedDoubleMetric("plannedNativePrefixPopulationConfidence", population.confidence());
+		}
+	}
+
+	private record NativePrefixPopulation(LmdbPlanningCardinality cardinality, String source, double confidence) {
 	}
 
 	private FrontierLeafProbe nativePrefixProbe(FiniteLookupKey prefix) {
@@ -4816,11 +5065,25 @@ final class LmdbPackedCostModel
 	}
 
 	private record MappedRowsEstimate(double pointRows, double lowerRows, double upperRows, double confidence,
-			String source, double distinctLookupBindings) {
+			String source, double distinctLookupBindings, FrontierLeafEstimate.Guarantee leafGuarantee) {
 
 		private MappedRowsEstimate(double pointRows, double lowerRows, double upperRows, double confidence,
 				String source) {
-			this(pointRows, lowerRows, upperRows, confidence, source, -1.0d);
+			this(pointRows, lowerRows, upperRows, confidence, source, -1.0d,
+					FrontierLeafEstimate.Guarantee.ESTIMATE);
+		}
+
+		private MappedRowsEstimate(double pointRows, double lowerRows, double upperRows, double confidence,
+				String source, double distinctLookupBindings) {
+			this(pointRows, lowerRows, upperRows, confidence, source, distinctLookupBindings,
+					FrontierLeafEstimate.Guarantee.ESTIMATE);
+		}
+
+		private static MappedRowsEstimate fromLeaf(FrontierLeafEstimate estimate) {
+			return estimate != null && estimate.fallbackReason() == FrontierFallbackReason.NONE
+					? new MappedRowsEstimate(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
+							estimate.confidence(), estimate.source(), -1.0d, estimate.guarantee())
+					: null;
 		}
 
 		private static MappedRowsEstimate finiteDomainZero() {

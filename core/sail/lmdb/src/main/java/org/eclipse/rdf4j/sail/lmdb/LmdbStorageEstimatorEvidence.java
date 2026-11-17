@@ -144,8 +144,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	@Override
 	public BagEstimate refineResolvedLeaf(TupleExpr expression, EstimateContext context, BagEstimate resolved) {
+		context.requireAdmittedRead();
 		if (!(expression instanceof StatementPattern pattern) || !context.nativeEvidenceAllowed()
-				|| context.readPopulation() != LmdbFrontierReadPopulation.STORE_DEFAULTS) {
+				|| context.readPopulation() != LmdbFrontierReadPopulation.STORE_DEFAULTS
+				|| context.admittedRead() != null && !context.admittedRead().sharedEvidenceCurrent()) {
 			return resolved;
 		}
 		return LmdbAdjacencyPlannerEvidence.enrich(pattern, resolved, adjacencySelection.get());
@@ -153,6 +155,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	@Override
 	public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+		context.requireAdmittedRead();
 		if (!context.nativeEvidenceAllowed()) {
 			return List.of();
 		}
@@ -185,6 +188,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	}
 
 	private List<EstimateCandidate> statementCandidates(StatementPattern pattern, EstimateContext context) {
+		context.requireAdmittedRead();
 		List<EstimateCandidate> candidates = new ArrayList<>(3);
 		FrontierLeafProbe frontierProbe = frontierProbe(pattern, context);
 		FrontierLeafEstimate frontier = frontierProbe == null ? null : mappedLeaf(context, frontierProbe);
@@ -201,7 +205,9 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 					.map(fallback -> fallback.withRowScope(RowScope.PER_INVOCATION))
 					.ifPresent(candidates::add);
 		}
-		if (synopsis != null) {
+		boolean sharedEvidence = context.admittedRead() == null
+				|| frontierAnswered && context.admittedRead().sharedEvidenceCurrent();
+		if (synopsis != null && sharedEvidence) {
 			QuadProbe probe = probe(pattern, context);
 			QuadEvidence evidence = synopsis.probe(probe);
 			if (evidence.usable()) {
@@ -210,8 +216,11 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 						projectedNames(pattern, probe.projectedMask())));
 			}
 		}
-		addFeedback(pattern, context, candidates);
+		if (sharedEvidence) {
+			addFeedback(pattern, context, candidates);
+		}
 		addMappedBoundVariableEvidence(pattern, context, frontierProbe, candidates);
+		context.requireAdmittedRead();
 		return candidates;
 	}
 
@@ -244,6 +253,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	}
 
 	private FrontierLeafEstimate mappedLeaf(EstimateContext context, FrontierLeafProbe probe) {
+		context.requireAdmittedRead();
+		if (context.admittedRead() != null) {
+			return context.admittedRead().estimateLeaf(probe);
+		}
 		if (context.frontierSnapshotEpoch() < 0L) {
 			return statistics.estimateLeafCurrent(probe);
 		}
@@ -253,6 +266,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	}
 
 	private FrontierJoinEstimate mappedJoin(EstimateContext context, FrontierJoinProbe probe) {
+		context.requireAdmittedRead();
+		if (context.admittedRead() != null) {
+			return context.admittedRead().estimateJoin(probe);
+		}
 		if (context.frontierSnapshotEpoch() < 0L) {
 			return statistics.estimateJoinCurrent(probe);
 		}
@@ -262,6 +279,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	}
 
 	private double mappedDistinct(EstimateContext context, FrontierLeafProbe probe, int component) {
+		context.requireAdmittedRead();
+		if (context.admittedRead() != null) {
+			return context.admittedRead().estimateProjectedDistinct(probe, component);
+		}
 		if (context.frontierSnapshotEpoch() < 0L) {
 			return statistics.estimateProjectedDistinctCurrent(probe, component);
 		}
@@ -293,6 +314,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	@Override
 	public Optional<JoinEvidence> joinEvidence(TupleExpr left, TupleExpr right, EstimateContext context) {
+		context.requireAdmittedRead();
 		if (!context.nativeEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(left)
 				|| !LmdbPlanningGraphEvidence.allows(right)
 				|| statistics == null || statisticsMode == FrontierEstimatorMode.OFF
@@ -341,8 +363,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	@Override
 	public Optional<EstimateCandidate> exactCandidate(TupleExpr expression, EstimateContext context) {
+		context.requireAdmittedRead();
 		if (!context.nativeEvidenceAllowed() || !(expression instanceof StatementPattern pattern)
 				|| cardinalities == null
+				|| context.admittedRead() != null
 				|| frontierLeafAnswered(pattern, context)) {
 			return Optional.empty();
 		}
@@ -358,10 +382,12 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	@Override
 	public Optional<FilterEvidence> filterEvidence(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
 			EstimateContext context) {
+		context.requireAdmittedRead();
 		if (!context.nativeEvidenceAllowed()) {
 			return Optional.empty();
 		}
 		Optional<FilterEvidence> missingIriEvidence = exactMissingIriComparison(input, condition, context);
+		context.requireAdmittedRead();
 		if (missingIriEvidence.isPresent()) {
 			return missingIriEvidence;
 		}
@@ -377,6 +403,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 					: exactMandatoryPatternFilterZero(input, condition, context);
 		}
 		if (authoritative()) {
+			if (context.admittedRead() != null) {
+				return mappedFilters.estimate(pattern, condition, context.readPopulation(), context.frontierPlaneMask(),
+						context.admittedRead());
+			}
 			return mappedFilters.estimate(pattern, condition, context.readPopulation(), context.frontierPlaneMask(),
 					context.frontierSnapshotEpoch());
 		}

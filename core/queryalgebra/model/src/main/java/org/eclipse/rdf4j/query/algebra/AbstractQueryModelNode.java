@@ -97,6 +97,9 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private transient Map<String, DeferredStringMetric> deferredStringMetricsPlanned = Collections.emptyMap();
 	@JsonIgnore
 	private transient Map<Object, Object> queryModelMetadata = Collections.emptyMap();
+	/** Set once by {@link #freezeDetachedPlanningState()}, under this node's monitor; never set on a clone. */
+	@JsonIgnore
+	private transient boolean detachedPlanningStateFrozen;
 
 	private double cardinality = CARDINALITY_NOT_SET;
 
@@ -195,6 +198,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 					: new HashMap<>(queryModelMetadata);
 			clone.indexLookupCountActual = indexLookupCountActual;
 			clone.executionSummaryEnabled = executionSummaryEnabled;
+			clone.detachedPlanningStateFrozen = false;
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -700,6 +704,17 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public synchronized Map<String, String> getStringMetricsPlanned() {
+		if (detachedPlanningStateFrozen && !deferredStringMetricsPlanned.isEmpty()) {
+			// A frozen cache template keeps no rendering: render into a map the caller owns.
+			Map<String, String> rendered = new HashMap<>(stringMetricsPlanned);
+			for (Map.Entry<String, DeferredStringMetric> entry : deferredStringMetricsPlanned.entrySet()) {
+				String value = entry.getValue().resolve();
+				if (value != null) {
+					rendered.put(entry.getKey(), value);
+				}
+			}
+			return Collections.unmodifiableMap(rendered);
+		}
 		while (!deferredStringMetricsPlanned.isEmpty()) {
 			Map.Entry<String, DeferredStringMetric> entry = deferredStringMetricsPlanned.entrySet().iterator().next();
 			resolveDeferredStringMetric(entry.getKey(), entry.getValue());
@@ -807,6 +822,9 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	}
 
 	private String resolveDeferredStringMetric(String metricName, DeferredStringMetric deferred) {
+		if (detachedPlanningStateFrozen) {
+			return deferred.resolve(); // a frozen cache template stores no rendering
+		}
 		String metricValue = deferred.resolve();
 		Iterator<Map.Entry<String, DeferredStringMetric>> iterator = deferredStringMetricsPlanned.entrySet().iterator();
 		while (iterator.hasNext()) {
@@ -1050,29 +1068,87 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		return true;
 	}
 
+	/**
+	 * Internal cache boundary. Freezes this detached copy as a cache's own retained template, which the cache never
+	 * reads in place: it only copies it ({@link #copyDetachedPlanningStateTo}) and accounts it. Owned deferred
+	 * diagnostics stop memoizing (a read renders the text and stores nothing) and the metric maps are rebuilt from
+	 * their final contents, so for as long as the copy is retained it holds exactly what
+	 * {@link #accountDetachedPlanningState} charges for it.
+	 *
+	 * @return false, leaving the copy unchanged, when an unresolved deferred metric is not an owned data-only
+	 *         diagnostic
+	 */
+	@InternalUseOnly
+	public synchronized boolean freezeDetachedPlanningState() {
+		Map<String, String> strings = new HashMap<>(stringMetricsPlanned);
+		Map<String, DeferredStringMetric> deferred = new HashMap<>();
+		IdentityHashMap<DeferredStringMetric, DeferredStringMetric> frozen = new IdentityHashMap<>();
+		for (Map.Entry<String, DeferredStringMetric> entry : deferredStringMetricsPlanned.entrySet()) {
+			DeferredStringMetric original = entry.getValue();
+			synchronized (original) {
+				if (original.resolved) {
+					if (original.value != null) {
+						strings.put(entry.getKey(), original.value);
+					}
+				} else if (original.producer instanceof OwnedStringDiagnostic diagnostic) {
+					DeferredStringMetric copy = frozen.get(original);
+					if (copy == null) {
+						copy = new DeferredStringMetric(diagnostic, false);
+						frozen.put(original, copy);
+					}
+					deferred.put(entry.getKey(), copy);
+				} else {
+					return false;
+				}
+			}
+		}
+		longMetricsActual = rebuilt(longMetricsActual);
+		doubleMetricsActual = rebuilt(doubleMetricsActual);
+		stringMetricsActual = rebuilt(stringMetricsActual);
+		longMetricsPlanned = rebuilt(longMetricsPlanned);
+		doubleMetricsPlanned = rebuilt(doubleMetricsPlanned);
+		stringMetricsPlanned = rebuilt(strings);
+		deferredStringMetricsPlanned = rebuilt(deferred);
+		detachedPlanningStateFrozen = true;
+		return true;
+	}
+
+	/** A copy-constructed HashMap of the final contents, or the shared empty singleton. */
+	private static <V> Map<String, V> rebuilt(Map<String, V> map) {
+		return map.isEmpty() ? Collections.emptyMap() : new HashMap<>(map);
+	}
+
 	@Override
 	public synchronized boolean accountDetachedPlanningState(
 			RetainedMemoryAccount account,
 			DetachedMetadataAccount metadata) {
-		accountMap(longMetricsPlanned, account);
-		accountMap(doubleMetricsPlanned, account);
-		accountMap(stringMetricsPlanned, account);
-		accountMap(longMetricsActual, account);
-		accountMap(doubleMetricsActual, account);
-		accountMap(stringMetricsActual, account);
-		account.add(deferredStringMetricsPlanned, 192L + 96L * deferredStringMetricsPlanned.size());
+		boolean frozen = detachedPlanningStateFrozen;
+		accountMap(longMetricsPlanned, frozen, account);
+		accountMap(doubleMetricsPlanned, frozen, account);
+		accountMap(stringMetricsPlanned, frozen, account);
+		accountMap(longMetricsActual, frozen, account);
+		accountMap(doubleMetricsActual, frozen, account);
+		accountMap(stringMetricsActual, frozen, account);
+		account.add(deferredStringMetricsPlanned, mapBytes(deferredStringMetricsPlanned, frozen));
 		for (Map.Entry<String, DeferredStringMetric> entry : deferredStringMetricsPlanned.entrySet()) {
-			accountString(entry.getKey(), account);
+			accountName(entry.getKey(), frozen, account);
 			DeferredStringMetric value = entry.getValue();
 			if (!(value.producer instanceof OwnedStringDiagnostic diagnostic)) {
 				return false;
 			}
-			long characters = diagnostic.maximumRenderedCharacters();
-			if (characters > (Long.MAX_VALUE - 104L) / 2L) {
-				return false;
+			if (frozen && !value.memoize) {
+				// Exact: this wrapper never stores a rendering (resolveDeferredStringMetric and
+				// getStringMetricsPlanned render a frozen node's diagnostics without storing them). The wrapper
+				// object is at most 32 bytes; its data snapshot is charged below.
+				account.add(value, 104L);
+			} else {
+				long characters = diagnostic.maximumRenderedCharacters();
+				if (characters > (Long.MAX_VALUE - 104L) / 2L) {
+					return false;
+				}
+				// Constant before/after lazy resolution: includes the wrapper and its maximum future memoized String.
+				account.add(value, 104L + 2L * characters);
 			}
-			// Constant before/after lazy resolution: includes the wrapper and its maximum future memoized String.
-			account.add(value, 104L + 2L * characters);
 			if (!diagnostic.accountRetainedMemory(account)) {
 				return false;
 			}
@@ -1086,17 +1162,52 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		return true;
 	}
 
-	private static void accountMap(Map<String, ?> map,
+	private static void accountMap(Map<String, ?> map, boolean frozen,
 			RetainedMemoryAccount account) {
-		account.add(map, 192L + 96L * map.size());
+		account.add(map, mapBytes(map, frozen));
 		for (Map.Entry<String, ?> entry : map.entrySet()) {
-			accountString(entry.getKey(), account);
+			accountName(entry.getKey(), frozen, account);
 			Object value = entry.getValue();
 			if (value instanceof String text) {
 				accountString(text, account);
 			} else {
 				account.add(value, 24L);
 			} // only this class's Long/Double metric maps
+		}
+	}
+
+	/**
+	 * A frozen map is a HashMap copy-constructed from its final contents and never modified (or the shared empty
+	 * singleton, which no node owns), so its table has tableSizeFor(ceil(size / 0.75)) slots; tableSizeFor(size * 4 / 3
+	 * + 1) also covers JDKs that pre-size with size / 0.75 + 1. Each object is sized for a 64-bit JVM with or without
+	 * compressed oops (header at most 12 bytes with compressed class pointers, reference at most 8, 8-byte alignment):
+	 * the HashMap 64, its entry, key and value views 3 x 24 (each created at most once), the table 16 plus 8 per slot,
+	 * and a list node 40 per entry. A bin turns into a tree only with eight colliding keys, which a fixed metric
+	 * vocabulary does not produce. An unfrozen map may have been modified, so it keeps the conservative 192 plus 96 per
+	 * entry.
+	 */
+	private static long mapBytes(Map<?, ?> map, boolean frozen) {
+		if (!frozen) {
+			return 192L + 96L * map.size();
+		}
+		if (map == Collections.emptyMap()) {
+			return 0L;
+		}
+		long requested = map.size() * 4L / 3L + 1L;
+		long slots = requested == 1L ? 1L : Long.highestOneBit(requested - 1L) << 1;
+		return 64L + 3L * 24L + 16L + 8L * slots + 40L * map.size();
+	}
+
+	/**
+	 * A frozen node does not charge a metric name that is the JVM's canonical instance of its content. Metric names are
+	 * compile-time constants; the canonical instance of a constant is held by the constant pool of its declaring class
+	 * for as long as that class is loaded, so referencing it retains nothing. The probe interns a new copy and so never
+	 * adds {@code name} itself to the pool: a name built at run time stays non-canonical and stays charged. Nothing
+	 * interns a metric name at run time.
+	 */
+	private static void accountName(String name, boolean frozen, RetainedMemoryAccount account) {
+		if (!frozen || new String(name).intern() != name) {
+			accountString(name, account);
 		}
 	}
 
@@ -1109,11 +1220,18 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	private static final class DeferredStringMetric {
 		private final Supplier<String> producer;
+		/** False only for a frozen template's wrapper: it renders on every read and stores nothing. */
+		private final boolean memoize;
 		private boolean resolved;
 		private String value;
 
 		private DeferredStringMetric(Supplier<String> producer) {
+			this(producer, true);
+		}
+
+		private DeferredStringMetric(Supplier<String> producer, boolean memoize) {
 			this.producer = producer;
+			this.memoize = memoize;
 		}
 
 		private boolean isProducedBy(Supplier<String> candidate) {
@@ -1121,6 +1239,9 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		}
 
 		private synchronized String resolve() {
+			if (!memoize) {
+				return producer.get();
+			}
 			if (!resolved) {
 				value = producer.get();
 				resolved = true;

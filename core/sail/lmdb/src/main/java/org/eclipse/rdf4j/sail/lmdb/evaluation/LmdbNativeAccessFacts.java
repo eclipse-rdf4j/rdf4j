@@ -16,6 +16,8 @@ import java.util.Objects;
 import java.util.OptionalDouble;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.sail.lmdb.LmdbAccessQuantityQuote;
+import org.eclipse.rdf4j.sail.lmdb.LmdbIndexAccessFeatures;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.IndexAccessProfile;
 
 /**
@@ -60,14 +62,25 @@ final class LmdbNativeAccessFacts {
 	 * @param scannedRows            estimated rows the LMDB path visits (prefix range or whole smallest-index sweep)
 	 * @param lmdb                   LMDB planning work interval, always finite
 	 * @param adjacency              adjacency planning work interval, or null when it cannot serve this shape
-	 * @param sourceRowsHigh         pinned source-row ceiling, including repeated fixed-context scans
+	 * @param sourceRowsHigh         legacy source-population ceiling, including repeated fixed-context scans; this is
+	 *                               not a receipt for a later execution view
 	 * @param adjacencyDirectoryHigh directory-work ceiling with that source population, not sampled output rows
 	 */
 	record Quote(int physicalMask, int prefixMask, int residualFields, double outputRows, double scannedRows,
-			LmdbNativeWork lmdb, LmdbNativeWork adjacency, double sourceRowsHigh, double adjacencyDirectoryHigh) {
+			LmdbNativeWork lmdb, LmdbNativeWork adjacency, double sourceRowsHigh, double adjacencyDirectoryHigh,
+			LmdbAccessQuantityQuote quantities) {
 
 		Quote {
 			Objects.requireNonNull(lmdb, "lmdb");
+			Objects.requireNonNull(quantities, "quantities");
+		}
+
+		Quote(int physicalMask, int prefixMask, int residualFields, double outputRows, double scannedRows,
+				LmdbNativeWork lmdb, LmdbNativeWork adjacency, double sourceRowsHigh, double adjacencyDirectoryHigh) {
+			this(physicalMask, prefixMask, residualFields, outputRows, scannedRows, lmdb, adjacency, sourceRowsHigh,
+					adjacencyDirectoryHigh, LmdbAccessQuantityQuote.nativeCandidate(
+							LmdbIndexAccessFeatures.of(physicalMask, prefixMask), outputRows, scannedRows, Double.NaN,
+							Double.NaN, -1, -1, sourceRowsHigh, residualFields, RESIDUAL_SEEK_SHARE));
 		}
 
 		/** A manually assembled planning quote has no certified source population. */
@@ -81,7 +94,7 @@ final class LmdbNativeAccessFacts {
 		/** The same pinned-source bounds on a forced LMDB access, including an adjacency binding retry. */
 		Quote withoutAdjacency() {
 			return new Quote(physicalMask, prefixMask, residualFields, outputRows, scannedRows, lmdb, null,
-					sourceRowsHigh, adjacencyDirectoryHigh);
+					sourceRowsHigh, adjacencyDirectoryHigh, quantities);
 		}
 
 		/** The source that gives the lower bound of {@link #combined()}. */
@@ -113,31 +126,27 @@ final class LmdbNativeAccessFacts {
 		}
 
 		/**
-		 * Physical features of the access the statement-access arbiter will open. Complete-open bounds retain the
-		 * pinned source population rather than sampled planning rows. Index seeks are certain, a residual walk may seek
-		 * once per skipped key, and matches are decoded. Adjacency decodes rows directly and scans its directory.
+		 * Modeled features of the access priced by the statement-access arbiter. The legacy complete-open ceiling
+		 * retains the source-reported population rather than sampled planning rows. Its base seeks and residual seek
+		 * share are pricing inputs, not observed cursor operations. Adjacency decodes rows and scans its directory.
 		 */
 		LmdbNativeCostVector vector(int sources, int scans) {
 			LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
-			double seeks = (double) sources * scans;
+			var seeks = quantities.nativeSeeks(sources, scans, RESIDUAL_SEEK_SHARE);
 			if (selectedSource() == Source.ADJACENCY) {
-				double rows = Math.max(0D, outputRows);
+				double rows = Math.max(0D, quantities.emittedRows().point());
 				double directory = Math.max(0D, adjacency.high() - rows);
-				builder.add(LmdbNativeCostVector.Feature.INDEX_SEEK, seeks)
+				builder.add(LmdbNativeCostVector.Feature.INDEX_SEEK, seeks.lower())
 						.add(LmdbNativeCostVector.Feature.DECODED_ROW, 0D, rows, Math.max(rows, sourceRowsHigh))
 						.add(LmdbNativeCostVector.Feature.SCANNED_ROW, 0D, directory / 2D,
 								Math.max(directory, adjacencyDirectoryHigh));
 				return builder.build();
 			}
-			boolean sweep = prefixMask <= 0;
-			double scannedLow = sweep ? scannedRows : 0D;
-			double scannedExpected = residualFields > 0 || sweep ? scannedRows : outputRows;
-			builder.add(LmdbNativeCostVector.Feature.INDEX_SEEK, seeks,
-					seeks + (residualFields > 0 ? RESIDUAL_SEEK_SHARE * scannedRows : 0D),
-					seeks + (residualFields > 0 ? Math.max(scannedRows, sourceRowsHigh) : 0D));
-			builder.add(LmdbNativeCostVector.Feature.SCANNED_ROW, scannedLow, scannedExpected,
-					Math.max(scannedRows, sourceRowsHigh));
-			builder.add(LmdbNativeCostVector.Feature.DECODED_ROW, 0D, outputRows, Math.max(outputRows, sourceRowsHigh));
+			var visits = quantities.visitedEntries();
+			builder.add(LmdbNativeCostVector.Feature.INDEX_SEEK, seeks.lower(), seeks.point(), seeks.upper());
+			builder.add(LmdbNativeCostVector.Feature.SCANNED_ROW, visits.lower(), visits.point(), visits.upper());
+			double emitted = quantities.emittedRows().point();
+			builder.add(LmdbNativeCostVector.Feature.DECODED_ROW, 0D, emitted, Math.max(emitted, sourceRowsHigh));
 			return builder.build();
 		}
 	}
@@ -167,49 +176,52 @@ final class LmdbNativeAccessFacts {
 		}
 		double rows = rows(mask);
 		int prefix = profile.prefixMask(pattern.statementOrder, mask);
+		long features = LmdbIndexAccessFeatures.of(mask, prefix);
 		double seek = LmdbNativeWork.SEEK * profile.sources() * scans;
 		double entries = (double) profile.entries() * scans;
 		// A residual field is filtered while walking the prefix range; LMDB skips stored keys with a seek per skipped
 		// key, so each candidate row of the range costs a visit plus a seek (measured by the skip-scan regression).
 		double residualVisit = 1D + LmdbNativeWork.SEEK;
 
-		int residualFields;
+		int residualFields = Integer.bitCount(LmdbIndexAccessFeatures.residualMask(features) & 0xF);
 		double scanned;
+		double prefixPopulation;
 		double lmdbLow;
 		double lmdbHigh;
-		if (prefix < 0) {
+		if (LmdbIndexAccessFeatures.noCompatibleIndex(features)) {
 			// no index yields this order (or binding): sweep the smallest index, filter, and sort if an order is
 			// required
-			residualFields = Integer.bitCount(mask & 0xF);
 			scanned = entries;
+			prefixPopulation = entries;
 			lmdbLow = seek + entries;
 			lmdbHigh = seek + entries * (residualFields > 0 ? residualVisit : 1D)
 					+ (pattern.statementOrder != null ? sortWork(entries) : 0D);
-		} else if (prefix == 0 && (mask & 0xF) != 0) {
+		} else if (LmdbIndexAccessFeatures.fullScan(features) && residualFields != 0) {
 			// an index exists but covers none of the bound fields: a full sweep with residual filtering
-			residualFields = Integer.bitCount(mask & 0xF);
 			scanned = entries;
+			prefixPopulation = entries;
 			lmdbLow = seek + entries;
 			lmdbHigh = seek + entries * residualVisit;
-		} else if (prefix == 0) {
+		} else if (LmdbIndexAccessFeatures.fullScan(features)) {
 			// nothing bound: one pass over the whole source
-			residualFields = 0;
 			scanned = entries;
+			prefixPopulation = entries;
 			lmdbLow = seek + entries;
 			lmdbHigh = lmdbLow;
 		} else {
-			residualFields = Integer.bitCount((mask & 0xF) & ~prefix);
 			if (residualFields == 0 && pattern.range == null) {
 				// the prefix covers every bound field: a direct lookup that visits exactly the matching rows; the
 				// seek is certain, the matches are an estimate that may turn out empty
 				scanned = rows;
+				prefixPopulation = rows;
 				lmdbLow = seek;
 				lmdbHigh = seek + rows;
 			} else {
 				// the prefix range is walked and filtered; its size is statistical when a fan-out is known, else
 				// bounded
 				// by the whole source
-				scanned = Math.max(rows, prefixRangeRows(prefix, entries));
+				prefixPopulation = prefixRangeRows(prefix, entries);
+				scanned = LmdbAccessQuantityQuote.candidateRows(rows, prefixPopulation);
 				lmdbLow = seek;
 				lmdbHigh = seek + scanned * residualVisit;
 			}
@@ -220,7 +232,11 @@ final class LmdbNativeAccessFacts {
 		LmdbNativeWork adjacency = adjacency(mask, rows, scans);
 		LmdbNativeWork adjacencyCeiling = adjacency == null ? null : adjacency(mask, entries, scans);
 		double directoryHigh = adjacencyCeiling == null ? 0D : Math.max(0D, adjacencyCeiling.high() - entries);
-		return new Quote(mask, prefix, residualFields, rows, scanned, lmdb, adjacency, entries, directoryHigh);
+		LmdbAccessQuantityQuote quantities = LmdbAccessQuantityQuote.nativeCandidate(features, rows, scanned,
+				profile.entries(), prefixPopulation, profile.sources(), scans, entries, residualFields,
+				RESIDUAL_SEEK_SHARE);
+		return new Quote(mask, prefix, residualFields, rows, scanned, lmdb, adjacency, entries, directoryHigh,
+				quantities);
 	}
 
 	/**

@@ -20,12 +20,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -45,23 +48,66 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryIdentityDigest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSearchCompletionStatus;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Store-owned cache of detached, fully optimized LMDB query-plan templates. */
 final class LmdbPipelinePlanCache {
 
+	private static final Logger LOGGER = LoggerFactory.getLogger(LmdbPipelinePlanCache.class);
 	private static final int DEFAULT_CAPACITY = 256;
 	private static final int DEFAULT_SEGMENTS = 16;
-	private static final long ENTRY_OBJECT_BYTES = 512L;
+	/**
+	 * Fixed charge of one published family for the records that no per-object accounting covers. The template, the
+	 * input identity and the keys are charged per object at publication; the family retains no source graph. Upper
+	 * bounds with 8-byte references, a 12-byte header and 8-byte alignment: PlanFamily 40, AtomicReference 24, its
+	 * refresh-claim ConcurrentHashMap 80 plus a first claim (table 144, node 40, Long 24, AtomicBoolean 16) 224,
+	 * FamilyVersion 80, exact-alias map 32, ExactAlias 48, VariantDispatcher with its list 56, PlanVariant 104,
+	 * ApplicabilityGuard with its two arrays 88, PlanVersion 80, ExactTupleRecipe 32, physical fingerprint (at most 83
+	 * characters) 208, EstimatedCostInterval 32, SearchCertificate 80, EvidenceSnapshot with its dependency set and
+	 * three dependencies 280, PlanStabilityEnvelope with its two arrays 72, RuntimePosterior 56, the family,
+	 * exact-alias and recency index entries 64 + 64 + 104, three reverse-evidence entries 192 and, conservatively once
+	 * per family, the three shared reverse-evidence key sets 840: 2,880 bytes in all.
+	 */
+	static final long ENTRY_OBJECT_BYTES = 3_072L;
+	/**
+	 * The part of {@link #ENTRY_OBJECT_BYTES} that belongs to one plan version rather than to its family: PlanVersion
+	 * 80, ExactTupleRecipe 32, physical fingerprint 208 and EstimatedCostInterval 32. Every retained version, the
+	 * published one and each one a detached refresh adds, carries this charge, and shedding a version releases it; the
+	 * rest of the entry charge belongs to the family for as long as the family is retained.
+	 */
+	static final long VERSION_OBJECT_BYTES = 352L;
+	/**
+	 * The part of {@link #ENTRY_OBJECT_BYTES} that belongs to one plan variant: PlanVariant 104, ApplicabilityGuard
+	 * with its two arrays 88, SearchCertificate 80, EvidenceSnapshot with its dependency set and three dependencies
+	 * 280, PlanStabilityEnvelope with its two arrays 72 and RuntimePosterior 56. The entry charge covers the published
+	 * variant; every further variant carries this charge.
+	 */
+	static final long VARIANT_OBJECT_BYTES = 680L;
+	/**
+	 * One challenger's runtime posterior in its variant's posterior map: RuntimePosterior 56, the boxed version key 24
+	 * and the map's entry or slots 40, an upper bound for both the hash map and the immutable map.
+	 */
+	static final long CHALLENGER_POSTERIOR_BYTES = 120L;
+	/**
+	 * One exact alias appended to a pipeline family beyond the published one: ExactAlias 48, its exact-alias index
+	 * entry 64, and the family alias map's entry and table slots 56 (LinkedHashMap entry 40 and two slots, table at
+	 * load factor 3/4). The alias key itself is charged per object.
+	 */
+	static final long APPENDED_ALIAS_BYTES = 168L;
+	private static final String[] RESULT_PROPERTIES = resultPropertyNames();
 
 	private final Segment[] segments;
 	private final int segmentMask;
 	private final FingerprintStrategy fingerprintStrategy;
+	private final RequestDigest requestDigest;
 	private final boolean enabled;
 	private final LmdbPlanDecisionCache decisionCache;
 	private final AtomicLong hits = new AtomicLong();
@@ -70,24 +116,36 @@ final class LmdbPipelinePlanCache {
 
 	LmdbPipelinePlanCache(long evidenceBudgetBytes, int maximumVariants, int refreshThreads,
 			double maximumCanaryFraction) {
+		this(evidenceBudgetBytes, maximumVariants, refreshThreads, maximumCanaryFraction, false);
+	}
+
+	LmdbPipelinePlanCache(long evidenceBudgetBytes, int maximumVariants, int refreshThreads,
+			double maximumCanaryFraction, boolean retainCachedPlanDiagnostics) {
 		this(DEFAULT_CAPACITY, DEFAULT_SEGMENTS, evidenceBudgetBytes, maximumVariants, refreshThreads,
-				maximumCanaryFraction,
-				(context, query) -> mix64(query.hashCode() ^ context.routingHash()));
+				maximumCanaryFraction, retainCachedPlanDiagnostics,
+				(context, query) -> mix64(query.hashCode() ^ context.routingHash()),
+				PackedQueryIdentityDigest::of);
 	}
 
 	LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes) {
-		this(capacity, segmentCount, evidenceBudgetBytes, 4, 1, 0.01d,
-				(context, query) -> mix64(query.hashCode() ^ context.routingHash()));
+		this(capacity, segmentCount, evidenceBudgetBytes, PackedQueryIdentityDigest::of);
+	}
+
+	LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes, RequestDigest requestDigest) {
+		this(capacity, segmentCount, evidenceBudgetBytes, 4, 1, 0.01d, false,
+				(context, query) -> mix64(query.hashCode() ^ context.routingHash()), requestDigest);
 	}
 
 	LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
 			FingerprintStrategy fingerprintStrategy) {
-		this(capacity, segmentCount, evidenceBudgetBytes, 4, 1, 0.01d, fingerprintStrategy);
+		this(capacity, segmentCount, evidenceBudgetBytes, 4, 1, 0.01d, false, fingerprintStrategy,
+				PackedQueryIdentityDigest::of);
 	}
 
 	private LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
 			int maximumVariants, int refreshThreads, double maximumCanaryFraction,
-			FingerprintStrategy fingerprintStrategy) {
+			boolean retainCachedPlanDiagnostics, FingerprintStrategy fingerprintStrategy,
+			RequestDigest requestDigest) {
 		if (capacity <= 0) {
 			throw new IllegalArgumentException("pipeline plan cache capacity must be positive");
 		}
@@ -98,9 +156,10 @@ final class LmdbPipelinePlanCache {
 			throw new IllegalArgumentException("pipeline plan cache evidence budget must be nonnegative");
 		}
 		this.fingerprintStrategy = Objects.requireNonNull(fingerprintStrategy, "fingerprintStrategy");
+		this.requestDigest = Objects.requireNonNull(requestDigest, "requestDigest");
 		this.enabled = evidenceBudgetBytes > 0L;
 		decisionCache = new LmdbPlanDecisionCache(capacity, evidenceBudgetBytes, maximumVariants, refreshThreads,
-				maximumCanaryFraction);
+				maximumCanaryFraction, retainCachedPlanDiagnostics);
 		int normalizedSegments = 1;
 		while (normalizedSegments < Math.min(capacity, segmentCount)) {
 			normalizedSegments <<= 1;
@@ -124,12 +183,31 @@ final class LmdbPipelinePlanCache {
 
 	Result getOrComputePlan(TupleExpr source, Context context, Supplier<Revision> currentRevision,
 			PlanComputer computer) {
+		return getOrComputePlan(source, context, currentRevision, computer, () -> Long.MIN_VALUE);
+	}
+
+	Result getOrComputePlan(TupleExpr source, Context context, Supplier<Revision> currentRevision,
+			PlanComputer computer, LongSupplier liveDataRevisionHorizon) {
+		return getOrComputePlan(source, context, currentRevision, computer, liveDataRevisionHorizon, null);
+	}
+
+	/**
+	 * @param validator replays a cached variant's read log for this request when its evidence differs from the
+	 *                  variant's only in learned state; null keeps the rule of identical evidence
+	 */
+	Result getOrComputePlan(TupleExpr source, Context context, Supplier<Revision> currentRevision,
+			PlanComputer computer, LongSupplier liveDataRevisionHorizon,
+			LmdbPlanCacheRevalidation.Validator validator) {
 		Objects.requireNonNull(computer, "computer");
 		if (!enabled || source == null || context == null || currentRevision == null
 				|| !context.revision().equals(currentRevision.get()) || !context.retainable()
 				|| !hasReusableInputs(source)) {
-			return new Result(compute(computer).plan(), false);
+			return new Result(compute(computer, false).computation().plan(), false);
 		}
+		// Read once per request: with the switch off, no log is kept and lookups and publications decide alone. A
+		// request without a validator still keeps its planning's log for later requests that can replay it.
+		boolean keepLogs = LmdbPlanCacheRevalidation.validationEnabled();
+		boolean validation = validator != null && keepLogs;
 
 		PackedPlanCache.StructuralKey query = context.inputIdentity().source();
 		if (query == null) {
@@ -139,32 +217,48 @@ final class LmdbPipelinePlanCache {
 							LmdbCacheValueCopies.CODEC);
 		}
 		if (query == null) {
-			return new Result(compute(computer).plan(), false);
+			return new Result(compute(computer, false).computation().plan(), false);
 		}
 		context = context.withSource(query);
 		if (!context.retainable()) {
-			return new Result(compute(computer).plan(), false);
+			return new Result(compute(computer, false).computation().plan(), false);
 		}
 		long fingerprint = fingerprintStrategy.fingerprint(context, query);
 		CacheKey key = new CacheKey(fingerprint, context, query);
+		LmdbPlanDecisionCache.ExactInvocationKey exactKey = exactInvocationKey(key);
 		LmdbPlanDecisionCache.LookupDecision decision;
 		try {
-			decision = decisionCache.lookupExact(exactInvocationKey(key), lookupRequest(context));
+			LmdbPlanDecisionCache.LookupRequest request = lookupRequest(context);
+			decision = decisionCache.lookupExact(exactKey,
+					validation ? request.withRevalidation(context.revision()) : request);
+			if (decision instanceof LmdbPlanDecisionCache.Revalidate revalidate) {
+				decision = revalidate(revalidate, exactKey, context, validator);
+			}
 		} catch (RuntimeException cacheFailure) {
 			decision = new LmdbPlanDecisionCache.ReplanBeforeUse("lookup-failure-closed");
 		}
 		if (decision instanceof LmdbPlanDecisionCache.Use use) {
 			hits.incrementAndGet();
-			return new Result(annotateDecision(use.plan().materialize(), use), true);
+			servedFromCache(keepLogs);
+			TupleExpr served = annotateDecision(use.plan().materialize(), use);
+			if (validation && revalidated(use) && LmdbPlanCacheRevalidation.auditEnabled()) {
+				audit(use, served, validator);
+			}
+			return new Result(served, true);
 		}
 		if (decision instanceof LmdbPlanDecisionCache.UseAndRefresh useAndRefresh) {
 			LmdbPlanDecisionCache.RefreshSubmission submission = decisionCache.submitRefresh(useAndRefresh);
 			if (submission == LmdbPlanDecisionCache.RefreshSubmission.SUBMITTED
 					|| submission == LmdbPlanDecisionCache.RefreshSubmission.ALREADY_IN_FLIGHT) {
 				hits.incrementAndGet();
+				servedFromCache(keepLogs);
 				return new Result(annotateDecision(useAndRefresh.plan().materialize(), useAndRefresh), true);
 			}
 		}
+		// Computed before any lock: the digest walks the request's exact identity, and the horizon reads the store's
+		// reader table.
+		OptionalLong missFingerprint = missFingerprint(query, exactKey);
+		long admissionHorizon = liveDataRevisionHorizon.getAsLong();
 		Segment segment = segments[(int) mix64(fingerprint) & segmentMask];
 		Flight owner = null;
 		CompletableFuture<TupleExpr> shared = null;
@@ -174,63 +268,274 @@ final class LmdbPipelinePlanCache {
 			if (existing != null) {
 				waits.incrementAndGet();
 				shared = existing.result;
-			} else if (segment.flights.size() >= segment.capacity
-					|| !decisionCache.tryRetainTransientIdentity(context.inputIdentity())) {
+			} else if (segment.flights.size() >= segment.capacity) {
 				bypass = true;
 			} else {
-				misses.incrementAndGet();
-				try {
-					owner = new Flight(key, FactorCostCacheKey.estimatedStructuralRetainedBytes(source));
-					segment.flights.put(key, owner);
-				} catch (RuntimeException | Error failure) {
-					decisionCache.releaseTransientIdentity(context.inputIdentity());
-					throw failure;
+				// Lock order: segment, then the decision cache's admission lock (which may evict retained families).
+				LmdbPlanDecisionCache.FlightAdmission admission = decisionCache.admitFlight(context.inputIdentity(),
+						missFingerprint.orElse(0L), missFingerprint.isPresent(), evidence(context), admissionHorizon);
+				if (admission == LmdbPlanDecisionCache.FlightAdmission.BYPASS) {
+					bypass = true;
+				} else {
+					misses.incrementAndGet();
+					try {
+						owner = new Flight(key,
+								admission == LmdbPlanDecisionCache.FlightAdmission.ADMITTED_PROVEN_REPEAT,
+								missFingerprint);
+						segment.flights.put(key, owner);
+					} catch (RuntimeException | Error failure) {
+						decisionCache.releaseTransientIdentity(context.inputIdentity());
+						throw failure;
+					}
 				}
 			}
 		}
 		if (bypass) {
-			return new Result(compute(computer).plan(), false);
+			return new Result(compute(computer, false).computation().plan(), false);
 		}
 		if (shared != null) {
 			TupleExpr template;
 			try {
-				template = shared.join();
-			} catch (CompletionException | CancellationException ownerFailed) {
+				template = shared.get();
+			} catch (ExecutionException | CancellationException ownerFailed) {
 				// The owner's computation failed; that failure belongs to the owner's request. This request plans
 				// for itself (the failed flight is already removed) and publishes nothing.
 				template = null;
+			} catch (InterruptedException interrupted) {
+				// This request was cancelled (connection shutdown, query timeout or an interrupt) while it waited: it
+				// fails as a cancelled planning does. A waiter holds no flight reservation, so nothing is released;
+				// the owner and the other waiters keep the flight.
+				Thread.currentThread().interrupt();
+				throw new QueryInterruptedException(
+						"Query planning was cancelled while waiting for a plan cache flight", interrupted);
 			}
 			if (template != null && context.revision().equals(currentRevision.get())) {
+				servedFromCache(keepLogs);
 				return new Result(LmdbCacheValueCopies.copy(template, true), true);
 			}
-			return new Result(compute(computer).plan(), false);
+			return new Result(compute(computer, false).computation().plan(), false);
 		}
 
-		PlanComputation computation;
+		Planned planned;
+		long wallClockCutsBefore = LmdbPlanningWallClockCuts.count();
 		try {
-			computation = compute(computer);
+			planned = compute(computer, keepLogs);
 		} catch (RuntimeException | Error failure) {
 			abandon(segment, owner, failure);
 			throw failure;
 		}
+		PlanComputation computation = planned.computation();
+		boolean wallClockCut = LmdbPlanningWallClockCuts.count() != wallClockCutsBefore;
 		// The revision was captured before planning and is re-read after it. TripleStore publishes a new data
 		// revision only after the committed data became readable, so a plan whose probes read newer data under the
 		// captured revision is caught here (or, at worst, keyed under a revision no later lookup uses again); a plan
 		// can never be keyed under a revision newer than the data it enumerated. Detached refresh brackets its
-		// planning the same way (LmdbDetachedPlanRefresh.execute).
-		boolean stable = context.revision().equals(currentRevision.get());
-		TupleExpr computed = computation.plan();
-		TupleExpr template = stable && retainable(computed) ? detachedTemplate(computed) : null;
-		publish(segment, owner, template, computation);
+		// planning the same way (LmdbDetachedPlanRefresh.execute). A move in learned state alone is published under
+		// the end capture when the planning's own log replays identical against it (B3).
+		Revision publishedUnder;
+		boolean retainable;
+		TupleExpr computed;
+		TupleExpr template;
+		try {
+			Revision current = currentRevision.get();
+			publishedUnder = context.revision().equals(current) ? context.revision() : null;
+			computed = computation.plan();
+			retainable = retainable(computed);
+			if (publishedUnder == null && validation && retainable && !wallClockCut
+					&& rescued(validator, planned.log(), context.revision(), current)) {
+				publishedUnder = current;
+			}
+			template = publishedUnder != null && retainable ? detachedTemplate(computed) : null;
+		} catch (RuntimeException | Error failure) {
+			// Planning completed but its result could not be prepared for retention. The flight fails like a failed
+			// computation: waiters re-plan for themselves and the transient reservation is returned.
+			abandon(segment, owner, failure);
+			throw failure;
+		}
+		LmdbPlanCacheRevalidation.Basis basis = keepLogs && publishedUnder != null
+				? LmdbPlanCacheRevalidation.basis(publishedUnder, planned.log(), planned.missingReason())
+				: null;
+		publish(segment, owner, template, computation, publishedUnder != null && !retainable, wallClockCut,
+				liveDataRevisionHorizon, publishedUnder, basis);
 		return new Result(computed, false);
 	}
 
-	private static PlanComputation compute(PlanComputer computer) {
-		return Objects.requireNonNull(computer.compute(), "pipeline plan computation");
+	/** B3: whether a planning whose revision moved may be published under its end capture. */
+	private boolean rescued(LmdbPlanCacheRevalidation.Validator validator, LmdbPlanningReadLog.Log log,
+			Revision start, Revision end) {
+		assert !holdsCacheLock() : "a read log is replayed with no cache lock held";
+		boolean publishable;
+		try {
+			publishable = LmdbPlanCacheRevalidation.publishableUnder(validator, log, start, end);
+		} catch (RuntimeException replayFailure) {
+			// Counted as a failed replay; the planning is refused as before (fails closed) and still serves its
+			// request.
+			decisionCache.revalidationCounters().replayed(null);
+			return false;
+		}
+		if (publishable) {
+			decisionCache.revalidationCounters().publicationRescued();
+		}
+		return publishable;
+	}
+
+	/**
+	 * B2: replays a variant's log for a request whose evidence differs from the variant's only in learned state, with
+	 * no cache lock held, and serves it when the replay validates (identical; within the tolerance only for a
+	 * replay-only decision, which has no refresh to pick up the difference). Anything else takes today's path: the
+	 * lookup again, deciding alone.
+	 */
+	private LmdbPlanDecisionCache.LookupDecision revalidate(LmdbPlanDecisionCache.Revalidate candidate,
+			LmdbPlanDecisionCache.ExactInvocationKey exactKey, Context context,
+			LmdbPlanCacheRevalidation.Validator validator) {
+		assert !holdsCacheLock() : "a read log is replayed with no cache lock held";
+		LmdbPlanCacheRevalidation.Outcome outcome;
+		try {
+			outcome = validator.validate(candidate.basis().log(), context.revision(),
+					LmdbPlanningReadLog.configuredTolerance());
+		} catch (RuntimeException replayFailure) {
+			// Counted as a failed replay; the request is not validated and takes today's path (fails closed).
+			outcome = null;
+		}
+		decisionCache.revalidationCounters().replayed(outcome);
+		if (outcome != null && (outcome.identical() || outcome.withinTolerance() && candidate.replayOnly())) {
+			LmdbPlanDecisionCache.Use served = decisionCache.completeRevalidation(candidate, context.revision(),
+					evidence(context), 0L, !outcome.identical());
+			if (served != null) {
+				return served;
+			}
+		}
+		return decisionCache.lookupExact(exactKey, lookupRequest(context));
+	}
+
+	private static boolean revalidated(LmdbPlanDecisionCache.Use use) {
+		return LmdbPlanCacheRevalidation.REVALIDATED.equals(use.reason())
+				|| LmdbPlanCacheRevalidation.REVALIDATED_WITHIN_TOLERANCE.equals(use.reason());
+	}
+
+	/**
+	 * A plan served from this cache did not make the reads behind it: a planning enclosing this request (if any) has an
+	 * incomplete log.
+	 */
+	private static void servedFromCache(boolean keepLogs) {
+		if (keepLogs) {
+			LmdbPlanningReadLog.markIncomplete("pipeline-plan-cache-hit");
+		}
+	}
+
+	/**
+	 * The audit switch: plans the request afresh, without publication, and compares the fresh plan's structure
+	 * (operators, join order, access paths, physical algorithms; not estimates or annotations) with the served one.
+	 */
+	private void audit(LmdbPlanDecisionCache.Use use, TupleExpr served,
+			LmdbPlanCacheRevalidation.Validator validator) {
+		PlanComputation computation;
+		LmdbPlanningWallClockCuts.beginPlanning();
+		try {
+			computation = LmdbPlanCacheRevalidation.planIndependently(validator::planAfresh);
+		} catch (RuntimeException failure) {
+			// A diagnostic switch: the failed re-plan is counted and reported as a mismatch, the request is served.
+			decisionCache.revalidationCounters().audited(true);
+			LOGGER.warn("Plan-cache revalidation audit could not re-plan family {} plan {}", use.familyVersion(),
+					use.plan().physicalFingerprint(), failure);
+			return;
+		} finally {
+			LmdbPlanningWallClockCuts.endPlanning();
+		}
+		if (computation == null) {
+			return;
+		}
+		if (LmdbPlanCacheRevalidation.reusedPackedWork(computation.plan())) {
+			// Not a function of this planning's own search: neither a match nor a mismatch.
+			decisionCache.revalidationCounters().auditInconclusive();
+			return;
+		}
+		String freshFingerprint = computation.decisionSummary() == null ? null
+				: computation.decisionSummary().physicalFingerprint();
+		String servedStructure = LmdbPlanCacheRevalidation.structure(served);
+		String freshStructure = LmdbPlanCacheRevalidation.structure(computation.plan());
+		boolean differs = freshFingerprint != null && !freshFingerprint.equals(use.plan().physicalFingerprint())
+				|| !servedStructure.equals(freshStructure);
+		if (differs && LmdbPlanCacheRevalidation.REVALIDATED_WITHIN_TOLERANCE.equals(use.reason())) {
+			// F9: after a within-tolerance revalidation a different fresh plan is expected (an unguarded discrete
+			// rule may sit between the two learned states) and measured, not a mismatch: keep what the measurement
+			// needs.
+			PackedPlanDecisionSummary summary = computation.decisionSummary();
+			double freshPrice = summary == null ? Double.NaN : summary.selectedCostInterval().point();
+			double servedPrice = summary == null ? Double.NaN
+					: summary.candidate(use.plan().physicalFingerprint())
+							.map(candidate -> candidate.costInterval().point())
+							.orElse(Double.NaN);
+			decisionCache.revalidationCounters()
+					.auditedWithinToleranceDifference(new LmdbPlanCacheRevalidation.WithinToleranceDifference(
+							use.plan().physicalFingerprint(), freshFingerprint, freshPrice, servedPrice,
+							servedStructure, freshStructure));
+			LOGGER.info(
+					"Plan-cache revalidation audit, within-tolerance difference: served {} (fresh price {}), fresh {} (price {})",
+					use.plan().physicalFingerprint(), servedPrice, freshFingerprint, freshPrice);
+			return;
+		}
+		decisionCache.revalidationCounters().audited(differs);
+		if (differs) {
+			LOGGER.warn(
+					"Plan-cache revalidation audit mismatch: served {} (structure digest {}), fresh {} (structure digest {})",
+					use.plan().physicalFingerprint(), Integer.toHexString(servedStructure.hashCode()), freshFingerprint,
+					Integer.toHexString(freshStructure.hashCode()));
+		}
+	}
+
+	/**
+	 * Runs one planning inside a planning scope, so that the packed planner's cost sessions judge wall-clock cuts over
+	 * the same interval this cache does. With {@code keepLog}, the planning's read log is taken before its scope ends,
+	 * but only for an outermost planning (F4): a planning nested in another one keeps no log, since the enclosing
+	 * scope's earlier reads may have answered some of its own from per-scope caches.
+	 */
+	private static Planned compute(PlanComputer computer, boolean keepLog) {
+		LmdbPlanningWallClockCuts.beginPlanning();
+		try {
+			LmdbPlanningReadLog.Mark mark = keepLog ? LmdbPlanningReadLog.markAtPlanningStart() : null;
+			PlanComputation computation;
+			LmdbPlanningReadLog.Log log = null;
+			try {
+				computation = Objects.requireNonNull(computer.compute(), "pipeline plan computation");
+			} finally {
+				if (mark != null) {
+					log = LmdbPlanningReadLog.slice(mark);
+				}
+			}
+			return new Planned(computation, log,
+					keepLog && mark == null ? LmdbPlanCacheRevalidation.NESTED_PLANNING : null);
+		} finally {
+			LmdbPlanningWallClockCuts.endPlanning();
+		}
+	}
+
+	/** One planning and its read log (null when not kept, with the reason when the cache declined to keep it). */
+	private record Planned(PlanComputation computation, LmdbPlanningReadLog.Log log, String missingReason) {
 	}
 
 	int entryCount() {
 		return Math.toIntExact(decisionCache.statistics().families());
+	}
+
+	/** The revalidation counters of the decision cache behind this pipeline cache. */
+	LmdbPlanCacheRevalidation.Counters revalidationCounters() {
+		return decisionCache.revalidationCounters();
+	}
+
+	/** Test seam: the store-owned decision cache behind this pipeline cache. */
+	LmdbPlanDecisionCache decisionCacheForTest() {
+		return decisionCache;
+	}
+
+	/** Whether the calling thread holds a monitor of this cache: a segment's or the decision cache's admission lock. */
+	boolean holdsCacheLock() {
+		for (Segment segment : segments) {
+			if (Thread.holdsLock(segment)) {
+				return true;
+			}
+		}
+		return decisionCache.holdsAdmissionLock();
 	}
 
 	long retainedBytes() {
@@ -263,12 +568,12 @@ final class LmdbPipelinePlanCache {
 		decisionCache.close();
 	}
 
-	private void publish(Segment segment, Flight flight, TupleExpr template, PlanComputation computation) {
-		long entryBytes = template == null
-				? Long.MAX_VALUE
-				: saturatedAdd(ENTRY_OBJECT_BYTES, saturatedAdd(
-						saturatedMultiply(flight.sourceRetainedBytes, 2L),
-						FactorCostCacheKey.estimatedStructuralRetainedBytes(template)));
+	private void publish(Segment segment, Flight flight, TupleExpr template, PlanComputation computation,
+			boolean neverRetainable, boolean wallClockCut, LongSupplier liveDataRevisionHorizon,
+			Revision publishedUnder, LmdbPlanCacheRevalidation.Basis basis) {
+		// The template's nodes are charged per object (LmdbCacheValueCopies.account) and the family keeps only the
+		// source's structural key, charged under its input identity: the entry adds only its fixed records.
+		long entryBytes = template == null ? Long.MAX_VALUE : ENTRY_OBJECT_BYTES;
 		boolean owned;
 		synchronized (segment) {
 			owned = segment.flights.remove(flight.key) == flight;
@@ -277,9 +582,10 @@ final class LmdbPipelinePlanCache {
 			throw new IllegalStateException("pipeline plan cache flight is no longer owned");
 		}
 		try {
-			// The removed flight no longer owns a cache key. Final publication charges that same input graph.
-			decisionCache.releaseTransientIdentity(flight.key.context().inputIdentity());
-			boolean retained = template != null && publishDecision(flight.key, template, entryBytes, computation);
+			// The removed flight no longer owns a cache key. Final publication charges that same input graph and
+			// releases the flight's transient reservation in the same admission critical section.
+			boolean retained = publishDecision(flight, template, entryBytes, computation, neverRetainable,
+					wallClockCut, liveDataRevisionHorizon, publishedUnder, basis);
 			// Waiters may retain a completed future after the separately charged family is retired or evicted.
 			TupleExpr flightTemplate = retained ? template : null;
 			if (flightTemplate != null && FactorCostCacheKey.retainsProviderPayload(flightTemplate)) {
@@ -304,35 +610,112 @@ final class LmdbPipelinePlanCache {
 		}
 	}
 
-	private boolean publishDecision(CacheKey key, TupleExpr template, long entryBytes,
-			PlanComputation computation) {
-		LmdbPlanDecisionCache.EvidenceSnapshot evidence = evidence(key.context());
+	/**
+	 * Publishes the flight's decision, or ends the flight without publication. A refusal that holds for every re-plan
+	 * of the request (a plan that is never retainable, an unavailable comparison planned under a deadline) marks the
+	 * request as unable to publish, so it stops evicting for its flights; a transient refusal (moved revisions, a
+	 * wall-clock cut inside planning) does not.
+	 */
+	private boolean publishDecision(Flight flight, TupleExpr template, long entryBytes, PlanComputation computation,
+			boolean neverRetainable, boolean wallClockCut, LongSupplier liveDataRevisionHorizon,
+			Revision publishedUnder, LmdbPlanCacheRevalidation.Basis basis) {
+		PackedProviderCacheIdentity transientIdentity = flight.key.context().inputIdentity();
+		long fingerprint = flight.missFingerprint.orElse(0L);
+		boolean fingerprinted = flight.missFingerprint.isPresent();
+		Refusal refusal = template == null ? neverRetainable ? Refusal.EVERY_REPLAN : Refusal.THIS_PLANNING
+				: replayRefusal(computation, wallClockCut);
+		if (refusal != Refusal.NONE) {
+			decisionCache.abandonFlight(transientIdentity, fingerprint, fingerprinted,
+					refusal == Refusal.EVERY_REPLAN);
+			return false;
+		}
+		LmdbPlanDecisionCache.BuildPublication publication;
+		long horizon;
+		try {
+			publication = buildPublication(flight.key, template, entryBytes, computation, publishedUnder, basis);
+			horizon = liveDataRevisionHorizon.getAsLong();
+		} catch (RuntimeException | Error failure) {
+			decisionCache.releaseTransientIdentity(transientIdentity);
+			throw failure;
+		}
+		try {
+			// Releases the transient reservation first, under the admission lock, whatever the outcome.
+			return decisionCache.publishFlight(publication, transientIdentity, flight.provenRepeat, fingerprint,
+					fingerprinted, horizon);
+		} catch (RuntimeException cacheFailure) {
+			return false;
+		}
+	}
+
+	private enum Refusal {
+		NONE,
+		/** Only this planning cannot be retained. */
+		THIS_PLANNING,
+		/** No re-plan of the request can be retained. */
+		EVERY_REPLAN
+	}
+
+	/**
+	 * A planning in which a planner read was cut by its wall-clock limit is not retained, whatever its decision: its
+	 * inputs are not reproducible (although the next planning's may well be). The packed plan cache does not retain it
+	 * either ({@link LmdbPlanningCutAwareCostSession}), while the planning itself keeps its complete provider runtime
+	 * state for its own request. Without a cost comparison only an exact replay is retained, and only a reproducible
+	 * planning can be replayed. A search cut by its deadline, or run under a finite deadline at all, is not
+	 * reproducible: the deadline can cut it even when its reported completion is the work limit (mirrors
+	 * PackedPlanCache.PlanEntry.reusableFor).
+	 */
+	private static Refusal replayRefusal(PlanComputation computation, boolean wallClockCut) {
 		PackedPlanDecisionSummary summary = computation.decisionSummary();
+		if (!replayOnly(summary)) {
+			return wallClockCut ? Refusal.THIS_PLANNING : Refusal.NONE;
+		}
+		if (summary.searchCompletion() == PackedSearchCompletionStatus.INCOMPLETE_DEADLINE
+				|| computation.deadlineBounded()) {
+			return Refusal.EVERY_REPLAN;
+		}
+		return wallClockCut ? Refusal.THIS_PLANNING : Refusal.NONE;
+	}
+
+	private static boolean replayOnly(PackedPlanDecisionSummary summary) {
+		return summary != null && (!summary.selectedCostInterval().available()
+				|| summary.comparisonCompleteness() != PackedPlanDecisionSummary.ComparisonCompleteness.COMPLETE);
+	}
+
+	/**
+	 * @param publishedUnder the revision the decision is stamped with: the request's, or the end capture of a planning
+	 *                       whose own log replayed identical against it (B3)
+	 */
+	private LmdbPlanDecisionCache.BuildPublication buildPublication(CacheKey key, TupleExpr template,
+			long entryBytes, PlanComputation computation, Revision publishedUnder,
+			LmdbPlanCacheRevalidation.Basis basis) {
+		PackedPlanDecisionSummary summary = computation.decisionSummary();
+		boolean replayOnly = replayOnly(summary);
+		LmdbPlanDecisionCache.EvidenceSnapshot evidence = evidence(publishedUnder.planningRevisions());
 		LmdbPlanDecisionCache.SemanticDependencies semanticDependencies = hardDependencies(
 				semanticDependencies(key.context()), computation.assumptions().committedSnapshotDependent(),
 				guaranteeDependent(summary, computation.assumptions()));
 		String physicalFingerprint = summary == null
 				? "unsupported-" + Long.toUnsignedString(key.fingerprint(), 16)
 				: summary.physicalFingerprint();
-		LmdbPlanDecisionCache.EstimatedCostInterval interval = summary == null
+		LmdbPlanDecisionCache.EstimatedCostInterval interval = summary == null || replayOnly
 				? LmdbPlanDecisionCache.EstimatedCostInterval.unbounded()
 				: new LmdbPlanDecisionCache.EstimatedCostInterval(summary.selectedCostInterval().lower(),
 						summary.selectedCostInterval().upper());
-		LmdbPlanDecisionCache.SearchCertificate certificate = summary == null
-				? new LmdbPlanDecisionCache.SearchCertificate(
-						LmdbPlanDecisionCache.SearchCompletion.UNSUPPORTED_SEMANTICS,
-						LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN,
-						evidence.globalEpoch(), evidence.globalEpoch(), 0.0d, 0L)
-				: certificate(summary, evidence.globalEpoch());
-		LmdbPlanDecisionCache.BuildPublication publication = new LmdbPlanDecisionCache.BuildPublication(
-				familyKey(key), exactInvocationKey(key), semanticDependencies, evidence, evidence,
-				template, physicalFingerprint, interval, certificate, entryBytes, 1L,
-				computation.detachedRefreshWork());
-		try {
-			return decisionCache.publishBuild(publication);
-		} catch (RuntimeException cacheFailure) {
-			return false;
+		LmdbPlanDecisionCache.SearchCertificate certificate;
+		if (summary == null) {
+			certificate = new LmdbPlanDecisionCache.SearchCertificate(
+					LmdbPlanDecisionCache.SearchCompletion.UNSUPPORTED_SEMANTICS,
+					LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN,
+					evidence.globalEpoch(), evidence.globalEpoch(), 0.0d, 0L);
+		} else if (replayOnly) {
+			certificate = replayOnlyCertificate(summary, evidence.globalEpoch());
+		} else {
+			certificate = certificate(summary, evidence.globalEpoch());
 		}
+		// A replay-only decision is never a refresh champion: it carries no detached refresh work.
+		return new LmdbPlanDecisionCache.BuildPublication(familyKey(key), exactInvocationKey(key),
+				semanticDependencies, evidence, evidence, template, physicalFingerprint, interval, certificate,
+				entryBytes, 1L, replayOnly ? null : computation.detachedRefreshWork(), basis);
 	}
 
 	/**
@@ -378,6 +761,14 @@ final class LmdbPipelinePlanCache {
 				summary.deterministicWorkUnits());
 	}
 
+	/** A decision without a cost comparison: replayable for the identical request, never a ranking certificate. */
+	static LmdbPlanDecisionCache.SearchCertificate replayOnlyCertificate(PackedPlanDecisionSummary summary,
+			long evidenceEpoch) {
+		return new LmdbPlanDecisionCache.SearchCertificate(searchCompletion(summary.searchCompletion()),
+				LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN, evidenceEpoch, evidenceEpoch, 0.0d,
+				summary.deterministicWorkUnits(), LmdbPlanDecisionCache.DecisionAuthority.REPLAY_ONLY);
+	}
+
 	private static LmdbPlanDecisionCache.SearchCompletion searchCompletion(PackedSearchCompletionStatus completion) {
 		return switch (completion) {
 		case EXACT_COMPLETE -> LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE;
@@ -412,6 +803,10 @@ final class LmdbPipelinePlanCache {
 			long evidenceEpoch, boolean stabilityEnvelopeCovered) {
 		plan.setStringMetricPlanned("optimizer.planCacheSearchCompletion", certificate.completion().name());
 		plan.setStringMetricPlanned("optimizer.planCacheSearchBoundKind", certificate.boundKind().name());
+		if (certificate.replayOnly()) {
+			// Ranked hits stay unannotated, so their hit path allocates nothing new.
+			plan.setStringMetricPlanned("optimizer.planCacheAuthority", certificate.authority().name());
+		}
 		plan.setDoubleMetricPlanned("optimizer.planCacheEvidenceEpoch", evidenceEpoch);
 		plan.setStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult",
 				stabilityEnvelopeCovered ? "WITHIN" : "OUTSIDE");
@@ -445,8 +840,29 @@ final class LmdbPipelinePlanCache {
 	private static LmdbPlanDecisionCache.PlanFamilyKey familyKey(CacheKey key) {
 		Context context = key.context();
 		return new LmdbPlanDecisionCache.PlanFamilyKey(key.query(), context.dataset(), context.bindings(),
-				Boolean.toString(context.preserveObservationOrder()), context.queryEvaluationMode(), 0L, 0L,
-				context.configuration(), context.inputIdentity());
+				resultProperties(context), context.queryEvaluationMode(), 0L, 0L, context.configuration(),
+				context.inputIdentity());
+	}
+
+	/**
+	 * Every flag of the exact key's semantic context. Requests that differ in a flag differ in their hard dependencies
+	 * (or in snapshot presence), so they can never share a decision; keeping them in separate families means one key's
+	 * decision never blocks or replaces another's. A constant per combination keeps the exact-hit path allocation free.
+	 */
+	private static String resultProperties(Context context) {
+		int mask = (context.preserveObservationOrder() ? 1 : 0) | (context.trackResultSize() ? 2 : 0)
+				| (context.trackTime() ? 4 : 0) | (context.runtimeTelemetry() ? 8 : 0)
+				| (context.executionSnapshotPresent() ? 16 : 0);
+		return RESULT_PROPERTIES[mask];
+	}
+
+	private static String[] resultPropertyNames() {
+		String[] names = new String[32];
+		for (int mask = 0; mask < names.length; mask++) {
+			names[mask] = "order=" + ((mask & 1) != 0) + ";resultSize=" + ((mask & 2) != 0) + ";time="
+					+ ((mask & 4) != 0) + ";telemetry=" + ((mask & 8) != 0) + ";snapshot=" + ((mask & 16) != 0);
+		}
+		return names;
 	}
 
 	private static LmdbPlanDecisionCache.ExactInvocationKey exactInvocationKey(CacheKey key) {
@@ -506,6 +922,27 @@ final class LmdbPipelinePlanCache {
 		return LmdbCacheValueCopies.copy(plan, true);
 	}
 
+	/**
+	 * Doorkeeper fingerprint of an exact request. It depends on no data or evidence revision: the exact key's context
+	 * parts enter through their equality-consistent {@code hashCode()} (none of them carries a revision), and the query
+	 * enters through the digest of the identity the exact key's structural key holds and compares for equality, so no
+	 * copy or encoding is repeated. Equal exact keys have equal structural keys, whose identities match row for row and
+	 * object for object; the digest streams only what that match compares (folding language-tag case the way literal
+	 * equality ignores it), so equal requests always have equal fingerprints, and requests the exact key tells apart
+	 * (constants, operators, slice bounds, function IRIs, aliases, order, scope, ...) differ up to hash collisions. A
+	 * digest that cannot be computed leaves the request without a fingerprint, like a request without an exact
+	 * identity: it plans, and proves no reuse.
+	 */
+	private OptionalLong missFingerprint(PackedPlanCache.StructuralKey query,
+			LmdbPlanDecisionCache.ExactInvocationKey exactKey) {
+		try {
+			return OptionalLong.of(mix64(requestDigest.digest(query) ^ mix64(exactKey.hashCode())));
+		} catch (RuntimeException digestFailure) {
+			// Only admission evidence is lost: like a failed lookup, the request plans without a proof of reuse.
+			return OptionalLong.empty();
+		}
+	}
+
 	private static long mix64(long value) {
 		long mixed = value + 0x9e3779b97f4a7c15L;
 		mixed = (mixed ^ mixed >>> 30) * 0xbf58476d1ce4e5b9L;
@@ -513,17 +950,15 @@ final class LmdbPipelinePlanCache {
 		return mixed ^ mixed >>> 31;
 	}
 
-	private static long saturatedAdd(long left, long right) {
-		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
-	}
-
-	private static long saturatedMultiply(long value, long multiplier) {
-		return value > Long.MAX_VALUE / multiplier ? Long.MAX_VALUE : value * multiplier;
-	}
-
 	@FunctionalInterface
 	interface FingerprintStrategy {
 		long fingerprint(Context context, PackedPlanCache.StructuralKey query);
+	}
+
+	/** Digest of the exact identity a structural key compares; see {@link PackedQueryIdentityDigest}. */
+	@FunctionalInterface
+	interface RequestDigest {
+		long digest(PackedPlanCache.StructuralKey query);
 	}
 
 	@FunctionalInterface
@@ -531,8 +966,14 @@ final class LmdbPipelinePlanCache {
 		PlanComputation compute();
 	}
 
+	/**
+	 * One complete planning. {@code deadlineBounded} records that the search ran under a finite wall-clock deadline:
+	 * such a search can be cut by the deadline even when its reported completion is another limit, so without a cost
+	 * comparison it is not a reproducible replay.
+	 */
 	record PlanComputation(TupleExpr plan, PackedPlanDecisionSummary decisionSummary,
-			LmdbPlanDecisionCache.DetachedRefreshWork detachedRefreshWork, LmdbPlanAssumptions assumptions) {
+			LmdbPlanDecisionCache.DetachedRefreshWork detachedRefreshWork, LmdbPlanAssumptions assumptions,
+			boolean deadlineBounded) {
 
 		PlanComputation {
 			Objects.requireNonNull(plan, "plan");
@@ -543,12 +984,17 @@ final class LmdbPipelinePlanCache {
 		}
 
 		PlanComputation(TupleExpr plan, PackedPlanDecisionSummary decisionSummary,
+				LmdbPlanDecisionCache.DetachedRefreshWork detachedRefreshWork, LmdbPlanAssumptions assumptions) {
+			this(plan, decisionSummary, detachedRefreshWork, assumptions, false);
+		}
+
+		PlanComputation(TupleExpr plan, PackedPlanDecisionSummary decisionSummary,
 				LmdbPlanDecisionCache.DetachedRefreshWork detachedRefreshWork) {
-			this(plan, decisionSummary, detachedRefreshWork, LmdbPlanAssumptions.NONE);
+			this(plan, decisionSummary, detachedRefreshWork, LmdbPlanAssumptions.NONE, false);
 		}
 
 		static PlanComputation nonRefreshable(TupleExpr plan) {
-			return new PlanComputation(plan, null, null, LmdbPlanAssumptions.NONE);
+			return new PlanComputation(plan, null, null, LmdbPlanAssumptions.NONE, false);
 		}
 	}
 
@@ -557,6 +1003,25 @@ final class LmdbPipelinePlanCache {
 
 		Revision(LmdbEstimatorRuntime.PlanningRevisions planningRevisions, boolean adaptiveEvidenceAllowed) {
 			this(planningRevisions, 0L, adaptiveEvidenceAllowed);
+		}
+
+		/**
+		 * Whether this capture and {@code other} differ only in learned state: equal data revision, Frontier revision,
+		 * provider generation, predicate range version and adaptive-evidence switch, and a different LEO revision.
+		 * False when either capture lacks its learned components.
+		 */
+		boolean onlyLearnedStateDiffers(Revision other) {
+			if (other == null || planningRevisions == null || other.planningRevisions == null
+					|| planningRevisions.learned() == null || other.planningRevisions.learned() == null) {
+				return false;
+			}
+			LmdbEstimatorRuntime.PlanningRevisions mine = planningRevisions;
+			LmdbEstimatorRuntime.PlanningRevisions theirs = other.planningRevisions;
+			return mine.dataRevision() == theirs.dataRevision() && mine.frontierRevision() == theirs.frontierRevision()
+					&& mine.learned().providerGeneration() == theirs.learned().providerGeneration()
+					&& predicateRangeVersion == other.predicateRangeVersion
+					&& adaptiveEvidenceAllowed == other.adaptiveEvidenceAllowed
+					&& mine.leoRevision() != theirs.leoRevision();
 		}
 	}
 
@@ -1029,12 +1494,16 @@ final class LmdbPipelinePlanCache {
 
 	private static final class Flight {
 		private final CacheKey key;
-		private final long sourceRetainedBytes;
+		/** Admission verdict, read only by the owning thread: whether publication may evict for this family. */
+		private final boolean provenRepeat;
+		/** Doorkeeper fingerprint of the owning request, read only by the owning thread. */
+		private final OptionalLong missFingerprint;
 		private final CompletableFuture<TupleExpr> result = new CompletableFuture<>();
 
-		private Flight(CacheKey key, long sourceRetainedBytes) {
+		private Flight(CacheKey key, boolean provenRepeat, OptionalLong missFingerprint) {
 			this.key = key;
-			this.sourceRetainedBytes = sourceRetainedBytes;
+			this.provenRepeat = provenRepeat;
+			this.missFingerprint = missFingerprint;
 		}
 	}
 

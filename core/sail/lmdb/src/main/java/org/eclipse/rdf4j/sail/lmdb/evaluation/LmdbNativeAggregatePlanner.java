@@ -333,6 +333,28 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return argStep == null ? null : new NativeBindingSetMultiProjectionStep(argStep, multiProjection);
 	}
 
+	/**
+	 * The planner on which the next root attempt of the same compile runs. A root attempt can decline after it froze
+	 * this planner's slot layout (a GROUP or row root prepares its input semantics, and post-group wrappers decide,
+	 * only after the freeze); a frozen layout accepts no further position masks, so that attempt has consumed this
+	 * planner. The next attempt then runs on a fresh planner with this planner's root configuration and with the
+	 * attempt outcomes the caller reads afterwards (an island seen, the slot budget exceeded), which accumulate across
+	 * attempts on a planner that is still open.
+	 */
+	LmdbNativeAggregatePlanner forNextRootAttempt() {
+		if (!layout.frozen()) {
+			return this;
+		}
+		LmdbNativeAggregatePlanner next = new LmdbNativeAggregatePlanner(context, strategy, source);
+		next.rootEvaluationScoped = rootEvaluationScoped;
+		next.finalTupleResult = finalTupleResult;
+		next.inheritedFrameInputNames = inheritedFrameInputNames;
+		next.inheritedLateralFrameInputNames = inheritedLateralFrameInputNames;
+		next.sawIsland = sawIsland;
+		next.slotBudgetExceeded = slotBudgetExceeded;
+		return next;
+	}
+
 	QueryEvaluationStep compileGroup(Group group, ValueExpr havingCondition, TupleExpr originalExpr) {
 		layout.positionMasks(strategy.valuePositionMasks(originalExpr), strategy.valuePositionMasks(group.getArg()));
 		QueryEvaluationStep census = LmdbNativeCensusAggregate.tryCreate(group, source, strategy, context, originalExpr,

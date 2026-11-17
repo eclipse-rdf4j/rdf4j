@@ -29,6 +29,9 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationLimitCause;
 import org.junit.jupiter.api.Test;
 
 class PackedPlannerResourceBudgetTest {
@@ -342,6 +345,33 @@ class PackedPlannerResourceBudgetTest {
 		assertThat(result.selectedPlan()).isNotNull();
 		assertThat(result.selectedPlan().getBindingNames()).contains("v0", "v4");
 		assertThat(result.retainedBytes()).isZero();
+	}
+
+	@Test
+	void resourceLimitedPublicCascadesResultIsNotComplete() {
+		TupleExpr source = chain(4);
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source,
+				new PackedPlannerLimits(Long.MAX_VALUE, Long.MAX_VALUE, 0L));
+		assertThat(result.completionStatus()).isEqualTo(PackedSearchCompletionStatus.INCOMPLETE_RESOURCE_LIMIT);
+		assertThat(result.exactComplete()).isFalse();
+		assertThat(result.selectedPlan().getBindingNames()).contains("v0", "v4");
+		assertThat(result.retainedBytes()).isZero();
+
+		var plan = CascadesPlanner.fromPackedResult(OptimizationGoal.root(), result);
+		assertThat(plan.tupleExpr()).isSameAs(result.selectedPlan());
+		assertThat(plan.metrics()).isSameAs(result.metrics());
+		assertThat(plan.decisionSummary()).isSameAs(result.decisionSummary());
+		assertThat(plan.searchStatus().counters().candidateEvaluations()).isEqualTo(result.metrics().workUnits());
+		assertThat(plan.searchStatus().retention().currentRetainedCandidates()).isEqualTo(result.metrics().winners());
+		assertThat(plan.searchStatus().retention().retainedCandidateHighWaterMark())
+				.isEqualTo(result.metrics().winners());
+		assertThat(plan.searchStatus().retention().frontierHighWaterMark())
+				.isEqualTo(result.metrics().physicalExpressions());
+		assertThat(plan.searchStatus().completeness().name()).isEqualTo("RESOURCE_LIMIT_REACHED");
+		assertThat(plan.searchStatus().limitCauses()).containsExactly(OptimizationLimitCause.RETAINED_STATE);
+		assertThat(plan.searchStatus().approximate()).isTrue();
+		assertThat(plan.provenance().approximate()).isTrue();
+		assertThat(plan.provenance().reason()).isEqualTo("packed search retained-state limit reached");
 	}
 
 	@Test

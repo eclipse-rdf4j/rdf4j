@@ -107,6 +107,10 @@ final class FrontierMutationTail {
 	}
 
 	synchronized FrontierLeafEstimate adjustLeaf(FrontierLeafEstimate base, FrontierLeafProbe probe) {
+		if (base.fallbackReason() != FrontierFallbackReason.NONE) {
+			// A complete delta cannot reconstruct rows that the base estimate failed to cover.
+			return base;
+		}
 		long delta = 0L;
 		for (int index = 0; index < rowCount; index++) {
 			if (matches(index, probe)) {
@@ -117,7 +121,8 @@ final class FrontierMutationTail {
 		double lower = Math.min(point, nonNegativeAdd(base.lowerRows(), delta));
 		double upper = Math.max(point, nonNegativeAdd(base.upperRows(), delta));
 		return new FrontierLeafEstimate(point, lower, upper, base.confidence(),
-				"frontier-v2-base-plus-memory-tail", FrontierFallbackReason.NONE);
+				"frontier-v2-base-plus-memory-tail", FrontierFallbackReason.NONE,
+				base.guarantee());
 	}
 
 	synchronized double projectedDistinct(FrontierLeafProbe probe, int component, double baseDistinct,

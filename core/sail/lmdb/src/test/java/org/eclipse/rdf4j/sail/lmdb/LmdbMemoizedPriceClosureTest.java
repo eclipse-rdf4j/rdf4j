@@ -475,6 +475,48 @@ class LmdbMemoizedPriceClosureTest {
 		}
 	}
 
+	/**
+	 * The planning read log's price-admission read (R12): the corrected whole price is
+	 * {@code point + (corrected projection - old projection)}, so with a point below the old projection the learned
+	 * values decide the admission and the log must compare them bit-exact; with a point at or above it they cannot.
+	 */
+	@Test
+	void aWholePriceBelowTheOldProjectionIsReadAsAnExactConsumerOfTheModelValues() {
+		var feedback = new LmdbOperatorFeedbackStats(temporary.resolve("price-admission-read"));
+		RuntimeFeedbackContract seed;
+		try (Fixture fixture = new Fixture(feedback, 5_000.0d)) {
+			PackedCostEstimate output = fixture.seed();
+			PackedCostTestSupport.refineMemoizedPhysicalJoin(fixture.session, fixture.context, output);
+			seed = output.runtimeFeedbackContract();
+		}
+		observe(feedback, seed, 55L, EvaluationStatistics.TerminationClassification.EXHAUSTED);
+		double[] points = { 0.0d, 1.0e9d };
+		double[] oldProjection = new double[2];
+		String[] admission = new String[2];
+		double[] corrections = new double[2];
+		LmdbPlanningReadLog.Log[] logs = new LmdbPlanningReadLog.Log[2];
+		for (int index = 0; index < points.length; index++) {
+			try (Fixture fixture = new Fixture(feedback, points[index])) {
+				PackedCostEstimate output = fixture.seed();
+				logs[index] = LmdbPlanningReadLogEncodingTest.record(
+						() -> PackedCostTestSupport.refineMemoizedPhysicalJoin(fixture.session, fixture.context,
+								output));
+				oldProjection[index] = new LmdbPhysicalCostObjective(fixture.runtime).score(fixture.beforeLearning);
+				admission[index] = output.plannedStringMetric("optimizer.frontierLeoPhysicalPriceAdmission");
+				corrections[index] = output.plannedDoubleMetric("optimizer.frontierLeoPhysicalDimensionCount", 0.0d);
+			}
+		}
+
+		assertAll(
+				() -> assertTrue(corrections[1] > 0.0d, "COVERAGE_PREREQUISITE: a learned physical correction"),
+				() -> assertEquals("rejected-incommensurate-whole-price", admission[0],
+						"COVERAGE_PREREQUISITE: the corrected values decided the admission"),
+				() -> assertTrue(points[0] < oldProjection[0], "COVERAGE_PREREQUISITE: below the old projection"),
+				() -> assertTrue(points[1] >= oldProjection[1], "COVERAGE_PREREQUISITE: at or above it"),
+				() -> assertEquals(1, logs[0].count(LmdbPlanningReadLog.CONSUMER_EXACT)),
+				() -> assertEquals(0, logs[1].count(LmdbPlanningReadLog.CONSUMER_EXACT)));
+	}
+
 	private static void refineImplementation(boolean memoized, PackedCostSession session,
 			PackedCostContext context, PackedCostEstimate output) {
 		if (memoized) {

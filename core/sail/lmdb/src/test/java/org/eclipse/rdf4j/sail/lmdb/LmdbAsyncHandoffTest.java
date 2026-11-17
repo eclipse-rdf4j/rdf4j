@@ -659,7 +659,8 @@ class LmdbAsyncHandoffTest {
 		private Fixture(Path directory) throws IOException {
 			AtomicReference<ControlledTripleStore> store = new AtomicReference<>();
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(false).setBulkOperationSize(0);
-			backing = new LmdbSailStore(directory.toFile(), new StoreProperties(directory.toFile()), config, false,
+			backing = new LmdbSailStore(directory.toFile(),
+					LmdbOwningTestStoreMetadata.open(directory.toFile(), config), config, false,
 					(dir, props, cfg) -> new ValueStore(dir, props, cfg) {
 
 						private boolean resolvingBatch;

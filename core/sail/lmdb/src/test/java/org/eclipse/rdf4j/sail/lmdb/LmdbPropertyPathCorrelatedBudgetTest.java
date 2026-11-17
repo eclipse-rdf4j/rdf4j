@@ -100,7 +100,7 @@ class LmdbPropertyPathCorrelatedBudgetTest {
 								assertEquals(baseline[2], estimate.pathExpansions(), 0.0d);
 							}
 						}
-						verify(view, times(statementPatterns(call) + 1)).estimateJoin(any());
+						verify(view, times(statementPatterns(call) + 1 + delegatedPrefixProbes(2))).estimateJoin(any());
 						verify(view, times(3)).estimateSubgraph(any());
 					});
 		}
@@ -125,7 +125,7 @@ class LmdbPropertyPathCorrelatedBudgetTest {
 						"a different path program declines after both existing work channels are exhausted");
 				assertFalse(refused.evidenceGuarantee() == EvidenceGuarantee.DATABASE_EXACT);
 			}
-			verify(view, times(statementPatterns(call) + 1)).estimateJoin(any());
+			verify(view, times(statementPatterns(call) + 1 + delegatedPrefixProbes(4))).estimateJoin(any());
 			verify(view, times(3)).estimateSubgraph(any());
 		});
 	}
@@ -168,7 +168,7 @@ class LmdbPropertyPathCorrelatedBudgetTest {
 						"an uninformative first depth cannot replace the existing scalar path estimate");
 				assertEquals(2.0d, estimate.invocations(), 0.0d);
 			}
-			verify(view, times(1)).estimateJoin(any());
+			verify(view, times(1 + delegatedPrefixProbes(2))).estimateJoin(any());
 			verify(view, times(1)).estimateSubgraph(any());
 		});
 	}
@@ -191,7 +191,7 @@ class LmdbPropertyPathCorrelatedBudgetTest {
 						"only informative depths may contribute conditional path evidence");
 				assertEquals(2.0d, estimate.invocations(), 0.0d);
 			}
-			verify(view, times(1)).estimateJoin(any());
+			verify(view, times(1 + delegatedPrefixProbes(2))).estimateJoin(any());
 			verify(view, times(2)).estimateSubgraph(any());
 		});
 	}
@@ -236,6 +236,15 @@ class LmdbPropertyPathCorrelatedBudgetTest {
 			assertEquals(0.0d, estimate.invocations(), 0.0d);
 			assertEquals(0.0d, estimate.pathExpansions(), 0.0d);
 		});
+	}
+
+	/**
+	 * Each path costing call also prices its connected prefix through the session's admitted read
+	 * ({@code LmdbEstimatorRuntime.context} to {@code LmdbPrefixEvidenceResolver}). That delegated estimate retains no
+	 * query-scope result, so it issues one prefix join probe per call; it does not draw on the mapped path reserve.
+	 */
+	private static int delegatedPrefixProbes(int pathCalls) {
+		return pathCalls;
 	}
 
 	private static FrontierJoinEstimate withoutConfidence(FrontierJoinEstimate estimate) {
@@ -368,12 +377,24 @@ class LmdbPropertyPathCorrelatedBudgetTest {
 				var pipeline = new LmdbQueryOptimizerPipeline(strategy, source, statistics);
 				pipeline.withPreparedQueryEntry(complete.clone(), null, EmptyBindingSet.getInstance(),
 						(prepared, cascades) -> {
-							FrontierStatisticsView view = spy(originalRuntime.statisticsService()
-									.openView(source.getSnapshotEpoch().orElseThrow()));
+							long epoch = source.getSnapshotEpoch().orElseThrow();
+							FrontierStatisticsView view = spy(originalRuntime.statisticsService().openView(epoch));
 							var service = spy(originalRuntime.statisticsService());
-							doReturn(view).when(service).openView(source.getSnapshotEpoch().orElseThrow());
+							doReturn(view).when(service).openView(epoch);
 							var runtime = spy(originalRuntime);
 							doReturn(service).when(runtime).statisticsService();
+							/*
+							 * A mapped session opens its view only through the entry's owned read selection, which
+							 * admits views of its own runtime's statistics service. Keep the entry's real selection
+							 * (source, snapshot, plane and currency checks) and let it admit the spied, counted view.
+							 */
+							LmdbFrontierReadSelection owned = originalRuntime.frontierPlanningReadSelection(source);
+							assertEquals(epoch, owned.snapshotEpoch(), "the entry owns a read of this snapshot");
+							LmdbFrontierReadSelection selection = spy(owned);
+							doAnswer(invocation -> new LmdbFrontierReadSelection.AdmittedView(service.openView(epoch),
+									selection)).when(selection).openAdmittedView(service);
+							doReturn(true).when(selection).ownsAdmittedView(view);
+							doReturn(selection).when(runtime).frontierPlanningReadSelection(source);
 							var model = new LmdbPackedCostModel(runtime, source.getSnapshotEpoch(), true, source,
 									strategy);
 							try (var session = model.openSession(call.query())) {

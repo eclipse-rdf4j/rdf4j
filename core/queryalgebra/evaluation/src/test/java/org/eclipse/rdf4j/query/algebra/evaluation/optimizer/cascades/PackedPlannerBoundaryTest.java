@@ -12,15 +12,23 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSearchCompletionStatus;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStatementPatternSemanticsCodec;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class PackedPlannerBoundaryTest {
 
@@ -42,7 +50,8 @@ class PackedPlannerBoundaryTest {
 				.map(RecordComponent::getName))
 						.containsExactly("physicalFingerprint", "selectedCostInterval", "candidates",
 								"semanticDependencies", "searchCompletion", "boundKind", "searchLowerBound",
-								"evidenceEpoch", "deterministicWorkUnits", "retainedBytes");
+								"evidenceEpoch", "deterministicWorkUnits", "providerWorkUnits", "retainedBytes",
+								"comparisonCompleteness");
 		assertThat(Arrays.stream(PackedPlanDecisionSummary.class.getRecordComponents())
 				.map(component -> component.getType().getSimpleName()))
 						.noneMatch(type -> type.contains("Memo") || type.contains("Recipe")
@@ -64,6 +73,103 @@ class PackedPlannerBoundaryTest {
 		assertThat(OptimizationGoal.SearchMode.values())
 				.extracting(Enum::name)
 				.containsExactly("AUTO", "EXACT", "BUDGETED");
+	}
+
+	@Test
+	void unavailablePackedPriceCannotBecomeAFinitePublicPlanCost() {
+		SingletonSet selected = new SingletonSet();
+		var interval = new PackedPlanDecisionSummary.CostInterval(Double.NaN, Double.NaN, Double.NaN);
+		var candidate = new PackedPlanDecisionSummary.CandidateSummary("fixture", interval);
+		var summary = new PackedPlanDecisionSummary("fixture", interval, List.of(candidate), Set.of(),
+				PackedSearchCompletionStatus.EXACT_COMPLETE, PackedPlanDecisionSummary.BoundKind.BEST_KNOWN_UNBOUNDED,
+				Double.NaN, 0L, 0L, 0L);
+		var packed = new PackedPlanningResult(selected, 5.0d, Double.NaN, PlanningMetrics.ZERO, false, false, 0L,
+				PackedSearchCompletionStatus.EXACT_COMPLETE, 0L, summary);
+
+		CascadesPlan plan = CascadesPlanner.fromPackedResult(OptimizationGoal.root(), packed);
+
+		assertThat(plan.tupleExpr()).isSameAs(selected);
+		assertThat(plan.searchStatus().completeness()).isEqualTo(OptimizationCompleteness.COMPLETE);
+		assertThat(plan.provenance().estimate().rows()).isEqualTo(5.0d);
+		assertThat(plan.outputRows()).isEqualTo(5.0d);
+		assertThat(plan.price()).isEmpty();
+		assertThat(plan.provenance().price()).isEmpty();
+		assertThat(plan.provenance().estimate().price()).isEmpty();
+		assertThat(plan.provenance().approximate()).isTrue();
+		assertThatThrownBy(plan::cost).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(plan.provenance()::cost).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(plan.provenance().estimate()::cost).isInstanceOf(IllegalStateException.class);
+		CascadesPlanProvenanceAnnotator.annotate(selected, plan.provenance());
+		assertThat(selected.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS)).isEqualTo(5.0d);
+		assertThat(selected.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE)).isNaN();
+		assertThat(selected.getStringMetricPlanned("optimizer.cascadesPriceAvailability")).isEqualTo("UNAVAILABLE");
+	}
+
+	@Test
+	void costIntervalsCannotMixAvailableAndUnavailableBounds() {
+		var unavailable = new PackedPlanDecisionSummary.CostInterval(Double.NaN, Double.NaN, Double.NaN);
+		assertThat(unavailable.available()).isFalse();
+		assertThat(new PackedPlanDecisionSummary.CostInterval(1.0d, 2.0d, 3.0d).available()).isTrue();
+		assertThatThrownBy(() -> new PackedPlanDecisionSummary.CostInterval(1.0d, Double.NaN, 3.0d))
+				.isInstanceOf(IllegalArgumentException.class);
+		var candidate = new PackedPlanDecisionSummary.CandidateSummary("unknown", unavailable);
+		assertThatThrownBy(() -> new PackedPlanDecisionSummary("unknown", unavailable, List.of(candidate), Set.of(),
+				PackedSearchCompletionStatus.EXACT_COMPLETE, PackedPlanDecisionSummary.BoundKind.VALID_LOWER_BOUND,
+				0.0d, 0L, 0L, 0L)).isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@ParameterizedTest
+	@EnumSource(PackedSearchCompletionStatus.class)
+	void packedCompletionStatusesRemainVisibleAtCascadesBoundary(PackedSearchCompletionStatus completion) {
+		SingletonSet selected = new SingletonSet();
+		PlanningMetrics metrics = new PlanningMetrics(11L, 12L, 13L, 14L, 15L, 16L, 17, 18, 19, 20,
+				false, false);
+		var interval = new PackedPlanDecisionSummary.CostInterval(6.0d, 7.0d, 8.0d);
+		var candidate = new PackedPlanDecisionSummary.CandidateSummary("fixture", interval);
+		boolean complete = completion == PackedSearchCompletionStatus.EXACT_COMPLETE;
+		var summary = new PackedPlanDecisionSummary("fixture", interval, List.of(candidate), Set.of(), completion,
+				complete ? PackedPlanDecisionSummary.BoundKind.VALID_LOWER_BOUND
+						: PackedPlanDecisionSummary.BoundKind.BEST_KNOWN_UNBOUNDED,
+				complete ? 6.0d : Double.NaN, 3L, 16L, 42L);
+		PackedPlanningResult packed = new PackedPlanningResult(selected, 5.0d, 7.0d, metrics,
+				completion == PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT,
+				completion == PackedSearchCompletionStatus.INCOMPLETE_DEADLINE, 0L, completion, 42L, summary);
+
+		CascadesPlan plan = CascadesPlanner.fromPackedResult(OptimizationGoal.root(), packed);
+
+		assertThat(plan.tupleExpr()).isSameAs(selected);
+		assertThat(plan.metrics()).isSameAs(metrics);
+		assertThat(plan.decisionSummary()).isSameAs(summary);
+		assertThat(plan.cost().rows()).isEqualTo(5.0d);
+		assertThat(plan.cost().workRows()).isEqualTo(7.0d);
+		assertThat(plan.searchStatus().counters().candidateEvaluations()).isEqualTo(16L);
+		assertThat(plan.searchStatus().retention()).isEqualTo(new SearchRetentionSnapshot(20, 20, 19));
+		String expectedCompleteness = switch (completion) {
+		case EXACT_COMPLETE -> "COMPLETE";
+		case INCOMPLETE_WORK_LIMIT -> "BUDGET_EXHAUSTED";
+		case INCOMPLETE_DEADLINE -> "DEADLINE_EXPIRED";
+		case INCOMPLETE_RESOURCE_LIMIT -> "RESOURCE_LIMIT_REACHED";
+		case UNSUPPORTED_SEMANTICS -> "UNSUPPORTED_SEMANTICS";
+		};
+		Set<OptimizationLimitCause> expectedCauses = switch (completion) {
+		case EXACT_COMPLETE -> Set.of();
+		case INCOMPLETE_WORK_LIMIT -> Set.of(OptimizationLimitCause.CANDIDATE_EVALUATIONS);
+		case INCOMPLETE_DEADLINE -> Set.of(OptimizationLimitCause.DEADLINE);
+		case INCOMPLETE_RESOURCE_LIMIT -> Set.of(OptimizationLimitCause.RETAINED_STATE);
+		case UNSUPPORTED_SEMANTICS -> Set.of(OptimizationLimitCause.UNSUPPORTED_REPRESENTATION);
+		};
+		String expectedReason = switch (completion) {
+		case EXACT_COMPLETE -> "packed search complete";
+		case INCOMPLETE_WORK_LIMIT -> "packed search work limit reached";
+		case INCOMPLETE_DEADLINE -> "packed search deadline reached";
+		case INCOMPLETE_RESOURCE_LIMIT -> "packed search retained-state limit reached";
+		case UNSUPPORTED_SEMANTICS -> "packed search unsupported semantics";
+		};
+		assertThat(plan.searchStatus().completeness().name()).isEqualTo(expectedCompleteness);
+		assertThat(plan.searchStatus().limitCauses()).isEqualTo(expectedCauses);
+		assertThat(plan.searchStatus().approximate()).isEqualTo(!complete);
+		assertThat(plan.provenance().approximate()).isEqualTo(!complete);
+		assertThat(plan.provenance().reason()).isEqualTo(expectedReason);
 	}
 
 	private static Object componentValue(CascadesPlan plan, String componentName) throws ReflectiveOperationException {

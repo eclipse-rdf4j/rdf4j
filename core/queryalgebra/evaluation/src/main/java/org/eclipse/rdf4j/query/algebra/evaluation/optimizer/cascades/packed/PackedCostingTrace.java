@@ -466,8 +466,9 @@ final class PackedCostingTrace {
 		int[] projectedTypedStarts = select(typedValueStarts, eventMapping, length);
 		int retainedTypedCount = 0;
 		for (int event = 1; event < length; event++) {
-			retainedTypedCount += projectedProviderTypedStarts[event] == 0 ? 0 : 18;
-			retainedTypedCount += projectedTypedStarts[event] == 0 ? 0 : 18;
+			retainedTypedCount += projectedProviderTypedStarts[event] == 0 ? 0
+					: PackedCostingTraceArena.TYPED_VALUE_COUNT;
+			retainedTypedCount += projectedTypedStarts[event] == 0 ? 0 : PackedCostingTraceArena.TYPED_VALUE_COUNT;
 		}
 		double[] projectedTypedValues = new double[retainedTypedCount];
 		int typedOffset = 0;
@@ -561,9 +562,9 @@ final class PackedCostingTrace {
 	private int copyTypedBlock(int[] starts, int event, double[] target, int offset) {
 		int encoded = starts[event];
 		if (encoded != 0) {
-			System.arraycopy(typedValues, encoded - 1, target, offset, 18);
+			System.arraycopy(typedValues, encoded - 1, target, offset, PackedCostingTraceArena.TYPED_VALUE_COUNT);
 			starts[event] = offset + 1;
-			offset += 18;
+			offset += PackedCostingTraceArena.TYPED_VALUE_COUNT;
 		}
 		return offset;
 	}
@@ -591,7 +592,10 @@ final class PackedCostingTrace {
 					typedValues[start + 10], typedValues[start + 11], typedValues[start + 12], typedValues[start + 13],
 					typedValues[start + 14]);
 		}
-		if ((flags & 1 << 6) != 0) {
+		if (start >= 0 && typedValues[start + 18] != 0.0d) {
+			estimate.restoreCostingTracePartialObjective(typedValues[start + 15], typedValues[start + 16],
+					typedValues[start + 17], typedValues[start + 19]);
+		} else if ((flags & 1 << 6) != 0) {
 			estimate.restoreCostingTraceObjective(typedValues[start + 15], typedValues[start + 16],
 					typedValues[start + 17]);
 		}
@@ -1236,18 +1240,19 @@ final class PackedCostingTrace {
 	/** Validates every reference before replay allocates mappings; legacy bounds come only from its bundle. */
 	int stateHandleCount(int populationStateCount) {
 		if (populationStateCount < 0 || populationStateCount == Integer.MAX_VALUE) {
-			throw new IllegalStateException("invalid authenticated population state count");
+			throw new PackedCheckpointRejectedException("invalid authenticated population state count");
 		}
 		int handleCount = populationStateCount;
 		if (populationOrdinalsByHandle != null) {
 			if (populationOrdinalsByHandle.length == 0 || populationOrdinalsByHandle[0] != 0
 					|| populationOrdinalsByHandle.length - 1 > stateReferenceCount()) {
-				throw new IllegalStateException("invalid costing trace producer-handle mapping");
+				throw new PackedCheckpointRejectedException("invalid costing trace producer-handle mapping");
 			}
 			handleCount = populationOrdinalsByHandle.length - 1;
 			for (int population : populationOrdinalsByHandle) {
 				if (population < 0 || population > populationStateCount) {
-					throw new IllegalStateException("costing trace references an invalid population ordinal");
+					throw new PackedCheckpointRejectedException(
+							"costing trace references an invalid population ordinal");
 				}
 			}
 		}
@@ -1255,12 +1260,31 @@ final class PackedCostingTrace {
 			for (int role = 0; role < 9; role++) {
 				int reference = stateColumn(role)[event];
 				if (reference < 0 || reference > handleCount) {
-					throw new IllegalStateException("costing event " + event
+					throw new PackedCheckpointRejectedException("costing event " + event
 							+ " has an invalid state reference in role " + role);
 				}
 			}
 		}
 		return handleCount;
+	}
+
+	/** Checks detached event inputs before any current-provider callback is entered. */
+	void validateReplayInputs() {
+		for (int event = 1; event <= eventCount(); event++) {
+			if (Byte.toUnsignedInt(phases[event]) > PackedCostingPhase.PHYSICAL_JOIN.ordinal()) {
+				throw new PackedCheckpointRejectedException("costing event " + event + " has a non-replayable phase");
+			}
+			if (assuredBindingRelationIds[event] < 0 || bindingLayoutIds[event] < 0
+					|| correlationMaskIds[event] < 0 || semanticScopeMaskIds[event] < 0
+					|| hashLookupMaskIds[event] < 0 || hashCompatibilityMaskIds[event] < 0) {
+				throw new PackedCheckpointRejectedException(
+						"costing event " + event + " has an invalid context identity");
+			}
+			if (providerInputCostEventIds[event] < 0) {
+				throw new PackedCheckpointRejectedException(
+						"costing event " + event + " has an invalid input event ID");
+			}
+		}
 	}
 
 	int populationOrdinal(int handle) {

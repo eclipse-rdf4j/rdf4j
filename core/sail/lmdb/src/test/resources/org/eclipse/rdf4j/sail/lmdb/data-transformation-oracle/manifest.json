@@ -1,0 +1,152 @@
+{
+  "format" : "rdf4j-theme-solution-bag-oracle",
+  "version" : 1,
+  "theme" : "DATA_TRANSFORMATION",
+  "codec" : {
+    "format" : "rdf4j-exact-solution-bag",
+    "version" : 1
+  },
+  "comparisonPolicy" : {
+    "id" : "rdf4j-proven-computed-numeric-bag",
+    "version" : 1
+  },
+  "jena" : {
+    "artifact" : "org.apache.jena:jena-arq",
+    "version" : "6.1.0",
+    "jarSha256" : "bc0fac2551db4b8616c861aab5b3bb5c7a3897e4516e8990bbab234a5a8f904c"
+  },
+  "fixture" : {
+    "profile" : "data-transformation-witness-v1",
+    "scope" : {
+      "graphs" : "default-graph-only",
+      "directionalLiterals" : false,
+      "tripleTerms" : false
+    },
+    "statementCount" : 89
+  },
+  "dataset" : {
+    "file" : "dataset.nq",
+    "format" : "N-Quads",
+    "sha256" : "468224f5abab150b430778f4f6dee94b40a6dbbb732866cf86083212163ce253",
+    "bytes" : 11901,
+    "statements" : 89
+  },
+  "queries" : [ {
+    "index" : 0,
+    "name" : "Data transformation: distinct lowercase literals in a length range",
+    "querySha256" : "ec82fbde994c6b9e0ad95cb503c24fdbb4709b5feeb0743b391c518707a44bc9",
+    "bagFile" : "query-00.json",
+    "bagSha256" : "0ddc92f66c56f727cc3d811512b6715c6dff8d77b138276074bfcb4f7dfd1f4d",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 1,
+    "name" : "Data transformation: concatenate five literals",
+    "querySha256" : "225e2bbced2ab9dae2709b8575cc6c9cc3587fbcdb87a3262e37ceed25d4fce8",
+    "bagFile" : "query-01.json",
+    "bagSha256" : "e86a1f2d2c04f131e3a568d338f42adecdbcca248a1431ca0f158f1deb26292f",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 2,
+    "name" : "Data transformation: compose an IRI from literal pieces",
+    "querySha256" : "708604a5360308f6dd66a2a5fe1716c8698e1cd2eed3b646c65322640102c9b4",
+    "bagFile" : "query-02.json",
+    "bagSha256" : "92a155b6a3f8786303098516f3dcf1485666bb3b2b284e26c9c9ca5aae7545df",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 3,
+    "name" : "Data transformation: numeric range after scaling",
+    "querySha256" : "18087a6281b175988e96a197a5144e4d2f650cd68e931870f6049d1dd515daea",
+    "bagFile" : "query-03.json",
+    "bagSha256" : "035cba65f4468e490944205b4eec4a89fc6447932236f84e5f1637cd1fb00caa",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 4,
+    "name" : "Data transformation: regular expression over normalized text",
+    "querySha256" : "cde7fdd7099f89e956b114c4b7e838d0591ef1e5657bdb156415dc72729af810",
+    "bagFile" : "query-04.json",
+    "bagSha256" : "b31f7b0d28c0bbb0cf24b3b0e58b982c84065d9d2f94ecc2117652b910784c57",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 5,
+    "name" : "Data transformation: lowercase substring search",
+    "querySha256" : "debbcd4a76cc88ae6f1ea3def48c814d1313245ab3ca92a5558ae721da66a094",
+    "bagFile" : "query-05.json",
+    "bagSha256" : "0ddc92f66c56f727cc3d811512b6715c6dff8d77b138276074bfcb4f7dfd1f4d",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 6,
+    "name" : "Data transformation: uppercase substring search",
+    "querySha256" : "9f3e9b2d84dd4a2dd23d07b8c848fb72ca57e5cafd2b83d0134f33a2d0f6e5c4",
+    "bagFile" : "query-06.json",
+    "bagSha256" : "0ddc92f66c56f727cc3d811512b6715c6dff8d77b138276074bfcb4f7dfd1f4d",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 7,
+    "name" : "Data transformation: combined substring search",
+    "querySha256" : "d23345f1362f12f59e6583449f1b5371aa8e6a9335524614c52609d5a8a3c487",
+    "bagFile" : "query-07.json",
+    "bagSha256" : "0ddc92f66c56f727cc3d811512b6715c6dff8d77b138276074bfcb4f7dfd1f4d",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 8,
+    "name" : "Data transformation: coalesce one optional literal",
+    "querySha256" : "b14ac5548b7a8e43b683a3ee3dc99bd394b597d4cfbc210fe705ea81608a04c3",
+    "bagFile" : "query-08.json",
+    "bagSha256" : "035cba65f4468e490944205b4eec4a89fc6447932236f84e5f1637cd1fb00caa",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 9,
+    "name" : "Data transformation: coalesce five optional literals",
+    "querySha256" : "ff8daf36486d37570a6f5bea8cd4e554292cbcc7a2e9c7d3942d9db9f70a0aad",
+    "bagFile" : "query-09.json",
+    "bagSha256" : "251cb0dcc80ffc2bcb381995c4ec49f0e9ecaec56c395e0bbc562324fa5008ef",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 10,
+    "name" : "Data transformation: uppercase coalesced code search",
+    "querySha256" : "bbb0547dd024f06e8260a7939d658983379eab56dd1ac2d69ef6732eb2c1ab97",
+    "bagFile" : "query-10.json",
+    "bagSha256" : "b31f7b0d28c0bbb0cf24b3b0e58b982c84065d9d2f94ecc2117652b910784c57",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 11,
+    "name" : "Data transformation: coalesced region in a composed IRI",
+    "querySha256" : "4bee50b2ad4f371c99e82b520299248f9d30514fee7d5777be3bd71ec6084439",
+    "bagFile" : "query-11.json",
+    "bagSha256" : "3868e7f6be35eef4066d4330ac1e271676c1cda6dcb0cc81f81cb2d0c1bb2b5c",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 12,
+    "name" : "Data transformation: full literal transformation pipeline",
+    "querySha256" : "b37329da79d78e2ef23e2c475297964967a8a9fbd230cc5e3b3ebbf538dd8151",
+    "bagFile" : "query-12.json",
+    "bagSha256" : "1720fa45a10bf5a4ce3fe66ec4f37200ffa8790a8fd7322eb3e2585e2e11bb25",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  } ]
+}

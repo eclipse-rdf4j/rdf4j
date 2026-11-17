@@ -26,18 +26,46 @@ final class PackedDependentSubqueryCosting {
 	private PackedDependentSubqueryCosting() {
 	}
 
-	static double defaultCost(PackedQuery query, PackedMemo memo, int relationId, double expectedInvocations) {
-		return scalarCost(query, memo, conditionId(query, relationId), 0,
-				query.relOutputMaskId(relationId), expectedInvocations);
+	/** A zero-priced subquery still has physical work and a separately selected lifecycle. */
+	static boolean hasSubquery(PackedQuery query, int relationId) {
+		return containsSubquery(query, conditionId(query, relationId));
 	}
 
-	static double contextualCost(PackedQuery query, PackedMemo memo, int relationId, int[] prefixRelations,
+	private static boolean containsSubquery(PackedQuery query, int scalarId) {
+		if (scalarId == 0) {
+			return false;
+		}
+		if (query.scalarOperator(scalarId) == PackedScalarOp.EXISTS) {
+			int payloadId = query.scalarPayload(scalarId);
+			if (query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
+					&& query.payloadChildCount(payloadId) == 1) {
+				return true;
+			}
+		}
+		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
+			if (containsSubquery(query, query.scalarChild(scalarId, ordinal))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static void defaultCost(PackedQuery query, PackedMemo memo, int relationId, double expectedInvocations,
+			Summary destination) {
+		destination.clear();
+		scalarCost(query, memo, conditionId(query, relationId), 0, query.relOutputMaskId(relationId),
+				expectedInvocations, destination);
+	}
+
+	static void contextualCost(PackedQuery query, PackedMemo memo, int relationId, int[] prefixRelations,
 			double[] prefixContributionRows, int prefixCount, double prefixRows, int prefixEvidenceStateId,
-			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId, double expectedInvocations) {
+			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId, double expectedInvocations,
+			Summary destination) {
+		destination.clear();
 		int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
 				prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
-		return scalarCost(query, memo, conditionId(query, relationId), inputContextId,
-				query.relOutputMaskId(relationId), expectedInvocations);
+		scalarCost(query, memo, conditionId(query, relationId), inputContextId, query.relOutputMaskId(relationId),
+				expectedInvocations, destination);
 	}
 
 	static void publishDefaultPlanInputs(PackedQuery query, PackedMemo memo, int relationId,
@@ -72,12 +100,11 @@ final class PackedDependentSubqueryCosting {
 		};
 	}
 
-	private static double scalarCost(PackedQuery query, PackedMemo memo, int scalarId, int inputContextId,
-			int outerBindingMaskId, double expectedInvocations) {
+	private static void scalarCost(PackedQuery query, PackedMemo memo, int scalarId, int inputContextId,
+			int outerBindingMaskId, double expectedInvocations, Summary destination) {
 		if (scalarId == 0) {
-			return 0.0d;
+			return;
 		}
-		double cost = 0.0d;
 		if (query.scalarOperator(scalarId) == PackedScalarOp.EXISTS) {
 			int payloadId = query.scalarPayload(scalarId);
 			if (query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
@@ -94,7 +121,9 @@ final class PackedDependentSubqueryCosting {
 					throw new PackedMemoInvariantException(
 							"embedded subquery " + subqueryRelationId + " has no incumbent");
 				}
-				cost = memo.winnerTotalCost(winnerId);
+				double cost = memo.winnerTotalCost(winnerId);
+				boolean enforced = memo.winnerEnforcesLifecycle(winnerId);
+				double comparison = enforced ? memo.winnerComparisonCost(winnerId) : cost;
 				double pricedInvocations = 1.0d;
 				int metadataId = memo.winnerPhysicalMetadataId(winnerId);
 				if (metadataId != 0) {
@@ -114,17 +143,85 @@ final class PackedDependentSubqueryCosting {
 					 */
 					double startupOnce = Math.min(cost,
 							Math.min(1.0d, Math.max(0.0d, memo.winnerStartupCost(winnerId))));
-					double nonStartupWork = Math.max(0.0d, cost - startupOnce);
-					cost = saturatedAdd(startupOnce, saturatedMultiply(nonStartupWork, remainingInvocations));
+					cost = repeatedCost(cost, startupOnce, remainingInvocations);
+					comparison = repeatedCost(comparison, startupOnce, remainingInvocations);
 				}
+				destination.add(cost, comparison, enforced, memo.winnerUsesExecutableFallback(winnerId));
 			}
 		}
 		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
-			cost = saturatedAdd(cost,
-					scalarCost(query, memo, query.scalarChild(scalarId, ordinal), inputContextId,
-							outerBindingMaskId, expectedInvocations));
+			scalarCost(query, memo, query.scalarChild(scalarId, ordinal), inputContextId, outerBindingMaskId,
+					expectedInvocations, destination);
 		}
-		return cost;
+	}
+
+	private static double repeatedCost(double cost, double startupOnce, double invocations) {
+		if (cost == Double.MAX_VALUE) {
+			return Double.MAX_VALUE;
+		}
+		return saturatedAdd(startupOnce, saturatedMultiply(Math.max(0.0d, cost - startupOnce), invocations));
+	}
+
+	/** Reused query-local accumulator for implicit dependent winners and their lifecycle admission. */
+	static final class Summary {
+		private double point;
+		private double comparison;
+		private boolean present;
+		private boolean enforced;
+		private boolean fallback;
+
+		void clear() {
+			point = comparison = 0.0d;
+			present = enforced = fallback = false;
+		}
+
+		void add(double point, double comparison, boolean enforced, boolean fallback) {
+			this.point = saturatedAdd(this.point, point);
+			this.comparison = saturatedAdd(this.comparison, comparison);
+			this.present = true;
+			this.enforced |= enforced;
+			this.fallback |= fallback;
+		}
+
+		boolean present() {
+			return present;
+		}
+
+		double point() {
+			return point;
+		}
+
+		void applyLifecycle(PackedCostEstimate estimate) {
+			if (!enforced && !fallback) {
+				return;
+			}
+			double composedPoint = estimate.objectivePoint();
+			if (!Double.isNaN(composedPoint) && (!Double.isFinite(composedPoint) || composedPoint < 0.0d)) {
+				throw new PackedMemoInvariantException("dependent lifecycle requires a complete objective");
+			}
+			boolean ownerEnforced = estimate.plannedDoubleMetric("optimizer.lifecycleEnforced", 0.0d) >= 1.0d;
+			if (Double.isNaN(composedPoint)) {
+				// Lifecycle admission is still meaningful, but no comparable objective can be reconstructed.
+				estimate.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.NaN);
+			} else {
+				double ownerComparison = ownerEnforced
+						? estimate.plannedDoubleMetric("optimizer.lifecycleComparisonCost", estimate.objectiveUpper())
+						: composedPoint;
+				double premium = comparison == Double.MAX_VALUE ? Double.MAX_VALUE : Math.max(0.0d, comparison - point);
+				estimate.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost",
+						ownerComparison == Double.MAX_VALUE || premium == Double.MAX_VALUE ? Double.MAX_VALUE
+								: saturatedAdd(ownerComparison, premium));
+			}
+			if (!ownerEnforced) {
+				// A monitored owner did not impose its own admission decision; only the dependent can do so here.
+				estimate.putPlannedDoubleMetric("optimizer.lifecycleEligible", 1.0d);
+				estimate.putPlannedDoubleMetric("optimizer.lifecycleLastGood", 0.0d);
+			}
+			estimate.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+			if (fallback) {
+				estimate.putPlannedDoubleMetric("optimizer.lifecycleEligible", 0.0d);
+			}
+		}
 	}
 
 	private static void publishScalarPlanInputs(PackedQuery query, PackedMemo memo, int scalarId, int inputContextId,
@@ -189,11 +286,11 @@ final class PackedDependentSubqueryCosting {
 
 	private static double saturatedAdd(double left, double right) {
 		double result = left + right;
-		return Double.isFinite(result) ? result : Double.MAX_VALUE;
+		return Double.isNaN(result) ? Double.NaN : Double.isFinite(result) ? result : Double.MAX_VALUE;
 	}
 
 	private static double saturatedMultiply(double left, double right) {
 		double result = left * right;
-		return Double.isFinite(result) ? result : Double.MAX_VALUE;
+		return Double.isNaN(result) ? Double.NaN : Double.isFinite(result) ? result : Double.MAX_VALUE;
 	}
 }

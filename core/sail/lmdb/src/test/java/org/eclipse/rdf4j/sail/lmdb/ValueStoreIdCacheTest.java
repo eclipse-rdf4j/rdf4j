@@ -1398,6 +1398,7 @@ class ValueStoreIdCacheTest {
 		private volatile boolean pauseAfterProbe;
 		private CountDownLatch probeCompleted;
 		private CountDownLatch resumeProbe;
+		private boolean instrumented;
 
 		CountingValueStore(File directory, LmdbStoreConfig config) throws IOException {
 			// Exercise the released mixed-split compatibility cache; fresh sessions require a canonical store.
@@ -1406,12 +1407,27 @@ class ValueStoreIdCacheTest {
 
 		CountingValueStore(File directory, LmdbStoreConfig config, int version) throws IOException {
 			// These tests create empty stores with trusted counts and explicitly exercise reclamation invalidation.
-			super(directory, new StoreProperties().setVersion(Integer.toString(version)),
-					config.setLegacyReferenceCountRepairEnabled(true));
+			super(directory, writerProperties(version, config), config.setLegacyReferenceCountRepairEnabled(true));
+			// Format-2 startup seeds core datatypes through these hooks before this subclass's field initializers
+			// have run; the instrumentation observes only work issued after the fixture is fully constructed.
+			instrumented = true;
+		}
+
+		/** The persisted writer identity of a real store of {@code version}; format 2 has no capability keys. */
+		private static StoreProperties writerProperties(int version, LmdbStoreConfig config) {
+			StoreProperties properties = new StoreProperties();
+			if (version == LmdbStoreFormat.LEGACY_VERSION) {
+				return properties.setVersion(Integer.toString(version));
+			}
+			LmdbStoreFormat.forBulkGeneration(version, config).initializeProperties(properties);
+			return properties;
 		}
 
 		@Override
 		int commitWriteTransaction(long transaction) {
+			if (!instrumented) {
+				return super.commitWriteTransaction(transaction);
+			}
 			if (failNextCommit) {
 				failNextCommit = false;
 				mdb_txn_abort(transaction);
@@ -1422,6 +1438,10 @@ class ValueStoreIdCacheTest {
 
 		@Override
 		void abortWriteTransaction(long transaction) {
+			if (!instrumented) {
+				super.abortWriteTransaction(transaction);
+				return;
+			}
 			abortedWriters++;
 			super.abortWriteTransaction(transaction);
 		}
@@ -1429,6 +1449,9 @@ class ValueStoreIdCacheTest {
 		@Override
 		Long findIdInTransaction(byte[] data, boolean create, CoreDatatype coreDatatype, MemoryStack stack, long txn)
 				throws IOException {
+			if (!instrumented) {
+				return super.findIdInTransaction(data, create, coreDatatype, stack, txn);
+			}
 			if (data[0] == ValueStoreRecordCodec.NAMESPACE_VALUE) {
 				namespaceProbes++;
 			} else {
@@ -1450,6 +1473,9 @@ class ValueStoreIdCacheTest {
 
 		@Override
 		int probeIriAlternative(long txn, MDBVal key, MDBVal value) {
+			if (!instrumented) {
+				return super.probeIriAlternative(txn, key, value);
+			}
 			alternativeProbes++;
 			if (observeNamespaceRoute) {
 				alternativeProbeTransactions.add(txn);
@@ -1466,6 +1492,9 @@ class ValueStoreIdCacheTest {
 
 		@Override
 		public Object valueLookupScope() throws IOException {
+			if (!instrumented) {
+				return super.valueLookupScope();
+			}
 			if (observeNamespaceRoute) {
 				observedScopeChecks++;
 				alternativeProbesAtScopeCheck = alternativeProbes;
@@ -1475,12 +1504,18 @@ class ValueStoreIdCacheTest {
 
 		@Override
 		int seekIriAlternative(long cursor, MDBVal key, MDBVal value, int operation) {
+			if (!instrumented) {
+				return super.seekIriAlternative(cursor, key, value, operation);
+			}
 			alternativeSeeks++;
 			return super.seekIriAlternative(cursor, key, value, operation);
 		}
 
 		@Override
 		<T> T readTransaction(long env, LmdbUtil.Transaction<T> transaction) throws IOException {
+			if (!instrumented) {
+				return super.readTransaction(env, transaction);
+			}
 			readTransactions++;
 			int probesBefore = valueProbes + namespaceProbes;
 			T result = super.readTransaction(env, transaction);

@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.stream.Stream;
@@ -413,6 +414,19 @@ class LmdbNativeAndUnknownBindingContractTest {
 		doAnswer(sourceAwareAnswer).when(custom)
 				.factorCost(any(TupleExpr.class),
 						any(JoinFactorCostModel.CostContext.class), nullable(LmdbFilterReadContext.class));
+		// An admitted mapped session prices through the admitted-read overload. That read is owned by this spy, so the
+		// real overload runs on the spy itself; delegating to the native runtime would cross estimator owners.
+		Answer<?> admittedAnswer = invocation -> {
+			TupleExpr expression = invocation.getArgument(0);
+			Optional<?> estimate = (Optional<?>) invocation.callRealMethod();
+			return estimate.map(value -> expression instanceof StatementPattern
+					? ((JoinFactorCostModel.FactorCostEstimate) value)
+							.withRowScope(JoinFactorCostModel.RowScope.UNKNOWN)
+					: value);
+		};
+		doAnswer(admittedAnswer).when(custom)
+				.factorCost(any(TupleExpr.class), any(JoinFactorCostModel.CostContext.class),
+						nullable(LmdbFilterReadContext.class), nullable(LmdbAdmittedFrontierRead.class));
 		return custom;
 	}
 

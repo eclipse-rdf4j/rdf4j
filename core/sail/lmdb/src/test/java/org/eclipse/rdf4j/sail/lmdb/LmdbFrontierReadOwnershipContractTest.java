@@ -1284,8 +1284,52 @@ class LmdbFrontierReadOwnershipContractTest {
 							try (var session = new LmdbPackedCostModel(read.runtime, read.source.getSnapshotEpoch(),
 									true,
 									read.source, read.strategy, mappedProgram).openSession(call.query())) {
+								assertEquals(mappedProgram, session instanceof LmdbFrontierStatisticsCostSession,
+										"exercise both scalar and admitted mapped costing");
+								if (mappedProgram) {
+									PackedCostEstimate unproven = new PackedCostEstimate();
+									session.appendFactor(call.relationId(), call.prefixContext(), unproven);
+									assertTrue(Double.isNaN(unproven.outputRows()),
+											"an unowned prefix must not borrow mapped population evidence");
+									assertEquals(0, unproven.evidenceStateId());
+								}
+								int assignment = call.prefixContext().prefixRelationId(0);
+								var empty = PackedCostTestSupport.prefixContext(new int[0], 0, 1.0d, 0);
+								PackedCostEstimate prefix = new PackedCostEstimate();
+								session.estimateLeaf(assignment, empty, prefix);
+								assertEquals(2.0d, prefix.outputRows(), "the VALUES bag is the actual prefix");
+								if (mappedProgram) {
+									assertTrue(prefix.evidenceStateId() > 0,
+											"the VALUES prefix owns its evidence in this mapped session");
+								}
+								var context = PackedCostTestSupport.prefixContext(new int[] { assignment }, 1,
+										prefix.outputRows(), prefix.evidenceStateId());
+								if (mappedProgram) {
+									var differentFrame = PackedCostTestSupport.withAssuredInput(context, assignment);
+									PackedCostEstimate refused = new PackedCostEstimate();
+									session.estimateLeaf(call.relationId(), empty, refused);
+									session.appendFactor(call.relationId(), differentFrame, refused);
+									assertEquals(nativePopulation, refused.outputRows(),
+											"only the isolated leaf remains");
+									assertFalse(refused.hasContextualOutputRows(),
+											"a different frame cannot price the prefix");
+									assertFalse(refused.hasComponentOutputRows());
+									assertEquals("frontier_v2_mapped_leaf", refused.estimateFusion());
+									assertEquals(0, refused.evidenceStateId(), "no mismatched population lease");
+								}
 								PackedCostEstimate work = new PackedCostEstimate();
-								session.appendFactor(call.relationId(), call.prefixContext(), work);
+								session.estimateLeaf(call.relationId(), empty, work);
+								session.appendFactor(call.relationId(), context, work);
+								assertTrue(work.hasContextualOutputRows(), "a valid finite prefix is contextual");
+								if (mappedProgram) {
+									assertFalse(work.hasComponentOutputRows(),
+											"mapped finite domain covers the complete prefix");
+									assertEquals("frontier_v2_omni_finite_domain", work.estimateFusion());
+									assertTrue(work.evidenceStateId() > 0,
+											"the matched mapped population remains owned");
+								} else {
+									assertEquals("finite_binding_probe", work.estimateFusion());
+								}
 								assertEquals(finiteRows, work.outputRows(), "finite VALUES candidate population");
 								assertEquals(finiteRows, work.sequentialRows(),
 										"finite VALUES candidate physical row visits");
@@ -1357,51 +1401,101 @@ class LmdbFrontierReadOwnershipContractTest {
 	void rawContextAliasesCannotBecomeMissingGraphWorkZeros(@TempDir Path root) throws Exception {
 		IRI predicate = VF.createIRI("urn:population-owner:alias-work");
 		String text = "SELECT ?s WHERE { ?s <" + predicate + "> ?s }";
-		try (Fixture fixture = new Fixture(root, true)) {
-			for (SailRepository target : new SailRepository[] { fixture.repository, fixture.oracle }) {
-				try (var writer = target.getConnection()) {
-					writer.add(A, predicate, A);
-					writer.add(B, predicate, B, G);
+		for (boolean contextLeading : new boolean[] { false, true }) {
+			String indexes = contextLeading ? "cspo,posc" : "spoc,ospc,psoc,posc";
+			Path storeRoot = root.resolve(contextLeading ? "context-leading" : "predicate-leading");
+			try (Fixture fixture = new Fixture(storeRoot, true, FrontierEstimatorMode.AUTHORITATIVE, indexes)) {
+				for (SailRepository target : new SailRepository[] { fixture.repository, fixture.oracle }) {
+					try (var writer = target.getConnection()) {
+						writer.begin();
+						writer.add(A, predicate, A);
+						writer.add(B, predicate, B, G);
+						var inferred = (InferencerConnection) writer.getSailConnection();
+						inferred.addInferredStatement(C, predicate, C, G);
+						inferred.addInferredStatement(A, predicate, B, G);
+						writer.commit();
+					}
 				}
-			}
-			assertEquals(FrontierStatisticsAvailability.READY,
-					fixture.store.rebuildFrontierStatistics().availability());
-			for (IRI alias : java.util.List.of(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL,
-					org.eclipse.rdf4j.model.vocabulary.SESAME.NIL)) {
-				TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null).getTupleExpr();
-				StatementPattern original = firstPattern(input);
-				original.replaceWith(new StatementPattern(original.getScope(), original.getSubjectVar().clone(),
-						original.getPredicateVar().clone(), original.getObjectVar().clone(),
-						Var.of("fixedContext", alias)));
-				assertEquals(Map.of(A, 1L), tupleBag(fixture.oracle, input));
-				assertEquals(Map.of(A, 1L), tupleBag(fixture.repository, input));
-				try (Read read = fixture.read(FrontierLeafProbe.BOTH_PLANES, null, null)) {
-					read.entry(input.clone(), null, (prepared, cascades) -> {
-						var call = PackedCostTestSupport.preparedLeaf(prepared);
-						for (boolean mappedProgram : new boolean[] { false, true }) {
-							try (var session = new LmdbPackedCostModel(read.runtime, read.source.getSnapshotEpoch(),
-									true,
-									read.source, read.strategy, mappedProgram).openSession(call.query())) {
-								var work = estimate(session, call);
-								assertEquals("unavailable",
-										work.plannedStringMetric("optimizer.nativeAccessPopulation"),
-										"raw query work must decline an unrepresented bound-default alias: " + alias);
-								assertFalse(Double.isFinite(work.accessRows()),
-										"alias IRI absence cannot certify zero physical work");
-							}
+				assertEquals(FrontierStatisticsAvailability.READY,
+						fixture.store.rebuildFrontierStatistics().availability());
+				for (IRI alias : java.util.List.of(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL,
+						org.eclipse.rdf4j.model.vocabulary.SESAME.NIL)) {
+					assertEquals(org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID,
+							fixture.store.getBackingStore().valueStore().getId(alias),
+							"the default-graph alias is absent from the value dictionary");
+					TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null).getTupleExpr();
+					StatementPattern original = firstPattern(input);
+					original.replaceWith(new StatementPattern(original.getScope(), original.getSubjectVar().clone(),
+							original.getPredicateVar().clone(), original.getObjectVar().clone(),
+							Var.of("fixedContext", alias)));
+					for (int plane : new int[] { FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.BOTH_PLANES }) {
+						boolean includeInferred = plane == FrontierLeafProbe.BOTH_PLANES;
+						Map<Value, Long> expectedBag = tupleBag(fixture.oracle, input, includeInferred);
+						assertEquals(Map.of(A, 1L), expectedBag, "the selected default graph has one matching row");
+						assertEquals(expectedBag, tupleBag(fixture.repository, input, includeInferred));
+						try (Read read = fixture.read(plane, null, null)) {
+							long candidateRows = sourceRows(read, null, predicate);
+							assertEquals(includeInferred ? 4L : 2L, candidateRows,
+									"the predicate prefix spans the actual reader's contexts and planes");
+							read.entry(input.clone(), null, (prepared, cascades) -> {
+								var call = PackedCostTestSupport.preparedLeaf(prepared);
+								for (boolean mappedProgram : new boolean[] { false, true }) {
+									try (var session = new LmdbPackedCostModel(read.runtime,
+											read.source.getSnapshotEpoch(),
+											true, read.source, read.strategy, mappedProgram)
+													.openSession(call.query())) {
+										assertEquals(mappedProgram,
+												session instanceof LmdbFrontierStatisticsCostSession);
+										var work = estimate(session, call);
+										assertEquals(1.0d, work.outputRows(), "the logical default-graph population");
+										assertEquals("prefixScan", work.accessMode());
+										assertEquals(contextLeading ? "cspo" : "posc", work.indexName());
+										assertEquals(
+												contextLeading ? FrontierLeafProbe.CONTEXT
+														: FrontierLeafProbe.PREDICATE,
+												work.lookupComponentMask());
+										assertEquals(
+												contextLeading ? FrontierLeafProbe.PREDICATE
+														: FrontierLeafProbe.CONTEXT,
+												work.missingLookupComponentMask());
+										double population = work.plannedDoubleMetric("plannedNativePrefixPopulation",
+												Double.NaN);
+										if (contextLeading) {
+											assertEquals("unavailable",
+													work.plannedStringMetric("optimizer.nativeAccessPopulation"));
+											assertTrue(Double.isNaN(population),
+													"an unrepresented bound-default prefix cannot become an empty graph");
+										} else {
+											assertEquals("native-prefix-before-equality",
+													work.plannedStringMetric("optimizer.nativeAccessPopulation"));
+											assertEquals((double) candidateRows, population,
+													"a predicate-only prefix retains its nonempty candidate population");
+										}
+										assertTrue(Double.isNaN(work.accessRows()),
+												"alias IRI absence cannot certify zero physical work");
+										assertTrue(Double.isNaN(work.sequentialRows()), "actual visits are unknown");
+										assertTrue(Double.isNaN(work.randomSeeks()), "residual seeks are unknown");
+										assertTrue(Double.isNaN(work.workRows()), "total physical work is unknown");
+									}
+								}
+								return null;
+							});
 						}
-						return null;
-					});
+					}
 				}
 			}
 		}
 	}
 
 	private static Map<Value, Long> tupleBag(SailRepository repository, TupleExpr expression) {
+		return tupleBag(repository, expression, true);
+	}
+
+	private static Map<Value, Long> tupleBag(SailRepository repository, TupleExpr expression, boolean includeInferred) {
 		Map<Value, Long> bag = new HashMap<>();
 		try (var connection = repository.getConnection();
 				var rows = connection.getSailConnection()
-						.evaluate(expression.clone(), null, EmptyBindingSet.getInstance(), true)) {
+						.evaluate(expression.clone(), null, EmptyBindingSet.getInstance(), includeInferred)) {
 			while (rows.hasNext()) {
 				bag.merge(rows.next().getValue("s"), 1L, Long::sum);
 			}
@@ -1528,7 +1622,11 @@ class LmdbFrontierReadOwnershipContractTest {
 		}
 
 		Fixture(Path root, boolean nativeEvaluation, FrontierEstimatorMode mode) throws Exception {
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+			this(root, nativeEvaluation, mode, "spoc,ospc,psoc,posc");
+		}
+
+		Fixture(Path root, boolean nativeEvaluation, FrontierEstimatorMode mode, String indexes) throws Exception {
+			LmdbStoreConfig config = new LmdbStoreConfig(indexes)
 					.setNativeEvaluationEnabled(nativeEvaluation)
 					.setSketchEstimatorEnabled(false)
 					.setDirectAdjacencyEnabled(false)

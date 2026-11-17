@@ -76,6 +76,10 @@ public final class ThemePlanQualityAuditCli {
 				.append("\n  \"completionStatus\": \"")
 				.append(audit.selectedPlanningResult().completionStatus())
 				.append("\",")
+				.append("\n  \"costComparisonCompleteness\": \"")
+				.append(audit.selectedPlanningResult().decisionSummary() == null ? "UNAVAILABLE_COST"
+						: audit.selectedPlanningResult().decisionSummary().comparisonCompleteness().name())
+				.append("\",")
 				.append("\n  \"maxRetainedBytes\": ")
 				.append(options.maxRetainedBytes())
 				.append(',')
@@ -112,6 +116,18 @@ public final class ThemePlanQualityAuditCli {
 				.append("\n  \"sampledDominatedCount\": ")
 				.append(audit.sampledDominatedCount())
 				.append(',')
+				.append("\n  \"unrankedCandidateCount\": ")
+				.append(audit.unrankedCandidateCount())
+				.append(',')
+				.append("\n  \"unavailableCandidateCount\": ")
+				.append(audit.unavailableCandidateCount())
+				.append(',')
+				.append("\n  \"omittedUnrankedCandidateCount\": ")
+				.append(audit.omittedUnrankedCandidateCount())
+				.append(',')
+				.append("\n  \"unrankedAdmission\": \"")
+				.append(audit.unrankedAdmission())
+				.append("\",")
 				.append("\n  \"alternatives\": [");
 		for (int index = 0; index < audit.alternatives().size(); index++) {
 			PackedPlanQualityAlternative alternative = audit.alternatives().get(index);
@@ -124,9 +140,9 @@ public final class ThemePlanQualityAuditCli {
 					.append(escape(alternative.stableId()))
 					.append('"')
 					.append(", \"estimatedCost\": ")
-					.append(alternative.estimatedCost())
+					.append(jsonPrice(alternative.estimatedCost()))
 					.append(", \"comparisonCost\": ")
-					.append(alternative.comparisonCost())
+					.append(jsonPrice(alternative.comparisonCost()))
 					.append(", \"physicalFingerprint\": \"")
 					.append(Long.toUnsignedString(alternative.physicalFingerprint(), 16))
 					.append('"')
@@ -136,6 +152,8 @@ public final class ThemePlanQualityAuditCli {
 					.append(alternative.paretoSurvivor())
 					.append(", \"sampledDominated\": ")
 					.append(alternative.sampledDominated())
+					.append(", \"unrankedCandidate\": ")
+					.append(alternative.unrankedCandidate())
 					.append(", \"stratumFingerprint\": \"")
 					.append(Long.toUnsignedString(alternative.stratumFingerprint(), 16))
 					.append('"')
@@ -148,6 +166,10 @@ public final class ThemePlanQualityAuditCli {
 					.append('}');
 		}
 		return json.append("\n  ]\n}\n").toString();
+	}
+
+	private static String jsonPrice(double price) {
+		return Double.isFinite(price) ? Double.toString(price) : "null";
 	}
 
 	private static String executionJson(Options options, LmdbBenchmarkPlanQualityAudit audit) {
@@ -189,6 +211,7 @@ public final class ThemePlanQualityAuditCli {
 				+ "  \"selectedByPolicy\": " + alternative.selectedByPolicy() + ",\n"
 				+ "  \"paretoSurvivor\": " + alternative.paretoSurvivor() + ",\n"
 				+ "  \"sampledDominated\": " + alternative.sampledDominated() + ",\n"
+				+ "  \"unrankedCandidate\": " + alternative.unrankedCandidate() + ",\n"
 				+ "  \"warmups\": " + options.warmups() + ",\n"
 				+ "  \"measurements\": " + options.measurements() + ",\n"
 				+ "  \"elapsedNanos\": " + Arrays.toString(elapsedNanos) + ",\n"

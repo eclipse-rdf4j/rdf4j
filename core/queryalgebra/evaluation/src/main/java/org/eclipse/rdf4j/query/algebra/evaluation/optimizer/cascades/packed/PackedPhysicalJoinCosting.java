@@ -187,7 +187,11 @@ final class PackedPhysicalJoinCosting {
 					scaleForMisses(rightResources.remoteCalls(), cacheMisses, leftRows),
 					Math.max(peakRows, cacheMisses > 0.0d ? rightResources.peakMemoryRows() : 0.0d));
 		}
-		output.setObjectivePricePreservingPhysicalCost(localPrice);
+		if (Double.isNaN(localPrice)) {
+			output.setUnavailableObjectivePreservingPhysicalCost();
+		} else {
+			output.setObjectivePricePreservingPhysicalCost(localPrice);
+		}
 		output.putPlannedDoubleMetric(MEMOIZED_DISTINCT_KEYS_METRIC, distinctKeys);
 		output.putPlannedDoubleMetric(MEMOIZED_CACHE_HITS_METRIC, cacheHits);
 		output.putPlannedDoubleMetric(MEMOIZED_CACHE_MISSES_METRIC, cacheMisses);
@@ -239,12 +243,12 @@ final class PackedPhysicalJoinCosting {
 
 	private static double saturatedAdd(double left, double right) {
 		double sum = left + right;
-		return Double.isFinite(sum) ? sum : Double.MAX_VALUE;
+		return Double.isNaN(sum) ? Double.NaN : Double.isFinite(sum) ? sum : Double.MAX_VALUE;
 	}
 
 	private static double saturatedMultiply(double left, double right) {
 		double product = left * right;
-		return Double.isFinite(product) ? product : Double.MAX_VALUE;
+		return Double.isNaN(product) ? Double.NaN : Double.isFinite(product) ? product : Double.MAX_VALUE;
 	}
 
 	private static double requireRows(double rows, String role) {

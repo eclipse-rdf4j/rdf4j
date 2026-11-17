@@ -371,7 +371,8 @@ final class PackedJoinEnumerator {
 		}
 
 		private boolean dominates(int leftStateId, int rightStateId) {
-			if (Double.compare(costs[leftStateId], costs[rightStateId]) > 0) {
+			if (!finiteNonNegative(costs[leftStateId]) || !finiteNonNegative(costs[rightStateId])
+					|| costs[leftStateId] > costs[rightStateId]) {
 				return false;
 			}
 			int leftVectorId = costCompletionIds[leftStateId];
@@ -407,7 +408,7 @@ final class PackedJoinEnumerator {
 			int best = 0;
 			for (int stateId = headStateId; stateId != 0; stateId = nextSubsetStateIds[stateId]) {
 				if (paretoActiveStates[stateId] != 0
-						&& (best == 0 || costs[stateId] < costs[best]
+						&& (best == 0 || preferAvailableCost(costs[stateId], costs[best])
 								|| Double.compare(costs[stateId], costs[best]) == 0
 										&& compareDigests(stateId, best) < 0)) {
 					best = stateId;
@@ -1025,11 +1026,11 @@ final class PackedJoinEnumerator {
 				int leafFactorOrdinal, int leafWinnerId, int continuationContextId,
 				int exactContinuationIdentityId, int evidenceStateId, double outputRows, double cost,
 				double appendedContributionRows, int physicalImplementation, int costCompletionId) {
-			if (memo == null || costCompletionId == 0 || nodeSetId >= subsetHeads.length) {
+			if (memo == null || costCompletionId == 0 || !finiteNonNegative(cost) || nodeSetId >= subsetHeads.length) {
 				return 0;
 			}
 			for (int stateId = subsetHeads[nodeSetId]; stateId != 0; stateId = nextSubsetStateIds[stateId]) {
-				if (paretoActiveStates[stateId] != 0
+				if (paretoActiveStates[stateId] != 0 && finiteNonNegative(costs[stateId])
 						&& sameParetoCell(stateId, leftChildStateId, rightChildStateId, leafFactorOrdinal,
 								leafWinnerId, continuationContextId, exactContinuationIdentityId,
 								evidenceStateId, outputRows, appendedContributionRows, physicalImplementation)
@@ -1043,11 +1044,11 @@ final class PackedJoinEnumerator {
 		}
 
 		private void deactivateDominatedStates(int stateId) {
-			if (memo == null || costCompletionIds[stateId] == 0) {
+			if (memo == null || costCompletionIds[stateId] == 0 || !finiteNonNegative(costs[stateId])) {
 				return;
 			}
 			for (int retained = subsetHeads[nodeSetIds[stateId]]; retained != 0; retained = nextSubsetStateIds[retained]) {
-				if (retained == stateId || paretoActiveStates[retained] == 0
+				if (retained == stateId || paretoActiveStates[retained] == 0 || !finiteNonNegative(costs[retained])
 						|| !sameParetoCell(retained, leftChildStateIds[stateId], rightChildStateIds[stateId],
 								leafFactorOrdinals[stateId], leafWinnerIds[stateId],
 								continuationContextIds[stateId], exactContinuationIdentityIds[stateId],
@@ -1081,7 +1082,7 @@ final class PackedJoinEnumerator {
 			int best = 0;
 			for (int stateId = headStateId; stateId != 0; stateId = nextSubsetStateIds[stateId]) {
 				if (paretoActiveStates[stateId] != 0
-						&& (best == 0 || costs[stateId] < costs[best]
+						&& (best == 0 || preferAvailableCost(costs[stateId], costs[best])
 								|| Double.compare(costs[stateId], costs[best]) == 0 && stateId < best)) {
 					best = stateId;
 				}
@@ -1269,7 +1270,7 @@ final class PackedJoinEnumerator {
 			int previousBest = bestStateIds[key];
 			if (paretoActiveStates[stateId] != 0
 					&& (previousBest == 0 || paretoActiveStates[previousBest] == 0
-							|| costs[stateId] < costs[previousBest]
+							|| preferAvailableCost(costs[stateId], costs[previousBest])
 							|| Double.compare(costs[stateId], costs[previousBest]) == 0
 									&& displaceable(previousBest) && compareDigests(stateId, previousBest) < 0)) {
 				bestStateIds[key] = stateId;
@@ -1862,13 +1863,19 @@ final class PackedJoinEnumerator {
 	private PackedCostEstimate memoizedRightPriceMetadata;
 	private PackedCostEstimate costEstimate;
 	private PackedCostEstimate scheduledFilterCandidateEstimate;
+	private PackedDependentSubqueryCosting.Summary dependentCostSummary;
+	private double scheduledFilterCompleteCost;
 	private PackedCostEstimate bestGreedyEstimate;
 	private PackedCostEstimate joinEstimate;
 	private PackedCostEstimate physicalJoinEstimate;
 	private PackedCostEstimate alternativePhysicalJoinEstimate;
 	private PackedCostEstimate independentJoinEstimate;
 	private PackedCostEstimate independentPhysicalJoinEstimate;
-	private PackedCostEstimate contextualDefaultEstimate;
+	private PackedCostEstimate writtenJoinRightEstimate;
+	private static final SavedFactorFrame[] NO_SAVED_FACTOR_FRAMES = new SavedFactorFrame[0];
+	private SavedFactorFrame[] savedFactorFrames = NO_SAVED_FACTOR_FRAMES;
+	private PackedCascadesPlanner.ProviderWorkBinding providerWork;
+	private int savedFactorFrameDepth;
 	private PackedCostEstimate composedMetadataEstimate;
 	private PackedCostEstimate dependentReopenEstimate;
 	private PackedCostEstimate contextualChildEstimate;
@@ -1978,11 +1985,11 @@ final class PackedJoinEnumerator {
 		return bestGreedyEstimate;
 	}
 
-	private PackedCostEstimate contextualDefaultEstimate() {
-		if (contextualDefaultEstimate == null) {
-			contextualDefaultEstimate = new PackedCostEstimate();
+	private PackedCostEstimate writtenJoinRightEstimate() {
+		if (writtenJoinRightEstimate == null) {
+			writtenJoinRightEstimate = new PackedCostEstimate();
 		}
-		return contextualDefaultEstimate;
+		return writtenJoinRightEstimate;
 	}
 
 	private PackedCostEstimate composedMetadataEstimate() {
@@ -2011,7 +2018,42 @@ final class PackedJoinEnumerator {
 		return correlatedSeedResumes;
 	}
 
+	/**
+	 * Absorbs the planner's refusal of provider work at a search driver's phase boundary, exactly like a refused search
+	 * step: the refusal abandons only the candidate whose callback it refused. A kernel appends each retained state
+	 * only after all of that state's callbacks, so every state retained before the refusal is complete and priced, and
+	 * the driver publishes the best of them through its provider-free epilogue. A strategy's own failure, or a refusal
+	 * type the provider threw without an admission refusal, is not a budget stop and propagates unchanged.
+	 */
+	private void absorbProviderStop(PackedProviderWork.Exhausted refused) {
+		if (!budget.isProviderRefusal(refused)) {
+			throw refused;
+		}
+		budget.recordExhaustedWorkStop();
+		budget.recordAbsorbedProviderStop();
+	}
+
+	/** Lets the enumerator take nested optional sub-searches out of the session's mandatory work scope. */
+	void bindProviderWork(PackedCascadesPlanner.ProviderWorkBinding providerWork) {
+		this.providerWork = providerWork;
+	}
+
 	int optimize(int rootRelationId) {
+		long workStart = budget.workUnits();
+		try {
+			return optimizeRegion(rootRelationId);
+		} catch (PackedProviderWork.Exhausted refused) {
+			/*
+			 * The arena kernels publish their own retained states. The remaining drivers (written sequence, anchored
+			 * recipe and greedy seeds) publish complete memo winners as they go, so an abandoned candidate leaves only
+			 * winners that were already complete. The search work they already charged stays reported.
+			 */
+			absorbProviderStop(refused);
+			return saturatedInt(budget.workUnits() - workStart);
+		}
+	}
+
+	private int optimizeRegion(int rootRelationId) {
 		if (!budget.canConsume(1L)) {
 			/*
 			 * Every join alternative needs at least one deterministic candidate-costing unit. Preserve the existing
@@ -2111,58 +2153,64 @@ final class PackedJoinEnumerator {
 				|| !inheritedPrefixSafe(rootRelationId)) {
 			return defaultWinnerId;
 		}
-		if (query.relOperator(rootRelationId) == PackedRelOp.FILTER) {
-			return contextualizeEquivalentAccessPaths(rootRelationId, defaultWinnerId, prefixRelations,
-					prefixContributionRows, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
-					correlationMaskId, semanticScopeMaskId, prefixCostEventId);
-		}
-		if (contextualAtomicFactor(rootRelationId, defaultWinnerId)) {
-			return contextualizeLeaf(rootRelationId, defaultWinnerId, prefixRelations, prefixContributionRows,
+		try {
+			if (query.relOperator(rootRelationId) == PackedRelOp.FILTER) {
+				return contextualizeEquivalentAccessPaths(rootRelationId, defaultWinnerId, prefixRelations,
+						prefixContributionRows, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
+						correlationMaskId, semanticScopeMaskId, prefixCostEventId);
+			}
+			if (contextualAtomicFactor(rootRelationId, defaultWinnerId)) {
+				return contextualizeLeaf(rootRelationId, defaultWinnerId, prefixRelations, prefixContributionRows,
+						prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId,
+						semanticScopeMaskId, prefixCostEventId);
+			}
+			if (query.relOperator(rootRelationId) == PackedRelOp.UNION) {
+				return contextualizeUnion(rootRelationId, defaultWinnerId, prefixRelations, prefixContributionRows,
+						prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId,
+						semanticScopeMaskId, prefixCostEventId);
+			}
+			if (contextualPositiveLeftJoin(rootRelationId)) {
+				return contextualizePositiveLeftJoin(rootRelationId, defaultWinnerId, prefixRelations,
+						prefixContributionRows, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
+						correlationMaskId, semanticScopeMaskId, prefixCostEventId);
+			}
+			if (contextualUnaryOperator(rootRelationId)) {
+				return contextualizeUnary(rootRelationId, defaultWinnerId, prefixRelations, prefixContributionRows,
+						prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId,
+						semanticScopeMaskId, prefixCostEventId);
+			}
+			if (query.relOperator(rootRelationId) != PackedRelOp.JOIN) {
+				return defaultWinnerId;
+			}
+			int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
+					prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId,
+					prefixCostEventId);
+			int contextualWinnerId = memo.findWinner(rootGroupId, memo.anyPropertyId(), 0, inputContextId, 0);
+			if (contextualWinnerId != 0) {
+				return contextualWinnerId;
+			}
+			int factorCount = factorCount(rootRelationId);
+			if (factorCount < 2) {
+				return defaultWinnerId;
+			}
+			int[] factors = new int[factorCount];
+			collectFactors(rootRelationId, factors);
+			if (requiresWrittenSequence(factors)) {
+				return defaultWinnerId;
+			}
+			if (subsetKernelForFactorCount(factorCount) == DENSE_SUBSETS) {
+				return optimizeDenseWithInheritedPrefix(rootRelationId, factors, prefixRelations,
+						prefixContributionRows, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
+						correlationMaskId, semanticScopeMaskId, prefixCostEventId, inputContextId, -1, defaultWinnerId);
+			}
+			return optimizeWideWithInheritedPrefix(rootRelationId, factors, prefixRelations, prefixContributionRows,
 					prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId,
-					semanticScopeMaskId, prefixCostEventId);
-		}
-		if (query.relOperator(rootRelationId) == PackedRelOp.UNION) {
-			return contextualizeUnion(rootRelationId, defaultWinnerId, prefixRelations, prefixContributionRows,
-					prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId,
-					semanticScopeMaskId, prefixCostEventId);
-		}
-		if (contextualPositiveLeftJoin(rootRelationId)) {
-			return contextualizePositiveLeftJoin(rootRelationId, defaultWinnerId, prefixRelations,
-					prefixContributionRows, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
-					correlationMaskId, semanticScopeMaskId, prefixCostEventId);
-		}
-		if (contextualUnaryOperator(rootRelationId)) {
-			return contextualizeUnary(rootRelationId, defaultWinnerId, prefixRelations, prefixContributionRows,
-					prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId,
-					semanticScopeMaskId, prefixCostEventId);
-		}
-		if (query.relOperator(rootRelationId) != PackedRelOp.JOIN) {
+					semanticScopeMaskId, prefixCostEventId, inputContextId, -1, defaultWinnerId);
+		} catch (PackedProviderWork.Exhausted refused) {
+			// Abandon the contextual candidate; the context-free incumbent stays the factor's winner.
+			absorbProviderStop(refused);
 			return defaultWinnerId;
 		}
-		int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
-				prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId,
-				prefixCostEventId);
-		int contextualWinnerId = memo.findWinner(rootGroupId, memo.anyPropertyId(), 0, inputContextId, 0);
-		if (contextualWinnerId != 0) {
-			return contextualWinnerId;
-		}
-		int factorCount = factorCount(rootRelationId);
-		if (factorCount < 2) {
-			return defaultWinnerId;
-		}
-		int[] factors = new int[factorCount];
-		collectFactors(rootRelationId, factors);
-		if (requiresWrittenSequence(factors)) {
-			return defaultWinnerId;
-		}
-		if (subsetKernelForFactorCount(factorCount) == DENSE_SUBSETS) {
-			return optimizeDenseWithInheritedPrefix(rootRelationId, factors, prefixRelations,
-					prefixContributionRows, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
-					correlationMaskId, semanticScopeMaskId, prefixCostEventId, inputContextId, -1, defaultWinnerId);
-		}
-		return optimizeWideWithInheritedPrefix(rootRelationId, factors, prefixRelations, prefixContributionRows,
-				prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId,
-				semanticScopeMaskId, prefixCostEventId, inputContextId, -1, defaultWinnerId);
 	}
 
 	private int contextualizeUnion(int relationId, int defaultWinnerId, int[] prefixRelations,
@@ -2215,7 +2263,7 @@ final class PackedJoinEnumerator {
 		if (finiteNonNegative(costEstimate.outputRows())) {
 			outputRows = costEstimate.outputRows();
 		}
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			totalWork = refinedOperatorWork(childWork, costEstimate);
 			if (costEstimate.hasExplicitPhysicalCost()
 					&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
@@ -2313,7 +2361,7 @@ final class PackedJoinEnumerator {
 		if (finiteNonNegative(costEstimate.outputRows())) {
 			outputRows = costEstimate.outputRows();
 		}
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			totalWork = refinedOperatorWork(childWork, costEstimate);
 			if (costEstimate.hasExplicitPhysicalCost()
 					&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
@@ -2483,7 +2531,7 @@ final class PackedJoinEnumerator {
 		if (finiteNonNegative(costEstimate.outputRows())) {
 			outputRows = costEstimate.outputRows();
 		}
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			totalWork = refinedOperatorWork(childWork, costEstimate);
 			if (costEstimate.hasExplicitPhysicalCost()
 					&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
@@ -2606,16 +2654,17 @@ final class PackedJoinEnumerator {
 				contextualAtomicFactor(relationId, memo.findWinner(memo.logicalGroupId(relationId),
 						memo.anyPropertyId(), 0, 0, 0)));
 		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
-		if (!finiteNonNegative(costEstimate.outputRows()) && !finiteNonNegative(costEstimate.workRows())) {
+		if (!costEstimate.hasExplicitPhysicalCost() && !finiteNonNegative(costEstimate.outputRows())
+				&& !finiteNonNegative(costEstimate.workRows())) {
 			return defaultWinnerId;
 		}
 		double fallbackRows = joinRowsForPrefix(prefixRelations, prefixCount, prefixRows, relationId,
 				memo.winnerOutputRows(defaultWinnerId), connectedToPrefix(prefixRelations, prefixCount, relationId));
 		double outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, relationId, fallbackRows);
-		double workRows = finiteNonNegative(costEstimate.workRows())
-				? objectiveWork(costEstimate)
-				: memo.winnerTotalCost(defaultWinnerId);
+		// A provider may return a known row estimate while explicitly leaving its scalar or physical work unknown.
+		// The context-free winner remains an executable fallback, but its price cannot fill this missing objective.
+		double workRows = objectiveWork(costEstimate);
 		int metadataId = addComposedPhysicalMetadata(costEstimate, outputRows, workRows);
 		return offerContextualFactorWinner(relationId, defaultWinnerId, inputContextId, metadataId, outputRows,
 				workRows);
@@ -2684,6 +2733,18 @@ final class PackedJoinEnumerator {
 	}
 
 	private int optimizeCorrelatedFilter(int filterRelationId, boolean seedMandatoryCompletion,
+			boolean enumerateAlternatives) {
+		long workStart = budget.workUnits();
+		try {
+			return optimizeCorrelatedFilterRegion(filterRelationId, seedMandatoryCompletion, enumerateAlternatives);
+		} catch (PackedProviderWork.Exhausted refused) {
+			// The correlated lattices publish or retain their own states; scheduled offers are complete when offered.
+			absorbProviderStop(refused);
+			return saturatedInt(budget.workUnits() - workStart);
+		}
+	}
+
+	private int optimizeCorrelatedFilterRegion(int filterRelationId, boolean seedMandatoryCompletion,
 			boolean enumerateAlternatives) {
 		if (hasCurrentCompletedCorrelatedSearch(filterRelationId)) {
 			/*
@@ -3343,6 +3404,16 @@ final class PackedJoinEnumerator {
 	}
 
 	private int seedCorrelatedFilter(int filterRelationId, boolean seedAccessBoundaryFrontier) {
+		long workStart = budget.workUnits();
+		try {
+			return seedCorrelatedFilterRegion(filterRelationId, seedAccessBoundaryFrontier);
+		} catch (PackedProviderWork.Exhausted refused) {
+			absorbProviderStop(refused);
+			return saturatedInt(budget.workUnits() - workStart);
+		}
+	}
+
+	private int seedCorrelatedFilterRegion(int filterRelationId, boolean seedAccessBoundaryFrontier) {
 		if (!isCorrelatedPredicateOperator(query.relOperator(filterRelationId))
 				|| query.relChildCount(filterRelationId) != 1) {
 			return 0;
@@ -3429,10 +3500,12 @@ final class PackedJoinEnumerator {
 			selectedSchedule = schedule;
 			break;
 		}
+		long seedWorkStart = budget.workUnits();
 		if (selectedSchedule == null || !budget.tryReserveMandatoryCompletion(factorCount)) {
 			return 0;
 		}
 		DenseCorrelatedStates states = new DenseCorrelatedStates(factorCount, filters.length, budget);
+		boolean providerStopped = false;
 		if (states.available && initializeDenseCorrelatedSingletons(states, factors)) {
 			int[] adjacency = adjacency(factors);
 			int[] prefixRelations = costSession == null ? null : new int[factorCount];
@@ -3447,9 +3520,16 @@ final class PackedJoinEnumerator {
 			seedOrder[readinessCount] = factorCount;
 			System.arraycopy(selectedSchedule, readinessCount, seedOrder, readinessCount + 1,
 					factorCount - readinessCount);
-			int emittedWork = seedDenseCorrelatedIncumbent(filterRelationId, inputRelationId, factors, filters,
-					requiredProviderMasks, requiredProviderStarts, adjacency, states, seedOrder, prefixRelations,
-					prefixContributionRows, scheduledPrefixRelations, scheduledPrefixContributionRows, false);
+			int emittedWork = 0;
+			try {
+				emittedWork = seedDenseCorrelatedIncumbent(filterRelationId, inputRelationId, factors, filters,
+						requiredProviderMasks, requiredProviderStarts, adjacency, states, seedOrder, prefixRelations,
+						prefixContributionRows, scheduledPrefixRelations, scheduledPrefixContributionRows, false);
+			} catch (PackedProviderWork.Exhausted refused) {
+				absorbProviderStop(refused);
+				providerStopped = true;
+				emittedWork = saturatedInt(budget.workUnits() - seedWorkStart);
+			}
 			int targetState = states.best(states.key(states.fullSet, states.fullFilterSet));
 			if (targetState != 0 && states.parentStates[targetState] != 0
 					&& Double.isFinite(states.costs[targetState])) {
@@ -3465,6 +3545,10 @@ final class PackedJoinEnumerator {
 						states.evidenceGuarantees, states.evidenceDispositions, states.physicalImplementations);
 				return emittedWork;
 			}
+		}
+		if (providerStopped) {
+			// The written schedule below would cost new candidates; a stopped seed keeps what it already published.
+			return saturatedInt(budget.workUnits() - seedWorkStart);
 		}
 		int[] orderedFactors = new int[factorCount];
 		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
@@ -3498,10 +3582,16 @@ final class PackedJoinEnumerator {
 		double[] prefixContributionRows = new double[factorCount];
 		int[] scheduledPrefixRelations = new int[factorCount];
 		double[] scheduledPrefixContributionRows = new double[factorCount];
-		int emittedWork = seedCorrelatedAccessBoundarySchedules(filterRelationId, inputRelationId, factors, filters,
-				requiredProviderMasks, requiredProviderStarts, evaluationBarrierMask, states, legalExtensions,
-				hypergraph, factorGraph, adjacency, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
-				scheduledPrefixContributionRows);
+		int emittedWork = 0;
+		try {
+			emittedWork = seedCorrelatedAccessBoundarySchedules(filterRelationId, inputRelationId, factors, filters,
+					requiredProviderMasks, requiredProviderStarts, evaluationBarrierMask, states, legalExtensions,
+					hypergraph, factorGraph, adjacency, prefixRelations, prefixContributionRows,
+					scheduledPrefixRelations, scheduledPrefixContributionRows);
+		} catch (PackedProviderWork.Exhausted refused) {
+			// The resumed seed left the retained table; it must be retained again with every state it already holds.
+			absorbProviderStop(refused);
+		}
 
 		retainSeededCorrelatedLattice(filterRelationId, inputRelationId, factors, filters, states,
 				factorGraph, hypergraph, legalExtensions);
@@ -3790,7 +3880,15 @@ final class PackedJoinEnumerator {
 						budget, costSession);
 				dependentEvidenceContext.reset(prefixRelations, prefixContributionRows, 0, prefixCount, prefixRows,
 						prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
-				nested.optimizeWithInheritedPrefix(subqueryRelationId, dependentEvidenceContext);
+				// The embedded subquery's contextual search is optional even when its predicate is mandatory.
+				boolean previousScope = providerWork != null && providerWork.suspendMandatoryCompletion();
+				try {
+					nested.optimizeWithInheritedPrefix(subqueryRelationId, dependentEvidenceContext);
+				} finally {
+					if (providerWork != null) {
+						providerWork.leaveMandatoryCompletion(previousScope);
+					}
+				}
 				workUnits += nested.contextualWorkUnits();
 			}
 		}
@@ -4103,6 +4201,8 @@ final class PackedJoinEnumerator {
 		 * larger input distribution for a potentially cheaper access path. Keeping that distinction is what lets the
 		 * cost model compare the complete factor and predicate order without a placement heuristic.
 		 */
+		// A refusal absorbed anywhere in this call left some transition unpriced: the call cannot certify the lattice.
+		long absorbedStopsAtStart = budget.absorbedProviderStops();
 		DenseCorrelatedStates states = null;
 		PackedJoinHypergraph factorGraph = null;
 		PackedJoinHypergraph retainedCorrelatedGraph = null;
@@ -4161,88 +4261,98 @@ final class PackedJoinEnumerator {
 				? retainedLegalExtensions
 				: dphypSingletonExtensions(hypergraph);
 		int inputFilterSet = semanticFilterSet(inputJoinRelationId, filters);
-		if (seedMandatoryCompletion && budget.isBounded() && seededStates != null) {
-			/*
-			 * A bounded traversal may spend its deadline or work budget on proper subsets before it reaches a complete
-			 * predicate-applied state. Reserve qualitatively distinct topology-derived completions first. Finite
-			 * factors form an access-enabling prefix because their Cartesian product can bind both ends of a later
-			 * probe even when the ordinary query graph has no edge between those factors. The graph and proof masks
-			 * determine this prefix; rows and objective costs never alter DPhyp traversal.
-			 */
-			int nodeCount = factors.length + filters.length;
-			int accessEnablingMask = denseFactorMask(accessEnablingFactorMask(factors));
-			int[] accessSeedOrder = accessEnablingMask == 0
-					? null
-					: firstLeftDeepNodeOrder(hypergraph, legalExtensions, nodeCount, factors.length,
-							accessEnablingMask);
-			if (accessSeedOrder != null
-					&& budget.tryReserveMandatoryCompletion(accessSeedOrder.length - 1L)) {
-				workUnits[0] += seedDenseCorrelatedIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
-						filters, requiredProviderMasks, requiredProviderStarts, adjacency, seededStates,
-						accessSeedOrder, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
-						scheduledPrefixContributionRows);
-			}
-			int[] topologySeedOrder = firstLeftDeepNodeOrder(hypergraph, legalExtensions, nodeCount, factors.length, 0);
-			if (topologySeedOrder != null && !Arrays.equals(topologySeedOrder, accessSeedOrder)
-					&& budget.tryReserveMandatoryCompletion(topologySeedOrder.length - 1L)) {
-				workUnits[0] += seedDenseCorrelatedIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
-						filters, requiredProviderMasks, requiredProviderStarts, adjacency, seededStates,
-						topologySeedOrder, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
-						scheduledPrefixContributionRows);
-			}
-			if (costSession != null && !budget.resourceLimitReached()) {
-				if (factorGraph == null) {
-					factorGraph = factorHypergraph(factors, factors.length);
+		boolean providerStopped = false;
+		long stopWorkStart = budget.workUnits();
+		try {
+			if (seedMandatoryCompletion && budget.isBounded() && seededStates != null) {
+				/*
+				 * A bounded traversal may spend its deadline or work budget on proper subsets before it reaches a
+				 * complete predicate-applied state. Reserve qualitatively distinct topology-derived completions first.
+				 * Finite factors form an access-enabling prefix because their Cartesian product can bind both ends of a
+				 * later probe even when the ordinary query graph has no edge between those factors. The graph and proof
+				 * masks determine this prefix; rows and objective costs never alter DPhyp traversal.
+				 */
+				int nodeCount = factors.length + filters.length;
+				int accessEnablingMask = denseFactorMask(accessEnablingFactorMask(factors));
+				int[] accessSeedOrder = accessEnablingMask == 0
+						? null
+						: firstLeftDeepNodeOrder(hypergraph, legalExtensions, nodeCount, factors.length,
+								accessEnablingMask);
+				if (accessSeedOrder != null
+						&& budget.tryReserveMandatoryCompletion(accessSeedOrder.length - 1L)) {
+					workUnits[0] += seedDenseCorrelatedIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
+							filters, requiredProviderMasks, requiredProviderStarts, adjacency, seededStates,
+							accessSeedOrder, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
+							scheduledPrefixContributionRows);
 				}
-				workUnits[0] += seedCorrelatedAccessBoundarySchedules(rootFilterRelationId, inputJoinRelationId,
-						factors, filters, requiredProviderMasks, requiredProviderStarts, evaluationBarrierMask,
-						seededStates, legalExtensions, hypergraph, factorGraph, adjacency, prefixRelations,
-						prefixContributionRows,
-						scheduledPrefixRelations, scheduledPrefixContributionRows);
+				int[] topologySeedOrder = firstLeftDeepNodeOrder(hypergraph, legalExtensions, nodeCount, factors.length,
+						0);
+				if (topologySeedOrder != null && !Arrays.equals(topologySeedOrder, accessSeedOrder)
+						&& budget.tryReserveMandatoryCompletion(topologySeedOrder.length - 1L)) {
+					workUnits[0] += seedDenseCorrelatedIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
+							filters, requiredProviderMasks, requiredProviderStarts, adjacency, seededStates,
+							topologySeedOrder, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
+							scheduledPrefixContributionRows);
+				}
+				if (costSession != null && !budget.resourceLimitReached()) {
+					if (factorGraph == null) {
+						factorGraph = factorHypergraph(factors, factors.length);
+					}
+					workUnits[0] += seedCorrelatedAccessBoundarySchedules(rootFilterRelationId, inputJoinRelationId,
+							factors, filters, requiredProviderMasks, requiredProviderStarts, evaluationBarrierMask,
+							seededStates, legalExtensions, hypergraph, factorGraph, adjacency, prefixRelations,
+							prefixContributionRows,
+							scheduledPrefixRelations, scheduledPrefixContributionRows);
+				}
 			}
-		}
-		if (seedMandatoryCompletion && costSession != null && seededStates != null
-				&& !budget.resourceLimitReached()) {
-			workUnits[0] += seedDenseCorrelatedGreedyIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
-					filters, requiredProviderMasks, requiredProviderStarts, adjacency, seededStates, legalExtensions,
-					prefixRelations, prefixContributionRows, scheduledPrefixRelations,
-					scheduledPrefixContributionRows);
-		}
-		if (enumerateAlternatives && costSession != null && !resumedSeed && !budget.resourceLimitReached()) {
-			/*
-			 * Cost-ordered exact search needs concrete upper bounds for every terminal it certifies. Replay legal DPhyp
-			 * paths into the exact arena itself: one reaches the factor-only JOIN boundary, one reaches the filters
-			 * already present in the input, and the greedy path supplies a strong fully-filtered incumbent. These
-			 * candidates do not prune by preference; monotone objective costs prove that a queued prefix at or above
-			 * the greatest terminal cost cannot improve any required terminal.
-			 */
-			int nodeCount = factors.length + filters.length;
-			int[] factorFirstOrder = firstLeftDeepNodeOrder(hypergraph, legalExtensions, nodeCount, factors.length,
-					states.fullSet);
-			if (factorFirstOrder != null && budget.tryReserve(factorFirstOrder.length - 1L)) {
-				workUnits[0] += seedDenseCorrelatedIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
-						filters, requiredProviderMasks, requiredProviderStarts, adjacency, states,
-						factorFirstOrder, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
+			if (seedMandatoryCompletion && costSession != null && seededStates != null
+					&& !budget.resourceLimitReached()) {
+				workUnits[0] += seedDenseCorrelatedGreedyIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
+						filters, requiredProviderMasks, requiredProviderStarts, adjacency, seededStates,
+						legalExtensions,
+						prefixRelations, prefixContributionRows, scheduledPrefixRelations,
 						scheduledPrefixContributionRows);
 			}
-			int requiredInputNodes = states.fullSet | inputFilterSet << factors.length;
-			int[] inputBoundaryOrder = requiredInputNodes == states.fullSet
-					? factorFirstOrder
-					: firstLeftDeepNodeOrder(hypergraph, legalExtensions, nodeCount, factors.length,
-							requiredInputNodes);
-			if (inputBoundaryOrder != null && !Arrays.equals(inputBoundaryOrder, factorFirstOrder)
-					&& budget.tryReserve(inputBoundaryOrder.length - 1L)) {
-				workUnits[0] += seedDenseCorrelatedIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
-						filters, requiredProviderMasks, requiredProviderStarts, adjacency, states,
-						inputBoundaryOrder, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
-						scheduledPrefixContributionRows);
+			if (enumerateAlternatives && costSession != null && !resumedSeed && !budget.resourceLimitReached()) {
+				/*
+				 * Cost-ordered exact search needs concrete upper bounds for every terminal it certifies. Replay legal
+				 * DPhyp paths into the exact arena itself: one reaches the factor-only JOIN boundary, one reaches the
+				 * filters already present in the input, and the greedy path supplies a strong fully-filtered incumbent.
+				 * These candidates do not prune by preference; monotone objective costs prove that a queued prefix at
+				 * or above the greatest terminal cost cannot improve any required terminal.
+				 */
+				int nodeCount = factors.length + filters.length;
+				int[] factorFirstOrder = firstLeftDeepNodeOrder(hypergraph, legalExtensions, nodeCount, factors.length,
+						states.fullSet);
+				if (factorFirstOrder != null && budget.tryReserve(factorFirstOrder.length - 1L)) {
+					workUnits[0] += seedDenseCorrelatedIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
+							filters, requiredProviderMasks, requiredProviderStarts, adjacency, states,
+							factorFirstOrder, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
+							scheduledPrefixContributionRows);
+				}
+				int requiredInputNodes = states.fullSet | inputFilterSet << factors.length;
+				int[] inputBoundaryOrder = requiredInputNodes == states.fullSet
+						? factorFirstOrder
+						: firstLeftDeepNodeOrder(hypergraph, legalExtensions, nodeCount, factors.length,
+								requiredInputNodes);
+				if (inputBoundaryOrder != null && !Arrays.equals(inputBoundaryOrder, factorFirstOrder)
+						&& budget.tryReserve(inputBoundaryOrder.length - 1L)) {
+					workUnits[0] += seedDenseCorrelatedIncumbent(rootFilterRelationId, inputJoinRelationId, factors,
+							filters, requiredProviderMasks, requiredProviderStarts, adjacency, states,
+							inputBoundaryOrder, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
+							scheduledPrefixContributionRows);
+				}
+				if (!budget.resourceLimitReached()) {
+					workUnits[0] += seedDenseCorrelatedGreedyIncumbent(rootFilterRelationId, inputJoinRelationId,
+							factors, filters, requiredProviderMasks, requiredProviderStarts, adjacency, states,
+							legalExtensions, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
+							scheduledPrefixContributionRows);
+				}
 			}
-			if (!budget.resourceLimitReached()) {
-				workUnits[0] += seedDenseCorrelatedGreedyIncumbent(rootFilterRelationId, inputJoinRelationId,
-						factors, filters, requiredProviderMasks, requiredProviderStarts, adjacency, states,
-						legalExtensions, prefixRelations, prefixContributionRows, scheduledPrefixRelations,
-						scheduledPrefixContributionRows);
-			}
+		} catch (PackedProviderWork.Exhausted refused) {
+			absorbProviderStop(refused);
+			providerStopped = true;
+			workUnits[0] = Math.max(workUnits[0], saturatedInt(budget.workUnits() - stopWorkStart));
 		}
 		if (splitSeedPhase && seededStates != null && seededStates.available) {
 			retainSeededCorrelatedLattice(rootFilterRelationId, inputJoinRelationId, factors, filters, seededStates,
@@ -4251,44 +4361,52 @@ final class PackedJoinEnumerator {
 		int fullNoFilterKey = states.key(states.fullSet, 0);
 		int fullInputKey = states.key(states.fullSet, inputFilterSet);
 		int fullAppliedKey = states.key(states.fullSet, states.fullFilterSet);
-		boolean stopped = !enumerateAlternatives;
-		if (enumerateAlternatives) {
-			stopped = false;
-			int[] targetFilterSets = new int[query.relationCount() + 3];
-			int targetFilterSetCount = 0;
-			targetFilterSets[targetFilterSetCount++] = states.fullFilterSet;
-			targetFilterSets[targetFilterSetCount++] = inputFilterSet;
-			targetFilterSets[targetFilterSetCount++] = 0;
-			int[] canonicalRelations = canonicalContextualOperatorRelationIds();
-			for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
-				int representedFilterSet = canonicalSemanticFilterSet(relationId, filters, canonicalRelations);
-				boolean duplicateTarget = false;
-				for (int previous = 0; previous < targetFilterSetCount; previous++) {
-					duplicateTarget |= targetFilterSets[previous] == representedFilterSet;
+		boolean stopped = !enumerateAlternatives || providerStopped;
+		if (enumerateAlternatives && !providerStopped) {
+			try {
+				stopped = false;
+				int[] targetFilterSets = new int[query.relationCount() + 3];
+				int targetFilterSetCount = 0;
+				targetFilterSets[targetFilterSetCount++] = states.fullFilterSet;
+				targetFilterSets[targetFilterSetCount++] = inputFilterSet;
+				targetFilterSets[targetFilterSetCount++] = 0;
+				int[] canonicalRelations = canonicalContextualOperatorRelationIds();
+				for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+					int representedFilterSet = canonicalSemanticFilterSet(relationId, filters, canonicalRelations);
+					boolean duplicateTarget = false;
+					for (int previous = 0; previous < targetFilterSetCount; previous++) {
+						duplicateTarget |= targetFilterSets[previous] == representedFilterSet;
+					}
+					if (!duplicateTarget) {
+						targetFilterSets[targetFilterSetCount++] = representedFilterSet;
+					}
 				}
-				if (!duplicateTarget) {
-					targetFilterSets[targetFilterSetCount++] = representedFilterSet;
+				for (int targetOrdinal = 0; targetOrdinal < targetFilterSetCount; targetOrdinal++) {
+					if (!costDenseCorrelatedTarget(rootFilterRelationId, inputJoinRelationId,
+							factors, filters, requiredProviderMasks, requiredProviderStarts, adjacency, states,
+							targetFilterSets[targetOrdinal], hypergraph, legalExtensions, prefixRelations,
+							prefixContributionRows,
+							scheduledPrefixRelations, scheduledPrefixContributionRows, workUnits, false)) {
+						stopped = true;
+						break;
+					}
 				}
-			}
-			for (int targetOrdinal = 0; targetOrdinal < targetFilterSetCount; targetOrdinal++) {
-				if (!costDenseCorrelatedTarget(rootFilterRelationId, inputJoinRelationId,
-						factors, filters, requiredProviderMasks, requiredProviderStarts, adjacency, states,
-						targetFilterSets[targetOrdinal], hypergraph, legalExtensions, prefixRelations,
-						prefixContributionRows,
-						scheduledPrefixRelations, scheduledPrefixContributionRows, workUnits, false)) {
+				if (!stopped && completeCorrelatedFrontierFits(factors.length, filters.length, states)
+						&& !costDenseCorrelatedTarget(rootFilterRelationId, inputJoinRelationId, factors, filters,
+								requiredProviderMasks, requiredProviderStarts, adjacency, states,
+								states.fullFilterSet, hypergraph, legalExtensions, prefixRelations,
+								prefixContributionRows,
+								scheduledPrefixRelations, scheduledPrefixContributionRows, workUnits, true)) {
 					stopped = true;
-					break;
 				}
-			}
-			if (!stopped && completeCorrelatedFrontierFits(factors.length, filters.length, states)
-					&& !costDenseCorrelatedTarget(rootFilterRelationId, inputJoinRelationId, factors, filters,
-							requiredProviderMasks, requiredProviderStarts, adjacency, states,
-							states.fullFilterSet, hypergraph, legalExtensions, prefixRelations, prefixContributionRows,
-							scheduledPrefixRelations, scheduledPrefixContributionRows, workUnits, true)) {
+			} catch (PackedProviderWork.Exhausted refused) {
+				absorbProviderStop(refused);
 				stopped = true;
+				workUnits[0] = Math.max(workUnits[0], saturatedInt(budget.workUnits() - stopWorkStart));
 			}
 		}
 		boolean searchCompleted = !stopped
+				&& budget.absorbedProviderStops() == absorbedStopsAtStart
 				&& states.exactStateKeys[fullNoFilterKey] != 0
 				&& states.exactStateKeys[fullInputKey] != 0
 				&& states.exactStateKeys[fullAppliedKey] != 0;
@@ -4774,6 +4892,7 @@ final class PackedJoinEnumerator {
 		if (!completeFrontier && states.exactStateKeys[targetKey] != 0) {
 			return true;
 		}
+		long absorbedStops = budget.absorbedProviderStops();
 		if (!completeFrontier && targetFilterSet == states.fullFilterSet) {
 			workUnits[0] += completeRetainedAccessBoundaryIncumbents(rootFilterRelationId, inputJoinRelationId,
 					factors, filters, requiredProviderMasks, requiredProviderStarts, adjacency, states, hypergraph,
@@ -4822,6 +4941,14 @@ final class PackedJoinEnumerator {
 			if ((nodeSet & ~targetNodeSet) != 0) {
 				continue;
 			}
+			if (budget.absorbedProviderStops() != absorbedStops) {
+				/*
+				 * A refusal absorbed by an earlier transition's nested search left that transition unexplored, and a
+				 * cheaper path may run through it. Neither this state nor the target is exact; stop so the open cut
+				 * keeps the transition for a continuation.
+				 */
+				return false;
+			}
 			if (!completeFrontier && stateKey == targetKey) {
 				states.exactStateKeys[targetKey] = 1;
 				return true;
@@ -4856,6 +4983,10 @@ final class PackedJoinEnumerator {
 					return false;
 				}
 			}
+		}
+		if (budget.absorbedProviderStops() != absorbedStops) {
+			// The last expansion absorbed a refusal; the target may be reachable only through that unpriced transition.
+			return false;
 		}
 		if (completeFrontier) {
 			return true;
@@ -4893,11 +5024,31 @@ final class PackedJoinEnumerator {
 		return left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
 	}
 
+	/**
+	 * Costs one filter transition and only then marks it explored. A provider refusal abandons the transition before it
+	 * is marked, and a refusal absorbed by a nested contextual search inside it leaves it unmarked too, so a retained
+	 * lattice keeps it in its open cut and never certifies completeness without it. Such a transition also publishes no
+	 * state: without its subquery's contextual winner the predicate would fall back to the context-free subquery price,
+	 * which is not the price of this transition.
+	 */
 	private int costDenseCorrelatedFilterTransition(int[] factors, int[] filters, int[] requiredProviderMasks,
 			int[] requiredProviderStarts, int[] adjacency, DenseCorrelatedStates states, int state,
 			int filterOrdinal, int[] scheduledPrefixRelations,
 			double[] scheduledPrefixContributionRows) {
-		states.exploredNodeMasks[state] |= 1 << (factors.length + filterOrdinal);
+		long absorbedStops = budget.absorbedProviderStops();
+		int workUnits = costDenseCorrelatedFilterTransitionCandidate(factors, filters, requiredProviderMasks,
+				requiredProviderStarts, adjacency, states, state, filterOrdinal, scheduledPrefixRelations,
+				scheduledPrefixContributionRows, absorbedStops);
+		if (budget.absorbedProviderStops() == absorbedStops) {
+			states.exploredNodeMasks[state] |= 1 << (factors.length + filterOrdinal);
+		}
+		return workUnits;
+	}
+
+	private int costDenseCorrelatedFilterTransitionCandidate(int[] factors, int[] filters,
+			int[] requiredProviderMasks, int[] requiredProviderStarts, int[] adjacency, DenseCorrelatedStates states,
+			int state, int filterOrdinal, int[] scheduledPrefixRelations,
+			double[] scheduledPrefixContributionRows, long absorbedStops) {
 		int stateKey = states.stateKeys[state];
 		int subset = denseFilterSubset(stateKey, states.stateCount);
 		int appliedFilterSet = denseFilterSet(stateKey, states.stateCount);
@@ -4909,9 +5060,12 @@ final class PackedJoinEnumerator {
 		int workUnits = costScheduledFilter(filterRelationId, scheduledPrefixRelations,
 				scheduledPrefixContributionRows, prefixCount, states.rows[state], states.costs[state],
 				states.evidenceStateIds[state], states.costCompletionIds[state]);
+		if (budget.absorbedProviderStops() != absorbedStops) {
+			return workUnits + 1;
+		}
 		int filterBit = 1 << filterOrdinal;
 		int targetKey = states.key(subset, appliedFilterSet | filterBit);
-		double candidateCost = Math.max(states.costs[state], completeOperatorWork(states.costs[state], costEstimate));
+		double candidateCost = Math.max(states.costs[state], scheduledFilterCompleteCost);
 		if (!finiteNonNegative(candidateCost)) {
 			return workUnits + 1;
 		}
@@ -4968,10 +5122,26 @@ final class PackedJoinEnumerator {
 				factorOrdinal, prefixRelations, prefixContributionRows, true);
 	}
 
+	/**
+	 * Costs one factor transition and only then marks it explored. A provider refusal abandons the transition before it
+	 * is marked, and a refusal absorbed by a nested contextual search inside it leaves it unmarked too, so a retained
+	 * lattice keeps it in its open cut and never certifies completeness without it.
+	 */
 	private int costDenseCorrelatedAppend(int rootFilterRelationId, int inputJoinRelationId, int[] factors,
 			DenseCorrelatedStates states, int state, int factorOrdinal, int[] prefixRelations,
 			double[] prefixContributionRows, boolean reuseExistingContextualFactor) {
-		states.exploredNodeMasks[state] |= 1 << factorOrdinal;
+		long absorbedStops = budget.absorbedProviderStops();
+		int workUnits = costDenseCorrelatedAppendCandidate(rootFilterRelationId, inputJoinRelationId, factors, states,
+				state, factorOrdinal, prefixRelations, prefixContributionRows, reuseExistingContextualFactor);
+		if (budget.absorbedProviderStops() == absorbedStops) {
+			states.exploredNodeMasks[state] |= 1 << factorOrdinal;
+		}
+		return workUnits;
+	}
+
+	private int costDenseCorrelatedAppendCandidate(int rootFilterRelationId, int inputJoinRelationId,
+			int[] factors, DenseCorrelatedStates states, int state, int factorOrdinal, int[] prefixRelations,
+			double[] prefixContributionRows, boolean reuseExistingContextualFactor) {
 		contextualFactorWorkUnits = 0;
 		int stateKey = states.stateKeys[state];
 		int subset = denseFilterSubset(stateKey, states.stateCount);
@@ -5021,7 +5191,7 @@ final class PackedJoinEnumerator {
 			candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 					prefixCount, factors[factorOrdinal], candidateRows);
 			factorContributionRows = rowComposition.factorContributionRows();
-			if (finiteNonNegative(costEstimate.workRows())) {
+			if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 				factorWork = objectiveWork(costEstimate);
 			}
 			if (retainedContextualWinnerId == 0) {
@@ -5240,10 +5410,11 @@ final class PackedJoinEnumerator {
 			}
 		}
 		if (!costedTypedAlternative) {
-			costScheduledFilterImplementation(filterRelationId, filterRelationId,
+			bestWork = costScheduledFilterImplementation(filterRelationId, filterRelationId,
 					prefixRelations, prefixContributionRows, prefixCount, inputRows, inputWork,
 					inputEvidenceStateId, semanticScopeMaskId, costEstimate, parentCompletion);
 		}
+		scheduledFilterCompleteCost = bestWork;
 		return dependentWorkUnits;
 	}
 
@@ -5278,31 +5449,39 @@ final class PackedJoinEnumerator {
 				totalWork = refinedOperatorWork(inputWork, estimate);
 			}
 		}
-		if (!estimate.dependentSubqueriesCosted()) {
-			double dependentCost = PackedDependentSubqueryCosting.contextualCost(query, memo, filterRelationId,
-					prefixRelations, prefixContributionRows, prefixCount, inputRows, inputEvidenceStateId, 0, 0,
-					semanticScopeMaskId, inputRows);
-			if (dependentCost > 0.0d) {
-				if (estimate.hasExplicitPhysicalCost()) {
-					boolean localOperatorCost = estimate.costScope() == PackedCostEstimate.CostScope.LOCAL;
-					estimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
-							0.0d);
-					if (localOperatorCost) {
-						/* The embedded subquery is local FILTER work; the relational input remains a separate child. */
-						estimate.setReplacesChildWork(false);
-					}
-					totalWork = completeOperatorWork(inputWork, estimate);
-				} else {
-					totalWork = saturatedAdd(totalWork, dependentCost, 0.0d);
-				}
+		double dependentCost = 0.0d;
+		boolean hasUnrepresentedSubquery = !estimate.dependentSubqueriesCosted()
+				&& PackedDependentSubqueryCosting.hasSubquery(query, filterRelationId);
+		if (hasUnrepresentedSubquery) {
+			if (dependentCostSummary == null) {
+				dependentCostSummary = new PackedDependentSubqueryCosting.Summary();
 			}
+			PackedDependentSubqueryCosting.contextualCost(query, memo, filterRelationId,
+					prefixRelations, prefixContributionRows, prefixCount, inputRows, inputEvidenceStateId, 0, 0,
+					semanticScopeMaskId, inputRows, dependentCostSummary);
+			dependentCost = dependentCostSummary.point();
 		}
 		if (estimate.hasExplicitPhysicalCost()) {
+			totalWork = completeOperatorWork(inputWork, estimate);
+			if (hasUnrepresentedSubquery) {
+				double scopedCost = estimate.costScope() == PackedCostEstimate.CostScope.LOCAL
+						? objectiveWork(estimate)
+						: totalWork;
+				estimate.setPhysicalCostWithUnknownChild(saturatedAdd(scopedCost, dependentCost, 0.0d));
+				totalWork = saturatedAdd(totalWork, dependentCost, 0.0d);
+			}
 			estimate.setContextualOutputRowsPreservingPhysicalCost(outputRows);
 		} else {
+			totalWork = saturatedAdd(totalWork, dependentCost, 0.0d);
+			if (hasUnrepresentedSubquery) {
+				estimate.rebaseObjective(totalWork);
+			}
 			estimate.setContextualRows(outputRows, totalWork);
 		}
-		return completeOperatorWork(inputWork, estimate);
+		if (hasUnrepresentedSubquery) {
+			dependentCostSummary.applyLifecycle(estimate);
+		}
+		return totalWork;
 	}
 
 	private static int denseFilterState(int stateCount, int subset, int appliedFilterSet) {
@@ -5459,12 +5638,22 @@ final class PackedJoinEnumerator {
 	}
 
 	private int optimizeDense(int rootRelationId, int[] factors, int fixedFirstOrdinal) {
-		int factorCount = factors.length;
-		int requiredFirstBit = fixedFirstOrdinal < 0 ? 0 : 1 << fixedFirstOrdinal;
-		DenseJoinStates states = new DenseJoinStates(factorCount, budget, memo);
+		DenseJoinStates states = new DenseJoinStates(factors.length, budget, memo);
 		if (!states.available) {
 			return 0;
 		}
+		// A deadline past which nothing priced is retained asks whether this region's stop would publish a priced plan.
+		budget.enterRegion(rootRelationId, () -> publishesPricedDenseTerminal(rootRelationId, states));
+		try {
+			return optimizeDense(rootRelationId, factors, fixedFirstOrdinal, states);
+		} finally {
+			budget.exitRegion();
+		}
+	}
+
+	private int optimizeDense(int rootRelationId, int[] factors, int fixedFirstOrdinal, DenseJoinStates states) {
+		int factorCount = factors.length;
+		int requiredFirstBit = fixedFirstOrdinal < 0 ? 0 : 1 << fixedFirstOrdinal;
 		int[] prefixRelations = costSession == null ? null : new int[factorCount];
 		double[] prefixContributionRows = costSession == null ? null : new double[factorCount];
 		int anyPropertyId = memo.anyPropertyId();
@@ -5479,126 +5668,135 @@ final class PackedJoinEnumerator {
 		}
 
 		int[] legalExtensions = dphypSingletonExtensions(factors);
-		int workUnits = costSession == null || factorCount == 2
-				? 0
-				: seedDenseCostedIncumbent(rootRelationId, factors, fixedFirstOrdinal, states, legalExtensions,
-						prefixRelations, prefixContributionRows);
-		boolean boundedBushyTurnTaken = false;
-		if (budget.isBounded() && costSession != null && factorCount >= 4
-				&& states.bestStateIds[states.fullSet] != 0 && !budget.resourceLimitReached()) {
-			int bushyWorkUnits = costDenseBushyPartitions(rootRelationId, factors, states, requiredFirstBit, 1L);
-			workUnits += bushyWorkUnits;
-			boundedBushyTurnTaken = bushyWorkUnits != 0;
-		}
-		if (factorCount == 2) {
-			int firstOrdinal = fixedFirstOrdinal < 0 ? 0 : fixedFirstOrdinal;
-			int lastOrdinal = fixedFirstOrdinal < 0 ? factorCount : fixedFirstOrdinal + 1;
-			for (int prefixOrdinal = firstOrdinal; prefixOrdinal < lastOrdinal; prefixOrdinal++) {
-				int prefixStateId = states.singletonStateIds[prefixOrdinal];
-				int prefixSubset = states.subsets[prefixStateId];
-				int factorBit = legalExtensions[prefixSubset] & ~prefixSubset;
-				if (factorBit == 0 || !budget.tryConsume()) {
-					break;
-				}
-				workUnits += costDenseAppend(rootRelationId, factors, states, prefixStateId,
-						Integer.numberOfTrailingZeros(factorBit), prefixRelations, prefixContributionRows);
+		int workUnits = 0;
+		long workStart = budget.workUnits();
+		boolean providerStopped = false;
+		try {
+			workUnits = costSession == null || factorCount == 2
+					? 0
+					: seedDenseCostedIncumbent(rootRelationId, factors, fixedFirstOrdinal, states, legalExtensions,
+							prefixRelations, prefixContributionRows);
+			boolean boundedBushyTurnTaken = false;
+			if (budget.isBounded() && costSession != null && factorCount >= 4
+					&& states.bestStateIds[states.fullSet] != 0 && !budget.resourceLimitReached()) {
+				int bushyWorkUnits = costDenseBushyPartitions(rootRelationId, factors, states, requiredFirstBit, 1L);
+				workUnits += bushyWorkUnits;
+				boundedBushyTurnTaken = bushyWorkUnits != 0;
 			}
-		} else {
-			PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(1 << factorCount, budget);
-			for (int stateId = 1; stateId <= states.size; stateId++) {
-				if (states.paretoActive(stateId)
-						&& denseCandidateSatisfiesRequiredFirst(states, stateId, states.subsets[stateId],
-								requiredFirstBit)) {
-					pendingStates.offer(stateId, 1, states.costs[stateId]);
-				}
-			}
-			denseSearch: while (!pendingStates.isEmpty()) {
-				int stateId = pendingStates.pollStateId();
-				if (!states.paretoActive(stateId)
-						|| Double.compare(states.costs[stateId], pendingStates.polledCost()) != 0) {
-					continue;
-				}
-				int subset = states.subsets[stateId];
-				int bestTerminalStateId = states.bestStateIds[states.fullSet];
-				if (bestTerminalStateId != 0 && states.costs[stateId] > states.costs[bestTerminalStateId]) {
-					break;
-				}
-				if (subset == states.fullSet && stateId == bestTerminalStateId && !boundedBushyTurnTaken
-						&& budget.isBounded() && costSession != null && factorCount >= 4) {
-					/*
-					 * Costs are monotone along every retained continuation, so the first current terminal removed from
-					 * the cost queue is the settled left-deep incumbent. Spend the bounded bushy turn only here:
-					 * starting it when an arbitrary terminal is merely generated can exhaust the remaining budget
-					 * before a cheaper queued continuation reaches the root.
-					 */
-					int bushyWorkUnits = costDenseBushyPartitions(rootRelationId, factors, states,
-							requiredFirstBit);
-					workUnits += bushyWorkUnits;
-					boundedBushyTurnTaken = bushyWorkUnits != 0;
-					if (budget.exhausted()) {
+			if (factorCount == 2) {
+				int firstOrdinal = fixedFirstOrdinal < 0 ? 0 : fixedFirstOrdinal;
+				int lastOrdinal = fixedFirstOrdinal < 0 ? factorCount : fixedFirstOrdinal + 1;
+				for (int prefixOrdinal = firstOrdinal; prefixOrdinal < lastOrdinal; prefixOrdinal++) {
+					int prefixStateId = states.singletonStateIds[prefixOrdinal];
+					int prefixSubset = states.subsets[prefixStateId];
+					int factorBit = legalExtensions[prefixSubset] & ~prefixSubset;
+					if (factorBit == 0 || !budget.tryConsume()) {
 						break;
 					}
-					bestTerminalStateId = states.bestStateIds[states.fullSet];
-				}
-				if (subset == states.fullSet && bestTerminalStateId != 0
-						&& pendingStates.minimumCost() > states.costs[bestTerminalStateId]) {
-					break;
-				}
-				for (int missing = legalExtensions[subset]; missing != 0; missing &= missing - 1) {
-					int factorBit = missing & -missing;
-					if ((subset & factorBit) != 0) {
-						continue;
-					}
-					int combined = subset | factorBit;
-					if (!denseCandidateSatisfiesRequiredFirst(states, stateId, combined, requiredFirstBit)) {
-						continue;
-					}
-					if (states.hasLeftDeepTransition(stateId, factorBit)) {
-						continue;
-					}
-					if (!budget.tryConsume()) {
-						break denseSearch;
-					}
-					workUnits += costDenseAppend(rootRelationId, factors, states, stateId,
+					workUnits += costDenseAppend(rootRelationId, factors, states, prefixStateId,
 							Integer.numberOfTrailingZeros(factorBit), prefixRelations, prefixContributionRows);
-					int firstRetainedStateId = states.firstRetainedStateId;
-					if (firstRetainedStateId != 0) {
-						for (int retainedStateId = firstRetainedStateId; retainedStateId <= states.lastRetainedStateId; retainedStateId++) {
-							if (states.paretoActive(retainedStateId)) {
-								pendingStates.offer(retainedStateId, 1, states.costs[retainedStateId]);
-							}
-						}
+				}
+			} else {
+				PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(1 << factorCount, budget);
+				for (int stateId = 1; stateId <= states.size; stateId++) {
+					if (states.paretoActive(stateId)
+							&& denseCandidateSatisfiesRequiredFirst(states, stateId, states.subsets[stateId],
+									requiredFirstBit)) {
+						pendingStates.offer(stateId, 1, states.costs[stateId]);
 					}
-					if (!boundedBushyTurnTaken && budget.isBounded() && costSession != null
-							&& factorCount >= 4 && states.bestStateIds[states.fullSet] != 0
-							&& !budget.resourceLimitReached()) {
-						int firstBushyStateId = states.size + 1;
+				}
+				denseSearch: while (!pendingStates.isEmpty()) {
+					int stateId = pendingStates.pollStateId();
+					if (!states.paretoActive(stateId)
+							|| Double.compare(states.costs[stateId], pendingStates.polledCost()) != 0) {
+						continue;
+					}
+					int subset = states.subsets[stateId];
+					int bestTerminalStateId = states.bestStateIds[states.fullSet];
+					if (bestTerminalStateId != 0 && !pendingStates.hasUnavailableCost()
+							&& states.costs[stateId] > states.costs[bestTerminalStateId]) {
+						break;
+					}
+					if (subset == states.fullSet && stateId == bestTerminalStateId && !boundedBushyTurnTaken
+							&& budget.isBounded() && costSession != null && factorCount >= 4) {
+						/*
+						 * Costs are monotone along every retained continuation, so the first current terminal removed
+						 * from the cost queue is the settled left-deep incumbent. Spend the bounded bushy turn only
+						 * here: starting it when an arbitrary terminal is merely generated can exhaust the remaining
+						 * budget before a cheaper queued continuation reaches the root.
+						 */
 						int bushyWorkUnits = costDenseBushyPartitions(rootRelationId, factors, states,
-								requiredFirstBit, 1L);
+								requiredFirstBit);
 						workUnits += bushyWorkUnits;
 						boundedBushyTurnTaken = bushyWorkUnits != 0;
-						for (int retainedStateId = firstBushyStateId; retainedStateId <= states.size; retainedStateId++) {
-							if (states.paretoActive(retainedStateId)) {
-								pendingStates.offer(retainedStateId, 1, states.costs[retainedStateId]);
+						if (budget.exhausted()) {
+							break;
+						}
+						bestTerminalStateId = states.bestStateIds[states.fullSet];
+					}
+					if (subset == states.fullSet && bestTerminalStateId != 0
+							&& pendingStates.minimumCost() > states.costs[bestTerminalStateId]) {
+						break;
+					}
+					for (int missing = legalExtensions[subset]; missing != 0; missing &= missing - 1) {
+						int factorBit = missing & -missing;
+						if ((subset & factorBit) != 0) {
+							continue;
+						}
+						int combined = subset | factorBit;
+						if (!denseCandidateSatisfiesRequiredFirst(states, stateId, combined, requiredFirstBit)) {
+							continue;
+						}
+						if (states.hasLeftDeepTransition(stateId, factorBit)) {
+							continue;
+						}
+						if (!budget.tryConsume()) {
+							break denseSearch;
+						}
+						workUnits += costDenseAppend(rootRelationId, factors, states, stateId,
+								Integer.numberOfTrailingZeros(factorBit), prefixRelations, prefixContributionRows);
+						int firstRetainedStateId = states.firstRetainedStateId;
+						if (firstRetainedStateId != 0) {
+							for (int retainedStateId = firstRetainedStateId; retainedStateId <= states.lastRetainedStateId; retainedStateId++) {
+								if (states.paretoActive(retainedStateId)) {
+									pendingStates.offer(retainedStateId, 1, states.costs[retainedStateId]);
+								}
 							}
 						}
-						if (budget.exhausted()) {
-							break denseSearch;
+						if (!boundedBushyTurnTaken && budget.isBounded() && costSession != null
+								&& factorCount >= 4 && states.bestStateIds[states.fullSet] != 0
+								&& !budget.resourceLimitReached()) {
+							int firstBushyStateId = states.size + 1;
+							int bushyWorkUnits = costDenseBushyPartitions(rootRelationId, factors, states,
+									requiredFirstBit, 1L);
+							workUnits += bushyWorkUnits;
+							boundedBushyTurnTaken = bushyWorkUnits != 0;
+							for (int retainedStateId = firstBushyStateId; retainedStateId <= states.size; retainedStateId++) {
+								if (states.paretoActive(retainedStateId)) {
+									pendingStates.offer(retainedStateId, 1, states.costs[retainedStateId]);
+								}
+							}
+							if (budget.exhausted()) {
+								break denseSearch;
+							}
 						}
 					}
 				}
 			}
+			if (costSession != null && factorCount >= 4 && !boundedBushyTurnTaken && !budget.resourceLimitReached()) {
+				workUnits += costDenseBushyPartitions(rootRelationId, factors, states, requiredFirstBit);
+			}
+		} catch (PackedProviderWork.Exhausted refused) {
+			absorbProviderStop(refused);
+			providerStopped = true;
+			workUnits = Math.max(workUnits, saturatedInt(budget.workUnits() - workStart));
 		}
-		if (costSession != null && factorCount >= 4 && !boundedBushyTurnTaken && !budget.resourceLimitReached()) {
-			workUnits += costDenseBushyPartitions(rootRelationId, factors, states, requiredFirstBit);
-		}
-		int rootGroupId = memo.logicalGroupId(rootRelationId);
-		int rootWinnerId = memo.findWinner(rootGroupId, anyPropertyId, 0, 0, 0);
 		int terminalStateId = states.bestStateIds[states.fullSet];
 		if (terminalStateId == 0 || states.parentStateIds[terminalStateId] == 0) {
-			return workUnits + optimizeGreedy(rootRelationId, factors, fixedFirstOrdinal);
+			// The greedy fallback costs new candidates; after a provider stop only retained states may be published.
+			return providerStopped ? workUnits : workUnits + optimizeGreedy(rootRelationId, factors, fixedFirstOrdinal);
 		}
-		if (costSession != null || states.costs[terminalStateId] < memo.winnerTotalCost(rootWinnerId)) {
+		if (publishesDenseTerminal(rootRelationId, states, terminalStateId)) {
 			if (costSession == null) {
 				emitDenseWinner(rootRelationId, factors, terminalStateId, states.parentStateIds,
 						states.appendedFactorBits);
@@ -5613,6 +5811,23 @@ final class PackedJoinEnumerator {
 			}
 		}
 		return workUnits;
+	}
+
+	/** Whether this region's retained complete candidate is published as the region's winner when its search ends. */
+	private boolean publishesDenseTerminal(int rootRelationId, DenseJoinStates states, int terminalStateId) {
+		return costSession != null || states.costs[terminalStateId] < memo.winnerTotalCost(
+				memo.findWinner(memo.logicalGroupId(rootRelationId), memo.anyPropertyId(), 0, 0, 0));
+	}
+
+	/**
+	 * Whether the region's search, if it stopped now, would publish a priced complete candidate: the same retained
+	 * terminal and the same publication condition that the end of {@link #optimizeDense} uses. Constant time.
+	 */
+	private boolean publishesPricedDenseTerminal(int rootRelationId, DenseJoinStates states) {
+		int terminalStateId = states.bestStateIds[states.fullSet];
+		return terminalStateId != 0 && states.parentStateIds[terminalStateId] != 0
+				&& Double.isFinite(states.costs[terminalStateId])
+				&& publishesDenseTerminal(rootRelationId, states, terminalStateId);
 	}
 
 	private int optimizeDenseWithInheritedPrefix(int rootRelationId, int[] factors, int[] inheritedRelations,
@@ -5640,77 +5855,84 @@ final class PackedJoinEnumerator {
 		}
 
 		int workUnits = 0;
-		for (int offset = 0; offset < factorCount; offset++) {
-			int ordinal = requiredFirstOrdinal < 0 ? offset : (requiredFirstOrdinal + offset) % factorCount;
-			if (!budget.tryConsume()) {
-				contextualFactorWorkUnits = workUnits;
-				return defaultWinnerId;
+		long stopWorkStart = budget.workUnits();
+		try {
+			for (int offset = 0; offset < factorCount; offset++) {
+				int ordinal = requiredFirstOrdinal < 0 ? offset : (requiredFirstOrdinal + offset) % factorCount;
+				if (!budget.tryConsume()) {
+					contextualFactorWorkUnits = workUnits;
+					return defaultWinnerId;
+				}
+				workUnits += costDenseInheritedSingleton(factors, states, ordinal, prefixRelations,
+						prefixContributionRows, inheritedCount, inheritedRows, inheritedEvidenceStateId,
+						bindingLayoutId, correlationMaskId, semanticScopeMaskId, inheritedCostEventId, inputContextId);
+				if (states.singletonStateIds[ordinal] == 0) {
+					contextualFactorWorkUnits = workUnits;
+					return defaultWinnerId;
+				}
 			}
-			workUnits += costDenseInheritedSingleton(factors, states, ordinal, prefixRelations,
-					prefixContributionRows, inheritedCount, inheritedRows, inheritedEvidenceStateId,
-					bindingLayoutId, correlationMaskId, semanticScopeMaskId, inheritedCostEventId, inputContextId);
-			if (states.singletonStateIds[ordinal] == 0) {
-				contextualFactorWorkUnits = workUnits;
-				return defaultWinnerId;
-			}
-		}
 
-		int[] legalExtensions = dphypSingletonExtensions(factors);
-		PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(1 << factorCount, budget);
-		for (int stateId = 1; stateId <= states.size; stateId++) {
-			if (states.paretoActive(stateId)
-					&& denseCandidateSatisfiesRequiredFirst(states, stateId, states.subsets[stateId],
-							requiredFirstBit)) {
-				pendingStates.offer(stateId, 1, states.costs[stateId]);
+			int[] legalExtensions = dphypSingletonExtensions(factors);
+			PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(1 << factorCount, budget);
+			for (int stateId = 1; stateId <= states.size; stateId++) {
+				if (states.paretoActive(stateId)
+						&& denseCandidateSatisfiesRequiredFirst(states, stateId, states.subsets[stateId],
+								requiredFirstBit)) {
+					pendingStates.offer(stateId, 1, states.costs[stateId]);
+				}
 			}
-		}
-		denseInheritedSearch: while (!pendingStates.isEmpty()) {
-			int stateId = pendingStates.pollStateId();
-			if (!states.paretoActive(stateId)
-					|| Double.compare(states.costs[stateId], pendingStates.polledCost()) != 0) {
-				continue;
-			}
-			int subset = states.subsets[stateId];
-			int bestTerminalStateId = states.bestStateIds[states.fullSet];
-			if (bestTerminalStateId != 0 && states.costs[stateId] > states.costs[bestTerminalStateId]) {
-				break;
-			}
-			if (subset == states.fullSet) {
-				if (bestTerminalStateId != 0
-						&& pendingStates.minimumCost() > states.costs[bestTerminalStateId]) {
+			denseInheritedSearch: while (!pendingStates.isEmpty()) {
+				int stateId = pendingStates.pollStateId();
+				if (!states.paretoActive(stateId)
+						|| Double.compare(states.costs[stateId], pendingStates.polledCost()) != 0) {
+					continue;
+				}
+				int subset = states.subsets[stateId];
+				int bestTerminalStateId = states.bestStateIds[states.fullSet];
+				if (bestTerminalStateId != 0 && !pendingStates.hasUnavailableCost()
+						&& states.costs[stateId] > states.costs[bestTerminalStateId]) {
 					break;
 				}
-				continue;
-			}
-			for (int missing = legalExtensions[subset] & ~subset; missing != 0; missing &= missing - 1) {
-				int factorBit = missing & -missing;
-				int combined = subset | factorBit;
-				if (!denseCandidateSatisfiesRequiredFirst(states, stateId, combined, requiredFirstBit)) {
+				if (subset == states.fullSet) {
+					if (bestTerminalStateId != 0
+							&& pendingStates.minimumCost() > states.costs[bestTerminalStateId]) {
+						break;
+					}
 					continue;
 				}
-				if (states.hasLeftDeepTransition(stateId, factorBit)) {
-					continue;
-				}
-				if (!budget.tryConsume()) {
-					break denseInheritedSearch;
-				}
-				workUnits += costDenseInheritedAppend(rootRelationId, factors, states, stateId,
-						Integer.numberOfTrailingZeros(factorBit), prefixRelations, prefixContributionRows,
-						inheritedCount, inheritedRows, bindingLayoutId, correlationMaskId,
-						semanticScopeMaskId);
-				if (states.firstRetainedStateId != 0) {
-					for (int retainedStateId = states.firstRetainedStateId; retainedStateId <= states.lastRetainedStateId; retainedStateId++) {
-						if (states.paretoActive(retainedStateId)) {
-							pendingStates.offer(retainedStateId, 1, states.costs[retainedStateId]);
+				for (int missing = legalExtensions[subset] & ~subset; missing != 0; missing &= missing - 1) {
+					int factorBit = missing & -missing;
+					int combined = subset | factorBit;
+					if (!denseCandidateSatisfiesRequiredFirst(states, stateId, combined, requiredFirstBit)) {
+						continue;
+					}
+					if (states.hasLeftDeepTransition(stateId, factorBit)) {
+						continue;
+					}
+					if (!budget.tryConsume()) {
+						break denseInheritedSearch;
+					}
+					workUnits += costDenseInheritedAppend(rootRelationId, factors, states, stateId,
+							Integer.numberOfTrailingZeros(factorBit), prefixRelations, prefixContributionRows,
+							inheritedCount, inheritedRows, bindingLayoutId, correlationMaskId,
+							semanticScopeMaskId);
+					if (states.firstRetainedStateId != 0) {
+						for (int retainedStateId = states.firstRetainedStateId; retainedStateId <= states.lastRetainedStateId; retainedStateId++) {
+							if (states.paretoActive(retainedStateId)) {
+								pendingStates.offer(retainedStateId, 1, states.costs[retainedStateId]);
+							}
 						}
 					}
 				}
 			}
-		}
-		if (factorCount >= 4 && !budget.resourceLimitReached()) {
-			workUnits += costDenseInheritedBushyPartitions(rootRelationId, factors, states, requiredFirstBit,
-					prefixRelations, prefixContributionRows, inheritedCount, inheritedRows, bindingLayoutId,
-					correlationMaskId, semanticScopeMaskId);
+			if (factorCount >= 4 && !budget.resourceLimitReached()) {
+				workUnits += costDenseInheritedBushyPartitions(rootRelationId, factors, states, requiredFirstBit,
+						prefixRelations, prefixContributionRows, inheritedCount, inheritedRows, bindingLayoutId,
+						correlationMaskId, semanticScopeMaskId);
+			}
+		} catch (PackedProviderWork.Exhausted refused) {
+			absorbProviderStop(refused);
+			workUnits = Math.max(workUnits, saturatedInt(budget.workUnits() - stopWorkStart));
 		}
 
 		contextualFactorWorkUnits = workUnits;
@@ -5743,6 +5965,10 @@ final class PackedJoinEnumerator {
 				bindingLayoutId, correlationMaskId, semanticScopeMaskId);
 		setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factorRelationId);
 		costSession.estimate(factorRelationId, costContext, costEstimate);
+		if (unavailableFactorWork(costEstimate, factorWork)) {
+			budget.markUnavailableCostComparison();
+			return 1;
+		}
 		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
 				inputContextId,
 				contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
@@ -5751,7 +5977,7 @@ final class PackedJoinEnumerator {
 		outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factorRelationId, outputRows);
 		double factorContributionRows = rowComposition.factorContributionRows();
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			factorWork = objectiveWork(costEstimate);
 		}
 		double iteratorProbeWork = iteratorProbeWork(costEstimate);
@@ -5828,7 +6054,7 @@ final class PackedJoinEnumerator {
 		candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factorRelationId, candidateRows);
 		factorContributionRows = rowComposition.factorContributionRows();
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			factorWork = objectiveWork(costEstimate);
 		}
 		factorWinnerId = contextualizeDependentFactor(factorRelationId, defaultFactorWinnerId,
@@ -6125,19 +6351,27 @@ final class PackedJoinEnumerator {
 		}
 
 		int workUnits = 0;
-		for (int offset = 0; offset < factorCount; offset++) {
-			int ordinal = requiredFirstOrdinal < 0 ? offset : (requiredFirstOrdinal + offset) % factorCount;
-			if (!budget.tryConsume()) {
-				contextualFactorWorkUnits = workUnits;
-				return defaultWinnerId;
+		long stopWorkStart = budget.workUnits();
+		try {
+			for (int offset = 0; offset < factorCount; offset++) {
+				int ordinal = requiredFirstOrdinal < 0 ? offset : (requiredFirstOrdinal + offset) % factorCount;
+				if (!budget.tryConsume()) {
+					contextualFactorWorkUnits = workUnits;
+					return defaultWinnerId;
+				}
+				workUnits += costWideInheritedSingleton(factors, nodeSets, states, ordinal, prefixRelations,
+						prefixContributionRows, inheritedCount, inheritedRows, inheritedEvidenceStateId,
+						bindingLayoutId, correlationMaskId, semanticScopeMaskId, inheritedCostEventId, inputContextId);
+				if (states.best(nodeSets.singleton(ordinal)) == 0) {
+					contextualFactorWorkUnits = workUnits;
+					return defaultWinnerId;
+				}
 			}
-			workUnits += costWideInheritedSingleton(factors, nodeSets, states, ordinal, prefixRelations,
-					prefixContributionRows, inheritedCount, inheritedRows, inheritedEvidenceStateId,
-					bindingLayoutId, correlationMaskId, semanticScopeMaskId, inheritedCostEventId, inputContextId);
-			if (states.best(nodeSets.singleton(ordinal)) == 0) {
-				contextualFactorWorkUnits = workUnits;
-				return defaultWinnerId;
-			}
+		} catch (PackedProviderWork.Exhausted refused) {
+			// No complete wide state can exist before every singleton is costed.
+			absorbProviderStop(refused);
+			contextualFactorWorkUnits = Math.max(workUnits, saturatedInt(budget.workUnits() - stopWorkStart));
+			return defaultWinnerId;
 		}
 		int fullNodeSetId = nodeSets.nodesBelowInclusive(factorCount - 1);
 		if (fullNodeSetId == 0) {
@@ -6150,73 +6384,80 @@ final class PackedJoinEnumerator {
 		 * a cost heuristic: it supplies only an executable upper bound, and every exact continuation below is still
 		 * queued.
 		 */
-		int seedFirstOrdinal = requiredFirstOrdinal < 0 ? 0 : requiredFirstOrdinal;
-		int seedStateId = states.best(nodeSets.singleton(seedFirstOrdinal));
-		for (int offset = 1; offset < factorCount && seedStateId != 0; offset++) {
-			int ordinal = (seedFirstOrdinal + offset) % factorCount;
-			if (!budget.tryReserveMandatoryCompletion(1L)) {
-				seedStateId = 0;
-				break;
-			}
-			int combinedNodeSetId = nodeSets.union(states.nodeSetIds[seedStateId], nodeSets.singleton(ordinal));
-			workUnits += costWideInheritedAppend(rootRelationId, factors, nodeSets, states, seedStateId,
-					ordinal, combinedNodeSetId, prefixRelations, prefixContributionRows, inheritedCount,
-					inheritedRows, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
-			seedStateId = cheaperWideTransition(states, seedStateId, ordinal, combinedNodeSetId);
-		}
-
-		PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(Math.max(2, factorCount << 1),
-				budget);
-		for (int stateId = 1; stateId <= states.size; stateId++) {
-			if (wideCandidateSatisfiesRequiredFirst(nodeSets, states, stateId, states.nodeSetIds[stateId],
-					requiredFirstOrdinal)) {
-				pendingStates.offer(stateId, 1, states.costs[stateId]);
-			}
-		}
-		wideInheritedSearch: while (!pendingStates.isEmpty()) {
-			int stateId = pendingStates.pollStateId();
-			if (Double.compare(states.costs[stateId], pendingStates.polledCost()) != 0) {
-				continue;
-			}
-			int nodeSetId = states.nodeSetIds[stateId];
-			int bestTerminalStateId = states.best(fullNodeSetId);
-			if (bestTerminalStateId != 0 && states.costs[stateId] > states.costs[bestTerminalStateId]) {
-				break;
-			}
-			if (nodeSetId == fullNodeSetId) {
-				if (bestTerminalStateId != 0
-						&& pendingStates.minimumCost() > states.costs[bestTerminalStateId]) {
+		try {
+			int seedFirstOrdinal = requiredFirstOrdinal < 0 ? 0 : requiredFirstOrdinal;
+			int seedStateId = states.best(nodeSets.singleton(seedFirstOrdinal));
+			for (int offset = 1; offset < factorCount && seedStateId != 0; offset++) {
+				int ordinal = (seedFirstOrdinal + offset) % factorCount;
+				// An optional contextual search: its caller keeps the context-free winner, so the deadline applies.
+				if (!budget.tryConsume()) {
+					seedStateId = 0;
 					break;
 				}
-				continue;
-			}
-			for (int factorOrdinal = 0; factorOrdinal < factorCount; factorOrdinal++) {
-				if (nodeSets.contains(nodeSetId, factorOrdinal)) {
-					continue;
-				}
-				int combinedNodeSetId = nodeSets.union(nodeSetId, nodeSets.singleton(factorOrdinal));
-				if (combinedNodeSetId == 0
-						|| !wideCandidateSatisfiesRequiredFirst(nodeSets, states, stateId, combinedNodeSetId,
-								requiredFirstOrdinal)
-						|| states.hasLeftDeepTransition(stateId, factorOrdinal, combinedNodeSetId)) {
-					continue;
-				}
-				if (!budget.tryConsume()) {
-					break wideInheritedSearch;
-				}
-				int previousSize = states.size;
-				workUnits += costWideInheritedAppend(rootRelationId, factors, nodeSets, states, stateId,
-						factorOrdinal, combinedNodeSetId, prefixRelations, prefixContributionRows, inheritedCount,
+				int combinedNodeSetId = nodeSets.union(states.nodeSetIds[seedStateId], nodeSets.singleton(ordinal));
+				workUnits += costWideInheritedAppend(rootRelationId, factors, nodeSets, states, seedStateId,
+						ordinal, combinedNodeSetId, prefixRelations, prefixContributionRows, inheritedCount,
 						inheritedRows, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
-				for (int retainedStateId = previousSize + 1; retainedStateId <= states.size; retainedStateId++) {
-					pendingStates.offer(retainedStateId, 1, states.costs[retainedStateId]);
+				seedStateId = cheaperWideTransition(states, seedStateId, ordinal, combinedNodeSetId);
+			}
+
+			PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(Math.max(2, factorCount << 1),
+					budget);
+			for (int stateId = 1; stateId <= states.size; stateId++) {
+				if (wideCandidateSatisfiesRequiredFirst(nodeSets, states, stateId, states.nodeSetIds[stateId],
+						requiredFirstOrdinal)) {
+					pendingStates.offer(stateId, 1, states.costs[stateId]);
 				}
 			}
-		}
-		if (factorCount >= 4 && !budget.resourceLimitReached()) {
-			workUnits += costWideInheritedBushyPartitions(rootRelationId, factors, nodeSets, states,
-					requiredFirstOrdinal, prefixRelations, prefixContributionRows, inheritedCount, inheritedRows,
-					bindingLayoutId, correlationMaskId, semanticScopeMaskId);
+			wideInheritedSearch: while (!pendingStates.isEmpty()) {
+				int stateId = pendingStates.pollStateId();
+				if (Double.compare(states.costs[stateId], pendingStates.polledCost()) != 0) {
+					continue;
+				}
+				int nodeSetId = states.nodeSetIds[stateId];
+				int bestTerminalStateId = states.best(fullNodeSetId);
+				if (bestTerminalStateId != 0 && !pendingStates.hasUnavailableCost()
+						&& states.costs[stateId] > states.costs[bestTerminalStateId]) {
+					break;
+				}
+				if (nodeSetId == fullNodeSetId) {
+					if (bestTerminalStateId != 0
+							&& pendingStates.minimumCost() > states.costs[bestTerminalStateId]) {
+						break;
+					}
+					continue;
+				}
+				for (int factorOrdinal = 0; factorOrdinal < factorCount; factorOrdinal++) {
+					if (nodeSets.contains(nodeSetId, factorOrdinal)) {
+						continue;
+					}
+					int combinedNodeSetId = nodeSets.union(nodeSetId, nodeSets.singleton(factorOrdinal));
+					if (combinedNodeSetId == 0
+							|| !wideCandidateSatisfiesRequiredFirst(nodeSets, states, stateId, combinedNodeSetId,
+									requiredFirstOrdinal)
+							|| states.hasLeftDeepTransition(stateId, factorOrdinal, combinedNodeSetId)) {
+						continue;
+					}
+					if (!budget.tryConsume()) {
+						break wideInheritedSearch;
+					}
+					int previousSize = states.size;
+					workUnits += costWideInheritedAppend(rootRelationId, factors, nodeSets, states, stateId,
+							factorOrdinal, combinedNodeSetId, prefixRelations, prefixContributionRows, inheritedCount,
+							inheritedRows, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
+					for (int retainedStateId = previousSize + 1; retainedStateId <= states.size; retainedStateId++) {
+						pendingStates.offer(retainedStateId, 1, states.costs[retainedStateId]);
+					}
+				}
+			}
+			if (factorCount >= 4 && !budget.resourceLimitReached()) {
+				workUnits += costWideInheritedBushyPartitions(rootRelationId, factors, nodeSets, states,
+						requiredFirstOrdinal, prefixRelations, prefixContributionRows, inheritedCount, inheritedRows,
+						bindingLayoutId, correlationMaskId, semanticScopeMaskId);
+			}
+		} catch (PackedProviderWork.Exhausted refused) {
+			absorbProviderStop(refused);
+			workUnits = Math.max(workUnits, saturatedInt(budget.workUnits() - stopWorkStart));
 		}
 
 		contextualFactorWorkUnits = workUnits;
@@ -6253,6 +6494,10 @@ final class PackedJoinEnumerator {
 				bindingLayoutId, correlationMaskId, semanticScopeMaskId);
 		setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factorRelationId);
 		costSession.estimate(factorRelationId, costContext, costEstimate);
+		if (unavailableFactorWork(costEstimate, factorWork)) {
+			budget.markUnavailableCostComparison();
+			return 1;
+		}
 		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
 				inputContextId,
 				contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
@@ -6261,7 +6506,7 @@ final class PackedJoinEnumerator {
 		outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factorRelationId, outputRows);
 		double factorContributionRows = rowComposition.factorContributionRows();
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			factorWork = objectiveWork(costEstimate);
 		}
 		double iteratorProbeWork = iteratorProbeWork(costEstimate);
@@ -6339,7 +6584,7 @@ final class PackedJoinEnumerator {
 		candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factorRelationId, candidateRows);
 		factorContributionRows = rowComposition.factorContributionRows();
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			factorWork = objectiveWork(costEstimate);
 		}
 		factorWinnerId = contextualizeDependentFactor(factorRelationId, defaultFactorWinnerId,
@@ -7252,6 +7497,11 @@ final class PackedJoinEnumerator {
 				0, 0, query.relSemanticScope(rootRelationId));
 		setUnrelatedPrefixRows(contextRelations, contextContributionRows, contextCount, factorRelationId);
 		costSession.estimate(factorRelationId, costContext, costEstimate);
+		if (unavailableFactorWork(costEstimate, factorWork)) {
+			// This retained continuation is an actual dependent input. Its isolated winner cannot price the new frame.
+			budget.markUnavailableCostComparison();
+			return 0;
+		}
 		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
 				inputContextId,
 				contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
@@ -7260,7 +7510,7 @@ final class PackedJoinEnumerator {
 		outputRows = rowComposition.effectiveRows(costEstimate, contextRelations, contextContributionRows,
 				contextCount, factorRelationId, outputRows);
 		double contributionRows = rowComposition.factorContributionRows();
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			factorWork = objectiveWork(costEstimate);
 		}
 
@@ -7341,7 +7591,7 @@ final class PackedJoinEnumerator {
 			candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 					prefixCount, factors[factorOrdinal], candidateRows);
 			factorContributionRows = rowComposition.factorContributionRows();
-			if (finiteNonNegative(costEstimate.workRows())) {
+			if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 				factorWork = objectiveWork(costEstimate);
 			}
 			factorWinnerId = contextualizeDependentFactor(factors[factorOrdinal], defaultFactorWinnerId,
@@ -7517,7 +7767,15 @@ final class PackedJoinEnumerator {
 			int factorBit = appendedFactorBits[path[pathOrdinal]];
 			orderedFactors[orderSize++] = factors[Integer.numberOfTrailingZeros(factorBit)];
 		}
-		emitSelectedOrder(rootRelationId, orderedFactors);
+		publishRetainedScalarOrder(rootRelationId, orderedFactors);
+	}
+
+	/**
+	 * Publishes a complete order a scalar kernel already retained. The kernel charged every one of its transitions, so
+	 * re-emitting the order is not new search work and must succeed after the search stopped at its limit.
+	 */
+	private void publishRetainedScalarOrder(int rootRelationId, int[] orderedFactors) {
+		emitSelectedOrder(rootRelationId, orderedFactors, false, orderedFactors.length - 1L, true, false);
 	}
 
 	private void emitRetainedDenseWinner(int rootRelationId, int[] factors, int terminalStateId, double[] rows,
@@ -8140,7 +8398,7 @@ final class PackedJoinEnumerator {
 				if (!connected && !finiteNonNegative(factorContributionRows)) {
 					factorContributionRows = factorRows;
 				}
-				if (finiteNonNegative(costEstimate.workRows())) {
+				if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 					factorWork = objectiveWork(costEstimate);
 				}
 				if (contextualAtomicFactor(factorRelationId, factorWinnerId)
@@ -8212,21 +8470,23 @@ final class PackedJoinEnumerator {
 				} else {
 					joinEstimate.setRows(outputRows, totalCost);
 				}
-				dependentPhysicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
-						anyPropertyId, JOIN_IMPLEMENTATION, logicalExpressionId, childGroups, 0, 2);
-				childWinners[0] = prefixWinnerId;
-				childWinners[1] = factorWinnerId;
-				PackedCostEstimate dependentEstimate = costSession == null ? joinEstimate : physicalJoinEstimate;
-				int metadataId = memo.addPhysicalMetadata(dependentEstimate, outputRows, totalCost);
-				currentWinnerId = rootJoin
-						? memo.materializeWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
-								dependentPhysicalExpressionId, metadataId, tieBreakRank, outputRows, totalCost,
-								totalCost, childWinners, 0, 2)
-						: memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
-								dependentPhysicalExpressionId, metadataId, tieBreakRank, outputRows, totalCost,
-								totalCost, childWinners, 0, 2);
-				retainedEmittedCandidate = memo
-						.winnerPhysicalExpressionId(currentWinnerId) == dependentPhysicalExpressionId;
+				if (finiteNonNegative(totalCost)) {
+					dependentPhysicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
+							anyPropertyId, JOIN_IMPLEMENTATION, logicalExpressionId, childGroups, 0, 2);
+					childWinners[0] = prefixWinnerId;
+					childWinners[1] = factorWinnerId;
+					PackedCostEstimate dependentEstimate = costSession == null ? joinEstimate : physicalJoinEstimate;
+					int metadataId = memo.addPhysicalMetadata(dependentEstimate, outputRows, totalCost);
+					currentWinnerId = rootJoin
+							? memo.materializeWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
+									dependentPhysicalExpressionId, metadataId, tieBreakRank, outputRows, totalCost,
+									totalCost, childWinners, 0, 2)
+							: memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
+									dependentPhysicalExpressionId, metadataId, tieBreakRank, outputRows, totalCost,
+									totalCost, childWinners, 0, 2);
+					retainedEmittedCandidate = memo
+							.winnerPhysicalExpressionId(currentWinnerId) == dependentPhysicalExpressionId;
+				}
 			}
 			if (finiteNonNegative(hashCost)) {
 				if (costSession != null) {
@@ -8306,7 +8566,7 @@ final class PackedJoinEnumerator {
 			/* This complete operator event was composed under the inherited invocation domain. */
 			costEstimate.setInvocations(pricedInvocations);
 		}
-		double totalWork = completeOperatorWork(inputWork, costEstimate);
+		double totalWork = scheduledFilterCompleteCost;
 		if (costEstimate.hasExplicitPhysicalCost()
 				&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
 			memo.addWinnerPhysicalCost(inputWinnerId, costEstimate, inputContextId,
@@ -8538,6 +8798,11 @@ final class PackedJoinEnumerator {
 			int groupId = memo.logicalGroupId(factors[ordinal]);
 			int winnerId = memo.findWinner(groupId, anyPropertyId, 0, 0, 0);
 			double factorRows = selectedRowsByGroup[groupId];
+			if (!finiteNonNegative(memo.winnerTotalCost(winnerId))) {
+				// An unpriced factor incumbent (a refused default pricing) gives no order a price; keep the incumbent.
+				budget.markUnavailableCostComparison();
+				return 0;
+			}
 			int stateId;
 			if (costSession == null) {
 				stateId = states.offerRetained(factorBit, factorRows, memo.winnerTotalCost(winnerId), factorRows,
@@ -8554,232 +8819,256 @@ final class PackedJoinEnumerator {
 		}
 
 		int workUnits = 0;
-		for (int cardinality = 1; cardinality < factorCount; cardinality++) {
-			int stateLimit = states.size();
-			for (int stateId = 1; stateId <= stateLimit; stateId++) {
-				if (!states.paretoActive(stateId)) {
-					continue;
-				}
-				long subset = states.mask(stateId);
-				if (Long.bitCount(subset) != cardinality
-						|| !sparseCandidateSatisfiesRequiredFirst(states, stateId, subset, requiredFirstBit)) {
-					continue;
-				}
-				long remaining = fullSet & ~subset;
-				long missing = states.neighborMask(stateId) & remaining;
-				boolean connected = missing != 0L;
-				if (!connected) {
-					missing = remaining;
-				}
-				while (missing != 0L) {
-					long factorBit = missing & -missing;
-					missing ^= factorBit;
-					long combined = subset | factorBit;
-					if (!sparseCandidateSatisfiesRequiredFirst(states, stateId, combined, requiredFirstBit)) {
+		long workStart = budget.workUnits();
+		boolean providerStopped = false;
+		/*
+		 * Every stop (search work, retained bytes, a full arena or a provider refusal) only ends the traversal. States
+		 * are retained after all of their callbacks, so each one is complete and priced, and the epilogue below
+		 * publishes the cheapest retained complete state.
+		 */
+		boolean stopped = false;
+		try {
+			sparseSearch: for (int cardinality = 1; cardinality < factorCount; cardinality++) {
+				int stateLimit = states.size();
+				for (int stateId = 1; stateId <= stateLimit; stateId++) {
+					if (!states.paretoActive(stateId)) {
 						continue;
 					}
-					if (!budget.tryConsume()) {
-						return workUnits;
+					long subset = states.mask(stateId);
+					if (Long.bitCount(subset) != cardinality
+							|| !sparseCandidateSatisfiesRequiredFirst(states, stateId, subset, requiredFirstBit)) {
+						continue;
 					}
-					int factorOrdinal = Long.numberOfTrailingZeros(factorBit);
-					int factorStateId = states.find(factorBit);
-					int defaultFactorWinnerId = states.appendedFactorWinnerId(factorStateId);
-					int factorWinnerId = defaultFactorWinnerId;
-					double candidateRows = joinRowsForSubset(factors, subset, factorOrdinal,
-							states.rows(stateId), states.rows(factorStateId), connected);
-					double factorWork = states.cost(factorStateId);
-					double factorContributionRows = Double.NaN;
-					double iteratorProbeWork = 0.0d;
-					int prefixCount = 0;
-					if (costSession != null) {
-						prefixCount = populateSparsePrefix(factors, states, stateId, prefixRelations,
-								prefixContributionRows);
-						resetFactorEstimate(states.rows(factorStateId), factorWork);
-						costContext.reset(prefixRelations, 0, prefixCount, states.rows(stateId),
-								states.evidenceStateId(stateId));
-						setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount,
-								factors[factorOrdinal]);
-						costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
-						activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext,
-								states.costCompletionId(stateId),
-								0,
-								contextualAtomicFactor(factors[factorOrdinal],
-										memo.findWinner(memo.logicalGroupId(factors[factorOrdinal]),
-												memo.anyPropertyId(), 0, 0, 0)));
-						activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
-						candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations,
-								prefixContributionRows, prefixCount, factors[factorOrdinal], candidateRows);
-						factorContributionRows = rowComposition.factorContributionRows();
-						if (finiteNonNegative(costEstimate.workRows())) {
-							factorWork = objectiveWork(costEstimate);
+					long remaining = fullSet & ~subset;
+					long missing = states.neighborMask(stateId) & remaining;
+					boolean connected = missing != 0L;
+					if (!connected) {
+						missing = remaining;
+					}
+					while (missing != 0L) {
+						long factorBit = missing & -missing;
+						missing ^= factorBit;
+						long combined = subset | factorBit;
+						if (!sparseCandidateSatisfiesRequiredFirst(states, stateId, combined, requiredFirstBit)) {
+							continue;
 						}
-						int parentMetadataId = states.operatorMetadataId(stateId);
-						int prefixCostEventId = parentMetadataId == 0
-								? 0
-								: memo.physicalMetadataCostEventId(parentMetadataId);
-						factorWinnerId = contextualizeDependentFactor(factors[factorOrdinal],
-								defaultFactorWinnerId, prefixRelations, prefixContributionRows, prefixCount,
-								states.rows(stateId), states.evidenceStateId(stateId), 0, 0,
-								query.relSemanticScope(rootRelationId), prefixCostEventId);
-						workUnits += contextualFactorWorkUnits;
-						if (factorWinnerId == 0) {
+						if (!budget.tryConsume()) {
+							stopped = true;
+							break sparseSearch;
+						}
+						int factorOrdinal = Long.numberOfTrailingZeros(factorBit);
+						int factorStateId = states.find(factorBit);
+						int defaultFactorWinnerId = states.appendedFactorWinnerId(factorStateId);
+						int factorWinnerId = defaultFactorWinnerId;
+						double candidateRows = joinRowsForSubset(factors, subset, factorOrdinal,
+								states.rows(stateId), states.rows(factorStateId), connected);
+						double factorWork = states.cost(factorStateId);
+						double factorContributionRows = Double.NaN;
+						double iteratorProbeWork = 0.0d;
+						int prefixCount = 0;
+						if (costSession != null) {
+							prefixCount = populateSparsePrefix(factors, states, stateId, prefixRelations,
+									prefixContributionRows);
+							resetFactorEstimate(states.rows(factorStateId), factorWork);
+							costContext.reset(prefixRelations, 0, prefixCount, states.rows(stateId),
+									states.evidenceStateId(stateId));
+							setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount,
+									factors[factorOrdinal]);
+							costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+							activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext,
+									states.costCompletionId(stateId),
+									0,
+									contextualAtomicFactor(factors[factorOrdinal],
+											memo.findWinner(memo.logicalGroupId(factors[factorOrdinal]),
+													memo.anyPropertyId(), 0, 0, 0)));
+							activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
+							candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations,
+									prefixContributionRows, prefixCount, factors[factorOrdinal], candidateRows);
+							factorContributionRows = rowComposition.factorContributionRows();
+							if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
+								factorWork = objectiveWork(costEstimate);
+							}
+							int parentMetadataId = states.operatorMetadataId(stateId);
+							int prefixCostEventId = parentMetadataId == 0
+									? 0
+									: memo.physicalMetadataCostEventId(parentMetadataId);
+							factorWinnerId = contextualizeDependentFactor(factors[factorOrdinal],
+									defaultFactorWinnerId, prefixRelations, prefixContributionRows, prefixCount,
+									states.rows(stateId), states.evidenceStateId(stateId), 0, 0,
+									query.relSemanticScope(rootRelationId), prefixCostEventId);
+							workUnits += contextualFactorWorkUnits;
+							if (factorWinnerId == 0) {
+								workUnits++;
+								continue;
+							}
+							if (factorWinnerId != defaultFactorWinnerId) {
+								restoreContextualFactorWinnerEstimate(factorWinnerId);
+								candidateRows = rowComposition.effectiveRows(costEstimate,
+										prefixRelations, prefixContributionRows, prefixCount, factors[factorOrdinal],
+										candidateRows);
+								factorContributionRows = rowComposition.factorContributionRows();
+								if (!connected && !finiteNonNegative(factorContributionRows)) {
+									factorContributionRows = states.rows(factorStateId);
+								}
+								factorWork = memo.winnerTotalCost(factorWinnerId);
+							}
+							iteratorProbeWork = iteratorProbeWork(costEstimate);
+						}
+						double candidateCost = saturatedAdd(states.cost(stateId), factorWork, candidateRows);
+						candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
+						boolean rootRefined = false;
+						if ((subset | factorBit) == fullSet
+								&& (costSession != null || hasFiniteFilterSemanticFallback(rootRelationId))) {
+							refineRootJoin(rootRelationId, prefixRelations, prefixCount, factors[factorOrdinal],
+									states.rows(stateId),
+									states.rows(factorStateId), candidateRows, candidateCost,
+									costEstimate.evidenceStateId(), states.evidenceStateId(stateId),
+									winnerEvidenceStateId(defaultFactorWinnerId));
+							if (finiteNonNegative(joinEstimate.outputRows())) {
+								candidateRows = joinEstimate.outputRows();
+							}
+							if (finiteNonNegative(joinEstimate.workRows())) {
+								candidateCost = Math.max(states.cost(stateId) + factorWork + iteratorProbeWork,
+										objectiveWork(joinEstimate));
+							}
+							rootRefined = true;
+						}
+						if (costSession != null) {
+							if (!rootRefined) {
+								joinEstimate.clear();
+							}
+							retainContextualJoinEvidence(costEstimate, joinEstimate, candidateRows);
+							if (!rootRefined) {
+								candidateRows = refineIntermediateJoinCandidate(prefixRelations, prefixCount,
+										states.rows(stateId), states.rows(factorStateId), candidateRows,
+										states.evidenceStateId(stateId), winnerEvidenceStateId(defaultFactorWinnerId),
+										joinEstimate);
+							}
+							double dependentCost = refinePhysicalJoinCandidate(
+									PackedPhysicalJoinCosting.DEPENDENT_ITERATION,
+									prefixRelations, prefixCount, states.rows(stateId), states.cost(stateId),
+									states.rows(factorStateId), factorWork, candidateRows,
+									states.evidenceStateId(stateId), winnerEvidenceStateId(factorWinnerId),
+									iteratorProbeWork, joinEstimate, costEstimate);
+							if (!PackedInputFrameScheduling.dependent(query, prefixRelations, prefixCount,
+									factors[factorOrdinal])) {
+								dependentCost = Double.POSITIVE_INFINITY;
+							}
+							copyEstimate(physicalJoinEstimate, alternativePhysicalJoinEstimate);
+							double hashCost = (subset | factorBit) == fullSet && finiteFilterSemanticFallbackPending()
+									&& !runtimeRequiresIndependentHashJoin(prefixRelations, prefixCount,
+											factors[factorOrdinal])
+													? Double.POSITIVE_INFINITY
+													: refineIndependentHashCandidate(prefixRelations, prefixCount,
+															factors[factorOrdinal], states.rows(stateId),
+															states.cost(stateId), states.evidenceStateId(stateId),
+															defaultFactorWinnerId,
+															rootRefined ? joinEstimate : costEstimate,
+															1.0d);
+							stampPhysicalJoinAlternativeCosts(alternativePhysicalJoinEstimate, dependentCost, hashCost);
+							stampPhysicalJoinAlternativeCosts(independentPhysicalJoinEstimate, dependentCost, hashCost);
+							boolean requiresHash = runtimeRequiresIndependentHashJoin(prefixRelations, prefixCount,
+									factors[factorOrdinal]);
+							long neighborMask = states.neighborMask(stateId) | adjacency[factorOrdinal];
+							if (!requiresHash) {
+								candidateCost = dependentCost;
+								copyEstimate(alternativePhysicalJoinEstimate, physicalJoinEstimate);
+								boolean retainsContextualFactorEvent = factorWinnerId == defaultFactorWinnerId
+										&& contextualAtomicFactor(factors[factorOrdinal], factorWinnerId)
+										&& (finiteNonNegative(costEstimate.outputRows())
+												|| finiteNonNegative(costEstimate.workRows()));
+								int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
+								int factorCostCompletionId = retainsContextualFactorEvent
+										? composedPhysicalCostCompletionId(costEstimate, candidateRows, factorWork)
+										: memo.winnerCostCompletionId(factorWinnerId);
+								int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+										states.costCompletionId(stateId), factorCostCompletionId, candidateCost);
+								int evidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
+										? physicalJoinEstimate.evidenceStateId()
+										: costEstimate.evidenceStateId();
+								if (states.findEquivalentRetained(combined, stateId, 0, factorOrdinal, factorWinnerId,
+										candidateRows, candidateCost, factorContributionRows, evidenceStateId,
+										JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId) == 0) {
+									int transitionMetadataId = retainsContextualFactorEvent
+											? addComposedPhysicalMetadata(costEstimate, candidateRows, factorWork)
+											: 0;
+									int operatorMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate,
+											candidateRows,
+											candidateCost);
+									if (operatorMetadataId == 0 && budget.resourceLimitReached()) {
+										stopped = true;
+										break sparseSearch;
+									}
+									int dependentStateId = states.offerRetainedContinuation(combined, candidateRows,
+											candidateCost, factorContributionRows, evidenceStateId, 0, stateId,
+											factorOrdinal, neighborMask, factorWinnerId, transitionMetadataId,
+											operatorMetadataId, JOIN_IMPLEMENTATION, exactContinuationIdentityId,
+											costCompletionId);
+									if (dependentStateId == 0) {
+										stopped = true;
+										break sparseSearch;
+									}
+								}
+							}
+							if (finiteNonNegative(hashCost)) {
+								copyEstimate(independentPhysicalJoinEstimate, physicalJoinEstimate);
+								int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
+								int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+										states.costCompletionId(stateId),
+										memo.winnerCostCompletionId(defaultFactorWinnerId), hashCost);
+								int evidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
+										? physicalJoinEstimate.evidenceStateId()
+										: costEstimate.evidenceStateId();
+								if (states.findEquivalentRetained(combined, stateId, 0, factorOrdinal,
+										defaultFactorWinnerId, independentHashRows, hashCost,
+										states.rows(factorStateId),
+										evidenceStateId, HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId,
+										costCompletionId) == 0) {
+									int hashMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate,
+											independentHashRows, hashCost);
+									if (hashMetadataId == 0 && budget.resourceLimitReached()) {
+										stopped = true;
+										break sparseSearch;
+									}
+									int hashStateId = states.offerRetainedContinuation(combined, independentHashRows,
+											hashCost, states.rows(factorStateId), evidenceStateId, 0, stateId,
+											factorOrdinal, neighborMask, defaultFactorWinnerId, 0, hashMetadataId,
+											HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId);
+									if (hashStateId == 0) {
+										stopped = true;
+										break sparseSearch;
+									}
+								}
+							}
 							workUnits++;
 							continue;
 						}
-						if (factorWinnerId != defaultFactorWinnerId) {
-							restoreContextualFactorWinnerEstimate(factorWinnerId);
-							candidateRows = rowComposition.effectiveRows(costEstimate,
-									prefixRelations, prefixContributionRows, prefixCount, factors[factorOrdinal],
-									candidateRows);
-							factorContributionRows = rowComposition.factorContributionRows();
-							if (!connected && !finiteNonNegative(factorContributionRows)) {
-								factorContributionRows = states.rows(factorStateId);
-							}
-							factorWork = memo.winnerTotalCost(factorWinnerId);
-						}
-						iteratorProbeWork = iteratorProbeWork(costEstimate);
-					}
-					double candidateCost = saturatedAdd(states.cost(stateId), factorWork, candidateRows);
-					candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
-					boolean rootRefined = false;
-					if ((subset | factorBit) == fullSet
-							&& (costSession != null || hasFiniteFilterSemanticFallback(rootRelationId))) {
-						refineRootJoin(rootRelationId, prefixRelations, prefixCount, factors[factorOrdinal],
-								states.rows(stateId),
-								states.rows(factorStateId), candidateRows, candidateCost,
-								costEstimate.evidenceStateId(), states.evidenceStateId(stateId),
-								winnerEvidenceStateId(defaultFactorWinnerId));
-						if (finiteNonNegative(joinEstimate.outputRows())) {
-							candidateRows = joinEstimate.outputRows();
-						}
-						if (finiteNonNegative(joinEstimate.workRows())) {
-							candidateCost = Math.max(states.cost(stateId) + factorWork + iteratorProbeWork,
-									objectiveWork(joinEstimate));
-						}
-						rootRefined = true;
-					}
-					if (costSession != null) {
-						if (!rootRefined) {
-							joinEstimate.clear();
-						}
-						retainContextualJoinEvidence(costEstimate, joinEstimate, candidateRows);
-						if (!rootRefined) {
-							candidateRows = refineIntermediateJoinCandidate(prefixRelations, prefixCount,
-									states.rows(stateId), states.rows(factorStateId), candidateRows,
-									states.evidenceStateId(stateId), winnerEvidenceStateId(defaultFactorWinnerId),
-									joinEstimate);
-						}
-						double dependentCost = refinePhysicalJoinCandidate(
-								PackedPhysicalJoinCosting.DEPENDENT_ITERATION,
-								prefixRelations, prefixCount, states.rows(stateId), states.cost(stateId),
-								states.rows(factorStateId), factorWork, candidateRows,
-								states.evidenceStateId(stateId), winnerEvidenceStateId(factorWinnerId),
-								iteratorProbeWork, joinEstimate, costEstimate);
-						if (!PackedInputFrameScheduling.dependent(query, prefixRelations, prefixCount,
-								factors[factorOrdinal])) {
-							dependentCost = Double.POSITIVE_INFINITY;
-						}
-						copyEstimate(physicalJoinEstimate, alternativePhysicalJoinEstimate);
-						double hashCost = (subset | factorBit) == fullSet && finiteFilterSemanticFallbackPending()
-								&& !runtimeRequiresIndependentHashJoin(prefixRelations, prefixCount,
-										factors[factorOrdinal])
-												? Double.POSITIVE_INFINITY
-												: refineIndependentHashCandidate(prefixRelations, prefixCount,
-														factors[factorOrdinal], states.rows(stateId),
-														states.cost(stateId), states.evidenceStateId(stateId),
-														defaultFactorWinnerId,
-														rootRefined ? joinEstimate : costEstimate,
-														1.0d);
-						stampPhysicalJoinAlternativeCosts(alternativePhysicalJoinEstimate, dependentCost, hashCost);
-						stampPhysicalJoinAlternativeCosts(independentPhysicalJoinEstimate, dependentCost, hashCost);
-						boolean requiresHash = runtimeRequiresIndependentHashJoin(prefixRelations, prefixCount,
-								factors[factorOrdinal]);
-						long neighborMask = states.neighborMask(stateId) | adjacency[factorOrdinal];
-						if (!requiresHash) {
-							candidateCost = dependentCost;
-							copyEstimate(alternativePhysicalJoinEstimate, physicalJoinEstimate);
-							boolean retainsContextualFactorEvent = factorWinnerId == defaultFactorWinnerId
-									&& contextualAtomicFactor(factors[factorOrdinal], factorWinnerId)
-									&& (finiteNonNegative(costEstimate.outputRows())
-											|| finiteNonNegative(costEstimate.workRows()));
-							int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-							int factorCostCompletionId = retainsContextualFactorEvent
-									? composedPhysicalCostCompletionId(costEstimate, candidateRows, factorWork)
-									: memo.winnerCostCompletionId(factorWinnerId);
-							int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
-									states.costCompletionId(stateId), factorCostCompletionId, candidateCost);
-							int evidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
-									? physicalJoinEstimate.evidenceStateId()
-									: costEstimate.evidenceStateId();
-							if (states.findEquivalentRetained(combined, stateId, 0, factorOrdinal, factorWinnerId,
-									candidateRows, candidateCost, factorContributionRows, evidenceStateId,
-									JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId) == 0) {
-								int transitionMetadataId = retainsContextualFactorEvent
-										? addComposedPhysicalMetadata(costEstimate, candidateRows, factorWork)
-										: 0;
-								int operatorMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate, candidateRows,
-										candidateCost);
-								if (operatorMetadataId == 0 && budget.resourceLimitReached()) {
-									return workUnits;
-								}
-								int dependentStateId = states.offerRetainedContinuation(combined, candidateRows,
-										candidateCost, factorContributionRows, evidenceStateId, 0, stateId,
-										factorOrdinal, neighborMask, factorWinnerId, transitionMetadataId,
-										operatorMetadataId, JOIN_IMPLEMENTATION, exactContinuationIdentityId,
-										costCompletionId);
-								if (dependentStateId == 0) {
-									return workUnits;
-								}
-							}
-						}
-						if (finiteNonNegative(hashCost)) {
-							copyEstimate(independentPhysicalJoinEstimate, physicalJoinEstimate);
-							int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-							int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
-									states.costCompletionId(stateId),
-									memo.winnerCostCompletionId(defaultFactorWinnerId), hashCost);
-							int evidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
-									? physicalJoinEstimate.evidenceStateId()
-									: costEstimate.evidenceStateId();
-							if (states.findEquivalentRetained(combined, stateId, 0, factorOrdinal,
-									defaultFactorWinnerId, independentHashRows, hashCost, states.rows(factorStateId),
-									evidenceStateId, HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId,
-									costCompletionId) == 0) {
-								int hashMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate,
-										independentHashRows, hashCost);
-								if (hashMetadataId == 0 && budget.resourceLimitReached()) {
-									return workUnits;
-								}
-								int hashStateId = states.offerRetainedContinuation(combined, independentHashRows,
-										hashCost, states.rows(factorStateId), evidenceStateId, 0, stateId,
-										factorOrdinal, neighborMask, defaultFactorWinnerId, 0, hashMetadataId,
-										HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId);
-								if (hashStateId == 0) {
-									return workUnits;
-								}
-							}
+						int retainedStateId = states.find(combined);
+						boolean improves = retainedStateId == 0 || candidateCost < states.cost(retainedStateId);
+						if (improves) {
+							states.offer(combined, candidateRows, candidateCost, factorContributionRows, 0,
+									0, stateId, factorOrdinal,
+									states.neighborMask(stateId) | adjacency[factorOrdinal]);
 						}
 						workUnits++;
-						continue;
 					}
-					int retainedStateId = states.find(combined);
-					boolean improves = retainedStateId == 0 || candidateCost < states.cost(retainedStateId);
-					if (improves) {
-						states.offer(combined, candidateRows, candidateCost, factorContributionRows, 0,
-								0, stateId, factorOrdinal,
-								states.neighborMask(stateId) | adjacency[factorOrdinal]);
-					}
-					workUnits++;
 				}
 			}
-		}
-		if (costSession != null && !budget.resourceLimitReached()) {
-			workUnits += costSparseBushyPartitions(rootRelationId, factors, states, requiredFirstBit);
+			if (!stopped && costSession != null && !budget.resourceLimitReached()) {
+				workUnits += costSparseBushyPartitions(rootRelationId, factors, states, requiredFirstBit);
+			}
+		} catch (PackedProviderWork.Exhausted refused) {
+			absorbProviderStop(refused);
+			providerStopped = true;
+			workUnits = Math.max(workUnits, saturatedInt(budget.workUnits() - workStart));
 		}
 
 		int fullStateId = states.find(fullSet);
 		if (fullStateId == 0) {
-			return workUnits + optimizeGreedy(rootRelationId, factors, fixedFirstOrdinal);
+			// The greedy fallback costs new candidates; after a stop only retained states may be published.
+			return providerStopped || stopped
+					? workUnits
+					: workUnits + optimizeGreedy(rootRelationId, factors, fixedFirstOrdinal);
 		}
 		int rootGroupId = memo.logicalGroupId(rootRelationId);
 		int rootWinnerId = memo.findWinner(rootGroupId, anyPropertyId, 0, 0, 0);
@@ -8790,7 +9079,7 @@ final class PackedJoinEnumerator {
 				for (int stateId = fullStateId; stateId != 0; stateId = states.parentStateId(stateId)) {
 					orderedFactors[--destination] = factors[states.appendedFactorOrdinal(stateId)];
 				}
-				emitSelectedOrder(rootRelationId, orderedFactors);
+				publishRetainedScalarOrder(rootRelationId, orderedFactors);
 			} else {
 				emitRetainedSparseWinner(rootRelationId, factors, states, fullStateId);
 			}
@@ -8829,7 +9118,7 @@ final class PackedJoinEnumerator {
 		candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factors[factorOrdinal], candidateRows);
 		double factorContributionRows = rowComposition.factorContributionRows();
-		if (finiteNonNegative(costEstimate.workRows())) {
+		if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 			factorWork = objectiveWork(costEstimate);
 		}
 		int parentMetadataId = states.operatorMetadataId(stateId);
@@ -8897,7 +9186,8 @@ final class PackedJoinEnumerator {
 		stampPhysicalJoinAlternativeCosts(alternativePhysicalJoinEstimate, dependentCost, hashCost);
 		stampPhysicalJoinAlternativeCosts(independentPhysicalJoinEstimate, dependentCost, hashCost);
 		long neighborMask = states.neighborMask(stateId) | adjacency[factorOrdinal];
-		if (!runtimeRequiresIndependentHashJoin(prefixRelations, prefixCount, factors[factorOrdinal])) {
+		if (finiteNonNegative(dependentCost)
+				&& !runtimeRequiresIndependentHashJoin(prefixRelations, prefixCount, factors[factorOrdinal])) {
 			copyEstimate(alternativePhysicalJoinEstimate, physicalJoinEstimate);
 			boolean retainsContextualFactorEvent = factorWinnerId == defaultFactorWinnerId
 					&& contextualAtomicFactor(factors[factorOrdinal], factorWinnerId)
@@ -9421,6 +9711,16 @@ final class PackedJoinEnumerator {
 	}
 
 	private int optimizeInternedMultiword(int rootRelationId, int[] factors, int fixedFirstOrdinal) {
+		int anyPropertyId = memo.anyPropertyId();
+		for (int factor : factors) {
+			if (!finiteNonNegative(memo.winnerTotalCost(memo.findWinner(memo.logicalGroupId(factor), anyPropertyId, 0,
+					0, 0)))) {
+				// An unpriced factor incumbent (a refused default pricing) gives no order a price, the greedy seed's
+				// included; keep the incumbent.
+				budget.markUnavailableCostComparison();
+				return 0;
+			}
+		}
 		int workUnits = seedInternedMultiwordIncumbent(rootRelationId, factors, fixedFirstOrdinal);
 		if (budget.exhausted()) {
 			return workUnits;
@@ -9432,7 +9732,6 @@ final class PackedJoinEnumerator {
 		if (budget.resourceLimitReached()) {
 			return workUnits;
 		}
-		int anyPropertyId = memo.anyPropertyId();
 		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
 			int nodeSetId = nodeSets.singleton(ordinal);
 			int groupId = memo.logicalGroupId(factors[ordinal]);
@@ -9453,39 +9752,45 @@ final class PackedJoinEnumerator {
 		int[] rightRelations = new int[factors.length];
 		double[] rightContributionRows = new double[factors.length];
 		int[] dphypWorkUnits = { 0 };
-		boolean stopped = PackedDphypEnumerator.enumerate(hypergraph, nodeSets, new PackedDphypReceiver() {
-			@Override
-			public boolean hasSeen(int nodeSetId) {
-				return states.first(nodeSetId) != 0;
-			}
-
-			@Override
-			public boolean foundSingleNode(int node) {
-				return states.first(nodeSets.singleton(node)) == 0;
-			}
-
-			@Override
-			public boolean foundSubgraphPair(int leftNodeSetId, int rightNodeSetId, int edgeId) {
-				int combined = nodeSets.union(leftNodeSetId, rightNodeSetId);
-				if (combined == 0 || !costWideDphypOrientation(rootRelationId, factors, nodeSets, states,
-						retainedRecipe,
-						leftNodeSetId, rightNodeSetId, combined, fullSet, fixedFirstOrdinal, prefixRelations,
-						prefixContributionRows, rightRelations, rightContributionRows, dphypWorkUnits)) {
-					return true;
+		long stopWorkStart = budget.workUnits();
+		try {
+			boolean stopped = PackedDphypEnumerator.enumerate(hypergraph, nodeSets, new PackedDphypReceiver() {
+				@Override
+				public boolean hasSeen(int nodeSetId) {
+					return states.first(nodeSetId) != 0;
 				}
-				return !costWideDphypOrientation(rootRelationId, factors, nodeSets, states, retainedRecipe,
-						rightNodeSetId,
-						leftNodeSetId, combined, fullSet, fixedFirstOrdinal, prefixRelations,
-						prefixContributionRows, rightRelations, rightContributionRows, dphypWorkUnits);
+
+				@Override
+				public boolean foundSingleNode(int node) {
+					return states.first(nodeSets.singleton(node)) == 0;
+				}
+
+				@Override
+				public boolean foundSubgraphPair(int leftNodeSetId, int rightNodeSetId, int edgeId) {
+					int combined = nodeSets.union(leftNodeSetId, rightNodeSetId);
+					if (combined == 0 || !costWideDphypOrientation(rootRelationId, factors, nodeSets, states,
+							retainedRecipe,
+							leftNodeSetId, rightNodeSetId, combined, fullSet, fixedFirstOrdinal, prefixRelations,
+							prefixContributionRows, rightRelations, rightContributionRows, dphypWorkUnits)) {
+						return true;
+					}
+					return !costWideDphypOrientation(rootRelationId, factors, nodeSets, states, retainedRecipe,
+							rightNodeSetId,
+							leftNodeSetId, combined, fullSet, fixedFirstOrdinal, prefixRelations,
+							prefixContributionRows, rightRelations, rightContributionRows, dphypWorkUnits);
+				}
+			});
+			if (stopped) {
+				budget.recordExhaustedWorkStop();
 			}
-		});
+			if (stopped && !budget.resourceLimitReached() && !budget.workLimitReached() && !budget.deadlineReached()) {
+				throw new PackedMemoInvariantException("wide DPhyp traversal stopped without a search limit");
+			}
+		} catch (PackedProviderWork.Exhausted refused) {
+			absorbProviderStop(refused);
+			dphypWorkUnits[0] = Math.max(dphypWorkUnits[0], saturatedInt(budget.workUnits() - stopWorkStart));
+		}
 		workUnits += dphypWorkUnits[0];
-		if (stopped) {
-			budget.recordExhaustedWorkStop();
-		}
-		if (stopped && !budget.resourceLimitReached() && !budget.workLimitReached() && !budget.deadlineReached()) {
-			throw new PackedMemoInvariantException("wide DPhyp traversal stopped without a search limit");
-		}
 		int terminalStateId = states.best(fullSet);
 		if (terminalStateId != 0) {
 			int rootGroupId = memo.logicalGroupId(rootRelationId);
@@ -10074,6 +10379,29 @@ final class PackedJoinEnumerator {
 
 	private int emitSelectedOrder(int rootRelationId, int[] factors, boolean contextualGreedy,
 			long reservedWorkUnits, boolean expandEquivalentAccessPaths) {
+		return emitSelectedOrder(rootRelationId, factors, contextualGreedy, reservedWorkUnits,
+				expandEquivalentAccessPaths, true);
+	}
+
+	private int emitSelectedOrder(int rootRelationId, int[] factors, boolean contextualGreedy,
+			long reservedWorkUnits, boolean expandEquivalentAccessPaths, boolean chargeReservation) {
+		long workBefore = budget.workUnits();
+		try {
+			return emitReservedOrder(rootRelationId, factors, contextualGreedy, reservedWorkUnits,
+					expandEquivalentAccessPaths, chargeReservation);
+		} catch (PackedProviderWork.Exhausted refused) {
+			/*
+			 * Each prefix winner is offered only after all of its callbacks, so the winners already published stay
+			 * complete; the order itself stays incomplete and the caller stops seeding from it.
+			 */
+			absorbProviderStop(refused);
+			emittedCompleteOrder = false;
+			return saturatedInt(budget.workUnits() - workBefore);
+		}
+	}
+
+	private int emitReservedOrder(int rootRelationId, int[] factors, boolean contextualGreedy,
+			long reservedWorkUnits, boolean expandEquivalentAccessPaths, boolean chargeReservation) {
 		ensureCostingScratch();
 		emittedCompleteOrder = false;
 		if (factors == null || !contextualGreedy && !PackedInputFrameScheduling.order(query, factors, factors.length)) {
@@ -10084,7 +10412,7 @@ final class PackedJoinEnumerator {
 			return 0;
 		}
 		long workBeforeReservation = budget.workUnits();
-		if (!budget.tryReserve(reservedWorkUnits)) {
+		if (chargeReservation && !budget.tryReserve(reservedWorkUnits)) {
 			return saturatedInt(budget.workUnits() - workBeforeReservation);
 		}
 		contextualGreedyWorkRemaining = contextualGreedy ? reservedWorkUnits : 0L;
@@ -10177,7 +10505,7 @@ final class PackedJoinEnumerator {
 				activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 				outputRows = rowComposition.effectiveRows(costEstimate, costPrefix, retainedPrefixContributions,
 						costPrefixCount, factorRelationId, outputRows);
-				if (Double.isFinite(costEstimate.workRows()) && costEstimate.workRows() >= 0.0d) {
+				if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 					factorWork = objectiveWork(costEstimate);
 				}
 			}
@@ -10291,19 +10619,23 @@ final class PackedJoinEnumerator {
 						selectedRowsByGroup[factorGroupId], factorWork, outputRows,
 						currentEvidenceStateId, winnerEvidenceStateId(factorWinnerId), iteratorProbeWork,
 						joinEstimate, costEstimate);
-				int physicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
-						anyPropertyId, JOIN_IMPLEMENTATION,
-						rootJoin ? rootRelationId : logicalExpressionId, childGroups, 0, 2);
-				childWinners[0] = emittedPrefixWinnerId;
-				childWinners[1] = factorWinnerId;
-				int joinMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate, outputRows, totalCost);
-				currentWinnerId = rootJoin
-						? memo.materializeWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
-								physicalExpressionId, joinMetadataId, tieBreakRank, outputRows, totalCost, totalCost,
-								childWinners, 0, 2)
-						: memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
-								physicalExpressionId, joinMetadataId, tieBreakRank, outputRows, totalCost, totalCost,
-								childWinners, 0, 2);
+				if (finiteNonNegative(totalCost)) {
+					int physicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
+							anyPropertyId, JOIN_IMPLEMENTATION,
+							rootJoin ? rootRelationId : logicalExpressionId, childGroups, 0, 2);
+					childWinners[0] = emittedPrefixWinnerId;
+					childWinners[1] = factorWinnerId;
+					int joinMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate, outputRows, totalCost);
+					currentWinnerId = rootJoin
+							? memo.materializeWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
+									physicalExpressionId, joinMetadataId, tieBreakRank, outputRows, totalCost,
+									totalCost,
+									childWinners, 0, 2)
+							: memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
+									physicalExpressionId, joinMetadataId, tieBreakRank, outputRows, totalCost,
+									totalCost,
+									childWinners, 0, 2);
+				}
 			}
 			int hashPhysicalExpressionId = 0;
 			if (finiteNonNegative(hashCost) && (currentWinnerId == 0 || hashCost < totalCost)) {
@@ -10448,7 +10780,7 @@ final class PackedJoinEnumerator {
 		}
 		PackedCostEstimate rightEstimate = null;
 		if (implementation == PackedPhysicalJoinCosting.DEPENDENT_ITERATION) {
-			rightEstimate = contextualDefaultEstimate();
+			rightEstimate = writtenJoinRightEstimate();
 			restoreWinnerEstimate(rightWinnerId, rightEstimate);
 			/*
 			 * A contextual RHS estimate is the result of evaluating that factor over the complete retained left prefix.
@@ -10460,6 +10792,15 @@ final class PackedJoinEnumerator {
 			} else {
 				// A default winner is an isolated price, never a certificate for a future prefix.
 				rightEstimate.setContextualScalarWork(false);
+				if (rightEstimate.hasExplicitPhysicalCost()
+						&& ((query.relMetadataFlags(rightRelationId)
+								& PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0
+								|| prefixMayChangeFactorInput(leftRelations, leftCount, rightRelationId))) {
+					// The executable written-order fallback has no contextual price yet. Enumeration may later
+					// produce a price for this exact input or a separately priced independent implementation.
+					copyEstimate(logicalEstimate, physicalJoinEstimate);
+					return Double.NaN;
+				}
 				if (!contextualAtomicFactor(rightRelationId, rightWinnerId)) {
 					// Internal composite invocations do not price future outer-prefix executions of this whole UNIT.
 					rightEstimate = null;
@@ -10475,6 +10816,28 @@ final class PackedJoinEnumerator {
 						leftEvidenceStateId, rightEvidenceStateId, 0.0d, logicalEstimate, rightEstimate);
 		copyEstimate(physicalJoinEstimate, logicalEstimate);
 		return totalCost;
+	}
+
+	boolean prefixMayChangeFactorInput(int[] prefixRelations, int prefixCount, int factorRelationId) {
+		if ((query.relMetadataFlags(factorRelationId) & PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0) {
+			return true;
+		}
+		for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
+			if ((query.relMetadataFlags(prefixRelations[ordinal])
+					& PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0) {
+				return true;
+			}
+			int possible = query.relOutputMaskId(prefixRelations[ordinal]);
+			if (query.masksIntersect(possible, query.relOutputMaskId(factorRelationId))
+					|| query.masksIntersect(possible, query.relRequiredInputMaskId(factorRelationId))
+					|| query.masksIntersect(possible, query.relProtectedInputMaskId(factorRelationId))
+					|| query.masksIntersect(possible, query.relNullableInputMaskId(factorRelationId))
+					|| query.masksIntersect(possible, query.relIndependentOutputMaskId(factorRelationId))
+					|| query.masksIntersect(possible, query.relOrdinaryWriteMaskId(factorRelationId))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private double refinePhysicalJoinCandidate(int implementation, int[] prefixRelations, int prefixCount,
@@ -10601,6 +10964,15 @@ final class PackedJoinEnumerator {
 						leftRows, leftEvidenceStateId) ? activeFactorInputFrame : 0;
 		int expectedRightSource = activeFactorSourceCompletion;
 		copyEstimate(logicalEstimate, physicalJoinEstimate);
+		if (implementation == PackedPhysicalJoinCosting.DEPENDENT_ITERATION
+				&& (!finiteNonNegative(rightWork) || unavailableFactorWork(rightEstimate, rightWork))) {
+			/*
+			 * No comparable price exists. rightWork is the work this candidate repeats per left binding, so a known
+			 * event objective cannot stand in for an unknown rightWork. An independent alternative may still be priced.
+			 */
+			budget.markUnavailableCostComparison();
+			return Double.NaN;
+		}
 		if (logicalEstimate.hasComponentOutputRows()) {
 			physicalJoinEstimate.setComponentOutputRowsPreservingPhysicalCost(outputRows);
 		} else if (logicalEstimate.hasContextualOutputRows()) {
@@ -10664,18 +11036,37 @@ final class PackedJoinEnumerator {
 	}
 
 	double contextualChildWork(int winnerId, double requiredInvocations, int expectedInputContextId) {
+		return contextualChildWork(winnerId, requiredInvocations, expectedInputContextId, false);
+	}
+
+	/** Reopen a factor-only price when a proven unrelated prefix cannot change the factor's input. */
+	double isolatedContextualChildWork(int winnerId, double requiredInvocations, int expectedInputContextId) {
+		return contextualChildWork(winnerId, requiredInvocations, expectedInputContextId, true);
+	}
+
+	private double contextualChildWork(int winnerId, double requiredInvocations, int expectedInputContextId,
+			boolean isolatedFactorOutput) {
 		if (contextualChildEstimate == null) {
 			contextualChildEstimate = new PackedCostEstimate();
 		}
 		PackedCostEstimate estimate = contextualChildEstimate;
 		restoreWinnerEstimate(winnerId, estimate);
 		int inputContextId = memo.winnerInputContextId(winnerId);
-		if (inputContextId != 0 && inputContextId != expectedInputContextId) {
-			// Exact memo contexts include population and frame; an old price cannot certify this input.
-			return Double.POSITIVE_INFINITY;
+		if (inputContextId != expectedInputContextId) {
+			/*
+			 * An absent contextual winner is returned as the context-free incumbent. It is an executable fallback, not
+			 * proof of the work performed under this input: in particular, a contextual estimate may have reported
+			 * unknown work. Exact memo contexts also include population and frame, so neither that fallback nor a
+			 * winner for a different context can certify this composition.
+			 */
+			return Double.NaN;
 		}
 		if (inputContextId == 0) {
 			estimate.setContextualScalarWork(false);
+		}
+		if (isolatedFactorOutput) {
+			// Winner rows were composed with the prefix, but the source event's result-work axis is per factor.
+			estimate.setOutputRowsPreservingPhysicalCost(estimate.outputRows());
 		}
 		double work = memo.winnerTotalCost(winnerId);
 		int sourceRelationId = memo.physicalSourceLogicalExpressionId(memo.winnerPhysicalExpressionId(winnerId));
@@ -10706,7 +11097,9 @@ final class PackedJoinEnumerator {
 		if (estimate != null && estimate.hasDependentCostComponents()) {
 			dependentReopenStartupWork = estimate.startupOnceWork();
 			dependentReopenFixedWork = estimate.memorySpillWork()
-					+ (estimate.hasComponentOutputRows() ? 0.0d : estimate.outputWork());
+					+ (estimate.hasContextualOutputRows() && !estimate.hasComponentOutputRows()
+							? estimate.outputWork()
+							: 0.0d);
 			dependentReopenPerInvocationWork = fallbackWork - dependentReopenStartupWork - dependentReopenFixedWork;
 			if (finiteNonNegative(dependentReopenPerInvocationWork)) {
 				return saturatedAdd(dependentReopenStartupWork,
@@ -10714,8 +11107,10 @@ final class PackedJoinEnumerator {
 						dependentReopenFixedWork);
 			}
 			// The calibrated whole price cannot certify this decomposition; use the complete UNIT fallback below.
-		} else if (estimate != null && estimate.hasExplicitPhysicalCost()) {
-			boolean repeatResultRows = estimate.hasComponentOutputRows();
+		} else if (estimate != null && estimate.hasExplicitPhysicalCost()
+				&& finiteNonNegative(estimate.peakMemoryRows())
+				&& (estimate.hasComponentOutputRows() || finiteNonNegative(estimate.resultRows()))) {
+			boolean repeatResultRows = estimate.hasComponentOutputRows() || !estimate.hasContextualOutputRows();
 			PackedCostEstimate fixed = dependentReopenEstimate();
 			fixed.clear();
 			fixed.setInclusivePhysicalCost(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
@@ -10731,8 +11126,21 @@ final class PackedJoinEnumerator {
 			}
 			// No residual clamp or fabricated physical quantity: preserve the complete price as a UNIT.
 		}
-		dependentReopenStartupWork = Math.min(Math.max(0.0d, fallbackWork), 1.0d);
-		dependentReopenPerInvocationWork = Math.max(0.0d, fallbackWork - dependentReopenStartupWork);
+		if (fallbackWork < 0.0d) {
+			// A work total is never negative; an unknown total is NaN (or an unbounded +Infinity), never below zero.
+			throw new PackedMemoInvariantException("dependent reopen work must not be negative: " + fallbackWork);
+		}
+		if (!finiteNonNegative(fallbackWork)) {
+			// Deliberately also +Infinity: an unbounded total is unknown work here, exactly like NaN.
+			// Unknown work stays unknown: the repeated invocations have no price and the comparison is unavailable.
+			dependentReopenStartupWork = Double.NaN;
+			dependentReopenPerInvocationWork = Double.NaN;
+			dependentReopenFixedWork = Double.NaN;
+			budget.markUnavailableCostComparison();
+			return Double.NaN;
+		}
+		dependentReopenStartupWork = Math.min(fallbackWork, 1.0d);
+		dependentReopenPerInvocationWork = fallbackWork - dependentReopenStartupWork;
 		dependentReopenFixedWork = 0.0d;
 		return saturatedAdd(dependentReopenStartupWork,
 				saturatedMultiply(dependentReopenPerInvocationWork, executionPartitions), 0.0d);
@@ -10940,8 +11348,36 @@ final class PackedJoinEnumerator {
 			restoreWinnerEstimate(contextualWinnerId);
 			return contextualWinnerId;
 		}
-		PackedCostEstimate defaultEstimate = contextualDefaultEstimate();
-		copyEstimate(costEstimate, defaultEstimate);
+		/*
+		 * offerContextualSafeFilter costs the filter's input region on this enumerator and can re-enter this method for
+		 * a nested FILTER factor. The caller keeps using its factor estimate and factor-input frame after this returns,
+		 * so each activation saves them in its own pre-allocated frame and restores the frame before returning.
+		 */
+		SavedFactorFrame saved = pushSavedFactorFrame();
+		try {
+			copyEstimate(costEstimate, saved.estimate);
+			saved.inputContext.copyFrom(activeFactorInputContext);
+			saved.inputFrame = activeFactorInputFrame;
+			saved.sourceCompletion = activeFactorSourceCompletion;
+			int savedCostEventId = saved.estimate.costEventId();
+			int winnerId = contextualizeEquivalentAccessPaths(relationId, defaultWinnerId, prefixRelations,
+					prefixContributionRows, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
+					correlationMaskId, semanticScopeMaskId, prefixCostEventId, groupId, inputContextId, saved.estimate,
+					savedCostEventId);
+			activeFactorInputContext.copyFrom(saved.inputContext);
+			activeFactorInputFrame = saved.inputFrame;
+			activeFactorSourceCompletion = saved.sourceCompletion;
+			return winnerId;
+		} finally {
+			savedFactorFrameDepth--;
+		}
+	}
+
+	private int contextualizeEquivalentAccessPaths(int relationId, int defaultWinnerId, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, double prefixRows, int prefixEvidenceStateId,
+			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId, int prefixCostEventId, int groupId,
+			int inputContextId, PackedCostEstimate defaultEstimate, int savedCostEventId) {
+		int contextualWinnerId;
 		int totalWorkUnits = 0;
 		for (int logicalExpressionId = memo
 				.firstLogicalExpression(groupId); logicalExpressionId != 0; logicalExpressionId = memo
@@ -10971,11 +11407,35 @@ final class PackedJoinEnumerator {
 		contextualFactorWorkUnits = totalWorkUnits;
 		contextualWinnerId = memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
 		if (contextualWinnerId == 0) {
+			assert defaultEstimate.costEventId() == savedCostEventId
+					: "a nested contextualization overwrote the caller's saved factor estimate";
 			copyEstimate(defaultEstimate, costEstimate);
 			return defaultWinnerId;
 		}
 		restoreWinnerEstimate(contextualWinnerId);
 		return contextualWinnerId;
+	}
+
+	/** Returns this activation's save frame; frames are allocated once per nesting depth and then reused. */
+	private SavedFactorFrame pushSavedFactorFrame() {
+		if (savedFactorFrameDepth == savedFactorFrames.length) {
+			savedFactorFrames = Arrays.copyOf(savedFactorFrames, Math.max(4, savedFactorFrameDepth << 1));
+		}
+		SavedFactorFrame saved = savedFactorFrames[savedFactorFrameDepth];
+		if (saved == null) {
+			saved = new SavedFactorFrame();
+			savedFactorFrames[savedFactorFrameDepth] = saved;
+		}
+		savedFactorFrameDepth++;
+		return saved;
+	}
+
+	/** One re-entrant contextualization's saved caller state. */
+	private static final class SavedFactorFrame {
+		private final PackedCostEstimate estimate = new PackedCostEstimate();
+		private final PackedCostContext inputContext = new PackedCostContext();
+		private int inputFrame;
+		private int sourceCompletion;
 	}
 
 	private boolean hasContextualAccessPathAlternative(int groupId) {
@@ -11195,7 +11655,7 @@ final class PackedJoinEnumerator {
 			if (finiteNonNegative(costEstimate.outputRows())) {
 				outputRows = costEstimate.outputRows();
 			}
-			if (finiteNonNegative(costEstimate.workRows())) {
+			if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 				totalWork = refinedOperatorWork(inputWork, costEstimate);
 			}
 		}
@@ -11295,7 +11755,7 @@ final class PackedJoinEnumerator {
 			outputRows = rowComposition.effectiveRows(costEstimate, retainedPrefixRelations,
 					retainedPrefixContributions, retainedPrefixCount, candidateRelationId, outputRows);
 			double contributionRows = rowComposition.factorContributionRows();
-			if (finiteNonNegative(costEstimate.workRows())) {
+			if (costEstimate.hasExplicitPhysicalCost() || finiteNonNegative(costEstimate.workRows())) {
 				factorWork = objectiveWork(costEstimate);
 			}
 			double iteratorProbeWork = iteratorProbeWork(costEstimate);
@@ -12549,20 +13009,44 @@ final class PackedJoinEnumerator {
 						& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) == 0;
 	}
 
+	private static boolean preferAvailableCost(double candidate, double incumbent) {
+		return finiteNonNegative(candidate) && (!finiteNonNegative(incumbent) || candidate < incumbent);
+	}
+
 	private static double saturatedAdd(double left, double right, double local) {
 		double result = left + right + local;
-		return Double.isFinite(result) ? result : Double.MAX_VALUE;
+		return Double.isNaN(result) ? Double.NaN : Double.isFinite(result) ? result : Double.MAX_VALUE;
 	}
 
 	private static double saturatedMultiply(double left, double right) {
 		double product = left * right;
-		return Double.isFinite(product) ? product : Double.MAX_VALUE;
+		return Double.isNaN(product) ? Double.NaN : Double.isFinite(product) ? product : Double.MAX_VALUE;
+	}
+
+	private static boolean unavailableFactorWork(PackedCostEstimate estimate, double fallbackWork) {
+		if (estimate != null && estimate.costEventId() != 0
+				&& estimate.plannedDoubleMetric("optimizer.costEventOrdinal", Double.NaN) == estimate.costEventId()) {
+			// A complete scalar objective can be known even when individual work dimensions are not.
+			return !finiteNonNegative(estimate.plannedDoubleMetric("optimizer.costEventObjective", Double.NaN));
+		}
+		if (!finiteNonNegative(fallbackWork)) {
+			return true;
+		}
+		if (estimate == null) {
+			return false;
+		}
+		// Restored winner metadata has an event ID without the live event telemetry; its retained objective remains
+		// the price authority. Unknown physical axes alone do not make that independently supplied price unknown.
+		return estimate.hasExplicitPhysicalCost() && !finiteNonNegative(estimate.workRows())
+				&& !finiteNonNegative(estimate.objectivePoint());
 	}
 
 	private static void stampPhysicalJoinAlternativeCosts(PackedCostEstimate estimate, double dependentCost,
 			double independentHashCost) {
-		estimate.putPlannedDoubleMetric("optimizer.dependentJoinCandidateCost", dependentCost);
-		estimate.putPlannedDoubleMetric("optimizer.independentHashJoinCandidateCost", independentHashCost);
+		estimate.putPlannedDoubleMetric("optimizer.dependentJoinCandidateCost",
+				finiteNonNegative(dependentCost) ? dependentCost : Double.NaN);
+		estimate.putPlannedDoubleMetric("optimizer.independentHashJoinCandidateCost",
+				finiteNonNegative(independentHashCost) ? independentHashCost : Double.NaN);
 	}
 
 	private void resetInheritedCostContext(int[] prefixRelations, int prefixCount, double prefixRows,

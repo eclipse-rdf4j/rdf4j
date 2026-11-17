@@ -130,7 +130,7 @@ public class ThemeQueryHexaBenchmark {
 		if (!STORE_DIRECTORY.exists() && !STORE_DIRECTORY.mkdirs()) {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
-		storeConfig = ConfigUtil.createConfig();
+		storeConfig = ConfigUtil.forPlanCapture(ConfigUtil.createConfig(), QueryPlanCapture.isCaptureEnabled());
 		storeConfig.setTripleIndexes("spoc,sopc,psoc,posc,ospc,opsc");
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
@@ -172,7 +172,7 @@ public class ThemeQueryHexaBenchmark {
 			throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
 
-		storeConfig = ConfigUtil.createConfig();
+		storeConfig = ConfigUtil.forPlanCapture(ConfigUtil.createConfig(), QueryPlanCapture.isCaptureEnabled());
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);

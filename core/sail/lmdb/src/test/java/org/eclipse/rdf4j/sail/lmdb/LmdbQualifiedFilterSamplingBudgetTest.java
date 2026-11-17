@@ -26,12 +26,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -47,13 +49,18 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
@@ -548,6 +555,171 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 				assertTrue(executor.awaitTermination(5L, TimeUnit.SECONDS));
 			}
 		}
+	}
+
+	@Test
+	void foregroundSamplingCutByItsTimeLimitIsRecordedForThePlanningThread(@TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = Fixture.open(directory, 16, 2_000L, 64, Planes.BOTH, Distribution.NUMERIC)) {
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			CountDownLatch release = new CountDownLatch(1);
+			try {
+				Future<long[]> cuts = executor.submit(() -> {
+					try (ReadSession read = fixture.openRead()) {
+						long before = LmdbPlanningWallClockCuts.count();
+						fixture.sample(read, positiveFilter());
+						long afterComplete = LmdbPlanningWallClockCuts.count();
+						read.stats().setSamplingViewSupplier(() -> {
+							try {
+								release.await();
+							} catch (InterruptedException interrupted) {
+								Thread.currentThread().interrupt();
+								throw new QueryInterruptedException("sampling admission interrupted", interrupted);
+							}
+							throw new IllegalStateException("the sampling time limit must fire first");
+						});
+						PatternFilterSampleEstimate cut = fixture.sample(read, positiveFilter());
+						long afterCut = LmdbPlanningWallClockCuts.count();
+						return new long[] { before, afterComplete, afterCut, Double.doubleToLongBits(cut.passRatio()) };
+					}
+				});
+				long[] counts = cuts.get(10L, TimeUnit.SECONDS);
+				assertEquals(counts[0], counts[1], "a sample that finished within its time limit is not a cut");
+				assertEquals(-1.0d, Double.longBitsToDouble(counts[3]), 0.0d,
+						"the cut sample yields no estimate and publishes no revision");
+				assertEquals(counts[1] + 1L, counts[2], "a sample ended by its time limit is recorded for the planner");
+			} finally {
+				release.countDown();
+				executor.shutdownNow();
+				assertTrue(executor.awaitTermination(5L, TimeUnit.SECONDS));
+			}
+		}
+	}
+
+	@Test
+	void aPlanningCutBySamplingTimeLimitIsServedByNeitherPlanCache(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = Fixture.open(directory, 16, 2_000L, 64, Planes.BOTH, Distribution.NUMERIC)) {
+			LmdbSailStore backing = fixture.store.getBackingStore();
+			LmdbFilterSelectivityStats stats = ((LmdbEvaluationStatistics) backing.getEvaluationStatistics())
+					.estimatorRuntime()
+					.filters();
+			CountDownLatch release = new CountDownLatch(1);
+			AtomicInteger admissions = new AtomicInteger();
+			stats.setSamplingViewSupplier(() -> {
+				if (admissions.getAndIncrement() > 0) {
+					return backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null);
+				}
+				// The first planning's sample is held until its time limit cuts it.
+				try {
+					release.await();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new QueryInterruptedException("sampling admission interrupted", interrupted);
+				}
+				throw new IllegalStateException("the sampling time limit must fire first");
+			});
+			// Sampled in the foreground, and without a constant (a store value outside the patterns), so that both the
+			// pipeline cache and the packed plan cache may retain its planning.
+			String query = "SELECT ?s WHERE { ?s <" + PREDICATE + "> ?o FILTER(?o > ?s) }";
+			try (RepositoryConnection connection = fixture.repository.getConnection()) {
+				long before = LmdbPlanningWallClockCuts.count();
+				optimized(connection, query);
+				assertEquals(before + 1L, LmdbPlanningWallClockCuts.count(),
+						"fixture: the first planning's filter sample is cut by its time limit");
+
+				TupleExpr second = optimized(connection, query);
+				assertEquals(before + 1L, LmdbPlanningWallClockCuts.count(), "fixture: the second request is uncut");
+				assertFalse(Boolean.parseBoolean(second.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
+						"the pipeline cache does not serve the cut planning");
+				assertFalse(Boolean.parseBoolean(second.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")),
+						"the packed plan cache does not serve the cut planning");
+
+				TupleExpr third = optimized(connection, query);
+				assertTrue(Boolean.parseBoolean(third.getStringMetricPlanned("optimizer.pipelinePlanCacheHit"))
+						|| Boolean.parseBoolean(third.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")),
+						"the uncut planning is served");
+			} finally {
+				release.countDown();
+			}
+		}
+	}
+
+	@Test
+	void aPlanningCutBySamplingTimeLimitStillGetsItsCompletePlan(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = Fixture.open(directory, 16, 2_000L, 64, Planes.BOTH, Distribution.NUMERIC)) {
+			// Frontier statistics give the planning provider runtime state (feedback contracts, Frontier evidence).
+			fixture.store.rebuildFrontierStatistics();
+			LmdbSailStore backing = fixture.store.getBackingStore();
+			LmdbFilterSelectivityStats stats = ((LmdbEvaluationStatistics) backing.getEvaluationStatistics())
+					.estimatorRuntime()
+					.filters();
+			CountDownLatch release = new CountDownLatch(1);
+			AtomicInteger admissions = new AtomicInteger();
+			stats.setSamplingViewSupplier(() -> {
+				if (admissions.getAndIncrement() > 0) {
+					return backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null);
+				}
+				try {
+					release.await();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new QueryInterruptedException("sampling admission interrupted", interrupted);
+				}
+				throw new IllegalStateException("the sampling time limit must fire first");
+			});
+			String query = "SELECT ?s WHERE { ?s <" + PREDICATE + "> ?o FILTER(?o > ?s) }";
+			try (RepositoryConnection connection = fixture.repository.getConnection()) {
+				long before = LmdbPlanningWallClockCuts.count();
+				TupleExpr cut = optimized(connection, query);
+				assertEquals(before + 1L, LmdbPlanningWallClockCuts.count(),
+						"fixture: the first planning's filter sample is cut by its time limit");
+				TupleExpr uncut = optimized(connection, query);
+				assertEquals(before + 1L, LmdbPlanningWallClockCuts.count(), "fixture: the second planning is uncut");
+				assertFalse(Boolean.parseBoolean(uncut.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")),
+						"fixture: the second request is planned again");
+				PlanState uncutState = PlanState.of(uncut);
+				assertTrue(uncutState.feedbackContracts() > 0, "fixture: an uncut planning carries feedback contracts");
+
+				// Withholding a cut planning from the caches must not degrade the planning itself.
+				PlanState cutState = PlanState.of(cut);
+				assertEquals(uncutState.completeness(), cutState.completeness(),
+						"a cut planning reports its own search completion");
+				assertEquals(uncutState.feedbackContracts(), cutState.feedbackContracts(),
+						"a cut planning keeps its provider runtime state");
+				assertEquals(uncutState.frontierMetrics(), cutState.frontierMetrics(),
+						"a cut planning keeps its Frontier evidence");
+			} finally {
+				release.countDown();
+			}
+		}
+	}
+
+	/** What a planning hands its own request: search completion, feedback contracts and Frontier evidence metrics. */
+	private record PlanState(String completeness, int feedbackContracts, Set<String> frontierMetrics) {
+		static PlanState of(TupleExpr plan) {
+			int[] contracts = new int[1];
+			Set<String> frontier = new TreeSet<>();
+			plan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					if (node.getRuntimeFeedbackContract() != null) {
+						contracts[0]++;
+					}
+					for (String metric : node.getStringMetricsPlanned().keySet()) {
+						if (metric.startsWith("optimizer.frontier")) {
+							frontier.add(node.getClass().getSimpleName() + ":" + metric);
+						}
+					}
+					super.meetNode(node);
+				}
+			});
+			return new PlanState(plan.getStringMetricPlanned("optimizer.cascadesCompleteness"), contracts[0],
+					frontier);
+		}
+	}
+
+	private static TupleExpr optimized(RepositoryConnection connection, String query) {
+		return (TupleExpr) connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).tupleExpr();
 	}
 
 	private static Stream<Arguments> smallBudgetsAndPlanes() {

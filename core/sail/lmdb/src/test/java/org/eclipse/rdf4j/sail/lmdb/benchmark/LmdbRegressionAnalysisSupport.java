@@ -193,7 +193,7 @@ final class LmdbRegressionAnalysisSupport {
 	}
 
 	private static PreparedThemeStore prepareThemeStore(Path dataDir, Theme theme) throws Exception {
-		LmdbStoreConfig storeConfig = ConfigUtil.createConfig();
+		LmdbStoreConfig storeConfig = ConfigUtil.createPlanCaptureConfig();
 		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/cold";
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(

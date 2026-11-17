@@ -3650,6 +3650,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				registration.interruptedByConnection = false;
 				return LmdbStoreConnection.this;
 			}
+			if (registration.depth > 0 && cancellationSignal().isCancelled()) {
+				// AbstractSailConnection.requestShutdown() cancels this connection's signal before it interrupts the
+				// registered operation threads, and calls onShutdownRequested() (which marks LMDB read registrations)
+				// only afterwards. An interrupt observed by an active read in that window belongs to the same shutdown.
+				return LmdbStoreConnection.this;
+			}
 			return null;
 		}
 

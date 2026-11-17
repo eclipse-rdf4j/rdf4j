@@ -232,13 +232,25 @@ final class PackedPhysicalMetadataArena {
 		double producedRows = finiteNonNegative(estimate.resultRows(), Double.NaN);
 		double calls = finiteNonNegative(estimate.remoteCalls(), Double.NaN);
 		double peakRows = finiteNonNegative(estimate.peakMemoryRows(), Double.NaN);
-		double objectivePoint = finiteNonNegative(estimate.objectivePoint(), workRows[metadataId]);
-		double objectiveLower = Math.min(objectivePoint,
-				finiteNonNegative(estimate.objectiveLower(), objectivePoint));
-		double objectiveUpper = Math.max(objectivePoint,
-				finiteNonNegative(estimate.objectiveUpper(), objectivePoint));
-		double lifecycleComparison = finiteNonNegative(
-				estimate.plannedDoubleMetric("optimizer.lifecycleComparisonCost", objectiveUpper), objectiveUpper);
+		boolean unavailableEventObjective = estimate.costEventId() != 0
+				&& estimate.plannedDoubleMetric("optimizer.costEventOrdinal", Double.NaN) == estimate.costEventId()
+				&& !Double.isFinite(estimate.plannedDoubleMetric("optimizer.costEventObjective", Double.NaN));
+		// A complete caller-supplied price may finish a partial event. Known physical work alone cannot do so.
+		double objectivePoint = unavailableEventObjective || estimate.hasPartialObjective()
+				? finiteNonNegative(fallbackWork, Double.NaN)
+				: finiteNonNegative(estimate.objectivePoint(), workRows[metadataId]);
+		double objectiveLower = estimate.hasPartialObjective() && Double.isFinite(objectivePoint)
+				? estimate.completedObjectiveLower(objectivePoint)
+				: Math.min(objectivePoint, finiteNonNegative(estimate.objectiveLower(), objectivePoint));
+		double objectiveUpper = estimate.hasPartialObjective() && Double.isFinite(objectivePoint)
+				? estimate.completedObjectiveUpper(objectivePoint)
+				: Math.max(objectivePoint, finiteNonNegative(estimate.objectiveUpper(), objectivePoint));
+		double lifecycleComparison = Double.isNaN(objectivePoint) ? Double.NaN
+				: estimate.hasPartialObjective() && Double.isFinite(objectivePoint)
+						? finiteNonNegative(estimate.translatedComparison(objectivePoint), objectiveUpper)
+						: finiteNonNegative(
+								estimate.plannedDoubleMetric("optimizer.lifecycleComparisonCost", objectiveUpper),
+								objectiveUpper);
 		if (sequentialRows != null || !canonicalPhysicalMetadata(metadataId, sequential, seeks, opens, evaluations,
 				buildRows, probeRows, expansions, producedRows, calls, peakRows, objectiveLower, objectivePoint,
 				objectiveUpper, lifecycleComparison)) {
@@ -528,8 +540,14 @@ final class PackedPhysicalMetadataArena {
 		}
 		estimate.setContextualScalarWork((physicalCostFlags[metadataId] & CONTEXTUAL_SCALAR_WORK) != 0);
 		estimate.setDependentSubqueriesCosted(dependentSubqueriesCosted(metadataId));
-		estimate.setObjectiveInterval(objectiveLowerBound(metadataId), objectivePointCost(metadataId),
-				objectiveUpperBound(metadataId));
+		double lower = objectiveLowerBound(metadataId);
+		double point = objectivePointCost(metadataId);
+		double upper = objectiveUpperBound(metadataId);
+		if (Double.isNaN(lower) && Double.isNaN(point) && Double.isNaN(upper)) {
+			estimate.setUnavailableObjectivePreservingPhysicalCost();
+		} else {
+			estimate.setObjectiveInterval(lower, point, upper);
+		}
 		if ((physicalCostFlags[metadataId] & TYPED_DEPENDENT_PROFILE) != 0) {
 			int start = plannedDoubleMetricStarts[metadataId];
 			estimate.setDependentCostComponents(
@@ -715,7 +733,11 @@ final class PackedPhysicalMetadataArena {
 				continue;
 			}
 			plannedDoubleMetricNameIds[plannedDoubleMetricSize] = objects.intern(name);
-			plannedDoubleMetricValues[plannedDoubleMetricSize++] = estimate.plannedDoubleMetricValue(ordinal);
+			double value = estimate.plannedDoubleMetricValue(ordinal);
+			if (estimate.hasPartialObjective() && "optimizer.lifecycleComparisonCost".equals(name)) {
+				value = lifecycleComparisonCost(metadataId);
+			}
+			plannedDoubleMetricValues[plannedDoubleMetricSize++] = value;
 		}
 	}
 

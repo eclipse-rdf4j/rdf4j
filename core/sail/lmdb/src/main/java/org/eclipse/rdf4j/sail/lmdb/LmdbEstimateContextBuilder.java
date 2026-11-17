@@ -45,7 +45,7 @@ final class LmdbEstimateContextBuilder {
 		context = context.withPrefixEstimate(prefixEvidence.estimate(expression, cost, context, scope));
 		FiniteRelationEstimate finite = prefixEvidence.finiteBindings(
 				relevantFiniteBindingValues(expression, cost.getFiniteBindingValues()),
-				scope == null ? null : scope.finiteBindingContexts);
+				scope == null || context.admittedRead() != null ? null : scope.finiteBindingContexts);
 		return finite == null ? context : context.withFiniteBindings(finite);
 	}
 

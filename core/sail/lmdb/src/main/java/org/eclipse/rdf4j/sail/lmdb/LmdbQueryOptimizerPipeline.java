@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.function.BiFunction;
+import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -83,6 +84,17 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer(
 			false);
 	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
+	/** Without an estimator runtime a request has no Frontier read scope and no plane-qualified reuse. */
+	private static final LmdbEstimatorRuntime.PlanningReadScope NO_PLANNING_READ_SCOPE = new LmdbEstimatorRuntime.PlanningReadScope() {
+		@Override
+		public int observedReadPlanes() {
+			return 0;
+		}
+
+		@Override
+		public void close() {
+		}
+	};
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
@@ -93,7 +105,11 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	private final LmdbEstimatorRuntime runtime;
 	private final LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots;
 	private final LmdbPipelinePlanCache planCache;
+	// Bound once: a method reference evaluated per optimize call would allocate on every cache hit.
+	private final LongSupplier liveDataRevisionHorizon;
 	private final OptionalLong executionSnapshotEpoch;
+	/** Test seam: runs after a request passed the pipeline cache gate and before it builds its cache context. */
+	private Runnable afterPipelineCacheGate;
 
 	@InternalUseOnly
 	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
@@ -133,11 +149,16 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		this.planCache = runtime == null || executionSnapshotEpoch.isEmpty()
 				? null
 				: runtime.frontierSettings().pipelinePlanCache();
+		this.liveDataRevisionHorizon = planCache == null ? null : runtime::oldestLivePlanningDataRevision;
 		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
 			// Pipeline-only statistics instances (serializable connections) publish feedback under the same
 			// committed-snapshot rule as the strategy's instance.
 			lmdbStatistics.bindOptimizerSource(tripleSource, executionSnapshotEpoch);
 		}
+	}
+
+	void afterPipelineCacheGateForTest(Runnable hook) {
+		afterPipelineCacheGate = hook;
 	}
 
 	/** Borrow only the actual read owner; custom optimizer input and graph metadata remain the caller's. */
@@ -175,22 +196,32 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		// Every planner-time storage read of this pipeline run (request-bound optimizers, cascades, filter sampling)
 		// reuses the query's own dataset lease; the pin is released before the dataset is, on this thread.
 		try (TripleStore.PlanningReadPin ignored = pinPlanningReads();
-				var population = runtime == null
-						? (org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope) () -> {
-						}
+				LmdbEstimatorRuntime.PlanningReadScope population = runtime == null ? NO_PLANNING_READ_SCOPE
 						: runtime.beginFrontierReadScope(tripleSource, dataset)) {
 			if (tupleExpr == null || planCache == null) {
 				return optimizeUncached(tupleExpr, dataset, bindings);
 			}
-			LmdbPipelinePlanCache.Context context = context(tupleExpr, dataset, bindings);
+			// Observed once, where this request pinned its planning reads: the cache gate, the cache key and the
+			// detached refresh work all use this value and never re-read the planes.
+			int readPlanes = population.observedReadPlanes();
+			LmdbPipelinePlanCache.Context context = context(tupleExpr, dataset, bindings, readPlanes);
 			if (context == null) {
 				return optimizeUncached(tupleExpr, dataset, bindings);
 			}
+			// The request replays a cached variant's read log inside its own planning read scope; the audit re-plans
+			// an untouched copy of the request's source. With the switch off, neither is allocated (F8).
+			LmdbPlanCacheRevalidation.Validator validator = !LmdbPlanCacheRevalidation.validationEnabled() ? null
+					: new LmdbPlanCacheRevalidation.RuntimeValidator(runtime,
+							!LmdbPlanCacheRevalidation.auditEnabled() ? null
+									: () -> computePlan(auditCopy(tupleExpr), dataset, bindings, context,
+											readPlanes));
 			LmdbPipelinePlanCache.Result result = planCache.getOrComputePlan(tupleExpr, context, this::revision,
-					() -> computePlan(tupleExpr, dataset, bindings, context));
+					() -> computePlan(tupleExpr, dataset, bindings, context, readPlanes), liveDataRevisionHorizon,
+					validator);
 			if (!result.cacheHit()) {
 				return result.plan();
 			}
+			LmdbCascadesOptimizer.clearInvocationMetrics(tupleExpr);
 			TupleExpr installed = install(tupleExpr, result.plan());
 			annotatePipelineCacheHit(installed, true);
 			annotateFeedbackPublication(installed);
@@ -311,8 +342,16 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		}
 	}
 
+	/** A copy of a request's unplanned source, prepared as this pipeline prepares its entry. */
+	private static TupleExpr auditCopy(TupleExpr source) {
+		TupleExpr copy = source.clone();
+		LmdbValueIdFilter.preserveEffectiveKinds(copy);
+		PlanningGraphDomains.capture(copy, PlanningGraphDomain.defaultGraph());
+		return copy;
+	}
+
 	private LmdbPipelinePlanCache.PlanComputation computePlan(TupleExpr tupleExpr, Dataset dataset,
-			BindingSet bindings, LmdbPipelinePlanCache.Context context) {
+			BindingSet bindings, LmdbPipelinePlanCache.Context context, int readPlanes) {
 		prepareRequestBoundInput(tupleExpr, dataset, bindings);
 		// Collect the rewrite certificates before Cascades rebuilds the tree: the request-bound optimizers stamp
 		// their data-dependent assumptions on the nodes they create, and PackedPlanMaterializer does not carry
@@ -345,7 +384,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 												.collect(Collectors.toUnmodifiableSet())));
 		LmdbPlanDecisionCache.DetachedRefreshWork refreshWork = summary == null || detachedPrepared == null
 				|| runtime.cascadesPlanCache() == null
-				|| detachedPlanningSnapshots == null || runtime.frontierReadPlaneMask() == 0
+				|| detachedPlanningSnapshots == null || readPlanes == 0
 						? null
 						: PackedCascadesPlanner
 								.detachedRefreshWork(detachedPrepared, detachedGoal, summary,
@@ -361,9 +400,11 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 										context.revision().planningRevisions().dataRevision(),
 										strategy.getQueryExecutionPolicy().experimentalQueryOptimizations(),
 										context.filterReadIdentity(),
-										context.inputIdentity(), runtime.frontierReadPlaneMask()))
+										context.inputIdentity(), readPlanes))
 								.orElse(null);
-		return new LmdbPipelinePlanCache.PlanComputation(optimized, summary, refreshWork, assumptions);
+		boolean deadlineBounded = outcome.goal() != null && outcome.goal().deadlineNanos() != Long.MAX_VALUE;
+		return new LmdbPipelinePlanCache.PlanComputation(optimized, summary, refreshWork, assumptions,
+				deadlineBounded);
 	}
 
 	/**
@@ -393,14 +434,25 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		}
 	}
 
+	/**
+	 * Plans without the pipeline cache, in one planning scope: a planner read cut by its wall-clock limit in any
+	 * optimizer, including those that run before the packed planner opens its cost session, keeps that planning out of
+	 * the packed plan cache. (A cached planning runs in the pipeline cache's own scope; a cache hit plans nothing.)
+	 */
 	private TupleExpr optimizeUncached(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		if (tupleExpr == null) {
 			return null;
 		}
-		for (QueryOptimizer optimizer : getOptimizers()) {
-			optimizer.optimize(tupleExpr, dataset, getOptimizerInputBindings(optimizer, bindings));
-			PlanningGraphDomains.refresh(tupleExpr, PlanningGraphDomain.defaultGraph());
+		LmdbPlanningWallClockCuts.beginPlanning();
+		try {
+			for (QueryOptimizer optimizer : getOptimizers()) {
+				optimizer.optimize(tupleExpr, dataset, getOptimizerInputBindings(optimizer, bindings));
+				PlanningGraphDomains.refresh(tupleExpr, PlanningGraphDomain.defaultGraph());
+			}
+		} finally {
+			LmdbPlanningWallClockCuts.endPlanning();
 		}
+		annotatePipelineCacheHit(tupleExpr, false);
 		return tupleExpr;
 	}
 
@@ -434,10 +486,15 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				preserveSerializableObservationOrder, strategy, tripleSource, executionSnapshotEpoch);
 	}
 
-	private LmdbPipelinePlanCache.Context context(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+	private LmdbPipelinePlanCache.Context context(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
+			int readPlanes) {
 		// Unknown physical compositions have no plane-qualified reusable query plan or detached refresh owner.
-		if (runtime.frontierReadPlaneMask() == 0) {
+		if (readPlanes == 0) {
 			return null;
+		}
+		Runnable gatePassed = afterPipelineCacheGate;
+		if (gatePassed != null) {
+			gatePassed.run();
 		}
 		LmdbPipelinePlanCache.BindingIdentity bindingIdentity = LmdbPipelinePlanCache.BindingIdentity.of(bindings);
 		LmdbPipelinePlanCache.DatasetIdentity datasetIdentity = LmdbPipelinePlanCache.DatasetIdentity.of(dataset);
@@ -457,7 +514,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				revision(), executionSnapshotEpoch.isPresent(), executionSnapshotEpoch.orElse(0L), datasetIdentity,
 				bindingIdentity,
 				LmdbPipelinePlanCache.PredicateRangeIdentity.capture(detachedSource, bindingIdentity, runtime),
-				planningConfiguration(), preserveSerializableObservationOrder, strategy.isTrackResultSize(),
+				planningConfiguration(readPlanes), preserveSerializableObservationOrder, strategy.isTrackResultSize(),
 				strategy.isTrackTime(), strategy.getQueryEvaluationMode().name(), tupleExpr.isRuntimeTelemetryEnabled(),
 				filterReadIdentity(tupleExpr, dataset, bindings)).withSource(sourceIdentity);
 		return context.retainable() ? context : null;
@@ -478,7 +535,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				runtime.adaptiveEvidenceAllowed());
 	}
 
-	private String planningConfiguration() {
+	private String planningConfiguration(int readPlanes) {
 		Properties properties = System.getProperties();
 		List<String> names = new ArrayList<>();
 		for (String name : properties.stringPropertyNames()) {
@@ -489,7 +546,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		Collections.sort(names);
 		StringBuilder signature = new StringBuilder(names.size() * 48);
 		signature.append("frontier.population.schema=4;read.planes=")
-				.append(runtime.frontierReadPlaneMask())
+				.append(readPlanes)
 				.append(';');
 		signature.append("query.policy.experimental=")
 				.append(strategy.getQueryExecutionPolicy().experimentalQueryOptimizations())
@@ -539,12 +596,12 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		String value = Boolean.toString(cacheHit);
 		root.setStringMetricPlanned("optimizer.pipelinePlanCacheHit", value);
 		if (cacheHit) {
-			root.setStringMetricPlanned("optimizer.cascadesPlanCacheHit", "true");
+			root.setStringMetricPlanned(LmdbCascadesOptimizer.PLAN_CACHE_HIT_METRIC, "true");
 		}
 		if (root instanceof QueryRoot queryRoot) {
 			queryRoot.getArg().setStringMetricPlanned("optimizer.pipelinePlanCacheHit", value);
 			if (cacheHit) {
-				queryRoot.getArg().setStringMetricPlanned("optimizer.cascadesPlanCacheHit", "true");
+				queryRoot.getArg().setStringMetricPlanned(LmdbCascadesOptimizer.PLAN_CACHE_HIT_METRIC, "true");
 			}
 		}
 	}

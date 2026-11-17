@@ -376,6 +376,35 @@ class QueryPlanCaptureTest {
 	}
 
 	@Test
+	void anOmittedOptimizerTraceIsRecordedAsOmittedNotAsAParseError() throws Exception {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		String query = "SELECT ?s WHERE { ?s ?p ?o }";
+		EnumMap<Explanation.Level, Explanation> explanations = new EnumMap<>(Explanation.Level.class);
+		for (Explanation.Level level : Explanation.Level.values()) {
+			TupleExpr tupleExpr = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			if (level == Explanation.Level.Optimized || level == Explanation.Level.Telemetry) {
+				// What a store returns for a diagnostic it did not retain with a cached plan.
+				tupleExpr.setStringMetricPlanned("optimizer.cascadesTraceJson",
+						"omitted: replayed from the plan cache");
+			}
+			explanations.put(level, toExplanation(tupleExpr, level));
+		}
+
+		QueryPlanSnapshot snapshot = capture.capture(QueryPlanCaptureContext.builder()
+				.outputDirectory(tempDir)
+				.queryId("omitted-trace")
+				.queryString(query)
+				.benchmark("QueryPlanCaptureTest")
+				.build(), () -> stubTupleQueryFor(explanations));
+
+		Map<String, Object> optimizerTrace = optimizerTrace(snapshot);
+		assertEquals("1", optimizerTrace.get("formatVersion"));
+		assertEquals("replayed from the plan cache", optimizerTrace.get("traceOmitted"));
+		assertFalse(optimizerTrace.containsKey("parseError"),
+				() -> "an omitted trace is not malformed: " + optimizerTrace);
+	}
+
+	@Test
 	void estimateAccuracyUsesRepeatedInvocationRowsWhenPresent() {
 		String explanationJson = """
 				{

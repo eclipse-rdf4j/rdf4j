@@ -20,11 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Method;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -33,13 +36,486 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PackedPhysicalCostContractTest {
+
+	@Test
+	void unknownDependentWorkCannotBorrowTheSingletonPrice() {
+		int[] contextualCalls = { 0 };
+		PackedPlanningResult result = planJoinWithContextualWork(true, contextualCalls, 1_000.0d);
+		assertTrue(contextualCalls[0] > 0, "the real factor append must receive the bound input");
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:first"), values.createIRI("urn:firstValue"));
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:second"), values.createIRI("urn:secondValue"));
+		assertEquals(java.util.List.of("firstValue=urn:firstValue|joinKey=urn:subject|secondValue=urn:secondValue"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertFalse("dependent-iteration".equals(
+						result.selectedPlan().getStringMetricPlanned("optimizer.physicalJoinImplementation")),
+						() -> "selected cost=" + result.totalCost() + ", plan=" + result.selectedPlan()),
+				() -> assertTrue(result.exactComplete(), "search exhaustion is separate from price comparison"),
+				() -> assertEquals(PackedPlanDecisionSummary.BoundKind.BEST_KNOWN_UNBOUNDED,
+						result.decisionSummary().boundKind()),
+				() -> assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+						result.decisionSummary().comparisonCompleteness()),
+				() -> assertTrue(result.totalPrice().isPresent(), "the independent alternative retains its price"),
+				() -> assertTrue(Double.isNaN(result.decisionSummary().searchLowerBound())));
+	}
+
+	@Test
+	void unknownDependentWorkWithoutAnAdmittedHashRemainsAnUnpricedExecutableFallback() {
+		int[] contextualCalls = { 0 };
+		PackedPlanningResult result = planJoinWithContextualWork(true, contextualCalls, 100.0d);
+		assertTrue(contextualCalls[0] > 0);
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:first"), values.createIRI("urn:firstValue"));
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:second"), values.createIRI("urn:secondValue"));
+		assertEquals(java.util.List.of("firstValue=urn:firstValue|joinKey=urn:subject|secondValue=urn:secondValue"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		assertTrue(result.selectedPlan() instanceof Join);
+		assertFalse("hash".equals(result.selectedPlan().getStringMetricPlanned("optimizer.joinAlgorithmHint")));
+		String implementation = result.selectedPlan().getStringMetricPlanned("optimizer.physicalJoinImplementation");
+		assertTrue(implementation == null || "dependent-iteration".equals(implementation));
+		assertTrue(result.exactComplete());
+		assertTrue(result.totalPrice().isEmpty(),
+				() -> "unpriced dependent fallback was assigned " + result.totalCost() + ": " + result.selectedPlan()
+						+ ", numeric metrics=" + result.selectedPlan().getDoubleMetricsPlanned()
+						+ ", labels=" + result.selectedPlan().getStringMetricsPlanned());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unknownOptionalRightWorkRemainsUnavailableOnTheExecutableFallback(boolean explicitPhysicalCost) {
+		int[] contextualCalls = { 0 };
+		PackedPlanningResult result = planJoinWithContextualWork(true, contextualCalls, 100.0d, true, true,
+				explicitPhysicalCost);
+		assertTrue(contextualCalls[0] > 0, "the optional right input must receive the bound left input");
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:first"), values.createIRI("urn:firstValue"));
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:second"), values.createIRI("urn:secondValue"));
+		data.add(values.createIRI("urn:other"), values.createIRI("urn:first"), values.createIRI("urn:otherValue"));
+		assertEquals(java.util.List.of("firstValue=urn:firstValue|joinKey=urn:subject|secondValue=urn:secondValue",
+				"firstValue=urn:otherValue|joinKey=urn:other"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		assertTrue(result.selectedPlan() instanceof LeftJoin);
+		assertFalse("independent-hash".equals(
+				result.selectedPlan().getStringMetricPlanned("optimizer.physicalJoinImplementation")));
+		assertTrue(result.totalPrice().isEmpty(),
+				() -> "optional fallback assigned " + result.totalCost() + ": " + result.selectedPlan());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unknownOptionalRightWorkDoesNotSuppressAPricedIndependentAlternative(boolean explicitPhysicalCost) {
+		int[] contextualCalls = { 0 };
+		PackedPlanningResult result = planJoinWithContextualWork(true, contextualCalls, 100.0d, true, false,
+				explicitPhysicalCost);
+		assertTrue(contextualCalls[0] > 0);
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:first"), values.createIRI("urn:firstValue"));
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:second"), values.createIRI("urn:secondValue"));
+		data.add(values.createIRI("urn:other"), values.createIRI("urn:first"), values.createIRI("urn:otherValue"));
+		assertEquals(java.util.List.of("firstValue=urn:firstValue|joinKey=urn:subject|secondValue=urn:secondValue",
+				"firstValue=urn:otherValue|joinKey=urn:other"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		assertEquals("independent-hash",
+				result.selectedPlan().getStringMetricPlanned("optimizer.physicalJoinImplementation"));
+		assertTrue(result.totalPrice().isPresent());
+		assertTrue(result.exactComplete());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void knownOptionalRightWorkRemainsPriced(boolean condition) {
+		int[] contextualCalls = { 0 };
+		PackedPlanningResult result = planJoinWithContextualWork(false, contextualCalls, 100.0d, true, condition);
+		assertTrue(contextualCalls[0] > 0);
+		assertTrue(result.totalPrice().isPresent());
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void isolatedOptionalRightWorkDoesNotCertifyABoundInputPrice(boolean explicitPhysicalCost) {
+		int[] contextualCalls = { 0 };
+		PackedPlanningResult result = planJoinWithContextualWork(false, contextualCalls, 100.0d, true, true,
+				explicitPhysicalCost, true);
+		assertTrue(contextualCalls[0] > 0, "the provider must see the bound input before declining a scoped price");
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:first"), values.createIRI("urn:firstValue"));
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:second"), values.createIRI("urn:secondValue"));
+		assertEquals(java.util.List.of("firstValue=urn:firstValue|joinKey=urn:subject|secondValue=urn:secondValue"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		assertTrue(result.totalPrice().isEmpty(),
+				() -> "isolated work was used as the bound OPTIONAL price " + result.totalCost());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void isolatedOptionalRightWorkRepeatsForDisconnectedInput(boolean explicitPhysicalCost) {
+		int[] contextualCalls = { 0 };
+		PackedPlanningResult result = planJoinWithContextualWork(false, contextualCalls, 100.0d, true, true,
+				explicitPhysicalCost, true, true);
+		assertTrue(contextualCalls[0] > 0, "the provider must see the unrelated input");
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:first"), values.createIRI("urn:firstValue"));
+		data.add(values.createIRI("urn:other"), values.createIRI("urn:second"), values.createIRI("urn:secondValue"));
+		assertEquals(java.util.List
+				.of("firstValue=urn:firstValue|joinKey=urn:subject|otherJoinKey=urn:other|secondValue=urn:secondValue"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		double leftWork = explicitPhysicalCost ? 5.0d : 2.0d;
+		// The legacy scalar recurrence treats one unit as one-time startup; explicit physical work repeats in full.
+		double repeatedRightWork = explicitPhysicalCost ? 2.0d * 201.0d : 1.0d + 2.0d * 99.0d;
+		assertEquals(leftWork + repeatedRightWork + result.outputRows(), result.totalPrice().orElseThrow(),
+				"the unchanged right access is priced over both left inputs");
+	}
+
+	@Test
+	void mixedOptionalInputDoesNotCertifyAnIsolatedRightPrice() {
+		var values = SimpleValueFactory.getInstance();
+		QueryBindingSet bound = new QueryBindingSet();
+		bound.addBinding("joinKey", values.createIRI("urn:subject"));
+		BindingSetAssignment input = new BindingSetAssignment();
+		input.setDeclaredBindingNames(java.util.Set.of("joinKey"));
+		input.setBindingSets(java.util.List.of(bound, new QueryBindingSet()));
+		StatementPattern right = new StatementPattern(Var.of("joinKey"),
+				Var.of("predicate", values.createIRI("urn:second"), true, true), Var.of("value"));
+		LeftJoin source = new LeftJoin(input, right, new ValueConstant(values.createLiteral(true)));
+		int[] contextualCalls = { 0 };
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 100.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				if (context.prefixRelationCount() == 0) {
+					output.setRows(100.0d, 100.0d);
+					output.setLocalPhysicalCost(100.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d,
+							0.0d, 100.0d, 0.0d, 0.0d);
+				} else {
+					contextualCalls[0]++;
+					output.setRows(100.0d, Double.NaN);
+					output.setLocalPhysicalCostPreservingUnknown(Double.NaN, Double.NaN, context.prefixRows(),
+							0.0d, 0.0d, 0.0d, 0.0d, Double.NaN, 0.0d, 0.0d, Double.NaN);
+				}
+			}
+		};
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), model);
+		var data = PackedPlanDifferentialSupport.model();
+		data.add(values.createIRI("urn:subject"), values.createIRI("urn:second"), values.createIRI("urn:first"));
+		data.add(values.createIRI("urn:other"), values.createIRI("urn:second"), values.createIRI("urn:otherValue"));
+		assertEquals(java.util.List.of("joinKey=urn:other|value=urn:otherValue",
+				"joinKey=urn:subject|value=urn:first", "joinKey=urn:subject|value=urn:first"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		assertTrue(result.totalPrice().isEmpty(),
+				() -> "mixed input was assigned an isolated right price " + result.totalCost());
+		assertTrue(contextualCalls[0] > 0, "the provider must see the possible binding in the real input");
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+	}
+
+	@Test
+	void knownDependentWorkStillCompetesWithIndependentAlternatives() {
+		int[] contextualCalls = { 0 };
+		PackedPlanningResult result = planJoinWithContextualWork(false, contextualCalls);
+		assertTrue(contextualCalls[0] > 0);
+		assertTrue(result.exactComplete());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+		assertEquals(PackedPlanDecisionSummary.BoundKind.BEST_KNOWN_UNBOUNDED,
+				result.decisionSummary().boundKind());
+		assertTrue(result.totalPrice().isPresent());
+		assertEquals("dependent-iteration",
+				result.selectedPlan().getStringMetricPlanned("optimizer.physicalJoinImplementation"));
+	}
+
+	@Test
+	void aFullyPricedSingleAccessHasACompleteComparison() {
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		var predicate = values.createIRI("urn:first");
+		data.add(values.createIRI("urn:subject"), predicate, values.createIRI("urn:firstValue"));
+		StatementPattern source = new StatementPattern(Var.of("joinKey"),
+				Var.of("firstPredicate", predicate, true, true), Var.of("firstValue"));
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 2.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isStatementPattern(relationId)) {
+					output.setRows(2.0d, 2.0d);
+					output.setLocalPhysicalCost(2.0d, 0.0d, 1.0d, 0.0d, 0.0d,
+							0.0d, 0.0d, 2.0d, 0.0d, 0.0d);
+				}
+			}
+		};
+		var result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), model);
+		assertEquals(java.util.List.of("firstValue=urn:firstValue|joinKey=urn:subject"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		assertTrue(result.exactComplete());
+		assertEquals(5.0d, result.totalPrice().orElseThrow());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.COMPLETE,
+				result.decisionSummary().comparisonCompleteness());
+		assertEquals(PackedPlanDecisionSummary.BoundKind.VALID_LOWER_BOUND,
+				result.decisionSummary().boundKind());
+	}
+
+	@Test
+	void unavailableLeafWorkStillRetainsAnExecutableUnpricedPlan() {
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		var predicate = values.createIRI("urn:first");
+		data.add(values.createIRI("urn:subject"), predicate, values.createIRI("urn:firstValue"));
+		StatementPattern source = new StatementPattern(Var.of("joinKey"),
+				Var.of("firstPredicate", predicate, true, true), Var.of("firstValue"));
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 2.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isStatementPattern(relationId)) {
+					output.setRows(2.0d, Double.NaN);
+					output.setLocalPhysicalCostPreservingUnknown(Double.NaN, Double.NaN, 1.0d, 0.0d, 0.0d,
+							0.0d, 0.0d, 2.0d, 0.0d, 0.0d, Double.NaN);
+				}
+			}
+		};
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), model);
+		assertEquals(2.0d, result.outputRows());
+		assertEquals(java.util.List.of("firstValue=urn:firstValue|joinKey=urn:subject"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertTrue(result.exactComplete(), "search exhaustion is separate from price availability"),
+				() -> assertEquals(PackedPlanDecisionSummary.BoundKind.BEST_KNOWN_UNBOUNDED,
+						result.decisionSummary().boundKind()),
+				() -> assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+						result.decisionSummary().comparisonCompleteness()),
+				() -> assertTrue(result.totalPrice().isEmpty()),
+				() -> assertFalse(result.decisionSummary().selectedCostInterval().available()),
+				() -> assertTrue(Double.isNaN(result.totalCost()), "unavailable work has no finite total"),
+				() -> assertTrue(Double.isNaN(result.decisionSummary().selectedCostInterval().point())));
+	}
+
+	@Test
+	void anUnpricedLeafRemainsUnpricedUnderAnExecutableExtension() {
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		var predicate = values.createIRI("urn:first");
+		data.add(values.createIRI("urn:subject"), predicate, values.createIRI("urn:firstValue"));
+		StatementPattern source = new StatementPattern(Var.of("joinKey"),
+				Var.of("firstPredicate", predicate, true, true), Var.of("firstValue"));
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 2.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isStatementPattern(relationId)) {
+					output.setRows(2.0d, Double.NaN);
+					output.setLocalPhysicalCostPreservingUnknown(Double.NaN, Double.NaN, 1.0d, 0.0d, 0.0d,
+							0.0d, 0.0d, 2.0d, 0.0d, 0.0d, Double.NaN);
+				}
+			}
+		};
+		var result = PackedCascadesPlanner.optimize(new Extension(source,
+				new ExtensionElem(Var.of("firstValue"), "alias")), OptimizationGoal.root(), model);
+		assertEquals(java.util.List.of("alias=urn:firstValue|firstValue=urn:firstValue|joinKey=urn:subject"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		assertTrue(result.totalPrice().isEmpty(), "the enclosing operator cannot supply its child's missing price");
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unpricedExistsWorkDoesNotBecomeAFiniteParentPrice(boolean explicitFilterCost) {
+		var data = PackedPlanDifferentialSupport.model();
+		var values = SimpleValueFactory.getInstance();
+		var outerPredicate = values.createIRI("urn:outer");
+		var dependentPredicate = values.createIRI("urn:dependent");
+		data.add(values.createIRI("urn:subject"), outerPredicate, values.createIRI("urn:outerValue"));
+		data.add(values.createIRI("urn:other"), dependentPredicate, values.createIRI("urn:dependentValue"));
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", outerPredicate, true, true), Var.of("outerValue"));
+		StatementPattern dependent = new StatementPattern(Var.of("independentSubject"),
+				Var.of("dependentPredicate", dependentPredicate, true, true), Var.of("dependentValue"));
+		Filter source = new Filter(outer,
+				new Or(new Exists(dependent), new ValueConstant(values.createLiteral(false))));
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 1.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				if (query.materializeRelation(relationId).equals(dependent)) {
+					output.setRows(1.0d, Double.NaN);
+					output.setLocalPhysicalCostPreservingUnknown(Double.NaN, Double.NaN, 1.0d, 0.0d, 0.0d,
+							0.0d, 0.0d, 1.0d, 0.0d, 0.0d, Double.NaN);
+				} else {
+					output.setRows(1.0d, 1.0d);
+					output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 1.0d, 0.0d, 0.0d);
+				}
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (explicitFilterCost && query.isFilter(relationId)) {
+					output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 1.0d, 0.0d, 0.0d);
+				}
+			}
+		};
+		var result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), model);
+		assertEquals(java.util.List.of("outerValue=urn:outerValue|subject=urn:subject"),
+				PackedPlanDifferentialSupport.evaluate(data, result.selectedPlan()));
+		assertTrue(result.totalPrice().isEmpty(), "an unknown subquery price cannot become a numeric bound");
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				result.decisionSummary().comparisonCompleteness());
+	}
+
+	private static PackedPlanningResult planJoinWithContextualWork(boolean unknown, int[] contextualCalls) {
+		return planJoinWithContextualWork(unknown, contextualCalls, 100.0d);
+	}
+
+	private static PackedPlanningResult planJoinWithContextualWork(boolean unknown, int[] contextualCalls,
+			double secondRows) {
+		return planJoinWithContextualWork(unknown, contextualCalls, secondRows, false);
+	}
+
+	private static PackedPlanningResult planJoinWithContextualWork(boolean unknown, int[] contextualCalls,
+			double secondRows, boolean optional) {
+		return planJoinWithContextualWork(unknown, contextualCalls, secondRows, optional, true);
+	}
+
+	private static PackedPlanningResult planJoinWithContextualWork(boolean unknown, int[] contextualCalls,
+			double secondRows, boolean optional, boolean optionalCondition) {
+		return planJoinWithContextualWork(unknown, contextualCalls, secondRows, optional, optionalCondition, true);
+	}
+
+	private static PackedPlanningResult planJoinWithContextualWork(boolean unknown, int[] contextualCalls,
+			double secondRows, boolean optional, boolean optionalCondition, boolean explicitPhysicalCost) {
+		return planJoinWithContextualWork(unknown, contextualCalls, secondRows, optional, optionalCondition,
+				explicitPhysicalCost, false);
+	}
+
+	private static PackedPlanningResult planJoinWithContextualWork(boolean unknown, int[] contextualCalls,
+			double secondRows, boolean optional, boolean optionalCondition, boolean explicitPhysicalCost,
+			boolean isolatedFactorContext) {
+		return planJoinWithContextualWork(unknown, contextualCalls, secondRows, optional, optionalCondition,
+				explicitPhysicalCost, isolatedFactorContext, false);
+	}
+
+	private static PackedPlanningResult planJoinWithContextualWork(boolean unknown, int[] contextualCalls,
+			double secondRows, boolean optional, boolean optionalCondition, boolean explicitPhysicalCost,
+			boolean isolatedFactorContext, boolean disconnected) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern first = new StatementPattern(Var.of("joinKey"),
+				Var.of("firstPredicate", values.createIRI("urn:first"), true, true), Var.of("firstValue"));
+		StatementPattern second = new StatementPattern(Var.of(disconnected ? "otherJoinKey" : "joinKey"),
+				Var.of("secondPredicate", values.createIRI("urn:second"), true, true), Var.of("secondValue"));
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return query.materializeRelation(relationId).equals(first) ? 2.0d : secondRows;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				double rows = estimateRows(query, relationId);
+				if (!query.prefixBindsStatementComponent(context, relationId, 0)) {
+					if (context.prefixRelationCount() > 0) {
+						contextualCalls[0]++;
+					}
+					output.setRows(rows, rows);
+					if (!isolatedFactorContext || explicitPhysicalCost) {
+						output.setLocalPhysicalCost(rows, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+								rows, 0.0d, 0.0d);
+					}
+					return;
+				}
+				contextualCalls[0]++;
+				double invocations = Math.max(1.0d, context.prefixRows());
+				if (isolatedFactorContext) {
+					output.setRows(rows, rows);
+					if (explicitPhysicalCost) {
+						output.setLocalPhysicalCost(rows, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+								rows, 0.0d, 0.0d);
+					}
+					output.setInvocations(1.0d);
+					return;
+				} else if (unknown) {
+					output.setRows(rows, Double.NaN);
+					if (explicitPhysicalCost) {
+						output.setLocalPhysicalCostPreservingUnknown(Double.NaN, Double.NaN, invocations, 0.0d, 0.0d,
+								0.0d, 0.0d, Double.NaN, 0.0d, 0.0d, Double.NaN);
+					}
+				} else {
+					output.setContextualRows(invocations, invocations);
+					output.setLocalPhysicalCost(invocations, 0.0d, invocations, 0.0d, 0.0d, 0.0d, 0.0d,
+							invocations, 0.0d, 0.0d);
+				}
+				output.setInvocations(invocations);
+			}
+		};
+		TupleExpr source = optional
+				? optionalCondition
+						? new LeftJoin(first, second, new Compare(Var.of("firstValue"),
+								new ValueConstant(values.createIRI("urn:firstValue")), Compare.CompareOp.EQ))
+						: new LeftJoin(first, second)
+				: new Join(first, second);
+		return PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), model);
+	}
 
 	@Test
 	void reusableCostSlotIndexesMetricNamesWithoutChangingReplacementSemantics() {
@@ -557,6 +1033,222 @@ class PackedPhysicalCostContractTest {
 	}
 
 	@Test
+	void dependentSubqueryObjectiveIsNotRepricedAsSourceRows() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
+		StatementPattern dependent = new StatementPattern(Var.of("independentSubject"),
+				Var.of("dependentPredicate", values.createIRI("urn:dependent"), true, true), Var.of("dependentValue"));
+		Filter filter = new Filter(outer,
+				new Or(new Exists(dependent), new ValueConstant(values.createLiteral(false))));
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (query.isStatementPattern(relationId)) {
+							output.setRows(1.0d, 10.0d);
+							output.setInclusivePhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+									0.0d);
+						}
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (query.isFilter(relationId)) {
+							output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+						}
+					}
+
+					@Override
+					public double objectiveScore(PackedCostEstimate estimate) {
+						return estimate.sequentialRows() * 10.0d;
+					}
+				};
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
+
+		// One outer scan (100), the filter (10), and one independent subquery (100).
+		assertEquals(210.0d, result.totalCost(), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void nestedIndependentSubqueriesEachContributeTheirPricedObjectiveOnce() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
+		StatementPattern first = new StatementPattern(Var.of("firstSubject"),
+				Var.of("firstPredicate", values.createIRI("urn:first"), true, true), Var.of("firstValue"));
+		StatementPattern second = new StatementPattern(Var.of("secondSubject"),
+				Var.of("secondPredicate", values.createIRI("urn:second"), true, true), Var.of("secondValue"));
+		Filter filter = new Filter(outer, new Or(new Exists(first),
+				new Or(new Exists(second), new ValueConstant(values.createLiteral(false)))));
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (query.isStatementPattern(relationId)) {
+							output.setRows(1.0d, 10.0d);
+							output.setInclusivePhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+									0.0d);
+						}
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (query.isFilter(relationId)) {
+							output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+						}
+					}
+
+					@Override
+					public double objectiveScore(PackedCostEstimate estimate) {
+						return estimate.sequentialRows() * 10.0d;
+					}
+				};
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
+
+		assertEquals(310.0d, result.totalCost(), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void dependentWinnerRiskContributesToOwningFilterComparison() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
+		StatementPattern dependent = new StatementPattern(Var.of("independentSubject"),
+				Var.of("dependentPredicate", values.createIRI("urn:dependent"), true, true), Var.of("dependentValue"));
+		Filter filter = new Filter(outer,
+				new Or(new Exists(dependent), new ValueConstant(values.createLiteral(false))));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(filter);
+		PackedQueryView view = new PackedQueryView(query);
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		PackedCostSession session = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (!view.isStatementPattern(relationId)) {
+					return;
+				}
+				output.setRows(1.0d, 10.0d);
+				output.setInclusivePhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+				if (view.materializeRelation(relationId).equals(dependent)) {
+					output.setObjectiveInterval(10.0d, 10.0d, 20.0d);
+					output.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+					output.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 20.0d);
+				}
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				estimateLeaf(relationId, context, output);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (view.isFilter(relationId)) {
+					output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+					output.setObjectiveInterval(1.0d, 1.0d, 1.0d);
+					output.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+					output.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 1.0d);
+				}
+			}
+		};
+		int relationCount = query.relationCount();
+		try (PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2, budget)) {
+			int winner = PackedIncumbentSearch.forSession(query, memo, budget, false, session).build();
+
+			assertEquals(21.0d, memo.winnerTotalCost(winner));
+			assertEquals(31.0d, memo.winnerComparisonCost(winner),
+					"the implicit dependent winner's risk must survive the owning filter's lifecycle comparison");
+		}
+	}
+
+	@Test
+	void correlatedDependentWinnerRiskUsesTheSameReopenDomainAsItsPointPrice() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
+		StatementPattern dependent = new StatementPattern(Var.of("subject"),
+				Var.of("dependentPredicate", values.createIRI("urn:dependent"), true, true), Var.of("dependentValue"));
+		Filter filter = new Filter(outer,
+				new Or(new Exists(dependent), new ValueConstant(values.createLiteral(false))));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(filter);
+		PackedQueryView view = new PackedQueryView(query);
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		PackedCostSession session = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (!view.isStatementPattern(relationId)) {
+					return;
+				}
+				boolean isDependent = view.materializeRelation(relationId).equals(dependent);
+				output.setRows(isDependent ? 1.0d : 10.0d, 10.0d);
+				output.setInclusivePhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+				if (isDependent) {
+					output.setObjectiveInterval(10.0d, 10.0d, 20.0d);
+					output.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+					output.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 20.0d);
+				}
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				estimateLeaf(relationId, context, output);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (view.isFilter(relationId)) {
+					output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+					output.setObjectiveInterval(1.0d, 1.0d, 1.0d);
+					output.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+					output.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 1.0d);
+				}
+			}
+		};
+		int relationCount = query.relationCount();
+		try (PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2, budget)) {
+			int winner = PackedIncumbentSearch.forSession(query, memo, budget, false, session).build();
+
+			assertEquals(102.0d, memo.winnerTotalCost(winner));
+			assertEquals(202.0d, memo.winnerComparisonCost(winner),
+					"the dependent risk and point cost must both cover all ten correlated invocations");
+		}
+	}
+
+	@Test
 	void dependentSubqueryCostParticipatesInOwningFilterWinnerSelection() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("subject"),
@@ -931,6 +1623,83 @@ class PackedPhysicalCostContractTest {
 		assertTrue(metadataId != 0, "the composite winner must retain its complete physical vector");
 		assertEquals(10.0d, memo.physicalMetadataInvocations(metadataId),
 				"a complete contextual vector must retain the invocation domain it already priced");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void isolatedFactorResultWorkRepeatsAcrossAdditionalInheritedInvocations(boolean dependentProfile) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("outerSubject"),
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
+		StatementPattern first = new StatementPattern(Var.of("componentSubject"),
+				Var.of("firstPredicate", values.createIRI("urn:first"), true, true), Var.of("joinKey"));
+		StatementPattern second = new StatementPattern(Var.of("joinKey"),
+				Var.of("secondPredicate", values.createIRI("urn:second"), true, true), Var.of("result"));
+		Join nestedJoin = new Join(first, second);
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				TupleExpr expression = query.materializeRelation(relationId);
+				return expression.equals(outer) ? 10.0d : expression.equals(first) ? 2.0d : 100.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				TupleExpr expression = query.materializeRelation(relationId);
+				if (expression.equals(outer)) {
+					output.setRows(10.0d, 21.0d);
+					output.setInclusivePhysicalCost(10.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							10.0d, 0.0d, 0.0d);
+					return;
+				}
+				if (expression.equals(first)) {
+					boolean inherited = context.prefixRelationCount() != 0;
+					double priced = inherited ? 2.0d : 1.0d;
+					output.setRows(2.0d, 5.0d * priced);
+					output.setInclusivePhysicalCost(2.0d * priced, 0.0d, priced, 0.0d, 0.0d, 0.0d,
+							0.0d, 2.0d * priced, 0.0d, 0.0d);
+					output.setInvocations(priced);
+					if (dependentProfile) {
+						output.setDependentCostComponents(0.0d, priced, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+								2.0d * priced, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+					}
+					return;
+				}
+				boolean joinKeyBound = query.prefixBindsStatementComponent(context, relationId, 0);
+				if (!joinKeyBound) {
+					output.setComponentRows(100.0d, 201.0d);
+					output.setInclusivePhysicalCost(100.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							100.0d, 0.0d, 0.0d);
+					return;
+				}
+				output.setComponentRows(2.0d, 6.0d);
+				output.setInclusivePhysicalCost(2.0d, 0.0d, 2.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+						2.0d, 0.0d, 0.0d);
+				output.setInvocations(2.0d);
+			}
+		};
+
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Union(outer, nestedJoin));
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, budget, false, model);
+		search.build();
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(),
+				budget, model);
+		int winnerId = enumerator.optimizeWithInheritedPrefix(relationId(query, nestedJoin),
+				new int[] { relationId(query, outer) }, 1, 10.0d);
+
+		assertEquals(150.0d, memo.winnerTotalCost(winnerId),
+				"the isolated factor's result work repeats with its remaining inherited invocations");
 	}
 
 	@Test

@@ -491,6 +491,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private double frontierPlanCacheMaximumCanaryFraction = FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION;
 
+	private boolean retainCachedPlanDiagnostics;
+
 	private boolean optimizerSamplingEnabled = true;
 
 	private long optimizerSamplingMaxMillis = OPTIMIZER_SAMPLING_MAX_MILLIS;
@@ -1169,6 +1171,22 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * Whether a plan served from the pipeline plan cache keeps its explanation diagnostics
+	 * ({@code optimizer.packedExplanation}, {@code optimizer.packedExplanationJson} and
+	 * {@code optimizer.cascadesTraceJson}). Off by default: the cache then retains a short placeholder instead, which
+	 * lets it hold more plans. EXPLAIN text and JSON never contain these diagnostics; only direct metric access on the
+	 * explained plan reads them, as plan-capture tooling does.
+	 */
+	public boolean getRetainCachedPlanDiagnostics() {
+		return retainCachedPlanDiagnostics;
+	}
+
+	public LmdbStoreConfig setRetainCachedPlanDiagnostics(boolean retainCachedPlanDiagnostics) {
+		this.retainCachedPlanDiagnostics = retainCachedPlanDiagnostics;
+		return this;
+	}
+
 	private static void requirePlanCacheCount(int value, String name) {
 		if (value < 1 || value > 16) {
 			throw new IllegalArgumentException(name + " must be in range 1..16");
@@ -1616,6 +1634,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION,
 					vf.createLiteral(frontierPlanCacheMaximumCanaryFraction));
 		}
+		if (retainCachedPlanDiagnostics) {
+			m.add(implNode, LmdbStoreSchema.RETAIN_CACHED_PLAN_DIAGNOSTICS, vf.createLiteral(true));
+		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
 		}
@@ -2039,6 +2060,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						} catch (IllegalArgumentException e) {
 							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION,
 									lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.RETAIN_CACHED_PLAN_DIAGNOSTICS, null))
+					.ifPresent(lit -> {
+						try {
+							setRetainCachedPlanDiagnostics(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException("Boolean value required for "
+									+ LmdbStoreSchema.RETAIN_CACHED_PLAN_DIAGNOSTICS + " property, found " + lit);
 						}
 					});
 

@@ -81,6 +81,292 @@ class PackedDeclaredQuantityReplayTest {
 	}
 
 	@Test
+	void composingAChildDoesNotInventAnUnknownSeekCount() {
+		PackedCostEstimate value = new PackedCostEstimate();
+		value.setRows(1.0d, 99.0d);
+		value.setInclusivePhysicalCostPreservingUnknown(5.0d, Double.NaN, 2.0d, 0.0d, 0.0d,
+				0.0d, 0.0d, 0.0d, 0.0d, Double.NaN, 99.0d);
+
+		value.addChildPhysicalCost(2.0d, 3.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 4.0d);
+
+		assertTrue(Double.isNaN(value.randomSeeks()), "an unknown contribution cannot become the child's count");
+		assertEquals(7.0d, value.sequentialRows());
+		assertEquals(3.0d, value.iteratorOpens());
+		assertTrue(Double.isNaN(value.peakMemoryRows()), "unknown peak memory cannot become the child's peak");
+		assertTrue(Double.isNaN(value.physicalWorkRows()));
+	}
+
+	@Test
+	void composingAChildDoesNotInventACombinedIndependentPrice() {
+		PackedCostEstimate value = new PackedCostEstimate();
+		value.setRows(1.0d, 99.0d);
+		value.setInclusivePhysicalCost(5.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		value.setObjectivePricePreservingPhysicalCost(99.0d);
+
+		value.addChildPhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+
+		assertEquals(7.0d, value.sequentialRows(), "known quantities are still composed");
+		assertTrue(Double.isNaN(value.workRows()), "the previous price does not price the new child");
+		assertTrue(Double.isNaN(value.objectivePoint()), "a stale objective interval cannot certify the new event");
+		value.addChildPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		assertEquals(8.0d, value.sequentialRows());
+		assertTrue(Double.isNaN(value.workRows()), "another child cannot recreate an unavailable price");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "direct", "copy", "provider-copy", "metadata", "trace", "provider-input", "replace" })
+	void scalarPricedChildKeepsCompositeResourcesUnknownThroughRetention(String route) {
+		for (boolean inclusive : new boolean[] { false, true }) {
+			PackedCostEstimate value = new PackedCostEstimate();
+			value.setRows(1.0d, 5.0d);
+			if (inclusive) {
+				value.setInclusivePhysicalCost(5.0d, 2.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+						0.0d, 3.0d);
+			} else {
+				value.setLocalPhysicalCost(5.0d, 2.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+						0.0d, 3.0d);
+			}
+			value.setPhysicalCostWithUnknownChild(123.0d);
+
+			PackedCostEstimate output = retained(value, route);
+			assertEquals(123.0d, output.workRows(), route);
+			assertEquals(inclusive ? PackedCostEstimate.CostScope.INCLUSIVE : PackedCostEstimate.CostScope.LOCAL,
+					output.costScope(), route);
+			PackedCostVectorArena vectors = new PackedCostVectorArena();
+			int quantities = vectors.importQuantities(output);
+			assertFalse(vectors.isKnown(quantities, CPU), route);
+			assertFalse(vectors.isKnown(quantities, SOURCE), route);
+			assertFalse(vectors.isKnown(quantities, PackedCostDimensionRegistry.RANDOM_SEEKS), route);
+			assertFalse(vectors.isKnown(quantities, PackedCostDimensionRegistry.LEGACY_PEAK_MEMORY_ROWS), route);
+		}
+	}
+
+	@Test
+	void scalarPricedChildPreservesLifecycleRiskThroughMetadata() {
+		PackedCostEstimate value = new PackedCostEstimate();
+		value.setRows(1.0d, 10.0d);
+		value.setLocalPhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		value.setObjectiveInterval(8.0d, 10.0d, 20.0d);
+		value.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		value.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 20.0d);
+
+		value.setPhysicalCostWithUnknownChild(110.0d);
+		PackedPhysicalMetadataArena metadata = new PackedPhysicalMetadataArena(1);
+		int id = metadata.append(value, 1.0d, 110.0d);
+
+		assertEquals(108.0d, metadata.objectiveLowerBound(id));
+		assertEquals(110.0d, metadata.objectivePointCost(id));
+		assertEquals(120.0d, metadata.objectiveUpperBound(id));
+		assertEquals(120.0d, metadata.lifecycleComparisonCost(id));
+		assertTrue(metadata.lifecycleEnforced(id));
+	}
+
+	@Test
+	void physicalChildThenScalarChildPreservesSourceLifecycleRisk() {
+		PackedCostEstimate value = new PackedCostEstimate();
+		value.setRows(1.0d, 10.0d);
+		value.setLocalPhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		value.setObjectiveInterval(8.0d, 10.0d, 20.0d);
+		value.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		value.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 20.0d);
+		value.addChildPhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+
+		value.setPhysicalCostWithUnknownChild(110.0d);
+		PackedPhysicalMetadataArena metadata = new PackedPhysicalMetadataArena(1);
+		int id = metadata.append(value, 1.0d, 110.0d);
+
+		assertEquals(108.0d, metadata.objectiveLowerBound(id));
+		assertEquals(110.0d, metadata.objectivePointCost(id));
+		assertEquals(120.0d, metadata.objectiveUpperBound(id));
+		assertEquals(120.0d, metadata.lifecycleComparisonCost(id));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "direct", "copy", "provider-copy", "trace", "provider-input", "replace" })
+	void partialObjectiveSurvivesRetentionUntilTheCompositePriceIsKnown(String route) {
+		PackedCostEstimate value = new PackedCostEstimate();
+		value.setRows(1.0d, 10.0d);
+		value.setLocalPhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		value.setObjectiveInterval(8.0d, 10.0d, 20.0d);
+		value.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		value.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 20.0d);
+		value.addChildPhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		PackedCostEstimate output = retained(value, route);
+		assertTrue(Double.isNaN(output.objectivePoint()), route);
+
+		output.setObjectivePricePreservingPhysicalCost(110.0d);
+
+		assertEquals(108.0d, output.objectiveLower(), route);
+		assertEquals(110.0d, output.objectivePoint(), route);
+		assertEquals(120.0d, output.objectiveUpper(), route);
+		assertEquals(120.0d, output.plannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.NaN), route);
+	}
+
+	@Test
+	void metadataRebasesAnUnpricedPhysicalCompositionWithoutMutatingItsInput() {
+		PackedCostEstimate value = new PackedCostEstimate();
+		value.setRows(1.0d, 10.0d);
+		value.setLocalPhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		value.setObjectiveInterval(8.0d, 10.0d, 20.0d);
+		value.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		value.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 20.0d);
+		value.addChildPhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+
+		PackedPhysicalMetadataArena metadata = new PackedPhysicalMetadataArena(1);
+		int id = metadata.append(value, 1.0d, 110.0d);
+
+		assertTrue(Double.isNaN(value.objectivePoint()), "retention cannot mutate the provider's input slot");
+		assertEquals(108.0d, metadata.objectiveLowerBound(id));
+		assertEquals(110.0d, metadata.objectivePointCost(id));
+		assertEquals(120.0d, metadata.objectiveUpperBound(id));
+		assertEquals(120.0d, metadata.lifecycleComparisonCost(id));
+	}
+
+	@Test
+	void metadataKeepsKnownResourcesWhenTheProviderObjectiveIsUnavailable() {
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relation, PackedCostContext context, PackedCostEstimate output) {
+				output.setRows(2.0d, 5.0d);
+				output.setLocalPhysicalCost(5.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+						2.0d, 0.0d, 0.0d);
+			}
+
+			@Override
+			public void appendFactor(int relation, PackedCostContext context, PackedCostEstimate output) {
+				estimateLeaf(relation, context, output);
+			}
+
+			@Override
+			public void refineOperator(int relation, PackedCostContext context, PackedCostEstimate output) {
+			}
+
+			@Override
+			public double objectiveScore(PackedCostEstimate output) {
+				return Double.NaN;
+			}
+		};
+		PackedCostEstimate output = new PackedCostEstimate();
+		try (EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider)) {
+			session.estimateLeaf(1, context(), output);
+			double price = session.objectiveScore(output);
+			assertTrue(Double.isNaN(price));
+			assertEquals(5.0d, output.sequentialRows());
+			PackedPhysicalMetadataArena metadata = new PackedPhysicalMetadataArena(1);
+			int id = metadata.append(output, output.outputRows(), price);
+			assertEquals(5.0d, metadata.sequentialRows(id));
+			assertTrue(Double.isNaN(metadata.objectiveLowerBound(id)));
+			assertTrue(Double.isNaN(metadata.objectivePointCost(id)), "work rows are not the provider's objective");
+			assertTrue(Double.isNaN(metadata.objectiveUpperBound(id)));
+			PackedCostEstimate restored = new PackedCostEstimate();
+			metadata.restorePhysicalCost(id, restored);
+			assertEquals(5.0d, restored.sequentialRows());
+			assertTrue(Double.isNaN(restored.objectivePoint()));
+		}
+	}
+
+	@Test
+	void repricingAPartialObjectiveDoesNotChangeItsQuantityTranscript() {
+		PackedCostEstimate input = declared("typed", 5.0d);
+		PackedCostEstimate first = declared("typed", 10.0d);
+		first.setObjectiveInterval(8.0d, 10.0d, 20.0d);
+		first.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 20.0d);
+		first.addChildPhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		PackedCostEstimate second = declared("typed", 20.0d);
+		second.setObjectiveInterval(15.0d, 20.0d, 30.0d);
+		second.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", 30.0d);
+		second.addChildPhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+
+		PackedCostingTrace original = trace(context(), input, first, PackedCostingPhase.LEAF);
+		PackedCostingTrace repriced = trace(context(), input, second, PackedCostingPhase.LEAF);
+
+		assertTrue(original.sameQuantityTranscript(repriced),
+				"a source price or risk change does not change the declared resource quantities");
+	}
+
+	@Test
+	void reopeningUnknownPhysicalResourcesUsesTheCompleteScalarPrice() {
+		PackedCostEstimate scalar = new PackedCostEstimate();
+		scalar.setLocalScalarPrice(1.0d, 10.0d);
+		PackedCostEstimate unknown = new PackedCostEstimate();
+		unknown.setRows(1.0d, 10.0d);
+		unknown.setLocalPhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		unknown.setPhysicalCostWithUnknownChild(10.0d);
+
+		assertEquals(reopenedWinnerPrice(scalar), reopenedWinnerPrice(unknown),
+				"unknown result and memory quantities cannot replace the complete scalar price");
+	}
+
+	@Test
+	void reopeningAnImplicitChildCannotUseTheSourceOperatorsPartialProfile() {
+		PackedCostEstimate scalar = new PackedCostEstimate();
+		scalar.setLocalScalarPrice(1.0d, 10.0d);
+		PackedCostEstimate unknown = new PackedCostEstimate();
+		unknown.setRows(1.0d, 10.0d);
+		unknown.setLocalPhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		unknown.setDependentCostComponents(5.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+				0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		unknown.setPhysicalCostWithUnknownChild(10.0d);
+
+		assertEquals(reopenedWinnerPrice(scalar), reopenedWinnerPrice(unknown),
+				"the source-only startup profile does not describe the implicit child's work");
+	}
+
+	@Test
+	void addingAKnownChildDoesNotPromoteTheSourceDependentProfileToTheWholeSubtree() {
+		PackedCostEstimate value = new PackedCostEstimate();
+		value.setRows(1.0d, 10.0d);
+		value.setLocalPhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		value.setDependentCostComponents(5.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+				0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+
+		value.addChildPhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+
+		assertEquals(12.0d, value.sequentialRows());
+		assertFalse(value.hasDependentCostComponents(),
+				"a source-only reopen profile cannot describe an independently added child");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 })
+	void composedUnknownAxesSurviveLocalAndInclusiveRetention(int unknownAxis) {
+		for (boolean inclusive : new boolean[] { false, true }) {
+			PackedCostEstimate value = new PackedCostEstimate();
+			value.setRows(1.0d, 99.0d);
+			double[] input = { 1.0d, 2.0d, 3.0d, 4.0d, 5.0d, 6.0d, 7.0d, 8.0d, 9.0d, 10.0d };
+			input[unknownAxis] = Double.NaN;
+			value.setInclusivePhysicalCostPreservingUnknown(input[0], input[1], input[2], input[3], input[4],
+					input[5], input[6], input[7], input[8], input[9], 99.0d);
+			value.setReplacesChildWork(inclusive);
+			// Two independent children exercise repeated composition; the original unknown must stay unknown.
+			value.addChildPhysicalCost(1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 20.0d);
+			value.addChildPhysicalCost(1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 1.0d, 15.0d);
+			// A real pricing policy supplies an independent objective after composition.
+			value.setObjectivePricePreservingPhysicalCost(123.0d);
+			for (String route : new String[] { "direct", "copy", "provider-copy", "metadata", "trace",
+					"provider-input", "replace" }) {
+				PackedCostEstimate retained = retained(value, route);
+				double[] axes = { retained.sequentialRows(), retained.randomSeeks(), retained.iteratorOpens(),
+						retained.expressionEvaluations(), retained.hashBuildRows(), retained.hashProbeRows(),
+						retained.pathExpansions(), retained.resultRows(), retained.remoteCalls(),
+						retained.peakMemoryRows() };
+				for (int axis = 0; axis < axes.length; axis++) {
+					String detail = "axis=" + axis + ", unknown=" + unknownAxis + ", inclusive=" + inclusive
+							+ ", route=" + route;
+					if (axis == unknownAxis) {
+						assertTrue(Double.isNaN(axes[axis]), detail);
+					} else {
+						assertEquals(axis == 9 ? 20.0d : input[axis] + 2.0d, axes[axis], detail);
+					}
+				}
+				PackedCostVectorArena vectors = new PackedCostVectorArena();
+				int quantities = vectors.importQuantities(retained);
+				assertEquals(unknownAxis == 9, vectors.isKnown(quantities, CPU), route);
+			}
+		}
+	}
+
+	@Test
 	void clearAndScalarSettersCannotInheritAnEarlierPhysicalDeclaration() {
 		PackedCostEstimate value = declared("typed", 99.0d);
 		value.clear();
@@ -219,6 +505,39 @@ class PackedDeclaredQuantityReplayTest {
 		assertEquals(99.0d, twice.decisionCertificate().candidateCostPoint(0, CPU));
 		assertEquals(certificate.candidateQuantityKnown(0, CPU),
 				twice.decisionCertificate().candidateQuantityKnown(0, CPU));
+	}
+
+	@Test
+	void replayRefusesAnUnavailableFreshObjectiveInsteadOfCertifyingIt() {
+		PackedQuery query = query();
+		PackedPlanRecipe recipe = recipe(query, "typed", 5.0d);
+		PackedPlanValidationRequest request = new PackedPlanValidationRequest(new PackedQueryView(query), recipe,
+				cacheContext(11L), cacheContext(12L));
+		PackedCostSession unavailable = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relation, PackedCostContext context, PackedCostEstimate output) {
+				publish(output, "typed", 99.0d);
+			}
+
+			@Override
+			public void appendFactor(int relation, PackedCostContext context, PackedCostEstimate output) {
+				estimateLeaf(relation, context, output);
+			}
+
+			@Override
+			public void refineOperator(int relation, PackedCostContext context, PackedCostEstimate output) {
+			}
+
+			@Override
+			public double objectiveScore(PackedCostEstimate output) {
+				return Double.NaN;
+			}
+		};
+		PackedCheckpointRejectedException refused = assertThrows(PackedCheckpointRejectedException.class,
+				() -> PackedCostingReplay.replay(request, unavailable));
+		assertTrue(refused instanceof PackedCostingReplay.UnavailablePriceException,
+				"stale validators outside this package must be able to recognize this refusal");
+		assertTrue(refused.getMessage().contains("unavailable"));
 	}
 
 	@ParameterizedTest
@@ -442,6 +761,18 @@ class PackedDeclaredQuantityReplayTest {
 				query.relPayload(query.rootRelId()), memo.anyPropertyId(), 7, new int[0], 0, 0);
 		return memo.offerWinnerWithMetadata(group, memo.anyPropertyId(), 0, 0, 0, physical, metadata,
 				0.0d, price, price, new int[0], 0, 0);
+	}
+
+	private static double reopenedWinnerPrice(PackedCostEstimate estimate) {
+		PackedQuery query = query();
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		try (PackedMemo memo = memo(query, budget)) {
+			int winner = offer(memo, query, memo.addPhysicalMetadata(estimate, 1.0d, 10.0d), 10.0d);
+			PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo,
+					new double[query.relationCount() + 1],
+					budget, null);
+			return enumerator.contextualChildWork(winner, 3.0d, 0);
+		}
 	}
 
 	private static PackedMemo memo(PackedQuery query, PackedSearchBudget budget) {

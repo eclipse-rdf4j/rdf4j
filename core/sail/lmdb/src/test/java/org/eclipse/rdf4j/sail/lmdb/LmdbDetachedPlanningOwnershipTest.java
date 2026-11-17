@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -30,6 +31,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -52,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.OwnedStringDiagnostic;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -73,6 +77,7 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -85,6 +90,17 @@ class LmdbDetachedPlanningOwnershipTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI P = VF.createIRI("urn:owned:p");
 	private static final String MEDICAL_Q10 = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 10);
+	private static final String PIPELINE_CACHE_HIT = "optimizer.pipelinePlanCacheHit";
+	private static final List<String> EXPLANATION_DIAGNOSTICS = List.of("optimizer.packedExplanation",
+			"optimizer.packedExplanationJson", "optimizer.cascadesTraceJson");
+	private static final String OWNED_JOIN = "SELECT ?o ?other WHERE { ?s <urn:owned:p> ?o . ?s <urn:owned:q> ?other }";
+	private static final String OWNED_OPTIONAL = """
+			SELECT ?s ?o ?other WHERE {
+			  ?s <urn:owned:p> ?o
+			  OPTIONAL { ?s <urn:owned:q> ?other }
+			  FILTER(?o != "absent")
+			} ORDER BY ?o
+			""";
 	private static final String NESTED_AGGREGATE_QUERY = """
 			SELECT ?count WHERE {
 			  { SELECT (COUNT(?s) AS ?count) WHERE { ?s <urn:owned:p> ?o }
@@ -322,33 +338,178 @@ class LmdbDetachedPlanningOwnershipTest {
 	}
 
 	@Test
-	void actualPackedPipelineKeepsARealWarmHitAndSchemaTwoDiagnostics(@TempDir Path directory) {
-		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile()));
+	void actualPackedPipelineKeepsARealWarmHitAndSchemaTwoDiagnostics(@TempDir Path directory) throws Exception {
+		for (boolean retainDiagnostics : new boolean[] { false, true }) {
+			LmdbStore store = new LmdbStore(directory.resolve("retain-" + retainDiagnostics).toFile(),
+					new LmdbStoreConfig().setRetainCachedPlanDiagnostics(retainDiagnostics));
+			SailRepository repository = new SailRepository(store);
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				seedOwnedJoin(connection);
+			}
+			// Startup maintenance that activates RDF-term domains changes the query's predicate-range identity, which
+			// legitimately replans the family; the warm hit is asserted on a settled store, like its neighbours.
+			LmdbTestUtil.awaitBackgroundMaintenance(store, 30L, TimeUnit.SECONDS);
+			try (var connection = repository.getConnection()) {
+				var query = connection.prepareTupleQuery(OWNED_JOIN);
+				TupleExpr fresh = (TupleExpr) query.explain(Explanation.Level.Optimized).tupleExpr();
+				assertNotEquals("true", fresh.getStringMetricPlanned(PIPELINE_CACHE_HIT),
+						"the first planning is fresh");
+				assertSchemaTwoDiagnostics(fresh);
+				try (var rows = query.evaluate()) {
+					assertTrue(rows.hasNext());
+					BindingSet row = rows.next();
+					assertEquals(VF.createLiteral("left"), row.getValue("o"));
+					assertEquals(VF.createLiteral("right"), row.getValue("other"));
+					assertFalse(rows.hasNext());
+				}
+				query.explain(Explanation.Level.Optimized);
+				TupleExpr plan = (TupleExpr) query.explain(Explanation.Level.Optimized).tupleExpr();
+				assertEquals("true", plan.getStringMetricPlanned(PIPELINE_CACHE_HIT));
+				if (retainDiagnostics) {
+					assertSchemaTwoDiagnostics(plan);
+				} else {
+					for (String diagnostic : EXPLANATION_DIAGNOSTICS) {
+						assertEquals(LmdbCacheValueCopies.OMITTED_CACHED_DIAGNOSTIC,
+								plan.getStringMetricPlanned(diagnostic), diagnostic);
+					}
+				}
+			} finally {
+				repository.shutDown();
+			}
+		}
+	}
+
+	@Test
+	void explainTextAndJsonOfACachedPlanEqualTheFreshPlan(@TempDir Path directory) throws Exception {
+		int stores = 0;
+		for (String text : new String[] { OWNED_JOIN, OWNED_OPTIONAL }) {
+			SailRepository repository = settledStore(directory.resolve("explain-" + stores++));
+			try (var connection = repository.getConnection()) {
+				List<Explanation> replay = freshAndCached(connection, text);
+				Explanation fresh = replay.get(0);
+				Explanation cached = replay.get(1);
+				assertEquals(withoutCacheAnnotations(fresh.toString()), withoutCacheAnnotations(cached.toString()),
+						text);
+				assertEquals(withoutCacheAnnotations(fresh.toJson()), withoutCacheAnnotations(cached.toJson()), text);
+				for (String diagnostic : EXPLANATION_DIAGNOSTICS) {
+					assertFalse(cached.toString().contains(diagnostic), text + " text shows " + diagnostic);
+					assertFalse(cached.toJson().contains(diagnostic), text + " JSON shows " + diagnostic);
+				}
+			} finally {
+				repository.shutDown();
+			}
+		}
+	}
+
+	@Test
+	void replayedPlanKeepsExecutionAndLearningMetrics(@TempDir Path directory) throws Exception {
+		int stores = 0;
+		for (String text : new String[] { OWNED_JOIN, OWNED_OPTIONAL }) {
+			SailRepository repository = settledStore(directory.resolve("replay-" + stores++));
+			try (var connection = repository.getConnection()) {
+				List<Explanation> replay = freshAndCached(connection, text);
+				TupleExpr fresh = (TupleExpr) replay.get(0).tupleExpr();
+				TupleExpr cached = (TupleExpr) replay.get(1).tupleExpr();
+				List<QueryModelNode> freshNodes = planNodes(fresh);
+				List<QueryModelNode> cachedNodes = planNodes(cached);
+				assertEquals(freshNodes.size(), cachedNodes.size(), text);
+				for (int i = 0; i < freshNodes.size(); i++) {
+					QueryModelNode expected = freshNodes.get(i);
+					QueryModelNode actual = cachedNodes.get(i);
+					String label = text + " node " + i + " " + expected.getSignature();
+					assertEquals(expected.getClass(), actual.getClass(), label);
+					assertEquals(withoutCacheMetrics(expected.getLongMetricsPlanned()),
+							withoutCacheMetrics(actual.getLongMetricsPlanned()), label);
+					assertEquals(withoutCacheMetrics(expected.getDoubleMetricsPlanned()),
+							withoutCacheMetrics(actual.getDoubleMetricsPlanned()), label);
+					assertEquals(withoutCacheMetrics(expected.getStringMetricsPlanned()),
+							withoutCacheMetrics(actual.getStringMetricsPlanned()), label);
+					assertEquals(expected.getRuntimeFeedbackContract() == null,
+							actual.getRuntimeFeedbackContract() == null, label);
+				}
+			} finally {
+				repository.shutDown();
+			}
+		}
+	}
+
+	/**
+	 * A seeded store whose planning cannot be cut by time and whose planning revisions no longer move: optimizer
+	 * sampling is off (a planning whose sampling hit its wall-clock limit is not retained) and startup maintenance has
+	 * finished (a planning across moved revisions is not retained).
+	 */
+	private static SailRepository settledStore(Path directory) throws Exception {
+		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig().setOptimizerSamplingEnabled(false));
+		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (var connection = repository.getConnection()) {
-			IRI subject = VF.createIRI("urn:owned:s");
-			IRI q = VF.createIRI("urn:owned:q");
-			connection.add(subject, P, VF.createLiteral("left"));
-			connection.add(subject, q, VF.createLiteral("right"));
-			var query = connection
-					.prepareTupleQuery("SELECT ?o ?other WHERE { ?s <urn:owned:p> ?o . ?s <urn:owned:q> ?other }");
-			try (var rows = query.evaluate()) {
-				assertTrue(rows.hasNext());
-				BindingSet row = rows.next();
-				assertEquals(VF.createLiteral("left"), row.getValue("o"));
-				assertEquals(VF.createLiteral("right"), row.getValue("other"));
-				assertFalse(rows.hasNext());
-			}
-			query.explain(Explanation.Level.Optimized);
-			TupleExpr plan = (TupleExpr) query.explain(Explanation.Level.Optimized).tupleExpr();
-			assertEquals("true", plan.getStringMetricPlanned("optimizer.pipelinePlanCacheHit"));
-			String json = plan.getStringMetricPlanned("optimizer.packedExplanationJson");
-			assertNotNull(json);
-			assertTrue(json.contains("\"schema\":2"));
-			assertNotNull(plan.getStringMetricPlanned("optimizer.packedExplanation"));
-		} finally {
-			repository.shutDown();
+			seedOwnedJoin(connection);
 		}
+		LmdbTestUtil.awaitBackgroundMaintenance(store, 30L, TimeUnit.SECONDS);
+		return repository;
+	}
+
+	/**
+	 * Explains {@code text} at {@code Optimized} until the pipeline cache serves it and returns the fresh planning that
+	 * the hit replays (the one just before it) and the hit. On a settled store the second planning is the hit.
+	 */
+	private static List<Explanation> freshAndCached(RepositoryConnection connection, String text) {
+		Explanation fresh = connection.prepareTupleQuery(text).explain(Explanation.Level.Optimized);
+		Explanation cached = connection.prepareTupleQuery(text).explain(Explanation.Level.Optimized);
+		assertNotEquals("true", ((TupleExpr) fresh.tupleExpr()).getStringMetricPlanned(PIPELINE_CACHE_HIT), text);
+		assertEquals("true", ((TupleExpr) cached.tupleExpr()).getStringMetricPlanned(PIPELINE_CACHE_HIT),
+				"the second planning on a settled store is served from the pipeline plan cache: " + text);
+		return List.of(fresh, cached);
+	}
+
+	private static void seedOwnedJoin(RepositoryConnection connection) {
+		IRI subject = VF.createIRI("urn:owned:s");
+		IRI q = VF.createIRI("urn:owned:q");
+		connection.add(subject, P, VF.createLiteral("left"));
+		connection.add(subject, q, VF.createLiteral("right"));
+		connection.add(VF.createIRI("urn:owned:t"), P, VF.createLiteral("lone"));
+	}
+
+	private static void assertSchemaTwoDiagnostics(TupleExpr plan) {
+		String json = plan.getStringMetricPlanned("optimizer.packedExplanationJson");
+		assertNotNull(json);
+		assertTrue(json.contains("\"schema\":2"));
+		assertNotNull(plan.getStringMetricPlanned("optimizer.packedExplanation"));
+		assertEquals(json, plan.getStringMetricPlanned("optimizer.cascadesTraceJson"));
+	}
+
+	/** The plan-cache annotations a hit adds, or a fresh plan marks as absent: planCache*, pipeline and packed hits. */
+	private static boolean cacheAnnotation(String name) {
+		return name.startsWith("optimizer.planCache") || name.equals(PIPELINE_CACHE_HIT)
+				|| name.equals("optimizer.cascadesPlanCacheHit");
+	}
+
+	/** Every planned metric but the plan-cache annotations and the explanation diagnostics. */
+	private static <V> Map<String, V> withoutCacheMetrics(Map<String, V> metrics) {
+		Map<String, V> kept = new TreeMap<>(metrics);
+		kept.keySet().removeIf(name -> cacheAnnotation(name) || EXPLANATION_DIAGNOSTICS.contains(name));
+		return kept;
+	}
+
+	/** EXPLAIN text or JSON without the plan-cache annotation entries a hit adds (JSON has one entry per line). */
+	private static String withoutCacheAnnotations(String explanation) {
+		String annotation = "optimizer\\.(?:planCache\\w*|pipelinePlanCacheHit|cascadesPlanCacheHit)";
+		return explanation.replaceAll("(?m)^[ \\t]*\"" + annotation + "\" : [^\\n]*\\n", "")
+				.replaceAll(",(\\s*[}\\]])", "$1")
+				.replaceAll("(?:, )?" + annotation + "=[^,)\\n]*", "");
+	}
+
+	private static List<QueryModelNode> planNodes(TupleExpr root) {
+		List<QueryModelNode> nodes = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				nodes.add(node);
+				super.meetNode(node);
+			}
+		});
+		return nodes;
 	}
 
 	@Test

@@ -181,6 +181,9 @@ public final class RuntimeFeedbackContract {
 		this.appliedDependentPrediction = Objects.requireNonNull(appliedDependentPrediction,
 				"applied dependent prediction");
 		validateEnvelope(objectiveLower, objectivePoint, objectiveUpper);
+		if (Double.isNaN(objectivePoint) && (admissionFlags & ADMIT_LIFECYCLE) != 0) {
+			throw new IllegalArgumentException("lifecycle admission requires an available objective envelope");
+		}
 		if (!(finiteNonNegative(regressionLimit) || regressionLimit == Double.POSITIVE_INFINITY)) {
 			throw new IllegalArgumentException("regression limit must be non-negative or positive infinity");
 		}
@@ -242,6 +245,11 @@ public final class RuntimeFeedbackContract {
 		return appliedDependentPrediction;
 	}
 
+	/** Whether this contract has a comparable objective envelope. Unknown envelopes contain three NaNs. */
+	public boolean objectiveAvailable() {
+		return !Double.isNaN(objectivePoint);
+	}
+
 	public double objectiveLower() {
 		return objectiveLower;
 	}
@@ -295,6 +303,9 @@ public final class RuntimeFeedbackContract {
 	}
 
 	private static void validateEnvelope(double lower, double point, double upper) {
+		if (Double.isNaN(lower) && Double.isNaN(point) && Double.isNaN(upper)) {
+			return;
+		}
 		if (!finiteNonNegative(lower) || !finiteNonNegative(point) || !finiteNonNegative(upper)
 				|| lower > point || point > upper) {
 			throw new IllegalArgumentException("objective envelope must be finite, non-negative, and ordered");

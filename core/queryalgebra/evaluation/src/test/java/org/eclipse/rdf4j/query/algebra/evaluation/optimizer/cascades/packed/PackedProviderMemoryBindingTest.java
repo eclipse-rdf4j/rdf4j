@@ -37,7 +37,8 @@ class PackedProviderMemoryBindingTest {
 		assertTrue(reserved.closed);
 		assertEquals(first.retainedBytes() + 128L, second.retainedBytes(),
 				"the provider must borrow the same budget reported by the real search");
-		assertFalse(reserved.memory.tryReserve(1L), "even a retained stale borrowed callback is revoked after close");
+		assertThrows(IllegalStateException.class, () -> reserved.memory.tryReserve(1L),
+				"even a retained stale borrowed callback is revoked after close");
 		assertEquals(first.outputRows(), second.outputRows(), 0.0d);
 		assertEquals(first.totalCost(), second.totalCost(), 0.0d);
 	}
@@ -57,7 +58,7 @@ class PackedProviderMemoryBindingTest {
 		assertThrows(IllegalStateException.class, () -> optimize(model));
 		assertTrue(model.closed);
 		assertEquals(0, model.callbacks);
-		assertFalse(model.memory.tryReserve(1L));
+		assertThrows(IllegalStateException.class, () -> model.memory.tryReserve(1L));
 	}
 
 	private static PackedPlanningResult optimize(Model model) {

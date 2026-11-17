@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
@@ -28,8 +29,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -46,7 +49,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
@@ -146,6 +151,190 @@ class LmdbPackedRepeatedVariableAccessCostTest {
 	}
 
 	@Test
+	void isolatedScalarFactorRepeatsItsModelForUnrelatedInputs() throws Exception {
+		Fixture fixture = new Fixture(100.0d, 100.0d, false);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+		PackedCostEstimate output = fixture.appendScalar(values("unrelated", P, Q), pattern);
+
+		assertFalse(output.hasContextualOutputRows());
+		assertFalse(output.hasComponentOutputRows());
+		assertEquals(100.0d, output.outputRows());
+		assertEquals(2.0d, output.invocations());
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertEquals(100.0d,
+						output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN)),
+				() -> assertEquals(200.0d, output.sequentialRows()),
+				() -> assertEquals(2.0d, output.randomSeeks()),
+				() -> assertEquals(2.0d, output.iteratorOpens()),
+				() -> assertEquals(200.0d, output.resultRows()));
+	}
+
+	@Test
+	void isolatedScalarFactorCannotInferBoundOrMixedInputAccess() throws Exception {
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertUnknownBoundScalarInput(false), () -> assertUnknownBoundScalarInput(true));
+	}
+
+	private static void assertUnknownBoundScalarInput(boolean mixed) throws Exception {
+		Fixture fixture = new Fixture(100.0d, 100.0d, false);
+		BindingSetAssignment prefix = mixed ? new BindingSetAssignment() : values("s", P, Q);
+		if (mixed) {
+			prefix.setBindingSets(List.of(new ListBindingSet(List.of("s"), P), EmptyBindingSet.getInstance()));
+		}
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+		PackedCostEstimate output = fixture.appendScalar(prefix, pattern, true);
+
+		assertFalse(output.hasContextualOutputRows());
+		assertEquals(100.0d, output.outputRows());
+		assertEquals(2.0d, output.invocations());
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertTrue(Double.isNaN(
+						output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN)),
+						"the isolated population has no per-binding distribution, mixed=" + mixed),
+				() -> assertTrue(Double.isNaN(output.sequentialRows())),
+				() -> assertTrue(Double.isNaN(output.randomSeeks())),
+				() -> assertTrue(Double.isNaN(output.resultRows())),
+				() -> assertEquals(2.0d, output.iteratorOpens()));
+	}
+
+	@Test
+	void rowOnlyValuesBindingCannotAuthorizeAnUnchangedScalarAccess() throws Exception {
+		Fixture fixture = new Fixture(100.0d, 100.0d, false);
+		BindingSetAssignment prefix = new BindingSetAssignment();
+		prefix.setDeclaredBindingNames(Set.of("unrelated"));
+		prefix.setBindingSets(List.of(
+				new ListBindingSet(List.of("unrelated", "s"), P, P),
+				new ListBindingSet(List.of("unrelated"), Q)));
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+		PackedCostEstimate output = fixture.appendScalar(prefix, pattern);
+
+		assertFalse(output.hasContextualOutputRows());
+		assertEquals(100.0d, output.outputRows());
+		assertEquals(2.0d, output.invocations());
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertTrue(Double.isNaN(
+						output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN))),
+				() -> assertTrue(Double.isNaN(output.sequentialRows())),
+				() -> assertTrue(Double.isNaN(output.randomSeeks())),
+				() -> assertTrue(Double.isNaN(output.resultRows())));
+	}
+
+	@Test
+	void inheritedBindingCannotAuthorizeAnUnchangedScalarAccess() throws Exception {
+		Fixture fixture = new Fixture(100.0d, 100.0d, false);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+		PackedCostEstimate output = fixture.appendScalarWithInherited(
+				values("s", P, Q), values("unrelated", P, Q), pattern);
+
+		assertFalse(output.hasContextualOutputRows());
+		assertEquals(100.0d, output.outputRows());
+		assertEquals(2.0d, output.invocations());
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertTrue(Double.isNaN(
+						output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN))),
+				() -> assertTrue(Double.isNaN(output.sequentialRows())),
+				() -> assertTrue(Double.isNaN(output.randomSeeks())),
+				() -> assertTrue(Double.isNaN(output.resultRows())));
+	}
+
+	@Test
+	void connectedComponentWorkExcludesUnrelatedPrefixMultiplicity() throws Exception {
+		Fixture fixture = new Fixture(100.0d, 100.0d, false);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+		PackedCostEstimate output = fixture.appendScalarWithComponent(
+				values("unrelated", P, Q), values("s", P, Q, P), pattern);
+
+		assertTrue(output.hasComponentOutputRows());
+		assertEquals(300.0d, output.outputRows());
+		assertEquals(3.0d, output.invocations());
+		assertEquals(100.0d, output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN));
+		assertEquals(300.0d, output.sequentialRows());
+		assertEquals(300.0d, output.resultRows());
+	}
+
+	@Test
+	void finiteBoundScalarInputKeepsItsMeasuredAverage() throws Exception {
+		Fixture fixture = new Fixture(100.0d, 100.0d, false);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+		PackedCostEstimate output = fixture.appendScalar(values("s", P, Q), pattern);
+
+		assertTrue(output.hasComponentOutputRows());
+		assertEquals(200.0d, output.outputRows());
+		assertEquals(2.0d, output.invocations());
+		assertEquals(100.0d, output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN));
+		assertEquals(200.0d, output.sequentialRows());
+		assertEquals(200.0d, output.resultRows());
+	}
+
+	@Test
+	void isolatedScalarFactorCoversOneAndThreeInvocations() throws Exception {
+		for (int count : new int[] { 1, 3 }) {
+			Fixture fixture = new Fixture(100.0d, 100.0d, false);
+			Value[] bindings = new Value[count];
+			java.util.Arrays.fill(bindings, P);
+			StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+			PackedCostEstimate output = fixture.appendScalar(values("unrelated", bindings), pattern);
+			assertFalse(output.hasContextualOutputRows());
+			assertEquals((double) count, output.invocations());
+			assertEquals(100.0d, output.outputRows());
+			assertEquals(100.0d, output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN));
+			assertEquals(100.0d * count, output.sequentialRows());
+			assertEquals(100.0d * count, output.resultRows());
+		}
+	}
+
+	@Test
+	void fullyConstantIsolatedFactorUsesThePerInvocationBound() throws Exception {
+		for (boolean restricted : new boolean[] { false, true }) {
+			Fixture fixture = new Fixture(100.0d, 100.0d, false);
+			StatementPattern pattern = new StatementPattern(Var.of("subject", P), Var.of("predicate", P),
+					Var.of("object", Q));
+			PackedCostEstimate output = fixture.appendScalar(values("unrelated", P, Q), pattern, restricted);
+
+			assertEquals(2.0d, output.invocations());
+			org.junit.jupiter.api.Assertions.assertAll(
+					() -> assertFalse(output.hasContextualOutputRows()),
+					() -> assertEquals(1.0d, output.outputRows()),
+					() -> assertEquals(1.0d,
+							output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN)),
+					() -> assertEquals(2.0d, output.sequentialRows()),
+					() -> assertEquals(2.0d, output.resultRows()));
+		}
+	}
+
+	@Test
+	void fullyPrefixBoundInputDoesNotClampTheIsolatedFactor() throws Exception {
+		Fixture fixture = new Fixture(100.0d, 100.0d, false);
+		BindingSetAssignment prefix = new BindingSetAssignment();
+		prefix.setBindingSets(List.of(
+				new ListBindingSet(List.of("s", "p", "o"), P, P, Q),
+				new ListBindingSet(List.of("s", "p", "o"), Q, P, Q)));
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		PackedCostEstimate output = fixture.appendScalar(prefix, pattern, true);
+
+		assertEquals(2.0d, output.invocations());
+		org.junit.jupiter.api.Assertions.assertAll(
+				() -> assertFalse(output.hasContextualOutputRows()),
+				() -> assertEquals(100.0d, output.outputRows()),
+				() -> assertTrue(Double.isNaN(output.sequentialRows())),
+				() -> assertTrue(Double.isNaN(output.randomSeeks())),
+				() -> assertTrue(Double.isNaN(output.resultRows())));
+	}
+
+	@Test
+	void isolatedRepeatedVariableKeepsOutputAndScanDomainsDistinct() throws Exception {
+		Fixture fixture = new Fixture(3.0d, 100.0d, false);
+		PackedCostEstimate output = fixture.appendScalar(values("unrelated", P, Q), selfLoop());
+
+		assertFalse(output.hasContextualOutputRows());
+		assertEquals(3.0d, output.outputRows());
+		assertEquals(2.0d, output.invocations());
+		assertEquals(100.0d, output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN));
+		assertEquals(200.0d, output.sequentialRows());
+		assertEquals(6.0d, output.resultRows());
+	}
+
+	@Test
 	void unrelatedPrefixesMultiplyNativeOpensWithoutChangingTheAccessPopulation() throws Exception {
 		Fixture fixture = new Fixture(0.0d, 97.0d, true);
 		PackedCostEstimate output = fixture.append(values("unrelated", P, Q), selfLoop());
@@ -199,7 +388,90 @@ class LmdbPackedRepeatedVariableAccessCostTest {
 		assertEquals(0.0d, output.outputRows());
 		assertEquals(2, output.lookupComponentMask());
 		assertEquals(1, output.missingLookupComponentMask());
-		assertEquals(97.0d, output.sequentialRows());
+		assertTrue(Double.isNaN(output.sequentialRows()), "a native residual can skip candidate keys");
+		assertEquals(97.0d, output.plannedDoubleMetric("plannedNativePrefixPopulation", Double.NaN));
+	}
+
+	@Test
+	void selectiveConstantOutsideThePrefixDoesNotShrinkTheScannedPopulation() throws Exception {
+		Fixture fixture = new Fixture(1.0d, 97.0d, true);
+		fixture.coveredMask = FrontierLeafProbe.PREDICATE;
+		fixture.selectiveLogicalMask = FrontierLeafProbe.SUBJECT | FrontierLeafProbe.PREDICATE;
+		StatementPattern pattern = new StatementPattern(Var.of("s", Q), Var.of("p", P), Var.of("o"));
+
+		PackedCostEstimate output = fixture.leaf(pattern);
+
+		assertEquals(1.0d, output.outputRows(), "the complete pattern has one estimated result");
+		// The prefix has 97 candidates, but skip-scan can seek past residual mismatches without visiting each key.
+		assertTrue(Double.isNaN(output.accessRows()), "the number of visited keys has no justified point estimate");
+		assertTrue(Double.isNaN(output.sequentialRows()), "a candidate population is not an exact visit count");
+		assertTrue(Double.isNaN(output.randomSeeks()), "extra skip-scan seeks are not known from population alone");
+		assertEquals(1.0d, output.iteratorOpens());
+		assertEquals(1.0d, output.resultRows());
+		assertEquals(97.0d, output.plannedDoubleMetric("plannedNativePrefixPopulation", Double.NaN));
+		assertEquals(97.0d, output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN),
+				"the partial quote retains its candidate separately from unknown visits and seeks");
+		fixture.assertNoMappedSnapshotFallback();
+	}
+
+	@Test
+	void candidateEstimateCanExceedTheEstimatedPrefixPopulation() throws Exception {
+		Fixture fixture = new Fixture(103.0d, 97.0d, true);
+		fixture.coveredMask = FrontierLeafProbe.PREDICATE;
+		fixture.selectiveLogicalMask = FrontierLeafProbe.SUBJECT | FrontierLeafProbe.PREDICATE;
+		PackedCostEstimate output = fixture.leaf(new StatementPattern(Var.of("s", Q), Var.of("p", P), Var.of("o")));
+
+		assertEquals(103.0d, output.outputRows());
+		assertEquals(97.0d, output.plannedDoubleMetric("plannedNativePrefixPopulation", Double.NaN));
+		assertEquals(103.0d, output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN));
+		assertTrue(Double.isNaN(output.sequentialRows()));
+		assertTrue(Double.isNaN(output.randomSeeks()));
+	}
+
+	@Test
+	void residualCandidateStaysPerInvocationWhenTheOuterPrefixHasMultipleRows() throws Exception {
+		Fixture fixture = new Fixture(1.0d, 97.0d, true);
+		fixture.coveredMask = FrontierLeafProbe.PREDICATE;
+		fixture.selectiveLogicalMask = FrontierLeafProbe.SUBJECT | FrontierLeafProbe.PREDICATE;
+		StatementPattern residual = new StatementPattern(Var.of("s", Q), Var.of("p", P), Var.of("o"));
+		PackedCostEstimate output = fixture.append(values("unrelated", P, Q), residual);
+
+		assertEquals(2.0d, output.invocations());
+		assertEquals(97.0d, output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN));
+		assertTrue(Double.isNaN(output.sequentialRows()));
+		assertTrue(Double.isNaN(output.randomSeeks()));
+		assertEquals(2.0d, output.iteratorOpens());
+		assertEquals(output.outputRows(), output.resultRows());
+	}
+
+	@Test
+	void zeroEstimatedCandidatesDoNotInventSkipScanWork() throws Exception {
+		Fixture fixture = new Fixture(0.0d, 0.0d, true);
+		fixture.coveredMask = FrontierLeafProbe.PREDICATE;
+		fixture.selectiveLogicalMask = FrontierLeafProbe.SUBJECT | FrontierLeafProbe.PREDICATE;
+		PackedCostEstimate output = fixture.leaf(new StatementPattern(Var.of("s", Q), Var.of("p", P), Var.of("o")));
+
+		assertEquals(0.0d, output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN));
+		assertTrue(Double.isNaN(output.sequentialRows()));
+		assertTrue(Double.isNaN(output.randomSeeks()));
+		assertEquals(1.0d, output.iteratorOpens());
+	}
+
+	@Test
+	void unavailableResidualPrefixKeepsCandidateAndPhysicalWorkUnknown() throws Exception {
+		Fixture fixture = new Fixture(1.0d, 97.0d, true);
+		fixture.coveredMask = FrontierLeafProbe.PREDICATE;
+		fixture.selectiveLogicalMask = FrontierLeafProbe.SUBJECT | FrontierLeafProbe.PREDICATE;
+		fixture.declineNative = true;
+		PackedCostEstimate output = fixture.leaf(new StatementPattern(Var.of("s", Q), Var.of("p", P), Var.of("o")));
+
+		assertEquals(1.0d, output.outputRows());
+		assertTrue(Double.isNaN(output.plannedDoubleMetric("plannedNativePrefixPopulation", Double.NaN)));
+		assertTrue(Double.isNaN(output.plannedDoubleMetric("plannedNativeCandidateRowsPerInvocation", Double.NaN)));
+		assertTrue(Double.isNaN(output.sequentialRows()));
+		assertTrue(Double.isNaN(output.randomSeeks()));
+		assertEquals(1.0d, output.iteratorOpens());
+		assertEquals(1.0d, output.resultRows());
 	}
 
 	@Test
@@ -246,24 +518,47 @@ class LmdbPackedRepeatedVariableAccessCostTest {
 	}
 
 	private static final class Fixture {
+		private static final long SNAPSHOT_EPOCH = 123L;
 		final LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		final FrontierStatisticsView view = mock(FrontierStatisticsView.class);
+		final SailDatasetTripleTermSource source = mock(SailDatasetTripleTermSource.class);
+		final boolean mapped;
 		double distinct = 4.0d;
 		boolean declineNative;
 		int coveredMask = -1;
+		int selectiveLogicalMask = -1;
 		boolean datasetUsesDefaults = true;
 
 		Fixture(double logicalRows, double nativeRows, boolean mapped) throws Exception {
+			this.mapped = mapped;
+			// This unit fixture models a live selected read; ownership itself is covered by real-store integration
+			// tests.
+			LmdbFrontierReadSelection selection = mock(LmdbFrontierReadSelection.class);
+			when(runtime.frontierPlanningReadSelection(source)).thenReturn(selection);
+			when(selection.matchesSource(source)).thenReturn(true);
+			when(selection.isCurrent()).thenReturn(true);
+			when(selection.snapshotEpoch()).thenReturn(SNAPSHOT_EPOCH);
+			when(selection.planeMask()).thenReturn(FrontierLeafProbe.BOTH_PLANES);
+			when(selection.population()).thenAnswer(invocation -> datasetUsesDefaults
+					? LmdbFrontierReadPopulation.STORE_DEFAULTS
+					: LmdbFrontierReadPopulation.UNSUPPORTED);
 			ValueStore dictionary = mock(ValueStore.class);
 			when(dictionary.getId(P)).thenReturn(11L);
 			when(dictionary.getId(Q)).thenReturn(22L);
 			when(runtime.valueStore()).thenReturn(dictionary);
+			TripleStore triples = mock(TripleStore.class);
+			when(runtime.physicalTripleStore()).thenReturn(triples);
+			when(selection.matchesStores(dictionary, triples)).thenReturn(true);
 			when(runtime.frontierSettings()).thenReturn(LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
 					.setFrontierEstimatorMode(
 							mapped ? FrontierEstimatorMode.AUTHORITATIVE : FrontierEstimatorMode.OFF)));
 			when(runtime.packedStatementPatternRows(any(), any(), any(), any(), anyInt())).thenReturn(logicalRows);
 			when(runtime.packedStatementPatternRowsQualified(any(), any(), any(), any(), anyInt()))
 					.thenReturn(LmdbPlanningCardinality.unqualified(nativeRows));
+			when(runtime.packedReadRowsQualified(nullable(Resource.class), nullable(IRI.class), nullable(Value.class),
+					nullable(Resource.class), anyInt(), any(), nullable(FrontierStatisticsView.class)))
+							.thenAnswer(invocation -> LmdbPlanningCardinality.unqualified(
+									(int) invocation.getArgument(4) == 0 ? nativeRows : logicalRows));
 			if (mapped) {
 				LmdbStatisticsService service = mock(LmdbStatisticsService.class);
 				FrontierStatisticsStatus status = mock(FrontierStatisticsStatus.class);
@@ -272,10 +567,17 @@ class LmdbPackedRepeatedVariableAccessCostTest {
 				when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 				when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
 				when(service.openCurrentView()).thenReturn(view);
+				when(service.openView(SNAPSHOT_EPOCH)).thenReturn(view);
+				when(selection.openAdmittedView(service))
+						.thenReturn(new LmdbFrontierReadSelection.AdmittedView(view, selection));
+				when(selection.ownsAdmittedView(view)).thenReturn(true);
 				when(view.ready()).thenReturn(true);
 				when(view.generationId()).thenReturn(23L);
 				when(view.estimateLeaf(any())).thenAnswer(invocation -> {
 					FrontierLeafProbe probe = invocation.getArgument(0);
+					if (probe.boundMask() == selectiveLogicalMask) {
+						return leafEstimate(logicalRows, FrontierFallbackReason.NONE);
+					}
 					if (probe.repeatedComponentPairMask() != 0) {
 						return leafEstimate(logicalRows, FrontierFallbackReason.NONE);
 					}
@@ -308,13 +610,19 @@ class LmdbPackedRepeatedVariableAccessCostTest {
 			when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(factorCostAnswer);
 			when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class)))
 					.thenAnswer(factorCostAnswer);
+			when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class),
+					any(LmdbAdmittedFrontierRead.class))).thenAnswer(factorCostAnswer);
 		}
 
 		PackedCostEstimate leaf(StatementPattern pattern) {
 			PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(
 					PlanningGraphDomain.defaultGraph(), new Filter(pattern, new ValueConstant(VF.createLiteral(true))));
-			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), datasetUsesDefaults)
-					.openSession(call.query())) {
+			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.of(SNAPSHOT_EPOCH),
+					datasetUsesDefaults, source, null)
+							.openSession(call.query())) {
+				if (mapped && datasetUsesDefaults) {
+					assertInstanceOf(LmdbFrontierStatisticsCostSession.class, session);
+				}
 				PackedCostEstimate output = new PackedCostEstimate();
 				session.estimateLeaf(call.inputRelationId(), call.emptyContext(), output);
 				return output;
@@ -324,8 +632,12 @@ class LmdbPackedRepeatedVariableAccessCostTest {
 		PackedCostEstimate append(TupleExpr prefix, StatementPattern pattern) {
 			PackedCostTestSupport.BinaryCostCall call = PackedCostTestSupport.binaryOperator(
 					PlanningGraphDomain.defaultGraph(), new Join(prefix, pattern));
-			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), datasetUsesDefaults)
-					.openSession(call.query())) {
+			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.of(SNAPSHOT_EPOCH),
+					datasetUsesDefaults, source, null)
+							.openSession(call.query())) {
+				if (mapped && datasetUsesDefaults) {
+					assertInstanceOf(LmdbFrontierStatisticsCostSession.class, session);
+				}
 				PackedCostEstimate left = new PackedCostEstimate();
 				session.estimateLeaf(call.leftRelationId(), call.emptyContext(), left);
 				assertTrue(left.evidenceStateId() > 0, "the prefix must supply its actual session-owned proof");
@@ -338,7 +650,76 @@ class LmdbPackedRepeatedVariableAccessCostTest {
 			}
 		}
 
+		PackedCostEstimate appendScalar(TupleExpr prefix, StatementPattern pattern) {
+			return appendScalar(prefix, pattern, false);
+		}
+
+		PackedCostEstimate appendScalar(TupleExpr prefix, StatementPattern pattern, boolean restricted) {
+			PackedCostTestSupport.BinaryCostCall call = PackedCostTestSupport.binaryOperator(
+					PlanningGraphDomain.defaultGraph(), new Join(prefix, pattern));
+			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.of(SNAPSHOT_EPOCH),
+					datasetUsesDefaults, source, null).openSession(call.query())) {
+				PackedCostEstimate left = new PackedCostEstimate();
+				session.estimateLeaf(call.leftRelationId(), call.emptyContext(), left);
+				PackedCostEstimate right = new PackedCostEstimate();
+				session.estimateLeaf(call.rightRelationId(), call.emptyContext(), right);
+				var context = restricted
+						? PackedCostTestSupport.restrictedPrefixContext(new int[] { call.leftRelationId() }, 1,
+								left.outputRows(), left.evidenceStateId())
+						: PackedCostTestSupport.prefixContext(new int[] { call.leftRelationId() }, 1,
+								left.outputRows(), left.evidenceStateId());
+				session.appendFactor(call.rightRelationId(), context, right);
+				return right;
+			}
+		}
+
+		PackedCostEstimate appendScalarWithInherited(TupleExpr inherited, TupleExpr prefix,
+				StatementPattern pattern) {
+			var call = PackedCostTestSupport.binaryOperator(PlanningGraphDomain.defaultGraph(),
+					new Join(inherited, new Join(prefix, pattern)));
+			int nested = call.rightRelationId();
+			int prefixId = call.query().childRelationId(nested, 0);
+			int factorId = call.query().childRelationId(nested, 1);
+			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.of(SNAPSHOT_EPOCH),
+					datasetUsesDefaults, source, null).openSession(call.query())) {
+				PackedCostEstimate left = new PackedCostEstimate();
+				session.estimateLeaf(prefixId, call.emptyContext(), left);
+				PackedCostEstimate output = new PackedCostEstimate();
+				session.estimateLeaf(factorId, call.emptyContext(), output);
+				var context = PackedCostTestSupport.prefixContext(new int[] { prefixId }, 1, left.outputRows(),
+						left.evidenceStateId());
+				context = PackedCostTestSupport.withAssuredInput(context, call.leftRelationId());
+				session.appendFactor(factorId, context, output);
+				return output;
+			}
+		}
+
+		PackedCostEstimate appendScalarWithComponent(TupleExpr unrelated, TupleExpr connected,
+				StatementPattern pattern) {
+			var call = PackedCostTestSupport.binaryOperator(PlanningGraphDomain.defaultGraph(),
+					new Join(new Join(unrelated, connected), pattern));
+			int left = call.leftRelationId();
+			int unrelatedId = call.query().childRelationId(left, 0);
+			int connectedId = call.query().childRelationId(left, 1);
+			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.of(SNAPSHOT_EPOCH),
+					datasetUsesDefaults, source, null).openSession(call.query())) {
+				PackedCostEstimate independent = new PackedCostEstimate();
+				session.estimateLeaf(unrelatedId, call.emptyContext(), independent);
+				PackedCostEstimate bound = new PackedCostEstimate();
+				session.estimateLeaf(connectedId, call.emptyContext(), bound);
+				PackedCostEstimate output = new PackedCostEstimate();
+				session.estimateLeaf(call.rightRelationId(), call.emptyContext(), output);
+				var context = PackedCostTestSupport.prefixContext(new int[] { unrelatedId, connectedId }, 2,
+						independent.outputRows() * bound.outputRows(), 0, independent.outputRows());
+				session.appendFactor(call.rightRelationId(), context, output);
+				return output;
+			}
+		}
+
 		void assertNoMappedSnapshotFallback() {
+			verify(runtime, never()).packedReadRowsQualified(nullable(Resource.class), nullable(IRI.class),
+					nullable(Value.class), nullable(Resource.class), anyInt(), any(),
+					nullable(FrontierStatisticsView.class));
 			verify(runtime, never()).packedStatementPatternRowsQualified(any(), any(), any(), any(), anyInt());
 			verify(runtime, never()).packedStatementPatternRows(any(), any(), any(), any(), anyInt());
 			verify(runtime, never()).conventionalStatementPatternRows(any());

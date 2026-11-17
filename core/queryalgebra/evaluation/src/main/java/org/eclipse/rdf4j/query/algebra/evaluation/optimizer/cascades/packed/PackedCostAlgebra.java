@@ -28,6 +28,25 @@ final class PackedCostAlgebra {
 
 	int compose(CompositionMode mode, int localVectorId, int[] childVectorIds, int childOffset, int childCount,
 			long invocationCount) {
+		return compose(mode, localVectorId, childVectorIds, childOffset, childCount, invocationCount, null, null, 0L);
+	}
+
+	int compose(CompositionMode mode, int localVectorId, int[] childVectorIds, int childOffset, int childCount,
+			long invocationCount, PackedProviderWork work, PackedProviderMemory memory, long resultBytes) {
+		return compose(mode, localVectorId, childVectorIds, childOffset, childCount, invocationCount, work, memory,
+				resultBytes, false);
+	}
+
+	/** Unknown execution/lifetime relationships permit only the additive axes to be composed. */
+	int composeAdditiveOnly(int localVectorId, int[] childVectorIds, PackedProviderWork work,
+			PackedProviderMemory memory, long resultBytes) {
+		return compose(CompositionMode.SEQUENTIAL_SUM, localVectorId, childVectorIds, 0, childVectorIds.length, 1L,
+				work, memory, resultBytes, true);
+	}
+
+	private int compose(CompositionMode mode, int localVectorId, int[] childVectorIds, int childOffset, int childCount,
+			long invocationCount, PackedProviderWork work, PackedProviderMemory memory, long resultBytes,
+			boolean additiveOnly) {
 		if (mode == null || childVectorIds == null || childOffset < 0 || childCount < 0
 				|| childOffset > childVectorIds.length - childCount || invocationCount < 0L) {
 			throw new IllegalArgumentException("invalid cost composition request");
@@ -35,31 +54,42 @@ final class PackedCostAlgebra {
 		if (mode == CompositionMode.ONCE_PLUS_PER_OPEN && childCount != 1) {
 			throw new IllegalArgumentException("ONCE_PLUS_PER_OPEN requires exactly one per-open vector");
 		}
+		admit(work, vectors.builderResetWork());
 		vectors.resetBuilderToUnknown();
 		for (int dimensionId = 1; dimensionId <= PackedCostDimensionRegistry.dimensionCount(); dimensionId++) {
+			admit(work, 1L);
 			PackedCostDimensionRegistry.Dimension dimension = PackedCostDimensionRegistry.dimension(dimensionId);
-			if (!dimension.legalModes().contains(mode)) {
+			if (additiveOnly && dimension.aggregation() != Aggregation.ADDITIVE
+					|| !dimension.legalModes().contains(mode)) {
 				continue;
 			}
 			if (mode == CompositionMode.BLOCKING_CHILD
 					&& dimensionId == PackedCostDimensionRegistry.FIRST_RESULT_LATENCY_NS) {
-				composeBlockingFirstResult(localVectorId, childVectorIds, childOffset, childCount, dimensionId);
+				if (!composeBlockingFirstResult(localVectorId, childVectorIds, childOffset, childCount, dimensionId,
+						work, memory)) {
+					return 0;
+				}
 				continue;
 			}
-			composeDimension(mode, dimension.aggregation(), localVectorId, childVectorIds, childOffset, childCount,
-					invocationCount, dimensionId);
+			if (!composeDimension(mode, dimension.aggregation(), localVectorId, childVectorIds, childOffset, childCount,
+					invocationCount, dimensionId, work, memory)) {
+				return 0;
+			}
 		}
-		return vectors.internBuilder();
+		return work == null ? vectors.internBuilder() : vectors.internBuilder(work, memory, resultBytes);
 	}
 
-	private void composeDimension(CompositionMode mode, Aggregation aggregation, int localVectorId,
-			int[] childVectorIds, int childOffset, int childCount, long invocationCount, int dimensionId) {
+	private boolean composeDimension(CompositionMode mode, Aggregation aggregation, int localVectorId,
+			int[] childVectorIds, int childOffset, int childCount, long invocationCount, int dimensionId,
+			PackedProviderWork work, PackedProviderMemory memory) {
+		admit(work, 1L);
 		if (!vectors.isKnown(localVectorId, dimensionId)) {
-			return;
+			return true;
 		}
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			admit(work, 1L);
 			if (!vectors.isKnown(childVectorIds[childOffset + ordinal], dimensionId)) {
-				return;
+				return true;
 			}
 		}
 
@@ -69,31 +99,38 @@ final class PackedCostAlgebra {
 		switch (mode) {
 		case SEQUENTIAL_SUM, BLOCKING_CHILD -> {
 			if (aggregation == Aggregation.PEAK_MEMORY) {
-				lower = maximum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.LOWER);
-				point = maximum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.POINT);
-				upper = maximum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.UPPER);
+				lower = maximum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.LOWER,
+						work);
+				point = maximum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.POINT,
+						work);
+				upper = maximum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.UPPER,
+						work);
 			} else {
-				lower = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.LOWER);
-				point = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.POINT);
-				upper = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.UPPER);
+				lower = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.LOWER, work);
+				point = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.POINT, work);
+				upper = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.UPPER, work);
 			}
 		}
 		case PARALLEL_MAX, FIRST_RESULT_PIPELINE, PEAK_LIVE_SET -> {
 			if (aggregation == Aggregation.LATENCY) {
+				admit(work, 1L);
 				lower = saturatedAdd(vectors.lower(localVectorId, dimensionId),
-						maximumChildren(childVectorIds, childOffset, childCount, dimensionId, Endpoint.LOWER));
+						maximumChildren(childVectorIds, childOffset, childCount, dimensionId, Endpoint.LOWER, work));
+				admit(work, 1L);
 				point = saturatedAdd(vectors.point(localVectorId, dimensionId),
-						maximumChildren(childVectorIds, childOffset, childCount, dimensionId, Endpoint.POINT));
+						maximumChildren(childVectorIds, childOffset, childCount, dimensionId, Endpoint.POINT, work));
+				admit(work, 1L);
 				upper = saturatedAdd(vectors.upper(localVectorId, dimensionId),
-						maximumChildren(childVectorIds, childOffset, childCount, dimensionId, Endpoint.UPPER));
+						maximumChildren(childVectorIds, childOffset, childCount, dimensionId, Endpoint.UPPER, work));
 			} else {
-				lower = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.LOWER);
-				point = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.POINT);
-				upper = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.UPPER);
+				lower = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.LOWER, work);
+				point = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.POINT, work);
+				upper = sum(localVectorId, childVectorIds, childOffset, childCount, dimensionId, Endpoint.UPPER, work);
 			}
 		}
 		case ONCE_PLUS_PER_OPEN -> {
 			int perOpenVectorId = childVectorIds[childOffset];
+			admit(work, 6L);
 			if (aggregation == Aggregation.PEAK_MEMORY) {
 				lower = Math.max(vectors.lower(localVectorId, dimensionId),
 						vectors.lower(perOpenVectorId, dimensionId));
@@ -119,66 +156,90 @@ final class PackedCostAlgebra {
 		}
 		default -> throw new PackedMemoInvariantException("unhandled cost composition mode " + mode);
 		}
-		vectors.setBuilderInterval(dimensionId, lower, point, upper,
-				combinedLineage(localVectorId, childVectorIds, childOffset, childCount, dimensionId));
+		int lineage = combinedLineage(localVectorId, childVectorIds, childOffset, childCount, dimensionId, work);
+		if (work == null) {
+			vectors.setBuilderInterval(dimensionId, lower, point, upper, lineage);
+			return true;
+		}
+		return vectors.setBuilderInterval(dimensionId, lower, point, upper, lineage, work, memory);
 	}
 
-	private void composeBlockingFirstResult(int localVectorId, int[] childVectorIds, int childOffset, int childCount,
-			int firstResultDimensionId) {
+	private boolean composeBlockingFirstResult(int localVectorId, int[] childVectorIds, int childOffset, int childCount,
+			int firstResultDimensionId, PackedProviderWork work, PackedProviderMemory memory) {
+		admit(work, 1L);
 		if (!vectors.isKnown(localVectorId, firstResultDimensionId)) {
-			return;
+			return true;
 		}
+		admit(work, 4L);
 		double lower = vectors.lower(localVectorId, firstResultDimensionId);
 		double point = vectors.point(localVectorId, firstResultDimensionId);
 		double upper = vectors.upper(localVectorId, firstResultDimensionId);
 		int lineage = vectors.lineageId(localVectorId, firstResultDimensionId);
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			admit(work, 1L);
 			int childVectorId = childVectorIds[childOffset + ordinal];
 			int childDimensionId = ordinal == 0
 					? PackedCostDimensionRegistry.FINAL_RESULT_LATENCY_NS
 					: firstResultDimensionId;
 			if (!vectors.isKnown(childVectorId, childDimensionId)) {
-				return;
+				return true;
 			}
+			admit(work, 4L);
 			lower = saturatedAdd(lower, vectors.lower(childVectorId, childDimensionId));
 			point = saturatedAdd(point, vectors.point(childVectorId, childDimensionId));
 			upper = saturatedAdd(upper, vectors.upper(childVectorId, childDimensionId));
 			lineage = combineLineage(lineage, vectors.lineageId(childVectorId, childDimensionId));
 		}
-		vectors.setBuilderInterval(firstResultDimensionId, lower, point, upper, lineage);
+		if (work == null) {
+			vectors.setBuilderInterval(firstResultDimensionId, lower, point, upper, lineage);
+			return true;
+		}
+		return vectors.setBuilderInterval(firstResultDimensionId, lower, point, upper, lineage, work, memory);
 	}
 
 	private double sum(int localVectorId, int[] children, int childOffset, int childCount, int dimensionId,
-			Endpoint endpoint) {
+			Endpoint endpoint, PackedProviderWork work) {
+		admit(work, 1L);
 		double result = endpoint.value(vectors, localVectorId, dimensionId);
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			admit(work, 1L);
 			result = saturatedAdd(result, endpoint.value(vectors, children[childOffset + ordinal], dimensionId));
 		}
 		return result;
 	}
 
 	private double maximum(int localVectorId, int[] children, int childOffset, int childCount, int dimensionId,
-			Endpoint endpoint) {
+			Endpoint endpoint, PackedProviderWork work) {
+		admit(work, 1L);
 		return Math.max(endpoint.value(vectors, localVectorId, dimensionId),
-				maximumChildren(children, childOffset, childCount, dimensionId, endpoint));
+				maximumChildren(children, childOffset, childCount, dimensionId, endpoint, work));
 	}
 
 	private double maximumChildren(int[] children, int childOffset, int childCount, int dimensionId,
-			Endpoint endpoint) {
+			Endpoint endpoint, PackedProviderWork work) {
 		double result = 0.0d;
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			admit(work, 1L);
 			result = Math.max(result, endpoint.value(vectors, children[childOffset + ordinal], dimensionId));
 		}
 		return result;
 	}
 
 	private int combinedLineage(int localVectorId, int[] children, int childOffset, int childCount,
-			int dimensionId) {
+			int dimensionId, PackedProviderWork work) {
+		admit(work, 1L);
 		int result = vectors.lineageId(localVectorId, dimensionId);
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			admit(work, 1L);
 			result = combineLineage(result, vectors.lineageId(children[childOffset + ordinal], dimensionId));
 		}
 		return result;
+	}
+
+	private static void admit(PackedProviderWork work, long units) {
+		if (work != null) {
+			work.require(units);
+		}
 	}
 
 	private static int combineLineage(int left, int right) {

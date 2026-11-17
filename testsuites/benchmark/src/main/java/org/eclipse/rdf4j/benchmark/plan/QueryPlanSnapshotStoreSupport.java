@@ -107,6 +107,8 @@ final class QueryPlanSnapshotStoreSupport {
 		config.setDirectAdjacencyEnabled(options.directAdjacencyReadyTimeoutSeconds != null);
 		config.setForceSync(false);
 		config.setSketchEstimatorEvidenceMode(options.lmdbEvidenceMode);
+		// Plan capture reads the optimizer trace of every plan, including plans the pipeline plan cache serves.
+		config.setRetainCachedPlanDiagnostics(true);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB
 		config.setTripleDBSize(config.getValueDBSize());
 

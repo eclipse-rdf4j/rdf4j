@@ -64,6 +64,19 @@ final class MultiJoinPlan implements SlotPlan {
 		return new MultiJoinPlan(children, newFilters);
 	}
 
+	/**
+	 * Whether a pattern child carries an explicit requested scan order (for example from {@code STABLE_INDEX}). Such a
+	 * pattern is an order contract: a strategy that cannot preserve the encounter order of that scan declines the join.
+	 */
+	boolean containsOrderedScan() {
+		for (SlotPlan child : children) {
+			if (child instanceof PatternPlan pattern && pattern.statementOrder != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	static MaskedFilter compiledFilter(NativeBooleanFilter filter, long mask, int plannedDepth) {
 		AdaptiveFilterMetadata metadata = filter instanceof RecordingNativeBooleanFilter recording
 				? recording.adaptive

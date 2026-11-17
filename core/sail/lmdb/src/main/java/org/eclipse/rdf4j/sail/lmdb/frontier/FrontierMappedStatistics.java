@@ -232,18 +232,21 @@ final class FrontierMappedStatistics {
 		}
 		double deltaPoint = 0.0d;
 		double deltaError = 0.0d;
+		boolean exactDelta = true;
 		for (FrontierStatisticsShardDescriptor descriptor : signedDeltas) {
 			DeltaEstimate delta = estimateDelta(descriptor, probe);
 			deltaPoint = finiteAdd(deltaPoint, delta.point);
 			deltaError = saturatedAdd(deltaError, delta.error);
 			confidence = Math.min(confidence, delta.confidence);
+			exactDelta &= delta.exact;
 		}
 		double adjustedPoint = Math.max(0.0d, finiteAdd(point, deltaPoint));
 		double adjustedLower = Math.max(0.0d, finiteAdd(lower, deltaPoint - deltaError));
 		double adjustedUpper = Math.max(adjustedPoint, finiteAdd(upper, deltaPoint + deltaError));
 		FrontierLeafEstimate scalar = new FrontierLeafEstimate(
 				adjustedPoint, Math.min(adjustedPoint, adjustedLower), adjustedUpper,
-				confidence, "frontier-v2-base-plus-signed-delta", FrontierFallbackReason.NONE);
+				confidence, "frontier-v2-base-plus-signed-delta", FrontierFallbackReason.NONE,
+				exactDelta ? base.guarantee() : FrontierLeafEstimate.Guarantee.ESTIMATE);
 		return selectLeafEstimate(currentOmni, scalar);
 	}
 
@@ -267,8 +270,7 @@ final class FrontierMappedStatistics {
 		if (probe.namedContextsOnly()
 				&& (probe.boundMask() & FrontierLeafProbe.CONTEXT) != 0
 				&& probe.contextId() == 0L) {
-			return new FrontierLeafEstimate(0.0d, 0.0d, 0.0d, 1.0d,
-					"frontier-v2-named-context-contradiction", FrontierFallbackReason.NONE);
+			return FrontierLeafEstimate.exact(0.0d, "frontier-v2-named-context-contradiction");
 		}
 		if (probe.namedContextsOnly()) {
 			return estimateNamedBaseLeaf(probe, scratch);
@@ -323,7 +325,8 @@ final class FrontierMappedStatistics {
 			exact &= estimate.exact;
 		}
 		return new FrontierLeafEstimate(point, lower, upper, confidence,
-				exact ? "frontier-v2-exact" : "frontier-v2-count-min", FrontierFallbackReason.NONE);
+				exact ? "frontier-v2-exact" : "frontier-v2-count-min", FrontierFallbackReason.NONE,
+				exact ? FrontierLeafEstimate.Guarantee.EXACT : FrontierLeafEstimate.Guarantee.ESTIMATE);
 	}
 
 	private static boolean isExact(FrontierLeafEstimate estimate) {
@@ -342,14 +345,27 @@ final class FrontierMappedStatistics {
 		if (defaultContext.fallbackReason() != FrontierFallbackReason.NONE) {
 			return new FrontierLeafEstimate(allContexts.pointRows(), 0.0d, allContexts.upperRows(),
 					Math.min(0.25d, allContexts.confidence()), "frontier-v2-named-context-conservative",
-					FrontierFallbackReason.NONE);
+					FrontierFallbackReason.NONE,
+					certified(allContexts) ? FrontierLeafEstimate.Guarantee.CERTIFIED_BOUNDS
+							: FrontierLeafEstimate.Guarantee.ESTIMATE);
 		}
 		double point = Math.max(0.0d, allContexts.pointRows() - defaultContext.pointRows());
 		double lower = Math.max(0.0d, allContexts.lowerRows() - defaultContext.upperRows());
 		double upper = Math.max(point, allContexts.upperRows() - defaultContext.lowerRows());
 		return new FrontierLeafEstimate(point, Math.min(point, lower), upper,
 				Math.min(allContexts.confidence(), defaultContext.confidence()),
-				"frontier-v2-named-context-difference", FrontierFallbackReason.NONE);
+				"frontier-v2-named-context-difference", FrontierFallbackReason.NONE,
+				allContexts.guarantee() == FrontierLeafEstimate.Guarantee.EXACT
+						&& defaultContext.guarantee() == FrontierLeafEstimate.Guarantee.EXACT
+								? FrontierLeafEstimate.Guarantee.EXACT
+								: certified(allContexts) && certified(defaultContext)
+										? FrontierLeafEstimate.Guarantee.CERTIFIED_BOUNDS
+										: FrontierLeafEstimate.Guarantee.ESTIMATE);
+	}
+
+	private static boolean certified(FrontierLeafEstimate estimate) {
+		return estimate.guarantee() == FrontierLeafEstimate.Guarantee.EXACT
+				|| estimate.guarantee() == FrontierLeafEstimate.Guarantee.CERTIFIED_BOUNDS;
 	}
 
 	double estimateProjectedDistinct(FrontierLeafProbe probe, int component, FrontierOmniIndex.Scratch scratch)
@@ -912,7 +928,8 @@ final class FrontierMappedStatistics {
 			DeltaEstimate defaultContext = estimateDelta(descriptor, bindDefaultContext(probe));
 			return new DeltaEstimate(finiteAdd(allContexts.point, -defaultContext.point),
 					saturatedAdd(allContexts.error, defaultContext.error),
-					Math.min(allContexts.confidence, defaultContext.confidence));
+					Math.min(allContexts.confidence, defaultContext.confidence),
+					allContexts.exact && defaultContext.exact);
 		}
 		int width = Math.toIntExact(descriptor.logicalKey());
 		int lanes = descriptor.lane();
@@ -927,7 +944,7 @@ final class FrontierMappedStatistics {
 					exact = finiteAdd(exact, lookupSigned(shard, plane));
 				}
 			}
-			return new DeltaEstimate(exact, 0.0d, 1.0d);
+			return new DeltaEstimate(exact, 0.0d, 1.0d, true);
 		}
 		double[] laneEstimates = new double[lanes];
 		long conditioningKey = FrontierStatisticsHash.conditioningKey(probe.boundMask(), probe.subjectId(),
@@ -954,7 +971,7 @@ final class FrontierMappedStatistics {
 		}
 		double updates = descriptor.maximumKey() - descriptor.minimumKey() + 1.0d;
 		double error = Math.ceil(4.0d * updates / Math.sqrt(width));
-		return new DeltaEstimate(point, error, 1.0d - Math.exp(-lanes / 2.0d));
+		return new DeltaEstimate(point, error, 1.0d - Math.exp(-lanes / 2.0d), false);
 	}
 
 	private static FrontierLeafProbe withNamedContextsOnly(FrontierLeafProbe probe, boolean namedContextsOnly) {
@@ -1120,7 +1137,7 @@ final class FrontierMappedStatistics {
 	private record AgmsShape(int lanes, int width) {
 	}
 
-	private record DeltaEstimate(double point, double error, double confidence) {
+	private record DeltaEstimate(double point, double error, double confidence, boolean exact) {
 	}
 
 	private record MutationDebt(long insertions, long deletions, double ratio) {

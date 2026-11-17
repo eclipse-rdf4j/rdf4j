@@ -1,0 +1,198 @@
+{
+  "format" : "rdf4j-real-estate-solution-bag-oracle",
+  "version" : 2,
+  "codec" : {
+    "format" : "rdf4j-exact-solution-bag",
+    "version" : 1
+  },
+  "comparisonPolicy" : {
+    "id" : "rdf4j-proven-computed-numeric-bag",
+    "version" : 1
+  },
+  "jena" : {
+    "artifact" : "org.apache.jena:jena-arq",
+    "version" : "6.1.0",
+    "jarSha256" : "bc0fac2551db4b8616c861aab5b3bb5c7a3897e4516e8990bbab234a5a8f904c"
+  },
+  "fixture" : {
+    "seed" : 42,
+    "overlay" : "realestate-witness-overlay-v1",
+    "scope" : {
+      "graphs" : "default-graph-only",
+      "directionalLiterals" : false,
+      "tripleTerms" : false
+    },
+    "requestedCounts" : {
+      "districts" : 4,
+      "agents" : 8,
+      "amenities" : 3,
+      "properties" : 32
+    },
+    "probabilities" : {
+      "phone" : 0.0,
+      "worksIn" : 0.0,
+      "listedBy" : 0.0,
+      "price" : 0.0,
+      "floorArea" : 0.0,
+      "yearBuilt" : 0.0,
+      "energyRating" : 0.0,
+      "description" : 0.0,
+      "renovated" : 0.0,
+      "soldDate" : 0.0,
+      "amenityLink" : 0.0,
+      "viewing" : 0.0,
+      "feedback" : 0.0,
+      "offer" : 0.0,
+      "madeOn" : 0.0,
+      "accepted" : 0.0
+    },
+    "seededActualCounts" : {
+      "district" : 3,
+      "agent" : 4,
+      "amenity" : 4,
+      "property" : 41,
+      "viewing" : 0,
+      "offer" : 0
+    },
+    "fixtureActualCounts" : {
+      "district" : 21,
+      "agent" : 15,
+      "amenity" : 8,
+      "property" : 111,
+      "viewing" : 13,
+      "offer" : 10
+    },
+    "seededStatementCount" : 104,
+    "overlayStatementCount" : 418,
+    "statementCount" : 522
+  },
+  "dataset" : {
+    "file" : "dataset.nq",
+    "format" : "N-Quads",
+    "sha256" : "cea493dfca9e8b06629ecb951995311c0eb3c525c46114027678b0b372e4469f",
+    "bytes" : 86583,
+    "statements" : 522
+  },
+  "queries" : [ {
+    "index" : 0,
+    "name" : "RealEstate: average price per district",
+    "querySha256" : "44700481321704d99e5a9c1c3055c60a2d2342eae3a3ca8e351f0a143e404d6a",
+    "bagFile" : "query-00.json",
+    "bagSha256" : "64bf821c913d3c18544b217291aa2966a6372daf9c0c067659cb5e15d8ba6ad7",
+    "distinctRows" : 2,
+    "rows" : 2,
+    "computedNumericVariables" : [ "avgPrice" ]
+  }, {
+    "index" : 1,
+    "name" : "RealEstate: price statistics for large homes",
+    "querySha256" : "6204d59d9886e18dc505098850b565d253e1c302922399155a8ee802b9debd37",
+    "bagFile" : "query-01.json",
+    "bagSha256" : "29b1fcbebf2694b5e6ea0640ed8ad20d7386b04211d7ccfeb4a7902004557ee9",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "totalPrice" ]
+  }, {
+    "index" : 2,
+    "name" : "RealEstate: top listings by price",
+    "querySha256" : "5eb015fb6fb086e89c784cfac73b5ff2a112d106ffbf63c4662b0eeea368668f",
+    "bagFile" : "query-02.json",
+    "bagSha256" : "7bec642ddfe4b55216e3c5f2d3425018cc9921aceacd8299e60653d2d0e5ba7f",
+    "distinctRows" : 25,
+    "rows" : 25,
+    "computedNumericVariables" : [ ],
+    "orderFile" : "query-02-order.json",
+    "orderSha256" : "ad5f8b20a72f0c9e98ab49be5ab049327b1012af4a469b5501d6ae172dda2fdf"
+  }, {
+    "index" : 3,
+    "name" : "RealEstate: districts with unsold expensive stock",
+    "querySha256" : "db4e708f9738f4f2ad083171e71aedaf690da1ec9d4f0ca0f25fba29bfb62819",
+    "bagFile" : "query-03.json",
+    "bagSha256" : "89392a3157ab0027b758a4534cca7d7f09dab0d82a34d11c999ae5b58c2da74d",
+    "distinctRows" : 3,
+    "rows" : 3,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 4,
+    "name" : "RealEstate: affordable or spacious unsold properties",
+    "querySha256" : "9c5dab6aed14c6d5626d0119d1a9c02ac67a04a96c635a230fc92215683f695b",
+    "bagFile" : "query-04.json",
+    "bagSha256" : "c4363936910286e6547c8b33d551e9def483a14e35e4216936eb354244fa7a9b",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 5,
+    "name" : "RealEstate: price per square meter by district",
+    "querySha256" : "2223f458a73ae210a76366a59be0e5109f85b8d3f02df275766caa5a4995ac8f",
+    "bagFile" : "query-05.json",
+    "bagSha256" : "7bc1b854515effff42035654f1eab35da3272f447083a5f2784ad99c8ed59c58",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "propertyCount" ]
+  }, {
+    "index" : 6,
+    "name" : "RealEstate: viewing agents working in the property district",
+    "querySha256" : "10a07d3b4a71351e2df3e554bb8e41809b5cbbf782262bd5bb4c18f4a1ba8485",
+    "bagFile" : "query-06.json",
+    "bagSha256" : "e86a1f2d2c04f131e3a568d338f42adecdbcca248a1431ca0f158f1deb26292f",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 7,
+    "name" : "RealEstate: stale expensive listings",
+    "querySha256" : "db2c42f6088aed6a7a4cbfa0f59e6c9e5fea14ca3d861ec2aefe2dcb635869ac",
+    "bagFile" : "query-07.json",
+    "bagSha256" : "b31f7b0d28c0bbb0cf24b3b0e58b982c84065d9d2f94ecc2117652b910784c57",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ ]
+  }, {
+    "index" : 8,
+    "name" : "RealEstate: agents with high average feedback",
+    "querySha256" : "a3c4e9ca0c70f91d8271168b71ed1db1a86a6c05ab6321588e8dc4218e6904c9",
+    "bagFile" : "query-08.json",
+    "bagSha256" : "035cba65f4468e490944205b4eec4a89fc6447932236f84e5f1637cd1fb00caa",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "count" ]
+  }, {
+    "index" : 9,
+    "name" : "RealEstate: district offer counts above threshold",
+    "querySha256" : "d2fb4ed62cd2d62ba578ff2a38da9387bf5fc390eaf19114f20311fce0f98223",
+    "bagFile" : "query-09.json",
+    "bagSha256" : "c13f3d5e890b0ecc1616066d27bc208da2fe82c0e3c2064df84c47c49ac1bafd",
+    "distinctRows" : 4,
+    "rows" : 4,
+    "computedNumericVariables" : [ "offerCount" ]
+  }, {
+    "index" : 10,
+    "name" : "RealEstate: amenity exposure of active listings",
+    "querySha256" : "5b3a95593c2a6dee874fb5037c38c2472ed75c979ab6d1453a79d959fdd61c7c",
+    "bagFile" : "query-10.json",
+    "bagSha256" : "a1b677d614c570227a4a37c65dcd1f09f25c5ba4c87cfa73b71bca81107bf0a5",
+    "distinctRows" : 1,
+    "rows" : 1,
+    "computedNumericVariables" : [ "exposure" ]
+  }, {
+    "index" : 11,
+    "name" : "RealEstate: denormalized property dossier view",
+    "querySha256" : "51f46d7a7f290eed74d7678dea9604e93ae8af21d3cef5f92d3e0ff0949113cb",
+    "bagFile" : "query-11.json",
+    "bagSha256" : "3874412e6ba597e54f22df14f7a2e78988718e54c2ccdb45e4c3e8c660f25b64",
+    "distinctRows" : 123,
+    "rows" : 123,
+    "computedNumericVariables" : [ ],
+    "orderFile" : "query-11-order.json",
+    "orderSha256" : "07b80a78801d6c587b034e1089ac4457fde2b5dfcc0eb91b7297e9e14e0add9a"
+  }, {
+    "index" : 12,
+    "name" : "RealEstate: union-heavy sparse entity view",
+    "querySha256" : "6c955b000cda49c1da1fb204ded5aef09f4d7b021146d81f799da30d88d1cde1",
+    "bagFile" : "query-12.json",
+    "bagSha256" : "864d868eb776543273618efad4ed72278f68dbf8cdafab875ce37036731ce320",
+    "distinctRows" : 128,
+    "rows" : 128,
+    "computedNumericVariables" : [ ]
+  } ]
+}

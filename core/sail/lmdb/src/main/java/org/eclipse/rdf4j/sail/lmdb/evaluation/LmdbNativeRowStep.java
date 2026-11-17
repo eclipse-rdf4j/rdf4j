@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.NativeExecutionObservation;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -812,7 +813,33 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				|| SyntheticValueSource.inheritedEvaluation(evalSource)) {
 			return iteration;
 		}
-		return new NativeContextClosingIteration(iteration, ((SyntheticValueSource) evalSource).executionContext());
+		NativeExecutionContext owner = ((SyntheticValueSource) evalSource).executionContext();
+		NativeContextClosingIteration carrier = new NativeContextClosingIteration(iteration, owner);
+		NativeExecutionObservation.Capture capture = NativeExecutionObservation.current();
+		if (!(iteration instanceof NativeRowsIteration rows) || owner.filterOutcomeOwner() != owner
+				|| capture == null || !capture.enabled()) {
+			return carrier;
+		}
+		NativeExecutionObservation.RowRegion region = null;
+		try {
+			region = capture.reserveRow(owner.cancellation().evaluationId());
+			if (region != null) {
+				if (owner.observeRowSettlement(region)) {
+					rows.observedRow = region;
+					carrier.observeRow(region);
+					region.opened();
+				} else {
+					region.discard();
+				}
+			}
+			return carrier;
+		} catch (RuntimeException | Error failure) {
+			if (region != null) {
+				region.failure();
+			}
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(carrier, failure));
+			throw new AssertionError("unreachable");
+		}
 	}
 
 	private NativeRowsStep withEntryBindingVariant(NativeEntryBindingVariant variant) {
@@ -1106,7 +1133,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 						return ordered.value();
 					} catch (RuntimeException | Error failure) {
 						Throwable retained = ordered.value() instanceof AutoCloseable resource
-								? KernelRuntime.closeResource(resource, failure) : failure;
+								? KernelRuntime.closeResource(resource, failure)
+								: failure;
 						retained = ordered.finish(retained);
 						KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 						throw failure;
@@ -1853,8 +1881,10 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				context -> factorizedQuote == null ? LmdbNativeAdmission.declined("not-multi-join")
 						: LmdbNativeAdmission.of(LmdbNativeStrategyProposal.candidate(
 								new LmdbNativeStrategyProposal<List<BindingSet>>(
-										filters -> withArg(filters.borrow(arg)).tryEvaluateOrderedFactorized(base, values,
-												comparator, emitCap), work, factorizedTag, () -> {
+										filters -> withArg(filters.borrow(arg)).tryEvaluateOrderedFactorized(base,
+												values,
+												comparator, emitCap),
+										work, factorizedTag, () -> {
 										}).withCostQuote(factorizedQuote)))));
 		return strategies;
 	}
@@ -1869,8 +1899,10 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					context -> staticDecline != null ? LmdbNativeAdmission.declined(staticDecline)
 							: LmdbNativeAdmission.of(LmdbNativeStrategyProposal.candidate(
 									new LmdbNativeStrategyProposal<List<BindingSet>>(
-											filters -> withArg(filters.borrow(arg)).tryEvaluateOrderedKernel(row, values,
-													false, wildcard), LmdbNativeWork.UNKNOWN, tag, () -> {
+											filters -> withArg(filters.borrow(arg)).tryEvaluateOrderedKernel(row,
+													values,
+													false, wildcard),
+											LmdbNativeWork.UNKNOWN, tag, () -> {
 											}).withCostQuote(quote)))));
 		}
 		if (LmdbNativeKernelInterpreter.enabled()) {
@@ -1880,8 +1912,10 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					context -> staticDecline != null ? LmdbNativeAdmission.declined(staticDecline)
 							: LmdbNativeAdmission.of(LmdbNativeStrategyProposal.candidate(
 									new LmdbNativeStrategyProposal<List<BindingSet>>(
-											filters -> withArg(filters.borrow(arg)).tryEvaluateOrderedKernel(row, values,
-													true, wildcard), LmdbNativeWork.UNKNOWN, tag, () -> {
+											filters -> withArg(filters.borrow(arg)).tryEvaluateOrderedKernel(row,
+													values,
+													true, wildcard),
+											LmdbNativeWork.UNKNOWN, tag, () -> {
 											}).withCostQuote(quote)))));
 		}
 	}
@@ -1929,9 +1963,16 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				&& distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
 			// The ordered-distinct plan competes instead of short-circuiting the ladder; its accepter marks the
 			// input ORDERED so the caller builds the order-relying tracker only for this winner.
-			arbiter.offer(() -> planProposal(
-					filters -> acceptOrderedDistinct(row, filters.borrow(distinctPlan.arg).open(row)),
-					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, distinctPlan.arg, row));
+			arbiter.offer(() -> {
+				if (inputHasOrderedScan()) {
+					// its input is re-planned for adjacent duplicates and may drop the requested scan order
+					LmdbNativeAttemptMetrics.recordDecline(originalExpr,
+							LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, "ordered-scan");
+					return null;
+				}
+				return planProposal(filters -> acceptOrderedDistinct(row, filters.borrow(distinctPlan.arg).open(row)),
+						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, distinctPlan.arg, row);
+			});
 		}
 		LmdbNativeLeapfrogJoin.Shape leapfrog = LmdbNativeLeapfrogJoin.shape(arg, row.boundMask());
 		if (leapfrog != null) {
@@ -1981,7 +2022,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				LmdbNativeKernelExecution.proposeWildcardRows(arg, row, originalExpr, true, consumerInput),
 				this::acceptKernel));
 		arbiter.offer(() -> wrapCursorProposal(row,
-				LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, false, consumerInput), this::acceptKernel));
+				LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, false, consumerInput),
+				this::acceptKernel));
 		arbiter.offer(() -> wrapCursorProposal(row,
 				LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, true, consumerInput),
 				this::acceptKernel));
@@ -2032,7 +2074,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				long boundMask = row.boundMask();
 				double rows = estimatedRows(row);
 				return inputProposal(
-						filters -> acceptNested(row, NativeExpressionDomainPolicy.openHashed(filters.borrow(arg), row), multiJoin),
+						filters -> acceptNested(row, NativeExpressionDomainPolicy.openHashed(filters.borrow(arg), row),
+								multiJoin),
 						NativeExpressionDomainPolicy.HASHED_TAG, LmdbNativeWork.UNKNOWN, rows)
 								.withCostQuote(LmdbNativeCostQuote.streaming(
 										LmdbNativePlanExecutionProfile.profile(arg, row, boundMask,
@@ -2148,11 +2191,23 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		LmdbNativeStrategyPreview.inspect(arg);
 	}
 
+	/** Whether this step's input is an explicitly ordered scan, or a join holding one; see MultiJoinPlan. */
+	private boolean inputHasOrderedScan() {
+		return arg instanceof MultiJoinPlan join ? join.containsOrderedScan()
+				: arg instanceof PatternPlan pattern && pattern.statementOrder != null;
+	}
+
 	private LmdbNativeStrategyProposal<NativeUnorderedInput> proposeFactorized(RowState row,
 			MultiJoinPlan multiJoin, boolean correlatedEntry, int[] retainedSlots) {
 		if (multiJoin == null) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
 					"not-multi-join");
+			return null;
+		}
+		if (multiJoin.containsOrderedScan()) {
+			// the split runs a sunk and locally reordered child order, which loses the scan's encounter order
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
+					"ordered-scan");
 			return null;
 		}
 		MultiJoinPlan.OrderedPlan derived = LmdbNativeFactorizedRows.selectFactorizedOrder(multiJoin,
@@ -2211,7 +2266,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		if (proposal == null && multiJoin == null) {
 			boolean directPatternBatch = arg instanceof PatternPlan pattern && pattern.p.isConstant();
 			LmdbNativeStrategyProposal<NativeUnorderedInput> direct = planProposal(
-					filters -> openDirectBatch(row, capacity, filters.borrow(arg)), LmdbNativeAttemptMetrics.PATH_BATCH, arg,
+					filters -> openDirectBatch(row, capacity, filters.borrow(arg)), LmdbNativeAttemptMetrics.PATH_BATCH,
+					arg,
 					row, LmdbNativeCostVector.Feature.BATCH_ROW, directPatternBatch ? capacity : 1);
 			// Composed wildcard batches can be exposed as scalar cursors. Only this plain fixed-predicate
 			// pattern proves that the consumer filters a complete selected batch before returning its first key.
@@ -2438,6 +2494,12 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 							: "The leading pattern has incoming bound slots");
 			return null;
 		}
+		if (inputHasOrderedScan()) {
+			// runs are emitted in the order of the prefix index, not of the requested scan order
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
+					"ordered-scan");
+			return null;
+		}
 		if (LmdbNativeParallelPipelines.enabled() && LmdbNativeParallelPipelines.configuredThreads() > 0
 				&& prefixPattern.p.hasSlot() && !prefixPattern.p.isConstant()
 				&& prefixPattern.s.lookup(row.slots) == NativeLmdbQuerySource.UNKNOWN_ID
@@ -2590,7 +2652,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	private static LmdbNativeStrategyProposal<NativeUnorderedInput> planProposal(
-			LmdbNativeStrategyProposal.AttemptOpener<NativeUnorderedInput> opener, String tag, SlotPlan plan, RowState row,
+			LmdbNativeStrategyProposal.AttemptOpener<NativeUnorderedInput> opener, String tag, SlotPlan plan,
+			RowState row,
 			LmdbNativeCostVector.Feature rowFeature, int producerBatchSize) {
 		long boundMask = row.boundMask();
 		double rows = LmdbNativeWork.rowsOut(plan, row, boundMask);
@@ -3975,6 +4038,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 	final NativeLmdbQuerySource source;
 	final NativeCancellationToken cancellation;
 	final NativeExecutionPhaseEvent.InputOwner inputPhases;
+	/** Set only for an explicitly observed fresh owner, before the iteration is returned. */
+	volatile NativeExecutionObservation.RowRegion observedRow;
 
 	NativeRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
 		this.step = step;
@@ -4071,6 +4136,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 
 	private BindingSet getNextElement() throws IOException {
 		if (remainingLimit == 0) {
+			if (!initialized && observedRow != null) {
+				observedRow.started();
+			}
 			if (!initialized && step.limit == 0) {
 				LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_LIMIT_ZERO);
 			}
@@ -4091,8 +4159,13 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			consumeLimitSlot();
 			return repeated;
 		}
-		if (!initialized && !initialize()) {
-			return null;
+		if (!initialized) {
+			if (observedRow != null) {
+				observedRow.started();
+			}
+			if (!initialize()) {
+				return null;
+			}
 		}
 		if (batchCursor != null) {
 			return getNextBatchElement();
@@ -4279,8 +4352,31 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 
 	private void finish(boolean completed, Throwable primary) {
 		closed = true;
-		Throwable failure = closeResources(completed, primary);
-		KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, primary);
+		NativeExecutionObservation.RowRegion observation = observedRow;
+		if (observation != null) {
+			observation.producerFinishing();
+		}
+		Throwable failure = primary;
+		boolean threwFailure = false;
+		boolean threwCancellation = false;
+		try {
+			failure = closeResources(completed, primary);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, primary);
+		} catch (KernelQueryCancelledException cancellation) {
+			threwCancellation = true;
+			throw cancellation;
+		} catch (RuntimeException | Error problem) {
+			threwFailure = true;
+			throw problem;
+		} finally {
+			if (observation != null) {
+				boolean cancellation = threwCancellation || explicitCancellationRequested
+						|| primary instanceof KernelQueryCancelledException;
+				boolean failed = threwFailure || failure != null && !(failure instanceof KernelQueryCancelledException);
+				observation.producerFinished(completed && failure == null && !threwFailure && !threwCancellation,
+						failed, cancellation);
+			}
+		}
 	}
 
 	private Throwable closeResources(boolean completed, Throwable primary) {

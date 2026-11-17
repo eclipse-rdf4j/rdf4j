@@ -13,11 +13,23 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-/** One executable root alternative retained by an opt-in plan-quality audit. */
+/**
+ * One executable root alternative retained by an opt-in plan-quality audit. A selected fallback or an unranked
+ * candidate can have an unavailable estimated or comparison cost, represented by NaN. Unranked candidates are not
+ * ordered by price or classified as Pareto survivors or dominated samples.
+ */
 public record PackedPlanQualityAlternative(String stableId, TupleExpr plan, double estimatedCost,
 		double comparisonCost, long physicalFingerprint, boolean selectedByPolicy, boolean paretoSurvivor,
 		boolean sampledDominated, long stratumFingerprint, int stratumOrdinal, int stratumPopulation,
-		String decisionTraceJson) {
+		String decisionTraceJson, boolean unrankedCandidate) {
+
+	public PackedPlanQualityAlternative(String stableId, TupleExpr plan, double estimatedCost,
+			double comparisonCost, long physicalFingerprint, boolean selectedByPolicy, boolean paretoSurvivor,
+			boolean sampledDominated, long stratumFingerprint, int stratumOrdinal, int stratumPopulation,
+			String decisionTraceJson) {
+		this(stableId, plan, estimatedCost, comparisonCost, physicalFingerprint, selectedByPolicy, paretoSurvivor,
+				sampledDominated, stratumFingerprint, stratumOrdinal, stratumPopulation, decisionTraceJson, false);
+	}
 
 	public PackedPlanQualityAlternative {
 		if (stableId == null || stableId.isBlank()) {
@@ -26,15 +38,21 @@ public record PackedPlanQualityAlternative(String stableId, TupleExpr plan, doub
 		if (plan == null) {
 			throw new NullPointerException("plan-quality alternative plan");
 		}
-		if (!Double.isFinite(estimatedCost) || estimatedCost < 0.0d
-				|| !Double.isFinite(comparisonCost) || comparisonCost < 0.0d) {
+		boolean mayBeUnavailable = selectedByPolicy || unrankedCandidate;
+		if ((!Double.isFinite(estimatedCost) || estimatedCost < 0.0d)
+				&& !(mayBeUnavailable && Double.isNaN(estimatedCost))
+				|| (!Double.isFinite(comparisonCost) || comparisonCost < 0.0d)
+						&& !(mayBeUnavailable && Double.isNaN(comparisonCost))) {
 			throw new IllegalArgumentException("plan-quality alternative costs must be finite and non-negative");
 		}
-		if (!selectedByPolicy && !paretoSurvivor && !sampledDominated) {
+		if (!selectedByPolicy && !paretoSurvivor && !sampledDominated && !unrankedCandidate) {
 			throw new IllegalArgumentException("plan-quality alternative has no inclusion reason");
 		}
 		if (sampledDominated && (selectedByPolicy || paretoSurvivor)) {
 			throw new IllegalArgumentException("sampled dominated alternative cannot be selected or Pareto-retained");
+		}
+		if (unrankedCandidate && (selectedByPolicy || paretoSurvivor || sampledDominated)) {
+			throw new IllegalArgumentException("unranked alternative cannot have a ranked inclusion reason");
 		}
 		if (stratumOrdinal < 0 || stratumPopulation <= stratumOrdinal) {
 			throw new IllegalArgumentException("invalid plan-quality stratum position");
@@ -42,5 +60,10 @@ public record PackedPlanQualityAlternative(String stableId, TupleExpr plan, doub
 		if (decisionTraceJson == null || decisionTraceJson.isBlank()) {
 			throw new IllegalArgumentException("plan-quality decision trace must not be blank");
 		}
+	}
+
+	/** Whether both individual objective values are available; this does not certify the overall ranking. */
+	public boolean priceAvailable() {
+		return Double.isFinite(estimatedCost) && Double.isFinite(comparisonCost);
 	}
 }

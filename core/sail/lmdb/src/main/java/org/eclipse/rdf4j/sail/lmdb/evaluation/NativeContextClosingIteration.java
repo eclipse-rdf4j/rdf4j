@@ -18,6 +18,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.sail.lmdb.NativeExecutionObservation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 
 /**
  * Ties a {@link NativeExecutionContext}'s lifetime to the result iteration it served (M-A0 gate 5): the context closes
@@ -32,6 +34,7 @@ final class NativeContextClosingIteration
 	private final NativeExecutionContext context;
 	private final boolean closeContext;
 	private final NativeLmdbQuerySource evaluationSource;
+	private volatile NativeExecutionObservation.RowRegion observedRow;
 	private volatile boolean closed;
 	private int activeCancellations;
 	private boolean cleanupStarted;
@@ -56,6 +59,11 @@ final class NativeContextClosingIteration
 		this.evaluationSource = evaluationSource;
 	}
 
+	/** Installed before this fresh carrier is returned to its caller. */
+	void observeRow(NativeExecutionObservation.RowRegion region) {
+		observedRow = region;
+	}
+
 	@Override
 	public boolean hasNext() {
 		if (closed) {
@@ -66,6 +74,7 @@ final class NativeContextClosingIteration
 				: SyntheticValueSource.attachEvaluation(evaluationSource)) {
 			hasNext = delegate.hasNext();
 		} catch (Throwable failure) {
+			observeFailure(failure);
 			context.filterFailure();
 			Throwable cleanupFailure = closeResources();
 			if (cleanupFailure != null && cleanupFailure != failure) {
@@ -89,6 +98,7 @@ final class NativeContextClosingIteration
 				: SyntheticValueSource.attachEvaluation(evaluationSource)) {
 			return delegate.next();
 		} catch (Throwable failure) {
+			observeFailure(failure);
 			context.filterFailure();
 			Throwable cleanupFailure = closeResources();
 			if (cleanupFailure != null && cleanupFailure != failure) {
@@ -141,10 +151,14 @@ final class NativeContextClosingIteration
 			boolean requested = CooperativeCancellation.forward(delegate) || closeContext;
 			if (requested) {
 				context.filterFailure();
+				if (observedRow != null) {
+					observedRow.cancellation();
+				}
 			}
 			return requested;
 		} catch (RuntimeException | Error problem) {
 			failure = problem;
+			observeFailure(problem);
 			throw problem;
 		} finally {
 			Throwable cleanup = finishCancellation(lease);
@@ -252,7 +266,20 @@ final class NativeContextClosingIteration
 			cleanupThread = null;
 			notifyAll();
 		}
+		if (observedRow != null) {
+			observedRow.carrierFinished(failure != null);
+		}
 		return failure;
+	}
+
+	private void observeFailure(Throwable failure) {
+		if (observedRow != null) {
+			if (failure instanceof KernelQueryCancelledException) {
+				observedRow.cancellation();
+			} else {
+				observedRow.failure();
+			}
+		}
 	}
 
 	/** Never invoke source or context callbacks while holding the admission monitor. */

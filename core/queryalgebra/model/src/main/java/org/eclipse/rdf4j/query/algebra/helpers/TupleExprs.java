@@ -536,8 +536,12 @@ public class TupleExprs {
 	 * extension nodes, including evaluation-only function wrappers, conservative rather than trusting their package.
 	 * SERVICE stays unknown because its serialized remote expression and public backend may observe invocation bindings
 	 * beyond the traversed tuple preview. INTERSECT, DISTINCT and REDUCED also stay unknown: their whole-row identity
-	 * comparisons can observe arbitrary input names unless a separate input-domain proof bounds them. The holder defers
-	 * the immutable exact-class table until an observation domain is actually inspected.
+	 * comparisons can observe arbitrary input names unless a separate input-domain proof bounds them. The one
+	 * exception to the exact-class rule is a {@link Var} of any class that {@code isConstant()} and {@code hasValue()}:
+	 * such a constant reads no binding and writes none, and the names branch below already treats every {@code Var} by
+	 * {@code instanceof}. A non-constant {@code Var} subclass, a constant without a value and every other unlisted
+	 * node class are still not trusted. The holder defers the immutable exact-class table until an observation domain
+	 * is actually inspected.
 	 */
 	private static final class BindingObservationTypes {
 		private static final Set<Class<?>> COMPLETE = Set.of(
@@ -572,7 +576,8 @@ public class TupleExprs {
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				known[0] &= BindingObservationTypes.COMPLETE.contains(node.getClass())
-						|| functionArgumentsAreExplicit && node instanceof FunctionCall;
+						|| functionArgumentsAreExplicit && node instanceof FunctionCall
+						|| node instanceof Var constant && constant.hasValue() && constant.isConstant();
 				if (node instanceof Var var && (!var.hasValue() || !var.isConstant()) && var.getName() != null) {
 					// Optimizer values do not remove named caller compatibility or parameter reification.
 					names.add(var.getName());

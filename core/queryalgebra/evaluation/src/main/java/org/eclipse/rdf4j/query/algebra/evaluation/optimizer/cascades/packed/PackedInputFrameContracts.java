@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -76,9 +77,15 @@ final class PackedInputFrameContracts {
 			Set<String> nullableInputs = new HashSet<>(observations);
 			nullableInputs.removeAll(required);
 			nullableInputs.removeAll(protectedInputs);
+			var output = analysis.outputFacts(node);
+			// The encoded VALUES header is preserved for materialization, but its rows can carry additional names.
+			// If that header is incomplete, do not treat it as a complete possible-output domain.
+			boolean outputDomainKnown = output.possibleOutputsKnown()
+					&& (!(node instanceof BindingSetAssignment assignment)
+							|| assignment.getBindingNames().containsAll(output.possibleOutputs()));
 			return new Contract(Set.copyOf(required), Set.copyOf(protectedInputs), Set.copyOf(nullableInputs), writes,
 					TupleExprs.independentlyProducedProjectionBindingNames(node),
-					analysis.outputFacts(node).possibleOutputsKnown());
+					outputDomainKnown);
 		});
 	}
 

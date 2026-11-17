@@ -26,7 +26,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalLong;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -66,6 +65,7 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
@@ -382,6 +382,7 @@ class LmdbPhysicalFallbackFrameAuthorityTest {
 	}
 
 	static final class Fixture implements AutoCloseable {
+		private static final long SNAPSHOT_EPOCH = 41L;
 		final FrontierStatisticsView view = mock(FrontierStatisticsView.class);
 		final LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		final List<JoinFactorCostModel.CostContext> physicalFactorRequests = new ArrayList<>();
@@ -455,7 +456,7 @@ class LmdbPhysicalFallbackFrameAuthorityTest {
 			when(statistics.status()).thenReturn(status);
 			when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 			when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
-			when(statistics.openCurrentView()).thenReturn(view);
+			when(statistics.openView(SNAPSHOT_EPOCH)).thenReturn(view);
 			when(view.ready()).thenReturn(true);
 			Answer<?> factorCostAnswer = invocation -> {
 				TupleExpr expression = invocation.getArgument(0);
@@ -491,7 +492,11 @@ class LmdbPhysicalFallbackFrameAuthorityTest {
 			when(runtime.factorCost(any(), any())).thenAnswer(factorCostAnswer);
 			when(runtime.factorCost(any(), any(), nullable(LmdbFilterReadContext.class)))
 					.thenAnswer(factorCostAnswer);
-			model = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true);
+			// The admitted scoped model prices every factor through the admitted-read overload.
+			when(runtime.factorCost(any(), any(), nullable(LmdbFilterReadContext.class),
+					nullable(LmdbAdmittedFrontierRead.class))).thenAnswer(factorCostAnswer);
+			model = LmdbOwnedFrontierReadTestSupport.ownedModel(runtime, view, SNAPSHOT_EPOCH,
+					FrontierLeafProbe.BOTH_PLANES);
 		}
 
 		int priceFilteredPrefix(PackedCostSession session) throws Exception {

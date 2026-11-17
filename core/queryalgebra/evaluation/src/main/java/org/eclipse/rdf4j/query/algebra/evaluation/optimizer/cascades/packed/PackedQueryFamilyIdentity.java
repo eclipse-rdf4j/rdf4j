@@ -91,7 +91,7 @@ final class PackedQueryFamilyIdentity {
 			PackedQuery identityQuery = PackedQueryCodec.encodeForParameterizedCacheIdentity(source, canonicalNames,
 					semanticsCodec);
 			PackedQuery concreteQuery = PackedQueryCodec.encodeForParameterizedPlanning(source, rangeProvider,
-					semanticsCodec);
+					semanticsCodec, canonicalNames);
 			if (!identityQuery.supportsCacheIdentity() || !concreteQuery.supportsCacheIdentity()
 					|| !identityQuery.parameterSchema().equals(concreteQuery.parameterSchema())) {
 				return null;

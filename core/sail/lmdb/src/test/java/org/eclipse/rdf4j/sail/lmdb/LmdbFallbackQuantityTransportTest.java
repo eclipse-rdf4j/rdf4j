@@ -573,6 +573,8 @@ class LmdbFallbackQuantityTransportTest {
 		when(fixture.runtime.factorCost(isA(ArbitraryLengthPath.class), any())).thenAnswer(factorCostAnswer);
 		when(fixture.runtime.factorCost(isA(ArbitraryLengthPath.class), any(), nullable(LmdbFilterReadContext.class)))
 				.thenAnswer(factorCostAnswer);
+		when(fixture.runtime.factorCost(isA(ArbitraryLengthPath.class), any(), nullable(LmdbFilterReadContext.class),
+				nullable(LmdbAdmittedFrontierRead.class))).thenAnswer(factorCostAnswer);
 	}
 
 	@Test

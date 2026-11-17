@@ -92,7 +92,12 @@ class LmdbNativeRawEqualityDispatchTest {
 					"?person a :Person . GRAPH :graph-one { ?person :member ?member } FILTER(?member = :red)",
 					"?person a :Person . OPTIONAL { GRAPH :graph-one { ?person :member ?member } }"
 							+ " FILTER(?member = :red)")) {
-				verify(connection, "SELECT ?person", body, rowStrategy, "person", NS + "alice", mismatches);
+				// A GRAPH body is joined by the ordinary evaluator over single-scan native leaves, and a kernel tier
+				// has nothing to fuse in a single scan. The preference list keeps the kernel wherever it applies
+				// and leaves such a leaf to the batch route instead of failing the forced dispatch.
+				String rows = body.contains("GRAPH") && rowStrategy.startsWith("irKernel") ? rowStrategy + ",batch"
+						: rowStrategy;
+				verify(connection, "SELECT ?person", body, rows, "person", NS + "alice", mismatches);
 				verify(connection, "SELECT (COUNT(*) AS ?count)", body, aggregateStrategy, "count", "1", mismatches);
 				verify(connection, "SELECT (COUNT(?person) AS ?count)", body, aggregateStrategy, "count", "1",
 						mismatches);
@@ -100,7 +105,7 @@ class LmdbNativeRawEqualityDispatchTest {
 					verify(connection, "SELECT ?nick", body, rowStrategy, "nick", "Alice", mismatches);
 				}
 				if (body.contains("?member")) {
-					verify(connection, "SELECT ?member", body, rowStrategy, "member", NS + "red", mismatches);
+					verify(connection, "SELECT ?member", body, rows, "member", NS + "red", mismatches);
 				}
 			}
 			assertThat(mismatches).as("raw execution mismatches").isEmpty();

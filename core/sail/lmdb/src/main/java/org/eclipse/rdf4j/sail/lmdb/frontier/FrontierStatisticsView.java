@@ -81,6 +81,7 @@ public final class FrontierStatisticsView implements AutoCloseable {
 		try {
 			return generation.estimateLeaf(probe);
 		} catch (IOException | RuntimeException failure) {
+			FrontierCancellation.rethrowIfCancelled(failure);
 			recordFailure(failure);
 			return FrontierLeafEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
 		}
@@ -97,6 +98,7 @@ public final class FrontierStatisticsView implements AutoCloseable {
 		try {
 			return generation.estimateProjectedDistinct(probe, component);
 		} catch (IOException | RuntimeException failure) {
+			FrontierCancellation.rethrowIfCancelled(failure);
 			recordFailure(failure);
 			return Double.NaN;
 		}
@@ -110,6 +112,7 @@ public final class FrontierStatisticsView implements AutoCloseable {
 		try {
 			return generation.estimateJoin(probe);
 		} catch (IOException | RuntimeException failure) {
+			FrontierCancellation.rethrowIfCancelled(failure);
 			recordFailure(failure);
 			return FrontierJoinEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
 		}
@@ -124,6 +127,7 @@ public final class FrontierStatisticsView implements AutoCloseable {
 		try {
 			return generation.estimateConditionalJoin(probe, upperRowsPerLeft);
 		} catch (IOException | RuntimeException failure) {
+			FrontierCancellation.rethrowIfCancelled(failure);
 			recordFailure(failure);
 			return FrontierJoinEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
 		}
@@ -137,6 +141,7 @@ public final class FrontierStatisticsView implements AutoCloseable {
 		try {
 			return generation.estimateSubgraph(program);
 		} catch (IOException | RuntimeException failure) {
+			FrontierCancellation.rethrowIfCancelled(failure);
 			recordFailure(failure);
 			return FrontierJoinEstimate.unavailable(FrontierFallbackReason.SHARD_CORRUPT);
 		}
@@ -159,11 +164,30 @@ public final class FrontierStatisticsView implements AutoCloseable {
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
-		if (scratch != null) {
-			scratch.close();
+		Throwable failure = null;
+		try {
+			if (scratch != null) {
+				scratch.close();
+			}
+		} catch (RuntimeException | Error first) {
+			failure = first;
 		}
-		if (generation != null) {
-			generation.close();
+		try {
+			if (generation != null) {
+				generation.close();
+			}
+		} catch (RuntimeException | Error next) {
+			if (failure == null) {
+				failure = next;
+			} else if (failure != next) {
+				failure.addSuppressed(next);
+			}
+		}
+		if (failure instanceof RuntimeException exception) {
+			throw exception;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 }

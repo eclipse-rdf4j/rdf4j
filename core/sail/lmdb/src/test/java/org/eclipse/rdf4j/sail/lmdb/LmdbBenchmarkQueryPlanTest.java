@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -23,6 +24,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -42,6 +44,10 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class LmdbBenchmarkQueryPlanTest {
 
@@ -88,6 +94,77 @@ class LmdbBenchmarkQueryPlanTest {
 			assertNull(System.getProperty(CASCADES_TIMEOUT_MILLIS_PROPERTY));
 		} finally {
 			restoreProperty(previous);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(TimeoutRestoreFailure.class)
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void scopedTimeoutPreservesPrimaryIfPropertyRestoreFails(TimeoutRestoreFailure scenario) {
+		Properties originalProperties = System.getProperties();
+		AssertionError original = new AssertionError("optimization failure");
+		Throwable cleanup = scenario == TimeoutRestoreFailure.PRESENT_SELF ? original
+				: new IllegalStateException("timeout property restore failure");
+		FailingRestoreProperties failingProperties = new FailingRestoreProperties(cleanup);
+		failingProperties.putAll(originalProperties);
+		if (scenario == TimeoutRestoreFailure.ABSENT) {
+			failingProperties.remove(CASCADES_TIMEOUT_MILLIS_PROPERTY);
+		} else {
+			failingProperties.setProperty(CASCADES_TIMEOUT_MILLIS_PROPERTY, "45000");
+		}
+		System.setProperties(failingProperties);
+		try {
+			AssertionError actual = assertThrows(AssertionError.class,
+					() -> LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(60, () -> {
+						// The next mutation of this property is the helper's restoration.
+						failingProperties.armed = true;
+						throw original;
+					}));
+			assertSame(original, actual);
+			assertEquals(cleanup == original ? 0 : 1, actual.getSuppressed().length);
+			if (cleanup != original) {
+				assertSame(cleanup, actual.getSuppressed()[0]);
+			}
+		} finally {
+			System.setProperties(originalProperties);
+		}
+	}
+
+	private enum TimeoutRestoreFailure {
+		ABSENT,
+		PRESENT,
+		PRESENT_SELF
+	}
+
+	private static final class FailingRestoreProperties extends Properties {
+		private final Throwable cleanup;
+		private boolean armed;
+
+		private FailingRestoreProperties(Throwable cleanup) {
+			this.cleanup = cleanup;
+		}
+
+		@Override
+		public synchronized Object put(Object key, Object value) {
+			if (armed && CASCADES_TIMEOUT_MILLIS_PROPERTY.equals(key)) {
+				throwCleanup();
+			}
+			return super.put(key, value);
+		}
+
+		@Override
+		public synchronized Object remove(Object key) {
+			if (armed && CASCADES_TIMEOUT_MILLIS_PROPERTY.equals(key)) {
+				throwCleanup();
+			}
+			return super.remove(key);
+		}
+
+		private void throwCleanup() {
+			if (cleanup instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			throw (Error) cleanup;
 		}
 	}
 

@@ -143,6 +143,17 @@ class LmdbHashJoinCostingTest {
 		assertThat(new LmdbPhysicalCostObjective(null).score(estimate)).isEqualTo(17.0d);
 	}
 
+	@Test
+	void lmdbObjectiveCannotPriceAnUnknownPhysicalDimension() {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		estimate.setRows(2.0d, Double.NaN);
+		estimate.setLocalPhysicalCostPreservingUnknown(7.0d, Double.NaN, 1.0d, 0.0d, 0.0d,
+				0.0d, 0.0d, 3.0d, 0.0d, 0.0d, Double.NaN);
+
+		assertThat(estimate.sequentialRows()).isEqualTo(7.0d);
+		assertThat(new LmdbPhysicalCostObjective(null).score(estimate)).isNaN();
+	}
+
 	private static FrontierCorrelationDomain domain(double rows, double distinctKeys, EvidenceGuarantee guarantee,
 			FrontierPrimitiveCorrelationRelation relation) {
 		double lower = guarantee == EvidenceGuarantee.DATABASE_EXACT && Double.isFinite(distinctKeys)

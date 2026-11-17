@@ -383,6 +383,7 @@ final class LmdbNativeAggregateCompiler {
 				// Preserve specialized row terminals (packed sort/top-K, generated rows, parallel rows) whenever the
 				// ordinary row compiler can represent the complete wrapper stack. The semantic pipeline is the total
 				// floor, not a higher-priority replacement for optimized row plans.
+				compiler = compiler.forNextRootAttempt();
 				step = compiler.compileRowRoot(expr);
 				rowRootAttempted = true;
 			}
@@ -392,6 +393,8 @@ final class LmdbNativeAggregateCompiler {
 				step = NativeRootPipeline.tryCompile(expr, context, strategy, source, rootEvaluation);
 			}
 			if (step == null && !rowRootAttempted) {
+				// the aggregate attempt above may have declined after freezing its planner's layout
+				compiler = compiler.forNextRootAttempt();
 				step = compiler.compileRowRoot(expr);
 			}
 			if (step == null && rootEvaluation && compiler.slotBudgetExceeded) {

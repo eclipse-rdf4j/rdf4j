@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
@@ -26,9 +27,11 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.util.OptionalLong;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -50,6 +53,9 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -76,7 +82,7 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void semanticExactZeroCertificateSurvivesPlanCacheHit(@TempDir File dataDir) {
+	void semanticExactZeroCertificateSurvivesPlanCacheHit(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -86,6 +92,7 @@ class LmdbPackedPlanCacheTest {
 					values.createIRI("urn:left-shared"));
 			connection.add(values.createIRI("urn:right-shared"), values.createIRI("urn:right"),
 					values.createIRI("urn:right-object"));
+			settle(store);
 
 			TupleExpr cold = connectedJoin();
 			new LmdbCascadesOptimizer(store.getBackingStore().getEvaluationStatistics(), false)
@@ -106,12 +113,13 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void freshlyParsedCorrelatedAnonymousVariablesReuseCompletePlan(@TempDir File dataDir) {
+	void freshlyParsedCorrelatedAnonymousVariablesReuseCompletePlan(@TempDir File dataDir) throws Exception {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
 		try {
 			LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 			SailRepository repository = new SailRepository(store);
 			repository.init();
+			settle(store);
 			try (var connection = repository.getConnection()) {
 				String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 4);
 
@@ -131,6 +139,7 @@ class LmdbPackedPlanCacheTest {
 				assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 				assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
 						"an equivalent freshly parsed query should reuse the complete revision-safe LMDB plan template");
+				assertReuseAuthorityMatchesDecision(cold, hot);
 			} finally {
 				repository.shutDown();
 			}
@@ -140,12 +149,13 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void boundedCorrelatedAnonymousQueriesReuseTheHonestIncumbent(@TempDir File dataDir) {
+	void boundedCorrelatedAnonymousQueriesReuseTheHonestIncumbent(@TempDir File dataDir) throws Exception {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "auto");
 		try {
 			LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 			SailRepository repository = new SailRepository(store);
 			repository.init();
+			settle(store);
 			try (var connection = repository.getConnection()) {
 				String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 4);
 				TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(query)
@@ -164,6 +174,7 @@ class LmdbPackedPlanCacheTest {
 				assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
 				assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 				assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+				assertReuseAuthorityMatchesDecision(cold, hot);
 				try (var rows = connection.prepareTupleQuery(query).evaluate()) {
 					assertTrue(rows.hasNext());
 					assertEquals(0L, assertInstanceOf(Literal.class, rows.next().getValue("count")).longValue(),
@@ -195,6 +206,19 @@ class LmdbPackedPlanCacheTest {
 		assertTrue(ruleWork >= 0.0d && ruleWork <= 4_096.0d, "the existing AUTO rule-work limit stays authoritative");
 	}
 
+	/**
+	 * A hit carries exactly the authority its decision earned: a ranked decision is served within its stability
+	 * envelope; a decision whose cost comparison was unavailable is served only as an exact replay of the identical
+	 * request.
+	 */
+	private static void assertReuseAuthorityMatchesDecision(TupleExpr cold, TupleExpr hot) {
+		boolean ranked = "COMPLETE".equals(cold.getStringMetricPlanned("optimizer.cascadesCostComparisonCompleteness"));
+		assertEquals("USE", hot.getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
+		assertEquals(ranked ? null : "REPLAY_ONLY", hot.getStringMetricPlanned("optimizer.planCacheAuthority"));
+		assertEquals(ranked ? "confident-within-stability-envelope" : "replay-only-identical-request",
+				hot.getStringMetricPlanned("optimizer.planCacheRefreshReason"));
+	}
+
 	private static void restoreCascadesMode(String previous) {
 		if (previous == null) {
 			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
@@ -204,7 +228,7 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void freshlyParsedAnonymousPathVariablesReuseCompletePlan(@TempDir File dataDir) {
+	void freshlyParsedAnonymousPathVariablesReuseCompletePlan(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -214,6 +238,8 @@ class LmdbPackedPlanCacheTest {
 					values.createIRI("urn:middle"));
 			connection.add(values.createIRI("urn:middle"), values.createIRI("urn:right"),
 					values.createIRI("urn:end"));
+			// Startup maintenance moves the planning revisions; a planning that overlaps it is not published.
+			settle(store);
 			String query = "SELECT ?start ?end WHERE { ?start <urn:left>/<urn:right> ?end }";
 
 			TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(query)
@@ -232,18 +258,26 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void completePlanCacheRetainsExecutableChampionAcrossCommittedDataRevisions(@TempDir File dataDir) {
+	void completePlanCacheRetainsExecutableChampionAcrossCommittedDataRevisions(@TempDir File dataDir)
+			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		settle(store);
 		try (var connection = repository.getConnection()) {
-			String query = "SELECT ?subject ?object WHERE { "
-					+ "?subject <urn:left> ?shared . ?shared <urn:right> ?object }";
+			// A champion exists only where the planning completed its cost comparison. A connected two-pattern join is
+			// UNAVAILABLE_COST on a settled store: an exact replay that a commit invalidates and that is never served
+			// stale or refreshed (LmdbReplayOnlyDecisionCacheTest). A single pattern is priced, so it is ranked.
+			String query = "SELECT ?subject ?object WHERE { ?subject <urn:left> ?object }";
 			TupleExpr cold = optimized(connection, query);
 			TupleExpr hot = optimized(connection, query);
 
+			assertEquals("COMPLETE", cold.getStringMetricPlanned("optimizer.cascadesCostComparisonCompleteness"),
+					"precondition: the cached decision is a ranked champion");
 			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertEquals("USE", hot.getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
+			assertNull(hot.getStringMetricPlanned("optimizer.planCacheAuthority"), "a ranked hit");
 
 			var values = connection.getValueFactory();
 			connection.add(values.createIRI("urn:subject"), values.createIRI("urn:left"),
@@ -252,15 +286,17 @@ class LmdbPackedPlanCacheTest {
 					values.createIRI("urn:object"));
 
 			TupleExpr revised = optimized(connection, query);
-			TupleExpr revisedHot = LmdbPlannerAwait.awaitDetachedPlanRefreshPlan(() -> optimized(connection, query));
 			assertTrue(Boolean.parseBoolean(revised.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 			assertEquals("USE_AND_REFRESH", revised.getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
+			TupleExpr revisedHot = LmdbPlannerAwait.awaitDetachedPlanRefreshPlan(() -> optimized(connection, query));
 			assertTrue(Boolean.parseBoolean(revisedHot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 			assertEquals("USE", revisedHot.getStringMetricPlanned("optimizer.planCacheLookupOutcome"),
 					"a completed current-evidence refresh must revalidate the served champion");
 			try (var result = connection.prepareTupleQuery(query).evaluate()) {
 				assertTrue(result.hasNext());
-				assertEquals(values.createIRI("urn:subject"), result.next().getValue("subject"));
+				var bindings = result.next();
+				assertEquals(values.createIRI("urn:subject"), bindings.getValue("subject"));
+				assertEquals(values.createIRI("urn:shared"), bindings.getValue("object"));
 				assertFalse(result.hasNext());
 			}
 		} finally {
@@ -269,33 +305,41 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void completePlanCacheSeparatesExternalBindingValues(@TempDir File dataDir) {
+	void completePlanCacheSeparatesExternalBindingValues(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (var connection = repository.getConnection()) {
-			var values = connection.getValueFactory();
+			// Portable values: a value created by the store's own value factory is a store capability whose Java
+			// identity a retained plan cannot reproduce, so a request bound to one is planned without the pipeline
+			// cache (LmdbQueryValueIdentity.Capture).
+			var values = SimpleValueFactory.getInstance();
 			var predicate = values.createIRI("urn:predicate");
 			var firstSubject = values.createIRI("urn:first");
 			var secondSubject = values.createIRI("urn:second");
 			connection.add(firstSubject, predicate, values.createLiteral("first"));
 			connection.add(secondSubject, predicate, values.createLiteral("second"));
+			settle(store);
 			String query = "SELECT ?object WHERE { ?subject <urn:predicate> ?object }";
 
 			TupleExpr first = optimized(connection, query, "subject", firstSubject);
 			TupleExpr firstHot = optimized(connection, query, "subject", firstSubject);
 			TupleExpr second = optimized(connection, query, "subject", secondSubject);
+			TupleExpr secondHot = optimized(connection, query, "subject", secondSubject);
 
 			assertFalse(Boolean.parseBoolean(first.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 			assertTrue(Boolean.parseBoolean(firstHot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
-			assertFalse(Boolean.parseBoolean(second.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertFalse(Boolean.parseBoolean(second.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
+					"a different external binding value is a different request");
+			assertTrue(Boolean.parseBoolean(secondHot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
+					"each binding value keeps its own cached plan");
 		} finally {
 			repository.shutDown();
 		}
 	}
 
 	@Test
-	void multipleFreshAnonymousPathVariablesReuseExecutablePlan(@TempDir File dataDir) {
+	void multipleFreshAnonymousPathVariablesReuseExecutablePlan(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -309,6 +353,7 @@ class LmdbPackedPlanCacheTest {
 					values.createIRI("urn:right-middle"));
 			connection.add(values.createIRI("urn:right-middle"), values.createIRI("urn:leaf"),
 					values.createIRI("urn:end"));
+			settle(store);
 			String query = "SELECT ?start ?end WHERE { "
 					+ "?start <urn:left>/<urn:right> ?middle . "
 					+ "?middle <urn:tail>/<urn:leaf> ?end }";
@@ -323,6 +368,7 @@ class LmdbPackedPlanCacheTest {
 			assertEquals("COMPLETE", cold.getStringMetricPlanned("optimizer.cascadesCompleteness"));
 			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
 			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+			assertReuseAuthorityMatchesDecision(cold, hot);
 			try (var result = connection.prepareTupleQuery(query).evaluate()) {
 				assertTrue(result.hasNext());
 				var bindings = result.next();
@@ -356,11 +402,12 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void cacheIsOwnedByStoreAndInvalidatedByDataRevision(@TempDir File dataDir) {
+	void cacheIsOwnedByStoreAndInvalidatedByDataRevision(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
+			settle(store);
 			TupleExpr source = connectedJoin();
 			CascadesPlan cold = plan(store, source.clone());
 			CascadesPlan hotFromFreshStatisticsFacade = plan(store, source.clone());
@@ -406,10 +453,11 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void learnedFilterRevisionInvalidatesCachedPlan(@TempDir File dataDir) {
+	void learnedFilterRevisionInvalidatesCachedPlan(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		store.init();
 		try {
+			settle(store);
 			Filter source = filteredPattern();
 
 			CascadesPlan cold = plan(store, source.clone());
@@ -417,10 +465,14 @@ class LmdbPackedPlanCacheTest {
 			assertFalse(cold.metrics().planCacheHit());
 			assertTrue(hot.metrics().planCacheHit());
 
-			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
-					.getEvaluationStatistics();
-			statistics.bindExecutionSnapshot(OptionalLong.of(0L)); // committed-snapshot observation
-			statistics.recordFilterOutcome(source, 3L, 1L);
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			long dataRevision = runtime.snapshotVersion();
+			long leoRevision = runtime.leoRevision();
+			// A separate but equal filter: the observation must not touch the algebra that is planned again below.
+			recordFilterOutcomeUnderReadAuthority(store, filteredPattern(), 3L, 1L);
+			assertEquals(dataRevision, runtime.snapshotVersion(), "only learned filter evidence changed");
+			assertNotEquals(leoRevision, runtime.leoRevision(), "the recorded filter outcome is learned evidence");
 
 			CascadesPlan revised = plan(store, source.clone());
 			assertFalse(revised.metrics().planCacheHit());
@@ -430,20 +482,20 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void providerIdentityIsStableAcrossIndependentDataAndLeoRevisions(@TempDir File dataDir) {
+	void providerIdentityIsStableAcrossIndependentDataAndLeoRevisions(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		store.init();
 		try {
+			settle(store);
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
-			statistics.bindExecutionSnapshot(OptionalLong.of(0L)); // committed-snapshot observation
 			LmdbEstimatorRuntime runtime = statistics.estimatorRuntime();
 			LmdbPackedCostModel model = new LmdbPackedCostModel(runtime);
 			long initialProviderVersion = model.providerVersion();
 			long initialDataRevision = runtime.snapshotVersion();
 			long initialLeoRevision = runtime.leoRevision();
 
-			statistics.recordFilterOutcome(filteredPattern(), 3L, 1L);
+			recordFilterOutcomeUnderReadAuthority(store, filteredPattern(), 3L, 1L);
 
 			assertEquals(initialProviderVersion, model.providerVersion());
 			assertEquals(
@@ -453,6 +505,41 @@ class LmdbPackedPlanCacheTest {
 			assertNotEquals(initialLeoRevision, runtime.leoRevision());
 		} finally {
 			store.shutDown();
+		}
+	}
+
+	/**
+	 * Waits until startup maintenance has finished. That maintenance activates RDF-term domains and publishes Frontier
+	 * statistics and provider generations, which legitimately moves the predicate-range, Frontier and LEO revisions a
+	 * cached plan is keyed under; a planning during which a revision moved is not published. Plan reuse is asserted on
+	 * a settled store.
+	 */
+	private static void settle(LmdbStore store) throws Exception {
+		LmdbTestUtil.awaitBackgroundMaintenance(store, 30L, TimeUnit.SECONDS);
+	}
+
+	/**
+	 * Records a completed filter outcome as a query execution does: through store-backed statistics bound to the live
+	 * source that owns the paired planning readers. Store-backed statistics publish runtime feedback only under that
+	 * read authority; an execution-snapshot epoch alone does not authorize it.
+	 */
+	private static void recordFilterOutcomeUnderReadAuthority(LmdbStore store, Filter filter, long passedCount,
+			long filteredCount) {
+		LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+				.getEvaluationStatistics();
+		try (SailDataset owner = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
+			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), owner);
+			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
+			try (SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
+					TripleStore.PlanningReadPin pin = statistics.estimatorRuntime()
+							.pinQueryPlanningReads(borrowed.pinnedReadTxn().orElseThrow(),
+									borrowed.pinnedValueSnapshot().orElseThrow())) {
+				statistics.bindExecutionSource(source, null);
+				assertTrue(statistics.feedbackPublicationAllowed(), "a live current paired source authorizes feedback");
+				statistics.recordFilterOutcome(filter, passedCount, filteredCount);
+			}
 		}
 	}
 

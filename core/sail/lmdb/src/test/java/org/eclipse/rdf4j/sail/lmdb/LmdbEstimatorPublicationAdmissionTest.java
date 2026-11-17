@@ -505,6 +505,9 @@ class LmdbEstimatorPublicationAdmissionTest {
 	void delegateConstructionFailuresReleaseAdmissionAndGuard(DelegatedFailure kind, @TempDir Path directory)
 			throws Exception {
 		LmdbStore store = initializedStore(directory);
+		// Post-ready work and index maintenance take ordinary readers in the background; settle them before capturing
+		// the absolute reader-slot baseline that the failure and retry paths are compared against.
+		awaitReadAdmissionFixtureSetup(store);
 		LmdbSailStore backingStore = store.getBackingStore();
 		TxnManager triples = backingStore.getTripleStore().getTxnManager();
 		int initialAvailableSlots = triples.availableReadTxnSlots(Integer.MAX_VALUE, 0);

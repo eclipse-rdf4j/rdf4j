@@ -190,6 +190,9 @@ public class LmdbStoreSchema {
 
 	public final static IRI FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION;
 
+	/** Whether the pipeline plan cache keeps explanation diagnostics on the plans it retains. */
+	public final static IRI RETAIN_CACHED_PLAN_DIAGNOSTICS;
+
 	public final static IRI OPTIMIZER_SAMPLING_ENABLED;
 
 	public final static IRI OPTIMIZER_SAMPLING_MAX_MILLIS;
@@ -331,6 +334,7 @@ public class LmdbStoreSchema {
 		FRONTIER_PLAN_CACHE_REFRESH_THREADS = factory.createIRI(NAMESPACE, "frontierPlanCacheRefreshThreads");
 		FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION = factory.createIRI(NAMESPACE,
 				"frontierPlanCacheMaximumCanaryFraction");
+		RETAIN_CACHED_PLAN_DIAGNOSTICS = factory.createIRI(NAMESPACE, "retainCachedPlanDiagnostics");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");
 		OPTIMIZER_SAMPLING_MAX_ROWS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxRows");

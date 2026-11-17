@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierCancellation;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProbe;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProgram;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
@@ -90,6 +91,7 @@ final class LmdbFrontierProbeFactory {
 			return new FrontierLeafProbe(planeMask, boundMask, ids[0], ids[1], ids[2], ids[3],
 					repeatedComponentPairMask(pattern), namedContextsOnly);
 		} catch (IOException | RuntimeException failure) {
+			FrontierCancellation.rethrowIfCancelled(failure);
 			return null;
 		}
 	}
@@ -384,6 +386,7 @@ final class LmdbFrontierProbeFactory {
 			return new FrontierLeafProbe(planeMask, boundMask, ids[0], ids[1], ids[2], ids[3],
 					repeatedComponentPairMask(pattern), namedContextsOnly);
 		} catch (IOException | RuntimeException failure) {
+			FrontierCancellation.rethrowIfCancelled(failure);
 			return null;
 		}
 	}
@@ -596,6 +599,7 @@ final class LmdbFrontierProbeFactory {
 			return new FrontierLeafProbe(planeMask, boundMask, subjectId, predicateId, objectId, contextId,
 					repeatedComponentPairMask);
 		} catch (IOException | RuntimeException failure) {
+			FrontierCancellation.rethrowIfCancelled(failure);
 			return null;
 		}
 	}

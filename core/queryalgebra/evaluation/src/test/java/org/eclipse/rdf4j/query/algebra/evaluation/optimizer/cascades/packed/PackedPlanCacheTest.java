@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
@@ -27,16 +28,20 @@ import java.lang.reflect.Proxy;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -67,6 +72,157 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 class PackedPlanCacheTest {
+
+	@Test
+	void cancellationDuringPortfolioCapturePropagatesWithoutPublishingTheChampion() {
+		AtomicInteger detachments = new AtomicInteger();
+		AtomicInteger closed = new AtomicInteger();
+		QueryInterruptedException cancellation = new QueryInterruptedException("cancel while detaching challenger");
+		PackedCostModel base = frontierCostModel();
+		PackedCostModel provider = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return base.estimateRows(query, relationId);
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				PackedCostSession delegate = base.openSession(query);
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.appendFactor(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.refineOperator(relationId, context, output);
+					}
+
+					@Override
+					public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+						if (detachments.incrementAndGet() == 2) {
+							throw cancellation;
+						}
+						return delegate.detachEvidence(evidenceStateIds);
+					}
+
+					@Override
+					public void close() {
+						closed.incrementAndGet();
+						delegate.close();
+					}
+				};
+			}
+		};
+		RuntimeException observed = null;
+		try {
+			PackedCascadesPlanner.optimize(threeFactorConnectedJoin(), OptimizationGoal.root(), provider);
+		} catch (RuntimeException failure) {
+			observed = failure;
+		}
+
+		assertEquals(2, detachments.get(), "fixture must reach optional challenger detachment");
+		assertSame(cancellation, observed, "query cancellation must not become a successful champion result");
+		assertEquals(1, closed.get(), "the provider must close even when portfolio capture is cancelled");
+	}
+
+	@Test
+	void portfolioBudgetRefusalKeepsDetachedChampionAndIncompleteSummary() {
+		AtomicInteger detachments = new AtomicInteger();
+		PackedCostModel base = frontierCostModel();
+		PackedCostModel provider = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return base.estimateRows(query, relationId);
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query, PackedProviderWork work,
+					PackedProviderMemory memory) {
+				PackedCostSession delegate = base.openSession(query);
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.appendFactor(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.refineOperator(relationId, context, output);
+					}
+
+					@Override
+					public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+						if (detachments.incrementAndGet() == 2) {
+							work.require(work.remainingWorkUnits() + 1L);
+						}
+						return delegate.detachEvidence(evidenceStateIds);
+					}
+
+					@Override
+					public void close() {
+						delegate.close();
+					}
+				};
+			}
+		};
+		TupleExpr source = threeFactorConnectedJoin();
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		long allowance = 100_000L;
+		OptimizationGoal goal = OptimizationGoal.root().asBudgeted(null, (int) allowance);
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, goal, cache, context, provider);
+
+		assertEquals(2, detachments.get(), "the champion was detached before the challenger was refused");
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, result.completionStatus());
+		assertEquals(result.completionStatus(), result.decisionSummary().searchCompletion(),
+				"the detached champion and its public summary must report the same incomplete search");
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.createPlanIdentity(source),
+				new PackedPlannerLimits(allowance, Long.MAX_VALUE));
+		assertTrue(entry.recipe().hasDetachedEvidence(), "the already detached provider champion must survive");
+		assertEquals(result.completionStatus(), entry.completionStatus());
+		assertNotEquals(PackedSearchCompletionStatus.EXACT_COMPLETE, entry.completionStatus());
+		assertFalse(entry.supportsStaleValidation(), "a partial decision transcript is not an exact search proof");
+		assertNull(cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.createPlanIdentity(source), PackedPlannerLimits.unbounded()),
+				"an incomplete retained champion must not satisfy an exact-cache lookup");
+	}
+
+	@Test
+	void aBoundedSearchCanRetainProviderEvidenceForContinuation() {
+		TupleExpr source = threeFactorConnectedJoin();
+		PackedPlanCache.Context context = context(11L);
+		// The session open and the reserved detachment unit are provider work, not search work, so a single search
+		// unit reaches the first complete, still-incomplete provider stage, after eight provider calls.
+		int allowance = 1;
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		AtomicInteger providerCalls = new AtomicInteger();
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source.clone(),
+				OptimizationGoal.root().asBudgeted(null, allowance), cache, context,
+				countingFrontierCostModel(providerCalls));
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.createPlanIdentity(source),
+				new PackedPlannerLimits(allowance, Long.MAX_VALUE));
+
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, result.completionStatus());
+		assertEquals(8, providerCalls.get(), "this budget reaches the measured provider checkpoint stage");
+		assertNotNull(entry);
+		assertTrue(entry.recipe().hasDetachedEvidence());
+		assertNotNull(entry.optimizationDecision().searchCheckpoint());
+	}
 
 	@Test
 	void replayPreservesPrefixBagDescriptionAfterScheduledFilter() {
@@ -318,8 +474,242 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
+	void resumedProviderFailureRemainsPrimaryWhenCloseAlsoFails() {
+		TupleExpr source = threeFactorConnectedJoin();
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context evidence = context(11L);
+		PackedPlannerLimits seedLimits = new PackedPlannerLimits(1L, Long.MAX_VALUE);
+		AtomicInteger seedCalls = new AtomicInteger();
+		PackedPlanningResult seed = PackedCascadesPlanner.optimize(source.clone(),
+				OptimizationGoal.root().asBudgeted(null, 1), cache, evidence, countingFrontierCostModel(seedCalls));
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, seed.completionStatus());
+		assertEquals(8, seedCalls.get());
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), evidence, source,
+				PackedQueryCacheIdentity.createPlanIdentity(source), seedLimits);
+		assertNotNull(entry);
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		assertNotNull(checkpoint);
+		assertTrue(checkpoint.continuationRecipe().hasDetachedEvidence());
+
+		IllegalStateException providerFailure = new IllegalStateException("provider replay failure");
+		IllegalStateException closeFailure = new IllegalStateException("provider close failure");
+		AtomicInteger calls = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		PackedCostModel provider = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return 1.0d;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				PackedCostSession delegate = frontierCostModel().openSession(query);
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (calls.getAndIncrement() == 0) {
+							providerFailure.fillInStackTrace();
+							throw providerFailure;
+						}
+						delegate.estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.appendFactor(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.refineOperator(relationId, context, output);
+					}
+
+					@Override
+					public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+						delegate.refineIntermediateJoin(context, output);
+					}
+
+					@Override
+					public FrontierEvidenceBundle detachEvidence(int[] stateIds) {
+						return delegate.detachEvidence(stateIds);
+					}
+
+					@Override
+					public void close() {
+						closes.incrementAndGet();
+						delegate.close();
+						throw closeFailure;
+					}
+				};
+			}
+		};
+		PackedQueryFamilyIdentity invocation = PackedQueryFamilyIdentity.create(source, null);
+
+		IllegalStateException thrown = assertThrows(IllegalStateException.class,
+				() -> PackedCascadesPlanner.resume(checkpoint, invocation, PackedPlannerLimits.unbounded(), provider));
+
+		assertTrue(calls.get() > 0, "the current provider callback must have run");
+		assertEquals(1, closes.get());
+		if (thrown != providerFailure) {
+			System.err.println("Lost provider failure; callback count=" + calls.get());
+			providerFailure.printStackTrace(System.err);
+			System.err.println("Observed primary failure:");
+			thrown.printStackTrace(System.err);
+		}
+		assertSame(providerFailure, thrown, "provider failure must not become a corrupt-checkpoint fallback");
+		assertEquals(1, thrown.getSuppressed().length);
+		assertSame(closeFailure, thrown.getSuppressed()[0]);
+	}
+
+	@Test
+	void directCheckpointReplayPropagatesProviderFailureWithoutRetry() {
+		assertCheckpointProviderFailure(false, new IllegalStateException("provider failure"), false);
+	}
+
+	@Test
+	void directCheckpointReplayPropagatesCancellationWithoutRetry() {
+		assertCheckpointProviderFailure(false, new QueryInterruptedException("provider cancellation"), false);
+		assertCheckpointProviderFailure(false, new CancellationException("provider cancellation"), true);
+	}
+
+	@Test
+	void directCheckpointReplayDoesNotMisclassifyProviderRejectionType() {
+		assertCheckpointProviderFailure(false, new PackedCheckpointRejectedException("provider's own failure"), false);
+	}
+
+	@Test
+	void detachedRefreshPropagatesProviderFailureWithoutRetry() {
+		assertCheckpointProviderFailure(true, new IllegalArgumentException("provider failure"), false);
+	}
+
+	@Test
+	void detachedRefreshPropagatesCancellationWithoutRetry() {
+		assertCheckpointProviderFailure(true, new QueryInterruptedException("provider cancellation"), false);
+		assertCheckpointProviderFailure(true, new CancellationException("provider cancellation"), true);
+	}
+
+	@Test
+	void detachedRefreshDoesNotMisclassifyProviderRejectionType() {
+		assertCheckpointProviderFailure(true, new PackedCheckpointRejectedException("provider's own failure"), true);
+	}
+
+	@Test
+	void detachedRefreshPreservesProviderAndCloseFailureIdentity() {
+		assertCheckpointProviderFailure(true, new IllegalStateException("provider failure"), true);
+	}
+
+	@Test
+	void providerOpenFailureDuringCheckpointResumeIsNotRetried() {
+		TupleExpr source = threeFactorConnectedJoin();
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context evidence = context(11L);
+		AtomicInteger seedCalls = new AtomicInteger();
+		PackedPlanningResult seed = PackedCascadesPlanner.optimize(source.clone(),
+				OptimizationGoal.root().asBudgeted(null, 1), cache, evidence, countingFrontierCostModel(seedCalls));
+		assertEquals(8, seedCalls.get());
+		PackedPlanRefreshWork work = PackedCascadesPlanner
+				.detachedRefreshWork(source, OptimizationGoal.root(), seed.decisionSummary())
+				.orElseThrow();
+		IllegalArgumentException failure = new IllegalArgumentException("actual provider open failure");
+		AtomicInteger opens = new AtomicInteger();
+		PackedCostModel provider = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				throw new AssertionError("estimation must not run");
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				opens.incrementAndGet();
+				throw failure;
+			}
+		};
+		assertSame(failure, assertThrows(IllegalArgumentException.class,
+				() -> PackedCascadesPlanner.refresh(work, cache, evidence, provider, null)));
+		assertEquals(1, opens.get());
+	}
+
+	private static void assertCheckpointProviderFailure(boolean refresh, RuntimeException failure,
+			boolean failClose) {
+		TupleExpr source = threeFactorConnectedJoin();
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context evidence = context(11L);
+		AtomicInteger seedCalls = new AtomicInteger();
+		PackedPlanningResult seed = PackedCascadesPlanner.optimize(source.clone(),
+				OptimizationGoal.root().asBudgeted(null, 1), cache, evidence, countingFrontierCostModel(seedCalls));
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, seed.completionStatus());
+		assertEquals(8, seedCalls.get());
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), evidence, source,
+				PackedQueryCacheIdentity.createPlanIdentity(source), new PackedPlannerLimits(1L, Long.MAX_VALUE));
+		assertNotNull(entry);
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		assertNotNull(checkpoint);
+		assertTrue(checkpoint.continuationRecipe().hasDetachedEvidence());
+		PackedPlanRefreshWork refreshWork = PackedCascadesPlanner
+				.detachedRefreshWork(source, OptimizationGoal.root(), seed.decisionSummary())
+				.orElseThrow();
+		AtomicInteger opens = new AtomicInteger();
+		AtomicInteger calls = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		IllegalStateException closeFailure = new IllegalStateException("provider close failure");
+		PackedCostModel provider = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				throw new AssertionError("the provider session owns estimates");
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				opens.incrementAndGet();
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						calls.incrementAndGet();
+						throw failure;
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void close() {
+						closes.incrementAndGet();
+						if (failClose) {
+							throw closeFailure;
+						}
+					}
+				};
+			}
+		};
+		RuntimeException actual = assertThrows(RuntimeException.class, () -> {
+			if (refresh) {
+				PackedCascadesPlanner.refresh(refreshWork, cache, evidence, provider, null);
+			} else {
+				PackedCascadesPlanner.resume(checkpoint, PackedQueryFamilyIdentity.create(source, null),
+						PackedPlannerLimits.unbounded(), provider);
+			}
+		});
+		assertSame(failure, actual, "a provider failure is not checkpoint corruption");
+		assertEquals(1, opens.get(), "a failing provider must not be opened again");
+		assertEquals(1, calls.get(), "a failing provider must not be called again");
+		assertEquals(1, closes.get());
+		assertEquals(failClose ? 1 : 0, actual.getSuppressed().length);
+		if (failClose) {
+			assertSame(closeFailure, actual.getSuppressed()[0]);
+		}
+	}
+
+	@Test
 	void detachedRefreshResumesAuthenticatedCheckpointAndFallsBackCleanly() throws Exception {
 		TupleExpr source = threeFactorConnectedJoin();
+		// Work 1 reaches the provider-backed incomplete checkpoint measured above.
 		OptimizationGoal budgeted = OptimizationGoal.root().asBudgeted(null, 1);
 		PackedPlanCache.Context originalEvidence = context(11L);
 		AtomicInteger uninterruptedProviderCalls = new AtomicInteger();
@@ -327,8 +717,11 @@ class PackedPlanCacheTest {
 				countingFrontierCostModel(uninterruptedProviderCalls));
 
 		PackedPlanCache resumableCache = new PackedPlanCache(8, 1);
+		AtomicInteger seedProviderCalls = new AtomicInteger();
 		PackedPlanningResult resumableSeed = PackedCascadesPlanner.optimize(source.clone(), budgeted, resumableCache,
-				originalEvidence, frontierCostModel());
+				originalEvidence, countingFrontierCostModel(seedProviderCalls));
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, resumableSeed.completionStatus());
+		assertEquals(8, seedProviderCalls.get(), "the seed must contain provider work before continuation");
 		PackedPlanRefreshWork resumableWork = PackedCascadesPlanner
 				.detachedRefreshWork(source, OptimizationGoal.root(), resumableSeed.decisionSummary())
 				.orElseThrow();
@@ -374,6 +767,7 @@ class PackedPlanCacheTest {
 		PackedPlanCache.PlanEntry corruptEntry = corruptCache.findPlan(corruptCache.fingerprint(source),
 				corruptEvidence,
 				source, PackedQueryCacheIdentity.createPlanIdentity(source), workLimited);
+		assertNotNull(corruptEntry, "the corrupt-checkpoint fixture must find its provider-backed seed");
 		PackedPlanContinuationSeed corruptSeed = corruptEntry.optimizationDecision()
 				.searchCheckpoint()
 				.continuationRecipe()
@@ -459,7 +853,9 @@ class PackedPlanCacheTest {
 				PackedPlannerLimits.unbounded(), countingFrontierCostModel(resumedProviderCalls));
 
 		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, interrupted.completionStatus());
+		assertEquals(8, interruptedProviderCalls.get(), "the seed must reach the measured provider checkpoint stage");
 		assertTrue(checkpoint != null, "provider-backed incomplete search must retain detached continuation state");
+		assertTrue(checkpoint.continuationRecipe().hasDetachedEvidence());
 		assertTrue(resumed.exactComplete());
 		assertEquals(uninterrupted.selectedPlan(), resumed.selectedPlan());
 		assertTrue(resumedProviderCalls.get() < uninterruptedProviderCalls.get(),
@@ -471,16 +867,120 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
+	void checkpointWithUnavailableFreshPriceReplansAnExecutableUnpricedResult() {
+		TupleExpr source = threeFactorConnectedJoin();
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		PackedPlannerLimits limited = new PackedPlannerLimits(1L, Long.MAX_VALUE);
+		PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root().asBudgeted(null, 1), cache, context,
+				frontierCostModel());
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.createPlanIdentity(source), limited);
+		assertNotNull(entry);
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		assertNotNull(checkpoint);
+		AtomicInteger freshCalls = new AtomicInteger();
+		PackedCostModel unavailable = frontierCostModel(null, freshCalls, true);
+
+		PackedPlanningResult resumed = PackedCascadesPlanner.resume(checkpoint,
+				PackedQueryFamilyIdentity.create(source, null), PackedPlannerLimits.unbounded(), unavailable);
+		PackedPlanningResult replanned = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(),
+				frontierCostModel(null, null, true));
+		assertTrue(freshCalls.get() > 0, "the current provider must be consulted");
+		assertEquals(replanned.selectedPlan(), resumed.selectedPlan());
+		assertTrue(resumed.totalPrice().isEmpty());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				resumed.decisionSummary().comparisonCompleteness());
+	}
+
+	@Test
+	void staleValidationWithUnavailableFreshPriceReplansInsteadOfReusingOrFailing() {
+		class ReplayingModel implements PackedCostModel, PackedStalePlanValidator {
+			boolean unavailable;
+			int validations;
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return 1.0d;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return frontierCostModel(null, null, unavailable).openSession(query);
+			}
+
+			@Override
+			public PackedStalePlanValidation validateStalePlan(PackedPlanValidationRequest request) {
+				validations++;
+				unavailable = true;
+				PackedCostingReplay.replay(request, openSession(request.query()));
+				return PackedStalePlanValidation.certifiedUnchanged(request);
+			}
+		}
+		ReplayingModel model = new ReplayingModel();
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		TupleExpr source = connectedJoin("left", "right");
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context(11L), model);
+
+		PackedPlanningResult replanned = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache,
+				context(12L), model);
+		assertEquals(1, model.validations);
+		assertFalse(replanned.metrics().planCacheHit());
+		assertTrue(replanned.totalPrice().isEmpty());
+		assertEquals(PackedPlanDecisionSummary.ComparisonCompleteness.UNAVAILABLE_COST,
+				replanned.decisionSummary().comparisonCompleteness());
+	}
+
+	@Test
+	void expiredResumeDoesNotOpenAProvider() {
+		TupleExpr source = threeFactorConnectedJoin();
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root().asBudgeted(null, 1), cache, context,
+				frontierCostModel());
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.createPlanIdentity(source), new PackedPlannerLimits(1L, Long.MAX_VALUE));
+		assertNotNull(entry);
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		assertNotNull(checkpoint);
+		PackedCostModel forbidden = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				throw new AssertionError("expired resume attempted optional estimation");
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				throw new AssertionError("expired resume opened an optional provider");
+			}
+		};
+
+		PackedPlanningResult resumed = PackedCascadesPlanner.resume(checkpoint,
+				PackedQueryFamilyIdentity.create(source, null), new PackedPlannerLimits(Long.MAX_VALUE, Long.MIN_VALUE),
+				forbidden);
+
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_DEADLINE, resumed.completionStatus());
+		assertNotNull(resumed.selectedPlan());
+	}
+
+	@Test
 	void providerBackedCheckpointReopensSearchWhenEvidenceDigestChanges() {
 		PackedPlanCache cache = new PackedPlanCache(8, 1);
 		PackedPlanCache.Context context = context(11L);
 		OptimizationGoal budgeted = OptimizationGoal.root().asBudgeted(null, 1);
 		TupleExpr source = threeFactorConnectedJoin();
 
-		PackedCascadesPlanner.optimize(source.clone(), budgeted, cache, context, frontierCostModel());
+		AtomicInteger seedProviderCalls = new AtomicInteger();
+		PackedPlanningResult seed = PackedCascadesPlanner.optimize(source.clone(), budgeted, cache, context,
+				countingFrontierCostModel(seedProviderCalls));
 		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
 				PackedQueryCacheIdentity.createPlanIdentity(source), new PackedPlannerLimits(1L, Long.MAX_VALUE));
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, seed.completionStatus());
+		assertEquals(8, seedProviderCalls.get(), "the seed must reach the provider-backed checkpoint stage");
+		assertNotNull(entry);
 		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		assertNotNull(checkpoint);
+		assertTrue(checkpoint.continuationRecipe().hasDetachedEvidence());
 		PackedQueryFamilyIdentity invocation = PackedQueryFamilyIdentity.create(source, null);
 		PackedCostModel changedEvidence = multiplyingFrontierCostModel();
 		PackedPlanningResult uninterrupted = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(),
@@ -501,10 +1001,17 @@ class PackedPlanCacheTest {
 		OptimizationGoal budgeted = OptimizationGoal.root().asBudgeted(null, 1);
 		TupleExpr source = threeFactorConnectedJoin();
 
-		PackedCascadesPlanner.optimize(source.clone(), budgeted, cache, context, frontierCostModel());
+		AtomicInteger seedProviderCalls = new AtomicInteger();
+		PackedPlanningResult interrupted = PackedCascadesPlanner.optimize(source.clone(), budgeted, cache, context,
+				countingFrontierCostModel(seedProviderCalls));
 		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
 				PackedQueryCacheIdentity.createPlanIdentity(source), new PackedPlannerLimits(1L, Long.MAX_VALUE));
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, interrupted.completionStatus());
+		assertEquals(8, seedProviderCalls.get(), "the seed must reach the provider-backed checkpoint stage");
+		assertNotNull(entry);
 		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		assertNotNull(checkpoint);
+		assertTrue(checkpoint.continuationRecipe().hasDetachedEvidence());
 		PackedPlanContinuationSeed seed = checkpoint.continuationRecipe().continuationSeed();
 		var requiredPropertiesField = PackedPlanContinuationSeed.class.getDeclaredField("requiredPropertyIds");
 		requiredPropertiesField.setAccessible(true);
@@ -561,6 +1068,127 @@ class PackedPlanCacheTest {
 		assertTrue(hot.metrics().planCacheHit());
 		assertSame(contract, cold.selectedPlan().getRuntimeFeedbackContract());
 		assertSame(contract, hot.selectedPlan().getRuntimeFeedbackContract());
+	}
+
+	@Test
+	void unreproducibleSessionKeepsItsPlanningForItsRequestButPublishesNothing() throws Exception {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		RuntimeFeedbackContract contract = runtimeFeedbackContract();
+		TupleExpr source = new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		AtomicInteger sessions = new AtomicInteger();
+		CountDownLatch ownerSearching = new CountDownLatch(1);
+		CountDownLatch releaseOwner = new CountDownLatch(1);
+		PackedCostModel base = frontierCostModel(contract);
+		PackedCostModel provider = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return base.estimateRows(query, relationId);
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query, PackedProviderWork work,
+					PackedProviderMemory memory) {
+				PackedCostSession delegate = base.openSession(query);
+				// Only the first planning's reads are cut by a wall-clock limit.
+				boolean cut = sessions.incrementAndGet() == 1;
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (cut) {
+							ownerSearching.countDown();
+							await(releaseOwner);
+						}
+						delegate.estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.appendFactor(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						delegate.refineOperator(relationId, context, output);
+					}
+
+					@Override
+					public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+						return delegate.detachEvidence(evidenceStateIds);
+					}
+
+					@Override
+					public boolean reproducible() {
+						return !cut;
+					}
+
+					@Override
+					public void close() {
+						delegate.close();
+					}
+				};
+			}
+		};
+		AtomicReference<PackedPlanningResult> waited = new AtomicReference<>();
+		Thread waiter = new Thread(() -> waited.set(PackedCascadesPlanner.optimize(source.clone(),
+				OptimizationGoal.root(), cache, context, provider)));
+		ExecutorService owner = Executors.newSingleThreadExecutor();
+		try {
+			Future<PackedPlanningResult> cut = owner.submit(() -> PackedCascadesPlanner.optimize(source.clone(),
+					OptimizationGoal.root(), cache, context, provider));
+			await(ownerSearching);
+			waiter.start();
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+			while (waiter.getState() != Thread.State.WAITING && waiter.getState() != Thread.State.TIMED_WAITING
+					&& System.nanoTime() < deadline) {
+				Thread.onSpinWait();
+			}
+			assertEquals(1, sessions.get(), "fixture: the waiter waits on the owner's flight");
+			releaseOwner.countDown();
+			PackedPlanningResult planned = cut.get(10L, TimeUnit.SECONDS);
+			waiter.join(10_000L);
+
+			// The request that planned keeps its complete planning, provider runtime state included ...
+			assertFalse(planned.metrics().planCacheHit());
+			assertEquals(PackedSearchCompletionStatus.EXACT_COMPLETE, planned.completionStatus());
+			assertSame(contract, planned.selectedPlan().getRuntimeFeedbackContract());
+			// ... but neither publishes it nor hands it to the request that waited on its flight.
+			assertNotNull(waited.get());
+			assertFalse(waited.get().metrics().planCacheHit(), "the waiter plans for itself");
+			assertEquals(2, sessions.get(), "the waiter opened its own session");
+			PackedPlanningResult after = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(),
+					cache, context, provider);
+			assertTrue(after.metrics().planCacheHit(), "the reproducible planning of the waiter is retained");
+			assertEquals(2, sessions.get());
+		} finally {
+			releaseOwner.countDown();
+			owner.shutdownNow();
+		}
+	}
+
+	private static void await(CountDownLatch latch) {
+		try {
+			if (!latch.await(10L, TimeUnit.SECONDS)) {
+				throw new AssertionError("test latch was not released");
+			}
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted", interrupted);
+		}
+	}
+
+	@Test
+	void identityDigestSeparatesConstantsWithEqualStringHashes() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		assertEquals("Aa".hashCode(), "BB".hashCode(), "fixture: equal 32-bit string hashes");
+		PackedPlanCache.StructuralKey first = PackedPlanCache.structuralKey(new StatementPattern(Var.of("subject"),
+				Var.of("predicate", values.createIRI("urn:p")), Var.of("object", values.createLiteral("Aa"))));
+		PackedPlanCache.StructuralKey second = PackedPlanCache.structuralKey(new StatementPattern(Var.of("subject"),
+				Var.of("predicate", values.createIRI("urn:p")), Var.of("object", values.createLiteral("BB"))));
+
+		assertNotEquals(first, second, "fixture: different exact keys");
+		assertNotEquals(PackedQueryIdentityDigest.of(first), PackedQueryIdentityDigest.of(second),
+				"keys that differ in a constant must have different digests");
 	}
 
 	@Test
@@ -1665,6 +2293,11 @@ class PackedPlanCacheTest {
 
 	private static PackedCostModel frontierCostModel(RuntimeFeedbackContract runtimeFeedbackContract,
 			AtomicInteger providerCalls) {
+		return frontierCostModel(runtimeFeedbackContract, providerCalls, false);
+	}
+
+	private static PackedCostModel frontierCostModel(RuntimeFeedbackContract runtimeFeedbackContract,
+			AtomicInteger providerCalls, boolean unavailableObjective) {
 		return new PackedCostModel() {
 			@Override
 			public double estimateRows(PackedQueryView query, int relationId) {
@@ -1694,6 +2327,11 @@ class PackedPlanCacheTest {
 					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
 						increment(providerCalls);
 						publish(output);
+					}
+
+					@Override
+					public double objectiveScore(PackedCostEstimate estimate) {
+						return unavailableObjective ? Double.NaN : estimate.workRows();
 					}
 
 					@Override

@@ -229,6 +229,7 @@ public class ThemeQueryBenchmarkDelta {
 		configureIrExecution();
 		try {
 			storeConfig = ConfigUtil.createConfig();
+			storeConfig.setRetainCachedPlanDiagnostics(QueryPlanCapture.isCaptureEnabled());
 			storeConfig.setSketchEstimatorEnabled(waitForSketchesEnabled());
 			store = new LmdbStore(storeDirectory, storeConfig);
 			repository = new SailRepository(store);
@@ -453,6 +454,7 @@ public class ThemeQueryBenchmarkDelta {
 		}
 
 		storeConfig = ConfigUtil.createConfig();
+		storeConfig.setRetainCachedPlanDiagnostics(QueryPlanCapture.isCaptureEnabled());
 		storeConfig.setIterationCacheSyncThreshold(0);
 		boolean buildSketches = waitForSketchesEnabled();
 		storeConfig.setSketchEstimatorEnabled(buildSketches);

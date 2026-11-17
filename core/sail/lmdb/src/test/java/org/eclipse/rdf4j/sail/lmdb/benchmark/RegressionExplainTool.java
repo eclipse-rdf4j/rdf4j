@@ -29,7 +29,7 @@ public class RegressionExplainTool {
 	public static void main(String[] args) throws Exception {
 		File storeDirectory = new File(BenchmarkPathSupport.resolveTarget("lmdb-theme-query-benchmark").toFile(),
 				System.getProperty("regressionExplain.store", "complete"));
-		var store = new LmdbStore(storeDirectory, ConfigUtil.createConfig());
+		var store = new LmdbStore(storeDirectory, ConfigUtil.createPlanCaptureConfig());
 		var repository = new SailRepository(store);
 		try {
 			for (String arg : args) {

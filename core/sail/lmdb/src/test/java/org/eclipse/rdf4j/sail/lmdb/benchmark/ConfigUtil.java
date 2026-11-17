@@ -61,6 +61,19 @@ final class ConfigUtil {
 		return config;
 	}
 
+	/** A store for plan capture or explain tooling: it keeps the optimizer diagnostics of the plans it caches. */
+	static LmdbStoreConfig createPlanCaptureConfig() {
+		return forPlanCapture(createConfig(), true);
+	}
+
+	/**
+	 * Opts {@code config} in to retaining cached plans' optimizer diagnostics when this run captures or explains plans;
+	 * timing runs keep the store default.
+	 */
+	static LmdbStoreConfig forPlanCapture(LmdbStoreConfig config, boolean capturingPlans) {
+		return config.setRetainCachedPlanDiagnostics(capturingPlans);
+	}
+
 	static LmdbStoreConfig createBulkLoadConfig() {
 		LmdbStoreConfig config = createConfig(DEFAULT_TRIPLE_INDEXES);
 		config.setSketchEstimatorEnabled(false);

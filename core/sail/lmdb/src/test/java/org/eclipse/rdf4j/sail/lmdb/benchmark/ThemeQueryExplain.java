@@ -55,7 +55,7 @@ public class ThemeQueryExplain {
 	public static void main(String[] args) throws RunnerException, IOException {
 		File storeDirectory = storeDirectory();
 
-		var storeConfig = ConfigUtil.createConfig();
+		var storeConfig = ConfigUtil.createPlanCaptureConfig();
 		var store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		try {
@@ -172,7 +172,7 @@ public class ThemeQueryExplain {
 			throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + storeDirectory);
 		}
 
-		storeConfig = ConfigUtil.createConfig();
+		storeConfig = ConfigUtil.createPlanCaptureConfig();
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);

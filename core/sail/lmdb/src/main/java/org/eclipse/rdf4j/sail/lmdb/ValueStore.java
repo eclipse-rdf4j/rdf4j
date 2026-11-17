@@ -920,6 +920,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final StoreProperties properties;
 	private boolean forceDomainQualificationSyncOnClose;
 	private volatile boolean domainQualificationSyncSucceeded;
+	/** The language-tag reconcile witness named the native state found before any startup write. */
+	private boolean languageTagReconcileWitnessedAtOpen;
+	/** The language-tag reconcile completed, or was witnessed, for this session's environment. */
+	private volatile boolean languageTagReconcileCurrent;
+	/** Final owned native transaction synced by a clean close of a reconciled legacy store; otherwise -1. */
+	private volatile long languageTagReconcileClosedTransactionId = -1L;
 	private final LmdbStoreFormat format;
 	private final boolean deferPersistedUnusedRecovery;
 	/** One-use authority granted only when this standalone owner created a new empty dictionary sidecar. */
@@ -997,6 +1003,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			Runtime.getRuntime().maxMemory());
 	private final Long2LongOpenHashMap refCountsTxCache = newRefCountsTxCache();
 	private final Set<Long> seededDatatypeIds = ConcurrentHashMap.newKeySet();
+	/**
+	 * The thread of the construction-time lookup-only seeding pass and its lookups with misses; null after the pass.
+	 */
+	private Thread seedingPassOwner;
+	private List<ValueLookupContext> seedingPassLookups;
 	private final ConcurrentHashMap<String, VocabularyId> commonVocabulary = new ConcurrentHashMap<>();
 
 	private record VocabularyId(ReverseIdCache.Entry<RdfTermKey> entry, Object epoch) {
@@ -1536,7 +1547,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 		if (!deferAuxiliaryDatabases) {
 			try {
-				initializeAfterOpen(config);
+				initializeAfterOpen(config, true);
 			} catch (IOException | RuntimeException | Error e) {
 				try {
 					close();
@@ -1548,7 +1559,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private void initializeAfterOpen(LmdbStoreConfig config) throws IOException {
+	/** @param constructing the store is not yet published: no other writer of this environment can run */
+	private void initializeAfterOpen(LmdbStoreConfig config, boolean constructing) throws IOException {
 		valueStoreInitializationComplete = false;
 		if (properties.preparedBulkStore != null && (startupMarkerStatus == null || !startupMarkerStatus.valid()
 				|| startupMarkerStatus.nativeTransactionId() != properties.preparedBulkStore.values()
@@ -1603,7 +1615,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (createMissing) {
 				startTransaction(true);
 			}
-			seedCoreDatatypes(createMissing);
+			seedCoreDatatypes(createMissing, constructing);
 			if (createMissing) {
 				commit();
 			}
@@ -2158,7 +2170,37 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		initializeTermIndexes(config);
 	}
 
-	private void seedCoreDatatypes(boolean createMissing) throws IOException {
+	private void seedCoreDatatypes(boolean createMissing, boolean constructing) throws IOException {
+		if (createMissing || !constructing) {
+			// Creation reads through the startup writer; a clear re-seeds a live store with one admission per lookup.
+			seedCoreDatatypeIds(createMissing);
+			return;
+		}
+		// Lookup only, before the store is published: nothing can commit to this environment during the pass, so one
+		// read admission resolves exactly the lookups of one admission per datatype.
+		List<ValueLookupContext> lookups = new ArrayList<>();
+		seedingPassLookups = lookups;
+		seedingPassOwner = Thread.currentThread();
+		try {
+			readTransaction(env, (stack, txn) -> {
+				seedCoreDatatypeIds(false);
+				return null;
+			});
+		} finally {
+			seedingPassOwner = null;
+			seedingPassLookups = null;
+		}
+		// Each lookup publishes its misses only while its snapshot is still the latest view. Every lookup of the pass
+		// read the same snapshot, so one view check publishes them all.
+		if (!lookups.isEmpty()) {
+			Object latest = valueLookupScope();
+			for (ValueLookupContext lookup : lookups) {
+				lookup.publish(latest);
+			}
+		}
+	}
+
+	private void seedCoreDatatypeIds(boolean createMissing) throws IOException {
 		for (CoreDatatype.XSD datatype : CoreDatatype.XSD.values()) {
 			seedCoreDatatype(datatype, createMissing);
 		}
@@ -2281,7 +2323,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		invalidateRefCountIntegrity("explicit offline owner-graph reconstruction");
 		// Commit UNKNOWN before the first partial count batch. A crash cannot revive an older completion marker.
-		writeTransaction((stack, txn) -> {
+		commitRefCountRecoveryMetadata("the UNKNOWN marker commit", (stack, txn) -> {
 			invalidateUntrustedCountMetadata(stack, txn);
 			return null;
 		});
@@ -2294,11 +2336,30 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		refCountRecoveryRequired = false;
 		refCountIntegrityEstablished = true;
 		try {
-			writeTransaction((stack, txn) -> null);
+			commitRefCountRecoveryMetadata("the completion proof commit", (stack, txn) -> null);
 			observeReferenceCountMaintenance("exact");
 		} catch (IOException | RuntimeException failure) {
 			invalidateRefCountIntegrity("failed reconstruction proof publication");
 			throw failure;
+		}
+	}
+
+	/**
+	 * Commits one of the offline reconstruction's own marker transactions. Without auto-grow, its MDB_MAP_FULL is the
+	 * same reconstruction capacity failure that the clear and count-batch writers report, so a retry on a store whose
+	 * earlier attempt already committed partial counts fails the same way as the first attempt.
+	 */
+	private void commitRefCountRecoveryMetadata(String phase, LmdbUtil.Transaction<Void> marker) throws IOException {
+		try {
+			writeTransaction(marker);
+		} catch (LmdbUtil.MapFullException mapFull) {
+			if (autoGrow) {
+				throw mapFull;
+			}
+			RefCountRecoveryMapFullException capacity = new RefCountRecoveryMapFullException(phase);
+			capacity.initCause(mapFull);
+			throw new IOException("Cannot rebuild ValueStore ref_counts: LMDB map is full and auto-grow is disabled",
+					capacity);
 		}
 	}
 
@@ -3232,6 +3293,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		valueStoreInitializationComplete = false;
 		forceDomainQualificationSyncOnClose = false;
 		domainQualificationSyncSucceeded = false;
+		languageTagReconcileWitnessedAtOpen = false;
+		languageTagReconcileCurrent = false;
+		languageTagReconcileClosedTransactionId = -1L;
 		refCountIntegrityEstablished = false;
 		refCountRecoveryInProgress = false;
 		legacyStructuredRefCountMarker = false;
@@ -3307,6 +3371,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				RdfTermDomainQualification.withdraw(properties, null);
 				throw new IOException("ValueStore changed after RDF domain qualification preflight");
 			}
+			languageTagReconcileWitnessedAtOpen = LmdbLanguageTagVariantMerge.witnessedAtOpen(properties, format,
+					markerStatus.nativeTransactionId(), markerStatus.referenceCountGeneration());
 		} catch (IOException | RuntimeException | Error failure) {
 			mdb_env_close(env);
 			env = 0L;
@@ -10206,6 +10272,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer idBytes = idBuffer(stack);
 			ByteBuffer hashBytes = stack.malloc(2 + 2 * Long.BYTES + 2);
+			// Record hashes whose HASH_KEY an alternative-IRI probe found missing in the current native writer
+			// transaction. This writer's own hash-keyed inserts are removed below as they are made.
+			LongHashSet absentRecordHashes = format.usesCanonicalIriEncoding() ? null : new LongHashSet();
+			long absentAsOfCommit = nativeCommitGeneration;
 			for (int position = 0; position < count; position++) {
 				int index = order == null ? position : order[position];
 				byte[] encoded = data[index];
@@ -10237,8 +10307,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						continue;
 					}
 					resizeForAllocation(txn, 2L * encoded.length + 2L * (2L + Long.BYTES));
+					// A resize checkpoint commits the writer and starts a replacement; never probe the consumed one.
+					txn = writeTxn != 0 ? writeTxn : admitted;
+					if (absentRecordHashes != null && nativeCommitGeneration != absentAsOfCommit) {
+						// A native commit ended the transaction these absences were observed in.
+						absentRecordHashes.clear();
+						absentAsOfCommit = nativeCommitGeneration;
+					}
 					long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
-							: findAlternativeIriId(encoded, stack, txn);
+							: findAlternativeIriId(encoded, stack, txn, absentRecordHashes);
 					if (alternativeId != LmdbValue.UNKNOWN_ID) {
 						ids[indexes[index]] = alternativeId;
 						continue;
@@ -10249,6 +10326,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						idVal.mv_data(id2data(idBytes, id).flip());
 						E(mdb_put(activeTxn, dbi, keyVal, idVal, 0));
 						if (hashed) {
+							if (absentRecordHashes != null) {
+								absentRecordHashes.remove(hashes[index]);
+							}
 							dataVal.mv_size(encoded.length);
 							E(mdb_put(activeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 							dataVal.mv_data().put(encoded);
@@ -13309,12 +13389,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (lastTransactionId() != plan.plannedDictionaryTransactionId()) {
 				throw new IOException("ValueStore changed while planning the language-tag migration");
 			}
-			// The Sail's actual no-op inspection grants this owner's semantic lookup mode, not permission to
-			// add policy to an original loaded legacy sidecar. Bare dictionaries retain their existing protocol.
-			if (!deferPersistedUnusedRecovery || !properties.isLoaded() || properties.getLanguageTagKey() != null) {
-				properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
-			}
-			languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
+			adoptLegacyCanonicalLanguageLookup();
 			return;
 		}
 		LanguageTagRekey rekey;
@@ -13354,6 +13429,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					+ "mappings were normalized", dir, rekey.rekeyed(), rekey.literals());
 		}
 		properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
+	}
+
+	/** The outcome of a legacy reconcile with nothing to change: an empty plan, or a witnessed one. */
+	private void adoptLegacyCanonicalLanguageLookup() {
+		// The Sail's actual no-op inspection grants this owner's semantic lookup mode, not permission to
+		// add policy to an original loaded legacy sidecar. Bare dictionaries retain their existing protocol.
+		if (!deferPersistedUnusedRecovery || !properties.isLoaded() || properties.getLanguageTagKey() != null) {
+			properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		}
 		languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
 	}
 
@@ -14006,7 +14091,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				? nativeValue.getInternalIdentity()
 				: null;
 		boolean own = identity != null && identity.revision().getValueStore() == this;
-		if (own && ((LmdbValue) value).getSemanticVersion() != LmdbValue.UNKNOWN_ID) {
+		// A borrowed reader has its own membership horizon: a current-revision identity may name a reused ID there.
+		if (own && ((LmdbValue) value).getSemanticVersion() != LmdbValue.UNKNOWN_ID
+				&& readContext.get().borrowedTxn == 0L) {
 			WriterPublication publication = writerPublication;
 			if ((publication == null || publication.owner == Thread.currentThread() && isWriteTransactionOwner())
 					&& revision.equals(completedRevision(identity.revision()))
@@ -14134,7 +14221,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				System.arraycopy(iri.localNameData(), 0, data, prefix, iri.localNameData().length);
 				result = findCapturedId(txn, data);
 			}
-			if (result == LmdbValue.UNKNOWN_ID && !format.usesCanonicalIriEncoding()) {
+			// A legacy miss of the record under a known namespace has already searched every other split of this
+			// lexical IRI in this read transaction (findIdInTransaction); only an unknown namespace needs the search.
+			if (result == LmdbValue.UNKNOWN_ID && namespaceId == LmdbValue.UNKNOWN_ID
+					&& !format.usesCanonicalIriEncoding()) {
 				byte[] lexical = new byte[iri.namespaceData().length - 1 + iri.localNameData().length];
 				System.arraycopy(iri.namespaceData(), 1, lexical, 0, iri.namespaceData().length - 1);
 				System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1,
@@ -14440,8 +14530,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 
 		void complete() throws IOException {
-			if (scope == null || valueLookupGeneration != generation || values == null && namespaces == null
-					|| valueLookupScope() != scope
+			if (scope == null || valueLookupGeneration != generation || values == null && namespaces == null) {
+				return;
+			}
+			if (seedingPassOwner == Thread.currentThread()) {
+				// The seeding pass publishes the misses of all its lookups once it has ended.
+				seedingPassLookups.add(this);
+				return;
+			}
+			publish(valueLookupScope());
+		}
+
+		/** Publishes the misses if {@code latestScope}, the lookup scope of the latest view, is still this lookup's. */
+		void publish(Object latestScope) throws IOException {
+			if (scope == null || valueLookupGeneration != generation || latestScope != scope
 					|| !sameRevision(lookupRevision, revision)) {
 				return;
 			}
@@ -17799,7 +17901,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				open(false, true);
 				setNewRevision();
 				try {
-					initializeAfterOpen(storeConfig);
+					initializeAfterOpen(storeConfig, false);
 					if (maintenanceWasReady) {
 						startIndexRebuildAfterStoreInitialization();
 					}
@@ -17845,6 +17947,54 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	boolean domainQualificationSyncSucceeded() {
 		return domainQualificationSyncSucceeded;
+	}
+
+	/**
+	 * Adopts a reconcile witnessed at open as the merge adopts an empty plan, provided only this owner's writers have
+	 * committed since the witnessed state.
+	 *
+	 * @return {@code false} when there is no such witness and the merge has to plan
+	 */
+	boolean adoptWitnessedLanguageTagReconcile() throws IOException {
+		if (!languageTagReconcileWitnessedAtOpen || env == 0L
+				|| lastTransactionId() != lastTrustedNativeTransactionId) {
+			return false;
+		}
+		adoptLegacyCanonicalLanguageLookup();
+		languageTagReconcileCurrent = true;
+		return true;
+	}
+
+	/** The language-tag merge reports a completed or witnessed reconcile; only then can a clean close witness it. */
+	void markLanguageTagReconcileCurrent() {
+		languageTagReconcileCurrent = true;
+	}
+
+	/** The final transaction a successful close certified for the language-tag reconcile witness; otherwise -1. */
+	long languageTagReconcileClosedTransactionId() {
+		return env == 0L ? languageTagReconcileClosedTransactionId : -1L;
+	}
+
+	/** Called under the final close barrier, after every possible native write and before freeing the environment. */
+	private long syncLanguageTagReconcileClose(long environment) {
+		if (!languageTagReconcileCurrent || !format.isLegacy() || languageTagKeyMode != LanguageTagKeyMode.CANONICAL
+				|| referenceCountGeneration == null || lastTrustedNativeTransactionId < 0L) {
+			return -1L;
+		}
+		try {
+			long closedTransactionId = lastTransactionId();
+			if (closedTransactionId != lastTrustedNativeTransactionId) {
+				// Not this owner's last commit: an unowned native writer may have introduced language variants.
+				return -1L;
+			}
+			// The witness may only name a transaction that cannot be rolled back by a later crash.
+			E(mdb_env_sync(environment, true));
+			return lastTransactionId() == closedTransactionId ? closedTransactionId : -1L;
+		} catch (IOException | RuntimeException syncFailure) {
+			logger.warn("Could not durably close ValueStore for the language-tag reconcile witness; the next open "
+					+ "reconciles again", syncFailure);
+			return -1L;
+		}
 	}
 
 	void syncForDomainQualification(long environment) throws IOException {
@@ -18070,8 +18220,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			beginValueLookupMutation();
 			awaitAndStopValueOverlayWarmup();
 			durableCleanupClosedTransactionId = -1L;
+			languageTagReconcileClosedTransactionId = -1L;
 			long cleanMarkerTransactionId = writeCleanRefCountMarker();
 			long durableClosedTransactionId = -1L;
+			long reconciledClosedTransactionId = -1L;
 			Throwable failure = null;
 			for (ValueResolutionScope scope : valueResolutionScopes) {
 				try {
@@ -18157,9 +18309,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					} catch (Throwable syncFailure) {
 						failure = appendFailure(failure, syncFailure);
 					}
+					long reconciledTransactionId = failure == null ? syncLanguageTagReconcileClose(environment) : -1L;
 					try {
 						closeEnvironment(environment);
 						durableClosedTransactionId = durableTransactionId;
+						reconciledClosedTransactionId = reconciledTransactionId;
 					} catch (Throwable closeFailure) {
 						failure = appendFailure(failure, closeFailure);
 					} finally {
@@ -18185,6 +18339,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			rethrowFailure(failure);
 			durableCleanupClosedTransactionId = durableClosedTransactionId;
+			languageTagReconcileClosedTransactionId = reconciledClosedTransactionId;
 			return true;
 		} finally {
 			closeInProgress = false;

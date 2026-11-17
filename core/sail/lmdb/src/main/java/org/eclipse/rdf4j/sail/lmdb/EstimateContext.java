@@ -36,7 +36,19 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
 		MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain,
 		LmdbFilterReadContext filterReadContext, LmdbFrontierReadPopulation readPopulation, int frontierPlaneMask,
-		long frontierSnapshotEpoch) {
+		long frontierSnapshotEpoch, LmdbAdmittedFrontierRead admittedRead) {
+
+	EstimateContext(BindingUniverse universe, BindingMask boundMask,
+			Optional<FiniteRelationEstimate> finiteBindings, BagEstimate prefixEstimate, double invocationCount,
+			EvidencePolicy evidencePolicy, JoinFactorCostModel.EstimationTier estimationTier,
+			QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
+			MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain,
+			LmdbFilterReadContext filterReadContext, LmdbFrontierReadPopulation readPopulation, int frontierPlaneMask,
+			long frontierSnapshotEpoch) {
+		this(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy, estimationTier,
+				snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference, exactProbePermitted, graphDomain,
+				filterReadContext, readPopulation, frontierPlaneMask, frontierSnapshotEpoch, null);
+	}
 
 	EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			Optional<FiniteRelationEstimate> finiteBindings, BagEstimate prefixEstimate, double invocationCount,
@@ -64,7 +76,28 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
 				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
 				exactProbePermitted, graphDomain, readContext, readPopulation, frontierPlaneMask,
-				frontierSnapshotEpoch);
+				frontierSnapshotEpoch, admittedRead);
+	}
+
+	EstimateContext withAdmittedRead(LmdbAdmittedFrontierRead read) {
+		if (read == null) {
+			return this;
+		}
+		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
+				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
+				exactProbePermitted, graphDomain, filterReadContext, read.population(), read.planeMask(),
+				read.snapshotEpoch(), read);
+	}
+
+	void requireAdmittedRead() {
+		if (admittedRead != null) {
+			admittedRead.requireContext(this);
+		}
+	}
+
+	Object admittedCacheIdentity() {
+		requireAdmittedRead();
+		return admittedRead == null ? null : admittedRead.cacheIdentity();
 	}
 
 	enum EvidencePolicy {
@@ -121,7 +154,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
 				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
 				exactProbePermitted,
-				domain, filterReadContext, readPopulation, frontierPlaneMask, frontierSnapshotEpoch);
+				domain, filterReadContext, readPopulation, frontierPlaneMask, frontierSnapshotEpoch, admittedRead);
 	}
 
 	EstimateContext withReadPopulation(LmdbFrontierReadPopulation population) {
@@ -135,7 +168,8 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 	EstimateContext withReadPopulation(LmdbFrontierReadPopulation population, int planeMask, long snapshotEpoch) {
 		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
 				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
-				exactProbePermitted, graphDomain, filterReadContext, population, planeMask, snapshotEpoch);
+				exactProbePermitted, graphDomain, filterReadContext, population, planeMask, snapshotEpoch,
+				admittedRead);
 	}
 
 	Set<String> boundNames() {
@@ -212,7 +246,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			MetricsPreference preference, boolean exactPermission) {
 		return new EstimateContext(universe, mask, bindings, prefix, invocations, policy, tier, snapshotIdentity,
 				snapshotVersion, learnedRevision, preference, exactPermission, graphDomain, filterReadContext,
-				readPopulation, frontierPlaneMask, frontierSnapshotEpoch);
+				readPopulation, frontierPlaneMask, frontierSnapshotEpoch, admittedRead);
 	}
 
 	private static double finiteNonNegative(double value, double fallback) {

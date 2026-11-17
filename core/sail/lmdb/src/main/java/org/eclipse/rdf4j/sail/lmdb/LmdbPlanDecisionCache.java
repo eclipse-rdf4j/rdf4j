@@ -30,7 +30,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCacheMemory;
@@ -71,7 +70,9 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	enum LookupOutcome {
 		USE,
 		USE_AND_REFRESH,
-		REPLAN_BEFORE_USE
+		REPLAN_BEFORE_USE,
+		/** The lookup cannot decide alone: the caller replays the variant's read log ({@link Revalidate}). */
+		REVALIDATE
 	}
 
 	enum RefreshSubmission {
@@ -93,6 +94,27 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		BEST_KNOWN_UNBOUNDED
 	}
 
+	/**
+	 * What a retained decision may be used for. A {@link #RANKED} decision may back stale reuse, detached refresh,
+	 * promotion and canary routing. A {@link #REPLAY_ONLY} decision has no available cost comparison; because
+	 * re-planning an identical request on unchanged inputs is deterministic, it may only be replayed for that identical
+	 * request under identical evidence.
+	 */
+	enum DecisionAuthority {
+		RANKED,
+		REPLAY_ONLY
+	}
+
+	/** Outcome of admitting a cache flight for a decision-cache miss. */
+	enum FlightAdmission {
+		/** Plan without caching; nothing was reserved. */
+		BYPASS,
+		/** The flight's transient identity was reserved in free space; its family may only use free space. */
+		ADMITTED,
+		/** The key has proven reuse; least-recently-used families may be evicted for its flight and its family. */
+		ADMITTED_PROVEN_REPEAT
+	}
+
 	enum EvidenceKind {
 		GLOBAL_DATA,
 		PREDICATE,
@@ -107,7 +129,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		PHYSICAL_CAPABILITY
 	}
 
-	sealed interface LookupDecision permits Use, UseAndRefresh, ReplanBeforeUse {
+	sealed interface LookupDecision permits Use, UseAndRefresh, ReplanBeforeUse, Revalidate {
 
 		LookupOutcome outcome();
 
@@ -177,6 +199,36 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		@Override
 		public LookupOutcome outcome() {
 			return LookupOutcome.REPLAN_BEFORE_USE;
+		}
+	}
+
+	/**
+	 * The exact variant would be used if its evidence were the request's, and the two differ only in learned state: the
+	 * caller replays {@code basis}'s log with no cache lock held and completes with {@link #completeRevalidation}, or
+	 * takes today's path. {@code observed} and {@code evidence} are the family version and the variant's stamped
+	 * evidence object the lookup saw; the lookup counted and touched nothing.
+	 */
+	record Revalidate(PlanFamilyKey familyKey, FamilyVersion observed, long variantId, PlanVersion plan,
+			EvidenceSnapshot evidence, LmdbPlanCacheRevalidation.Basis basis, boolean replayOnly)
+			implements LookupDecision {
+
+		Revalidate {
+			Objects.requireNonNull(familyKey, "familyKey");
+			Objects.requireNonNull(observed, "observed");
+			Objects.requireNonNull(plan, "plan");
+			Objects.requireNonNull(evidence, "evidence");
+			Objects.requireNonNull(basis, "basis");
+			Objects.requireNonNull(basis.log(), "basis log");
+		}
+
+		@Override
+		public LookupOutcome outcome() {
+			return LookupOutcome.REVALIDATE;
+		}
+
+		@Override
+		public String reason() {
+			return "learned-state-only-drift";
 		}
 	}
 
@@ -565,17 +617,35 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	}
 
 	record SearchCertificate(SearchCompletion completion, BoundKind boundKind, double lowerBound,
-			long evidenceEpoch, long pruningEpoch, double costPruningMargin, long deterministicWorkUnits) {
+			long evidenceEpoch, long pruningEpoch, double costPruningMargin, long deterministicWorkUnits,
+			DecisionAuthority authority) {
 
 		SearchCertificate {
 			Objects.requireNonNull(completion, "completion");
 			Objects.requireNonNull(boundKind, "boundKind");
+			Objects.requireNonNull(authority, "authority");
 			if (boundKind == BoundKind.VALID_LOWER_BOUND && (!(lowerBound >= 0.0d) || !Double.isFinite(lowerBound))) {
 				throw new IllegalArgumentException("valid lower bound must be finite and nonnegative");
 			}
 			if (costPruningMargin < 0.0d || deterministicWorkUnits < 0L) {
 				throw new IllegalArgumentException("certificate work and margin must be nonnegative");
 			}
+			if (authority == DecisionAuthority.REPLAY_ONLY && (boundKind != BoundKind.BEST_KNOWN_UNBOUNDED
+					|| !Double.isNaN(lowerBound) || completion == SearchCompletion.INCOMPLETE_DEADLINE)) {
+				throw new IllegalArgumentException(
+						"a replay-only decision carries no search bound and is never cut by a deadline");
+			}
+		}
+
+		/** Compatibility constructor for decisions backed by a cost comparison. */
+		SearchCertificate(SearchCompletion completion, BoundKind boundKind, double lowerBound, long evidenceEpoch,
+				long pruningEpoch, double costPruningMargin, long deterministicWorkUnits) {
+			this(completion, boundKind, lowerBound, evidenceEpoch, pruningEpoch, costPruningMargin,
+					deterministicWorkUnits, DecisionAuthority.RANKED);
+		}
+
+		boolean replayOnly() {
+			return authority == DecisionAuthority.REPLAY_ONLY;
 		}
 	}
 
@@ -722,20 +792,23 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 	}
 
-	private static final class ExactTupleRecipe implements ExecutableRecipe {
+	static final class ExactTupleRecipe implements ExecutableRecipe {
 
 		private final TupleExpr template;
 		private final long retainedBytes;
 		private final boolean automaticPlanningState;
 
-		private ExactTupleRecipe(TupleExpr template, long retainedBytes, PlanFamilyKey owner) {
+		private ExactTupleRecipe(TupleExpr template, long retainedBytes, PlanFamilyKey owner,
+				boolean retainDiagnostics) {
 			// The complete-query pipeline is the automatic input/readiness owner. Existing explicit low-level
 			// publishers keep their declared retainedBytes/typed-provider contract and ordinary clone API.
 			automaticPlanningState = owner.providerCacheIdentity() instanceof LmdbPipelinePlanCache.InputIdentity;
 			this.template = automaticPlanningState
-					? LmdbCacheValueCopies.copy(Objects.requireNonNull(template, "template"), true)
+					? LmdbCacheValueCopies.copyForCache(Objects.requireNonNull(template, "template"), retainDiagnostics)
 					: LmdbValueIdFilter.semanticClone(Objects.requireNonNull(template, "template"));
-			this.retainedBytes = retainedBytes;
+			// A pipeline version is charged its own records whoever publishes it (a build or a detached refresh): its
+			// template is charged per object, and the rest of a build's fixed charge belongs to the family.
+			this.retainedBytes = automaticPlanningState ? LmdbPipelinePlanCache.VERSION_OBJECT_BYTES : retainedBytes;
 		}
 
 		@Override
@@ -747,12 +820,17 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		@Override
 		public long retainedBytes() {
 			FactorCostCacheKey.ProviderRetainedMemory memory = new FactorCostCacheKey.ProviderRetainedMemory();
+			accountTo(memory);
+			return saturatedAdd(retainedBytes, memory.bytes());
+		}
+
+		/** Charges the retained template into {@code memory}, exactly as publication charges it. */
+		void accountTo(FactorCostCacheKey.ProviderRetainedMemory memory) {
 			if (automaticPlanningState) {
 				memory.accountCacheModels(template);
 			} else {
 				memory.account(template);
 			}
-			return saturatedAdd(retainedBytes, memory.bytes());
 		}
 	}
 
@@ -788,11 +866,28 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * @param readLogBasis the revision this variant was planned (or last revalidated) under and its planning's read
+	 *                     log, which lets a learned-state-only drift be revalidated by re-reading; null when the
+	 *                     variant is not revalidatable (no log retained, or not published by a build)
+	 */
 	record PlanVariant(long variantId, ApplicabilityGuard applicabilityGuard, PlanVersion champion,
 			List<PlanVersion> challengers, List<PlanVersion> rollbackVersions, SearchCertificate searchCertificate,
 			EvidenceSnapshot evidenceSnapshot, PlanStabilityEnvelope stabilityEnvelope,
 			RuntimePosterior runtimePosterior, Map<Long, RuntimePosterior> challengerPosteriors,
-			QualityState qualityState, boolean challengerKnownToDominate) {
+			QualityState qualityState, boolean challengerKnownToDominate,
+			LmdbPlanCacheRevalidation.Basis readLogBasis) {
+
+		PlanVariant(long variantId, ApplicabilityGuard applicabilityGuard, PlanVersion champion,
+				List<PlanVersion> challengers, List<PlanVersion> rollbackVersions,
+				SearchCertificate searchCertificate, EvidenceSnapshot evidenceSnapshot,
+				PlanStabilityEnvelope stabilityEnvelope, RuntimePosterior runtimePosterior,
+				Map<Long, RuntimePosterior> challengerPosteriors, QualityState qualityState,
+				boolean challengerKnownToDominate) {
+			this(variantId, applicabilityGuard, champion, challengers, rollbackVersions, searchCertificate,
+					evidenceSnapshot, stabilityEnvelope, runtimePosterior, challengerPosteriors, qualityState,
+					challengerKnownToDominate, null);
+		}
 
 		PlanVariant {
 			if (variantId <= 0L) {
@@ -833,7 +928,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			return quality == qualityState ? this
 					: new PlanVariant(variantId, applicabilityGuard, champion,
 							challengers, rollbackVersions, searchCertificate, evidenceSnapshot, stabilityEnvelope,
-							runtimePosterior, challengerPosteriors, quality, challengerKnownToDominate);
+							runtimePosterior, challengerPosteriors, quality, challengerKnownToDominate, readLogBasis);
 		}
 
 		RuntimePosterior posteriorFor(long planVersion) {
@@ -851,7 +946,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 						posterior.lifecycleBlocked() || posterior.resourceGuardBreached()
 								? QualityState.SUSPECT
 								: qualityState,
-						challengerKnownToDominate);
+						challengerKnownToDominate, readLogBasis);
 			}
 			if (challengers.stream().noneMatch(challenger -> challenger.version() == planVersion)) {
 				return this;
@@ -860,7 +955,44 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			updated.put(planVersion, posterior);
 			return new PlanVariant(variantId, applicabilityGuard, champion, challengers, rollbackVersions,
 					searchCertificate, evidenceSnapshot, stabilityEnvelope, runtimePosterior, updated, qualityState,
-					challengerKnownToDominate);
+					challengerKnownToDominate, readLogBasis);
+		}
+
+		/** The same variant with another read-log basis (a log dropped from the slack). */
+		PlanVariant withReadLogBasis(LmdbPlanCacheRevalidation.Basis basis) {
+			return new PlanVariant(variantId, applicabilityGuard, champion, challengers, rollbackVersions,
+					searchCertificate, evidenceSnapshot, stabilityEnvelope, runtimePosterior, challengerPosteriors,
+					qualityState, challengerKnownToDominate, basis);
+		}
+
+		/** Whether this variant keeps a read log, which the cache charges in its slack. */
+		boolean keepsReadLog() {
+			return readLogBasis != null && readLogBasis.log() != null;
+		}
+
+		/**
+		 * F11: whether this variant differs from {@code other} at most by its read-log basis: every other component is
+		 * the same object (or an equal primitive or enum constant). A log drop ({@link #withReadLogBasis}) yields one.
+		 */
+		boolean sameExceptReadLog(PlanVariant other) {
+			return other == this || other != null && variantId == other.variantId
+					&& applicabilityGuard == other.applicabilityGuard && champion == other.champion
+					&& challengers == other.challengers && rollbackVersions == other.rollbackVersions
+					&& searchCertificate == other.searchCertificate && evidenceSnapshot == other.evidenceSnapshot
+					&& stabilityEnvelope == other.stabilityEnvelope && runtimePosterior == other.runtimePosterior
+					&& challengerPosteriors == other.challengerPosteriors && qualityState == other.qualityState
+					&& challengerKnownToDominate == other.challengerKnownToDominate;
+		}
+
+		/**
+		 * The same decision vouching for {@code evidence}: only the stamped evidence, its exact stability envelope and
+		 * the basis's revision change; plan, recipe, refresh work, intervals, posteriors and log are kept.
+		 */
+		PlanVariant revalidatedAt(EvidenceSnapshot evidence, LmdbPipelinePlanCache.Revision revision) {
+			return new PlanVariant(variantId, applicabilityGuard, champion, challengers, rollbackVersions,
+					searchCertificate, evidence, PlanStabilityEnvelope.exact(evidence), runtimePosterior,
+					challengerPosteriors, qualityState, challengerKnownToDominate,
+					readLogBasis.revalidatedAt(revision));
 		}
 	}
 
@@ -886,12 +1018,20 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 	}
 
-	record ExactAlias(long familyVersion, long variantId, long planVersion) {
+	/**
+	 * @param missFingerprint doorkeeper fingerprint of the exact request that published or joined the alias, or zero
+	 *                        when that request had none; it lets a reclaimed retirement stay remembered (R5).
+	 */
+	record ExactAlias(long familyVersion, long variantId, long planVersion, long missFingerprint) {
 
 		ExactAlias {
 			if (familyVersion <= 0L || variantId <= 0L || planVersion <= 0L) {
 				throw new IllegalArgumentException("exact alias identifiers must be positive");
 			}
+		}
+
+		ExactAlias(long familyVersion, long variantId, long planVersion) {
+			this(familyVersion, variantId, planVersion, 0L);
 		}
 	}
 
@@ -922,6 +1062,36 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			exactAliases = exactAliases == null || exactAliases.isEmpty() ? Map.of() : Map.copyOf(exactAliases);
 		}
 
+		/**
+		 * F11: whether this version differs from {@code other} at most by its variants' read-log bases (logs dropped
+		 * from the slack): the same version number, every other component the same object (or an equal primitive or
+		 * enum constant), and the variants pairwise {@link PlanVariant#sameExceptReadLog}. Such a version is
+		 * {@code other} for every identity check the cache makes.
+		 */
+		boolean sameExceptReadLogs(FamilyVersion other) {
+			if (other == this) {
+				return true;
+			}
+			if (other == null || version != other.version || semanticValidity != other.semanticValidity
+					|| semanticDependencies != other.semanticDependencies
+					|| retainedStructuralCheckpoint != other.retainedStructuralCheckpoint
+					|| exactAliases != other.exactAliases || publicationEvidenceEpoch != other.publicationEvidenceEpoch
+					|| retainedBytes != other.retainedBytes) {
+				return false;
+			}
+			List<PlanVariant> mine = dispatcher.variants();
+			List<PlanVariant> theirs = other.dispatcher.variants();
+			if (mine.size() != theirs.size()) {
+				return false;
+			}
+			for (int index = 0; index < mine.size(); index++) {
+				if (!mine.get(index).sameExceptReadLog(theirs.get(index))) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		FamilyVersion withQuality(QualityState quality, long newVersion) {
 			List<PlanVariant> variants = dispatcher.variants()
 					.stream()
@@ -947,13 +1117,10 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		private final PlanFamilyKey key;
 		private final AtomicReference<FamilyVersion> current;
 		private final ConcurrentHashMap<Long, AtomicBoolean> refreshClaims = new ConcurrentHashMap<>();
-		private final LongAdder requests = new LongAdder();
-		private final LongAdder admissions = new LongAdder();
 
 		private PlanFamily(PlanFamilyKey key, FamilyVersion version) {
 			this.key = key;
 			current = new AtomicReference<>(version);
-			admissions.increment();
 		}
 
 		PlanFamilyKey key() {
@@ -969,10 +1136,24 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * @param revalidationRevision the revision the request's evidence was captured from, when the request can replay a
+	 *                             variant's read log ({@link Revalidate}); null for a lookup that decides alone
+	 */
 	record LookupRequest(SemanticDependencies semanticDependencies, EvidenceSnapshot evidenceSnapshot,
 			InvocationFeatures invocationFeatures, double maximumExpectedRegret, boolean executableRecipeCompatible,
 			boolean lifecycleBlocked, boolean resourceGuardViolated, long invocationRegionId,
-			long deterministicInvocationHash, boolean canaryEligible) {
+			long deterministicInvocationHash, boolean canaryEligible,
+			LmdbPipelinePlanCache.Revision revalidationRevision) {
+
+		LookupRequest(SemanticDependencies semanticDependencies, EvidenceSnapshot evidenceSnapshot,
+				InvocationFeatures invocationFeatures, double maximumExpectedRegret,
+				boolean executableRecipeCompatible, boolean lifecycleBlocked, boolean resourceGuardViolated,
+				long invocationRegionId, long deterministicInvocationHash, boolean canaryEligible) {
+			this(semanticDependencies, evidenceSnapshot, invocationFeatures, maximumExpectedRegret,
+					executableRecipeCompatible, lifecycleBlocked, resourceGuardViolated, invocationRegionId,
+					deterministicInvocationHash, canaryEligible, null);
+		}
 
 		LookupRequest {
 			Objects.requireNonNull(semanticDependencies, "semanticDependencies");
@@ -996,15 +1177,37 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		LookupRequest withCanary(long regionId, long invocationHash) {
 			return new LookupRequest(semanticDependencies, evidenceSnapshot, invocationFeatures, maximumExpectedRegret,
 					executableRecipeCompatible, lifecycleBlocked, resourceGuardViolated, regionId, invocationHash,
-					true);
+					true, revalidationRevision);
+		}
+
+		/** This request, able to replay a variant's read log on a learned-state-only drift from {@code revision}. */
+		LookupRequest withRevalidation(LmdbPipelinePlanCache.Revision revision) {
+			return new LookupRequest(semanticDependencies, evidenceSnapshot, invocationFeatures, maximumExpectedRegret,
+					executableRecipeCompatible, lifecycleBlocked, resourceGuardViolated, invocationRegionId,
+					deterministicInvocationHash, canaryEligible, revision);
 		}
 	}
 
+	/**
+	 * @param readLogBasis the revision of {@code buildEvidence} and the planning's read log the published variant
+	 *                     keeps; null when the publication cannot be revalidated
+	 */
 	record BuildPublication(PlanFamilyKey familyKey, ExactInvocationKey exactInvocationKey,
 			SemanticDependencies semanticDependencies, EvidenceSnapshot buildEvidence,
 			EvidenceSnapshot currentEvidence, TupleExpr executableTemplate, String physicalFingerprint,
 			EstimatedCostInterval estimatedCostInterval, SearchCertificate searchCertificate, long retainedBytes,
-			long optimizerGeneration, DetachedRefreshWork detachedRefreshWork) {
+			long optimizerGeneration, DetachedRefreshWork detachedRefreshWork,
+			LmdbPlanCacheRevalidation.Basis readLogBasis) {
+
+		BuildPublication(PlanFamilyKey familyKey, ExactInvocationKey exactInvocationKey,
+				SemanticDependencies semanticDependencies, EvidenceSnapshot buildEvidence,
+				EvidenceSnapshot currentEvidence, TupleExpr executableTemplate, String physicalFingerprint,
+				EstimatedCostInterval estimatedCostInterval, SearchCertificate searchCertificate, long retainedBytes,
+				long optimizerGeneration, DetachedRefreshWork detachedRefreshWork) {
+			this(familyKey, exactInvocationKey, semanticDependencies, buildEvidence, currentEvidence,
+					executableTemplate, physicalFingerprint, estimatedCostInterval, searchCertificate, retainedBytes,
+					optimizerGeneration, detachedRefreshWork, null);
+		}
 
 		BuildPublication {
 			Objects.requireNonNull(familyKey, "familyKey");
@@ -1159,15 +1362,19 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	record Statistics(long families, long exactAliases, long retainedBytes, long hits, long refreshUses,
 			long replans, long publications, long stalePublications, long evictions, long globalEvidenceEpoch,
-			boolean closed) {
+			boolean closed, LmdbPlanCacheRevalidation.Snapshot revalidation) {
 	}
 
 	private static final int MAX_REVERSE_FAMILIES_PER_KEY = 256;
+	private static final int MINIMUM_DOORKEEPER_CAPACITY = 16;
+	private static final int MAXIMUM_DOORKEEPER_CAPACITY = 4096;
 
 	private final int maximumFamilies;
 	private final int maximumVariants;
 	private final long maximumRetainedBytes;
 	private final double maximumCanaryFraction;
+	/** Final, set by the constructor: whether retained pipeline templates keep their explanation diagnostics. */
+	private final boolean retainCachedPlanDiagnostics;
 	private final ThreadPoolExecutor refreshExecutor;
 	private final ConcurrentHashMap<PlanFamilyKey, PlanFamily> families = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<ExactInvocationKey, ExactAlias> exactAliases = new ConcurrentHashMap<>();
@@ -1183,10 +1390,41 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	private final AtomicLong publications = new AtomicLong();
 	private final AtomicLong stalePublications = new AtomicLong();
 	private final AtomicLong evictions = new AtomicLong();
+	private final LmdbPlanCacheRevalidation.Counters revalidation = new LmdbPlanCacheRevalidation.Counters();
+	/*
+	 * F1: the bytes the retained read logs occupy. They are never part of a decision: every admission, OVERSIZED,
+	 * NO_ROOM and eviction decision sees retainedBytes (the families' bytes without their logs) exactly as with the
+	 * read-log switch off; logs live in the slack (retained + logs + reservations + doorkeeper <= budget) and are
+	 * dropped, coldest family first, whenever a charge needs it. Changed only under admissionLock.
+	 */
+	private final AtomicLong readLogBytes = new AtomicLong();
+	/** Test seam: runs in a refresh publication between its observation of the family and its commit. */
+	private volatile Runnable beforeRefreshCommit = () -> {
+	};
+	/** Test seam: runs in a variant publication between its observation of the family and its commit. */
+	private volatile Runnable beforeVariantCommit = () -> {
+	};
+	/** Test seam: runs in a hard invalidation between its observation of the family and its commit. */
+	private volatile Runnable beforeHardInvalidation = () -> {
+	};
+	/** Refresh tasks created and not yet released (run to completion, rejected or shut down); for tests. */
+	private final AtomicLong unreleasedRefreshTasks = new AtomicLong();
+	/**
+	 * Bumped by a broad evidence change, and when the reverse evidence index can no longer route a family: versions
+	 * published under an earlier value are withdrawn from lookup. It is not an evidence clock; whether a build's
+	 * evidence is newer than a retained or retired decision's is decided by their snapshots ({@link #newerThan}).
+	 */
 	private final AtomicLong globalEvidenceEpoch = new AtomicLong();
 	private final AtomicLong refreshTaskSequence = new AtomicLong();
 	private final AtomicBoolean closed = new AtomicBoolean();
+	/*
+	 * Byte accounting, all charged under admissionLock: retained (the families' bytes) + pending (flight and refresh
+	 * identities) + the doorkeeper's charge never exceeds maximumRetainedBytes. Charges only grow under admissionLock
+	 * after a fit check; releases may happen anywhere because they only shrink the sum.
+	 */
 	private final PackedProviderIdentityBudget pendingProviderIdentities;
+	/** Recent exact-key misses; read and written only under admissionLock. */
+	private final MissDoorkeeper doorkeeper;
 
 	private final class PrioritizedRefreshTask implements Runnable, Comparable<PrioritizedRefreshTask> {
 
@@ -1208,6 +1446,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			this.expectedFamilyVersion = expectedFamilyVersion;
 			this.expectedCacheEpoch = expectedCacheEpoch;
 			sequence = refreshTaskSequence.incrementAndGet();
+			unreleasedRefreshTasks.incrementAndGet();
 		}
 
 		@Override
@@ -1246,6 +1485,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			if (released.compareAndSet(false, true)) {
 				pendingProviderIdentities.release(retainedIdentity);
 				claim.set(false);
+				unreleasedRefreshTasks.decrementAndGet();
 			}
 		}
 	}
@@ -1256,6 +1496,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	LmdbPlanDecisionCache(int maximumFamilies, long maximumRetainedBytes, int maximumVariants, int refreshThreads,
 			double maximumCanaryFraction) {
+		this(maximumFamilies, maximumRetainedBytes, maximumVariants, refreshThreads, maximumCanaryFraction, false);
+	}
+
+	LmdbPlanDecisionCache(int maximumFamilies, long maximumRetainedBytes, int maximumVariants, int refreshThreads,
+			double maximumCanaryFraction, boolean retainCachedPlanDiagnostics) {
 		if (maximumFamilies <= 0) {
 			throw new IllegalArgumentException("plan decision cache family capacity must be positive");
 		}
@@ -1275,8 +1520,10 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		this.maximumFamilies = maximumFamilies;
 		this.maximumRetainedBytes = maximumRetainedBytes;
 		this.pendingProviderIdentities = new PackedProviderIdentityBudget(maximumRetainedBytes);
+		this.doorkeeper = new MissDoorkeeper(doorkeeperCapacity(maximumFamilies));
 		this.maximumVariants = maximumVariants;
 		this.maximumCanaryFraction = maximumCanaryFraction;
+		this.retainCachedPlanDiagnostics = retainCachedPlanDiagnostics;
 		AtomicLong threadSequence = new AtomicLong();
 		ThreadFactory threadFactory = runnable -> {
 			Thread thread = new Thread(runnable,
@@ -1288,14 +1535,134 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				new PriorityBlockingQueue<>(), threadFactory);
 	}
 
+	/** The doorkeeper remembers as many recent distinct misses as the cache can hold families, within fixed bounds. */
+	private static int doorkeeperCapacity(int maximumFamilies) {
+		return Math.max(MINIMUM_DOORKEEPER_CAPACITY, Math.min(MAXIMUM_DOORKEEPER_CAPACITY, maximumFamilies));
+	}
+
+	/** Modeled bytes the miss doorkeeper charges to the budget once the cache admits its first flight. */
+	static long doorkeeperBytes(int maximumFamilies) {
+		return MissDoorkeeper.modeledBytes(doorkeeperCapacity(maximumFamilies));
+	}
+
+	/** Reserves a transient identity in free space only; it never evicts and never records a miss. */
 	boolean tryRetainTransientIdentity(PackedProviderCacheIdentity identity) {
 		synchronized (admissionLock) {
-			return identity == null || enabled() && pendingProviderIdentities.tryRetain(identity, retainedBytes.get());
+			boolean retained = identity == null
+					|| enabled() && pendingProviderIdentities.tryRetain(identity, occupiedBytes());
+			fitReadLogs();
+			return retained;
+		}
+	}
+
+	/**
+	 * Admits the flight of a decision-cache miss. The miss is recorded in the doorkeeper first; the key has proven
+	 * reuse when its previous miss is still recorded and it has not been found unable to publish. The flight's
+	 * transient identity is reserved in free space when it fits. Otherwise dead replays are reclaimed first, without
+	 * proof of reuse (P7); then only a proven repeat is admitted, by evicting least-recently-used families until the
+	 * reservation fits, and only when it would fit with no family retained; anything else plans without caching.
+	 *
+	 * @param missFingerprint         revision-independent fingerprint of the exact request
+	 * @param fingerprinted           false when the request has no fingerprint; it then never proves reuse
+	 * @param requestEvidence         the evidence the request plans with
+	 * @param liveDataRevisionHorizon no present or future request plans below this data revision
+	 */
+	FlightAdmission admitFlight(PackedProviderCacheIdentity identity, long missFingerprint, boolean fingerprinted,
+			EvidenceSnapshot requestEvidence, long liveDataRevisionHorizon) {
+		synchronized (admissionLock) {
+			FlightAdmission admission = admitFlightLocked(identity, missFingerprint, fingerprinted, requestEvidence,
+					liveDataRevisionHorizon);
+			// The decision above saw the families' bytes without their logs; the reservation and doorkeeper charge it
+			// took may now need the slack the logs occupy.
+			fitReadLogs();
+			return admission;
+		}
+	}
+
+	/** Caller holds admissionLock. */
+	private FlightAdmission admitFlightLocked(PackedProviderCacheIdentity identity, long missFingerprint,
+			boolean fingerprinted, EvidenceSnapshot requestEvidence, long liveDataRevisionHorizon) {
+		{
+			if (!enabled()) {
+				return FlightAdmission.BYPASS;
+			}
+			// A key retired on evidence the request's is not newer than cannot publish: its flight never proves reuse,
+			// so it never evicts a live family (it is admitted into free space only). Newer evidence clears the
+			// tombstone first, with what its blocked publications left, and the key proves reuse like any other.
+			boolean retired = fingerprinted && doorkeeper.retiredUnder(missFingerprint, requestEvidence);
+			boolean provenRepeat = fingerprinted && recordMiss(missFingerprint) == MissDoorkeeper.REPEAT && !retired;
+			FlightAdmission admitted = provenRepeat ? FlightAdmission.ADMITTED_PROVEN_REPEAT : FlightAdmission.ADMITTED;
+			if (identity == null || pendingProviderIdentities.tryRetain(identity, occupiedBytes())) {
+				return admitted;
+			}
+			while (reclaimOneDead(null, liveDataRevisionHorizon)) {
+				if (pendingProviderIdentities.tryRetain(identity, occupiedBytes())) {
+					return admitted;
+				}
+			}
+			if (!provenRepeat || !fitsWithoutRetainedFamilies(identity)) {
+				return FlightAdmission.BYPASS;
+			}
+			while (releaseOneLeastRecent(null)) {
+				if (pendingProviderIdentities.tryRetain(identity, occupiedBytes())) {
+					return admitted;
+				}
+			}
+			return FlightAdmission.BYPASS;
 		}
 	}
 
 	void releaseTransientIdentity(PackedProviderCacheIdentity identity) {
 		pendingProviderIdentities.release(identity);
+	}
+
+	/**
+	 * Ends a flight that publishes nothing. When the reason is deterministic for the request (its decision can never be
+	 * retained), its fingerprint is remembered as unable to publish and stops proving reuse until it publishes or ages
+	 * out.
+	 */
+	void abandonFlight(PackedProviderCacheIdentity transientIdentity, long missFingerprint, boolean fingerprinted,
+			boolean neverPublishable) {
+		synchronized (admissionLock) {
+			if (transientIdentity != null) {
+				pendingProviderIdentities.release(transientIdentity);
+			}
+			if (fingerprinted && neverPublishable) {
+				doorkeeper.markPublishable(missFingerprint, false);
+			}
+		}
+	}
+
+	/** Bytes other than in-flight reservations that are charged to the budget. Caller holds admissionLock. */
+	private long occupiedBytes() {
+		return saturatedAdd(retainedBytes.get(), doorkeeper.chargedBytes());
+	}
+
+	/** Bytes the retained families may occupy next to the current reservations. Caller holds admissionLock. */
+	private long familyHeadroom() {
+		return maximumRetainedBytes - pendingProviderIdentities.bytes() - doorkeeper.chargedBytes();
+	}
+
+	/** Caller holds admissionLock. The doorkeeper is charged once, on its first use, and only into free space. */
+	private int recordMiss(long missFingerprint) {
+		if (!doorkeeper.charged()) {
+			if (doorkeeper.modeledBytes() > maximumRetainedBytes - pendingProviderIdentities.bytes()
+					- retainedBytes.get()) {
+				return MissDoorkeeper.FIRST_MISS;
+			}
+			doorkeeper.charge();
+		}
+		return doorkeeper.recordMiss(missFingerprint);
+	}
+
+	/**
+	 * Whether the identity would fit next to the current reservations with no family retained. A private ledger charges
+	 * it as if it shared no node with other reservations, so this is an upper bound and eviction never starts for a
+	 * reservation that cannot fit. Caller holds admissionLock.
+	 */
+	private boolean fitsWithoutRetainedFamilies(PackedProviderCacheIdentity identity) {
+		long room = familyHeadroom();
+		return room > 0L && new PackedProviderIdentityBudget(room).tryRetain(identity);
 	}
 
 	LookupDecision lookupExact(ExactInvocationKey key, LookupRequest request) {
@@ -1320,40 +1687,215 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		return lookupVersion(key, 0L, 0L, request, false);
 	}
 
+	/** Direct publication by an owner that asserts reuse: least-recently-used families may be evicted for it. */
 	boolean publishBuild(BuildPublication publication) {
-		// Canonicalize equal new provider keys before retaining aliases or replacing a family version. The map's
-		// original key remains an owner, and must share the one identity charged by the whole immutable portfolio.
 		synchronized (admissionLock) {
-			if (!Objects.equals(publication.familyKey().providerCacheIdentity(),
-					publication.semanticDependencies().providerCacheIdentity())) {
-				return false;
-			}
-			PlanFamily retained = families.get(publication.familyKey());
-			if (retained != null && publication.familyKey().providerCacheIdentity() != null) {
-				PlanFamilyKey key = retained.key();
-				publication = new BuildPublication(key, new ExactInvocationKey(key,
-						publication.exactInvocationKey().completeSourceIdentity(),
-						publication.exactInvocationKey().semanticContext()),
-						publication.semanticDependencies().withProviderCacheIdentity(key.providerCacheIdentity()),
-						publication.buildEvidence(), publication.currentEvidence(), publication.executableTemplate(),
-						publication.physicalFingerprint(), publication.estimatedCostInterval(),
-						publication.searchCertificate(),
-						publication.retainedBytes(), publication.optimizerGeneration(),
-						publication.detachedRefreshWork());
-			}
-			return publishBuildLocked(publication);
+			boolean published = publishCanonical(publication, true, 0L, Long.MIN_VALUE) == Publication.PUBLISHED;
+			fitReadLogs();
+			return published;
 		}
 	}
 
-	private boolean publishBuildLocked(BuildPublication publication) {
+	/**
+	 * Publishes the build of an admitted flight. The flight's transient identity is released inside the same admission
+	 * critical section that charges the family, so the bytes admission reserved for the flight are available to this
+	 * publication and no other flight can take them first: beyond the free space admission left, the family needs only
+	 * the difference between its bytes and the released reservation. Dead replays are reclaimed first (P7); then a
+	 * family without proven reuse is published into free space only, and a proven repeat may evict least-recently-used
+	 * families for it. A publication refused for a reason that holds for every re-plan of the request marks its
+	 * fingerprint as unable to publish; a publication marks it publishable again. A build whose evidence is not newer
+	 * ({@link #newerThan}) than that of a retired decision of its key is refused even when the retired family is gone
+	 * (R5).
+	 */
+	boolean publishFlight(BuildPublication publication, PackedProviderCacheIdentity transientIdentity,
+			boolean provenRepeat, long missFingerprint, boolean fingerprinted, long liveDataRevisionHorizon) {
+		synchronized (admissionLock) {
+			if (transientIdentity != null) {
+				pendingProviderIdentities.release(transientIdentity);
+			}
+			Publication outcome = fingerprinted && doorkeeper.retiredUnder(missFingerprint, publication.buildEvidence())
+					? Publication.BLOCKED
+					: publishCanonical(publication, provenRepeat, fingerprinted ? missFingerprint : 0L,
+							liveDataRevisionHorizon);
+			if (fingerprinted && outcome != Publication.NO_ROOM && outcome != Publication.STALE) {
+				doorkeeper.markPublishable(missFingerprint, outcome == Publication.PUBLISHED);
+			}
+			fitReadLogs();
+			return outcome == Publication.PUBLISHED;
+		}
+	}
+
+	/** Outcome of a build publication; the refusals other than NO_ROOM and STALE hold for every re-plan. */
+	private enum Publication {
+		PUBLISHED,
+		/** A retained family may not be displaced by this decision. */
+		BLOCKED,
+		/** The family can never fit next to the budget's resident charges. */
+		OVERSIZED,
+		/** No room now, or no proof of reuse to make room. */
+		NO_ROOM,
+		/** The evidence moved during planning. */
+		STALE,
+		/** Not retainable at all. */
+		REFUSED
+	}
+
+	/** Caller holds admissionLock. */
+	private Publication publishCanonical(BuildPublication publication, boolean mayEvict, long missFingerprint,
+			long liveDataRevisionHorizon) {
+		// Canonicalize equal new provider keys before retaining aliases or replacing a family version. The map's
+		// original key remains an owner, and must share the one identity charged by the whole immutable portfolio.
+		if (!Objects.equals(publication.familyKey().providerCacheIdentity(),
+				publication.semanticDependencies().providerCacheIdentity())) {
+			return Publication.REFUSED;
+		}
+		PlanFamily retained = families.get(publication.familyKey());
+		if (retained != null && publication.familyKey().providerCacheIdentity() != null) {
+			PlanFamilyKey key = retained.key();
+			publication = new BuildPublication(key, new ExactInvocationKey(key,
+					publication.exactInvocationKey().completeSourceIdentity(),
+					publication.exactInvocationKey().semanticContext()),
+					publication.semanticDependencies().withProviderCacheIdentity(key.providerCacheIdentity()),
+					publication.buildEvidence(), publication.currentEvidence(), publication.executableTemplate(),
+					publication.physicalFingerprint(), publication.estimatedCostInterval(),
+					publication.searchCertificate(),
+					publication.retainedBytes(), publication.optimizerGeneration(),
+					publication.detachedRefreshWork(), publication.readLogBasis());
+		}
+		return publishBuildLocked(publication, mayEvict, missFingerprint, liveDataRevisionHorizon);
+	}
+
+	/** Caller holds admissionLock. */
+	private Publication publishBuildLocked(BuildPublication publication, boolean mayEvict, long missFingerprint,
+			long liveDataRevisionHorizon) {
 		ExactTupleRecipe recipe = new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes(),
-				publication.familyKey());
+				publication.familyKey(), retainCachedPlanDiagnostics);
 		if (recipe.template == null) {
-			return false;
+			return Publication.REFUSED;
 		}
 		long refreshWorkBytes = publication.detachedRefreshWork() == null
 				? 0L
 				: publication.detachedRefreshWork().retainedBytes();
+		LmdbPlanCacheRevalidation.Basis basis = publication.readLogBasis();
+		FactorCostCacheKey.ProviderRetainedMemory ledger = publicationProviderMemory(publication, recipe);
+		// Every decision below uses the family's bytes without its read log, exactly as with the switch off.
+		long providerBytes = ledger.bytes();
+		long logCharge = 0L;
+		if (basis != null && basis.log() != null) {
+			// The log's charge: its basis records and what its keys add beyond the identities the variant holds anyway
+			// (the same identity-deduplicating ledger, accounted last).
+			ledger.account(basis);
+			long charge = providerBytes == Long.MAX_VALUE || ledger.bytes() == Long.MAX_VALUE ? Long.MAX_VALUE
+					: ledger.bytes() - providerBytes;
+			if (charge == Long.MAX_VALUE
+					|| charge - LmdbPlanCacheRevalidation.BASIS_BYTES > LmdbPlanCacheRevalidation.maxBytes()) {
+				revalidation.logOverRetentionCap();
+				revalidation.logDropped(LmdbPlanCacheRevalidation.OVER_RETENTION_CAP);
+				basis = LmdbPlanCacheRevalidation.Basis.dropped(LmdbPlanCacheRevalidation.OVER_RETENTION_CAP);
+			} else {
+				logCharge = charge;
+			}
+		}
+		// A pipeline build's fixed charge covers its family's records and its version's: never less than the latter, so
+		// that the family's part, which no version carries, stays with the family when the version is shed.
+		long fixedBytes = recipe.automaticPlanningState
+				? Math.max(publication.retainedBytes(), recipe.retainedBytes)
+				: publication.retainedBytes();
+		long structuralPublicationBytes = saturatedAdd(fixedBytes, refreshWorkBytes);
+		// Saturation is not proof that an opt-in payload fits even a Long.MAX_VALUE cache budget.
+		if (providerBytes > 0 && (providerBytes == Long.MAX_VALUE
+				|| providerBytes > Long.MAX_VALUE - structuralPublicationBytes)) {
+			return Publication.OVERSIZED;
+		}
+		long publicationBytes = saturatedAdd(structuralPublicationBytes, providerBytes);
+		if (!enabled() || !publication.familyKey().equals(publication.exactInvocationKey().familyKey())) {
+			return Publication.REFUSED;
+		}
+		if (publicationBytes > residentHeadroom()) {
+			return Publication.OVERSIZED;
+		}
+		if (!publication.buildEvidence().sameQualityEvidence(publication.currentEvidence())) {
+			stalePublications.incrementAndGet();
+			return Publication.STALE;
+		}
+		PlanFamily existing = families.get(publication.familyKey());
+		if (existing != null) {
+			Publication alias = appendCompatibleExactAlias(existing, publication, mayEvict, missFingerprint,
+					liveDataRevisionHorizon);
+			if (alias != null) {
+				return alias;
+			}
+			if (!mayReplace(existing.current().get(), publication)) {
+				/*
+				 * A build is not refresh or variant publication authority. Preserve the existing portfolio, rollback
+				 * history, aliases, and checkpoint when the new exact invocation produced a different decision.
+				 */
+				return Publication.BLOCKED;
+			}
+		}
+		long previousBytes = existing == null ? 0L : existing.current().get().retainedBytes();
+		if (publicationBytes > familyHeadroom()) {
+			// Not even with every other family evicted: evict nothing for it now.
+			return Publication.NO_ROOM;
+		}
+		makeRoomForBuild(publication.familyKey(), publicationBytes, previousBytes, existing == null, mayEvict,
+				liveDataRevisionHorizon);
+		if (families.size() >= maximumFamilies && existing == null
+				|| retainedBytes.get() - previousBytes > familyHeadroom() - publicationBytes) {
+			return Publication.NO_ROOM;
+		}
+		// Admitted on its bytes without its log. The log keeps to the slack: colder families' logs are dropped for it,
+		// coldest first; if it still does not fit, the family is published without it.
+		long previousLogBytes = existing == null ? 0L : logBytes(existing.current().get());
+		if (logCharge > 0L) {
+			long growth = publicationBytes - previousBytes - previousLogBytes + logCharge;
+			if (!fitsInSlack(growth)) {
+				dropColdestLogs(publication.familyKey(), growth, LmdbPlanCacheRevalidation.DROPPED_FOR_SLACK);
+			}
+			if (fitsInSlack(growth)) {
+				basis = basis.charged(logCharge);
+			} else {
+				revalidation.logDropped(LmdbPlanCacheRevalidation.NO_ROOM);
+				basis = LmdbPlanCacheRevalidation.Basis.dropped(LmdbPlanCacheRevalidation.NO_ROOM);
+			}
+		}
+		long familyVersionId = familyVersionSequence.incrementAndGet();
+		long planVersionId = planVersionSequence.incrementAndGet();
+		PlanVersion champion = new PlanVersion(planVersionId,
+				recipe,
+				publication.physicalFingerprint(), publication.estimatedCostInterval(), DeploymentRole.CHAMPION,
+				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration(),
+				publication.detachedRefreshWork());
+		PlanVariant variant = new PlanVariant(1L, ApplicabilityGuard.robust(), champion, List.of(), List.of(),
+				publication.searchCertificate(), publication.buildEvidence(),
+				PlanStabilityEnvelope.exact(publication.buildEvidence()), RuntimePosterior.empty(), Map.of(),
+				QualityState.CONFIDENT, false, basis);
+		ExactAlias alias = new ExactAlias(familyVersionId, variant.variantId(), champion.version(), missFingerprint);
+		FamilyVersion familyVersion = new FamilyVersion(familyVersionId, SemanticValidity.VALID,
+				publication.semanticDependencies(), new VariantDispatcher(List.of(variant)), null,
+				Map.of(publication.exactInvocationKey(), alias), globalEvidenceEpoch.get(),
+				publicationBytes);
+		if (existing == null) {
+			families.put(publication.familyKey(), new PlanFamily(publication.familyKey(), familyVersion));
+		} else {
+			removeAliases(existing.current().get());
+			existing.current().set(familyVersion);
+		}
+		exactAliases.put(publication.exactInvocationKey(), alias);
+		recency.put(publication.familyKey(), System.nanoTime());
+		retainedBytes.addAndGet(publicationBytes - previousBytes);
+		readLogBytes.addAndGet(logBytes(familyVersion) - previousLogBytes);
+		publications.incrementAndGet();
+		indexRetainedEvidence(families.get(publication.familyKey()).key(), publication.buildEvidence());
+		return Publication.PUBLISHED;
+	}
+
+	/**
+	 * Every object a build publication charges per object: the template, the semantic dependencies, the family and
+	 * exact keys and the refresh work's identity. A read log is charged after them into the same ledger, apart.
+	 */
+	private static FactorCostCacheKey.ProviderRetainedMemory publicationProviderMemory(BuildPublication publication,
+			ExactTupleRecipe recipe) {
 		FactorCostCacheKey.ProviderRetainedMemory providerMemory = new FactorCostCacheKey.ProviderRetainedMemory();
 		if (recipe.automaticPlanningState) {
 			providerMemory.accountCacheModels(recipe.template);
@@ -1366,96 +1908,167 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		if (publication.detachedRefreshWork() != null) {
 			publication.detachedRefreshWork().accountCacheIdentity(providerMemory);
 		}
-		long structuralPublicationBytes = saturatedAdd(publication.retainedBytes(), refreshWorkBytes);
-		// Saturation is not proof that an opt-in payload fits even a Long.MAX_VALUE cache budget.
-		if (providerMemory.bytes() > 0 && (providerMemory.bytes() == Long.MAX_VALUE
-				|| providerMemory.bytes() > Long.MAX_VALUE - structuralPublicationBytes)) {
-			return false;
-		}
-		long publicationBytes = saturatedAdd(structuralPublicationBytes, providerMemory.bytes());
-		if (!enabled() || publicationBytes > maximumRetainedBytes
-				|| !publication.familyKey().equals(publication.exactInvocationKey().familyKey())) {
-			return false;
-		}
-		if (!publication.buildEvidence().sameQualityEvidence(publication.currentEvidence())) {
-			stalePublications.incrementAndGet();
-			return false;
-		}
-		PlanFamily retainedFamily = families.get(publication.familyKey());
-		if (retainedFamily != null) {
-			if (appendCompatibleExactAlias(retainedFamily, publication)) {
-				return true;
-			}
-			if (retainedFamily.current().get().semanticValidity() == SemanticValidity.VALID) {
-				/*
-				 * A build is not refresh or variant publication authority. Preserve the existing portfolio, rollback
-				 * history, aliases, and checkpoint when the new exact invocation produced a different decision.
-				 */
-				return false;
-			}
-		}
-		long familyVersionId = familyVersionSequence.incrementAndGet();
-		long planVersionId = planVersionSequence.incrementAndGet();
-		PlanVersion champion = new PlanVersion(planVersionId,
-				recipe,
-				publication.physicalFingerprint(), publication.estimatedCostInterval(), DeploymentRole.CHAMPION,
-				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration(),
-				publication.detachedRefreshWork());
-		PlanVariant variant = new PlanVariant(1L, ApplicabilityGuard.robust(), champion, List.of(), List.of(),
-				publication.searchCertificate(), publication.buildEvidence(),
-				PlanStabilityEnvelope.exact(publication.buildEvidence()), RuntimePosterior.empty(),
-				QualityState.CONFIDENT, false);
-		ExactAlias alias = new ExactAlias(familyVersionId, variant.variantId(), champion.version());
-		FamilyVersion familyVersion = new FamilyVersion(familyVersionId, SemanticValidity.VALID,
-				publication.semanticDependencies(), new VariantDispatcher(List.of(variant)), null,
-				Map.of(publication.exactInvocationKey(), alias), globalEvidenceEpoch.get(),
-				publicationBytes);
+		return providerMemory;
+	}
 
-		synchronized (admissionLock) {
-			if (!enabled()) {
-				return false;
-			}
-			PlanFamily existing = families.get(publication.familyKey());
-			if (existing != null && existing != retainedFamily) {
-				if (appendCompatibleExactAlias(existing, publication)) {
-					return true;
-				}
-				if (existing.current().get().semanticValidity() == SemanticValidity.VALID) {
+	/**
+	 * Whether a build may replace the retained family version. A VALID ranked family is never displaced by a build that
+	 * one of its variants serves ({@link #servesAt}): one with detached refresh work serves stale through
+	 * use-and-refresh, one without serves the very evidence it was planned with. A replay-only family is replaced only
+	 * by a ranked decision or by a new decision of one of its own exact keys; a decision of another key never replaces
+	 * it (C4). No build planned at a lower data generation displaces a variant that is not retired: it comes from an
+	 * older pinned snapshot, and newer readers are served the retained decision. A retired variant is replaced only by
+	 * a build on newer evidence ({@link #newerThan}): a re-plan on the evidence it was retired under would re-publish
+	 * the retired decision (R5), and one from an older pinned snapshot would serve it again at the newer revision. The
+	 * cache's evidence epoch is not an evidence clock and takes no part: it only marks versions that no lookup may
+	 * serve any more.
+	 */
+	private boolean mayReplace(FamilyVersion retained, BuildPublication publication) {
+		if (retained.semanticValidity() != SemanticValidity.VALID) {
+			return true;
+		}
+		EvidenceSnapshot build = publication.buildEvidence();
+		if (replayOnly(retained)) {
+			for (PlanVariant variant : retained.dispatcher().variants()) {
+				if (canServe(variant) && build.dataGeneration() < variant.evidenceSnapshot().dataGeneration()) {
 					return false;
 				}
 			}
-			long previousBytes = existing == null ? 0L : existing.current().get().retainedBytes();
-			makeRoom(publication.familyKey(), publicationBytes, previousBytes);
-			if (families.size() >= maximumFamilies && existing == null
-					|| retainedBytes.get() - previousBytes > maximumRetainedBytes - pendingProviderIdentities.bytes()
-							- publicationBytes) {
+			if (!publication.searchCertificate().replayOnly()) {
+				return true;
+			}
+			if (!retained.exactAliases().containsKey(publication.exactInvocationKey())) {
 				return false;
 			}
-			if (existing == null) {
-				families.put(publication.familyKey(), new PlanFamily(publication.familyKey(), familyVersion));
-			} else {
-				removeAliases(existing.current().get());
-				existing.current().set(familyVersion);
+			for (PlanVariant variant : retained.dispatcher().variants()) {
+				if (!canServe(variant) && !newerThan(build, variant.evidenceSnapshot())) {
+					return false;
+				}
 			}
-			exactAliases.put(publication.exactInvocationKey(), alias);
-			recency.put(publication.familyKey(), System.nanoTime());
-			retainedBytes.addAndGet(publicationBytes - previousBytes);
-			publications.incrementAndGet();
+			return true;
 		}
-		indexEvidence(publication.familyKey(), publication.buildEvidence());
+		for (PlanVariant variant : retained.dispatcher().variants()) {
+			if (canServe(variant)) {
+				if (servesAt(retained, variant, build)
+						|| build.dataGeneration() < variant.evidenceSnapshot().dataGeneration()) {
+					return false;
+				}
+			} else if (!newerThan(build, variant.evidenceSnapshot())) {
+				return false;
+			}
+		}
 		return true;
 	}
 
-	private boolean appendCompatibleExactAlias(PlanFamily family, BuildPublication publication) {
+	/**
+	 * Whether {@code candidate} is newer evidence than {@code retired}, the build evidence of a retired or unservable
+	 * variant: its data generation is not lower (the committed data revision never decreases) and its snapshot differs
+	 * in some component (data generation, Frontier, LEO, learned-correction, lifecycle or learned-evidence revision, or
+	 * a dependency). A build on the same snapshot would reproduce the variant's decision, and one at a lower data
+	 * generation comes from an older pinned snapshot; neither is newer.
+	 */
+	private static boolean newerThan(EvidenceSnapshot candidate, EvidenceSnapshot retired) {
+		return candidate.dataGeneration() >= retired.dataGeneration() && !candidate.equals(retired);
+	}
+
+	/**
+	 * A 64-bit digest of the complete evidence snapshot for the doorkeeper's tombstones: equal snapshots have equal
+	 * digests, and different ones collide with probability 2^-64 (a collision only keeps a newer request blocked until
+	 * the data generation moves). Dependencies are combined order-independently, like the snapshot's set.
+	 */
+	static long evidenceDigest(EvidenceSnapshot evidence) {
+		long digest = mix64(evidence.globalEpoch());
+		digest = mix64(digest ^ evidence.dataGeneration());
+		digest = mix64(digest ^ evidence.frontierGeneration());
+		digest = mix64(digest ^ evidence.leoGeneration());
+		digest = mix64(digest ^ evidence.learnedCorrectionGeneration());
+		digest = mix64(digest ^ evidence.lifecycleGeneration());
+		long dependencies = 0L;
+		for (EvidenceDependency dependency : evidence.dependencies()) {
+			long item = mix64(dependency.kind().ordinal() + 1L);
+			String identity = dependency.identity();
+			for (int index = 0; index < identity.length(); index++) {
+				item = mix64(item ^ identity.charAt(index));
+			}
+			dependencies += mix64(item ^ dependency.generation());
+		}
+		return mix64(digest ^ dependencies);
+	}
+
+	/** SplitMix64 finalizer. */
+	private static long mix64(long value) {
+		long mixed = value + 0x9E3779B97F4A7C15L;
+		mixed = (mixed ^ (mixed >>> 30)) * 0xBF58476D1CE4E5B9L;
+		mixed = (mixed ^ (mixed >>> 27)) * 0x94D049BB133111EBL;
+		return mixed ^ (mixed >>> 31);
+	}
+
+	/** Whether the variant may still be served at all: confident, not retired by a guard, not known dominated. */
+	private static boolean servable(PlanVariant variant) {
+		RuntimePosterior posterior = variant.runtimePosterior();
+		return variant.qualityState() == QualityState.CONFIDENT && !posterior.lifecycleBlocked()
+				&& !posterior.resourceGuardBreached() && !variant.challengerKnownToDominate();
+	}
+
+	/**
+	 * Whether the variant is not retired: a replay while it is servable; a ranked variant, also when not confident,
+	 * unless it was retired by the lifecycle or resource guard or is known dominated. Lookup re-plans for a retired
+	 * variant before submitting any refresh; only a refresh submitted before the retirement can still publish a
+	 * different champion for it. Whether a variant that is not retired can serve a given request is {@link #servesAt}.
+	 */
+	private static boolean canServe(PlanVariant variant) {
+		if (variant.searchCertificate().replayOnly()) {
+			return servable(variant);
+		}
+		RuntimePosterior posterior = variant.runtimePosterior();
+		return !posterior.lifecycleBlocked() && !posterior.resourceGuardBreached()
+				&& !variant.challengerKnownToDominate();
+	}
+
+	/**
+	 * Whether the variant can serve a request planned on {@code evidence}: it is not retired, and either it is ranked
+	 * and its champion has detached refresh work (it serves stale through use-and-refresh), or the request presents the
+	 * very evidence it was planned with (an equal snapshot) and no broad evidence change since its version's
+	 * publication has withdrawn it from lookup (the cache's evidence epoch). Caller holds admissionLock.
+	 */
+	private boolean servesAt(FamilyVersion version, PlanVariant variant, EvidenceSnapshot evidence) {
+		if (!canServe(variant)) {
+			return false;
+		}
+		if (!variant.searchCertificate().replayOnly() && variant.champion().detachedRefreshWork() != null) {
+			return true;
+		}
+		return version.publicationEvidenceEpoch() == globalEvidenceEpoch.get()
+				&& variant.evidenceSnapshot().equals(evidence);
+	}
+
+	/**
+	 * Appends an exact alias for a build whose decision a retained variant already holds. Returns {@code null} when no
+	 * retained variant is compatible, so the caller applies the replacement rule, or the outcome of the append. A
+	 * replay-only decision never joins a ranked variant (C5), a ranked decision never joins a replay (it replaces it),
+	 * and no decision joins a variant that may no longer be served (C6). Caller holds admissionLock.
+	 */
+	private Publication appendCompatibleExactAlias(PlanFamily family, BuildPublication publication, boolean mayEvict,
+			long missFingerprint, long liveDataRevisionHorizon) {
 		while (families.get(publication.familyKey()) == family) {
 			FamilyVersion observed = family.current().get();
 			if (observed.semanticValidity() != SemanticValidity.VALID
 					|| !observed.semanticDependencies().equals(publication.semanticDependencies())) {
-				return false;
+				return null;
+			}
+			boolean replayOnlyFamily = replayOnly(observed);
+			if (replayOnlyFamily != publication.searchCertificate().replayOnly()
+					|| replayOnlyFamily && observed.publicationEvidenceEpoch() != globalEvidenceEpoch.get()) {
+				return null;
 			}
 			PlanVariant compatibleVariant = null;
 			for (PlanVariant variant : observed.dispatcher().variants()) {
 				PlanVersion champion = variant.champion();
+				if (!servable(variant) || !servesAt(observed, variant, publication.buildEvidence())) {
+					// A replay, or a ranked decision without detached refresh work, is only valid under the evidence it
+					// was planned with; new evidence replaces the family instead of extending one that serves nobody.
+					continue;
+				}
 				if (champion.optimizerGeneration() == publication.optimizerGeneration()
 						&& champion.physicalFingerprint().equals(publication.physicalFingerprint())
 						&& sameExecutableTemplate(champion, publication.executableTemplate())) {
@@ -1464,27 +2077,33 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				}
 			}
 			if (compatibleVariant == null) {
-				return false;
+				return null;
 			}
 			long familyVersionId = familyVersionSequence.incrementAndGet();
 			Map<ExactInvocationKey, ExactAlias> aliases = new LinkedHashMap<>(
 					reversionAliases(observed.exactAliases(), familyVersionId));
-			ExactInvocationKey canonicalAlias = new ExactInvocationKey(family.key(),
+			// The appended key holds the family key the version's aliases already hold, so it charges no second copy.
+			PlanFamilyKey aliasFamilyKey = observed.exactAliases().isEmpty() ? family.key()
+					: observed.exactAliases().keySet().iterator().next().familyKey();
+			ExactInvocationKey canonicalAlias = new ExactInvocationKey(aliasFamilyKey,
 					publication.exactInvocationKey().completeSourceIdentity(),
 					publication.exactInvocationKey().semanticContext());
 			aliases.put(canonicalAlias, new ExactAlias(familyVersionId,
-					compatibleVariant.variantId(), compatibleVariant.champion().version()));
+					compatibleVariant.variantId(), compatibleVariant.champion().version(), missFingerprint));
 			long aliasContainerGrowth = family.key().providerCacheIdentity() == null ? 0L
-					: 128L * (aliases.size() - observed.exactAliases().size());
+					: LmdbPipelinePlanCache.APPENDED_ALIAS_BYTES * (aliases.size() - observed.exactAliases().size());
 			long updatedBytes = withPortfolioProviderBytes(observed, observed.dispatcher().variants(), 0L,
 					aliasContainerGrowth, observed.semanticDependencies(), aliases);
-			if (updatedBytes < 0L || updatedBytes > maximumRetainedBytes) {
-				return false;
+			if (updatedBytes < 0L || updatedBytes > residentHeadroom()) {
+				return Publication.OVERSIZED;
 			}
-			makeRoom(publication.familyKey(), updatedBytes, observed.retainedBytes());
-			if (retainedBytes.get() - observed.retainedBytes() > maximumRetainedBytes
-					- pendingProviderIdentities.bytes() - updatedBytes) {
-				return false;
+			if (updatedBytes > familyHeadroom()) {
+				return Publication.NO_ROOM;
+			}
+			makeRoomForBuild(publication.familyKey(), updatedBytes, observed.retainedBytes(), false, mayEvict,
+					liveDataRevisionHorizon);
+			if (retainedBytes.get() - observed.retainedBytes() > familyHeadroom() - updatedBytes) {
+				return Publication.NO_ROOM;
 			}
 			FamilyVersion updated = new FamilyVersion(familyVersionId, observed.semanticValidity(),
 					observed.semanticDependencies(), observed.dispatcher(), observed.retainedStructuralCheckpoint(),
@@ -1494,10 +2113,10 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				replaceAliases(observed, updated);
 				touch(publication.familyKey());
 				publications.incrementAndGet();
-				return true;
+				return Publication.PUBLISHED;
 			}
 		}
-		return false;
+		return null;
 	}
 
 	private static boolean sameExecutableTemplate(PlanVersion plan, TupleExpr template) {
@@ -1529,14 +2148,16 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				.filter(candidate -> candidate.variantId() == publication.variantId())
 				.findFirst()
 				.orElse(null);
-		if (oldVariant == null) {
+		if (oldVariant == null || oldVariant.searchCertificate().replayOnly()
+				|| publication.searchCertificate().replayOnly()) {
+			// A replay-only decision is never a refresh champion, and an unranked refresh is never a challenger.
 			return false;
 		}
 		DetachedRefreshWork candidateRefreshWork = publication.detachedRefreshWork() == null
 				? oldVariant.champion().detachedRefreshWork()
 				: publication.detachedRefreshWork();
 		ExactTupleRecipe recipe = new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes(),
-				publication.familyKey());
+				publication.familyKey(), retainCachedPlanDiagnostics);
 		if (recipe.template == null) {
 			return false;
 		}
@@ -1578,10 +2199,15 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			updated.put(candidate.version(), RuntimePosterior.empty());
 			challengerPosteriors = Map.copyOf(updated);
 		}
+		/*
+		 * A refreshed variant keeps no read log and is never revalidated: its champion is not a fresh planning's choice
+		 * (the recalibrated incumbent stays unless the candidate dominates, and the refresh plans a source prepared by
+		 * the original request's rewrites), so a log could not vouch that a fresh planning would choose it.
+		 */
 		PlanVariant replacement = new PlanVariant(oldVariant.variantId(), oldVariant.applicabilityGuard(), champion,
 				challengers, rollbacks, publication.searchCertificate(), publication.buildEvidence(),
 				publication.stabilityEnvelope(), promote ? RuntimePosterior.empty() : oldVariant.runtimePosterior(),
-				challengerPosteriors, publishedQuality, false);
+				challengerPosteriors, publishedQuality, false, null);
 		List<PlanVariant> variants = new ArrayList<>(observed.dispatcher().variants());
 		variants.set(variants.indexOf(oldVariant), replacement);
 		long oldVariantBytes = variantRetainedBytes(oldVariant);
@@ -1594,7 +2220,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 					? champion.version()
 					: oldAlias.planVersion();
 			aliases.put(entry.getKey(),
-					new ExactAlias(familyVersionId, oldAlias.variantId(), retainedPlanVersion));
+					new ExactAlias(familyVersionId, oldAlias.variantId(), retainedPlanVersion,
+							oldAlias.missFingerprint()));
 		}
 		SemanticDependencies refreshedDependencies = publication.indexGenerationDependent()
 				? observed.semanticDependencies()
@@ -1613,22 +2240,34 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				observed.retainedStructuralCheckpoint(),
 				aliases,
 				globalEvidenceEpoch.get(), refreshedRetainedBytes);
+		beforeRefreshCommit.run();
 		synchronized (admissionLock) {
-			if (families.get(publication.familyKey()) != family || family.current().get() != observed) {
+			FamilyVersion base = family.current().get();
+			if (families.get(publication.familyKey()) != family || !base.sameExceptReadLogs(observed)) {
 				stalePublications.incrementAndGet();
+				countRestampRace(observed, base);
 				return false;
 			}
-			makeRoom(publication.familyKey(), refreshedRetainedBytes, observed.retainedBytes());
-			if (retainedBytes.get() - observed.retainedBytes() > maximumRetainedBytes
-					- pendingProviderIdentities.bytes() - refreshedRetainedBytes
-					|| !family.current().compareAndSet(observed, refreshed)) {
-				stalePublications.incrementAndGet();
+			// F11: a version that differs from the observed one only by dropped read logs is the observed one; the
+			// commit is made from it, so a dropped log is not resurrected and the log accounting stays a recomputation.
+			FamilyVersion committed = base == observed ? refreshed : rebased(refreshed, observed, base);
+			if (refreshedRetainedBytes > familyHeadroom()) {
+				// Not even with every other family evicted: evict nothing for it.
 				return false;
 			}
-			replaceAliases(observed, refreshed);
-			retainedBytes.addAndGet(refreshedRetainedBytes - observed.retainedBytes());
+			makeRoom(publication.familyKey(), refreshedRetainedBytes, base.retainedBytes());
+			if (retainedBytes.get() - base.retainedBytes() > familyHeadroom() - refreshedRetainedBytes
+					|| !family.current().compareAndSet(base, committed)) {
+				stalePublications.incrementAndGet();
+				countRestampRace(base, family.current().get());
+				return false;
+			}
+			replaceAliases(base, committed);
+			retainedBytes.addAndGet(refreshedRetainedBytes - base.retainedBytes());
+			readLogBytes.addAndGet(logBytes(committed) - logBytes(base));
 			recency.put(publication.familyKey(), System.nanoTime());
 			publications.incrementAndGet();
+			fitReadLogs();
 		}
 		return true;
 	}
@@ -1645,11 +2284,14 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			stalePublications.incrementAndGet();
 			return false;
 		}
+		if (replayOnly(observed) || publication.searchCertificate().replayOnly()) {
+			return false;
+		}
 		QualityState quality = publication.buildEvidence().sameQualityEvidence(publication.currentEvidence())
 				? QualityState.CONFIDENT
 				: QualityState.PROVISIONAL;
 		ExactTupleRecipe recipe = new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes(),
-				publication.familyKey());
+				publication.familyKey(), retainCachedPlanDiagnostics);
 		if (recipe.template == null) {
 			return false;
 		}
@@ -1681,7 +2323,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			}
 			variants.add(fallback, added);
 		}
-		long additionalBytes = mergeIndex >= 0 ? 0L : publication.retainedBytes();
+		// A pipeline variant beyond the published one carries its own records next to its version's.
+		long additionalBytes = mergeIndex >= 0 ? 0L
+				: recipe.automaticPlanningState
+						? saturatedAdd(recipe.retainedBytes, LmdbPipelinePlanCache.VARIANT_OBJECT_BYTES)
+						: recipe.retainedBytes;
 		long updatedBytes = withPortfolioProviderBytes(observed, variants, 0L, additionalBytes);
 		if (updatedBytes < 0L || updatedBytes > maximumRetainedBytes) {
 			return false;
@@ -1692,22 +2338,31 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				observed.retainedStructuralCheckpoint(),
 				reversionAliases(observed.exactAliases(), familyVersionId),
 				globalEvidenceEpoch.get(), updatedBytes);
+		beforeVariantCommit.run();
 		synchronized (admissionLock) {
-			if (families.get(publication.familyKey()) != family || family.current().get() != observed) {
+			FamilyVersion base = family.current().get();
+			if (families.get(publication.familyKey()) != family || !base.sameExceptReadLogs(observed)) {
 				stalePublications.incrementAndGet();
 				return false;
 			}
-			makeRoom(publication.familyKey(), updatedBytes, observed.retainedBytes());
-			if (retainedBytes.get() - observed.retainedBytes() > maximumRetainedBytes
-					- pendingProviderIdentities.bytes() - updatedBytes
-					|| !family.current().compareAndSet(observed, updated)) {
+			// F11: committed from the current version when it differs from the observed one only by dropped logs.
+			FamilyVersion committed = base == observed ? updated : rebased(updated, observed, base);
+			if (updatedBytes > familyHeadroom()) {
+				// Not even with every other family evicted: evict nothing for it.
+				return false;
+			}
+			makeRoom(publication.familyKey(), updatedBytes, base.retainedBytes());
+			if (retainedBytes.get() - base.retainedBytes() > familyHeadroom() - updatedBytes
+					|| !family.current().compareAndSet(base, committed)) {
 				stalePublications.incrementAndGet();
 				return false;
 			}
-			replaceAliases(observed, updated);
-			retainedBytes.addAndGet(updatedBytes - observed.retainedBytes());
+			replaceAliases(base, committed);
+			retainedBytes.addAndGet(updatedBytes - base.retainedBytes());
+			readLogBytes.addAndGet(logBytes(committed) - logBytes(base));
 			recency.put(publication.familyKey(), System.nanoTime());
 			publications.incrementAndGet();
+			fitReadLogs();
 		}
 		indexEvidence(publication.familyKey(), publication.buildEvidence());
 		return true;
@@ -1725,6 +2380,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 		FamilyVersion current = family.current().get();
 		if (current.version() != decision.familyVersion() || current.semanticValidity() != SemanticValidity.VALID
+				|| decision.searchCertificate().replayOnly() || replayOnly(current)
 				|| current.dispatcher()
 						.variants()
 						.stream()
@@ -1784,7 +2440,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			return false;
 		}
 		FamilyVersion current = family.current().get();
-		if (current.semanticValidity() != SemanticValidity.VALID || current.dispatcher()
+		if (current.semanticValidity() != SemanticValidity.VALID || replayOnly(current) || current.dispatcher()
 				.variants()
 				.stream()
 				.noneMatch(variant -> variant.variantId() == request.variantId())) {
@@ -1808,10 +2464,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 					family.key().providerCacheIdentity() == null ? null : family.key(), semanticIdentity,
 					capturedWorkIdentity);
 			synchronized (admissionLock) {
-				if (!pendingProviderIdentities.tryRetain(identity, retainedBytes.get())) {
+				if (!pendingProviderIdentities.tryRetain(identity, occupiedBytes())) {
 					claim.set(false);
 					return RefreshSubmission.UNAVAILABLE;
 				}
+				fitReadLogs();
 			}
 		} catch (RuntimeException | Error failure) {
 			claim.set(false);
@@ -1954,10 +2611,54 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 	}
 
+	/** Test seam: the resident families' current versions, read under the admission lock. */
+	Map<PlanFamilyKey, FamilyVersion> residentFamiliesForTest() {
+		synchronized (admissionLock) {
+			Map<PlanFamilyKey, FamilyVersion> resident = new LinkedHashMap<>();
+			families.forEach((key, family) -> resident.put(key, family.current().get()));
+			return resident;
+		}
+	}
+
 	Statistics statistics() {
-		return new Statistics(families.size(), exactAliases.size(), retainedBytes.get(), hits.get(),
-				refreshUses.get(), replans.get(), publications.get(), stalePublications.get(), evictions.get(),
-				globalEvidenceEpoch.get(), closed.get());
+		long logs = readLogBytes.get();
+		return new Statistics(families.size(), exactAliases.size(), saturatedAdd(retainedBytes.get(), logs),
+				hits.get(), refreshUses.get(), replans.get(), publications.get(), stalePublications.get(),
+				evictions.get(), globalEvidenceEpoch.get(), closed.get(), revalidation.snapshot(logs));
+	}
+
+	/** The revalidation counters, which the pipeline cache's replays and this cache's re-stamps report into. */
+	LmdbPlanCacheRevalidation.Counters revalidationCounters() {
+		return revalidation;
+	}
+
+	/** Test seam: installs the hook a refresh publication runs just before its commit; returns the previous one. */
+	Runnable setBeforeRefreshCommitForTest(Runnable hook) {
+		Runnable previous = beforeRefreshCommit;
+		beforeRefreshCommit = hook == null ? () -> {
+		} : hook;
+		return previous;
+	}
+
+	/** Test seam: installs the hook a variant publication runs just before its commit; returns the previous one. */
+	Runnable setBeforeVariantCommitForTest(Runnable hook) {
+		Runnable previous = beforeVariantCommit;
+		beforeVariantCommit = hook == null ? () -> {
+		} : hook;
+		return previous;
+	}
+
+	/** Test seam: installs the hook a hard invalidation runs just before its commit; returns the previous one. */
+	Runnable setBeforeHardInvalidationForTest(Runnable hook) {
+		Runnable previous = beforeHardInvalidation;
+		beforeHardInvalidation = hook == null ? () -> {
+		} : hook;
+		return previous;
+	}
+
+	/** Whether the calling thread holds this cache's admission lock (lock-order assertions and tests). */
+	boolean holdsAdmissionLock() {
+		return Thread.holdsLock(admissionLock);
 	}
 
 	@Override
@@ -1981,6 +2682,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			reverseEvidence.clear();
 			recency.clear();
 			retainedBytes.set(0L);
+			readLogBytes.set(0L);
+			doorkeeper.clear();
 		}
 	}
 
@@ -1991,7 +2694,6 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			return replan(exactAlias ? "exact-alias-family-missing" : "family-miss");
 		}
 		FamilyVersion version = family.current().get();
-		family.requests.increment();
 		if (version.semanticValidity() == SemanticValidity.HARD_INVALID) {
 			return replan("hard-dependency-invalid");
 		}
@@ -2033,6 +2735,25 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		boolean evidenceStable = version.publicationEvidenceEpoch() == globalEvidenceEpoch.get()
 				&& variant.stabilityEnvelope()
 						.covers(request.evidenceSnapshot(), request.invocationFeatures());
+		if (!evidenceStable && exactAlias && request.revalidationRevision() != null) {
+			Revalidate revalidate = revalidation(key, version, variant, plan, request);
+			if (revalidate != null) {
+				return revalidate;
+			}
+		}
+		if (variant.searchCertificate().replayOnly()) {
+			// No cost comparison backs this decision: it replays the identical request under identical evidence and
+			// is never a stale-reuse bound, a refresh champion, a family fallback or a canary baseline.
+			if (!exactAlias || requestedVariantId == 0L || variant.qualityState() != QualityState.CONFIDENT
+					|| !evidenceStable) {
+				return replan("replay-only-not-identical");
+			}
+			hits.incrementAndGet();
+			touch(key);
+			return new Use(key, version.version(), variant.variantId(), plan, variant.qualityState(),
+					"replay-only-identical-request", false, request.invocationRegionId(),
+					variant.searchCertificate(), variant.evidenceSnapshot().globalEpoch(), true);
+		}
 		boolean robustFamilyFallback = requestedVariantId == 0L && variant.applicabilityGuard().robustFallback()
 				&& version.dispatcher().variants().size() > 1;
 		if (robustFamilyFallback && posterior.expectedRegret() <= request.maximumExpectedRegret()) {
@@ -2078,15 +2799,303 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		return new ReplanBeforeUse(reason);
 	}
 
-	private void hardInvalidate(PlanFamily family, FamilyVersion observed) {
-		FamilyVersion updated = observed.hardInvalid(familyVersionSequence.incrementAndGet());
-		if (updated != observed && family.current().compareAndSet(observed, updated)) {
-			replaceAliases(observed, updated);
+	/**
+	 * B2: the exact variant would be used under equal evidence (an exact alias, confident, not retired, its version not
+	 * withdrawn by the cache's evidence epoch, an exact stability envelope), the request's evidence differs from its
+	 * stamped evidence only in learned state, and both stamps agree with their revisions: the lookup does not decide
+	 * alone. A variant without a log is counted and takes today's path. Counts and touches nothing else.
+	 */
+	private Revalidate revalidation(PlanFamilyKey key, FamilyVersion version, PlanVariant variant, PlanVersion plan,
+			LookupRequest request) {
+		LmdbPlanCacheRevalidation.Basis basis = variant.readLogBasis();
+		LmdbPipelinePlanCache.Revision requested = request.revalidationRevision();
+		if (basis == null || version.publicationEvidenceEpoch() != globalEvidenceEpoch.get()
+				|| variant.qualityState() != QualityState.CONFIDENT || !exactEnvelope(variant)) {
+			return null;
+		}
+		if (basis.log() == null) {
+			// A shared basis without a log keeps no revision: counted when the snapshots differ in learned state.
+			EvidenceSnapshot requestEvidence = request.evidenceSnapshot();
+			EvidenceSnapshot stamped = variant.evidenceSnapshot();
+			if (requestEvidence.dataGeneration() == stamped.dataGeneration()
+					&& requestEvidence.frontierGeneration() == stamped.frontierGeneration()
+					&& requestEvidence.leoGeneration() != stamped.leoGeneration()) {
+				revalidation.withoutLog(basis.missingReason());
+			}
+			return null;
+		}
+		if (!requested.onlyLearnedStateDiffers(basis.revision())
+				|| !LmdbPipelinePlanCache.evidence(requested.planningRevisions()).equals(request.evidenceSnapshot())
+				|| !LmdbPipelinePlanCache.evidence(basis.revision().planningRevisions())
+						.equals(variant.evidenceSnapshot())) {
+			return null;
+		}
+		return new Revalidate(key, version, variant.variantId(), plan, variant.evidenceSnapshot(), basis,
+				variant.searchCertificate().replayOnly());
+	}
+
+	/** The envelope a build or a re-stamp gives: exactly the variant's stamped evidence, no cardinality bounds. */
+	private static boolean exactEnvelope(PlanVariant variant) {
+		PlanStabilityEnvelope envelope = variant.stabilityEnvelope();
+		return envelope.interactionBounded() && envelope.minimumCardinalities().length == 0
+				&& envelope.evidenceBasis().equals(variant.evidenceSnapshot());
+	}
+
+	/**
+	 * The variant of {@code candidate} in {@code version} when it can still be served for the validated log: the same
+	 * version number (only an execution observation or another re-stamp replaced the object), still valid, its version
+	 * not withdrawn by the cache's evidence epoch, confident and not retired, the same champion and the same log object
+	 * (a log dropped from the slack meanwhile refuses), an exact envelope. Null otherwise.
+	 */
+	private PlanVariant revalidatable(FamilyVersion version, Revalidate candidate) {
+		if (version.version() != candidate.observed().version()
+				|| version.semanticValidity() != SemanticValidity.VALID
+				|| version.publicationEvidenceEpoch() != globalEvidenceEpoch.get()) {
+			return null;
+		}
+		for (PlanVariant variant : version.dispatcher().variants()) {
+			if (variant.variantId() != candidate.variantId()) {
+				continue;
+			}
+			LmdbPlanCacheRevalidation.Basis basis = variant.readLogBasis();
+			return servable(variant) && variant.champion().version() == candidate.plan().version() && basis != null
+					&& basis.log() == candidate.basis().log() && exactEnvelope(variant) ? variant : null;
+		}
+		return null;
+	}
+
+	/**
+	 * Completes a {@link Revalidate} whose log replayed to the request's revision: compare-and-sets the family version
+	 * the lookup observed to an equal version whose variant vouches for {@code evidence} (version number, plan, recipe,
+	 * refresh work, intervals, posteriors and log kept), and returns the {@link Use}. A concurrent execution
+	 * observation that replaced the object is retried ({@link LmdbPlanCacheRevalidation#RESTAMP_RETRIES}); a concurrent
+	 * re-stamp, to this evidence or another request's (F7: that request's own replay proved its revision, this one's
+	 * proved this one), is served without another. Returns null when anything else changed: the caller takes today's
+	 * path for this request.
+	 */
+	Use completeRevalidation(Revalidate candidate, LmdbPipelinePlanCache.Revision revision, EvidenceSnapshot evidence,
+			long invocationRegionId, boolean withinTolerance) {
+		PlanFamily family = families.get(candidate.familyKey());
+		FamilyVersion observed = candidate.observed();
+		for (int attempt = 0; enabled() && family != null
+				&& attempt <= LmdbPlanCacheRevalidation.RESTAMP_RETRIES; attempt++) {
+			PlanVariant variant = revalidatable(observed, candidate);
+			if (variant == null) {
+				break;
+			}
+			if (variant.evidenceSnapshot().equals(evidence)) {
+				// Another request validated the same log for the same evidence first.
+				return revalidatedUse(candidate.familyKey(), observed, variant, evidence, invocationRegionId,
+						withinTolerance);
+			}
+			if (variant.evidenceSnapshot() != candidate.evidence()) {
+				// F7: another request re-stamped the variant to its own revision meanwhile. This request's own replay
+				// proved its revision with the same log and champion: it is served, and the newer stamp stays.
+				revalidation.servedWithoutRestamp();
+				return revalidatedUse(candidate.familyKey(), observed, variant, evidence, invocationRegionId,
+						withinTolerance);
+			}
+			PlanVariant restamped = variant.revalidatedAt(evidence, revision);
+			List<PlanVariant> variants = new ArrayList<>(observed.dispatcher().variants());
+			variants.set(variants.indexOf(variant), restamped);
+			FamilyVersion updated = new FamilyVersion(observed.version(), observed.semanticValidity(),
+					observed.semanticDependencies(), new VariantDispatcher(variants),
+					observed.retainedStructuralCheckpoint(), observed.exactAliases(),
+					observed.publicationEvidenceEpoch(), observed.retainedBytes());
+			if (family.current().compareAndSet(observed, updated)) {
+				revalidation.restamped();
+				return revalidatedUse(candidate.familyKey(), updated, restamped, evidence, invocationRegionId,
+						withinTolerance);
+			}
+			observed = family.current().get();
+			revalidation.restampRetried();
+		}
+		revalidation.restampCasLost();
+		return null;
+	}
+
+	private Use revalidatedUse(PlanFamilyKey key, FamilyVersion version, PlanVariant variant,
+			EvidenceSnapshot evidence, long invocationRegionId, boolean withinTolerance) {
+		hits.incrementAndGet();
+		touch(key);
+		revalidation.served(withinTolerance);
+		return new Use(key, version.version(), variant.variantId(), variant.champion(), variant.qualityState(),
+				withinTolerance ? LmdbPlanCacheRevalidation.REVALIDATED_WITHIN_TOLERANCE
+						: LmdbPlanCacheRevalidation.REVALIDATED,
+				false, invocationRegionId, variant.searchCertificate(), evidence.globalEpoch(), true);
+	}
+
+	/** The bytes the read logs of a family version's variants occupy in the slack. */
+	private static long logBytes(FamilyVersion version) {
+		long bytes = 0L;
+		for (PlanVariant variant : version.dispatcher().variants()) {
+			if (variant.keepsReadLog()) {
+				bytes = saturatedAdd(bytes, variant.readLogBasis().chargedBytes());
+			}
+		}
+		return bytes;
+	}
+
+	/**
+	 * Whether {@code additionalBytes} more fit the budget next to the families, their logs, the reservations and the
+	 * doorkeeper. Caller holds admissionLock.
+	 */
+	private boolean fitsInSlack(long additionalBytes) {
+		long occupied = saturatedAdd(saturatedAdd(retainedBytes.get(), readLogBytes.get()),
+				saturatedAdd(pendingProviderIdentities.bytes(), doorkeeper.chargedBytes()));
+		return additionalBytes <= 0L ? occupied <= maximumRetainedBytes
+				: occupied <= maximumRetainedBytes - additionalBytes;
+	}
+
+	/** Drops logs, coldest family first, until everything fits the budget. Caller holds admissionLock. */
+	private void fitReadLogs() {
+		if (readLogBytes.get() > 0L && !fitsInSlack(0L)) {
+			dropColdestLogs(null, 0L, LmdbPlanCacheRevalidation.DROPPED_FOR_SLACK);
 		}
 	}
 
+	/**
+	 * Drops the read logs of families other than {@code protectedKey}, least recently used first, until
+	 * {@code additionalBytes} more fit or no such log is left. Caller holds admissionLock.
+	 */
+	private void dropColdestLogs(PlanFamilyKey protectedKey, long additionalBytes, String reason) {
+		for (PlanFamilyKey candidate : List.copyOf(recency.keySet())) {
+			if (fitsInSlack(additionalBytes)) {
+				return;
+			}
+			if (!candidate.equals(protectedKey)) {
+				PlanFamily family = families.get(candidate);
+				if (family != null) {
+					dropLogs(family, reason);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Replaces the family's version by an equal one (same version number, aliases, bytes) whose variants keep no log,
+	 * and releases the logs' charge. A concurrent execution observation or re-stamp only retries; a re-stamp that loses
+	 * to it re-checks the log's identity and takes today's path. Caller holds admissionLock. Returns whether a log was
+	 * dropped.
+	 */
+	private boolean dropLogs(PlanFamily family, String reason) {
+		while (true) {
+			FamilyVersion observed = family.current().get();
+			long released = logBytes(observed);
+			if (released == 0L) {
+				return false;
+			}
+			List<PlanVariant> variants = new ArrayList<>(observed.dispatcher().variants());
+			int dropped = 0;
+			for (int index = 0; index < variants.size(); index++) {
+				if (variants.get(index).keepsReadLog()) {
+					variants.set(index,
+							variants.get(index).withReadLogBasis(LmdbPlanCacheRevalidation.Basis.dropped(reason)));
+					dropped++;
+				}
+			}
+			FamilyVersion updated = new FamilyVersion(observed.version(), observed.semanticValidity(),
+					observed.semanticDependencies(), new VariantDispatcher(variants),
+					observed.retainedStructuralCheckpoint(), observed.exactAliases(),
+					observed.publicationEvidenceEpoch(), observed.retainedBytes());
+			if (family.current().compareAndSet(observed, updated)) {
+				if (families.get(family.key()) == family) {
+					readLogBytes.addAndGet(-released);
+				}
+				for (int count = 0; count < dropped; count++) {
+					revalidation.logDropped(reason);
+				}
+				return true;
+			}
+		}
+	}
+
+	/**
+	 * Test seam: whether every detached refresh task submitted so far has finished (its publication, if any, included).
+	 * Exact, unlike the executor's own counts, which miss a task a newly started worker holds before it first locks.
+	 */
+	boolean refreshTasksIdleForTest() {
+		return unreleasedRefreshTasks.get() == 0L;
+	}
+
+	/** Test seam: the bytes the in-flight reservations hold. */
+	long reservedBytesForTest() {
+		synchronized (admissionLock) {
+			return pendingProviderIdentities.bytes();
+		}
+	}
+
+	/** Test seam: drops every retained read log, as the slack would. */
+	void dropReadLogsForTest() {
+		synchronized (admissionLock) {
+			for (PlanFamily family : List.copyOf(families.values())) {
+				dropLogs(family, LmdbPlanCacheRevalidation.DROPPED_FOR_SLACK);
+			}
+		}
+	}
+
+	/**
+	 * Counts a refresh publication that lost its identity compare-and-set to a re-stamp: the family kept its version
+	 * number and a variant now vouches for other evidence (an execution observation keeps every stamp).
+	 */
+	private void countRestampRace(FamilyVersion observed, FamilyVersion current) {
+		if (current == null || current == observed || current.version() != observed.version()) {
+			return;
+		}
+		for (PlanVariant now : current.dispatcher().variants()) {
+			for (PlanVariant before : observed.dispatcher().variants()) {
+				if (now.variantId() == before.variantId() && now.evidenceSnapshot() != before.evidenceSnapshot()) {
+					revalidation.refreshLostToRestamp();
+					return;
+				}
+			}
+		}
+	}
+
+	private void hardInvalidate(PlanFamily family, FamilyVersion observed) {
+		FamilyVersion base = observed;
+		FamilyVersion updated = base.hardInvalid(familyVersionSequence.incrementAndGet());
+		beforeHardInvalidation.run();
+		while (updated != base && !family.current().compareAndSet(base, updated)) {
+			// F11: a version that differs only by dropped read logs is the observed one; invalidate it instead.
+			FamilyVersion current = family.current().get();
+			if (current == base || !current.sameExceptReadLogs(base)) {
+				return;
+			}
+			base = current;
+			updated = base.hardInvalid(familyVersionSequence.incrementAndGet());
+		}
+		if (updated != base) {
+			replaceAliases(base, updated);
+		}
+	}
+
+	/**
+	 * F11: {@code built}, made from {@code observed}, rebuilt on {@code current}, which differs from {@code observed}
+	 * only by read-log bases: every variant {@code built} carries over from {@code observed} is replaced by
+	 * {@code current}'s at the same position (a log dropped meanwhile stays dropped); the variants it made, and every
+	 * other component, are kept. Its bytes are unchanged: a family's charge never includes its logs.
+	 */
+	private static FamilyVersion rebased(FamilyVersion built, FamilyVersion observed, FamilyVersion current) {
+		List<PlanVariant> from = observed.dispatcher().variants();
+		List<PlanVariant> to = current.dispatcher().variants();
+		List<PlanVariant> variants = new ArrayList<>(built.dispatcher().variants().size());
+		for (PlanVariant variant : built.dispatcher().variants()) {
+			int index = -1;
+			for (int ordinal = 0; ordinal < from.size() && index < 0; ordinal++) {
+				if (from.get(ordinal) == variant) {
+					index = ordinal;
+				}
+			}
+			variants.add(index < 0 ? variant : to.get(index));
+		}
+		return new FamilyVersion(built.version(), built.semanticValidity(), built.semanticDependencies(),
+				new VariantDispatcher(variants), built.retainedStructuralCheckpoint(), built.exactAliases(),
+				built.publicationEvidenceEpoch(), built.retainedBytes());
+	}
+
 	private PlanVersion selectCanary(PlanVariant variant, LookupRequest request) {
-		if (!request.canaryEligible() || !(maximumCanaryFraction > 0.0d)
+		if (variant.searchCertificate().replayOnly() || !request.canaryEligible() || !(maximumCanaryFraction > 0.0d)
 				|| deterministicFraction(request.deterministicInvocationHash()) >= maximumCanaryFraction) {
 			return null;
 		}
@@ -2135,24 +3144,291 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 	}
 
+	/** Caller holds admissionLock. */
 	private void makeRoom(PlanFamilyKey protectedKey, long incomingBytes, long replacingBytes) {
 		while (!recency.isEmpty()
 				&& (families.size() >= maximumFamilies && !families.containsKey(protectedKey)
-						|| retainedBytes.get() - replacingBytes > maximumRetainedBytes
-								- pendingProviderIdentities.bytes() - incomingBytes)) {
-			PlanFamilyKey victim = null;
-			for (PlanFamilyKey candidate : recency.keySet()) {
-				if (!candidate.equals(protectedKey)) {
-					victim = candidate;
-					break;
-				}
-			}
-			if (victim == null) {
+						|| retainedBytes.get() - replacingBytes > familyHeadroom() - incomingBytes)) {
+			if (!releaseOneLeastRecent(protectedKey)) {
 				break;
 			}
-			if (!shedOneRetentionTier(victim)) {
-				evict(victim);
+		}
+	}
+
+	/**
+	 * Sheds one retention tier of, or else evicts, the least recently used family other than the protected key. Caller
+	 * holds admissionLock. Returns false when no such family is retained.
+	 */
+	private boolean releaseOneLeastRecent(PlanFamilyKey protectedKey) {
+		PlanFamilyKey victim = null;
+		for (PlanFamilyKey candidate : recency.keySet()) {
+			if (!candidate.equals(protectedKey)) {
+				victim = candidate;
+				break;
 			}
+		}
+		if (victim == null) {
+			return false;
+		}
+		if (!shedOneRetentionTier(victim)) {
+			evict(victim);
+		}
+		return true;
+	}
+
+	/**
+	 * Makes room for a build or an alias: dead replays first, without proof of reuse (P7); then, only for a proven
+	 * repeat, least-recently-used families. Caller holds admissionLock.
+	 */
+	private void makeRoomForBuild(PlanFamilyKey protectedKey, long incomingBytes, long replacingBytes,
+			boolean needsFamilySlot, boolean mayEvict, long liveDataRevisionHorizon) {
+		while ((needsFamilySlot && families.size() >= maximumFamilies
+				|| retainedBytes.get() - replacingBytes > familyHeadroom() - incomingBytes)
+				&& reclaimOneDead(protectedKey, liveDataRevisionHorizon)) {
+			// Each round evicts one dead replay.
+		}
+		if (mayEvict) {
+			makeRoom(protectedKey, incomingBytes, replacingBytes);
+		}
+	}
+
+	/**
+	 * Evicts the least recently used dead family other than the protected key (P7). Caller holds admissionLock. Returns
+	 * false when no dead family is retained.
+	 */
+	private boolean reclaimOneDead(PlanFamilyKey protectedKey, long liveDataRevisionHorizon) {
+		for (PlanFamilyKey candidate : recency.keySet()) {
+			if (candidate.equals(protectedKey)) {
+				continue;
+			}
+			PlanFamily family = families.get(candidate);
+			if (family != null && dead(family.current().get(), liveDataRevisionHorizon)) {
+				evict(candidate);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * P7: whether no present or future request can be served from the family. A ranked family is dead when it is hard
+	 * invalid, or when none of its variants can serve any more: each is retired by the lifecycle or resource guard or
+	 * known dominated, or has no detached refresh work and is confident at, and pinned to, no data revision a request
+	 * can still present. One that can still serve stale through use-and-refresh is never dead. A replay-only family is
+	 * dead when its version is invalid or was withdrawn from lookup by a broad evidence change (the cache's evidence
+	 * epoch moved since its publication), or when none of its variants is both servable (confident, not retired by the
+	 * lifecycle or resource guard) and pinned to a data revision a request can still present. Every request plans at a
+	 * data revision at or above {@code liveDataRevisionHorizon} (no reader is pinned below it and new readers see the
+	 * committed revision), and an exact replay requires the request's data revision to equal the pinned one. Caller
+	 * holds admissionLock.
+	 */
+	private boolean dead(FamilyVersion version, long liveDataRevisionHorizon) {
+		if (!replayOnly(version)) {
+			if (version.semanticValidity() != SemanticValidity.VALID) {
+				return true;
+			}
+			for (PlanVariant variant : version.dispatcher().variants()) {
+				if (canServe(variant) && (variant.champion().detachedRefreshWork() != null
+						|| servable(variant) && version.publicationEvidenceEpoch() == globalEvidenceEpoch.get()
+								&& variant.evidenceSnapshot().dataGeneration() >= liveDataRevisionHorizon)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (version.semanticValidity() != SemanticValidity.VALID
+				|| version.publicationEvidenceEpoch() != globalEvidenceEpoch.get()) {
+			return true;
+		}
+		for (PlanVariant variant : version.dispatcher().variants()) {
+			if (servable(variant) && variant.evidenceSnapshot().dataGeneration() >= liveDataRevisionHorizon) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Bytes the families may ever occupy: the budget less the charges that stay resident. */
+	private long residentHeadroom() {
+		return maximumRetainedBytes - doorkeeper.chargedBytes();
+	}
+
+	private static boolean replayOnly(FamilyVersion version) {
+		for (PlanVariant variant : version.dispatcher().variants()) {
+			if (variant.searchCertificate().replayOnly()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Fixed-capacity record of recent exact-key miss fingerprints, guarded by the admission lock. A key whose earlier
+	 * miss is still recorded when it misses again has proven reuse, unless its flight was found unable to publish: such
+	 * a key proves nothing for its next {@code capacity} misses, or until it publishes. A slot also remembers, as a
+	 * tombstone, the data generation and the evidence digest of the build of the key's decision that was retired when
+	 * its family was evicted: while the key plans on evidence that is not newer ({@link #newerThan}: a lower data
+	 * generation, or the same one with an equal digest) its flight neither proves reuse (so it evicts nothing) nor
+	 * publishes; a request or publication on newer evidence clears the tombstone. Tombstones are bounded and not
+	 * durable: one ages out with its slot after {@code capacity} other distinct misses, none is kept while the
+	 * doorkeeper is uncharged, and none survives the cache. The least recently missed fingerprint is replaced first, so
+	 * the state is a pure function of the miss, publication and eviction sequence. Its fixed modeled size is charged to
+	 * the cache budget once, on first use; a cache that never admits a flight carries no charge and remembers nothing.
+	 */
+	private static final class MissDoorkeeper {
+		static final int FIRST_MISS = 0;
+		static final int REPEAT = 1;
+		static final int UNPUBLISHABLE_REPEAT = 2;
+
+		/** The doorkeeper: header, capacity and size, clock, and five array references. */
+		private static final long OBJECT_BYTES = 72L;
+		/** An array header. */
+		private static final long ARRAY_HEADER_BYTES = 16L;
+		/** The retired data generation of a slot whose key holds no tombstone. */
+		private static final long NOT_RETIRED = Long.MIN_VALUE;
+
+		private final int capacity;
+		private long[] fingerprints;
+		private long[] lastMisses;
+		/** Remaining misses during which the slot's key proves nothing; zero for a publishable key. */
+		private int[] unpublishableMisses;
+		/** The data generation the slot key's retired decision was planned with; {@link #NOT_RETIRED} when none. */
+		private long[] retiredDataGenerations;
+		/** The {@link #evidenceDigest} of the build evidence of the slot key's retired decision. */
+		private long[] retiredEvidenceDigests;
+		private int size;
+		private long clock;
+
+		private MissDoorkeeper(int capacity) {
+			this.capacity = capacity;
+		}
+
+		/** The object, four {@code long[capacity]} and one {@code int[capacity]}, each array padded to 8 bytes. */
+		static long modeledBytes(int capacity) {
+			long longArray = ARRAY_HEADER_BYTES + 8L * capacity;
+			long intArray = (ARRAY_HEADER_BYTES + 4L * capacity + 7L) & ~7L;
+			return OBJECT_BYTES + 4L * longArray + intArray;
+		}
+
+		long modeledBytes() {
+			return modeledBytes(capacity);
+		}
+
+		boolean charged() {
+			return fingerprints != null;
+		}
+
+		long chargedBytes() {
+			return charged() ? modeledBytes() : 0L;
+		}
+
+		void charge() {
+			fingerprints = new long[capacity];
+			lastMisses = new long[capacity];
+			unpublishableMisses = new int[capacity];
+			retiredDataGenerations = new long[capacity];
+			retiredEvidenceDigests = new long[capacity];
+		}
+
+		/** Records one miss and classifies it. */
+		int recordMiss(long fingerprint) {
+			int slot = slotOf(fingerprint);
+			if (slot < 0) {
+				record(fingerprint);
+				return FIRST_MISS;
+			}
+			lastMisses[slot] = ++clock;
+			if (unpublishableMisses[slot] > 0) {
+				unpublishableMisses[slot]--;
+				return UNPUBLISHABLE_REPEAT;
+			}
+			return REPEAT;
+		}
+
+		/** Marks a recorded key as publishable again, or as unable to publish for its next {@code capacity} misses. */
+		void markPublishable(long fingerprint, boolean publishable) {
+			int slot = slotOf(fingerprint);
+			if (slot >= 0) {
+				unpublishableMisses[slot] = publishable ? 0 : capacity;
+			}
+		}
+
+		/**
+		 * Remembers that the key's decision, built on {@code buildEvidence}, was retired, recording the key when it is
+		 * not recorded. Whether the key proves reuse is left to its later requests: it proves nothing while it plans on
+		 * evidence that is not newer, and proves reuse like any other key once its evidence is. No-op before charge.
+		 */
+		void retire(long fingerprint, EvidenceSnapshot buildEvidence) {
+			if (!charged()) {
+				return;
+			}
+			int slot = slotOf(fingerprint);
+			if (slot < 0) {
+				slot = record(fingerprint);
+			}
+			retiredDataGenerations[slot] = buildEvidence.dataGeneration();
+			retiredEvidenceDigests[slot] = evidenceDigest(buildEvidence);
+		}
+
+		/**
+		 * Whether the key's decision was retired on evidence that {@code evidence} is not newer than: a lower data
+		 * generation, or the same one with an equal evidence digest. Newer evidence clears the tombstone, and with it
+		 * the unpublishable count its blocked publications left: those refusals no longer hold, so the key may prove
+		 * reuse again.
+		 */
+		boolean retiredUnder(long fingerprint, EvidenceSnapshot evidence) {
+			int slot = charged() ? slotOf(fingerprint) : -1;
+			if (slot < 0 || retiredDataGenerations[slot] == NOT_RETIRED) {
+				return false;
+			}
+			long retired = retiredDataGenerations[slot];
+			if (evidence.dataGeneration() < retired || evidence.dataGeneration() == retired
+					&& evidenceDigest(evidence) == retiredEvidenceDigests[slot]) {
+				return true;
+			}
+			retiredDataGenerations[slot] = NOT_RETIRED;
+			retiredEvidenceDigests[slot] = 0L;
+			unpublishableMisses[slot] = 0;
+			return false;
+		}
+
+		private int slotOf(long fingerprint) {
+			for (int index = 0; index < size; index++) {
+				if (fingerprints[index] == fingerprint) {
+					return index;
+				}
+			}
+			return -1;
+		}
+
+		/** Records an absent fingerprint in a free slot, or in the least recently missed one. */
+		private int record(long fingerprint) {
+			int slot;
+			if (size < capacity) {
+				slot = size++;
+			} else {
+				slot = 0;
+				for (int index = 1; index < size; index++) {
+					if (lastMisses[index] < lastMisses[slot]) {
+						slot = index;
+					}
+				}
+			}
+			fingerprints[slot] = fingerprint;
+			lastMisses[slot] = ++clock;
+			unpublishableMisses[slot] = 0;
+			retiredDataGenerations[slot] = NOT_RETIRED;
+			retiredEvidenceDigests[slot] = 0L;
+			return slot;
+		}
+
+		void clear() {
+			fingerprints = null;
+			lastMisses = null;
+			unpublishableMisses = null;
+			retiredDataGenerations = null;
+			retiredEvidenceDigests = null;
+			size = 0;
 		}
 	}
 
@@ -2160,6 +3436,10 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		PlanFamily family = families.get(key);
 		if (family == null) {
 			return false;
+		}
+		// The first tier: the variants' read logs (they never count toward a decision, but go before anything else).
+		if (dropLogs(family, LmdbPlanCacheRevalidation.SHED)) {
+			return true;
 		}
 		while (true) {
 			FamilyVersion observed = family.current().get();
@@ -2176,7 +3456,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 							variant.champion(), variant.challengers(), rollbacks, variant.searchCertificate(),
 							variant.evidenceSnapshot(), variant.stabilityEnvelope(), variant.runtimePosterior(),
 							variant.challengerPosteriors(), variant.qualityState(),
-							variant.challengerKnownToDominate()));
+							variant.challengerKnownToDominate(), variant.readLogBasis()));
 					changed = true;
 				}
 			}
@@ -2185,13 +3465,15 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				if (!variant.challengers().isEmpty()) {
 					List<PlanVersion> challengers = new ArrayList<>(variant.challengers());
 					PlanVersion removed = challengers.remove(challengers.size() - 1);
-					releasedBytes = retainedPlanBytes(removed, new HashSet<>());
+					releasedBytes = saturatedAdd(retainedPlanBytes(removed, new HashSet<>()),
+							challengerPosteriorBytes(variant, removed));
 					Map<Long, RuntimePosterior> posteriors = new LinkedHashMap<>(variant.challengerPosteriors());
 					posteriors.remove(removed.version());
 					variants.set(index, new PlanVariant(variant.variantId(), variant.applicabilityGuard(),
 							variant.champion(), challengers, variant.rollbackVersions(), variant.searchCertificate(),
 							variant.evidenceSnapshot(), variant.stabilityEnvelope(), variant.runtimePosterior(),
-							posteriors, variant.qualityState(), variant.challengerKnownToDominate()));
+							posteriors, variant.qualityState(), variant.challengerKnownToDominate(),
+							variant.readLogBasis()));
 					changed = true;
 				}
 			}
@@ -2228,11 +3510,34 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			return;
 		}
 		FamilyVersion version = removed.current().get();
+		rememberRetirements(version);
 		removeAliases(version);
 		retainedBytes.addAndGet(-version.retainedBytes());
+		readLogBytes.addAndGet(-logBytes(version));
 		evictions.incrementAndGet();
 		for (Set<PlanFamilyKey> keys : reverseEvidence.values()) {
 			keys.remove(key);
+		}
+	}
+
+	/**
+	 * R5 beyond reclaim: for each exact key of an evicted family whose variant was retired, the doorkeeper slot of that
+	 * key remembers the data generation and the evidence digest the variant was built on, so that a re-plan on evidence
+	 * that is not newer ({@link #newerThan}) is not re-published once the family is gone. Caller holds admissionLock.
+	 */
+	private void rememberRetirements(FamilyVersion version) {
+		if (version.semanticValidity() != SemanticValidity.VALID) {
+			return;
+		}
+		for (ExactAlias alias : version.exactAliases().values()) {
+			if (alias.missFingerprint() == 0L) {
+				continue;
+			}
+			for (PlanVariant variant : version.dispatcher().variants()) {
+				if (variant.variantId() == alias.variantId() && !canServe(variant)) {
+					doorkeeper.retire(alias.missFingerprint(), variant.evidenceSnapshot());
+				}
+			}
 		}
 	}
 
@@ -2264,7 +3569,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		Map<ExactInvocationKey, ExactAlias> updated = new LinkedHashMap<>();
 		for (Map.Entry<ExactInvocationKey, ExactAlias> entry : aliases.entrySet()) {
 			ExactAlias alias = entry.getValue();
-			updated.put(entry.getKey(), new ExactAlias(familyVersion, alias.variantId(), alias.planVersion()));
+			updated.put(entry.getKey(),
+					new ExactAlias(familyVersion, alias.variantId(), alias.planVersion(), alias.missFingerprint()));
 		}
 		return Map.copyOf(updated);
 	}
@@ -2390,11 +3696,20 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		long bytes = retainedPlanBytes(variant.champion(), counted);
 		for (PlanVersion challenger : variant.challengers()) {
 			bytes = saturatedAdd(bytes, retainedPlanBytes(challenger, counted));
+			bytes = saturatedAdd(bytes, challengerPosteriorBytes(variant, challenger));
 		}
 		for (PlanVersion rollback : variant.rollbackVersions()) {
 			bytes = saturatedAdd(bytes, retainedPlanBytes(rollback, counted));
 		}
 		return bytes;
+	}
+
+	/** A pipeline challenger's runtime posterior entry in its variant's posterior map. */
+	private static long challengerPosteriorBytes(PlanVariant variant, PlanVersion challenger) {
+		return challenger.physicalRecipe() instanceof ExactTupleRecipe exact && exact.automaticPlanningState
+				&& variant.challengerPosteriors().containsKey(challenger.version())
+						? LmdbPipelinePlanCache.CHALLENGER_POSTERIOR_BYTES
+						: 0L;
 	}
 
 	private static long retainedPlanBytes(PlanVersion plan, Set<Long> counted) {
