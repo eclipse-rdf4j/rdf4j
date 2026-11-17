@@ -38,11 +38,15 @@ class NativeProvenanceCaptureCapacityTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void wideOpaqueAuthorityGrowsIdentityAndPendingCapacityWithoutChangingRepresentatives(boolean shared) throws Exception {
+	void wideOpaqueAuthorityGrowsIdentityAndPendingCapacityWithoutChangingRepresentatives(boolean shared)
+			throws Exception {
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(POLICY, POLICY);
-		try (var ledger = manager.openQuery(); var memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		try (var ledger = manager.openQuery();
+				var memory = KernelRuntime.AggregateMemory.forLedger(ledger);
 				var dictionary = new NativeResultProvenanceDictionary(memory, new NativeCancellationToken(),
-						POLICY, () -> 0L, () -> { throw new AssertionError("no resident payload to reclaim"); })) {
+						POLICY, () -> 0L, () -> {
+							throw new AssertionError("no resident payload to reclaim");
+						})) {
 			for (int width : new int[] { 8, 80, 512 }) {
 				NativeRowProvenance frame = frame(width, shared);
 				int handle = dictionary.intern(frame);
@@ -50,7 +54,8 @@ class NativeProvenanceCaptureCapacityTest {
 				assertEquals(handle, dictionary.knownHandle(frame));
 				assertEquals(handle, dictionary.intern(frame));
 				for (var parameter : frame.origin.retainedParametersForTransport().entrySet()) {
-					assertSame(parameter.getValue(), dictionary.resolve(handle).origin.parameterValue(parameter.getKey()));
+					assertSame(parameter.getValue(),
+							dictionary.resolve(handle).origin.parameterValue(parameter.getKey()));
 				}
 				assertEquals(dictionary.retainedBytes(), ledger.usedBytes(),
 						"finished captures retain no traversal table or pending-stack claim");
@@ -63,9 +68,12 @@ class NativeProvenanceCaptureCapacityTest {
 	@Test
 	void aGrowingCaptureStillRefusesItsRealHardLimitAndReleasesEveryScratchClaim() {
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(POLICY, POLICY);
-		try (var ledger = manager.openQuery(); var memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		try (var ledger = manager.openQuery();
+				var memory = KernelRuntime.AggregateMemory.forLedger(ledger);
 				var dictionary = new NativeResultProvenanceDictionary(memory, new NativeCancellationToken(),
-						8192L, () -> 0L, () -> { throw new AssertionError("no resident payload to reclaim"); })) {
+						8192L, () -> 0L, () -> {
+							throw new AssertionError("no resident payload to reclaim");
+						})) {
 			QueryEvaluationException failure = assertThrows(QueryEvaluationException.class,
 					() -> dictionary.intern(frame(80, false)));
 			assertTrue(failure.getMessage().contains("Result provenance"));
@@ -82,13 +90,21 @@ class NativeProvenanceCaptureCapacityTest {
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(32768L, 32768L);
 		NativeCancellationToken token = new NativeCancellationToken();
 		AtomicInteger callbacks = new AtomicInteger();
-		try (var ledger = manager.openQuery(); var memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		try (var ledger = manager.openQuery();
+				var memory = KernelRuntime.AggregateMemory.forLedger(ledger);
 				var dictionary = new NativeResultProvenanceDictionary(memory, token, POLICY,
-						() -> 0L, () -> { throw new AssertionError("no resident payload to reclaim"); })) {
+						() -> 0L, () -> {
+							throw new AssertionError("no resident payload to reclaim");
+						})) {
 			try (var pressure = ledger.reserve(32768L - 2048L, new LmdbQueryMemoryManager.Reclaimable() {
-				@Override public boolean shed() {
+				@Override
+				public boolean shed() {
 					callbacks.incrementAndGet();
-					if (cancel) { token.requestCancellation(); } else { dictionary.close(); }
+					if (cancel) {
+						token.requestCancellation();
+					} else {
+						dictionary.close();
+					}
 					return true;
 				}
 			})) {
@@ -100,7 +116,8 @@ class NativeProvenanceCaptureCapacityTest {
 				assertEquals(0L, ledger.usedBytes());
 				assertThrows(java.io.IOException.class, () -> dictionary.resolve(1));
 				if (cancel) {
-					KernelQueryCancelledException stopped = assertInstanceOf(KernelQueryCancelledException.class, actual);
+					KernelQueryCancelledException stopped = assertInstanceOf(KernelQueryCancelledException.class,
+							actual);
 					assertTrue(stopped.observedBy(token));
 					assertTrue(token.owns(stopped));
 				} else {
@@ -124,10 +141,30 @@ class NativeProvenanceCaptureCapacityTest {
 
 	private static final class OpaqueIRI implements IRI {
 		private static final long serialVersionUID = 1L;
-		@Override public String stringValue() { throw new AssertionError("opaque lexical lookup"); }
-		@Override public String getNamespace() { throw new AssertionError("opaque namespace lookup"); }
-		@Override public String getLocalName() { throw new AssertionError("opaque local-name lookup"); }
-		@Override public int hashCode() { throw new AssertionError("opaque semantic hashing"); }
-		@Override public boolean equals(Object other) { throw new AssertionError("opaque semantic equality"); }
+
+		@Override
+		public String stringValue() {
+			throw new AssertionError("opaque lexical lookup");
+		}
+
+		@Override
+		public String getNamespace() {
+			throw new AssertionError("opaque namespace lookup");
+		}
+
+		@Override
+		public String getLocalName() {
+			throw new AssertionError("opaque local-name lookup");
+		}
+
+		@Override
+		public int hashCode() {
+			throw new AssertionError("opaque semantic hashing");
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			throw new AssertionError("opaque semantic equality");
+		}
 	}
 }

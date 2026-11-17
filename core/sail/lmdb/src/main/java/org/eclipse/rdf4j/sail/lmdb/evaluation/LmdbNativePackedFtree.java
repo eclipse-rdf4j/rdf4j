@@ -309,7 +309,8 @@ final class LmdbNativePackedFtree {
 			LmdbNativeCostQuote quote = parallelQuote(serial.costQuote(), input, row, capacity, null, false);
 			quote = bufferedProjectionReplay(quote, input, row, retainedSlots, distinct, capacity.workers());
 			return new LmdbNativeStrategyProposal<>(filters -> {
-				FactorizedRowCursor cursor = LmdbNativePackedMorsels.tryRows(filters.borrow(input), row, retainedSlots, distinct,
+				FactorizedRowCursor cursor = LmdbNativePackedMorsels.tryRows(filters.borrow(input), row, retainedSlots,
+						distinct,
 						explainTarget, capacity.reservation());
 				if (cursor == null)
 					return null;
@@ -610,7 +611,9 @@ final class LmdbNativePackedFtree {
 				return null;
 			Term subject = specialize(pattern.s, row), predicate = specialize(pattern.p, row);
 			Term object = specialize(pattern.o, row), context = specialize(pattern.c, row);
-			if (subject == null || predicate == null || object == null || context == null) { return null; }
+			if (subject == null || predicate == null || object == null || context == null) {
+				return null;
+			}
 			children[i] = new PatternPlan(subject, predicate, object, context, pattern.contexts,
 					pattern.namedContextScope, pattern.statementOrder, pattern.indexName, pattern.range,
 					pattern.staticEstimate, pattern.accessProfile);
@@ -621,7 +624,9 @@ final class LmdbNativePackedFtree {
 	private static Term specialize(Term term, RowState row) {
 		if (term.hasSlot() && !term.isConstant() && row.slots[term.slot] != UNKNOWN) {
 			long value = term.lookup(row.slots);
-			if (value == UNKNOWN) { return null; }
+			if (value == UNKNOWN) {
+				return null;
+			}
 			return (term.readOnly ? Term.constant(value) : Term.constantSlot(term.slot, value))
 					.withEqualFields(term.equalFields);
 		}
@@ -799,7 +804,8 @@ final class LmdbNativePackedFtree {
 			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr target,
 			LmdbNativeParallelPipelines.TaskReservation reservation, String tag) throws IOException {
 		NativeFilterLease lease = new NativeFilterLease(owner.filterAttempt == null
-				? NativeFilterLease.parentOf(row) : owner.filterAttempt);
+				? NativeFilterLease.parentOf(row)
+				: owner.filterAttempt);
 		try {
 			List<BindingSet> parallel = LmdbNativePackedMorsels.tryAggregate(lease.borrow(input), row,
 					groups, aggregates, owner, target, reservation);
@@ -2000,7 +2006,9 @@ final class LmdbNativePackedFtree {
 			for (int first = 0; first < patterns.size(); first++) {
 				for (int second = first + 1; second < patterns.size(); second++) {
 					if (!patterns.get(first).canCommuteWith(patterns.get(second))
-							|| !patterns.get(second).canCommuteWith(patterns.get(first))) { return null; }
+							|| !patterns.get(second).canCommuteWith(patterns.get(first))) {
+						return null;
+					}
 				}
 			}
 
@@ -2275,7 +2283,8 @@ final class LmdbNativePackedFtree {
 		}
 
 		private static boolean admissiblePattern(PatternPlan pattern) {
-			if (pattern.readOnlyMask() != 0L || !pattern.p.isConstant() || pattern.range != null || pattern.statementOrder != null
+			if (pattern.readOnlyMask() != 0L || !pattern.p.isConstant() || pattern.range != null
+					|| pattern.statementOrder != null
 					|| pattern.contexts.isEmpty() || pattern.hasRepeatedSlot()) {
 				return false;
 			}
@@ -2297,8 +2306,11 @@ final class LmdbNativePackedFtree {
 			if (!term.hasSlot() || !term.isConstant()) {
 				return true;
 			}
-			long value = term.preserveExisting && row.slots[term.slot] != UNKNOWN ? row.slots[term.slot] : term.constant;
-			if (value == 0L) { return false; }
+			long value = term.preserveExisting && row.slots[term.slot] != UNKNOWN ? row.slots[term.slot]
+					: term.constant;
+			if (value == 0L) {
+				return false;
+			}
 			Long previous = fixed.putIfAbsent(term.slot, value);
 			return previous == null || previous.longValue() == value;
 		}
@@ -7362,7 +7374,8 @@ final class LmdbNativePackedFtree {
 					return true;
 				}
 			} catch (PackedDecline lostCoverage) {
-				QueryEvaluationException failure = new QueryEvaluationException("factor transport lost adjacency coverage",
+				QueryEvaluationException failure = new QueryEvaluationException(
+						"factor transport lost adjacency coverage",
 						lostCoverage);
 				LmdbNativeFactorAlgebra.closeSuppressing(this, failure);
 				throw failure;

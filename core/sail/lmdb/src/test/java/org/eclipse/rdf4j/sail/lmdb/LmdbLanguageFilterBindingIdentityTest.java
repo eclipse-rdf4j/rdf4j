@@ -91,14 +91,17 @@ class LmdbLanguageFilterBindingIdentityTest {
 			assertTrue(store.getFormat().usesCanonicalLanguageTags(),
 					"format 7 persists RDF language tags in its canonical lower-case representation");
 			String storedProducerTag;
-			try (var connection = lmdb.getConnection(); var statements = connection.getStatements(subject, label, null)) {
-				assertTrue(statements.hasNext(), "direct statement readback establishes the actual producer representative");
+			try (var connection = lmdb.getConnection();
+					var statements = connection.getStatements(subject, label, null)) {
+				assertTrue(statements.hasNext(),
+						"direct statement readback establishes the actual producer representative");
 				Literal producer = (Literal) statements.next().getObject();
 				storedProducerTag = producer.getLanguage().orElseThrow();
 				assertEquals("abc", producer.getLabel());
 				assertEquals(storedTag.toLowerCase(Locale.ROOT), storedProducerTag,
 						"the current store's actual producer value follows its persisted format-7 policy");
-				assertFalse(statements.hasNext(), "the producer statement must have one unambiguous stored representative");
+				assertFalse(statements.hasNext(),
+						"the producer statement must have one unambiguous stored representative");
 			}
 			// Query VALUES/request inputs still carry queryTag; only statement-produced output uses storedProducerTag.
 			String outputTag = shape >= 9 ? queryTag : storedProducerTag;

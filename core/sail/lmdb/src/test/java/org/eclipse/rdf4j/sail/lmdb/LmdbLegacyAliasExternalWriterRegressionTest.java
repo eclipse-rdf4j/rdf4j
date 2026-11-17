@@ -16,8 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.CALLS_REAL_METHODS;
-import static org.mockito.Mockito.mockStatic;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
@@ -33,6 +31,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -88,7 +88,8 @@ class LmdbLegacyAliasExternalWriterRegressionTest {
 		AtomicBoolean rewriteStarted = new AtomicBoolean();
 		LmdbLanguageTagVariantMerge.stepObserverForTesting = step -> {
 			if (step == LmdbLanguageTagVariantMerge.Step.PLANNED && entered.compareAndSet(false, true)) {
-				runExternalWriter(targetDirectory, evidence.resolve("foreign-writer.log"), evidence.resolve("child-tmp"));
+				runExternalWriter(targetDirectory, evidence.resolve("foreign-writer.log"),
+						evidence.resolve("child-tmp"));
 			} else if (step == LmdbLanguageTagVariantMerge.Step.SKETCH_INVALIDATED) {
 				rewriteStarted.set(true);
 			}
@@ -198,7 +199,8 @@ class LmdbLegacyAliasExternalWriterRegressionTest {
 						+ batchesAtForeign.get() + "\n");
 		assertTrue(committedBatches.get() > 1, "the fixture must commit multiple real statement batches");
 		assertTrue(injected.get(), "the real dictionary retirement must encounter map-full");
-		assertTrue(externalCommitted.get(), "the independent writer must commit while native writer authority is released");
+		assertTrue(externalCommitted.get(),
+				"the independent writer must commit while native writer authority is released");
 		assertEquals(batchesAtForeign.get(), committedBatches.get(),
 				"no statement rewrite may resume after the unowned generation commits");
 		assertTrue(refused.get() != null, "an unowned resize-gap generation must not reuse the previous plan");
@@ -235,7 +237,8 @@ class LmdbLegacyAliasExternalWriterRegressionTest {
 		Process child = new ProcessBuilder(java, "--enable-native-access=ALL-UNNAMED", "-ea",
 				"-Djava.io.tmpdir=" + temporaryDirectory, "-cp", System.getProperty("java.class.path"),
 				ExternalWriter.class.getName(), directory.toString()).redirectErrorStream(true)
-						.redirectOutput(log.toFile()).start();
+						.redirectOutput(log.toFile())
+						.start();
 		try {
 			if (!child.waitFor(30, TimeUnit.SECONDS)) {
 				child.destroyForcibly();
@@ -286,7 +289,9 @@ class LmdbLegacyAliasExternalWriterRegressionTest {
 
 	private static LmdbStoreConfig config() {
 		return new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
-				.setAutoGrow(true).setSketchEstimatorEnabled(false).setPredicateGuaranteeIndexEnabled(false);
+				.setAutoGrow(true)
+				.setSketchEstimatorEnabled(false)
+				.setPredicateGuaranteeIndexEnabled(false);
 	}
 
 	private static void createFixture(Path directory) throws IOException {
@@ -350,8 +355,9 @@ class LmdbLegacyAliasExternalWriterRegressionTest {
 				rows.add(NTriplesUtil.toNTriplesString(statement.getSubject()) + " "
 						+ NTriplesUtil.toNTriplesString(statement.getPredicate()) + " "
 						+ NTriplesUtil.toNTriplesString(statement.getObject())
-						+ (statement.getContext() == null ? "" : " "
-								+ NTriplesUtil.toNTriplesString(statement.getContext())));
+						+ (statement.getContext() == null ? ""
+								: " "
+										+ NTriplesUtil.toNTriplesString(statement.getContext())));
 			}
 		}
 		Collections.sort(rows);

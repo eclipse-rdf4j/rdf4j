@@ -98,7 +98,8 @@ class NativeGenericSpillReceiptAdmissionTest {
 				BindingSet restored = spill(original);
 				assertSpilledAuthority(original, restored, kind);
 				before = fixture.source.operations.get();
-				boolean proved = NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(original), restored);
+				boolean proved = NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(original),
+						restored);
 				NativePhysicalResultPlan rebound = selected.rebind(rows, worker, restored);
 				assertEquals(before, fixture.source.operations.get(),
 						"Even a rejected receipt must precede scan/count/has/next consumption");
@@ -163,7 +164,8 @@ class NativeGenericSpillReceiptAdmissionTest {
 	private static BindingSet frame(FrameKind kind, Object remoteNamespace) {
 		if (kind == FrameKind.LOCAL_ONLY) {
 			return BindingSetOrigin.with(new QueryBindingSet(), BindingSetOrigin.of(EmptyBindingSet.getInstance())
-					.producing(Set.of("firstLocal")).producing(Set.of("secondLocal")));
+					.producing(Set.of("firstLocal"))
+					.producing(Set.of("secondLocal")));
 		}
 		QueryBindingSet requests = new QueryBindingSet();
 		requests.setBinding("hiddenRequest", VF.createLiteral("v", "EN"));
@@ -230,11 +232,15 @@ class NativeGenericSpillReceiptAdmissionTest {
 	}
 
 	private enum FrameKind {
-		LOCAL_ONLY, FULL_AUTHORITY
+		LOCAL_ONLY,
+		FULL_AUTHORITY
 	}
 
 	private enum Change {
-		LOCAL, REQUEST_REPRESENTATIVE, GRAPH, REMOTE_TRUST;
+		LOCAL,
+		REQUEST_REPRESENTATIVE,
+		GRAPH,
+		REMOTE_TRUST;
 
 		BindingSet apply(BindingSet original) {
 			QueryBindingSet copy = new QueryBindingSet(original);
@@ -255,7 +261,8 @@ class NativeGenericSpillReceiptAdmissionTest {
 				requests.setBinding("hiddenRequest", VF.createLiteral("v", "en"));
 			} else {
 				requests.setBinding("hiddenRemote", VF.createBNode(BindingSetOrigin.of(original)
-						.parameterValue("hiddenRemote").stringValue()));
+						.parameterValue("hiddenRemote")
+						.stringValue()));
 			}
 			return BindingSetOrigin.with(copy,
 					localLayers(BindingSetOrigin.of(BindingSetOrigin.optimizationInput(requests))));
@@ -292,7 +299,8 @@ class NativeGenericSpillReceiptAdmissionTest {
 		NativeRowsStep compile() {
 			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
 					new EvaluationStatistics(), false);
-			QueryEvaluationStep compiled = LmdbNativeAggregateCompiler.tryCompile(query.clone(), context, strategy, source);
+			QueryEvaluationStep compiled = LmdbNativeAggregateCompiler.tryCompile(query.clone(), context, strategy,
+					source);
 			return assertInstanceOf(NativeRowsStep.class, compiled,
 					"The actual simple statement projection is naturally admitted; a decline is a setup finding");
 		}
@@ -355,34 +363,83 @@ class NativeGenericSpillReceiptAdmissionTest {
 			this.delegate = delegate;
 		}
 
-		@Override public long idOf(Value value) { return delegate.idOf(value); }
-		@Override public Value lazyValue(long id) { return delegate.lazyValue(id); }
-		@Override public Object idSpace() { return delegate.idSpace(); }
-		@Override public Object valueLookupScope() { return delegate.valueLookupScope(); }
-		@Override public boolean hasCanonicalIds() { return delegate.hasCanonicalIds(); }
-		@Override public double estimate(long s, long p, long o, long c) { return delegate.estimate(s, p, o, c); }
-		@Override public boolean hasStatementsInSource() { return delegate.hasStatementsInSource(); }
-		@Override public long count(long s, long p, long o, long c) throws IOException {
-			operations.incrementAndGet(); return delegate.count(s, p, o, c);
+		@Override
+		public long idOf(Value value) {
+			return delegate.idOf(value);
 		}
-		@Override public boolean has(long s, long p, long o, long c) throws IOException {
-			operations.incrementAndGet(); return delegate.has(s, p, o, c);
+
+		@Override
+		public Value lazyValue(long id) {
+			return delegate.lazyValue(id);
 		}
-		@Override public RecordIterator statements(long s, long p, long o, long c) throws IOException {
+
+		@Override
+		public Object idSpace() {
+			return delegate.idSpace();
+		}
+
+		@Override
+		public Object valueLookupScope() {
+			return delegate.valueLookupScope();
+		}
+
+		@Override
+		public boolean hasCanonicalIds() {
+			return delegate.hasCanonicalIds();
+		}
+
+		@Override
+		public double estimate(long s, long p, long o, long c) {
+			return delegate.estimate(s, p, o, c);
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return delegate.hasStatementsInSource();
+		}
+
+		@Override
+		public long count(long s, long p, long o, long c) throws IOException {
+			operations.incrementAndGet();
+			return delegate.count(s, p, o, c);
+		}
+
+		@Override
+		public boolean has(long s, long p, long o, long c) throws IOException {
+			operations.incrementAndGet();
+			return delegate.has(s, p, o, c);
+		}
+
+		@Override
+		public RecordIterator statements(long s, long p, long o, long c) throws IOException {
 			operations.incrementAndGet();
 			RecordIterator cursor = delegate.statements(s, p, o, c);
 			opens.incrementAndGet();
 			return new RecordIterator() {
 				private boolean closed;
-				@Override public long[] next() { operations.incrementAndGet(); return cursor.next(); }
-				@Override public void close() {
+
+				@Override
+				public long[] next() {
+					operations.incrementAndGet();
+					return cursor.next();
+				}
+
+				@Override
+				public void close() {
 					if (!closed) {
 						closed = true;
-						try { cursor.close(); } finally { closes.incrementAndGet(); }
+						try {
+							cursor.close();
+						} finally {
+							closes.incrementAndGet();
+						}
 					}
 				}
 			};
 		}
-		void assertClosed() { assertEquals(opens.get(), closes.get(), "Every opened real statement cursor was closed"); }
+
+		void assertClosed() {
+			assertEquals(opens.get(), closes.get(), "Every opened real statement cursor was closed");
+		}
 	}
 }

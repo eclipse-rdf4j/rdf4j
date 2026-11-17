@@ -38,11 +38,14 @@ class ExternalOwnershipAdmissionBoundaryTest {
 	void replaySafeComputedCallbackStillNeedsItsActualWorkerConstructionProof() {
 		int[] invocations = { 0 };
 		CopyBinding binding = CopyBinding.computed(0, new LmdbNativeCompiledInlineId(0L, true, row -> {
-			invocations[0]++; return UNKNOWN;
+			invocations[0]++;
+			return UNKNOWN;
 		}));
 		SlotPlan computed = new ExtensionPlan(SlotPlan.singleton(), new CopyBinding[] { binding });
-		assertTrue(SlotPlan.encounterOrderReplaySafe(computed), "explicit replay declaration is not worker/lifetime authority");
-		assertFalse(NativeWorkerPlanBinder.canBind(computed), "opaque callback lacks the legitimate worker construction plan");
+		assertTrue(SlotPlan.encounterOrderReplaySafe(computed),
+				"explicit replay declaration is not worker/lifetime authority");
+		assertFalse(NativeWorkerPlanBinder.canBind(computed),
+				"opaque callback lacks the legitimate worker construction plan");
 		assertEquals(0, invocations[0], "admission never executes the callback to discover its effects");
 	}
 
@@ -50,27 +53,74 @@ class ExternalOwnershipAdmissionBoundaryTest {
 	void postInterfaceUnknownFactorProducersKeepBothConservativeDefaults() {
 		FactorEnvironment factors = new FactorEnvironment(1);
 		try (LmdbNativeFactorCursor nativeInput = new LmdbNativeFactorCursor() {
-			@Override public boolean next() { throw new AssertionError("unknown producer is not consumed"); }
-			@Override public long multiplicity() { return 0L; }
-			@Override public FactorEnvironment factors() { return factors; }
-			@Override public void close() { factors.clear(); }
+			@Override
+			public boolean next() {
+				throw new AssertionError("unknown producer is not consumed");
+			}
+
+			@Override
+			public long multiplicity() {
+				return 0L;
+			}
+
+			@Override
+			public FactorEnvironment factors() {
+				return factors;
+			}
+
+			@Override
+			public void close() {
+				factors.clear();
+			}
 		}; KernelPlan.FactorCursor kernelInput = new KernelPlan.FactorCursor() {
-			@Override public boolean next() { throw new AssertionError("unknown kernel producer is not consumed"); }
-			@Override public int slot(int outputColumn) { return outputColumn; }
-			@Override public long scalar(int slot) { return UNKNOWN; }
-			@Override public long multiplicity() { return 0L; }
-			@Override public FactorEnvironment factors() { return factors; }
-			@Override public void close() { factors.clear(); }
+			@Override
+			public boolean next() {
+				throw new AssertionError("unknown kernel producer is not consumed");
+			}
+
+			@Override
+			public int slot(int outputColumn) {
+				return outputColumn;
+			}
+
+			@Override
+			public long scalar(int slot) {
+				return UNKNOWN;
+			}
+
+			@Override
+			public long multiplicity() {
+				return 0L;
+			}
+
+			@Override
+			public FactorEnvironment factors() {
+				return factors;
+			}
+
+			@Override
+			public void close() {
+				factors.clear();
+			}
 		}) {
-			assertFalse(nativeInput.borrowedSourcesExternallyRetained(), "actual native interface default, no Source lifetime claimed");
-			assertFalse(kernelInput.borrowedSourcesExternallyRetained(), "actual kernel interface default, no Source lifetime claimed");
+			assertFalse(nativeInput.borrowedSourcesExternallyRetained(),
+					"actual native interface default, no Source lifetime claimed");
+			assertFalse(kernelInput.borrowedSourcesExternallyRetained(),
+					"actual kernel interface default, no Source lifetime claimed");
 		}
 	}
 
 	private static SlotPlan unknown() {
 		return new SlotPlan() {
-			@Override public RowCursor open(RowState row) { throw new AssertionError("unknown producer must remain unconsumed at this admission boundary"); }
-			@Override public long producedMask() { return 0L; }
+			@Override
+			public RowCursor open(RowState row) {
+				throw new AssertionError("unknown producer must remain unconsumed at this admission boundary");
+			}
+
+			@Override
+			public long producedMask() {
+				return 0L;
+			}
 		};
 	}
 }

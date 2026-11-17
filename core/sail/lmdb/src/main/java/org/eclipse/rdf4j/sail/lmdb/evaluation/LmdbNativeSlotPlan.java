@@ -31,18 +31,24 @@ interface SlotPlan {
 
 	static boolean requiresPhysicalCells(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
 		if (facts == null) {
-			if (!(plan instanceof NativeValuesFoldPlan)) { return requiresPhysicalCellsUncached(plan, null); }
+			if (!(plan instanceof NativeValuesFoldPlan)) {
+				return requiresPhysicalCellsUncached(plan, null);
+			}
 			facts = new java.util.IdentityHashMap<>();
 		}
 		Boolean previous = facts.get(plan);
-		if (previous != null) { return previous; }
+		if (previous != null) {
+			return previous;
+		}
 		boolean result = requiresPhysicalCellsUncached(plan, facts);
 		facts.put(plan, result);
 		return result;
 	}
 
 	static boolean requiresPhysicalCellsUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
-		if (plan instanceof NativeValuesFoldPlan guard) { return requiresPhysicalCells(guard.folded, facts) || requiresPhysicalCells(guard.original, facts); }
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return requiresPhysicalCells(guard.folded, facts) || requiresPhysicalCells(guard.original, facts);
+		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
 			return requiresPhysicalCells(alias.original, facts);
 		}
@@ -236,18 +242,24 @@ interface SlotPlan {
 
 	static long assuredMask(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Long> facts) {
 		if (facts == null) {
-			if (!(plan instanceof NativeValuesFoldPlan)) { return assuredMaskUncached(plan, null); }
+			if (!(plan instanceof NativeValuesFoldPlan)) {
+				return assuredMaskUncached(plan, null);
+			}
 			facts = new java.util.IdentityHashMap<>();
 		}
 		Long previous = facts.get(plan);
-		if (previous != null) { return previous; }
+		if (previous != null) {
+			return previous;
+		}
 		long result = assuredMaskUncached(plan, facts);
 		facts.put(plan, result);
 		return result;
 	}
 
 	static long assuredMaskUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Long> facts) {
-		if (plan instanceof NativeValuesFoldPlan guard) { return assuredMask(guard.folded, facts) & assuredMask(guard.original, facts); }
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return assuredMask(guard.folded, facts) & assuredMask(guard.original, facts);
+		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
 			return assuredMask(alias.original, facts);
 		}
@@ -317,18 +329,24 @@ interface SlotPlan {
 
 	static boolean encounterOrderReplaySafe(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
 		if (facts == null) {
-			if (!(plan instanceof NativeValuesFoldPlan)) { return encounterOrderReplaySafeUncached(plan, null); }
+			if (!(plan instanceof NativeValuesFoldPlan)) {
+				return encounterOrderReplaySafeUncached(plan, null);
+			}
 			facts = new java.util.IdentityHashMap<>();
 		}
 		Boolean previous = facts.get(plan);
-		if (previous != null) { return previous; }
+		if (previous != null) {
+			return previous;
+		}
 		boolean result = encounterOrderReplaySafeUncached(plan, facts);
 		facts.put(plan, result);
 		return result;
 	}
 
 	static boolean encounterOrderReplaySafeUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
-		if (plan instanceof NativeValuesFoldPlan guard) { return encounterOrderReplaySafe(guard.folded, facts) && encounterOrderReplaySafe(guard.original, facts); }
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return encounterOrderReplaySafe(guard.folded, facts) && encounterOrderReplaySafe(guard.original, facts);
+		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
 			return encounterOrderReplaySafe(alias.original, facts);
 		}
@@ -393,7 +411,8 @@ interface SlotPlan {
 			return (leftJoin.lexicalCondition == null || leftJoin.lexicalCondition.capabilities()
 					.atPlacement(leftJoin.lexicalConditionMask)
 					.replaySafe())
-					&& encounterOrderReplaySafe(leftJoin.left, facts) && encounterOrderReplaySafe(leftJoin.right, facts);
+					&& encounterOrderReplaySafe(leftJoin.left, facts)
+					&& encounterOrderReplaySafe(leftJoin.right, facts);
 		}
 		if (plan instanceof UnionPlan union) {
 			return encounterOrderReplaySafe(union.left, facts) && encounterOrderReplaySafe(union.right, facts);
@@ -420,29 +439,53 @@ interface SlotPlan {
 	static long fixedValueOutputMask(SlotPlan plan) {
 		if (plan instanceof PatternPlan pattern) {
 			long mask = 0L;
-			if (pattern.s.preserveExisting && pattern.s.hasSlot()) { mask |= 1L << pattern.s.slot; }
-			if (pattern.p.preserveExisting && pattern.p.hasSlot()) { mask |= 1L << pattern.p.slot; }
-			if (pattern.o.preserveExisting && pattern.o.hasSlot()) { mask |= 1L << pattern.o.slot; }
-			if (pattern.c.preserveExisting && pattern.c.hasSlot()) { mask |= 1L << pattern.c.slot; }
+			if (pattern.s.preserveExisting && pattern.s.hasSlot()) {
+				mask |= 1L << pattern.s.slot;
+			}
+			if (pattern.p.preserveExisting && pattern.p.hasSlot()) {
+				mask |= 1L << pattern.p.slot;
+			}
+			if (pattern.o.preserveExisting && pattern.o.hasSlot()) {
+				mask |= 1L << pattern.o.slot;
+			}
+			if (pattern.c.preserveExisting && pattern.c.hasSlot()) {
+				mask |= 1L << pattern.c.slot;
+			}
 			return mask;
 		}
 		if (plan instanceof MultiValuePatternPlan multi) {
 			long mask = 0L;
-			for (PatternPlan pattern : multi.alternatives) { mask |= fixedValueOutputMask(pattern); }
+			for (PatternPlan pattern : multi.alternatives) {
+				mask |= fixedValueOutputMask(pattern);
+			}
 			return mask | (multi.fallback == null ? 0L : fixedValueOutputMask(multi.fallback));
 		}
-		if (plan instanceof UnionPlan union) { return fixedValueOutputMask(union.left) | fixedValueOutputMask(union.right); }
-		if (plan instanceof JoinPlan join) { return fixedValueOutputMask(join.left) | fixedValueOutputMask(join.right); }
+		if (plan instanceof UnionPlan union) {
+			return fixedValueOutputMask(union.left) | fixedValueOutputMask(union.right);
+		}
+		if (plan instanceof JoinPlan join) {
+			return fixedValueOutputMask(join.left) | fixedValueOutputMask(join.right);
+		}
 		if (plan instanceof NativeSubqueryPlan subquery && subquery.frameInputMask() == 0L
-				&& subquery.hoistableAcross(java.util.Set.of())) { return 0L; }
-		if (plan instanceof FilterPlan filter) { return fixedValueOutputMask(filter.arg); }
-		if (plan instanceof ExtensionPlan extension) { return fixedValueOutputMask(extension.arg); }
+				&& subquery.hoistableAcross(java.util.Set.of())) {
+			return 0L;
+		}
+		if (plan instanceof FilterPlan filter) {
+			return fixedValueOutputMask(filter.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return fixedValueOutputMask(extension.arg);
+		}
 		if (plan instanceof MultiJoinPlan join) {
 			long mask = 0L;
-			for (SlotPlan child : join.children) { mask |= fixedValueOutputMask(child); }
+			for (SlotPlan child : join.children) {
+				mask |= fixedValueOutputMask(child);
+			}
 			return mask;
 		}
-		if (plan instanceof ValuesPlan || plan instanceof SingletonPlan || plan instanceof EmptyPlan) { return 0L; }
+		if (plan instanceof ValuesPlan || plan instanceof SingletonPlan || plan instanceof EmptyPlan) {
+			return 0L;
+		}
 		return -1L;
 	}
 

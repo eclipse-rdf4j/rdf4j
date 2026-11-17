@@ -104,7 +104,6 @@ class LmdbSocialQ7OptimizedPlanIT {
 		}
 	}
 
-
 	/** Diagnostic-only capture after the existing planning call, before any original quality assertion. */
 	private static void captureCandidateEvidence(TupleExpr optimized, Path evidence) throws IOException {
 		List<QueryModelNode> nodes = new ArrayList<>();
@@ -131,38 +130,54 @@ class LmdbSocialQ7OptimizedPlanIT {
 			while (parent != null && !(parent instanceof TupleExpr)) {
 				parent = parent.getParentNode();
 			}
-			inventory.append("node=").append(ordinals.get(node)).append(" parent=")
+			inventory.append("node=")
+					.append(ordinals.get(node))
+					.append(" parent=")
 					.append(parent == null ? "none" : ordinals.get(parent))
-					.append(" type=").append(node.getClass().getSimpleName());
+					.append(" type=")
+					.append(node.getClass().getSimpleName());
 			if (node instanceof StatementPattern pattern) {
-				inventory.append(" scope=").append(pattern.getScope())
-						.append(" S=").append(term(pattern.getSubjectVar()))
-						.append(" P=").append(term(pattern.getPredicateVar()))
-						.append(" O=").append(term(pattern.getObjectVar()))
-						.append(" C=").append(term(pattern.getContextVar()))
-						.append(" Sinput=").append(analysis.bindingState(pattern.getSubjectVar(), analysis.contextAt(pattern)))
-						.append(" Oinput=").append(analysis.bindingState(pattern.getObjectVar(), analysis.contextAt(pattern)));
+				inventory.append(" scope=")
+						.append(pattern.getScope())
+						.append(" S=")
+						.append(term(pattern.getSubjectVar()))
+						.append(" P=")
+						.append(term(pattern.getPredicateVar()))
+						.append(" O=")
+						.append(term(pattern.getObjectVar()))
+						.append(" C=")
+						.append(term(pattern.getContextVar()))
+						.append(" Sinput=")
+						.append(analysis.bindingState(pattern.getSubjectVar(), analysis.contextAt(pattern)))
+						.append(" Oinput=")
+						.append(analysis.bindingState(pattern.getObjectVar(), analysis.contextAt(pattern)));
 			} else if (node instanceof BindingSetAssignment assignment) {
 				inventory.append(" valuesOutputs=").append(new TreeSet<>(assignment.getBindingNames()));
 			} else if (node instanceof Difference difference) {
 				var left = analysis.outputFacts(difference.getLeftArg());
 				var right = analysis.outputFacts(difference.getRightArg());
-				inventory.append(" leftGuaranteedKnown=").append(left.guaranteedOutputsKnown())
-						.append(" leftGuaranteed=").append(new TreeSet<>(left.guaranteedOutputs()))
-						.append(" rightGuaranteedKnown=").append(right.guaranteedOutputsKnown())
-						.append(" rightGuaranteed=").append(new TreeSet<>(right.guaranteedOutputs()));
+				inventory.append(" leftGuaranteedKnown=")
+						.append(left.guaranteedOutputsKnown())
+						.append(" leftGuaranteed=")
+						.append(new TreeSet<>(left.guaranteedOutputs()))
+						.append(" rightGuaranteedKnown=")
+						.append(right.guaranteedOutputsKnown())
+						.append(" rightGuaranteed=")
+						.append(new TreeSet<>(right.guaranteedOutputs()));
 			}
 			for (String key : List.of("optimizer.cascadesMode", "optimizer.cascadesCompleteness",
 					"optimizer.cascadesApproximate", "optimizer.cascadesLimitCauses", "optimizer.cascadesPlanCacheHit",
 					"optimizer.pipelinePlanCacheHit", "optimizer.semiAntiAlgorithm", "optimizer.semiAntiKind",
-					"optimizer.filterAlgorithmHint", "optimizer.physicalJoinImplementation", "optimizer.joinAlgorithmHint",
+					"optimizer.filterAlgorithmHint", "optimizer.physicalJoinImplementation",
+					"optimizer.joinAlgorithmHint",
 					"plannedEstimateSource", "plannedLookupComponents", "plannedIndexAccessMode", "plannedCostScope",
 					"optimizer.costEventPhase", "optimizer.costEventCostScope", "optimizer.costEventContextFingerprint",
 					"optimizer.dependentCostSource")) {
 				inventory.append(' ').append(key).append('=').append(node.getStringMetricPlanned(key));
 			}
 			for (String key : List.of("optimizer.cascadesWorkUnits", "optimizer.cascadesCandidateEvaluations",
-					"optimizer.cascadesRuleWork", "optimizer.cascadesPredicateProbes", "optimizer.cascadesDphypPairProbes",
+					"optimizer.cascadesRuleWork", "optimizer.cascadesPredicateProbes",
+					"optimizer.cascadesDphypPairProbes",
 					"optimizer.cascadesPartitionProbes", "optimizer.cascadesRetainedCandidates",
 					"optimizer.cascadesRootCostWorkRows", "optimizer.costEventOrdinal", "optimizer.costEventPrefixRows",
 					"optimizer.costEventRows", "optimizer.costEventObjective", "plannedWorkRows", "plannedAccessRows",
@@ -189,7 +204,8 @@ class LmdbSocialQ7OptimizedPlanIT {
 	}
 
 	private static String term(Var variable) {
-		return variable == null ? "absent" : variable.hasValue() ? variable.getValue().toString() : "?" + variable.getName();
+		return variable == null ? "absent"
+				: variable.hasValue() ? variable.getValue().toString() : "?" + variable.getName();
 	}
 
 	private static void assertBefore(String value, List<String> firsts, String second, String message) {

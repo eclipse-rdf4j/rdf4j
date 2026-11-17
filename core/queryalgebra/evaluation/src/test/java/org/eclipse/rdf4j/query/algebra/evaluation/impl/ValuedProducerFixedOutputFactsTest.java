@@ -42,8 +42,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -52,12 +52,12 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.If;
-import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -91,9 +91,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.Statement
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ValueKind;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
@@ -104,9 +104,9 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
 
 /**
- * A valued, nonconstant producer Var is used both as a lookup restriction and as an output name. An incoming value
- * for that name can still win the output while the valued term restricts lookup. Output facts and physical evaluators
- * must model the same keep-or-fill rule.
+ * A valued, nonconstant producer Var is used both as a lookup restriction and as an output name. An incoming value for
+ * that name can still win the output while the valued term restricts lookup. Output facts and physical evaluators must
+ * model the same keep-or-fill rule.
  */
 class ValuedProducerFixedOutputFactsTest {
 
@@ -203,8 +203,9 @@ class ValuedProducerFixedOutputFactsTest {
 			assertThat(rows(new Source(data), candidate, conflicting)).as("valued subject first=%s", valuedSubjectFirst)
 					.containsExactly(Map.of("x", T));
 			assertThat(rows(new Source(data), candidate, matching)).as("matching input, valued subject first=%s",
-						valuedSubjectFirst).containsExactly(Map.of("x", S));
-			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(candidate, conflicting);
+					valuedSubjectFirst).containsExactly(Map.of("x", S));
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(candidate,
+					conflicting);
 			assertOutputFactsAgreeOrDecline(analysis.outputFacts(candidate, analysis.contextAt(candidate)), T);
 		}
 	}
@@ -218,7 +219,8 @@ class ValuedProducerFixedOutputFactsTest {
 		Source source = new Source(data);
 		List<Map<String, Value>> actual = rows(source, candidate, EmptyBindingSet.getInstance());
 
-		assertThat(actual).as("the unvalued subject is the first normalized producer; the later object only restricts lookup")
+		assertThat(actual)
+				.as("the unvalued subject is the first normalized producer; the later object only restricts lookup")
 				.containsExactly(Map.of("x", T), Map.of("x", S));
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(candidate,
 				EmptyBindingSet.getInstance());
@@ -413,7 +415,6 @@ class ValuedProducerFixedOutputFactsTest {
 		});
 	}
 
-
 	@Test
 	void defaultGraphContextIsNotAGuaranteedRdfValueAcrossBindingLayouts() {
 		IRI namedGraph = VF.createIRI("urn:fixed:graph");
@@ -446,7 +447,8 @@ class ValuedProducerFixedOutputFactsTest {
 		Set<ValueKind> mixedContextKinds = unvaluedFacts.valueKinds().get("g");
 		assertThat(mixedContextKinds == null || mixedContextKinds.contains(ValueKind.UNKNOWN)
 				|| mixedContextKinds.equals(Set.of(ValueKind.IRI)))
-				.as("only the non-null named-graph rows can establish an IRI kind: %s", mixedContextKinds).isTrue();
+						.as("only the non-null named-graph rows can establish an IRI kind: %s", mixedContextKinds)
+						.isTrue();
 
 		BindingSet namedInput = bindings("g", namedGraph);
 		assertThat(rows(source, unvalued, namedInput)).containsExactly(Map.of("g", namedGraph));
@@ -471,7 +473,8 @@ class ValuedProducerFixedOutputFactsTest {
 			assertThat(aliasFacts.fixedValues()).doesNotContainKey("g");
 			Set<ValueKind> aliasKinds = aliasFacts.valueKinds().get("g");
 			assertThat(aliasKinds == null || aliasKinds.isEmpty() || aliasKinds.contains(ValueKind.UNKNOWN))
-					.as("%s selects a null default graph and is not emitted as an IRI: %s", nullGraphSentinel, aliasKinds)
+					.as("%s selects a null default graph and is not emitted as an IRI: %s", nullGraphSentinel,
+							aliasKinds)
 					.isTrue();
 		}
 	}
@@ -1403,7 +1406,8 @@ class ValuedProducerFixedOutputFactsTest {
 					EmptyBindingSet.getInstance());
 			OutputFacts facts = analysis.outputFacts(candidate, analysis.contextAt(candidate));
 			assertThat(facts.guaranteedOutputs())
-				.as("successful RHS write remains guaranteed: %s", candidate).contains("x");
+					.as("successful RHS write remains guaranteed: %s", candidate)
+					.contains("x");
 			if (candidate instanceof Join) {
 				assertThat(facts.fixedValues().get("x")).isSameAs(T);
 				assertThat(facts.valueKinds().get("x")).containsExactly(ValueKind.IRI);
@@ -1443,14 +1447,16 @@ class ValuedProducerFixedOutputFactsTest {
 		OutputFacts facts = analysis.outputFacts(assignment, analysis.contextAt(assignment));
 		Value fixed = facts.fixedValues().get("x");
 		assertThat(fixed == null || fixed == CALLER_LITERAL)
-				.as("the UNDEF row preserves the actual incoming representative: %s", facts.fixedValues()).isTrue();
+				.as("the UNDEF row preserves the actual incoming representative: %s", facts.fixedValues())
+				.isTrue();
 		Set<ValueKind> kinds = facts.valueKinds().get("x");
 		assertThat(kinds == null || kinds.contains(ValueKind.UNKNOWN) || kinds.contains(ValueKind.LITERAL))
-				.as("the UNDEF row cannot narrow an incoming literal to the bound row's IRI kind: %s", kinds).isTrue();
+				.as("the UNDEF row cannot narrow an incoming literal to the bound row's IRI kind: %s", kinds)
+				.isTrue();
 
 		BindingSetAssignment allBound = values("x", S, S);
 		QueryAlgebraBindingAnalysis allBoundAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(allBound,
-					EmptyBindingSet.getInstance());
+				EmptyBindingSet.getInstance());
 		assertThat(allBoundAnalysis.outputFacts(allBound, allBoundAnalysis.contextAt(allBound)).valueKinds().get("x"))
 				.contains(ValueKind.IRI);
 	}
@@ -1500,7 +1506,8 @@ class ValuedProducerFixedOutputFactsTest {
 		Set<ValueKind> kinds = facts.valueKinds().get("x");
 		assertThat(kinds == null || kinds.contains(ValueKind.UNKNOWN)
 				|| kinds.containsAll(Set.of(ValueKind.IRI, ValueKind.BNODE, ValueKind.LITERAL, ValueKind.TRIPLE)))
-				.as("the UNDEF arm preserves an arbitrary guaranteed caller value: %s", kinds).isTrue();
+						.as("the UNDEF arm preserves an arbitrary guaranteed caller value: %s", kinds)
+						.isTrue();
 	}
 
 	@Test
@@ -1530,7 +1537,8 @@ class ValuedProducerFixedOutputFactsTest {
 		QueryAlgebraBindingAnalysis localAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(localProducer,
 				EmptyBindingSet.getInstance());
 		assertThat(localAnalysis.requiredInputBindingNames(localProducer))
-				.as("a producer inside the Extension argument satisfies its own dependency").isEmpty();
+				.as("a producer inside the Extension argument satisfies its own dependency")
+				.isEmpty();
 	}
 
 	@Test
@@ -1597,7 +1605,7 @@ class ValuedProducerFixedOutputFactsTest {
 		TripleSource source = new TripleSource() {
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
-						Value object, Resource... contexts) {
+					Value object, Resource... contexts) {
 				queryLookupObjects.add(object);
 				assertThat(object).isEqualTo(prepared);
 				return new CloseableIteratorIteration<>(List.of(stored).iterator());
@@ -1623,7 +1631,8 @@ class ValuedProducerFixedOutputFactsTest {
 		BindingSet input = bindings("x", caller);
 		List<BindingSet> ordinaryBindings = new ArrayList<>();
 		try (CloseableIteration<BindingSet> iteration = new StrictEvaluationStrategy(source, null)
-				.precompile(filter).evaluate(input)) {
+				.precompile(filter)
+				.evaluate(input)) {
 			while (iteration.hasNext()) {
 				ordinaryBindings.add(iteration.next());
 			}
@@ -1638,7 +1647,8 @@ class ValuedProducerFixedOutputFactsTest {
 		String trace = "preparerSawCaller=" + preparedInputs.stream().anyMatch(value -> value == caller)
 				+ ", preparerReturnedDistinctValue=" + preparedOutputs.stream().anyMatch(value -> value == prepared)
 				+ ", queryLookedUpPreparedValue=" + queryLookupObjects.stream().anyMatch(value -> value == prepared)
-				+ ", directReadbackIsStoredValue=" + directReadbackValues.stream().anyMatch(value -> value == storedValue)
+				+ ", directReadbackIsStoredValue="
+				+ directReadbackValues.stream().anyMatch(value -> value == storedValue)
 				+ ", returnedSameCaller=" + returnedValues.stream().anyMatch(value -> value == caller)
 				+ ", returnedSameStored=" + returnedValues.stream().anyMatch(value -> value == storedValue)
 				+ ", returnedSamePrepared=" + returnedValues.stream().anyMatch(value -> value == prepared)
@@ -1663,7 +1673,8 @@ class ValuedProducerFixedOutputFactsTest {
 		// SailSourceConnection evaluates an optimized plan with request mappings in origin metadata. This models that
 		// query-entry route; the unoptimized raw mapping above intentionally exercises the separate low-level contract.
 		try (CloseableIteration<BindingSet> iteration = new StrictEvaluationStrategy(source, null)
-				.precompile(optimized).evaluate(BindingSetOrigin.optimizationInput(input))) {
+				.precompile(optimized)
+				.evaluate(BindingSetOrigin.optimizationInput(input))) {
 			while (iteration.hasNext()) {
 				optimizedBindings.add(iteration.next());
 			}
@@ -1721,7 +1732,7 @@ class ValuedProducerFixedOutputFactsTest {
 			QueryAlgebraBindingAnalysis suppliedSubject = QueryAlgebraBindingAnalysis.withBindingValues(
 					constantSubjectWithoutValue, subjectInput);
 			OutputFacts suppliedSubjectFacts = suppliedSubject.outputFacts(constantSubjectWithoutValue,
-						suppliedSubject.contextAt(constantSubjectWithoutValue));
+					suppliedSubject.contextAt(constantSubjectWithoutValue));
 			assertObservedValueIsNotExcluded(suppliedSubjectFacts, "s", testCase.subject());
 			assertThat(suppliedSubject.contextAt(constantSubjectWithoutValue).fixedValues().get("s"))
 					.isEqualTo(testCase.subject());
@@ -1738,11 +1749,12 @@ class ValuedProducerFixedOutputFactsTest {
 			assertObservedValueIsNotExcluded(expressionFacts, "expr", testCase.expression());
 
 			BindingSet expressionInput = bindings("expr", testCase.expression());
-			assertThat(rows(testCase.source(), constantExpressionWithoutValue, expressionInput)).containsExactly(expected);
+			assertThat(rows(testCase.source(), constantExpressionWithoutValue, expressionInput))
+					.containsExactly(expected);
 			QueryAlgebraBindingAnalysis suppliedExpression = QueryAlgebraBindingAnalysis.withBindingValues(
 					constantExpressionWithoutValue, expressionInput);
 			OutputFacts suppliedExpressionFacts = suppliedExpression.outputFacts(constantExpressionWithoutValue,
-						suppliedExpression.contextAt(constantExpressionWithoutValue));
+					suppliedExpression.contextAt(constantExpressionWithoutValue));
 			assertObservedValueIsNotExcluded(suppliedExpressionFacts, "expr", testCase.expression());
 			assertThat(suppliedExpression.contextAt(constantExpressionWithoutValue).fixedValues().get("expr"))
 					.isEqualTo(testCase.expression());
@@ -1804,10 +1816,10 @@ class ValuedProducerFixedOutputFactsTest {
 				Map.of("pathStart", S, "pathEnd", middle, "graph", lookupGraph),
 				Map.of("pathStart", middle, "pathEnd", finish, "graph", lookupGraph),
 				Map.of("pathStart", S, "pathEnd", finish, "graph", lookupGraph));
-		assertThat(fixedRows).hasSize(3).allSatisfy(row ->
-				assertThat(row.keySet()).contains("pathStart", "pathEnd"));
+		assertThat(fixedRows).hasSize(3).allSatisfy(row -> assertThat(row.keySet()).contains("pathStart", "pathEnd"));
 		List<List<Value>> fixedEndpointPairs = fixedRows.stream()
-				.map(row -> List.of(row.get("pathStart"), row.get("pathEnd"))).toList();
+				.map(row -> List.of(row.get("pathStart"), row.get("pathEnd")))
+				.toList();
 		assertThat(fixedEndpointPairs).containsExactlyInAnyOrder(List.of(S, middle), List.of(middle, finish),
 				List.of(S, finish));
 
@@ -1819,7 +1831,8 @@ class ValuedProducerFixedOutputFactsTest {
 		QueryAlgebraBindingAnalysis absentAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(valuedPath,
 				EmptyBindingSet.getInstance());
 		assertOutputFactsAgreeOrDeclineWithObservedRows(
-				absentAnalysis.outputFacts(valuedPath, absentAnalysis.contextAt(valuedPath)), absentCallerRows, "graph");
+				absentAnalysis.outputFacts(valuedPath, absentAnalysis.contextAt(valuedPath)), absentCallerRows,
+				"graph");
 
 		QueryAlgebraBindingAnalysis unvaluedAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(unvaluedPath,
 				EmptyBindingSet.getInstance());
@@ -1857,13 +1870,16 @@ class ValuedProducerFixedOutputFactsTest {
 		List<BindingSet> pathRows = bindingSets(source, path, input);
 		assertThat(pathRows).hasSize(3);
 		assertThat(pathRows).filteredOn(row -> S.equals(row.getValue("pathStart"))
-				&& middle.equals(row.getValue("pathEnd"))).singleElement()
+				&& middle.equals(row.getValue("pathEnd")))
+				.singleElement()
 				.satisfies(row -> assertThat(row.getValue("marker")).isSameAs(callerGraph));
 		assertThat(pathRows).filteredOn(row -> middle.equals(row.getValue("pathStart"))
-				&& finish.equals(row.getValue("pathEnd"))).singleElement()
+				&& finish.equals(row.getValue("pathEnd")))
+				.singleElement()
 				.satisfies(row -> assertThat(row.getValue("marker")).isSameAs(callerGraph));
 		assertThat(pathRows).filteredOn(row -> S.equals(row.getValue("pathStart"))
-				&& finish.equals(row.getValue("pathEnd"))).singleElement()
+				&& finish.equals(row.getValue("pathEnd")))
+				.singleElement()
 				.satisfies(row -> assertThat(row.getValue("marker")).isSameAs(lookupGraph));
 
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(path, input);
@@ -1874,7 +1890,8 @@ class ValuedProducerFixedOutputFactsTest {
 	private static ArbitraryLengthPath namedContextPath(Var contextVar) {
 		StatementPattern step = new StatementPattern(Scope.NAMED_CONTEXTS, Var.of("pathStart"), constant(P),
 				Var.of("pathEnd"), contextVar.clone());
-		return new ArbitraryLengthPath(Scope.NAMED_CONTEXTS, Var.of("pathStart"), step, Var.of("pathEnd"), contextVar, 1);
+		return new ArbitraryLengthPath(Scope.NAMED_CONTEXTS, Var.of("pathStart"), step, Var.of("pathEnd"), contextVar,
+				1);
 	}
 
 	@Test
@@ -1889,7 +1906,7 @@ class ValuedProducerFixedOutputFactsTest {
 		TripleSource source = new TripleSource() {
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
-						Value object, Resource... contexts) {
+					Value object, Resource... contexts) {
 				lookupSubjects.add(subject);
 				return new CloseableIteratorIteration<>(List.of(stored).iterator());
 			}
@@ -2029,7 +2046,8 @@ class ValuedProducerFixedOutputFactsTest {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 				Resource... contexts) {
-			return new CloseableIteratorIteration<>(data.getStatements(subject, predicate, object, contexts).iterator());
+			return new CloseableIteratorIteration<>(
+					data.getStatements(subject, predicate, object, contexts).iterator());
 		}
 
 		@Override
@@ -2211,7 +2229,8 @@ class ValuedProducerFixedOutputFactsTest {
 	private static List<BindingSet> bindingSets(TripleSource source, TupleExpr expression, BindingSet input) {
 		List<BindingSet> rows = new ArrayList<>();
 		try (CloseableIteration<BindingSet> iteration = new StrictEvaluationStrategy(source, null)
-				.precompile(expression).evaluate(input)) {
+				.precompile(expression)
+				.evaluate(input)) {
 			while (iteration.hasNext()) {
 				rows.add(iteration.next());
 			}
@@ -2224,7 +2243,8 @@ class ValuedProducerFixedOutputFactsTest {
 		FederatedServiceResolver resolver = ignored -> service;
 		List<BindingSet> rows = new ArrayList<>();
 		try (CloseableIteration<BindingSet> iteration = new StrictEvaluationStrategy(source, resolver)
-				.precompile(expression).evaluate(input)) {
+				.precompile(expression)
+				.evaluate(input)) {
 			while (iteration.hasNext()) {
 				rows.add(iteration.next());
 			}
@@ -2249,7 +2269,8 @@ class ValuedProducerFixedOutputFactsTest {
 		var facts = analysis.outputFacts(candidate, analysis.contextAt(candidate));
 		org.junit.jupiter.api.Assertions.assertAll(
 				() -> assertThat(rows(source, optimized, EmptyBindingSet.getInstance()))
-						.as("optimized BOUND(?x) bag must match the ordinary empty bag\n%s", optimized).isEmpty(),
+						.as("optimized BOUND(?x) bag must match the ordinary empty bag\n%s", optimized)
+						.isEmpty(),
 				() -> assertThat(facts.guaranteedOutputs())
 						.as("a failed dependent RHS write can remove the left x binding: %s", candidate)
 						.doesNotContain("x"),
@@ -2336,7 +2357,8 @@ class ValuedProducerFixedOutputFactsTest {
 		Source source = new Source(new LinkedHashModel());
 		TupleExpr candidate = serviceValuesCandidate(first, second);
 		IdentityAwareService ordinaryService = new IdentityAwareService(identityScope);
-		List<BindingSet> ordinaryBindings = bindingSets(source, candidate, EmptyBindingSet.getInstance(), ordinaryService);
+		List<BindingSet> ordinaryBindings = bindingSets(source, candidate, EmptyBindingSet.getInstance(),
+				ordinaryService);
 		assertThat(ordinaryBindings).hasSize(2);
 		assertThat(ordinaryBindings.get(0).hasBinding("serviceResult")).isTrue();
 		assertThat(ordinaryBindings.get(1).hasBinding("serviceResult")).isEqualTo(secondTrusted);
@@ -2468,7 +2490,8 @@ class ValuedProducerFixedOutputFactsTest {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 				Resource... contexts) {
-			return new CloseableIteratorIteration<>(data.getStatements(subject, predicate, object, contexts).iterator());
+			return new CloseableIteratorIteration<>(
+					data.getStatements(subject, predicate, object, contexts).iterator());
 		}
 
 		@Override
@@ -2476,7 +2499,8 @@ class ValuedProducerFixedOutputFactsTest {
 			return new CloseableIteratorIteration<>(tripleTerms.stream()
 					.filter(term -> subject == null || subject.equals(term.getSubject()))
 					.filter(term -> predicate == null || predicate.equals(term.getPredicate()))
-					.filter(term -> object == null || object.equals(term.getObject())).iterator());
+					.filter(term -> object == null || object.equals(term.getObject()))
+					.iterator());
 		}
 
 		@Override

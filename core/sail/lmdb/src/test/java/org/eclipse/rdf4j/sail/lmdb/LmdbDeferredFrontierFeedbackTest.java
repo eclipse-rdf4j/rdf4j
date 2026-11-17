@@ -96,9 +96,11 @@ class LmdbDeferredFrontierFeedbackTest {
 						.getEvaluationStatistics()).estimatorRuntime().feedback();
 				var correction = feedback.frontierCorrection(KEY, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false);
 				if (commit) {
-					assertFalse(correction.isPresent(), "an observation from before a commit cannot train the new snapshot");
+					assertFalse(correction.isPresent(),
+							"an observation from before a commit cannot train the new snapshot");
 				} else {
-					assertTrue(correction.isPresent(), "completed current-snapshot Frontier feedback reaches its provider");
+					assertTrue(correction.isPresent(),
+							"completed current-snapshot Frontier feedback reaches its provider");
 					assertTrue(correction.orElseThrow() > 100.0d, "the correction keeps the observed direction");
 				}
 			}
@@ -158,8 +160,9 @@ class LmdbDeferredFrontierFeedbackTest {
 			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
 			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
 			try {
-				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
-						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime()
+						.pinQueryPlanningReads(
+								borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
 				try {
 					statistics.bindExecutionSource(source, null);
 					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority(),

@@ -43,11 +43,11 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
@@ -128,7 +128,8 @@ class TupleFunctionNullableAssuranceTest {
 
 	@Test
 	void sameTermAndBoundFiltersKeepNullableRowsConsistentAfterOptimization() {
-		List<List<? extends Value>> outputs = Arrays.asList(Arrays.asList((Value) null), List.of(FIXED), List.of(OTHER));
+		List<List<? extends Value>> outputs = Arrays.asList(Arrays.asList((Value) null), List.of(FIXED),
+				List.of(OTHER));
 
 		TupleExpr sameTerm = new Filter(call(List.of(Var.of("result"))),
 				new SameTerm(Var.of("result"), new ValueConstant(FIXED)));
@@ -221,7 +222,8 @@ class TupleFunctionNullableAssuranceTest {
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 					Resource... contexts) {
-				return new CloseableIteratorIteration<>(model.getStatements(subject, predicate, object, contexts).iterator());
+				return new CloseableIteratorIteration<>(
+						model.getStatements(subject, predicate, object, contexts).iterator());
 			}
 		};
 	}

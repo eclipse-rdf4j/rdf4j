@@ -266,7 +266,8 @@ class ExistsFilteredProbePreparationTest {
 		List<BindingSet> inputs = List.of(binding("x", caller), binding("x", stored), binding("x", caller));
 		List<BindingSet> localFrames = inputs.stream().map(row -> BindingSetOrigin.produced(row, Set.of("x"))).toList();
 		Source referenceSource = new Source(List.of(VF.createStatement(S, VALUE, stored)), preparation, caller, stored);
-		List<Boolean> ordinary = reference(kind.body(), localFrames, ConditionBindingScope.ALL, negated, referenceSource);
+		List<Boolean> ordinary = reference(kind.body(), localFrames, ConditionBindingScope.ALL, negated,
+				referenceSource);
 		assertEquals(negate(List.of(true, false, true), negated), ordinary);
 		Filter filter = outer(kind.body(), negated, ConditionBindingScope.ALL);
 		filter.setArg(values("x", inputs));
@@ -516,7 +517,8 @@ class ExistsFilteredProbePreparationTest {
 		BindingSet entered = BindingSetOrigin.requestInput(original);
 		for (String name : present) {
 			assertTrue(actual.hasBinding(name), name);
-			assertSame(original.getValue(name), actual.getValue(name), "The FILTER returns the original representative");
+			assertSame(original.getValue(name), actual.getValue(name),
+					"The FILTER returns the original representative");
 			assertEquals(BindingSetOrigin.of(entered).isRequest(name), BindingSetOrigin.of(actual).isRequest(name));
 			assertEquals(BindingSetOrigin.of(entered).isLocal(name), BindingSetOrigin.of(actual).isLocal(name));
 			assertEquals(GraphFrameBindings.isSupplied(original, name), GraphFrameBindings.isSupplied(actual, name));
@@ -579,7 +581,9 @@ class ExistsFilteredProbePreparationTest {
 	}
 
 	private enum Shape {
-		BASIC, CHAIN, UNION;
+		BASIC,
+		CHAIN,
+		UNION;
 
 		TupleExpr body() {
 			return switch (this) {
@@ -591,7 +595,13 @@ class ExistsFilteredProbePreparationTest {
 	}
 
 	private enum Unsafe {
-		OUTER_ONLY, EXCLUDED_FRAME, OPTIONAL, MINUS, SELECT, NESTED_EXISTS, WHOLE_ROW;
+		OUTER_ONLY,
+		EXCLUDED_FRAME,
+		OPTIONAL,
+		MINUS,
+		SELECT,
+		NESTED_EXISTS,
+		WHOLE_ROW;
 
 		TupleExpr body() {
 			return switch (this) {
@@ -612,9 +622,11 @@ class ExistsFilteredProbePreparationTest {
 	}
 
 	private enum Mode {
-		GENERIC("streaming-exists", null), STREAMING("streaming-correlated", "streaming-correlated"),
+		GENERIC("streaming-exists", null),
+		STREAMING("streaming-correlated", "streaming-correlated"),
 		MEMOIZED("memoized-correlated", "memoized-correlated"),
-		MATERIALIZED("materialized-hash", "materialized-hash"), ADAPTIVE_PROBE(null, "memoized-correlated"),
+		MATERIALIZED("materialized-hash", "materialized-hash"),
+		ADAPTIVE_PROBE(null, "memoized-correlated"),
 		ADAPTIVE_BUILD(null, "materialized-hash");
 
 		private final String hint;
@@ -636,11 +648,14 @@ class ExistsFilteredProbePreparationTest {
 	}
 
 	private enum Preparation {
-		NONE, IDENTITY, CANONICAL
+		NONE,
+		IDENTITY,
+		CANONICAL
 	}
 
 	private enum Representative {
-		LANGUAGE, IRI_NAMESPACE;
+		LANGUAGE,
+		IRI_NAMESPACE;
 
 		Value caller() {
 			return this == LANGUAGE ? VF.createLiteral("v", "EN") : VF.createIRI("urn:representative:i", "tem");
@@ -680,24 +695,29 @@ class ExistsFilteredProbePreparationTest {
 	}
 
 	private static Stream<Arguments> unsafeCases() {
-		return Stream.of(Unsafe.values()).flatMap(shape -> Stream.of(Mode.GENERIC, Mode.MATERIALIZED)
-				.flatMap(mode -> Stream.of(false, true).map(n -> Arguments.of(shape, mode, n))));
+		return Stream.of(Unsafe.values())
+				.flatMap(shape -> Stream.of(Mode.GENERIC, Mode.MATERIALIZED)
+						.flatMap(mode -> Stream.of(false, true).map(n -> Arguments.of(shape, mode, n))));
 	}
 
 	private static Stream<Arguments> representationCases() {
-		return Stream.of(Representative.values()).flatMap(kind -> Stream.of(Preparation.values())
-				.flatMap(preparation -> Stream.of(Mode.values())
-						.flatMap(mode -> Stream.of(false, true).map(n -> Arguments.of(kind, preparation, mode, n)))));
+		return Stream.of(Representative.values())
+				.flatMap(kind -> Stream.of(Preparation.values())
+						.flatMap(preparation -> Stream.of(Mode.values())
+								.flatMap(mode -> Stream.of(false, true)
+										.map(n -> Arguments.of(kind, preparation, mode, n)))));
 	}
 
 	private static Stream<Arguments> representationPreparationCases() {
-		return Stream.of(Representative.values()).flatMap(kind -> Stream.of(Preparation.values())
-				.map(preparation -> Arguments.of(kind, preparation)));
+		return Stream.of(Representative.values())
+				.flatMap(kind -> Stream.of(Preparation.values())
+						.map(preparation -> Arguments.of(kind, preparation)));
 	}
 
 	private static Stream<Arguments> graphCases() {
-		return Stream.of(false, true).flatMap(supplied -> Stream.of(false, true)
-				.flatMap(retained -> Stream.of(false, true).map(n -> Arguments.of(supplied, retained, n))));
+		return Stream.of(false, true)
+				.flatMap(supplied -> Stream.of(false, true)
+						.flatMap(retained -> Stream.of(false, true).map(n -> Arguments.of(supplied, retained, n))));
 	}
 
 	private static final class CountingStrategy extends DefaultEvaluationStrategy {
@@ -774,8 +794,9 @@ class ExistsFilteredProbePreparationTest {
 					.filter(st -> subject == null || subject.equals(st.getSubject()))
 					.filter(st -> predicate == null || predicate.equals(st.getPredicate()))
 					.filter(st -> object == null || object.equals(st.getObject()))
-					.filter(st -> contexts.length == 0 || Stream.of(contexts).anyMatch(c -> java.util.Objects.equals(c,
-							st.getContext())))
+					.filter(st -> contexts.length == 0 || Stream.of(contexts)
+							.anyMatch(c -> java.util.Objects.equals(c,
+									st.getContext())))
 					.toList();
 			opens.incrementAndGet();
 			return new CloseableIteratorIteration<Statement>(matched.iterator()) {
@@ -814,7 +835,8 @@ class ExistsFilteredProbePreparationTest {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 				Resource... contexts) {
-			CloseableIteration<? extends Statement> delegate = super.getStatements(subject, predicate, object, contexts);
+			CloseableIteration<? extends Statement> delegate = super.getStatements(subject, predicate, object,
+					contexts);
 			if (!armed || !CODE.equals(predicate)) {
 				return delegate;
 			}

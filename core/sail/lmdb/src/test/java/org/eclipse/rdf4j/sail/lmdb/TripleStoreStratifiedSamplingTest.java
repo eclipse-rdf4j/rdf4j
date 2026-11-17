@@ -101,10 +101,14 @@ class TripleStoreStratifiedSamplingTest {
 			try (Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
 				List<TripleStore.StratifiedSampleRow> rows = new ArrayList<>();
 				TripleStore.StratifiedSampleResult result = store.sampleTriplesStratified(snapshot, -1L, PREDICATE,
-						-1L, -1L, budget, 16, true, () -> true, row -> { rows.add(row); return true; });
+						-1L, -1L, budget, 16, true, () -> true, row -> {
+							rows.add(row);
+							return true;
+						});
 				for (boolean explicit : new boolean[] { true, false }) {
 					long first = explicit ? FIRST_SUBJECT : inferredFirst;
-					assertTrue(rows.stream().filter(row -> row.explicit() == explicit)
+					assertTrue(rows.stream()
+							.filter(row -> row.explicit() == explicit)
 							.mapToLong(row -> row.quad()[TripleIndex.SUBJ_IDX] - first)
 							.anyMatch(offset -> offset >= POPULATION * 65 / 100 && offset < POPULATION * 85 / 100),
 							"each plane must reach an upper interior stratum, not just its last endpoint");
@@ -165,7 +169,9 @@ class TripleStoreStratifiedSamplingTest {
 			IllegalStateException failure = new IllegalStateException("paired callback failure");
 			assertSame(failure, assertThrows(IllegalStateException.class,
 					() -> store.sampleTriplesStratified(snapshot, -1L, PREDICATE, -1L, -1L, 16, 16, true,
-								() -> true, row -> { throw failure; })));
+							() -> true, row -> {
+								throw failure;
+							})));
 			writeOne(store);
 		}
 	}
@@ -185,7 +191,10 @@ class TripleStoreStratifiedSamplingTest {
 							return true;
 						}));
 				assertTrue(callbackEntered.await(5L, TimeUnit.SECONDS), "a real sample must reach its callback");
-				Future<Void> writer = workers.submit(() -> { writeOne(store); return null; });
+				Future<Void> writer = workers.submit(() -> {
+					writeOne(store);
+					return null;
+				});
 				boolean committedWhilePaused = false;
 				try {
 					writer.get(3L, TimeUnit.SECONDS);
@@ -390,7 +399,8 @@ class TripleStoreStratifiedSamplingTest {
 						});
 				assertThrows(QueryInterruptedException.class,
 						() -> store.boundedExactCardinality(snapshot, -1L, PREDICATE, -1L, -1L, POPULATION));
-				assertTrue(Thread.currentThread().isInterrupted(), "the census must preserve its cancellation interrupt");
+				assertTrue(Thread.currentThread().isInterrupted(),
+						"the census must preserve its cancellation interrupt");
 			} finally {
 				Thread.interrupted();
 			}

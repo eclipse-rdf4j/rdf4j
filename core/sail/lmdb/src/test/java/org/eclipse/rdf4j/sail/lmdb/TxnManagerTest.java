@@ -37,8 +37,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_reader_list;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
-import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -58,8 +58,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
-import org.lwjgl.util.lmdb.LMDB;
-import org.mockito.MockedStatic;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.junit.jupiter.api.Test;
@@ -69,7 +67,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.LMDB;
 import org.lwjgl.util.lmdb.MDBMsgFunc;
+import org.mockito.MockedStatic;
 
 public class TxnManagerTest {
 
@@ -508,7 +508,8 @@ public class TxnManagerTest {
 				nativeCalls.verifyNoMoreInteractions();
 			}
 			assertEquals(1, rejectedRenewals.get(), "the refused call must not renew or modify the real native reader");
-			assertFalse(Thread.currentThread().isInterrupted(), "the time limit must clear its own delivered interrupt");
+			assertFalse(Thread.currentThread().isInterrupted(),
+					"the time limit must clear its own delivered interrupt");
 			assertFalse(reader.isNativeActive());
 			assertEquals(0, activeNativeReaderCount(fixture.env));
 			assertEquals(version + 1L, reader.version());

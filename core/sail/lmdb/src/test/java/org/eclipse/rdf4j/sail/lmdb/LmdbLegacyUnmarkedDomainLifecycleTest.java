@@ -58,9 +58,13 @@ class LmdbLegacyUnmarkedDomainLifecycleTest {
 
 	private static void verify(Path directory, java.util.Properties metadata, boolean rebuild) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
-				.setInlineLiterals(false).setAutoGrow(true).setValueDBSize(16L * 1024 * 1024)
-				.setTripleDBSize(16L * 1024 * 1024).setSketchEstimatorEnabled(false)
-				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF).setPredicateGuaranteeIndexEnabled(true)
+				.setInlineLiterals(false)
+				.setAutoGrow(true)
+				.setValueDBSize(16L * 1024 * 1024)
+				.setTripleDBSize(16L * 1024 * 1024)
+				.setSketchEstimatorEnabled(false)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setPredicateGuaranteeIndexEnabled(true)
 				.setPredicateGuaranteeIndexAutoRebuild(rebuild);
 		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
@@ -74,16 +78,21 @@ class LmdbLegacyUnmarkedDomainLifecycleTest {
 					"an unpinned planner cannot use a paired owner proof");
 			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getSailStore()
 					.getEvaluationStatistics()).estimatorRuntime();
-			try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+			try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+					null)) {
 				LmdbSailStore.ReadView view = admission.view();
 				view.requireDictionaryTermSnapshot();
-				try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(), view.valueSnapshot())) {
+				try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(),
+						view.valueSnapshot())) {
 					var domain = backing.getPersistedRdfTermDomain(CanonicalIriCompatibilityProcess.PREDICATE);
 					assertEquals(rebuild, domain.isPresent(),
 							"only this owner's complete paired rebuild may expose its domain");
 					if (rebuild) {
 						for (var value : CanonicalIriCompatibilityProcess.values()) {
-							assertFalse(domain.orElseThrow().meetRequired(RdfTermDomain.finiteValues(List.of(value))).isEmpty(),
+							assertFalse(
+									domain.orElseThrow()
+											.meetRequired(RdfTermDomain.finiteValues(List.of(value)))
+											.isEmpty(),
 									"the proof must admit each real stored fixture object");
 						}
 					}

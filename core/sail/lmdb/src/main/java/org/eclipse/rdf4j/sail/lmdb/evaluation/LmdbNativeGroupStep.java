@@ -1090,7 +1090,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							&& !LmdbNativeJaninoCodegen.enabled();
 			boolean available = interpreted ? LmdbNativeKernelInterpreter.enabled() : LmdbNativeJaninoCodegen.enabled();
 			SlotPlan irInput = available && consumerInput == null
-					? LmdbNativeNeutralRangeOrder.prepareAggregate(arg, row, row.boundMask(), aggregates) : arg;
+					? LmdbNativeNeutralRangeOrder.prepareAggregate(arg, row, row.boundMask(), aggregates)
+					: arg;
 			String kernel = LmdbNativeKernelExecution.aggregateRouteForExplanation(irInput, row, groupSlots, aggregates,
 					havingCondition, interpreted, strictCompare, true);
 			boolean requested = kernel != null && aggregateRouteMatchesForcedFamily(kernel, forcedExecutionStrategy);
@@ -1159,11 +1160,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			boolean forceCompiled = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(forcedExecutionStrategy);
 			if (forcedExecutionStrategy == null || forceInterpreted || forceCompiled) {
 				boolean interpreted = forceInterpreted || !forceCompiled && !LmdbNativeJaninoCodegen.enabled();
-				boolean available = interpreted ? LmdbNativeKernelInterpreter.enabled() : LmdbNativeJaninoCodegen.enabled();
+				boolean available = interpreted ? LmdbNativeKernelInterpreter.enabled()
+						: LmdbNativeJaninoCodegen.enabled();
 				SlotPlan irInput = available && consumerInput == null
-						? LmdbNativeNeutralRangeOrder.prepareAggregate(arg, row, row.boundMask(), aggregates) : arg;
+						? LmdbNativeNeutralRangeOrder.prepareAggregate(arg, row, row.boundMask(), aggregates)
+						: arg;
 				if (available) {
-					String dispatchRoute = LmdbNativeKernelExecution.aggregateRouteForExplanation(irInput, row, groupSlots,
+					String dispatchRoute = LmdbNativeKernelExecution.aggregateRouteForExplanation(irInput, row,
+							groupSlots,
 							aggregates, havingCondition, interpreted, strictCompare, true, explainTarget);
 					if (dispatchRoute != null) {
 						LmdbNativeDispatchLoop.logDirect(explainTarget, "GROUP BY serial dispatch",
@@ -1171,7 +1175,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 								"One serial value authority is required");
 					}
 				}
-				List<BindingSet> kernelRows = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(irInput, row, groupSlots,
+				List<BindingSet> kernelRows = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(irInput, row,
+						groupSlots,
 						aggregates, this, explainTarget, havingCondition, interpreted, true);
 				if (kernelRows != null) {
 					return kernelRows;
@@ -1225,7 +1230,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			return results;
 		} catch (EncounterOrderFallback fallback) {
 			Throwable cleanup = results instanceof AutoCloseable resource
-					? KernelRuntime.closeResource(resource, fallback) : fallback;
+					? KernelRuntime.closeResource(resource, fallback)
+					: fallback;
 			try {
 				KernelRuntime.rethrowCloseFailureIfNotPrimary(cleanup, fallback);
 				throwRealFailureSuppressedBy(fallback);
@@ -1239,7 +1245,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			return evaluateOwnedSequentialFallback(row, fallback.reason, true);
 		} catch (RuntimeException | Error failure) {
 			Throwable retained = results instanceof AutoCloseable resource
-					? KernelRuntime.closeResource(resource, failure) : failure;
+					? KernelRuntime.closeResource(resource, failure)
+					: failure;
 			retained = LmdbNativeDispatchLoop.finishFilters(filterLease, retained);
 			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			throw failure;
@@ -1746,7 +1753,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 										aggregates)));
 			} else if (LmdbNativeFactorAlgebra.candidate(arg)) {
 				arbiter.offer(() -> estimatedProposal(
-						filters -> LmdbNativePackedFtree.tryEvaluateAggregateSerial(filters.borrow(arg), row, groupSlots,
+						filters -> LmdbNativePackedFtree.tryEvaluateAggregateSerial(filters.borrow(arg), row,
+								groupSlots,
 								aggregates, withFilterAttempt(filters),
 								explainTarget),
 						LmdbNativePackedFtree.AGGREGATE_SERIAL,
@@ -1809,7 +1817,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates));
 		compiledIr = typeMatrixIr ? LmdbNativeJaninoCodegen.enabled() : compiledIr;
 		SlotPlan irInput = (compiledIr || interpretedIr) && consumerInput == null
-				? LmdbNativeNeutralRangeOrder.prepareAggregate(arg, row, row.boundMask(), aggregates) : arg;
+				? LmdbNativeNeutralRangeOrder.prepareAggregate(arg, row, row.boundMask(), aggregates)
+				: arg;
 		boolean orderedDistinctSpecialist = orderedDistinct != null && orderedDistinct.specialized();
 		// Fixed-context scans may participate in a forced request, but an ordinary dispatch keeps an
 		// already-admitted
@@ -1889,11 +1898,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					: LmdbNativeWork.planning(irInput, row, row.boundMask());
 			if (parallelIr) {
 				if (compiledIr) {
-					arbiter.offer(() -> parallelKernelProposal(irInput, row, compiledAdmission, compiledParallelTag, false,
-							allowFixedContexts, irAggregateWork, irAggregatePlanning));
+					arbiter.offer(
+							() -> parallelKernelProposal(irInput, row, compiledAdmission, compiledParallelTag, false,
+									allowFixedContexts, irAggregateWork, irAggregatePlanning));
 				}
 				if (interpretedIr) {
-					arbiter.offer(() -> parallelKernelProposal(irInput, row, interpretedAdmission, interpretedParallelTag, true,
+					arbiter.offer(() -> parallelKernelProposal(irInput, row, interpretedAdmission,
+							interpretedParallelTag, true,
 							allowFixedContexts, irAggregateWork, irAggregatePlanning));
 				}
 			}
@@ -2028,7 +2039,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				return selection.value();
 			} catch (RuntimeException | Error failure) {
 				Throwable retained = selection.value() instanceof AutoCloseable resource
-						? KernelRuntime.closeResource(resource, failure) : failure;
+						? KernelRuntime.closeResource(resource, failure)
+						: failure;
 				retained = selection.finish(retained);
 				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 				throw failure;
@@ -2101,16 +2113,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		try {
 			int workers = reservation.grantedWorkers();
 			return withKernelQuote(estimatedProposal(
-				filters -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(filters.borrow(input), row,
-						groupSlots, aggregates, withFilterAttempt(filters), explainTarget, havingCondition, interpreted,
-						allowFixedContexts, reservation),
-				tag, LmdbNativeKernelExecution.parallelProposalWork(serialWork, workers),
-				LmdbNativeKernelExecution.parallelStartupWork())
-						.withParallelReservation(reservation)
-						.withPlanningWork(LmdbNativeKernelExecution.parallelProposalWork(serialPlanning, workers))
-						.withOptionalAggregatePhysicalPlan(admission.physicalPlan(input, row, true, workers))
-						.withParallelShape(LmdbNativeStaticPrior.ParallelShape.aggregate(input, row,
-								row.boundMask(), groupSlots)),
+					filters -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(filters.borrow(input), row,
+							groupSlots, aggregates, withFilterAttempt(filters), explainTarget, havingCondition,
+							interpreted,
+							allowFixedContexts, reservation),
+					tag, LmdbNativeKernelExecution.parallelProposalWork(serialWork, workers),
+					LmdbNativeKernelExecution.parallelStartupWork())
+							.withParallelReservation(reservation)
+							.withPlanningWork(LmdbNativeKernelExecution.parallelProposalWork(serialPlanning, workers))
+							.withOptionalAggregatePhysicalPlan(admission.physicalPlan(input, row, true, workers))
+							.withParallelShape(LmdbNativeStaticPrior.ParallelShape.aggregate(input, row,
+									row.boundMask(), groupSlots)),
 					input, row, tag, workers, admission);
 		} catch (RuntimeException | Error failure) {
 			Throwable retained = KernelRuntime.closeResource(reservation, failure);
@@ -2212,7 +2225,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 * stream at the measured speed-up. Inputs already priced by physical work keep that quote instead.
 	 */
 	private LmdbNativeStrategyProposal<List<BindingSet>> withKernelQuote(
-			LmdbNativeStrategyProposal<List<BindingSet>> proposal, SlotPlan input, RowState row, String tag, int workers,
+			LmdbNativeStrategyProposal<List<BindingSet>> proposal, SlotPlan input, RowState row, String tag,
+			int workers,
 			LmdbNativeKernelExecution.AggregateAdmission admission) {
 		LmdbNativeCostQuote quote = kernelQuote(input, row, tag, workers, admission);
 		if (quote == null) {
@@ -2326,7 +2340,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		NativeGroupIteration execution = null;
 		try {
 			execution = withFilterAttempt(filters);
-			results = execution.evaluateSequentialFallback(speculativeRow, reason, encounterOrderRequired, execution.arg);
+			results = execution.evaluateSequentialFallback(speculativeRow, reason, encounterOrderRequired,
+					execution.arg);
 			cancellation.check();
 			Throwable cleanup = KernelRuntime.closeResource(execution.aggContext::close, null);
 			execution = null;
@@ -2335,7 +2350,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			return results;
 		} catch (RuntimeException | Error failure) {
 			Throwable retained = results instanceof AutoCloseable resource
-					? KernelRuntime.closeResource(resource, failure) : failure;
+					? KernelRuntime.closeResource(resource, failure)
+					: failure;
 			retained = KernelRuntime.closeResource(execution == null ? null : execution.aggContext::close, retained);
 			retained = LmdbNativeDispatchLoop.finishFilters(filters, retained);
 			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);

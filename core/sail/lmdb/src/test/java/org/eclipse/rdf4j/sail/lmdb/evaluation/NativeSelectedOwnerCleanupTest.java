@@ -35,16 +35,23 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /** Owning result adapters must retain cleanup before a terminal value can escape or be discarded. */
 class NativeSelectedOwnerCleanupTest {
-	enum ControlKind { QUERY_SINGLETON, PROBE_SINGLETON, LOCAL_QUERY, FOREIGN_QUERY }
+	enum ControlKind {
+		QUERY_SINGLETON,
+		PROBE_SINGLETON,
+		LOCAL_QUERY,
+		FOREIGN_QUERY
+	}
 
 	static Stream<Arguments> mappings() {
-		return Arrays.stream(ControlKind.values()).flatMap(kind -> Stream.of(false, true)
-				.map(failingClose -> Arguments.of(kind, failingClose)));
+		return Arrays.stream(ControlKind.values())
+				.flatMap(kind -> Stream.of(false, true)
+						.map(failingClose -> Arguments.of(kind, failingClose)));
 	}
 
 	static Stream<Arguments> losers() {
-		return Arrays.stream(ControlKind.values()).flatMap(kind -> Stream.of(false, true)
-				.map(extraFailure -> Arguments.of(kind, extraFailure)));
+		return Arrays.stream(ControlKind.values())
+				.flatMap(kind -> Stream.of(false, true)
+						.map(extraFailure -> Arguments.of(kind, extraFailure)));
 	}
 
 	@ParameterizedTest(name = "control={0}, failingClose={1}")
@@ -55,16 +62,22 @@ class NativeSelectedOwnerCleanupTest {
 		Carrier value = new Carrier(closes, failingClose ? cleanup : null);
 		AtomicReference<RuntimeException> signal = new AtomicReference<>();
 		try (LmdbNativeStrategyProposal<Carrier> original = new LmdbNativeStrategyProposal<>(() -> {
-			opens.incrementAndGet(); return value;
+			opens.incrementAndGet();
+			return value;
 		}, 1D, "nestedLoop");
 				LmdbNativeStrategyProposal<String> mapped = original.map(ignored -> {
-					RuntimeException observed = cancellation(kind); signal.set(observed); throw observed;
+					RuntimeException observed = cancellation(kind);
+					signal.set(observed);
+					throw observed;
 				}, "nestedLoop(fullValue)")) {
 			Throwable actual = assertThrows(RuntimeException.class, mapped::open);
 			assertAll(() -> assertEquals(1, opens.get()), () -> assertEquals(1, closes.get()),
 					() -> assertSame(failingClose ? cleanup : signal.get(), actual));
-			if (failingClose) { assertControlEvidence(cleanup, signal.get()); }
-			else { assertEquals(0, signal.get().getSuppressed().length); }
+			if (failingClose) {
+				assertControlEvidence(cleanup, signal.get());
+			} else {
+				assertEquals(0, signal.get().getSuppressed().length);
+			}
 		}
 		assertEquals(1, closes.get());
 	}
@@ -75,7 +88,9 @@ class NativeSelectedOwnerCleanupTest {
 		RuntimeException cleanup = new IllegalStateException("ordinary carrier close");
 		AtomicInteger closes = new AtomicInteger();
 		try (var original = new LmdbNativeStrategyProposal<>(() -> new Carrier(closes, cleanup), 1D, "nestedLoop");
-				var mapped = original.map(value -> { throw primary; }, "nestedLoop(fullValue)")) {
+				var mapped = original.map(value -> {
+					throw primary;
+				}, "nestedLoop(fullValue)")) {
 			assertSame(primary, assertThrows(RuntimeException.class, mapped::open));
 			assertEquals(1, closes.get());
 			assertEquals(1, primary.getSuppressed().length);
@@ -90,27 +105,44 @@ class NativeSelectedOwnerCleanupTest {
 		RuntimeException valueFailure = new IllegalStateException("selected value close");
 		RuntimeException filterFailure = new IllegalArgumentException("selected filter close");
 		RuntimeException loserFailure = new IllegalStateException("second losing owner close");
-		AtomicInteger opens = new AtomicInteger(), valueCloses = new AtomicInteger(), filterCloses = new AtomicInteger();
+		AtomicInteger opens = new AtomicInteger(), valueCloses = new AtomicInteger(),
+				filterCloses = new AtomicInteger();
 		AtomicInteger firstLoserCloses = new AtomicInteger(), secondLoserCloses = new AtomicInteger();
 		AtomicReference<RuntimeException> signal = new AtomicReference<>();
 		NativeBooleanFilter filter = new NativeBooleanFilter() {
-			@Override public boolean accept(RowState row) { return true; }
-			@Override public void close() { filterCloses.incrementAndGet(); throw filterFailure; }
+			@Override
+			public boolean accept(RowState row) {
+				return true;
+			}
+
+			@Override
+			public void close() {
+				filterCloses.incrementAndGet();
+				throw filterFailure;
+			}
 		};
 		LmdbNativeOffers<Carrier> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
 		offers.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
-			opens.incrementAndGet(); filters.borrow(filter).accept(null); return new Carrier(valueCloses, valueFailure);
-		}, 1D, "batch", () -> { }));
+			opens.incrementAndGet();
+			filters.borrow(filter).accept(null);
+			return new Carrier(valueCloses, valueFailure);
+		}, 1D, "batch", () -> {
+		}));
 		offers.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
 			throw new AssertionError("the strictly more expensive loser cannot execute");
 		}, 1000D, "parallelPipelines", () -> {
-			firstLoserCloses.incrementAndGet(); RuntimeException observed = cancellation(kind);
-			signal.set(observed); throw observed;
+			firstLoserCloses.incrementAndGet();
+			RuntimeException observed = cancellation(kind);
+			signal.set(observed);
+			throw observed;
 		}));
 		if (extraFailure) {
 			offers.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
 				throw new AssertionError("the second expensive loser cannot execute");
-			}, 2000D, "nestedLoop", () -> { secondLoserCloses.incrementAndGet(); throw loserFailure; }));
+			}, 2000D, "nestedLoop", () -> {
+				secondLoserCloses.incrementAndGet();
+				throw loserFailure;
+			}));
 		}
 		Throwable actual = assertThrows(RuntimeException.class,
 				() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
@@ -125,7 +157,8 @@ class NativeSelectedOwnerCleanupTest {
 			assertTrue(Arrays.stream(expected.getSuppressed()).anyMatch(problem -> problem == valueFailure));
 		}
 		assertControlEvidence(expected, signal.get());
-		assertEquals(1, valueCloses.get()); assertEquals(1, filterCloses.get());
+		assertEquals(1, valueCloses.get());
+		assertEquals(1, filterCloses.get());
 	}
 
 	private static RuntimeException cancellation(ControlKind kind) {
@@ -138,16 +171,22 @@ class NativeSelectedOwnerCleanupTest {
 			token = KernelCancellation.forOrdinaryExecution(() -> true, null, null);
 		} else {
 			owner = kind == ControlKind.LOCAL_QUERY ? invocation : new NativeCancellationToken();
-			owner.requestCancellation(); token = KernelCancellation.forOrdinaryExecution(null, owner, null);
+			owner.requestCancellation();
+			token = KernelCancellation.forOrdinaryExecution(null, owner, null);
 		}
 		RuntimeException result = assertThrows(RuntimeException.class, () -> KernelRuntime.checkCancelled(token));
-		if (kind == ControlKind.QUERY_SINGLETON) { assertSame(KernelQueryCancelledException.INSTANCE, result); }
-		else if (kind == ControlKind.PROBE_SINGLETON) { assertSame(KernelCancelledException.INSTANCE, result); }
-		else {
+		if (kind == ControlKind.QUERY_SINGLETON) {
+			assertSame(KernelQueryCancelledException.INSTANCE, result);
+		} else if (kind == ControlKind.PROBE_SINGLETON) {
+			assertSame(KernelCancelledException.INSTANCE, result);
+		} else {
 			KernelQueryCancelledException query = assertInstance(result);
-			assertSame(owner, query.origin()); assertTrue(query.observedBy(owner));
+			assertSame(owner, query.origin());
+			assertTrue(query.observedBy(owner));
 			assertEquals(kind == ControlKind.FOREIGN_QUERY, invocation.unownedCancellation(query));
-			if (kind == ControlKind.FOREIGN_QUERY) { assertFalse(invocation.isCancellationRequested()); }
+			if (kind == ControlKind.FOREIGN_QUERY) {
+				assertFalse(invocation.isCancellationRequested());
+			}
 		}
 		return result;
 	}
@@ -164,14 +203,22 @@ class NativeSelectedOwnerCleanupTest {
 		} else {
 			KernelQueryCancelledException query = assertInstance(signal);
 			KernelQueryCancelledException evidence = Arrays.stream(cleanup.getSuppressed())
-					.filter(KernelQueryCancelledException.class::isInstance).map(KernelQueryCancelledException.class::cast)
+					.filter(KernelQueryCancelledException.class::isInstance)
+					.map(KernelQueryCancelledException.class::cast)
 					.filter(candidate -> candidate.origin() == query.origin() && candidate.observedBy(query.origin()))
-					.findFirst().orElseThrow();
+					.findFirst()
+					.orElseThrow();
 			assertEquals(0, evidence.getSuppressed().length, "owner evidence cannot point back to cleanup");
 		}
 	}
 
 	private record Carrier(AtomicInteger closes, RuntimeException failure) implements AutoCloseable {
-		@Override public void close() { closes.incrementAndGet(); if (failure != null) { throw failure; } }
+		@Override
+		public void close() {
+			closes.incrementAndGet();
+			if (failure != null) {
+				throw failure;
+			}
+		}
 	}
 }

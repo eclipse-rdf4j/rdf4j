@@ -57,21 +57,25 @@ class LmdbNativeStatementSelectorChunkTest {
 				Var.of("_root", rootPredicate, true, true), Var.of("selector"), Var.of("_g", graph, true, true));
 		StatementPattern probe = new StatementPattern(Scope.NAMED_CONTEXTS, Var.of("_s", subject, true, true),
 				Var.of("selector", null, false, true), Var.of("result"), Var.of("_g", graph, true, true));
-		List<String> expected = List.of("result=urn:chunk-selector:o|root=urn:chunk-selector:r1|selector=urn:chunk-selector:p",
+		List<String> expected = List.of(
+				"result=urn:chunk-selector:o|root=urn:chunk-selector:r1|selector=urn:chunk-selector:p",
 				"result=urn:chunk-selector:o|root=urn:chunk-selector:r3|selector=urn:chunk-selector:p");
 		var ordinary = new DefaultEvaluationStrategy(source,
 				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
-		try (var rows = ordinary.precompile(new Join(root.clone(), probe.clone())).evaluate(EmptyBindingSet.getInstance())) {
+		try (var rows = ordinary.precompile(new Join(root.clone(), probe.clone()))
+				.evaluate(EmptyBindingSet.getInstance())) {
 			assertEquals(expected, canonical(QueryResults.asList(rows)), "ordinary correlated selector census");
 		}
 		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
-		var planner = new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+		var planner = new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+				source);
 		PatternPlan rootPlan = assertInstanceOf(PatternPlan.class, planner.compileTuple(root, false));
 		PatternPlan probePlan = assertInstanceOf(PatternPlan.class, planner.compileTuple(probe, false));
 		planner.layout.freeze(planner.slotNames);
 		RowState row = new RowState(source, planner.layout, EmptyBindingSet.getInstance());
-		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID); row.recomputeBoundMask();
-		SlotPlan[] sequence = {rootPlan, probePlan};
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		SlotPlan[] sequence = { rootPlan, probePlan };
 		// This is the real ordered sequence adapter used by sweep/factor/morsel paths, not SlotPlan.join flattening.
 		MultiJoinPlan plan = new MultiJoinPlan(sequence, new MaskedFilter[0]);
 		MultiJoinPlan.OrderedPlan ordered = new MultiJoinPlan.OrderedPlan(sequence, new int[0]);
@@ -80,12 +84,19 @@ class LmdbNativeStatementSelectorChunkTest {
 		List<BindingSet> actual = new java.util.ArrayList<>();
 		try {
 			System.setProperty(property, "true");
-			try (RowCursor cursor = LmdbNativeChunkPipeline.tryOpenPrefix(plan, ordered, sequence.length, row, budget)) {
+			try (RowCursor cursor = LmdbNativeChunkPipeline.tryOpenPrefix(plan, ordered, sequence.length, row,
+					budget)) {
 				assertNotNull(cursor, "actual direct chunk sequence must be admitted");
-				while (cursor.next()) { actual.add(NativeRowsStep.materialize(row.view)); }
+				while (cursor.next()) {
+					actual.add(NativeRowsStep.materialize(row.view));
+				}
 			}
 		} finally {
-			if (previous == null) { System.clearProperty(property); } else { System.setProperty(property, previous); }
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
 		}
 		assertEquals(expected, canonical(actual), "a hit/miss/hit input sequence must not reuse a selector-free key");
 		assertEquals(source.opened, source.closed, "all actual root and probe readers close");
@@ -93,8 +104,15 @@ class LmdbNativeStatementSelectorChunkTest {
 				"probe replay and memo allocations are fully returned after close");
 		budget.release(FactorizedTail.MEMO_MAX_ENTRIES, FactorizedTail.MEMO_MAX_STORED_VALUES);
 	}
+
 	private static List<String> canonical(List<BindingSet> rows) {
-		return rows.stream().map(row -> row.getBindingNames().stream().sorted()
-				.map(name -> name + "=" + row.getValue(name).stringValue()).collect(Collectors.joining("|"))).sorted().toList();
+		return rows.stream()
+				.map(row -> row.getBindingNames()
+						.stream()
+						.sorted()
+						.map(name -> name + "=" + row.getValue(name).stringValue())
+						.collect(Collectors.joining("|")))
+				.sorted()
+				.toList();
 	}
 }

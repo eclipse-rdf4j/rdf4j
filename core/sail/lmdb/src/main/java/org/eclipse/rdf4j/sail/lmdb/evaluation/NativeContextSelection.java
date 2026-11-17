@@ -132,17 +132,20 @@ final class NativeContextSelection {
 		}
 		// Census always excludes physical default in NAMED scope, unlike a nonempty selected context array.
 		return pattern.getScope() != Scope.NAMED_CONTEXTS || !selected
-				|| operand != null && operand.hasValue() || graphs.stream().allMatch(NativeContextSelection::ordinaryGraph);
+				|| operand != null && operand.hasValue()
+				|| graphs.stream().allMatch(NativeContextSelection::ordinaryGraph);
 	}
 
 	static boolean hasCompleteGraphSets(Dataset dataset) {
 		// Dataset's legacy adapters may return null. It is unknown selection, never evidence of an empty set.
-		return dataset == null || dataset.getDefaultGraphResources() != null && dataset.getNamedGraphResources() != null;
+		return dataset == null
+				|| dataset.getDefaultGraphResources() != null && dataset.getNamedGraphResources() != null;
 	}
 
 	private static Set<Resource> selectedGraphs(Scope scope, Dataset dataset) {
-		return dataset == null ? null : scope == Scope.DEFAULT_CONTEXTS ? dataset.getDefaultGraphResources()
-				: dataset.getNamedGraphResources();
+		return dataset == null ? null
+				: scope == Scope.DEFAULT_CONTEXTS ? dataset.getDefaultGraphResources()
+						: dataset.getNamedGraphResources();
 	}
 
 	private static boolean ordinaryGraph(Resource graph) {

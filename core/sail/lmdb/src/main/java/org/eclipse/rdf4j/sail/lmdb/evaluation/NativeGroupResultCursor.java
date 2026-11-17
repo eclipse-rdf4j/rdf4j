@@ -544,7 +544,8 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		LmdbNativeDispatchLoop.Selection<NativeResultCursor> retiring = selection;
 		selection = null;
 		if (retiring != null) {
-			Throwable cancellation = failure == null && cancellationRequested ? cancellation().pollCancellation() : null;
+			Throwable cancellation = failure == null && cancellationRequested ? cancellation().pollCancellation()
+					: null;
 			Throwable primary = failure == null ? cancellation : failure;
 			Throwable retained = retiring.finish(primary);
 			failure = retained == cancellation ? null : retained;
@@ -707,7 +708,8 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				return result;
 			} catch (RuntimeException | Error failure) {
 				Throwable retained = result != null ? KernelRuntime.closeResource(result, failure)
-						: rows instanceof AutoCloseable resource ? KernelRuntime.closeResource(resource, failure) : failure;
+						: rows instanceof AutoCloseable resource ? KernelRuntime.closeResource(resource, failure)
+								: failure;
 				retained = LmdbNativeDispatchLoop.finishFilters(filters, retained);
 				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 				throw failure;

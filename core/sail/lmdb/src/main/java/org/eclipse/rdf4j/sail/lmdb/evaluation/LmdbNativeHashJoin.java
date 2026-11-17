@@ -250,7 +250,8 @@ final class LmdbNativeHashJoin {
 				.plan(candidate.probe, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
 				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_PROBE, probeRows, row))
 				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows, row));
-		return new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters.borrow(plan), row, capacity), candidate.estCost,
+		return new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters.borrow(plan), row, capacity),
+				candidate.estCost,
 				LmdbNativeAttemptMetrics.PATH_BATCH)
 						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
 	}
@@ -889,12 +890,20 @@ final class HashJoinBatchCursor implements BatchCursor {
 	}
 
 	static boolean bindTerm(Term term, long id, long[] slots) {
-		if (term.readOnly) { return true; }
+		if (term.readOnly) {
+			return true;
+		}
 		if (term.isConstant()) {
-			if (term.constant != id) { return false; }
-			if (!term.bindConstant) { return true; }
+			if (term.constant != id) {
+				return false;
+			}
+			if (!term.bindConstant) {
+				return true;
+			}
 			long current = slots[term.slot];
-			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			if (term.preserveExisting && current != UNKNOWN) {
+				return current != 0L;
+			}
 			return bindSlot(term.slot, id, slots);
 		}
 		return term.slot < 0 || bindSlot(term.slot, id, slots);

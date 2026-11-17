@@ -40,8 +40,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -91,8 +91,12 @@ class LmdbRepeatedContextRequestSemanticsTest {
 			try (DatasetRead read = DatasetRead.open(fixture.lmdbStore, false)) {
 				Map<Quad, Long> bag = statementBag(read.source.getStatements((Resource) null, PREDICATE, null,
 						RDF4J.NIL, SESAME.NIL));
-				assertEquals(Set.of(RDF4J.NIL, SESAME.NIL), bag.keySet().stream().map(Quad::context).collect(
-						java.util.stream.Collectors.toSet()), "NIL aliases remain distinct raw named graph IRIs");
+				assertEquals(Set.of(RDF4J.NIL, SESAME.NIL), bag.keySet()
+						.stream()
+						.map(Quad::context)
+						.collect(
+								java.util.stream.Collectors.toSet()),
+						"NIL aliases remain distinct raw named graph IRIs");
 			}
 		}
 	}
@@ -171,8 +175,9 @@ class LmdbRepeatedContextRequestSemanticsTest {
 		try (Fixture fixture = fixture(root)) {
 			Map<Quad, Long> expected;
 			try (var connection = fixture.memoryRepository.getConnection()) {
-				expected = statementBag(connection.getSailConnection().getStatements(null, PREDICATE, null,
-						false, FIRST_GRAPH));
+				expected = statementBag(connection.getSailConnection()
+						.getStatements(null, PREDICATE, null,
+								false, FIRST_GRAPH));
 			}
 			try (LmdbStoreConnection writer = (LmdbStoreConnection) fixture.lmdbStore.getConnection()) {
 				writer.begin(IsolationLevels.NONE);
@@ -198,8 +203,9 @@ class LmdbRepeatedContextRequestSemanticsTest {
 			Resource[] contexts = { FIRST_GRAPH, FIRST_GRAPH };
 			Map<Quad, Long> expected;
 			try (var connection = fixture.memoryRepository.getConnection()) {
-				expected = statementBag(connection.getSailConnection().getStatements(null, PREDICATE, null,
-						true, contexts));
+				expected = statementBag(connection.getSailConnection()
+						.getStatements(null, PREDICATE, null,
+								true, contexts));
 			}
 			Map<Quad, Long> actual;
 			try (DatasetRead read = DatasetRead.open(fixture.lmdbStore, true)) {
@@ -296,17 +302,20 @@ class LmdbRepeatedContextRequestSemanticsTest {
 			List<Executable> checks = new ArrayList<>();
 			assertEquals(legacy, fixture.lmdbStore.getFormat().isLegacy(), "the actual owning store format");
 			if (legacy) {
-				assertEquals(2, fixture.lmdbStore.getFormat().getVersion(), "the authentic format-2 fixture stays format 2");
+				assertEquals(2, fixture.lmdbStore.getFormat().getVersion(),
+						"the authentic format-2 fixture stays format 2");
 			}
 			Resource prepared;
 			Resource lexical = VF.createIRI(FIRST_GRAPH.stringValue());
 			Map<Quad, Long> firstExpected;
 			Map<Quad, Long> bothExpected;
 			try (var connection = fixture.memoryRepository.getConnection()) {
-				firstExpected = statementBag(connection.getSailConnection().getStatements(null, PREDICATE, null,
-						false, FIRST_GRAPH));
-				bothExpected = statementBag(connection.getSailConnection().getStatements(null, PREDICATE, null,
-						false, FIRST_GRAPH, SECOND_GRAPH));
+				firstExpected = statementBag(connection.getSailConnection()
+						.getStatements(null, PREDICATE, null,
+								false, FIRST_GRAPH));
+				bothExpected = statementBag(connection.getSailConnection()
+						.getStatements(null, PREDICATE, null,
+								false, FIRST_GRAPH, SECOND_GRAPH));
 			}
 			try (DatasetRead read = DatasetRead.open(fixture.lmdbStore, false)) {
 				prepared = (Resource) read.source.getValuePreparer().apply(lexical);
@@ -318,7 +327,8 @@ class LmdbRepeatedContextRequestSemanticsTest {
 				assertEquals(lexical.hashCode(), prepared.hashCode());
 				assertSame(prepared, read.source.getValuePreparer().apply(prepared),
 						"the current actual reader accepts its own prepared representative");
-				assertEquals(firstExpected, statementBag(read.source.getStatements((Resource) null, PREDICATE, null, prepared)),
+				assertEquals(firstExpected,
+						statementBag(read.source.getStatements((Resource) null, PREDICATE, null, prepared)),
 						"positive: one real prepared context remains a normal RDF graph request");
 				Resource[] repeated = { prepared, lexical, SECOND_GRAPH, VF.createIRI(FIRST_GRAPH.stringValue()) };
 				Map<Quad, Long> actual = statementBag(read.dataset.getStatements(null, PREDICATE, null, repeated));
@@ -326,7 +336,8 @@ class LmdbRepeatedContextRequestSemanticsTest {
 				boolean actualHas = read.dataset.hasStatements(null, PREDICATE, null, repeated);
 				checks.add(() -> assertEquals(bothExpected, actual,
 						"equal RDF representatives request FIRST_GRAPH once, preserving SECOND_GRAPH rows"));
-				checks.add(() -> assertEquals(bothExpected.values().stream().mapToLong(Long::longValue).sum(), actualCount));
+				checks.add(() -> assertEquals(bothExpected.values().stream().mapToLong(Long::longValue).sum(),
+						actualCount));
 				checks.add(() -> assertTrue(actualHas));
 			}
 			try (DatasetRead fresh = DatasetRead.open(fixture.lmdbStore, false)) {
@@ -357,7 +368,8 @@ class LmdbRepeatedContextRequestSemanticsTest {
 			for (int index = 0; index < requests.size(); index++) {
 				try (Fixture fixture = fixture(root.resolve(level.name()).resolve("request-" + index))) {
 					Resource[] request = requests.get(index);
-					for (SailRepository repository : new SailRepository[] { fixture.lmdbRepository, fixture.memoryRepository }) {
+					for (SailRepository repository : new SailRepository[] { fixture.lmdbRepository,
+							fixture.memoryRepository }) {
 						try (SailConnection writer = repository.getSail().getConnection()) {
 							writer.begin(level);
 							writer.removeStatements(SUBJECT, PREDICATE, OBJECT, request);
@@ -367,13 +379,17 @@ class LmdbRepeatedContextRequestSemanticsTest {
 					for (boolean includeInferred : new boolean[] { false, true }) {
 						Map<Quad, Long> expected;
 						try (var reader = fixture.memoryRepository.getConnection()) {
-							expected = statementBag(reader.getSailConnection().getStatements(null, PREDICATE, null,
-									includeInferred));
+							expected = statementBag(reader.getSailConnection()
+									.getStatements(null, PREDICATE, null,
+											includeInferred));
 						}
 						try (var reader = fixture.lmdbRepository.getConnection()) {
-							assertEquals(expected, statementBag(reader.getSailConnection().getStatements(null, PREDICATE,
-									null, includeInferred)),
-									"direct removal preserves every other graph/plane: " + level + ";" + describe(request));
+							assertEquals(expected,
+									statementBag(reader.getSailConnection()
+											.getStatements(null, PREDICATE,
+													null, includeInferred)),
+									"direct removal preserves every other graph/plane: " + level + ";"
+											+ describe(request));
 						}
 					}
 				}
@@ -387,12 +403,14 @@ class LmdbRepeatedContextRequestSemanticsTest {
 		Map<Quad, Long> actualPublic;
 		SizePair sizePair = publicSize(fixture, contexts);
 		try (var connection = fixture.memoryRepository.getConnection()) {
-			expected = statementBag(connection.getSailConnection().getStatements(null, PREDICATE, null,
-					includeInferred, contexts));
+			expected = statementBag(connection.getSailConnection()
+					.getStatements(null, PREDICATE, null,
+							includeInferred, contexts));
 		}
-	try (var connection = fixture.lmdbRepository.getConnection()) {
-			actualPublic = statementBag(connection.getSailConnection().getStatements(null, PREDICATE, null,
-					includeInferred, contexts));
+		try (var connection = fixture.lmdbRepository.getConnection()) {
+			actualPublic = statementBag(connection.getSailConnection()
+					.getStatements(null, PREDICATE, null,
+							includeInferred, contexts));
 		}
 		long expectedRows = expected.values().stream().mapToLong(Long::longValue).sum();
 		try (DatasetRead read = DatasetRead.open(fixture.lmdbStore, includeInferred)) {

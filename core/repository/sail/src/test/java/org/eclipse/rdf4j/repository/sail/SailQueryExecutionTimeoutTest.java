@@ -249,7 +249,8 @@ class SailQueryExecutionTimeoutTest {
 	void directLegacyHookKeepsItsOwnLimitUnderAnUnrelatedOperationBudget() throws Exception {
 		var query = new SailTupleQuery(
 				((SailTupleQuery) repositoryConnection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }"))
-						.getParsedQuery(), repositoryConnection) {
+						.getParsedQuery(),
+				repositoryConnection) {
 			@Override
 			protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 					CloseableIteration<? extends BindingSet> bindings) {
@@ -303,7 +304,9 @@ class SailQueryExecutionTimeoutTest {
 		BlockingCallIteration source = new BlockingCallIteration(DelegateOperation.NEXT);
 		try (TimeLimitIteration<BindingSet> timed = new TimeLimitIteration<>(source, 0, 50, 50) {
 			@Override
-			protected void throwInterruptedException() { throw new QueryInterruptedException("expired"); }
+			protected void throwInterruptedException() {
+				throw new QueryInterruptedException("expired");
+			}
 		}) {
 			assertThatThrownBy(timed::next).isInstanceOf(QueryInterruptedException.class);
 			assertThat(source.closedLatch.await(3, TimeUnit.SECONDS)).isTrue();

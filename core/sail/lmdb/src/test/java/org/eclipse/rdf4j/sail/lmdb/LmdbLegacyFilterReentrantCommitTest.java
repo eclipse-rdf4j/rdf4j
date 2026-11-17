@@ -162,8 +162,9 @@ class LmdbLegacyFilterReentrantCommitTest {
 			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
 			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
 			try {
-				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
-						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime()
+						.pinQueryPlanningReads(
+								borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
 				try {
 					statistics.bindExecutionSource(source, null);
 					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority(),
@@ -242,8 +243,10 @@ class LmdbLegacyFilterReentrantCommitTest {
 		@Override
 		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketches) throws IOException, SailException {
-			LmdbSailStore.FilterSelectivityStatsFactory factory = (path, triples, values, enabled, millis, rows, raw) -> {
-				LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(path, triples, values, enabled, millis,
+			LmdbSailStore.FilterSelectivityStatsFactory factory = (path, triples, values, enabled, millis, rows,
+					raw) -> {
+				LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(path, triples, values, enabled,
+						millis,
 						rows, raw);
 				provider.set(stats);
 				return stats;

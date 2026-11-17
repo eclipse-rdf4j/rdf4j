@@ -84,15 +84,20 @@ class NativeGroupObservationRetirementTest {
 			assertFalse(full.inputSemantics.needsSemantic(EmptyBindingSet.getInstance()));
 			int opened = fixture.source.memory.opened;
 			try (var rows = full.evaluate(EmptyBindingSet.getInstance())) {
-				assertTrue(rows.hasNext()); assertEquals(O.stringValue(), rows.next().getValue("cat").stringValue());
+				assertTrue(rows.hasNext());
+				assertEquals(O.stringValue(), rows.next().getValue("cat").stringValue());
 				assertFalse(rows.hasNext());
 			}
-			assertTrue(fixture.source.memory.opened > opened, "the prepared candidate actually reads its native source");
+			assertTrue(fixture.source.memory.opened > opened,
+					"the prepared candidate actually reads its native source");
 			assertEquals(fixture.source.memory.opened, fixture.source.memory.closed);
 		}
 	}
 
-	private enum RetirementControl { CANCELLED_ADVANCE, EARLY_CLOSE }
+	private enum RetirementControl {
+		CANCELLED_ADVANCE,
+		EARLY_CLOSE
+	}
 
 	@ParameterizedTest
 	@EnumSource(RetirementControl.class)
@@ -113,7 +118,8 @@ class NativeGroupObservationRetirementTest {
 				assertTrue(fixture.statistics.events.isEmpty());
 				if (control == RetirementControl.CANCELLED_ADVANCE) {
 					assertTrue(rows.requestCancellation());
-					KernelQueryCancelledException stopped = assertThrows(KernelQueryCancelledException.class, rows::next);
+					KernelQueryCancelledException stopped = assertThrows(KernelQueryCancelledException.class,
+							rows::next);
 					assertTrue(rows.cancellation().owns(stopped));
 				} else {
 					rows.close();
@@ -138,15 +144,20 @@ class NativeGroupObservationRetirementTest {
 
 		Fixture() {
 			StatementPattern pattern = new StatementPattern(new Var("s"), Var.of("_p", P, true, true), new Var("o"));
-			Filter filter = new Filter(pattern, new Regex(new Str(new Var("o")), new ValueConstant(VF.createLiteral("one$")), null));
-			GroupConcat concat = new GroupConcat(new Var("o")); concat.setSeparator(new ValueConstant(VF.createLiteral("")));
-			aggregate = new GroupElem("cat", concat); group = new Group(filter); group.addGroupElement(aggregate);
+			Filter filter = new Filter(pattern,
+					new Regex(new Str(new Var("o")), new ValueConstant(VF.createLiteral("one$")), null));
+			GroupConcat concat = new GroupConcat(new Var("o"));
+			concat.setSeparator(new ValueConstant(VF.createLiteral("")));
+			aggregate = new GroupElem("cat", concat);
+			group = new Group(filter);
+			group.addGroupElement(aggregate);
 			root = new Projection(new Extension(group, new ExtensionElem(
 					new FunctionCall(FN.STRING_LENGTH.stringValue(), new Var("cat")), "length")),
 					new ProjectionElemList(new ProjectionElem("length")));
 			var ordinary = new DefaultEvaluationStrategy(source, (FederatedServiceResolver) null);
 			try (var rows = ordinary.precompile(root.clone()).evaluate(EmptyBindingSet.getInstance())) {
-				assertTrue(rows.hasNext()); assertEquals(O.stringValue().length(),
+				assertTrue(rows.hasNext());
+				assertEquals(O.stringValue().length(),
 						((org.eclipse.rdf4j.model.Literal) rows.next().getValue("length")).intValue());
 				assertFalse(rows.hasNext());
 			}
@@ -155,38 +166,82 @@ class NativeGroupObservationRetirementTest {
 		NativeGroupStep compile() {
 			NativeValuePositionAnalysis demand = NativeValuePositionAnalysis.analyze(root);
 			assertEquals(NativeAggregateResultDemand.LEXICAL_LENGTH, demand.aggregateDemand(aggregate));
-			var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, statistics, false).forWorker(source);
+			var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, statistics, false)
+					.forWorker(source);
 			QueryEvaluationStep compiled = strategy.withValuePositions(demand, () -> new LmdbNativeAggregatePlanner(
-					new QueryEvaluationContext.Minimal((Dataset) null), strategy, source).compileGroup(group, null, root));
-			return assertInstanceOf(NativeGroupStep.class, compiled, "normal Group compilation must admit this source/input");
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, source).compileGroup(group, null,
+							root));
+			return assertInstanceOf(NativeGroupStep.class, compiled,
+					"normal Group compilation must admit this source/input");
 		}
 
-		@Override public void close() { }
+		@Override
+		public void close() {
+		}
 	}
 
 	private static final class ObservedSource implements TripleSource, NativeLmdbQuerySource {
-		final LmdbNativeRepeatedStatementTermRoleTest.MemorySource memory =
-				new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(
-						List.of(VF.createStatement(VF.createIRI("urn:group-observer:s"), P, O)), O);
-		@Override public Object idSpace() { return memory.idSpace(); }
-		@Override public ValueFactory getValueFactory() { return VF; }
-		@Override public long idOf(Value value) { return memory.idOf(value); }
-		@Override public Value lazyValue(long id) { return memory.lazyValue(id); }
-		@Override public boolean hasStatementsInSource() { return memory.hasStatementsInSource(); }
-		@Override public long count(long s, long p, long o, long g) throws IOException { return memory.count(s, p, o, g); }
-		@Override public boolean has(long s, long p, long o, long g) throws IOException { return memory.has(s, p, o, g); }
-		@Override public double estimate(long s, long p, long o, long g) { return memory.estimate(s, p, o, g); }
-		@Override public RecordIterator statements(long s, long p, long o, long g) throws IOException {
+		final LmdbNativeRepeatedStatementTermRoleTest.MemorySource memory = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(
+				List.of(VF.createStatement(VF.createIRI("urn:group-observer:s"), P, O)), O);
+
+		@Override
+		public Object idSpace() {
+			return memory.idSpace();
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return memory.idOf(value);
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			return memory.lazyValue(id);
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return memory.hasStatementsInSource();
+		}
+
+		@Override
+		public long count(long s, long p, long o, long g) throws IOException {
+			return memory.count(s, p, o, g);
+		}
+
+		@Override
+		public boolean has(long s, long p, long o, long g) throws IOException {
+			return memory.has(s, p, o, g);
+		}
+
+		@Override
+		public double estimate(long s, long p, long o, long g) {
+			return memory.estimate(s, p, o, g);
+		}
+
+		@Override
+		public RecordIterator statements(long s, long p, long o, long g) throws IOException {
 			return memory.statements(s, p, o, g);
 		}
-		@Override public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o, Resource... c) {
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o, Resource... c) {
 			return memory.getStatements(s, p, o, c);
 		}
 	}
 
 	private static final class RecordingStatistics extends EvaluationStatistics {
 		final List<FilterOutcomeObservation> events = new CopyOnWriteArrayList<>();
-		@Override public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) { events.add(observation); }
+
+		@Override
+		public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
+			events.add(observation);
+		}
 	}
 
 }

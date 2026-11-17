@@ -74,8 +74,10 @@ final class LmdbNativeStrategyPreview {
 			return;
 		}
 		if (plan instanceof NativeValuesFoldPlan guard) {
-			QueryExplanationContext.withRuntimeCondition("The eliminated VALUES input is absent at operand entry", () -> inspect(guard.folded));
-			QueryExplanationContext.withRuntimeCondition("The VALUES target is supplied by the current caller frame", () -> inspect(guard.original));
+			QueryExplanationContext.withRuntimeCondition("The eliminated VALUES input is absent at operand entry",
+					() -> inspect(guard.folded));
+			QueryExplanationContext.withRuntimeCondition("The VALUES target is supplied by the current caller frame",
+					() -> inspect(guard.original));
 		} else if (LmdbNativeInteriorPlans.carrier(plan)) {
 			LmdbNativeInteriorPlans.preview(plan);
 		} else if (plan instanceof NativeGraphPlan graph) {

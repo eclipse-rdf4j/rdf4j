@@ -115,7 +115,8 @@ class FrontierStatisticsViewCancellationTest {
 		FrontierStatisticsHeapGovernor.Lease scratch = mock(FrontierStatisticsHeapGovernor.Lease.class);
 		IllegalStateException failure = new IllegalStateException("scratch close failed");
 		doThrow(failure).when(scratch).close();
-		FrontierStatisticsView view = FrontierStatisticsView.ready(generation, scratch, ignored -> { });
+		FrontierStatisticsView view = FrontierStatisticsView.ready(generation, scratch, ignored -> {
+		});
 
 		assertSame(failure, assertThrows(IllegalStateException.class, view::close));
 		verify(generation).close();
@@ -129,7 +130,8 @@ class FrontierStatisticsViewCancellationTest {
 		IllegalStateException generationFailure = new IllegalStateException("generation close failed");
 		doThrow(scratchFailure).when(scratch).close();
 		doThrow(generationFailure).when(generation).close();
-		FrontierStatisticsView view = FrontierStatisticsView.ready(generation, scratch, ignored -> { });
+		FrontierStatisticsView view = FrontierStatisticsView.ready(generation, scratch, ignored -> {
+		});
 
 		assertSame(scratchFailure, assertThrows(IllegalStateException.class, view::close));
 		assertEquals(1, scratchFailure.getSuppressed().length);
@@ -144,7 +146,8 @@ class FrontierStatisticsViewCancellationTest {
 		IllegalStateException sameFailure = new IllegalStateException("both closes failed");
 		doThrow(sameFailure).when(scratch).close();
 		doThrow(sameFailure).when(generation).close();
-		FrontierStatisticsView view = FrontierStatisticsView.ready(generation, scratch, ignored -> { });
+		FrontierStatisticsView view = FrontierStatisticsView.ready(generation, scratch, ignored -> {
+		});
 
 		assertSame(sameFailure, assertThrows(IllegalStateException.class, view::close));
 		assertEquals(0, sameFailure.getSuppressed().length);
@@ -163,7 +166,8 @@ class FrontierStatisticsViewCancellationTest {
 		when(generation.estimateLeaf(probe)).thenThrow(cancelled);
 		doThrow(scratchFailure).when(scratch).close();
 		doThrow(generationFailure).when(generation).close();
-		FrontierStatisticsView view = FrontierStatisticsView.ready(generation, scratch, ignored -> { });
+		FrontierStatisticsView view = FrontierStatisticsView.ready(generation, scratch, ignored -> {
+		});
 
 		QueryInterruptedException actual = assertThrows(QueryInterruptedException.class, () -> {
 			try (view) {

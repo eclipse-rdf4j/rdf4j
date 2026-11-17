@@ -361,7 +361,8 @@ public class TupleExprsTest {
 	/** Each subclass inherits the built-in visit method but exposes a custom binding contract. */
 	@Test
 	public void constantVarSubclassWithAValueIsKnownLikeAPlainConstantVar() {
-		StatementPattern plain = new StatementPattern(Var.of("s"), new Var("_const_p", f.createIRI("urn:p"), true, true),
+		StatementPattern plain = new StatementPattern(Var.of("s"),
+				new Var("_const_p", f.createIRI("urn:p"), true, true),
 				Var.of("o"));
 		StatementPattern subclassed = new StatementPattern(Var.of("s"),
 				new ValuedVarSubclass("_const_p", f.createIRI("urn:p"), true, true), Var.of("o"));

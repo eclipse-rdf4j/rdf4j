@@ -73,7 +73,8 @@ class StorePropertiesConcurrentPublicationTest {
 			}
 		};
 		StoreProperties properties = new StoreProperties(directory.toFile(), files)
-				.setVersion("6").setTripleTermIndexes("spoc");
+				.setVersion("6")
+				.setTripleTermIndexes("spoc");
 		properties.save();
 		properties.setRdfTermDomainsVersion("rdf-term-domain-v6");
 		armed.set(true);

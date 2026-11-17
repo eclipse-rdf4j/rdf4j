@@ -61,8 +61,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * Differential contract for a computed BIND on the mandatory spine under the semantic projection boundary: the bag,
  * every row's origin facts and (for ordered queries) the key-column sequence of the native engine equal the ordinary
- * evaluator's, exactly the admitted shapes execute as a sealed projection around a native body, and every refusal
- * shape keeps the semantic route. A row whose expression fails keeps the target among its local names.
+ * evaluator's, exactly the admitted shapes execute as a sealed projection around a native body, and every refusal shape
+ * keeps the semantic route. A row whose expression fails keeps the target among its local names.
  */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class NativeSealedComputedBindProjectionTest {
@@ -80,7 +80,8 @@ class NativeSealedComputedBindProjectionTest {
 	void open() {
 		previousFlag = System.getProperty(FLAG);
 		repository = new SailRepository(
-				new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				new LmdbStore(directory.toFile(),
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		repository.init();
 		IRI p = iri("p"), q = iri("q"), u = iri("u"), g = iri("g");
 		try (SailRepositoryConnection c = repository.getConnection()) {
@@ -120,7 +121,8 @@ class NativeSealedComputedBindProjectionTest {
 					c.add(s, q, VF.createLiteral(i));
 				}
 			}
-			// Stored terms equal to the computed values: datatype IRIs as subjects, numbers and strings as objects, and a
+			// Stored terms equal to the computed values: datatype IRIs as subjects, numbers and strings as objects, and
+			// a
 			// different lexical form of the same number.
 			IRI r = iri("r");
 			c.add(VF.createIRI("http://www.w3.org/2001/XMLSchema#integer"), q, VF.createLiteral("int"));
@@ -208,8 +210,9 @@ class NativeSealedComputedBindProjectionTest {
 	}
 
 	static Stream<Arguments> families() {
-		return FAMILIES.stream().map(f -> Arguments.of(f.label(), "SELECT ?s ?" + f.target() + " { " + f.body() + " }",
-				f.target(), f.failsSomewhere()));
+		return FAMILIES.stream()
+				.map(f -> Arguments.of(f.label(), "SELECT ?s ?" + f.target() + " { " + f.body() + " }",
+						f.target(), f.failsSomewhere()));
 	}
 
 	static Stream<Arguments> refused() {
@@ -217,7 +220,8 @@ class NativeSealedComputedBindProjectionTest {
 				Arguments.of("IF", "SELECT ?s ?x { ?s :p ?v BIND(IF(isNumeric(?v), ?v, 0) AS ?x) } ORDER BY ?x", "x"),
 				Arguments.of("COALESCE", "SELECT ?s ?x { ?s :p ?v BIND(COALESCE(?v + 1, -1) AS ?x) } ORDER BY ?x", "x"),
 				Arguments.of("regex function call", "SELECT ?s ?x { ?s :p ?v BIND(regex(str(?v), \"s\") AS ?x) }", ""),
-				Arguments.of("concat function call", "SELECT ?s ?x { ?s :p ?v BIND(concat(str(?v), \"!\") AS ?x) } ORDER BY ?x",
+				Arguments.of("concat function call",
+						"SELECT ?s ?x { ?s :p ?v BIND(concat(str(?v), \"!\") AS ?x) } ORDER BY ?x",
 						"x"),
 				Arguments.of("abs function call", "SELECT ?s ?x { ?s :p ?v BIND(abs(?v) AS ?x) } ORDER BY ?x", "x"),
 				Arguments.of("EXISTS", "SELECT ?s ?x { ?s :p ?v BIND(EXISTS { ?s :q ?w } AS ?x) }", ""),
@@ -336,7 +340,8 @@ class NativeSealedComputedBindProjectionTest {
 			assertEquals(bag(query, false, binding), bag(query, true, binding), "bag with input " + binding.keySet());
 			assertEquals(rowsWithProvenance(query, false, binding), rowsWithProvenance(query, true, binding),
 					"origin facts with input " + binding.keySet());
-			assertEquals(0, sealedRows(query, binding), "no row comes from the sealed branch with input " + binding.keySet());
+			assertEquals(0, sealedRows(query, binding),
+					"no row comes from the sealed branch with input " + binding.keySet());
 		}
 		assertTrue(sealedRows(query, null) > 0, "the sealed branch produces the rows without an input binding");
 	}
@@ -352,8 +357,9 @@ class NativeSealedComputedBindProjectionTest {
 		}
 		int count = 0;
 		try (SailRepositoryConnection c = repository.getConnection();
-				var rows = c.getSailConnection().evaluate(root, null, input == null ? EmptyBindingSet.getInstance() : bindings,
-						true)) {
+				var rows = c.getSailConnection()
+						.evaluate(root, null, input == null ? EmptyBindingSet.getInstance() : bindings,
+								true)) {
 			while (rows.hasNext()) {
 				if (rows.next().getClass().getSimpleName().equals("NativeProjectedBindingSet")) {
 					count++;
@@ -377,8 +383,9 @@ class NativeSealedComputedBindProjectionTest {
 		}
 		Map<Row, Integer> result = new HashMap<>();
 		try (SailRepositoryConnection c = repository.getConnection();
-				var rows = c.getSailConnection().evaluate(root, null, input == null ? EmptyBindingSet.getInstance() : bindings,
-						true)) {
+				var rows = c.getSailConnection()
+						.evaluate(root, null, input == null ? EmptyBindingSet.getInstance() : bindings,
+								true)) {
 			while (rows.hasNext()) {
 				BindingSet row = rows.next();
 				Map<String, Value> values = new LinkedHashMap<>();

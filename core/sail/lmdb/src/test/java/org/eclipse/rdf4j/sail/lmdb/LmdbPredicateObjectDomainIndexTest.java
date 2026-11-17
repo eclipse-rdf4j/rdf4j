@@ -874,7 +874,8 @@ class LmdbPredicateObjectDomainIndexTest {
 				null)) {
 			LmdbSailStore.ReadView view = admission.view();
 			view.requireDictionaryTermSnapshot();
-			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(), view.valueSnapshot())) {
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(),
+					view.valueSnapshot())) {
 				return backing.getPersistedRdfTermDomain(predicate);
 			}
 		}

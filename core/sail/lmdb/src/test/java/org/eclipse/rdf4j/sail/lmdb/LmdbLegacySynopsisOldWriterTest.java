@@ -72,12 +72,16 @@ class LmdbLegacySynopsisOldWriterTest {
 		Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
 				"-ea", "-cp", classpath, CanonicalIriCompatibilityProcess.class.getName(),
 				"verify-current-and-write", directory.toString(), manifest.toString())
-				.redirectErrorStream(true).redirectOutput(output.toFile()).start();
+						.redirectErrorStream(true)
+						.redirectOutput(output.toFile())
+						.start();
 		try {
 			assertTrue(process.waitFor(60, TimeUnit.SECONDS), "The pinned release process did not finish: " + output);
 			assertEquals(0, process.exitValue(), () -> "The pinned release writer failed: " + output);
 		} finally {
-			if (process.isAlive()) { process.destroyForcibly(); }
+			if (process.isAlive()) {
+				process.destroyForcibly();
+			}
 		}
 		StoreProperties discovery = new StoreProperties(directory.toFile());
 		assertTrue(discovery.load());
@@ -92,7 +96,8 @@ class LmdbLegacySynopsisOldWriterTest {
 			CanonicalIriCompatibilityProcess.verify(reopened, metadata);
 			try (var connection = reopened.getConnection()) {
 				assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.CURRENT_SUBJECT,
-						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.CURRENT_IRI, false));
+						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.CURRENT_IRI,
+						false));
 				assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.OLD_SUBJECT,
 						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.OLD_IRI, false));
 			}
@@ -107,15 +112,21 @@ class LmdbLegacySynopsisOldWriterTest {
 	}
 
 	private static double predicateRows(SketchBasedJoinEstimator estimator) {
-		return estimator.synopsisService().probe(new QuadProbe(QuadProbe.PREDICATE, QuadProbe.SUBJECT, 0L,
-				QuadValueHash.hash(CanonicalIriCompatibilityProcess.PREDICATE), 0L, 0L,
-				estimator.quadSnapshotIdentity())).rows().estimate();
+		return estimator.synopsisService()
+				.probe(new QuadProbe(QuadProbe.PREDICATE, QuadProbe.SUBJECT, 0L,
+						QuadValueHash.hash(CanonicalIriCompatibilityProcess.PREDICATE), 0L, 0L,
+						estimator.quadSnapshotIdentity()))
+				.rows()
+				.estimate();
 	}
 
 	private static SailRepository open(Path directory) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
-				.setInlineLiterals(false).setAutoGrow(true).setValueDBSize(16L * 1024 * 1024)
-				.setTripleDBSize(16L * 1024 * 1024).setSketchEstimatorEnabled(true)
+				.setInlineLiterals(false)
+				.setAutoGrow(true)
+				.setValueDBSize(16L * 1024 * 1024)
+				.setTripleDBSize(16L * 1024 * 1024)
+				.setSketchEstimatorEnabled(true)
 				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
 		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
@@ -125,7 +136,13 @@ class LmdbLegacySynopsisOldWriterTest {
 			LmdbTestUtil.awaitPostReadyInitialization(store, 20, TimeUnit.SECONDS);
 			return repository;
 		} catch (Throwable failure) {
-			try { repository.shutDown(); } catch (Throwable cleanup) { if (cleanup != failure) { failure.addSuppressed(cleanup); } }
+			try {
+				repository.shutDown();
+			} catch (Throwable cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
 			throw failure;
 		}
 	}

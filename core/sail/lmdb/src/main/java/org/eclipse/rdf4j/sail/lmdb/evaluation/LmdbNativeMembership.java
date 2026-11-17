@@ -228,12 +228,20 @@ final class PatternMembershipProbe {
 	}
 
 	private static boolean bindTerm(Term term, long id, long[] slots) {
-		if (term.readOnly) { return true; }
+		if (term.readOnly) {
+			return true;
+		}
 		if (term.isConstant()) {
-			if (term.constant != id) { return false; }
-			if (!term.bindConstant) { return true; }
+			if (term.constant != id) {
+				return false;
+			}
+			if (!term.bindConstant) {
+				return true;
+			}
 			long current = slots[term.slot];
-			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			if (term.preserveExisting && current != UNKNOWN) {
+				return current != 0L;
+			}
 			return bindSlot(term.slot, id, slots);
 		}
 		return term.slot < 0 || bindSlot(term.slot, id, slots);

@@ -510,7 +510,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 						LmdbNativeCostObservation observation = observation(chosen,
 								ranking.quotedExpectedNanos()[winner], openStarted);
 						discardUnselectedAttempts(unselectedAttempts);
-						NativeFilterLease filters = chosen.proposal() == null ? null : chosen.proposal().filterAttempt();
+						NativeFilterLease filters = chosen.proposal() == null ? null
+								: chosen.proposal().filterAttempt();
 						if (chosen.proposal() != null) {
 							chosen.proposal().selected();
 						}
@@ -519,7 +520,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 					} catch (RuntimeException | Error failure) {
 						// The result has not been handed to the caller if cleanup or observation fails.
 						Throwable retained = value instanceof AutoCloseable resource
-								? KernelRuntime.closeResource(resource, failure) : failure;
+								? KernelRuntime.closeResource(resource, failure)
+								: failure;
 						if (chosen.proposal() == null) {
 							retained = KernelRuntime.closeResource(chosen.release()::run, retained);
 						} else {
@@ -594,7 +596,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 
 	private static Throwable abortFilters(NativeFilterLease filters, Throwable failure,
 			Set<NativeBooleanFilter> closedFilters) {
-		return filters == null ? failure : KernelRuntime.closeResource(() -> filters.abort(failure, closedFilters), failure);
+		return filters == null ? failure
+				: KernelRuntime.closeResource(() -> filters.abort(failure, closedFilters), failure);
 	}
 
 	private void recordBudgetDecline(String id, Admitted admitted) {

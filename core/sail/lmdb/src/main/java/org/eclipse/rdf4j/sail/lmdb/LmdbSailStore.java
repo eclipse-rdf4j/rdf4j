@@ -7930,7 +7930,8 @@ class LmdbSailStore implements SailStore {
 							// no longer needs to grow. The failed publication was rolled back, so retry it after the
 							// writer is gone, unless nothing changed and the map still reports no need to grow.
 							long mapSize = tripleStore.mapSizeBytes();
-							if (mapSize == mapSizeAtPublication && !tripleStore.requiresResizeForEstimatedWrite(mapSize)) {
+							if (mapSize == mapSizeAtPublication
+									&& !tripleStore.requiresResizeForEstimatedWrite(mapSize)) {
 								throw new IOException("Predicate-domain rebuild could not grow the TripleStore map");
 							}
 							writerConflict = true;

@@ -29,11 +29,11 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -86,8 +86,9 @@ class TupleFunctionApiInputNullContractTest {
 	}
 
 	static Stream<Arguments> requestRows() {
-		return Stream.of(false, true).flatMap(optimized -> Stream.of(Output.values())
-				.map(output -> Arguments.of(optimized, output)));
+		return Stream.of(false, true)
+				.flatMap(optimized -> Stream.of(Output.values())
+						.map(output -> Arguments.of(optimized, output)));
 	}
 
 	@ParameterizedTest(name = "optimized={0}, output={1}")
@@ -117,7 +118,8 @@ class TupleFunctionApiInputNullContractTest {
 		}
 		// The reference receives the mapping the tuple's real materializer is entitled to supply.
 		BindingSet referenceInput = optimized
-				? BindingSetOrigin.materializeParameters(input, call.getResultVars(), new QueryEvaluationContext.Minimal(null))
+				? BindingSetOrigin.materializeParameters(input, call.getResultVars(),
+						new QueryEvaluationContext.Minimal(null))
 				: input;
 		TupleExpr ordinary = null;
 		for (Value value : tuple) {
@@ -164,16 +166,19 @@ class TupleFunctionApiInputNullContractTest {
 		assertSame(GRAPH, GraphFrameBindings.from(input).retainedParametersForTransport().get("hiddenGraph"));
 		assertFalse(GraphFrameBindings.isSupplied(input, "hiddenGraph"));
 		TrackingFunction function = new TrackingFunction(List.of(Arrays.asList((Value) null)));
-		TupleFunctionCall call = call(1); call.setResultVars(List.of(folded));
+		TupleFunctionCall call = call(1);
+		call.setResultVars(List.of(folded));
 		List<BindingSet> rows = drain(strategy(function).precompile(call).evaluate(input));
 		assertEquals(authority == Authority.MATCH ? 1 : 0, rows.size());
 		if (!rows.isEmpty()) {
 			assertSame(REQUEST, rows.getFirst().getValue("value"));
 			assertTrue(BindingSetOrigin.of(rows.getFirst()).isLocal("value"));
-			assertSame(GRAPH, GraphFrameBindings.from(rows.getFirst()).retainedParametersForTransport().get("hiddenGraph"));
+			assertSame(GRAPH,
+					GraphFrameBindings.from(rows.getFirst()).retainedParametersForTransport().get("hiddenGraph"));
 			assertFalse(GraphFrameBindings.isSupplied(rows.getFirst(), "hiddenGraph"));
 		}
-		assertEquals(1, function.opens); assertEquals(1, function.closes);
+		assertEquals(1, function.opens);
+		assertEquals(1, function.closes);
 	}
 
 	@ParameterizedTest(name = "constant={0}")
@@ -186,7 +191,8 @@ class TupleFunctionApiInputNullContractTest {
 		BindingSet input = BindingSetOrigin.requestInput(binding(REQUEST));
 		List<BindingSet> rows = drain(strategy(function).precompile(call).evaluate(input));
 		assertTrue(rows.isEmpty(), "a fixed query position requires a nonnull matching tuple cell");
-		assertEquals(1, function.opens); assertEquals(1, function.closes);
+		assertEquals(1, function.opens);
+		assertEquals(1, function.closes);
 	}
 
 	@ParameterizedTest(name = "authored-null={0}")
@@ -199,33 +205,42 @@ class TupleFunctionApiInputNullContractTest {
 		List<BindingSet> rows = drain(strategy(function).precompile(call)
 				.evaluate(BindingSetOrigin.optimizationInput(binding(REQUEST))));
 		assertEquals(authoredNull ? 0 : 1, rows.size());
-		if (!rows.isEmpty()) assertSame(REQUEST, rows.getFirst().getValue("value"));
-		assertEquals(1, function.opens); assertEquals(1, function.closes);
+		if (!rows.isEmpty())
+			assertSame(REQUEST, rows.getFirst().getValue("value"));
+		assertEquals(1, function.opens);
+		assertEquals(1, function.closes);
 	}
 
 	@Test
 	void absentRuntimeAuthorityDoesNotTurnAnApiValueIntoAnOptionalConstraint() {
-		TupleFunctionCall call = call(1); call.setResultVars(List.of(foldedVar()));
-		TrackingFunction function = new TrackingFunction(List.of(Arrays.asList((Value) null), List.of(MATCH), List.of(OTHER)));
+		TupleFunctionCall call = call(1);
+		call.setResultVars(List.of(foldedVar()));
+		TrackingFunction function = new TrackingFunction(
+				List.of(Arrays.asList((Value) null), List.of(MATCH), List.of(OTHER)));
 		List<BindingSet> rows = drain(strategy(function).precompile(call).evaluate(EmptyBindingSet.getInstance()));
 		assertEquals(1, rows.size());
 		assertSame(MATCH, rows.getFirst().getValue("value"));
 		assertTrue(BindingSetOrigin.of(rows.getFirst()).isLocal("value"));
 		assertTrue(call.getAssuredBindingNames().contains("value"));
 		assertTrue(QueryAlgebraBindingAnalysis.withBindingValues(call, EmptyBindingSet.getInstance())
-				.outputFacts(call).guaranteedOutputs().contains("value"));
-		assertEquals(1, function.opens); assertEquals(1, function.closes);
+				.outputFacts(call)
+				.guaranteedOutputs()
+				.contains("value"));
+		assertEquals(1, function.opens);
+		assertEquals(1, function.closes);
 	}
 
 	@Test
 	void noRequestAndUnvaluedNullEmitsOneTrulyAbsentLocalResult() {
 		TrackingFunction function = new TrackingFunction(List.of(Arrays.asList((Value) null)));
 		List<BindingSet> rows = drain(strategy(function).precompile(call(1)).evaluate(EmptyBindingSet.getInstance()));
-		assertEquals(1, rows.size()); assertFalse(rows.getFirst().hasBinding("value"));
+		assertEquals(1, rows.size());
+		assertFalse(rows.getFirst().hasBinding("value"));
 		assertFalse(rows.getFirst().getBindingNames().contains("value"));
 		assertTrue(BindingSetOrigin.of(rows.getFirst()).isLocal("value"));
 		assertFalse(BindingSetOrigin.of(rows.getFirst()).isRequest("value"));
-		assertEquals(1, function.opens); assertEquals(1, function.closes);
+		assertEquals(1, function.opens);
+		assertEquals(1, function.closes);
 	}
 
 	@ParameterizedTest(name = "null-cell={0}")
@@ -235,14 +250,18 @@ class TupleFunctionApiInputNullContractTest {
 		QueryRoot root = new QueryRoot(new Filter(new SingletonSet(), new Exists(call)));
 		new BindingAssignerOptimizer().optimize(root, null, binding(REQUEST));
 		Var substituted = call.getResultVars().getFirst();
-		assertTrue(substituted.hasApiInputOrigin()); assertTrue(substituted.hasValue());
+		assertTrue(substituted.hasApiInputOrigin());
+		assertTrue(substituted.hasValue());
 		assertTrue(substituted.isConstant(), "EXISTS substitution turns the occurrence into a fixed query term");
-		TrackingFunction function = new TrackingFunction(List.of(nullCell ? Arrays.asList((Value) null) : List.of(MATCH)));
+		TrackingFunction function = new TrackingFunction(
+				List.of(nullCell ? Arrays.asList((Value) null) : List.of(MATCH)));
 		List<BindingSet> rows = drain(strategy(function).precompile(call)
 				.evaluate(BindingSetOrigin.optimizationInput(binding(REQUEST))));
 		assertEquals(nullCell ? 0 : 1, rows.size());
-		if (!rows.isEmpty()) assertSame(MATCH, rows.getFirst().getValue("value"));
-		assertEquals(1, function.opens); assertEquals(1, function.closes);
+		if (!rows.isEmpty())
+			assertSame(MATCH, rows.getFirst().getValue("value"));
+		assertEquals(1, function.opens);
+		assertEquals(1, function.closes);
 	}
 
 	@ParameterizedTest(name = "real-null-key={0}")
@@ -254,61 +273,98 @@ class TupleFunctionApiInputNullContractTest {
 		BindingSet input = BindingSetOrigin.requestInput(raw);
 		assertEquals(realNullKey, BindingSetOrigin.of(input).isRequest("value"));
 		assertEquals(null, input.getValue("value"));
-		TupleFunctionCall call = call(1); call.setResultVars(List.of(foldedVar()));
+		TupleFunctionCall call = call(1);
+		call.setResultVars(List.of(foldedVar()));
 		TrackingFunction function = new TrackingFunction(List.of(Arrays.asList((Value) null)));
 		assertTrue(drain(strategy(function).precompile(call).evaluate(input)).isEmpty());
-		assertEquals(1, function.opens); assertEquals(1, function.closes);
+		assertEquals(1, function.opens);
+		assertEquals(1, function.closes);
 	}
 
 	private static Var foldedVar() {
 		TupleFunctionCall call = call(1);
 		new BindingAssignerOptimizer().optimize(new QueryRoot(call), null, binding(REQUEST));
 		Var folded = call.getResultVars().getFirst();
-		assertTrue(folded.hasValue()); assertTrue(folded.hasApiInputOrigin()); assertFalse(folded.isConstant());
-		assertSame(REQUEST, folded.getValue()); return folded.clone();
+		assertTrue(folded.hasValue());
+		assertTrue(folded.hasApiInputOrigin());
+		assertFalse(folded.isConstant());
+		assertSame(REQUEST, folded.getValue());
+		return folded.clone();
 	}
 
 	private static TupleFunctionCall call(int count) {
-		TupleFunctionCall call = new TupleFunctionCall(); call.setURI("urn:tuple-api-input:rows");
-		for (int i = 0; i < count; i++) call.addResultVar(Var.of("value"));
+		TupleFunctionCall call = new TupleFunctionCall();
+		call.setURI("urn:tuple-api-input:rows");
+		for (int i = 0; i < count; i++)
+			call.addResultVar(Var.of("value"));
 		return call;
 	}
 
 	private static BindingSetAssignment values(Value value) {
-		BindingSetAssignment result = new BindingSetAssignment(); result.setBindingNames(Set.of("value"));
-		result.setBindingSets(List.of(new ListBindingSet(List.of("value"), value))); return result;
+		BindingSetAssignment result = new BindingSetAssignment();
+		result.setBindingNames(Set.of("value"));
+		result.setBindingSets(List.of(new ListBindingSet(List.of("value"), value)));
+		return result;
 	}
 
 	private static QueryBindingSet binding(Value value) {
-		QueryBindingSet row = new QueryBindingSet(); row.setBinding("value", value); return row;
+		QueryBindingSet row = new QueryBindingSet();
+		row.setBinding("value", value);
+		return row;
 	}
 
 	private static DefaultEvaluationStrategy strategy(TrackingFunction function) {
-		TupleFunctionRegistry registry = new TupleFunctionRegistry(); if (function != null) registry.add(function);
+		TupleFunctionRegistry registry = new TupleFunctionRegistry();
+		if (function != null)
+			registry.add(function);
 		return new DefaultEvaluationStrategy(new EmptyTripleSource(VF), null, null, 0L,
 				new EvaluationStatistics(), false, registry);
 	}
 
 	private static List<BindingSet> drain(CloseableIteration<? extends BindingSet> rows) {
-		try (rows) { List<BindingSet> result = new ArrayList<>(); while (rows.hasNext()) result.add(rows.next()); return result; }
+		try (rows) {
+			List<BindingSet> result = new ArrayList<>();
+			while (rows.hasNext())
+				result.add(rows.next());
+			return result;
+		}
 	}
 
-	private static BindingSet only(List<BindingSet> rows) { assertEquals(1, rows.size()); return rows.getFirst(); }
+	private static BindingSet only(List<BindingSet> rows) {
+		assertEquals(1, rows.size());
+		return rows.getFirst();
+	}
 
 	private enum Authority {
-		NONE, MATCH, CONFLICT, LOCAL_MASK;
+		NONE,
+		MATCH,
+		CONFLICT,
+		LOCAL_MASK;
+
 		BindingSet input() {
-			if (this == NONE) return EmptyBindingSet.getInstance();
+			if (this == NONE)
+				return EmptyBindingSet.getInstance();
 			BindingSet hidden = BindingSetOrigin.optimizationInput(binding(this == CONFLICT ? OTHER : REQUEST));
 			return this == LOCAL_MASK ? BindingSetOrigin.produced(hidden, Set.of("value")) : hidden;
 		}
 	}
 
 	private enum Output {
-		NULL(false), MATCHING(false), CONFLICTING(true), NULL_MATCH(false), MATCH_NULL(false),
-		NULL_CONFLICT(true), CONFLICT_NULL(true), NULL_NULL(false);
+		NULL(false),
+		MATCHING(false),
+		CONFLICTING(true),
+		NULL_MATCH(false),
+		MATCH_NULL(false),
+		NULL_CONFLICT(true),
+		CONFLICT_NULL(true),
+		NULL_NULL(false);
+
 		private final boolean conflicting;
-		Output(boolean conflicting) { this.conflicting = conflicting; }
+
+		Output(boolean conflicting) {
+			this.conflicting = conflicting;
+		}
+
 		List<Value> cells() {
 			return switch (this) {
 			case NULL -> Arrays.asList((Value) null);
@@ -324,18 +380,41 @@ class TupleFunctionApiInputNullContractTest {
 	}
 
 	private static final class TrackingFunction implements TupleFunction {
-		private final List<List<Value>> rows; private int opens; private int closes;
-		private TrackingFunction(List<List<Value>> rows) { this.rows = rows; }
-		@Override public String getURI() { return "urn:tuple-api-input:rows"; }
-		@Override public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory vf, Value... args) {
+		private final List<List<Value>> rows;
+		private int opens;
+		private int closes;
+
+		private TrackingFunction(List<List<Value>> rows) {
+			this.rows = rows;
+		}
+
+		@Override
+		public String getURI() {
+			return "urn:tuple-api-input:rows";
+		}
+
+		@Override
+		public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory vf, Value... args) {
 			opens++;
 			return new AbstractCloseableIteration<List<Value>>() {
 				private int index;
-				@Override public boolean hasNext() { return !isClosed() && index < rows.size(); }
-				@Override public List<Value> next() {
-					if (!hasNext()) throw new java.util.NoSuchElementException(); return rows.get(index++);
+
+				@Override
+				public boolean hasNext() {
+					return !isClosed() && index < rows.size();
 				}
-				@Override protected void handleClose() { closes++; }
+
+				@Override
+				public List<Value> next() {
+					if (!hasNext())
+						throw new java.util.NoSuchElementException();
+					return rows.get(index++);
+				}
+
+				@Override
+				protected void handleClose() {
+					closes++;
+				}
 			};
 		}
 	}

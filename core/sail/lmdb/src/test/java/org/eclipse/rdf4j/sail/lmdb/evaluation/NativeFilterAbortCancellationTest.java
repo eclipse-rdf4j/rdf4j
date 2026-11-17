@@ -36,7 +36,12 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /** Real runtime signals through the owning attempt, selected-result and cached-producer cleanup interfaces. */
 class NativeFilterAbortCancellationTest {
-	enum ControlKind { QUERY_SINGLETON, PROBE_SINGLETON, LOCAL_QUERY, FOREIGN_QUERY }
+	enum ControlKind {
+		QUERY_SINGLETON,
+		PROBE_SINGLETON,
+		LOCAL_QUERY,
+		FOREIGN_QUERY
+	}
 
 	private record Control(KernelCancellation kernel, NativeCancellationToken invocation,
 			NativeCancellationToken signaller, ControlKind kind) {
@@ -64,14 +69,16 @@ class NativeFilterAbortCancellationTest {
 		if (kind == ControlKind.PROBE_SINGLETON) {
 			return new Control(KernelCancellation.forOrdinaryExecution(() -> true, null, null), invocation, null, kind);
 		}
-		NativeCancellationToken signaller = kind == ControlKind.LOCAL_QUERY ? invocation : new NativeCancellationToken();
+		NativeCancellationToken signaller = kind == ControlKind.LOCAL_QUERY ? invocation
+				: new NativeCancellationToken();
 		signaller.requestCancellation();
 		return new Control(KernelCancellation.forOrdinaryExecution(null, signaller, null), invocation, signaller, kind);
 	}
 
 	static Stream<Arguments> openings() {
-		return Stream.of("candidate", "terminal").flatMap(route -> Arrays.stream(ControlKind.values())
-				.map(kind -> Arguments.of(route, kind)));
+		return Stream.of("candidate", "terminal")
+				.flatMap(route -> Arrays.stream(ControlKind.values())
+						.map(kind -> Arguments.of(route, kind)));
 	}
 
 	@ParameterizedTest
@@ -131,14 +138,16 @@ class NativeFilterAbortCancellationTest {
 		LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(filters -> {
 			filters.borrow(semantic).accept(null);
 			throw new AssertionError("the actual runtime cancellation must leave this opening");
-		}, 1D, "nestedLoop", () -> { });
+		}, 1D, "nestedLoop", () -> {
+		});
 		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
 		if (route.equals("terminal")) {
 			offers.terminalFallback(() -> proposal);
 		} else {
 			offers.offer(() -> proposal);
 			offers.terminalFallback(() -> new LmdbNativeStrategyProposal<>(() -> {
-				laterOpens.incrementAndGet(); return "must not restart after a terminal failure";
+				laterOpens.incrementAndGet();
+				return "must not restart after a terminal failure";
 			}, 1D, "nestedLoop"));
 		}
 		var dispatch = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null).eager();
@@ -177,7 +186,8 @@ class NativeFilterAbortCancellationTest {
 	void lazyProducerAbortRetiresEveryOwnerAfterTheFilterReleaseFailure(ControlKind kind) {
 		Control control = control(kind);
 		RuntimeException cleanup = new IllegalStateException("cached producer filter release");
-		AtomicInteger filterCloses = new AtomicInteger(), producerCloses = new AtomicInteger(), pulls = new AtomicInteger();
+		AtomicInteger filterCloses = new AtomicInteger(), producerCloses = new AtomicInteger(),
+				pulls = new AtomicInteger();
 		AtomicReference<RuntimeException> observed = new AtomicReference<>();
 		NativeExecutionContext context = new NativeExecutionContext();
 		var ledger = context.memoryLedger();
@@ -185,13 +195,29 @@ class NativeFilterAbortCancellationTest {
 		NativeFilterLease capture = NativeFilterLease.capture(context);
 		NativeBooleanFilter borrowed = capture.borrow(filter(filterCloses, cleanup));
 		NativeResultCursor producer = new NativeResultCursor() {
-			@Override public NativeResultRow next() {
-				pulls.incrementAndGet(); borrowed.accept(null);
-				RuntimeException signal = control.observe(); observed.set(signal); throw signal;
+			@Override
+			public NativeResultRow next() {
+				pulls.incrementAndGet();
+				borrowed.accept(null);
+				RuntimeException signal = control.observe();
+				observed.set(signal);
+				throw signal;
 			}
-			@Override public NativeCancellationToken cancellation() { return context.cancellation(); }
-			@Override public NativeExecutionContext executionContext() { return context; }
-			@Override public void close() { producerCloses.incrementAndGet(); }
+
+			@Override
+			public NativeCancellationToken cancellation() {
+				return context.cancellation();
+			}
+
+			@Override
+			public NativeExecutionContext executionContext() {
+				return context;
+			}
+
+			@Override
+			public void close() {
+				producerCloses.incrementAndGet();
+			}
 		};
 		try {
 			Throwable actual = assertThrows(RuntimeException.class, () -> new NativeLazyResultReplay(
@@ -224,21 +250,34 @@ class NativeFilterAbortCancellationTest {
 
 	private static NativeBooleanFilter filter(AtomicInteger closes, RuntimeException cleanup) {
 		return new NativeBooleanFilter() {
-			@Override public boolean accept(RowState row) { return true; }
-			@Override public void close() { closes.incrementAndGet(); if (cleanup != null) { throw cleanup; } }
+			@Override
+			public boolean accept(RowState row) {
+				return true;
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+				if (cleanup != null) {
+					throw cleanup;
+				}
+			}
 		};
 	}
 
 	private static void assertEvidence(Control control, RuntimeException signal, RuntimeException cleanup) {
 		assertTrue(signal != null);
 		if (signal == KernelCancelledException.INSTANCE || signal == KernelQueryCancelledException.INSTANCE) {
-			assertEquals(0, signal.getSuppressed().length, "the shared control cannot retain occurrence-specific state");
+			assertEquals(0, signal.getSuppressed().length,
+					"the shared control cannot retain occurrence-specific state");
 			assertTrue(Arrays.stream(cleanup.getSuppressed()).anyMatch(problem -> problem == signal));
 		} else {
 			KernelQueryCancelledException evidence = Arrays.stream(cleanup.getSuppressed())
-					.filter(KernelQueryCancelledException.class::isInstance).map(KernelQueryCancelledException.class::cast)
+					.filter(KernelQueryCancelledException.class::isInstance)
+					.map(KernelQueryCancelledException.class::cast)
 					.filter(query -> query.origin() == control.signaller() && query.observedBy(control.signaller()))
-					.findFirst().orElseThrow();
+					.findFirst()
+					.orElseThrow();
 			assertEquals(0, evidence.getSuppressed().length, "retained owner evidence cannot point back to cleanup");
 		}
 		if (control.kind() == ControlKind.FOREIGN_QUERY) {

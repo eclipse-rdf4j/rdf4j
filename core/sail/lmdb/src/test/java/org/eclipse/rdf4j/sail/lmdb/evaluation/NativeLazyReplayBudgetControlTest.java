@@ -49,7 +49,7 @@ class NativeLazyReplayBudgetControlTest {
 			assertSame(NativeRowProvenance.EMPTY, NativeResultRow.fromBindingSet(first).provenance(),
 					"plain mappings carry no retained authority metadata");
 			Producer producer = new Producer(List.of(first, second), context.cancellation());
-			try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] {"payload"}, context,
+			try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "payload" }, context,
 					context.cancellation(), producer);
 					NativeResultCursor reader = replay.cursor(context.cancellation())) {
 				assertEquals(payload, reader.next().cell("payload").value());

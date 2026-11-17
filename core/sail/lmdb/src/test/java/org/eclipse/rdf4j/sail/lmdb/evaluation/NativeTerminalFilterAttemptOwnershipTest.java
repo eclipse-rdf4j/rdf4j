@@ -39,10 +39,10 @@ class NativeTerminalFilterAttemptOwnershipTest {
 	void terminalOpeningClosesItsUsedFilterAndSuppressesCleanupOnTheOriginalFailure(String route, String kind)
 			throws Exception {
 		Throwable primary = switch (kind) {
-			case "io" -> new IOException("terminal input failure");
-			case "error" -> new AssertionError("terminal input failure");
-			case "cancel" -> new KernelQueryCancelledException(new Object(), new Object());
-			default -> new IllegalStateException("terminal input failure");
+		case "io" -> new IOException("terminal input failure");
+		case "error" -> new AssertionError("terminal input failure");
+		case "cancel" -> new KernelQueryCancelledException(new Object(), new Object());
+		default -> new IllegalStateException("terminal input failure");
 		};
 		IllegalArgumentException cleanup = new IllegalArgumentException("terminal filter cleanup");
 		AtomicInteger calls = new AtomicInteger(), closes = new AtomicInteger();
@@ -68,7 +68,8 @@ class NativeTerminalFilterAttemptOwnershipTest {
 		LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(filters -> {
 			filters.borrow(semantic).accept(null);
 			throw (IOException) primary;
-		}, 1D, "nestedLoop", () -> { });
+		}, 1D, "nestedLoop", () -> {
+		});
 		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
 		if (route.equals("terminalFallback")) {
 			offers.terminalFallback(() -> proposal);
@@ -110,12 +111,14 @@ class NativeTerminalFilterAttemptOwnershipTest {
 		offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
 			filters.borrow(semantic).accept(null);
 			return null;
-		}, 1D, "nestedLoop", () -> { }));
+		}, 1D, "nestedLoop", () -> {
+		}));
 		offers.terminalFallback(() -> new LmdbNativeStrategyProposal<>(filters -> {
 			assertEquals(0, closes.get(), "a declined arm cannot revoke its fallback's reusable input");
 			filters.borrow(semantic).accept(null);
 			return "selected";
-		}, 1D, "nestedLoop", () -> { }));
+		}, 1D, "nestedLoop", () -> {
+		}));
 		var selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
 				.dispatch(null);
 		assertEquals("selected", selected.value());

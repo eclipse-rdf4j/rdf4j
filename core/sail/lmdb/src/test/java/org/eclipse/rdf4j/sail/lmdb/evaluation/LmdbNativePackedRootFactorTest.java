@@ -62,7 +62,8 @@ class LmdbNativePackedRootFactorTest {
 
 		LmdbStore store = new LmdbStore(directory.resolve("native").toFile(),
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
-						.setDirectAdjacencyEnabled(true).setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+						.setDirectAdjacencyEnabled(true)
+						.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 						.setDirectAdjacencyMaxBytes(1L << 30));
 		SailRepository nativeRepository = new SailRepository(store);
 		SailRepository memoryRepository = new SailRepository(new MemoryStore());
@@ -98,13 +99,11 @@ class LmdbNativePackedRootFactorTest {
 					assertNotNull(opened, "the real fixed-pattern leaf must be admitted by the existing packed path");
 					assertTrue(opened instanceof LmdbNativePackedFtree.GroupedRowCursor,
 							"openLeaf must return its actual grouped runtime, got " + opened.getClass().getName());
-					LmdbNativePackedFtree.GroupedRowCursor grouped =
-							(LmdbNativePackedFtree.GroupedRowCursor) opened;
+					LmdbNativePackedFtree.GroupedRowCursor grouped = (LmdbNativePackedFtree.GroupedRowCursor) opened;
 					assertTrue(grouped.runtime.roots instanceof LmdbNativePackedFtree.RunRootProducer,
 							"source setup must reach an actual RunRootProducer; got "
 									+ grouped.runtime.roots.getClass().getName());
-					LmdbNativePackedFtree.RunRootProducer root =
-							(LmdbNativePackedFtree.RunRootProducer) grouped.runtime.roots;
+					LmdbNativePackedFtree.RunRootProducer root = (LmdbNativePackedFtree.RunRootProducer) grouped.runtime.roots;
 					assertNotNull(root.adjacency, "the selected root must retain its real source adjacency");
 					assertTrue(root.size > 0L, "the stored predicate run must be nonempty");
 					assertEquals(0L, root.offset, "openLeaf must not consume the selected root before export");

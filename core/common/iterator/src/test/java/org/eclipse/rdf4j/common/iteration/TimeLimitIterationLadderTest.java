@@ -236,9 +236,20 @@ class TimeLimitIterationLadderTest {
 					return true;
 				}
 			}
-			@Override public Integer next() { throw new UnsupportedOperationException(); }
-			@Override public void remove() { throw new UnsupportedOperationException(); }
-			@Override public void close() {}
+
+			@Override
+			public Integer next() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public void close() {
+			}
 		};
 		try (Ladder timed = new Ladder(source, HOUR, 0, HOUR);
 				ExecutorService executor = Executors.newSingleThreadExecutor()) {

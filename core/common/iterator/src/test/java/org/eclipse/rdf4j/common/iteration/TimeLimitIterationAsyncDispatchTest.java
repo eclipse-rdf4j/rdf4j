@@ -91,7 +91,9 @@ class TimeLimitIterationAsyncDispatchTest {
 			assertEquals(1, source.release.getCount(), "the callback is blocked when construction returns");
 		} finally {
 			source.release.countDown();
-			if (limited == null) { limited = construction.get(10, TimeUnit.SECONDS); }
+			if (limited == null) {
+				limited = construction.get(10, TimeUnit.SECONDS);
+			}
 			limited.close();
 			caller.shutdown();
 		}
@@ -187,7 +189,8 @@ class TimeLimitIterationAsyncDispatchTest {
 				throw rejection;
 			}
 		}) {
-			TimeLimitScheduler.Task task = new TimeLimitScheduler.Task(() -> {}, scheduler, Runnable::run);
+			TimeLimitScheduler.Task task = new TimeLimitScheduler.Task(() -> {
+			}, scheduler, Runnable::run);
 			assertSame(rejection, assertThrows(RejectedExecutionException.class,
 					() -> task.schedule(new TimeLimitScheduler.Deadline(60_000, System.nanoTime()))));
 		}

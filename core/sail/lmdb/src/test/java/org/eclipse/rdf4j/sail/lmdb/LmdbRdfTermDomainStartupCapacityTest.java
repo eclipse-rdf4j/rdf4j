@@ -99,7 +99,8 @@ class LmdbRdfTermDomainStartupCapacityTest {
 
 	@ParameterizedTest
 	@ValueSource(longs = { 1L, 40_960L })
-	void domainEnabledEmptyStartupAcceptsSmallAutoGrowCapacity(long requestedBytes, @TempDir(cleanup = CleanupMode.NEVER) Path directory)
+	void domainEnabledEmptyStartupAcceptsSmallAutoGrowCapacity(long requestedBytes,
+			@TempDir(cleanup = CleanupMode.NEVER) Path directory)
 			throws Exception {
 		long predicateId;
 		long objectId;
@@ -225,28 +226,28 @@ class LmdbRdfTermDomainStartupCapacityTest {
 				laterOwnerAdmitted = publication != null;
 			}
 			assertAll("publication cleanup preserves the operation outcome and releases ownership",
-						() -> assertEquals(1, probe.commitCalls.get(), "one real native commit attempt"),
-						() -> assertEquals(operationCapacity ? 1 : 0, probe.injectedFailures.get()),
-						() -> assertEquals(1, probe.scopeCleanupCalls.get(), "real scope cleanup was reached"),
-						() -> assertNotNull(probe.domainWorker, "domain publication was reached"),
-						() -> assertSame(probe.domainWorker, probe.scopeCleanupThread, "the domain owner closed its scope"),
-						() -> assertTrue(probe.scopeReleasedNativeOwner.get(), "native writer was settled"),
-						() -> assertTrue(laterOwnerAdmitted, "a later owner can acquire logical publication"),
-						() -> assertNotNull(completion.get(), "scope cleanup failure reaches completion"),
-						() -> {
-							if (operationCapacity) {
-								assertNotNull(probe.observedCapacity.get(), "the actual capacity object was captured");
-								assertSame(probe.observedCapacity.get(), completion.get());
-								assertDirectSuppressed(completion.get(), cleanup);
-							} else {
-								assertNull(probe.observedCapacity.get());
-								assertInstanceOf(TripleStore.MapFullException.class, cleanup.getCause());
-								assertSame(cleanup, completion.get(), "close-origin capacity is not retryable");
-							}
-						},
-						() -> assertTrue(probe.admissionEvents.stream().allMatch(event -> event.failures() == 0)),
-						() -> assertEquals(operationCapacity ? 0 : 1, probe.publicationBarriers.get()),
-						() -> assertRowsAndIds(store, seed.predicateId(), seed.objectId()));
+					() -> assertEquals(1, probe.commitCalls.get(), "one real native commit attempt"),
+					() -> assertEquals(operationCapacity ? 1 : 0, probe.injectedFailures.get()),
+					() -> assertEquals(1, probe.scopeCleanupCalls.get(), "real scope cleanup was reached"),
+					() -> assertNotNull(probe.domainWorker, "domain publication was reached"),
+					() -> assertSame(probe.domainWorker, probe.scopeCleanupThread, "the domain owner closed its scope"),
+					() -> assertTrue(probe.scopeReleasedNativeOwner.get(), "native writer was settled"),
+					() -> assertTrue(laterOwnerAdmitted, "a later owner can acquire logical publication"),
+					() -> assertNotNull(completion.get(), "scope cleanup failure reaches completion"),
+					() -> {
+						if (operationCapacity) {
+							assertNotNull(probe.observedCapacity.get(), "the actual capacity object was captured");
+							assertSame(probe.observedCapacity.get(), completion.get());
+							assertDirectSuppressed(completion.get(), cleanup);
+						} else {
+							assertNull(probe.observedCapacity.get());
+							assertInstanceOf(TripleStore.MapFullException.class, cleanup.getCause());
+							assertSame(cleanup, completion.get(), "close-origin capacity is not retryable");
+						}
+					},
+					() -> assertTrue(probe.admissionEvents.stream().allMatch(event -> event.failures() == 0)),
+					() -> assertEquals(operationCapacity ? 0 : 1, probe.publicationBarriers.get()),
+					() -> assertRowsAndIds(store, seed.predicateId(), seed.objectId()));
 		}
 		assertEquals(1, probe.closeCalls.get());
 		assertColdReopen(directory, seed.predicateId(), seed.objectId());
@@ -379,15 +380,18 @@ class LmdbRdfTermDomainStartupCapacityTest {
 				settled = writer.awaitTermination(15, TimeUnit.SECONDS);
 			} catch (InterruptedException interrupted) {
 				Thread.currentThread().interrupt();
-				RETAINED_DICTIONARY_WRITERS.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
+				RETAINED_DICTIONARY_WRITERS
+						.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
 				throw new AssertionError("dictionary writer cleanup interrupted; retained " + directory + ": "
 						+ retainedOwnerDescription(writerThread.get()), interrupted);
 			} catch (RuntimeException | Error failure) {
-				RETAINED_DICTIONARY_WRITERS.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
+				RETAINED_DICTIONARY_WRITERS
+						.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
 				throw failure;
 			}
 			if (!settled) {
-				RETAINED_DICTIONARY_WRITERS.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
+				RETAINED_DICTIONARY_WRITERS
+						.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
 				throw new AssertionError("dictionary writer remains live; retained " + directory + ": "
 						+ retainedOwnerDescription(writerThread.get()));
 			}
@@ -400,14 +404,16 @@ class LmdbRdfTermDomainStartupCapacityTest {
 			var committed = writer.submit(() -> {
 				values.startTransaction(false);
 				try {
-					long id = values.getId(VF.createIRI("urn:startup-domain:concurrent-owner-with-cleanup-fault"), true);
+					long id = values.getId(VF.createIRI("urn:startup-domain:concurrent-owner-with-cleanup-fault"),
+							true);
 					values.commit();
 					return id;
 				} catch (IOException | RuntimeException | Error failure) {
 					try {
 						values.rollback();
 					} catch (IOException | RuntimeException | Error cleanupError) {
-						if (cleanupError != failure) failure.addSuppressed(cleanupError);
+						if (cleanupError != failure)
+							failure.addSuppressed(cleanupError);
 					}
 					throw failure;
 				}
@@ -458,15 +464,18 @@ class LmdbRdfTermDomainStartupCapacityTest {
 				settled = writer.awaitTermination(15, TimeUnit.SECONDS);
 			} catch (InterruptedException interrupted) {
 				Thread.currentThread().interrupt();
-				RETAINED_DICTIONARY_WRITERS.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
+				RETAINED_DICTIONARY_WRITERS
+						.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
 				throw new AssertionError("dictionary writer cleanup interrupted; retained " + directory + ": "
 						+ retainedOwnerDescription(writerThread.get()), interrupted);
 			} catch (RuntimeException | Error failure) {
-				RETAINED_DICTIONARY_WRITERS.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
+				RETAINED_DICTIONARY_WRITERS
+						.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
 				throw failure;
 			}
 			if (!settled) {
-				RETAINED_DICTIONARY_WRITERS.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
+				RETAINED_DICTIONARY_WRITERS
+						.add(new RetainedDictionaryWriter(store, writer, writerThread.get(), directory));
 				throw new AssertionError("dictionary writer remains live; retained " + directory + ": "
 						+ retainedOwnerDescription(writerThread.get()));
 			}
@@ -486,7 +495,8 @@ class LmdbRdfTermDomainStartupCapacityTest {
 					try {
 						values.rollback();
 					} catch (IOException | RuntimeException | Error cleanupFailure) {
-						if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
+						if (cleanupFailure != failure)
+							failure.addSuppressed(cleanupFailure);
 					}
 					throw failure;
 				}
@@ -505,20 +515,25 @@ class LmdbRdfTermDomainStartupCapacityTest {
 			}
 			assertAll("pre-fault rescan retains the native commit boundary",
 					() -> assertEquals(1, probe.injectedFailures.get()),
-					() -> assertEquals(autoGrow ? 2 : 1, probe.commitCalls.get(), "capacity fault has the expected commit retry"),
+					() -> assertEquals(autoGrow ? 2 : 1, probe.commitCalls.get(),
+							"capacity fault has the expected commit retry"),
 					() -> assertEquals(autoGrow ? 1 : 0, probe.publicationBarriers.get()),
 					() -> assertTrue(probe.admissionEvents.size() >= 2, "changed dictionary forced a fresh scan"),
-					() -> assertTrue(probe.admissionEvents.get(1).dictionaryTransaction()
-							> probe.admissionEvents.get(0).dictionaryTransaction(), "the owned generation advanced"),
-					() -> assertTrue(probe.admissionEvents.stream().filter(event -> event.failures() == 0).count() >= 2),
+					() -> assertTrue(probe.admissionEvents.get(1).dictionaryTransaction() > probe.admissionEvents.get(0)
+							.dictionaryTransaction(), "the owned generation advanced"),
+					() -> assertTrue(
+							probe.admissionEvents.stream().filter(event -> event.failures() == 0).count() >= 2),
 					() -> {
 						long afterFault = probe.admissionEvents.stream().filter(event -> event.failures() > 0).count();
-						if (autoGrow) assertTrue(afterFault >= 1, "a capacity fault must retry the complete rebuild");
-						else assertEquals(0, afterFault, "disabled growth must not rescan after a capacity fault");
+						if (autoGrow)
+							assertTrue(afterFault >= 1, "a capacity fault must retry the complete rebuild");
+						else
+							assertEquals(0, afterFault, "disabled growth must not rescan after a capacity fault");
 					},
 					() -> assertRowsAndIds(store, seed.predicateId(), seed.objectId()));
 		}
-		if (autoGrow) assertClosedQualification(directory);
+		if (autoGrow)
+			assertClosedQualification(directory);
 		assertColdReopen(directory, seed.predicateId(), seed.objectId());
 	}
 
@@ -554,7 +569,8 @@ class LmdbRdfTermDomainStartupCapacityTest {
 					try {
 						values.rollback();
 					} catch (IOException | RuntimeException | Error cleanupFailure) {
-						if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
+						if (cleanupFailure != failure)
+							failure.addSuppressed(cleanupFailure);
 					}
 					throw failure;
 				}
@@ -570,8 +586,10 @@ class LmdbRdfTermDomainStartupCapacityTest {
 			assertTrue(probe.admissionEvents.size() >= 2, "changed dictionary must force a fresh scan");
 			assertTrue(probe.admissionEvents.stream().allMatch(event -> event.failures() == 0),
 					() -> "no domain admission after the fault: " + probe.admissionEvents);
-			assertTrue(probe.admissionEvents.get(probe.admissionEvents.size() - 1).dictionaryTransaction()
-					> probe.admissionEvents.get(0).dictionaryTransaction(), "a new paired generation was scanned");
+			assertTrue(
+					probe.admissionEvents.get(probe.admissionEvents.size() - 1)
+							.dictionaryTransaction() > probe.admissionEvents.get(0).dictionaryTransaction(),
+					"a new paired generation was scanned");
 			assertEquals(0, probe.publicationBarriers.get());
 			assertNull(store.getBackingStore().getTripleStore().completeRdfTermDomainVersion());
 			assertRowsAndIds(store, seed.predicateId(), seed.objectId());
@@ -758,6 +776,7 @@ class LmdbRdfTermDomainStartupCapacityTest {
 
 		private record DomainAdmission(long tripleTransaction, long dictionaryTransaction, int failures) {
 		}
+
 		private Throwable cleanupFailure;
 		private NativeState stateBeforeDomain;
 		private NativeState stateBeforeClose;
@@ -883,7 +902,8 @@ class LmdbRdfTermDomainStartupCapacityTest {
 
 							@Override
 							void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
-								// The actual publication worker, not replay-policy configuration, identifies this admission.
+								// The actual publication worker, not replay-policy configuration, identifies this
+								// admission.
 								domainTransaction = Thread.currentThread() == probe.domainWorker;
 								if (domainTransaction) {
 									probe.beforeDomainAdmission(this, tripleProperties, values);
@@ -1212,7 +1232,8 @@ class LmdbRdfTermDomainStartupCapacityTest {
 				null)) {
 			LmdbSailStore.ReadView view = admission.view();
 			view.requireDictionaryTermSnapshot();
-			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(), view.valueSnapshot())) {
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(),
+					view.valueSnapshot())) {
 				RdfTermDomain domain = triples.getKnownRdfTermDomain(predicateId).orElseThrow();
 				assertTrue(domain.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
 				assertEquals(domain, triples.getPersistedRdfTermDomain(predicateId).orElseThrow());

@@ -151,7 +151,8 @@ final class LmdbReplayOpenCloseProbe {
 					assertThat(observedNamespaces.get()).containsExactlyEntriesOf(Map.of("seed", "urn:opener:seed:"));
 				} else {
 					Throwable expectedFailure = mode.equals("OPENER_FOREIGN_OWNER")
-							? gate.foreignFailure.get() : gate.cleanupFailure;
+							? gate.foreignFailure.get()
+							: gate.cleanupFailure;
 					assertThat(expectedFailure).as("the intended cleanup/ownership failure was produced").isNotNull();
 					assertThat(contains(failure, expectedFailure)).as("real cleanup/ownership failure must surface")
 							.isTrue();
@@ -259,8 +260,8 @@ final class LmdbReplayOpenCloseProbe {
 						throw new QueryEvaluationException(signal);
 					}
 					if (mode.equals("OPENER_FOREIGN_OWNER")) {
-						LmdbSailStore.MapResizeConflictException accepted =
-								(LmdbSailStore.MapResizeConflictException) signal.getCause();
+						LmdbSailStore.MapResizeConflictException accepted = (LmdbSailStore.MapResizeConflictException) signal
+								.getCause();
 						LmdbSailStore.MapResizeConflictException foreign = new LmdbSailStore.MapResizeConflictException(
 								accepted.kind(), "foreign replay owner", new Object(), accepted.replayToken());
 						try (QueryExecutionContext.Activation ignored = QueryExecutionContext

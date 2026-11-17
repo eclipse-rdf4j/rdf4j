@@ -29,7 +29,8 @@ public final class LmdbPreparedFilterOutcome {
 	private final LmdbFeedbackReadAuthority.Publication authority;
 
 	LmdbPreparedFilterOutcome(LmdbLearnedFilterSelectivity.BoundOutcome learned,
-			LmdbFilterOutcomeFeedbackDescriptor inputFrame, LmdbFilterSelectivityStats.PreparedFilterOutcome legacySurface,
+			LmdbFilterOutcomeFeedbackDescriptor inputFrame,
+			LmdbFilterSelectivityStats.PreparedFilterOutcome legacySurface,
 			LmdbEvaluationFilterServices services, LmdbFeedbackReadAuthority.Publication authority) {
 		this.learned = learned;
 		this.inputFrame = inputFrame;
@@ -39,7 +40,9 @@ public final class LmdbPreparedFilterOutcome {
 	}
 
 	/** Distinct from unsupported/custom statistics: a rejected LMDB origin cannot fall back to legacy publication. */
-	static LmdbPreparedFilterOutcome denied() { return DENIED; }
+	static LmdbPreparedFilterOutcome denied() {
+		return DENIED;
+	}
 
 	/** Called once for each actual logical input opening, before that argument produces local bindings. */
 	public boolean acceptsInput(BindingSet input) {
@@ -49,7 +52,9 @@ public final class LmdbPreparedFilterOutcome {
 	/** Called only after selected native receipts and all owned cleanup have settled. */
 	public void record(FilterOutcomeObservation observation, boolean inputQualified) {
 		if (inputFrame != null && inputQualified && observation.completed() && observation.poisonReason().isEmpty()) {
-			if (learned != null) { learned.record(observation.passedCount(), observation.filteredCount()); }
+			if (learned != null) {
+				learned.record(observation.passedCount(), observation.filteredCount());
+			}
 			services.recordNativeLegacyOutcome(legacySurface, observation, authority);
 		}
 	}

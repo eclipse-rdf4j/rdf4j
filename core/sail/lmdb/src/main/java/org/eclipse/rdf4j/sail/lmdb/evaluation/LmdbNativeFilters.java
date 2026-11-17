@@ -365,7 +365,8 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
-			AdaptiveFilterMetadata adaptive, LmdbPreparedFilterOutcome preparedOutcome, boolean logicalInputPopulation) {
+			AdaptiveFilterMetadata adaptive, LmdbPreparedFilterOutcome preparedOutcome,
+			boolean logicalInputPopulation) {
 		this(delegate, filter, statistics, adaptive, null, null, preparedOutcome, logicalInputPopulation);
 	}
 

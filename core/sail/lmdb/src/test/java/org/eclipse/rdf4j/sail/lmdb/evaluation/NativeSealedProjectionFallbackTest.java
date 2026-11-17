@@ -60,166 +60,211 @@ import org.junit.jupiter.params.provider.MethodSource;
 /** Original projection output must own every pre-consumption native decline, including a private demand plan. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class NativeSealedProjectionFallbackTest {
-    private static final String FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
-    private String previous;
-    @BeforeEach void enableNative() { previous = System.getProperty(FLAG); System.setProperty(FLAG, "true"); }
-    @AfterEach void restoreNative() { if (previous == null) System.clearProperty(FLAG); else System.setProperty(FLAG, previous); }
+	private static final String FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private String previous;
 
-    static Stream<Arguments> constantEntries() {
-        return Stream.of("LEADING_EMPTY", "LEADING_TRACKED", "LEADING_REQUEST", "TRAILING_EMPTY", "HASH_EMPTY")
-                .flatMap(shape -> Stream.of(false, true).flatMap(experimental -> Stream.of(false, true)
-                        .map(typed -> Arguments.of(shape, experimental, typed))));
-    }
+	@BeforeEach
+	void enableNative() {
+		previous = System.getProperty(FLAG);
+		System.setProperty(FLAG, "true");
+	}
 
-    @ParameterizedTest(name = "{0}, experimental={1}, typed={2}") @MethodSource("constantEntries")
-    void constantGuardCannotPublishThePrivateDemandProjection(String shape, boolean experimental, boolean typed,
-            TestReporter reporter) {
-        var source = source(NativeCompositeOriginFixture.miniData());
-        var value = NativeCompositeOriginFixture.iri("s0");
-        var inputValues = new QueryBindingSet();
-        BindingSet input;
-        if (shape.equals("LEADING_TRACKED")) {
-            input = BindingSetOrigin.with(inputValues, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
-            assertTrue(input.isEmpty()); assertTrue(BindingSetOrigin.isTrackedInput(input));
-        } else if (shape.equals("LEADING_REQUEST")) {
-            inputValues.setBinding("s", value); input = BindingSetOrigin.requestInput(inputValues);
-            assertSame(value, input.getValue("s"));
-        } else {
-            input = EmptyBindingSet.getInstance();
-            assertFalse(BindingSetOrigin.isTrackedInput(input));
-        }
-        StatementPattern constant = new StatementPattern(
-                Var.of("_constantSubject", value, true, true),
-                Var.of("_constantPredicate", NativeCompositeOriginFixture.iri("p"), true, true),
-                Var.of("_constantObject", NativeCompositeOriginFixture.iri("o0"), true, true));
-        StatementPattern emitting = pattern();
-        Join join = shape.equals("TRAILING_EMPTY") ? new Join(emitting, constant) : new Join(constant, emitting);
-        if (shape.equals("HASH_EMPTY")) join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
-        var projection = new Projection(join, columns());
-        var root = new QueryRoot(projection);
-        QueryRoot reference = root.clone();
-        Join referenceJoin = (Join) ((Projection) reference.getArg()).getArg();
-        var ordinary = new DefaultEvaluationStrategy(source,
-                (org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
-        ordinary.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
-        List<BindingSet> expected = drain(ordinary.precompile(reference), input, false);
-        assertEquals(shape.equals("LEADING_REQUEST") ? 1 : 3, expected.size());
-        for (BindingSet row : expected) {
-            assertEquals(Set.of("alias"), row.getBindingNames());
-            assertTrue(BindingSetOrigin.isTrackedInput(row));
-            assertEquals(Set.of("alias"), BindingSetOrigin.of(row).localNames());
-        }
-        String algorithm = referenceJoin.getAlgorithmName();
-        if (shape.equals("HASH_EMPTY")) assertEquals("HashJoinIteration", algorithm);
-        else if (!experimental) assertEquals("JoinIterator", algorithm);
-        else if (shape.equals("TRAILING_EMPTY")) {
-            // The left emitting pattern has no row/work estimate, so the budget guard declines this invocation.
-            assertEquals("JoinIterator", algorithm);
-        }
-        else assertEquals("BoundStatementPatternLeftJoinIteration", algorithm);
-        // This directly characterizes the existing private-frame proof through its owning analysis interface.
-        var context = new QueryEvaluationContext.Minimal((Dataset) null);
-        NativeBGPOrigin.ProjectionFrame frame = NativeBGPOrigin.projection(root, context);
-        // Duplicate aliases intentionally have no uniform projection proof. A private unique source demand does.
-        assertEquals(null, frame);
-        Projection demand = new Projection(join.clone(),
-                new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o")));
-        NativeBGPOrigin.ProjectionFrame privateFrame = NativeBGPOrigin.projection(demand, context);
-        if (shape.equals("HASH_EMPTY")) assertEquals(null, privateFrame);
-        else {
-            assertNotNull(privateFrame);
-            assertEquals(shape.equals("TRAILING_EMPTY"), privateFrame.supportsInput(EmptyBindingSet.getInstance()));
-        }
-        root.setExecutionSummaryEnabled(true); join.setExecutionSummaryEnabled(true);
-        var initial = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
-        initial.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
-        QueryEvaluationStep compiled = initial.forWorker(source).precompile(root);
-        int opened = source.opened;
-        List<BindingSet> actual = drain(compiled, input, typed);
-        reporter.publishEntry(Map.of("ordinaryAlgorithm", algorithm,
-                "componentPlan", String.valueOf(join.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN)),
-                "componentPath", String.valueOf(join.getStringMetricActual("nativeExecutionPath")),
-                "openedAfterCompile", String.valueOf(source.opened - opened)));
-        assertEquals(source.opened, source.closed);
-        assertTrue(source.opened > opened, "actual native record-reader work after compilation; count-only semantic fallback is a route finding");
-        assertRows(expected, actual);
-    }
+	@AfterEach
+	void restoreNative() {
+		if (previous == null)
+			System.clearProperty(FLAG);
+		else
+			System.setProperty(FLAG, previous);
+	}
 
-    static Stream<Arguments> graphDescendants() {
-        return Stream.of("CONSTANT_GRAPH", "VARIABLE_GRAPH")
-                .flatMap(graph -> Stream.of(false, true).map(typed -> Arguments.of(graph, typed)));
-    }
+	static Stream<Arguments> constantEntries() {
+		return Stream.of("LEADING_EMPTY", "LEADING_TRACKED", "LEADING_REQUEST", "TRAILING_EMPTY", "HASH_EMPTY")
+				.flatMap(shape -> Stream.of(false, true)
+						.flatMap(experimental -> Stream.of(false, true)
+								.map(typed -> Arguments.of(shape, experimental, typed))));
+	}
 
-    @ParameterizedTest(name = "lowered descendant={0}, typed={1}") @MethodSource("graphDescendants")
-    void ownOriginRootDoesNotEraseTheRealLoweredGraphDescendant(String mode, boolean typed, TestReporter reporter) {
-        var graphName = NativeCompositeOriginFixture.iri("named");
-        var data = new ArrayList<>(NativeCompositeOriginFixture.miniData());
-        data.add(NativeCompositeOriginFixture.VF.createStatement(NativeCompositeOriginFixture.iri("s0"),
-                NativeCompositeOriginFixture.iri("p"), NativeCompositeOriginFixture.iri("o0"), graphName));
-        var source = source(data);
-        Var selector = mode.equals("CONSTANT_GRAPH") ? Var.of("_graph", graphName, true, true) : Var.of("g");
-        Graph graph = new Graph(selector, pattern());
-        var reference = new QueryRoot(new Projection(graph.clone(), columns()));
-        var ordinary = new DefaultEvaluationStrategy(source,
-                (org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
-        List<BindingSet> expected = drain(ordinary.precompile(reference), EmptyBindingSet.getInstance(), false);
-        assertEquals(1, expected.size());
-        var initial = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
-        var strategy = initial.forWorker(source);
-        NativeGraphFusion.Prepared prepared = NativeGraphFusion.prepare(graph, null, strategy);
-        assertFalse(prepared.expression() instanceof Graph, "the actual owning lowerer has removed the GRAPH node");
-        assertTrue(prepared.expression() instanceof StatementPattern, "the exact positive BGP lowering is reached");
-        // A normal model owner can compose an already-lowered operand. No private metadata or runtime slot is written.
-        TupleExpr lowered = prepared.expression();
-        var root = new QueryRoot(new Projection(lowered, columns()));
-        root.setExecutionSummaryEnabled(true); lowered.setExecutionSummaryEnabled(true);
-        QueryEvaluationStep compiled = strategy.precompile(root);
-        int opened = source.opened;
-        List<BindingSet> actual = drain(compiled, EmptyBindingSet.getInstance(), typed);
-        String plan = String.valueOf(root.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN));
-        String childPlan = String.valueOf(lowered.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN));
-        reporter.publishEntry(Map.of("rootPlan", plan, "loweredPlan", childPlan,
-                "rootPath", String.valueOf(root.getStringMetricActual("nativeExecutionPath"))));
-        assertRows(expected, actual);
-        assertTrue(source.opened > opened); assertEquals(source.opened, source.closed);
-        assertFalse(plan.contains("SealedProjection(") || childPlan.contains("SealedProjection("),
-                "this capability excludes actual GRAPH scope even when only its descendant origin retains it");
-    }
+	@ParameterizedTest(name = "{0}, experimental={1}, typed={2}")
+	@MethodSource("constantEntries")
+	void constantGuardCannotPublishThePrivateDemandProjection(String shape, boolean experimental, boolean typed,
+			TestReporter reporter) {
+		var source = source(NativeCompositeOriginFixture.miniData());
+		var value = NativeCompositeOriginFixture.iri("s0");
+		var inputValues = new QueryBindingSet();
+		BindingSet input;
+		if (shape.equals("LEADING_TRACKED")) {
+			input = BindingSetOrigin.with(inputValues, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
+			assertTrue(input.isEmpty());
+			assertTrue(BindingSetOrigin.isTrackedInput(input));
+		} else if (shape.equals("LEADING_REQUEST")) {
+			inputValues.setBinding("s", value);
+			input = BindingSetOrigin.requestInput(inputValues);
+			assertSame(value, input.getValue("s"));
+		} else {
+			input = EmptyBindingSet.getInstance();
+			assertFalse(BindingSetOrigin.isTrackedInput(input));
+		}
+		StatementPattern constant = new StatementPattern(
+				Var.of("_constantSubject", value, true, true),
+				Var.of("_constantPredicate", NativeCompositeOriginFixture.iri("p"), true, true),
+				Var.of("_constantObject", NativeCompositeOriginFixture.iri("o0"), true, true));
+		StatementPattern emitting = pattern();
+		Join join = shape.equals("TRAILING_EMPTY") ? new Join(emitting, constant) : new Join(constant, emitting);
+		if (shape.equals("HASH_EMPTY"))
+			join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		var projection = new Projection(join, columns());
+		var root = new QueryRoot(projection);
+		QueryRoot reference = root.clone();
+		Join referenceJoin = (Join) ((Projection) reference.getArg()).getArg();
+		var ordinary = new DefaultEvaluationStrategy(source,
+				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
+		ordinary.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
+		List<BindingSet> expected = drain(ordinary.precompile(reference), input, false);
+		assertEquals(shape.equals("LEADING_REQUEST") ? 1 : 3, expected.size());
+		for (BindingSet row : expected) {
+			assertEquals(Set.of("alias"), row.getBindingNames());
+			assertTrue(BindingSetOrigin.isTrackedInput(row));
+			assertEquals(Set.of("alias"), BindingSetOrigin.of(row).localNames());
+		}
+		String algorithm = referenceJoin.getAlgorithmName();
+		if (shape.equals("HASH_EMPTY"))
+			assertEquals("HashJoinIteration", algorithm);
+		else if (!experimental)
+			assertEquals("JoinIterator", algorithm);
+		else if (shape.equals("TRAILING_EMPTY")) {
+			// The left emitting pattern has no row/work estimate, so the budget guard declines this invocation.
+			assertEquals("JoinIterator", algorithm);
+		} else
+			assertEquals("BoundStatementPatternLeftJoinIteration", algorithm);
+		// This directly characterizes the existing private-frame proof through its owning analysis interface.
+		var context = new QueryEvaluationContext.Minimal((Dataset) null);
+		NativeBGPOrigin.ProjectionFrame frame = NativeBGPOrigin.projection(root, context);
+		// Duplicate aliases intentionally have no uniform projection proof. A private unique source demand does.
+		assertEquals(null, frame);
+		Projection demand = new Projection(join.clone(),
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o")));
+		NativeBGPOrigin.ProjectionFrame privateFrame = NativeBGPOrigin.projection(demand, context);
+		if (shape.equals("HASH_EMPTY"))
+			assertEquals(null, privateFrame);
+		else {
+			assertNotNull(privateFrame);
+			assertEquals(shape.equals("TRAILING_EMPTY"), privateFrame.supportsInput(EmptyBindingSet.getInstance()));
+		}
+		root.setExecutionSummaryEnabled(true);
+		join.setExecutionSummaryEnabled(true);
+		var initial = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
+		initial.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
+		QueryEvaluationStep compiled = initial.forWorker(source).precompile(root);
+		int opened = source.opened;
+		List<BindingSet> actual = drain(compiled, input, typed);
+		reporter.publishEntry(Map.of("ordinaryAlgorithm", algorithm,
+				"componentPlan", String.valueOf(join.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN)),
+				"componentPath", String.valueOf(join.getStringMetricActual("nativeExecutionPath")),
+				"openedAfterCompile", String.valueOf(source.opened - opened)));
+		assertEquals(source.opened, source.closed);
+		assertTrue(source.opened > opened,
+				"actual native record-reader work after compilation; count-only semantic fallback is a route finding");
+		assertRows(expected, actual);
+	}
 
-    private static ProjectionElemList columns() {
-        return new ProjectionElemList(new ProjectionElem("s", "alias"), new ProjectionElem("o", "alias"));
-    }
-    private static StatementPattern pattern() {
-        return new StatementPattern(Var.of("s"),
-                Var.of("_p", NativeCompositeOriginFixture.iri("p"), true, true), Var.of("o"));
-    }
-    private static LmdbNativeRepeatedStatementTermRoleTest.MemorySource source(List<org.eclipse.rdf4j.model.Statement> rows) {
-        return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(rows, NativeCompositeOriginFixture.iri("extra"));
-    }
-    private static List<BindingSet> drain(QueryEvaluationStep step, BindingSet input, boolean typed) {
-        if (!typed) { try (var rows = step.evaluate(input)) { return QueryResults.asList(rows); } }
-        List<BindingSet> result = new ArrayList<>();
-        try (var rows = NativeResultSteps.open(step, input)) {
-            for (NativeResultRow row; (row = rows.next()) != null;) result.add(row.toBindingSet());
-        }
-        return result;
-    }
-    private record Facts(Map<String, Value> values, boolean tracked, Set<String> request, Set<String> local,
-            Map<String, Value> parameters, Map<String, Value> graphs) { }
-    private static Facts facts(BindingSet row) {
-        Map<String, Value> values = new LinkedHashMap<>();
-        for (String name : row.getBindingNames()) if (row.hasBinding(name)) values.put(name, row.getValue(name));
-        BindingSetOrigin origin = BindingSetOrigin.of(row);
-        return new Facts(Collections.unmodifiableMap(values), BindingSetOrigin.isTrackedInput(row), origin.requestNames(),
-                origin.localNames(), origin.retainedParametersForTransport(), GraphFrameBindings.from(row).retainedParametersForTransport());
-    }
-    private static Map<Facts, Integer> bag(List<BindingSet> rows, boolean reenter) {
-        Map<Facts, Integer> bag = new HashMap<>();
-        for (BindingSet row : rows) bag.merge(facts(reenter ? BindingSetOrigin.requestInput(row) : row), 1, Integer::sum);
-        return bag;
-    }
-    private static void assertRows(List<BindingSet> expected, List<BindingSet> actual) {
-        assertEquals(bag(expected, false), bag(actual, false), "exact domain/multiplicity and complete row authority");
-        assertEquals(bag(expected, true), bag(actual, true), "real entry cannot promote the wrong source mapping");
-    }
+	static Stream<Arguments> graphDescendants() {
+		return Stream.of("CONSTANT_GRAPH", "VARIABLE_GRAPH")
+				.flatMap(graph -> Stream.of(false, true).map(typed -> Arguments.of(graph, typed)));
+	}
+
+	@ParameterizedTest(name = "lowered descendant={0}, typed={1}")
+	@MethodSource("graphDescendants")
+	void ownOriginRootDoesNotEraseTheRealLoweredGraphDescendant(String mode, boolean typed, TestReporter reporter) {
+		var graphName = NativeCompositeOriginFixture.iri("named");
+		var data = new ArrayList<>(NativeCompositeOriginFixture.miniData());
+		data.add(NativeCompositeOriginFixture.VF.createStatement(NativeCompositeOriginFixture.iri("s0"),
+				NativeCompositeOriginFixture.iri("p"), NativeCompositeOriginFixture.iri("o0"), graphName));
+		var source = source(data);
+		Var selector = mode.equals("CONSTANT_GRAPH") ? Var.of("_graph", graphName, true, true) : Var.of("g");
+		Graph graph = new Graph(selector, pattern());
+		var reference = new QueryRoot(new Projection(graph.clone(), columns()));
+		var ordinary = new DefaultEvaluationStrategy(source,
+				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
+		List<BindingSet> expected = drain(ordinary.precompile(reference), EmptyBindingSet.getInstance(), false);
+		assertEquals(1, expected.size());
+		var initial = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
+		var strategy = initial.forWorker(source);
+		NativeGraphFusion.Prepared prepared = NativeGraphFusion.prepare(graph, null, strategy);
+		assertFalse(prepared.expression() instanceof Graph, "the actual owning lowerer has removed the GRAPH node");
+		assertTrue(prepared.expression() instanceof StatementPattern, "the exact positive BGP lowering is reached");
+		// A normal model owner can compose an already-lowered operand. No private metadata or runtime slot is written.
+		TupleExpr lowered = prepared.expression();
+		var root = new QueryRoot(new Projection(lowered, columns()));
+		root.setExecutionSummaryEnabled(true);
+		lowered.setExecutionSummaryEnabled(true);
+		QueryEvaluationStep compiled = strategy.precompile(root);
+		int opened = source.opened;
+		List<BindingSet> actual = drain(compiled, EmptyBindingSet.getInstance(), typed);
+		String plan = String.valueOf(root.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN));
+		String childPlan = String.valueOf(lowered.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN));
+		reporter.publishEntry(Map.of("rootPlan", plan, "loweredPlan", childPlan,
+				"rootPath", String.valueOf(root.getStringMetricActual("nativeExecutionPath"))));
+		assertRows(expected, actual);
+		assertTrue(source.opened > opened);
+		assertEquals(source.opened, source.closed);
+		assertFalse(plan.contains("SealedProjection(") || childPlan.contains("SealedProjection("),
+				"this capability excludes actual GRAPH scope even when only its descendant origin retains it");
+	}
+
+	private static ProjectionElemList columns() {
+		return new ProjectionElemList(new ProjectionElem("s", "alias"), new ProjectionElem("o", "alias"));
+	}
+
+	private static StatementPattern pattern() {
+		return new StatementPattern(Var.of("s"),
+				Var.of("_p", NativeCompositeOriginFixture.iri("p"), true, true), Var.of("o"));
+	}
+
+	private static LmdbNativeRepeatedStatementTermRoleTest.MemorySource source(
+			List<org.eclipse.rdf4j.model.Statement> rows) {
+		return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(rows,
+				NativeCompositeOriginFixture.iri("extra"));
+	}
+
+	private static List<BindingSet> drain(QueryEvaluationStep step, BindingSet input, boolean typed) {
+		if (!typed) {
+			try (var rows = step.evaluate(input)) {
+				return QueryResults.asList(rows);
+			}
+		}
+		List<BindingSet> result = new ArrayList<>();
+		try (var rows = NativeResultSteps.open(step, input)) {
+			for (NativeResultRow row; (row = rows.next()) != null;)
+				result.add(row.toBindingSet());
+		}
+		return result;
+	}
+
+	private record Facts(Map<String, Value> values, boolean tracked, Set<String> request, Set<String> local,
+			Map<String, Value> parameters, Map<String, Value> graphs) {
+	}
+
+	private static Facts facts(BindingSet row) {
+		Map<String, Value> values = new LinkedHashMap<>();
+		for (String name : row.getBindingNames())
+			if (row.hasBinding(name))
+				values.put(name, row.getValue(name));
+		BindingSetOrigin origin = BindingSetOrigin.of(row);
+		return new Facts(Collections.unmodifiableMap(values), BindingSetOrigin.isTrackedInput(row),
+				origin.requestNames(),
+				origin.localNames(), origin.retainedParametersForTransport(),
+				GraphFrameBindings.from(row).retainedParametersForTransport());
+	}
+
+	private static Map<Facts, Integer> bag(List<BindingSet> rows, boolean reenter) {
+		Map<Facts, Integer> bag = new HashMap<>();
+		for (BindingSet row : rows)
+			bag.merge(facts(reenter ? BindingSetOrigin.requestInput(row) : row), 1, Integer::sum);
+		return bag;
+	}
+
+	private static void assertRows(List<BindingSet> expected, List<BindingSet> actual) {
+		assertEquals(bag(expected, false), bag(actual, false), "exact domain/multiplicity and complete row authority");
+		assertEquals(bag(expected, true), bag(actual, true), "real entry cannot promote the wrong source mapping");
+	}
 }

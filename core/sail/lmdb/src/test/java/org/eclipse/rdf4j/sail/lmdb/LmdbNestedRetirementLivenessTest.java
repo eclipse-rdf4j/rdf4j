@@ -49,8 +49,11 @@ class LmdbNestedRetirementLivenessTest {
 		String key = "rdf4j.lmdb.valueGc.drainBatchSize";
 		String previous = System.getProperty(key);
 		System.setProperty(key, "2");
-		var config = new LmdbStoreConfig(indexes).setForceSync(true).setInlineLiterals(false)
-				.setSketchEstimatorEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+		var config = new LmdbStoreConfig(indexes).setForceSync(true)
+				.setInlineLiterals(false)
+				.setSketchEstimatorEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		ProbeStore store = new ProbeStore(directory, config);
 		SailRepository repository = new SailRepository(store);
 		var writer = Executors.newSingleThreadExecutor();
@@ -83,10 +86,12 @@ class LmdbNestedRetirementLivenessTest {
 			List<Value> retired = List.of(root, rootPredicate, outer, outerSubject, outerPredicate,
 					inner, innerSubject, innerPredicate);
 			for (Value value : retired) {
-				assertTrue(values.getId(value) != LmdbValue.UNKNOWN_ID, "the nested owner must be present before removal");
+				assertTrue(values.getId(value) != LmdbValue.UNKNOWN_ID,
+						"the nested owner must be present before removal");
 			}
 			LmdbSailStore backing = store.getBackingStore();
-			try (LmdbSailStore.DatasetAdmission old = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+			try (LmdbSailStore.DatasetAdmission old = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+					null)) {
 				writer.submit(() -> {
 					try (var connection = repository.getConnection()) {
 						connection.begin(IsolationLevels.NONE);

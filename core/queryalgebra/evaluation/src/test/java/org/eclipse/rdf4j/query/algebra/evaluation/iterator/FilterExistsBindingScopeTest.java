@@ -66,7 +66,8 @@ class FilterExistsBindingScopeTest {
 
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		List<BindingSet> actual = new ArrayList<>();
-		try (CloseableIteration<BindingSet> result = strategy.precompile(filter).evaluate(EmptyBindingSet.getInstance())) {
+		try (CloseableIteration<BindingSet> result = strategy.precompile(filter)
+				.evaluate(EmptyBindingSet.getInstance())) {
 			while (result.hasNext()) {
 				actual.add(result.next());
 			}
@@ -201,7 +202,8 @@ class FilterExistsBindingScopeTest {
 		case "memoized" -> filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "memoized-correlated");
 		case "materialized" -> filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "materialized-hash");
 		case "adaptive-materialize" -> filter.setDoubleMetricPlanned("plannedSemiAntiBreakEvenDistinctKeys", 0);
-		default -> { }
+		default -> {
+		}
 		}
 	}
 

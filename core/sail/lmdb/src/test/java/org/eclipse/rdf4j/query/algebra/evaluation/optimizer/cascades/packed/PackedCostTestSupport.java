@@ -54,7 +54,8 @@ public final class PackedCostTestSupport {
 
 	/** A finite prefix encoded from the caller's already prepared real query, without graph recapture. */
 	public static PreparedFiniteCall preparedFinite(TupleExpr prepared) {
-		PackedQuery captured = PackedQueryCodec.encodeForPlanning(prepared, null, PackedStatementPatternSemanticsCodec.NONE);
+		PackedQuery captured = PackedQueryCodec.encodeForPlanning(prepared, null,
+				PackedStatementPatternSemanticsCodec.NONE);
 		PackedQueryView query = new PackedQueryView(captured);
 		int assignment = 0;
 		int statement = 0;
@@ -79,7 +80,6 @@ public final class PackedCostTestSupport {
 
 	public record PreparedFiniteCall(PackedQueryView query, int relationId, PackedCostContext prefixContext) {
 	}
-
 
 	/** The caller supplies its fixture's source proof; missing facts are never promoted by the construction bridge. */
 	private static PackedQuery encodeInDomain(TupleExpr expression, PlanningGraphDomain inputDomain) {

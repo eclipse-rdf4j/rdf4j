@@ -132,7 +132,9 @@ record LmdbNativeWork(double low, double high) {
 	}
 
 	static RowBounds rowBounds(SlotPlan plan, RowState row, long boundMask) {
-		if (plan instanceof NativeValuesFoldPlan guard) { return rowBounds(guard.select(row, boundMask), row, boundMask); }
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return rowBounds(guard.select(row, boundMask), row, boundMask);
+		}
 		if (plan instanceof EmptyPlan) {
 			return RowBounds.ZERO;
 		}
@@ -250,7 +252,9 @@ record LmdbNativeWork(double low, double high) {
 	}
 
 	private static ExpectedEstimate expectedEstimate(SlotPlan plan, RowState row, long boundMask) {
-		if (plan instanceof NativeValuesFoldPlan guard) { return expectedEstimate(guard.select(row, boundMask), row, boundMask); }
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return expectedEstimate(guard.select(row, boundMask), row, boundMask);
+		}
 		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan) {
 			return new ExpectedEstimate(plan instanceof EmptyPlan ? 0D : 1D, 0D);
 		}

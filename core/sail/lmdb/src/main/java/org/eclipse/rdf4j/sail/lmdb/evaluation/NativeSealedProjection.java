@@ -209,10 +209,10 @@ final class NativeSealedProjection {
 	}
 
 	/**
-	 * A closure of one default-graph statement pattern, or of alternatives of such patterns that all run in the
-	 * same direction, with a constant IRI predicate. Minimum length zero is admitted only with a constant IRI
-	 * endpoint. Only the endpoint that is the stored subject of every alternative is claimed as a resource, and
-	 * only for minimum length one or more.
+	 * A closure of one default-graph statement pattern, or of alternatives of such patterns that all run in the same
+	 * direction, with a constant IRI predicate. Minimum length zero is admitted only with a constant IRI endpoint. Only
+	 * the endpoint that is the stored subject of every alternative is claimed as a resource, and only for minimum
+	 * length one or more.
 	 */
 	private static Domain pathDomain(ArbitraryLengthPath path, Set<String> observed,
 			Map<String, Integer> slots) {
@@ -237,7 +237,8 @@ final class NativeSealedProjection {
 		long possible = 0L, resources = 0L;
 		for (Var endpoint : new Var[] { subject, object }) {
 			if (endpoint.isConstant()) {
-				if (!endpoint.hasValue() || !(endpoint.getValue() instanceof IRI) || observed.contains(endpoint.getName()))
+				if (!endpoint.hasValue() || !(endpoint.getValue() instanceof IRI)
+						|| observed.contains(endpoint.getName()))
 					return null;
 				continue;
 			}
@@ -267,8 +268,8 @@ final class NativeSealedProjection {
 
 	/**
 	 * The slice-2 condition proof: exact whitelisted classes, constants with a value and unobserved name, other
-	 * variables without a value, and a complete (known) binding observation domain. Returns the non-constant names,
-	 * or null for a refusal.
+	 * variables without a value, and a complete (known) binding observation domain. Returns the non-constant names, or
+	 * null for a refusal.
 	 */
 	private static Set<String> conditionNames(ValueExpr condition, Set<String> observed) {
 		TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(condition);
@@ -360,7 +361,8 @@ final class NativeSealedProjection {
 		IdentityHashMap<TupleExpr, Set<String>> conditionVars = new IdentityHashMap<>();
 		Map<List<String>, Integer> computedRecipes = new HashMap<>();
 		// Slots that are computed targets inside each node's subtree, carried beside Domain so no Domain consumer
-		// changes. A computed value's id is not a store id, so such a name never serves as a join key or condition name.
+		// changes. A computed value's id is not a store id, so such a name never serves as a join key or condition
+		// name.
 		IdentityHashMap<TupleExpr, Long> computedMasks = new IdentityHashMap<>();
 		IdentityHashMap<TupleExpr, Boolean> spine = mandatorySpine(body);
 		java.util.LinkedHashMap<String, Integer> slots = new java.util.LinkedHashMap<>();
@@ -684,7 +686,8 @@ final class NativeSealedProjection {
 									|| copy.setNullOnError || copy.termChecked || !copy.encounterOrderReplaySafe
 									|| copy.computed != null || copy.semanticValue != null
 									|| copy.constant != NativeLmdbQuerySource.UNKNOWN_ID
-									|| (possible & 1L << copy.targetSlot) != 0L || reads < 0L || (reads & ~possible) != 0L)
+									|| (possible & 1L << copy.targetSlot) != 0L || reads < 0L
+									|| (reads & ~possible) != 0L)
 								return null;
 							computedTargets.add(layout.slotName(copy.targetSlot));
 							possible |= 1L << copy.targetSlot;
@@ -919,8 +922,10 @@ final class NativeSealedProjection {
 		private final SlotPlan provedPlan;
 		private final NativeSlotLayout provedLayout;
 		private final NativePrimitiveInputSemantics originalInputs;
-		/** Computed spine targets: a local name on every row, bound or not (every evaluator of an evaluated extension
-		 * element marks its target as locally produced whether or not a value was bound). */
+		/**
+		 * Computed spine targets: a local name on every row, bound or not (every evaluator of an evaluated extension
+		 * element marks its target as locally produced whether or not a value was bound).
+		 */
 		private final boolean[] alwaysLocal;
 
 		private RowProjection(String[] names, String[] targets, String[] demanded, int[] demandedSlots,

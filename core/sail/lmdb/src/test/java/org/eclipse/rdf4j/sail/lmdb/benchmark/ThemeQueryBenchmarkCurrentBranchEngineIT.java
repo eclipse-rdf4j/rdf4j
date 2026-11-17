@@ -48,105 +48,109 @@ import ch.qos.logback.core.read.ListAppender;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ThemeQueryBenchmarkCurrentBranchEngineIT {
 
-    private static final Pattern SERVED = Pattern.compile("served=(\\d+)");
-    private static final String DIRECTORY = "rdf4j.lmdb.themeEngineContract.storeDirectory";
-    private final Map<String, String> previous = new LinkedHashMap<>();
+	private static final Pattern SERVED = Pattern.compile("served=(\\d+)");
+	private static final String DIRECTORY = "rdf4j.lmdb.themeEngineContract.storeDirectory";
+	private final Map<String, String> previous = new LinkedHashMap<>();
 
-    @TempDir
-    Path temporary;
+	@TempDir
+	Path temporary;
 
-    @BeforeEach
-    void configureProperties() {
-        for (String property : new String[] { "rdf4j.benchmark.profiling",
-                "rdf4j.lmdb.nativeQueryEngine.enabled", ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY,
-                ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY,
-                ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY }) {
-            previous.put(property, System.getProperty(property));
-        }
-        System.setProperty("rdf4j.benchmark.profiling", "true");
-        System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
-        System.clearProperty(ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY);
-        System.setProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, "false");
-        // Exercise the new benchmark default rather than relying on the JMH @Fork-only override.
-        System.clearProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
-        // Preserve the caller's value-overlay setting; it is independent of this engine contract.
-    }
+	@BeforeEach
+	void configureProperties() {
+		for (String property : new String[] { "rdf4j.benchmark.profiling",
+				"rdf4j.lmdb.nativeQueryEngine.enabled", ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY,
+				ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY,
+				ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY }) {
+			previous.put(property, System.getProperty(property));
+		}
+		System.setProperty("rdf4j.benchmark.profiling", "true");
+		System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+		System.clearProperty(ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY);
+		System.setProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, "false");
+		// Exercise the new benchmark default rather than relying on the JMH @Fork-only override.
+		System.clearProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
+		// Preserve the caller's value-overlay setting; it is independent of this engine contract.
+	}
 
-    @AfterEach
-    void restoreProperties() {
-        previous.forEach((property, value) -> {
-            if (value == null) {
-                System.clearProperty(property);
-            } else {
-                System.setProperty(property, value);
-            }
-        });
-    }
+	@AfterEach
+	void restoreProperties() {
+		previous.forEach((property, value) -> {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+		});
+	}
 
-    @ParameterizedTest(name = "MEDICAL_RECORDS q{0}, actual public engine")
-    @ValueSource(ints = { 10, 11 })
-    @Timeout(value = 20, unit = TimeUnit.MINUTES)
-    void exactCatalogResultAndActualNativeAdjacencyExecution(int index) throws Exception {
-        String configured = System.getProperty(DIRECTORY);
-        Path directory = configured == null || configured.isBlank() ? temporary.resolve("complete")
-                : Path.of(configured);
-        ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark(directory.toFile(),
-                ThemeQueryBenchmark::loadAllThemeDatasets);
-        benchmark.themeName = Theme.MEDICAL_RECORDS.name();
-        benchmark.z_queryIndex = index;
-        benchmark.sketchEstimatorEnabled = false;
-        benchmark.queryExplanationLevel = "Telemetry";
-        benchmark.z_z_irMode = "auto";
-        long expected = index == 10 ? 8_335L : 199_461L;
-        if (index == 10) {
-            assertEquals(expected, ThemeQueryCatalog.expectedCountBindingValueFor(Theme.MEDICAL_RECORDS, index)
-                    .orElseThrow());
-        } else {
-            assertEquals(expected, ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, index));
-        }
-        try {
-            benchmark.setup();
-            assertEquals(expected, benchmark.executeQuery(), "Exact normal public-query result precedes route checks");
-            Logger logger = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.lmdb.LmdbSailStore");
-            Level previousLevel = logger.getLevel();
-            ListAppender<ILoggingEvent> receipt = new ListAppender<>();
-            receipt.start();
-            logger.addAppender(receipt);
-            logger.setLevel(Level.INFO);
-            List<String> paths = new ArrayList<>();
-            try {
-                var executed = benchmark.explainTelemetryTupleExpr();
-                assertEquals(index == 10 ? 1L : expected, executed.getResultSizeActual(),
-                        "The separate executed explanation completes the same query's full output");
-                executed.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-                    @Override
-                    protected void meetNode(QueryModelNode node) {
-                        String path = node.getStringMetricActual("nativeExecutionPath");
-                        if (path != null) {
-                            paths.add(path);
-                        }
-                        super.meetNode(node);
-                    }
-                });
-            } finally {
-                logger.detachAppender(receipt);
-                logger.setLevel(previousLevel);
-                receipt.stop();
-            }
-            assertTrue(paths.stream().flatMap(path -> Arrays.stream(path.split(" \\| ")) )
-                    .anyMatch(path -> !path.startsWith("generic") && !path.startsWith("nativeEntryBindingVariant")
-                            && !"...".equals(path) && !"emptySeed".equals(path) && !"limitZero".equals(path)
-                            && !"constantFalseFilter".equals(path)),
-                    () -> "At least one actual public native path must run; actual paths=" + paths);
-            long served = receipt.list.stream().map(ILoggingEvent::getFormattedMessage)
-                    .filter(message -> message.startsWith("Direct adjacency usage for closed "))
-                    .map(SERVED::matcher).filter(matcher -> matcher.find())
-                    .mapToLong(matcher -> Long.parseLong(matcher.group(1))).sum();
-            assertTrue(served > 0L,
-                    () -> "The same executed explanation must have actual closed-dataset direct-adjacency receipts: "
-                            + receipt.list.stream().map(ILoggingEvent::getFormattedMessage).toList());
-        } finally {
-            benchmark.tearDown();
-        }
-    }
+	@ParameterizedTest(name = "MEDICAL_RECORDS q{0}, actual public engine")
+	@ValueSource(ints = { 10, 11 })
+	@Timeout(value = 20, unit = TimeUnit.MINUTES)
+	void exactCatalogResultAndActualNativeAdjacencyExecution(int index) throws Exception {
+		String configured = System.getProperty(DIRECTORY);
+		Path directory = configured == null || configured.isBlank() ? temporary.resolve("complete")
+				: Path.of(configured);
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark(directory.toFile(),
+				ThemeQueryBenchmark::loadAllThemeDatasets);
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = index;
+		benchmark.sketchEstimatorEnabled = false;
+		benchmark.queryExplanationLevel = "Telemetry";
+		benchmark.z_z_irMode = "auto";
+		long expected = index == 10 ? 8_335L : 199_461L;
+		if (index == 10) {
+			assertEquals(expected, ThemeQueryCatalog.expectedCountBindingValueFor(Theme.MEDICAL_RECORDS, index)
+					.orElseThrow());
+		} else {
+			assertEquals(expected, ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, index));
+		}
+		try {
+			benchmark.setup();
+			assertEquals(expected, benchmark.executeQuery(), "Exact normal public-query result precedes route checks");
+			Logger logger = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.lmdb.LmdbSailStore");
+			Level previousLevel = logger.getLevel();
+			ListAppender<ILoggingEvent> receipt = new ListAppender<>();
+			receipt.start();
+			logger.addAppender(receipt);
+			logger.setLevel(Level.INFO);
+			List<String> paths = new ArrayList<>();
+			try {
+				var executed = benchmark.explainTelemetryTupleExpr();
+				assertEquals(index == 10 ? 1L : expected, executed.getResultSizeActual(),
+						"The separate executed explanation completes the same query's full output");
+				executed.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					protected void meetNode(QueryModelNode node) {
+						String path = node.getStringMetricActual("nativeExecutionPath");
+						if (path != null) {
+							paths.add(path);
+						}
+						super.meetNode(node);
+					}
+				});
+			} finally {
+				logger.detachAppender(receipt);
+				logger.setLevel(previousLevel);
+				receipt.stop();
+			}
+			assertTrue(paths.stream()
+					.flatMap(path -> Arrays.stream(path.split(" \\| ")))
+					.anyMatch(path -> !path.startsWith("generic") && !path.startsWith("nativeEntryBindingVariant")
+							&& !"...".equals(path) && !"emptySeed".equals(path) && !"limitZero".equals(path)
+							&& !"constantFalseFilter".equals(path)),
+					() -> "At least one actual public native path must run; actual paths=" + paths);
+			long served = receipt.list.stream()
+					.map(ILoggingEvent::getFormattedMessage)
+					.filter(message -> message.startsWith("Direct adjacency usage for closed "))
+					.map(SERVED::matcher)
+					.filter(matcher -> matcher.find())
+					.mapToLong(matcher -> Long.parseLong(matcher.group(1)))
+					.sum();
+			assertTrue(served > 0L,
+					() -> "The same executed explanation must have actual closed-dataset direct-adjacency receipts: "
+							+ receipt.list.stream().map(ILoggingEvent::getFormattedMessage).toList());
+		} finally {
+			benchmark.tearDown();
+		}
+	}
 }

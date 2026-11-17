@@ -37,8 +37,8 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -107,9 +107,11 @@ class LmdbCacheAdmissionDiagnosticTest {
 			if (!store.awaitDirectAdjacencyReady(30L, TimeUnit.SECONDS)) {
 				throw new AssertionError(store.getDirectAdjacencyReadinessDescription());
 			}
-			System.err.println("CACHE_ADMISSION_DIAGNOSTIC config=native:true adjacency:PREFER/FULL indexes:spoc,ospc,posc frontier:OFF");
+			System.err.println(
+					"CACHE_ADMISSION_DIAGNOSTIC config=native:true adjacency:PREFER/FULL indexes:spoc,ospc,posc frontier:OFF");
 			System.err.println("CACHE_ADMISSION_DIAGNOSTIC query=simple " + SIMPLE_QUERY.replace('\n', ' '));
-			System.err.println("CACHE_ADMISSION_DIAGNOSTIC query=medical-q10 sha256-input=ThemeQueryCatalog.queryFor(MEDICAL_RECORDS,10)");
+			System.err.println(
+					"CACHE_ADMISSION_DIAGNOSTIC query=medical-q10 sha256-input=ThemeQueryCatalog.queryFor(MEDICAL_RECORDS,10)");
 			for (boolean includeInferred : new boolean[] { false, true }) {
 				String source = includeInferred ? "include-inferred" : "explicit-only";
 				diagnosePipeline(store, repository, SIMPLE_QUERY, source, includeInferred, true);
@@ -191,7 +193,8 @@ class LmdbCacheAdmissionDiagnosticTest {
 					: explicitDataset;
 		}
 		try (dataset) {
-			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(store.getValueFactory(),
+					dataset);
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) backing.getEvaluationStatistics();
 			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
 					.createEvaluationStrategy(null, tripleSource, statistics, store.getQueryExecutionPolicy());
@@ -213,7 +216,8 @@ class LmdbCacheAdmissionDiagnosticTest {
 							+ " secondOutcome=" + metric(second.tupleExpr(), "optimizer.planCacheLookupOutcome"));
 					printGates("OPTIMIZED source=" + sourceLabel + " query=" + queryLabel(query), first.tupleExpr());
 					System.err.println("OPTIMIZED_RETENTION source=" + sourceLabel + " query=" + queryLabel(query)
-							+ " cacheSource=" + (LmdbCacheValueCopies.CODEC.prepareCacheSource(first.tupleExpr()) != null)
+							+ " cacheSource="
+							+ (LmdbCacheValueCopies.CODEC.prepareCacheSource(first.tupleExpr()) != null)
 							+ " detachedPrivateCopy=" + (LmdbCacheValueCopies.copy(first.tupleExpr(), false) != null)
 							+ " detachedPlanEmission=" + (LmdbCacheValueCopies.copy(first.tupleExpr(), true) != null));
 				}
@@ -272,9 +276,9 @@ class LmdbCacheAdmissionDiagnosticTest {
 					while (result.hasNext()) {
 						var row = result.next();
 						if (rows == 0L) {
-						first = row.toString();
+							first = row.toString();
 						}
-					rows++;
+						rows++;
 					}
 				}
 				System.err.println("PUBLIC_EVALUATE source=" + sourceLabel + " query=" + queryLabel
@@ -351,7 +355,8 @@ class LmdbCacheAdmissionDiagnosticTest {
 					+ " isNative=" + (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue)
 					+ " ordinaryCapture=" + (ordinaryIdentity != null)
 					+ " loadedCapture=" + (loadedIdentity != null)
-					+ " flatIdentity=" + (ordinaryIdentity == null ? "n/a" : ordinaryIdentity.supportsFlatSemanticObservation())
+					+ " flatIdentity="
+					+ (ordinaryIdentity == null ? "n/a" : ordinaryIdentity.supportsFlatSemanticObservation())
 					+ " packedRepresentation=" + (ordinaryIdentity == null ? loadedIdentity == null ? "n/a"
 							: loadedIdentity.supportsPackedValueRepresentation()
 							: ordinaryIdentity.supportsPackedValueRepresentation())
@@ -445,7 +450,8 @@ class LmdbCacheAdmissionDiagnosticTest {
 								+ " nodePath=" + entry.path() + " nodeClass=" + entry.node().getClass().getName()
 								+ " sourceExpressionClass=" + expression.getClass().getName()
 								+ " sourceExpressionParentClass=" + expression.getParentNode().getClass().getName()
-								+ " sourceExpressionParentPath=" + paths.getOrDefault(expression.getParentNode(), "<outside-owned-dag>")
+								+ " sourceExpressionParentPath="
+								+ paths.getOrDefault(expression.getParentNode(), "<outside-owned-dag>")
 								+ " sourceExpressionParentMapped=" + copies.containsKey(expression.getParentNode())
 								+ " reason=source-expression-parent-outside-owned-copy");
 						return;
@@ -508,15 +514,15 @@ class LmdbCacheAdmissionDiagnosticTest {
 				if (variable.hasApiInputOrigin()) {
 					replacement = replacement.withApiInputOrigin();
 				}
-			QueryModelNode parent = target.getParentNode();
-			if (parent == null) {
-				System.err.println("COPY_STAGE_REJECT " + label + " stage=valueReplacement"
-						+ " nodePath=" + entry.path() + " nodeClass=" + original.getClass().getName()
-						+ " reason=valued-var-copy-has-no-parent");
-				return;
-			}
-			parent.replaceChildNode(target, replacement);
-			copies.put(original, replacement);
+				QueryModelNode parent = target.getParentNode();
+				if (parent == null) {
+					System.err.println("COPY_STAGE_REJECT " + label + " stage=valueReplacement"
+							+ " nodePath=" + entry.path() + " nodeClass=" + original.getClass().getName()
+							+ " reason=valued-var-copy-has-no-parent");
+					return;
+				}
+				parent.replaceChildNode(target, replacement);
+				copies.put(original, replacement);
 			} else if (original instanceof ValueConstant constant) {
 				LmdbQueryValueIdentity identity = identities.get(constant.getValue());
 				if (identity == null) {
@@ -710,8 +716,10 @@ class LmdbCacheAdmissionDiagnosticTest {
 		String packageName = node.getClass().getPackageName();
 		return packageName.equals("org.eclipse.rdf4j.query.algebra")
 				&& CACHE_COPY_BUILTIN_NODE_NAMES.contains(node.getClass().getSimpleName())
-				|| node.getClass().getName().equals(
-						"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr")
+				|| node.getClass()
+						.getName()
+						.equals(
+								"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr")
 				|| node.getClass() == LmdbValueVar.class
 				|| node.getClass() == LmdbGraphDistinctAccess.Carrier.class;
 	}

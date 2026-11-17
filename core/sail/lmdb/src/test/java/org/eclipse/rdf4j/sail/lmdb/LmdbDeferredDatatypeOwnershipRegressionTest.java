@@ -154,7 +154,8 @@ class LmdbDeferredDatatypeOwnershipRegressionTest {
 		values.startTransaction(true);
 		assertTrue(values.gcIdsIfReaderAvailable(Set.of(id), new HashSet<>(), candidates -> {
 			triples.filterUsedIds(candidates);
-			assertTrue(candidates.contains(id), "the real exhaustive statement scan must leave the datatype eligible for GC");
+			assertTrue(candidates.contains(id),
+					"the real exhaustive statement scan must leave the datatype eligible for GC");
 			checked.set(true);
 			return true;
 		}));

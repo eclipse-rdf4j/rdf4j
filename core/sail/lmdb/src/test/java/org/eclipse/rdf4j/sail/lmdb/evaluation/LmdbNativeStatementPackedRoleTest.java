@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -51,9 +51,11 @@ class LmdbNativeStatementPackedRoleTest {
 		int selector = planner.slot("selector"), term = planner.slot("term");
 		planner.layout.freeze(planner.slotNames);
 		RowState row = row(source, planner);
-		row.slots[selector] = 0L; row.slots[term] = source.idOf(B); row.recomputeBoundMask();
+		row.slots[selector] = 0L;
+		row.slots[term] = source.idOf(B);
+		row.recomputeBoundMask();
 		MultiJoinPlan specialized = LmdbNativePackedFtree.specializeEntry(
-				new MultiJoinPlan(new SlotPlan[] {pattern}, new MaskedFilter[0]), row);
+				new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]), row);
 		assertEquals(0, source.opened, "specialization is pre-consumption");
 		PatternPlan actual = specialized == null ? pattern : (PatternPlan) specialized.children[0];
 		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, actual.s.lookup(row.slots),
@@ -72,23 +74,29 @@ class LmdbNativeStatementPackedRoleTest {
 		StatementPattern left = new StatementPattern(Var.of("root"), Var.of("_p", P, true, true), Var.of("term"));
 		StatementPattern right = new StatementPattern(Var.of("root"), Var.of("_q", Q, true, true),
 				Var.of("term", A, false, false));
-		MapBindingSet expectedRow = new MapBindingSet(); expectedRow.addBinding("root", S); expectedRow.addBinding("term", B);
+		MapBindingSet expectedRow = new MapBindingSet();
+		expectedRow.addBinding("root", S);
+		expectedRow.addBinding("term", B);
 		List<BindingSet> expected = List.of(expectedRow);
 		var ordinary = new DefaultEvaluationStrategy(source,
 				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
-		try (var result = ordinary.precompile(new Join(left.clone(), right.clone())).evaluate(EmptyBindingSet.getInstance())) {
-			assertEquals(expected, QueryResults.asList(result), "the first producer supplies B; later fixed scan A keeps it");
+		try (var result = ordinary.precompile(new Join(left.clone(), right.clone()))
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertEquals(expected, QueryResults.asList(result),
+					"the first producer supplies B; later fixed scan A keeps it");
 		}
 		var planner = planner(source);
 		PatternPlan first = assertInstanceOf(PatternPlan.class, planner.compileTuple(left, false));
 		PatternPlan second = assertInstanceOf(PatternPlan.class, planner.compileTuple(right, false));
-		int root = planner.slot("root"), term = planner.slot("term"); planner.layout.freeze(planner.slotNames);
+		int root = planner.slot("root"), term = planner.slot("term");
+		planner.layout.freeze(planner.slotNames);
 		RowState row = row(source, planner);
-		MultiJoinPlan sequence = new MultiJoinPlan(new SlotPlan[] {first, second}, new MaskedFilter[0]);
+		MultiJoinPlan sequence = new MultiJoinPlan(new SlotPlan[] { first, second }, new MaskedFilter[0]);
 		// The same direct sequence boundary is used by native accumulation/factor/morsel adapters.
-		LmdbNativePackedFtree.Plan packed = LmdbNativePackedFtree.Planner.plan(sequence, row, new int[] {root, term});
+		LmdbNativePackedFtree.Plan packed = LmdbNativePackedFtree.Planner.plan(sequence, row, new int[] { root, term });
 		List<BindingSet> actual = new ArrayList<>();
-		FactorizedRowCursor packedRows = packed == null ? null : LmdbNativePackedFtree.PackedRowCursor.open(packed, row);
+		FactorizedRowCursor packedRows = packed == null ? null
+				: LmdbNativePackedFtree.PackedRowCursor.open(packed, row);
 		if (packedRows != null) {
 			try (FactorizedRowCursor cursor = packedRows) {
 				while (cursor.next()) {
@@ -100,10 +108,13 @@ class LmdbNativeStatementPackedRoleTest {
 		} else {
 			try (RowCursor cursor = sequence.openChain(new MultiJoinPlan.OrderedPlan(sequence.children, new int[0]),
 					sequence.children.length, row)) {
-				while (cursor.next()) { actual.add(NativeRowsStep.materialize(row.view)); }
+				while (cursor.next()) {
+					actual.add(NativeRowsStep.materialize(row.view));
+				}
 			}
 		}
-		assertEquals(expected, actual, "the packed proposal or exact native refusal path must preserve original output order");
+		assertEquals(expected, actual,
+				"the packed proposal or exact native refusal path must preserve original output order");
 		assertEquals(source.opened, source.closed);
 	}
 
@@ -111,13 +122,18 @@ class LmdbNativeStatementPackedRoleTest {
 		return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(
 				List.of(VF.createStatement(S, P, B, G), VF.createStatement(S, Q, A, G)), A);
 	}
+
 	private static LmdbNativeAggregatePlanner planner(NativeLmdbQuerySource source) {
 		return new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null),
 				new LmdbNativeEvaluationStrategy((org.eclipse.rdf4j.query.algebra.evaluation.TripleSource) source,
-						null, null, 0L, new EvaluationStatistics(), false), source);
+						null, null, 0L, new EvaluationStatistics(), false),
+				source);
 	}
+
 	private static RowState row(NativeLmdbQuerySource source, LmdbNativeAggregatePlanner planner) {
 		RowState row = new RowState(source, planner.layout, new QueryBindingSet());
-		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID); row.recomputeBoundMask(); return row;
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		return row;
 	}
 }

@@ -239,7 +239,8 @@ class LmdbEstimatorReadResourceContextTest {
 				Future<?> read = executor.submit(() -> {
 					try (InterruptingTimeLimit timeLimit = InterruptingTimeLimit.start(100)) {
 						try {
-							fixture.backing.new GuardedEstimatorStatementSource().getStatements(null, null, null).close();
+							fixture.backing.new GuardedEstimatorStatementSource().getStatements(null, null, null)
+									.close();
 						} finally {
 							timeLimitFired.set(timeLimit.fired());
 						}

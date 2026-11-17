@@ -64,7 +64,8 @@ class LmdbLegacyAllocationProofContractTest {
 		} finally {
 			initial.close();
 		}
-		byte[] generation = LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.GENERATION_KEY);
+		byte[] generation = LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta",
+				ReferenceCountProof.GENERATION_KEY);
 		byte[] proof = LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.ALLOCATION_KEY);
 		assertNotNull(generation);
 		assertNotNull(proof);

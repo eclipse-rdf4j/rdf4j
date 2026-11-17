@@ -41,8 +41,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Scenario: on a tiny auto-grow map the startup domain publication hits MAP_FULL and releases its writer; before it
- * asks for growth a user write is admitted and owns the growth episode. Startup maintenance cannot replace that
- * writer, so it must wait for it and then retry the complete publication, not give up for this process.
+ * asks for growth a user write is admitted and owns the growth episode. Startup maintenance cannot replace that writer,
+ * so it must wait for it and then retry the complete publication, not give up for this process.
  */
 @Timeout(90)
 class LmdbDeferredDomainStartupWriterOverlapTest {
@@ -101,7 +101,8 @@ class LmdbDeferredDomainStartupWriterOverlapTest {
 				};
 			}
 		};
-		ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> new Thread(runnable, "domain-overlap-user"));
+		ExecutorService executor = Executors
+				.newSingleThreadExecutor(runnable -> new Thread(runnable, "domain-overlap-user"));
 		try {
 			store.init();
 			assertTrue(domainParked.await(30, TimeUnit.SECONDS), "post-ready deferred-domain attempt never failed");
@@ -253,8 +254,8 @@ class LmdbDeferredDomainStartupWriterOverlapTest {
 
 	/**
 	 * Bounded state poll (no sleep). No test seam fires when the post-ready thread starts waiting for the writer:
-	 * beforeWriterAuthorityPromotion runs only after that wait, beforeWriterAuthorityRelease is on the releasing
-	 * side, afterAttemptAdmissionWaitStarted covers attempt admission, not the writer-owner wait.
+	 * beforeWriterAuthorityPromotion runs only after that wait, beforeWriterAuthorityRelease is on the releasing side,
+	 * afterAttemptAdmissionWaitStarted covers attempt admission, not the writer-owner wait.
 	 */
 	private static void awaitPostReadyEndedOrWaiting() {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);

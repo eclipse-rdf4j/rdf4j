@@ -68,7 +68,8 @@ final class TupleFactorFilter implements AutoCloseable {
 			BorrowedTupleBatch.Cursor previous = reader;
 			reader = null;
 			batch = null;
-			if (previous != null) previous.close();
+			if (previous != null)
+				previous.close();
 			reader = source.cursor(WINDOW);
 			batch = source;
 		}
@@ -168,21 +169,28 @@ final class TupleFactorFilter implements AutoCloseable {
 		factors = null;
 		exhausted = true;
 		Throwable failure = KernelRuntime.closeResource(previous, null);
-		try { clearOutput(); }
-		catch (RuntimeException | Error problem) {
-			if (failure == null) failure = problem;
-			else if (failure != problem) failure.addSuppressed(problem);
+		try {
+			clearOutput();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null)
+				failure = problem;
+			else if (failure != problem)
+				failure.addSuppressed(problem);
 		}
 		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	@Override
 	public void close() {
-		if (closed) return;
+		if (closed)
+			return;
 		closed = true;
 		Throwable failure = null;
-		try { releaseInput(); }
-		catch (RuntimeException | Error problem) { failure = problem; }
+		try {
+			releaseInput();
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
 		SelectedTupleSource previous = selected;
 		selected = null;
 		failure = KernelRuntime.closeResource(previous, failure);

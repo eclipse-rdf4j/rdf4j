@@ -31,20 +31,26 @@ final class LegacyStoreIdentity {
 	private static final String HEADER = "rdf4j-lmdb-logical-identity-v1\n";
 	private static final int LENGTH = HEADER.length() + 36 + 1;
 
-	private LegacyStoreIdentity() { }
+	private LegacyStoreIdentity() {
+	}
 
 	/** Caller owns the repository directory lock and has completed real discovery and the native-format fence. */
 	static UUID resolve(File directory, StoreProperties properties, LmdbStoreFormat format) throws IOException {
 		UUID propertyIdentity = properties.savedStoreId();
-		if (propertyIdentity != null) { return propertyIdentity; }
+		if (propertyIdentity != null) {
+			return propertyIdentity;
+		}
 		if (!format.isLegacy() || !properties.isLoaded() || !properties.hasNativeGeneration()
 				|| properties.verifiedValueTransactionId < 0L || properties.verifiedTripleTransactionId < 0L) {
-			throw new IOException("An auxiliary legacy identity requires an admitted existing loaded-policy native pair");
+			throw new IOException(
+					"An auxiliary legacy identity requires an admitted existing loaded-policy native pair");
 		}
 		Path parent = directory.toPath().toAbsolutePath().normalize();
 		Path target = parent.resolve(FILE_NAME);
 		StorePropertiesFileOps operations = properties.fileOperations();
-		if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) { return readAndForce(target, operations); }
+		if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+			return readAndForce(target, operations);
+		}
 		UUID identity = UUID.randomUUID();
 		byte[] bytes = (HEADER + identity + '\n').getBytes(StandardCharsets.US_ASCII);
 		Path temporary = Files.createTempFile(parent, FILE_NAME + '-', ".tmp");
@@ -63,12 +69,20 @@ final class LegacyStoreIdentity {
 			}
 			operations.forceDirectory(parent);
 			return identity;
-		} catch (IOException | RuntimeException | Error failure) { primary = failure; throw failure; }
-		finally {
-			try { operations.deleteIfExists(temporary); }
-			catch (IOException | RuntimeException | Error cleanup) {
-				if (primary != null) { if (cleanup != primary) { primary.addSuppressed(cleanup); } }
-				else { throw cleanup; }
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			try {
+				operations.deleteIfExists(temporary);
+			} catch (IOException | RuntimeException | Error cleanup) {
+				if (primary != null) {
+					if (cleanup != primary) {
+						primary.addSuppressed(cleanup);
+					}
+				} else {
+					throw cleanup;
+				}
 			}
 		}
 	}
@@ -82,15 +96,22 @@ final class LegacyStoreIdentity {
 		byte[] bytes = new byte[LENGTH];
 		UUID identity;
 		try (FileChannel channel = FileChannel.open(target, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
-			if (channel.size() != LENGTH) { throw new IOException("Legacy identity changed during admission: " + target); }
+			if (channel.size() != LENGTH) {
+				throw new IOException("Legacy identity changed during admission: " + target);
+			}
 			ByteBuffer buffer = ByteBuffer.wrap(bytes);
 			while (buffer.hasRemaining()) {
-				if (channel.read(buffer) < 0) { throw new IOException("Incomplete legacy identity: " + target); }
+				if (channel.read(buffer) < 0) {
+					throw new IOException("Incomplete legacy identity: " + target);
+				}
 			}
-			if (channel.read(ByteBuffer.allocate(1)) != -1) { throw new IOException("Oversized legacy identity: " + target); }
+			if (channel.read(ByteBuffer.allocate(1)) != -1) {
+				throw new IOException("Oversized legacy identity: " + target);
+			}
 			String encoded = new String(bytes, StandardCharsets.US_ASCII);
-			try { identity = UUID.fromString(encoded.substring(HEADER.length(), LENGTH - 1)); }
-			catch (IllegalArgumentException malformed) {
+			try {
+				identity = UUID.fromString(encoded.substring(HEADER.length(), LENGTH - 1));
+			} catch (IllegalArgumentException malformed) {
 				throw new IOException("Unrecognized legacy identity is preserved: " + target, malformed);
 			}
 			if (!Arrays.equals(bytes, (HEADER + identity + '\n').getBytes(StandardCharsets.US_ASCII))) {

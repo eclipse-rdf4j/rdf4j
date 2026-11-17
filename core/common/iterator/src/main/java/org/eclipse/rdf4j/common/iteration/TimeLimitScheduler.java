@@ -34,7 +34,9 @@ final class TimeLimitScheduler {
 	private static int leases;
 
 	private static synchronized ScheduledThreadPoolExecutor retainExecutor() {
-		if (executor == null) { executor = createExecutor(); }
+		if (executor == null) {
+			executor = createExecutor();
+		}
 		leases++;
 		return executor;
 	}
@@ -205,7 +207,9 @@ final class TimeLimitScheduler {
 					LOGGER.warn("Could not dispatch time limit task on retry", retryFailure);
 				}
 			} finally {
-				synchronized (this) { releaseLease(); }
+				synchronized (this) {
+					releaseLease();
+				}
 			}
 		}
 

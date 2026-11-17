@@ -85,7 +85,9 @@ class LmdbLegacyAliasTripleCapacityIsolationTest {
 
 	private static LmdbStoreConfig config() {
 		return new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
-				.setAutoGrow(true).setSketchEstimatorEnabled(false).setPredicateGuaranteeIndexEnabled(false);
+				.setAutoGrow(true)
+				.setSketchEstimatorEnabled(false)
+				.setPredicateGuaranteeIndexEnabled(false);
 	}
 
 	private static void createFixture(Path directory) throws IOException {
@@ -108,8 +110,9 @@ class LmdbLegacyAliasTripleCapacityIsolationTest {
 				rows.add(NTriplesUtil.toNTriplesString(statement.getSubject()) + " "
 						+ NTriplesUtil.toNTriplesString(statement.getPredicate()) + " "
 						+ NTriplesUtil.toNTriplesString(statement.getObject())
-						+ (statement.getContext() == null ? "" : " "
-								+ NTriplesUtil.toNTriplesString(statement.getContext())));
+						+ (statement.getContext() == null ? ""
+								: " "
+										+ NTriplesUtil.toNTriplesString(statement.getContext())));
 			}
 		}
 		Collections.sort(rows);

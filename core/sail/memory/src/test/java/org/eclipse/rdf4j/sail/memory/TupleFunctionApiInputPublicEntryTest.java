@@ -70,8 +70,10 @@ class TupleFunctionApiInputPublicEntryTest {
 	}
 
 	static Stream<Arguments> entries() {
-		return Stream.of(Route.values()).flatMap(route -> Stream.of(false, true)
-				.flatMap(request -> Stream.of(Output.values()).map(output -> Arguments.of(route, request, output))));
+		return Stream.of(Route.values())
+				.flatMap(route -> Stream.of(false, true)
+						.flatMap(request -> Stream.of(Output.values())
+								.map(output -> Arguments.of(route, request, output))));
 	}
 
 	@ParameterizedTest(name = "{0}, request={1}, output={2}")
@@ -92,9 +94,13 @@ class TupleFunctionApiInputPublicEntryTest {
 				}
 			} else {
 				try (var connection = fixture.repository.getConnection()) {
-					var query = connection.prepareTupleQuery("SELECT ?value WHERE {(1) <" + fixture.function.getURI() + "> ?value}");
-					if (request) query.setBinding("value", REQUEST);
-					try (var result = query.evaluate()) { rows = drain(result); }
+					var query = connection
+							.prepareTupleQuery("SELECT ?value WHERE {(1) <" + fixture.function.getURI() + "> ?value}");
+					if (request)
+						query.setBinding("value", REQUEST);
+					try (var result = query.evaluate()) {
+						rows = drain(result);
+					}
 				}
 			}
 			boolean rejected = request && output == Output.CONFLICT;
@@ -122,13 +128,15 @@ class TupleFunctionApiInputPublicEntryTest {
 						"the matching request must reach the tuple's actual materialized mapping");
 				assertTrue(BindingSetOrigin.of(fixture.factory.tupleInput).isRequest("value"));
 			}
-			assertEquals(1, fixture.function.opens); assertEquals(1, fixture.function.closes);
+			assertEquals(1, fixture.function.opens);
+			assertEquals(1, fixture.function.closes);
 		}
 	}
 
 	static Stream<Arguments> authoredPositions() {
-		return Stream.of(false, true).flatMap(constant -> Stream.of(Output.values())
-				.map(output -> Arguments.of(constant, output)));
+		return Stream.of(false, true)
+				.flatMap(constant -> Stream.of(Output.values())
+						.map(output -> Arguments.of(constant, output)));
 	}
 
 	@ParameterizedTest(name = "constant={0}, output={1}")
@@ -142,15 +150,18 @@ class TupleFunctionApiInputPublicEntryTest {
 				rows = drain(result);
 			}
 			assertEquals(output == Output.MATCH ? 1 : 0, rows.size());
-			if (!rows.isEmpty()) assertEquals(REQUEST, rows.getFirst().getValue("value"));
+			if (!rows.isEmpty())
+				assertEquals(REQUEST, rows.getFirst().getValue("value"));
 			assertEquals(1, fixture.factory.optimizedVars.size());
 			Var optimized = fixture.factory.optimizedVars.getFirst();
-			assertTrue(optimized.hasValue()); assertFalse(optimized.hasApiInputOrigin());
+			assertTrue(optimized.hasValue());
+			assertFalse(optimized.hasApiInputOrigin());
 			assertEquals(constant, optimized.isConstant());
 			assertNotNull(fixture.factory.entry);
 			assertFalse(fixture.factory.entry.hasBinding("value"));
 			assertSame(REQUEST, BindingSetOrigin.of(fixture.factory.entry).parameterValue("value"));
-			assertEquals(1, fixture.function.opens); assertEquals(1, fixture.function.closes);
+			assertEquals(1, fixture.function.opens);
+			assertEquals(1, fixture.function.closes);
 		}
 	}
 
@@ -159,24 +170,45 @@ class TupleFunctionApiInputPublicEntryTest {
 		try {
 			try (var connection = repository.getConnection()) {
 				var query = connection.prepareTupleQuery("SELECT ?value WHERE {VALUES ?value {UNDEF}}");
-				if (request) query.setBinding("value", REQUEST);
-				try (var rows = query.evaluate()) { return drain(rows); }
+				if (request)
+					query.setBinding("value", REQUEST);
+				try (var rows = query.evaluate()) {
+					return drain(rows);
+				}
 			}
-		} finally { repository.shutDown(); }
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	private static QueryBindingSet binding() {
-		QueryBindingSet row = new QueryBindingSet(); row.setBinding("value", REQUEST); return row;
+		QueryBindingSet row = new QueryBindingSet();
+		row.setBinding("value", REQUEST);
+		return row;
 	}
 
 	private static List<BindingSet> drain(CloseableIteration<? extends BindingSet> rows) {
-		List<BindingSet> result = new ArrayList<>(); while (rows.hasNext()) result.add(rows.next()); return result;
+		List<BindingSet> result = new ArrayList<>();
+		while (rows.hasNext())
+			result.add(rows.next());
+		return result;
 	}
 
-	private enum Route { SAIL_ALGEBRA, PARSED_MAGIC_PROPERTY }
+	private enum Route {
+		SAIL_ALGEBRA,
+		PARSED_MAGIC_PROPERTY
+	}
+
 	private enum Output {
-		NULL(null), MATCH(TupleFunctionApiInputPublicEntryTest.MATCH), CONFLICT(OTHER);
-		private final Value value; Output(Value value) { this.value = value; }
+		NULL(null),
+		MATCH(TupleFunctionApiInputPublicEntryTest.MATCH),
+		CONFLICT(OTHER);
+
+		private final Value value;
+
+		Output(Value value) {
+			this.value = value;
+		}
 	}
 
 	private static final class Fixture implements AutoCloseable {
@@ -184,65 +216,122 @@ class TupleFunctionApiInputPublicEntryTest {
 		private final MemoryStore store = new MemoryStore();
 		private final SailRepository repository;
 		private final TrackedFunction function;
+
 		private Fixture(Output output) {
-			function = new TrackedFunction(output.value); TupleFunctionRegistry.getInstance().add(function);
-			store.setEvaluationStrategyFactory(factory); repository = new SailRepository(store); repository.init();
+			function = new TrackedFunction(output.value);
+			TupleFunctionRegistry.getInstance().add(function);
+			store.setEvaluationStrategyFactory(factory);
+			repository = new SailRepository(store);
+			repository.init();
 		}
+
 		private TupleFunctionCall call(Var result) {
-			TupleFunctionCall call = new TupleFunctionCall(); call.setURI(function.getURI());
-			call.addArg(new ValueConstant(VF.createLiteral(1))); call.addResultVar(result); return call;
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(function.getURI());
+			call.addArg(new ValueConstant(VF.createLiteral(1)));
+			call.addResultVar(result);
+			return call;
 		}
-		@Override public void close() {
-			try { repository.shutDown(); } finally { TupleFunctionRegistry.getInstance().remove(function); }
+
+		@Override
+		public void close() {
+			try {
+				repository.shutDown();
+			} finally {
+				TupleFunctionRegistry.getInstance().remove(function);
+			}
 		}
 	}
 
 	/** Observes standard owning hooks; the full ordinary pipeline and preparation remain delegated. */
 	private static final class RecordingFactory extends DefaultEvaluationStrategyFactory {
-		private BindingSet entry; private BindingSet tupleInput; private final List<Var> optimizedVars = new ArrayList<>();
-		@Override public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+		private BindingSet entry;
+		private BindingSet tupleInput;
+		private final List<Var> optimizedVars = new ArrayList<>();
+
+		@Override
+		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
 				EvaluationStatistics statistics) {
 			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset,
 					getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), statistics, isTrackResultSize()) {
-				@Override public TupleExpr optimize(TupleExpr expression, EvaluationStatistics stats, BindingSet bindings) {
+				@Override
+				public TupleExpr optimize(TupleExpr expression, EvaluationStatistics stats, BindingSet bindings) {
 					TupleExpr optimized = super.optimize(expression, stats, bindings);
 					optimized.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
-						@Override public void meetOther(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+						@Override
+						public void meetOther(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
 							if (node instanceof TupleFunctionCall call) {
-								for (Var var : call.getResultVars()) optimizedVars.add(var.clone());
+								for (Var var : call.getResultVars())
+									optimizedVars.add(var.clone());
 							}
 							super.meetOther(node);
 						}
-					}); return optimized;
+					});
+					return optimized;
 				}
-				@Override public QueryEvaluationStep precompileFinalTupleResult(TupleExpr expression) {
+
+				@Override
+				public QueryEvaluationStep precompileFinalTupleResult(TupleExpr expression) {
 					QueryEvaluationStep step = super.precompileFinalTupleResult(expression);
-					return bindings -> { entry = new QueryBindingSet(bindings); return step.evaluate(bindings); };
+					return bindings -> {
+						entry = new QueryBindingSet(bindings);
+						return step.evaluate(bindings);
+					};
 				}
-				@Override protected QueryEvaluationStep prepare(TupleFunctionCall expression, QueryEvaluationContext context) {
+
+				@Override
+				protected QueryEvaluationStep prepare(TupleFunctionCall expression, QueryEvaluationContext context) {
 					QueryEvaluationStep step = super.prepare(expression, context);
-					return bindings -> { tupleInput = new QueryBindingSet(bindings); return step.evaluate(bindings); };
+					return bindings -> {
+						tupleInput = new QueryBindingSet(bindings);
+						return step.evaluate(bindings);
+					};
 				}
 			};
 			getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
-			strategy.setCollectionFactory(getCollectionFactorySupplier()); return strategy;
+			strategy.setCollectionFactory(getCollectionFactorySupplier());
+			return strategy;
 		}
 	}
 
 	private static final class TrackedFunction extends AbstractTupleFunction {
 		private final String uri = "urn:tuple-api-public:" + UUID.randomUUID();
-		private final Value value; private int opens; private int closes;
-		private TrackedFunction(Value value) { this.value = value; }
-		@Override public String getURI() { return uri; }
-		@Override protected CloseableIteration<? extends List<? extends Value>> rows(ValueFactory vf, Value[] args) {
+		private final Value value;
+		private int opens;
+		private int closes;
+
+		private TrackedFunction(Value value) {
+			this.value = value;
+		}
+
+		@Override
+		public String getURI() {
+			return uri;
+		}
+
+		@Override
+		protected CloseableIteration<? extends List<? extends Value>> rows(ValueFactory vf, Value[] args) {
 			opens++;
 			return new AbstractCloseableIteration<List<Value>>() {
 				private boolean emitted;
-				@Override public boolean hasNext() { return !isClosed() && !emitted; }
-				@Override public List<Value> next() {
-					if (!hasNext()) throw new java.util.NoSuchElementException(); emitted = true; return Arrays.asList(value);
+
+				@Override
+				public boolean hasNext() {
+					return !isClosed() && !emitted;
 				}
-				@Override protected void handleClose() { closes++; }
+
+				@Override
+				public List<Value> next() {
+					if (!hasNext())
+						throw new java.util.NoSuchElementException();
+					emitted = true;
+					return Arrays.asList(value);
+				}
+
+				@Override
+				protected void handleClose() {
+					closes++;
+				}
 			};
 		}
 	}

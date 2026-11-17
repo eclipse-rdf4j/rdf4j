@@ -260,14 +260,20 @@ public final class KernelFactorCursor implements AutoCloseable {
 	private void releaseReaders() {
 		Throwable failure = null;
 		if (product != null) {
-			try { product.release(); }
-			catch (RuntimeException | Error problem) { failure = problem; }
+			try {
+				product.release();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
 		}
 		if (counter != null) {
-			try { counter.release(); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem;
-				else if (failure != problem) failure.addSuppressed(problem);
+			try {
+				counter.release();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
 			}
 		}
 		KernelRuntime.rethrowCloseFailure(failure);

@@ -110,10 +110,12 @@ class LmdbDeferredDomainPublicationForeignWriterTest {
 						"the global domain qualification must remain withheld");
 				LmdbEstimatorRuntime runtime = assertInstanceOf(LmdbEvaluationStatistics.class,
 						store.getSailStore().getEvaluationStatistics()).estimatorRuntime();
-				try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+				try (LmdbSailStore.DatasetAdmission admission = backing
+						.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
 					LmdbSailStore.ReadView view = admission.view();
 					view.requireDictionaryTermSnapshot();
-					try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(), view.valueSnapshot())) {
+					try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(),
+							view.valueSnapshot())) {
 						assertFalse(triples.getKnownRdfTermDomain(gate.predicateId).isPresent(),
 								"the admitted paired planner cannot use a foreign dictionary generation");
 					}
@@ -131,25 +133,27 @@ class LmdbDeferredDomainPublicationForeignWriterTest {
 			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 					boolean estimatorEnabled) throws IOException, SailException {
 				return new LmdbSailStore(dataDir, properties, config, estimatorEnabled,
-						(valueDir, valueProperties, valueConfig) -> new ValueStore(valueDir, valueProperties, valueConfig),
+						(valueDir, valueProperties, valueConfig) -> new ValueStore(valueDir, valueProperties,
+								valueConfig),
 						(tripleDir, tripleProperties, tripleConfig, values) -> new TripleStore(tripleDir,
 								tripleProperties, tripleConfig, values) {
 							@Override
 							int commitDeferredDomainNativeWriter(long transaction,
 									RetirementNativeTransaction nativeOwner) throws IOException {
 								if (gate.first.compareAndSet(true, false)) {
-										assertTrue(nativeOwner.canAbort(), "the actual domain writer must be owned on this thread");
-										assertEquals(RdfTermDomain.IRI, pendingDomain(transaction, gate.predicateId),
-												"the held native writer must contain the rebuilt IRI domain");
-										gate.entered.countDown();
-										try {
-											if (!gate.release.await(30, TimeUnit.SECONDS)) {
-												throw new AssertionError("domain commit gate was not released");
-											}
-										} catch (InterruptedException interrupted) {
-											Thread.currentThread().interrupt();
-											throw new AssertionError("domain commit gate interrupted", interrupted);
+									assertTrue(nativeOwner.canAbort(),
+											"the actual domain writer must be owned on this thread");
+									assertEquals(RdfTermDomain.IRI, pendingDomain(transaction, gate.predicateId),
+											"the held native writer must contain the rebuilt IRI domain");
+									gate.entered.countDown();
+									try {
+										if (!gate.release.await(30, TimeUnit.SECONDS)) {
+											throw new AssertionError("domain commit gate was not released");
 										}
+									} catch (InterruptedException interrupted) {
+										Thread.currentThread().interrupt();
+										throw new AssertionError("domain commit gate interrupted", interrupted);
+									}
 								}
 								return super.commitDeferredDomainNativeWriter(transaction, nativeOwner);
 							}
@@ -197,9 +201,12 @@ class LmdbDeferredDomainPublicationForeignWriterTest {
 	}
 
 	private static LmdbStoreConfig config() {
-		return new LmdbStoreConfig("spoc,posc").setInlineLiterals(false).setSketchEstimatorEnabled(false)
-				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF).setPredicateGuaranteeIndexEnabled(true)
-				.setPredicateGuaranteeIndexAutoRebuild(true).setForceSync(true);
+		return new LmdbStoreConfig("spoc,posc").setInlineLiterals(false)
+				.setSketchEstimatorEnabled(false)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setPredicateGuaranteeIndexEnabled(true)
+				.setPredicateGuaranteeIndexAutoRebuild(true)
+				.setForceSync(true);
 	}
 
 	private static void runForeignWriter(Path directory, Path evidence, AtomicBoolean settled) throws Exception {
@@ -210,7 +217,9 @@ class LmdbDeferredDomainPublicationForeignWriterTest {
 				"--enable-native-access=ALL-UNNAMED", "-ea", "-Djava.io.tmpdir=" + temporary,
 				"-cp", System.getProperty("java.class.path"),
 				LmdbDeferredDomainForeignWriterTest.ForeignWriter.class.getName(), directory.toString())
-						.redirectErrorStream(true).redirectOutput(log.toFile()).start();
+						.redirectErrorStream(true)
+						.redirectOutput(log.toFile())
+						.start();
 		if (!child.waitFor(30, TimeUnit.SECONDS)) {
 			throw new AssertionError("foreign writer did not settle; retained child and store: " + log);
 		}

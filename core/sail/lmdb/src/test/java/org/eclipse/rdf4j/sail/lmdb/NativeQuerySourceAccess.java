@@ -31,7 +31,8 @@ public final class NativeQuerySourceAccess {
 	}
 
 	/** Actual immutable view identity, not a fabricated lease/open counter and not an owning reference. */
-	public record BorrowedSourceView(Object identity, long lifetime, long snapshot, boolean exact) { }
+	public record BorrowedSourceView(Object identity, long lifetime, long snapshot, boolean exact) {
+	}
 
 	public static BorrowedSourceView borrowedSourceView(
 			org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch.Source source) {
@@ -55,8 +56,9 @@ public final class NativeQuerySourceAccess {
 	public static EvaluationStrategy evaluationStrategy(LmdbStore store,
 			SailDatasetTripleTermSource source,
 			EvaluationStatistics statistics) {
-		return store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(null, source, statistics,
-				store.getQueryExecutionPolicy());
+		return store.getConnectionEvaluationStrategyFactory()
+				.createEvaluationStrategy(null, source, statistics,
+						store.getQueryExecutionPolicy());
 	}
 
 	public static int learnedFilterCount(LmdbStore store) {
@@ -65,17 +67,21 @@ public final class NativeQuerySourceAccess {
 	}
 
 	/** Detached snapshot of the real legacy filter surface cells, without sampling or mutating them. */
-	public record LegacyFilterEvidence(long revision, long evidenceCount, double passRatio, boolean generalized) { }
+	public record LegacyFilterEvidence(long revision, long evidenceCount, double passRatio, boolean generalized) {
+	}
 
 	public static LegacyFilterEvidence legacyFilterEvidence(LmdbStore store,
 			org.eclipse.rdf4j.query.algebra.Filter filter) {
 		LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) evaluationStatistics(store)).estimatorRuntime();
 		try (var ignored = runtime.pinProviderView()) {
 			LmdbFilterSelectivityStats filters = runtime.filters();
-			if (filters == null) { return new LegacyFilterEvidence(-1L, -1L, Double.NaN, false); }
+			if (filters == null) {
+				return new LegacyFilterEvidence(-1L, -1L, Double.NaN, false);
+			}
 			var learned = filters.estimateLearnedSurface(filter);
 			return learned == null ? new LegacyFilterEvidence(filters.planningRevision(), -1L, Double.NaN, false)
-					: new LegacyFilterEvidence(filters.planningRevision(), learned.evidenceCount(), learned.passRatio(), learned.generalized());
+					: new LegacyFilterEvidence(filters.planningRevision(), learned.evidenceCount(), learned.passRatio(),
+							learned.generalized());
 		}
 	}
 

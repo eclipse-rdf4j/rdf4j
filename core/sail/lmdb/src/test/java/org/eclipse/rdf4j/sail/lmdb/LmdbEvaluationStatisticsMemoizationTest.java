@@ -17,8 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,8 +48,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -1194,34 +1194,43 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				LmdbFilterSelectivityStats filters = read.statistics().estimatorRuntime().filters();
 				assertEquals(-1.0d, filters.estimateLiveFilterPass(qualified,
 						StatementPatternCollector.process(qualified.getArg()).getFirst()).passRatio());
-				assertEquals(0, backingStore.learnedFilterSelectivity().size(), "no runtime census exists before execution");
+				assertEquals(0, backingStore.learnedFilterSelectivity().size(),
+						"no runtime census exists before execution");
 
-				TupleExpr trainedPlan = read.strategy().optimize(parseCompleteQuery(externalBoundQuery),
-						read.statistics(), EmptyBindingSet.getInstance());
+				TupleExpr trainedPlan = read.strategy()
+						.optimize(parseCompleteQuery(externalBoundQuery),
+								read.statistics(), EmptyBindingSet.getInstance());
 				assertInstanceOf(LmdbNativeEvaluationStrategy.class, read.strategy());
 				if (witnessNativePath) {
 					trainedPlan.setExecutionSummaryEnabled(true);
 				}
 				Filter trainedFilter = firstFilter(trainedPlan);
-				List<BindingSet> actual = QueryResults.asList(read.strategy().precompile(trainedPlan)
+				List<BindingSet> actual = QueryResults.asList(read.strategy()
+						.precompile(trainedPlan)
 						.evaluate(EmptyBindingSet.getInstance()));
 				if (witnessNativePath) {
-					assertEquals("lmdb-native", trainedPlan.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE),
+					assertEquals("lmdb-native",
+							trainedPlan.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE),
 							"the actual query must be compiled by the native engine");
-					assertNotEquals("genericHostedRoot", trainedPlan.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND),
+					assertNotEquals("genericHostedRoot",
+							trainedPlan.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND),
 							"the root must select a native plan rather than a generic host");
 					assertNotNull(trainedPlan.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH),
 							"the query must execute a real native path before asserting feedback");
 				}
-				List<String> bindings = actual.stream().map(row -> row.getValue("s").stringValue() + "|"
-						+ row.getValue("name").stringValue() + "|" + row.getValue("target").stringValue())
-						.sorted().toList();
+				List<String> bindings = actual.stream()
+						.map(row -> row.getValue("s").stringValue() + "|"
+								+ row.getValue("name").stringValue() + "|" + row.getValue("target").stringValue())
+						.sorted()
+						.toList();
 				assertEquals(List.of("urn:test:user:0|u0|u0", "urn:test:user:1|u1|u1"), bindings);
-				assertTrue(backingStore.learnedFilterSelectivity().size() > 0, "the actual completed query records evidence");
+				assertTrue(backingStore.learnedFilterSelectivity().size() > 0,
+						"the actual completed query records evidence");
 
 				// Reuse is valid only for the same actual normalized logical input, not merely the same condition.
-				TupleExpr preparedLookup = read.strategy().optimize(parseCompleteQuery(externalBoundQuery),
-						read.statistics(), EmptyBindingSet.getInstance());
+				TupleExpr preparedLookup = read.strategy()
+						.optimize(parseCompleteQuery(externalBoundQuery),
+								read.statistics(), EmptyBindingSet.getInstance());
 				Filter plannedEquivalentFilter = firstFilter(preparedLookup);
 				var learned = backingStore.learnedFilterSelectivity();
 				var trainedDescriptor = LmdbFilterOutcomeFeedbackDescriptor.captureSource(learned.outcomeOwnerToken(),
@@ -1230,7 +1239,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 						read.statistics().estimatorRuntime(), read.source(), null, plannedEquivalentFilter);
 				assertNotNull(trainedDescriptor);
 				assertNotNull(lookupDescriptor);
-				assertEquals(trainedDescriptor.read(), lookupDescriptor.read(), "the exact live source/plane/frame is retained");
+				assertEquals(trainedDescriptor.read(), lookupDescriptor.read(),
+						"the exact live source/plane/frame is retained");
 				assertNotNull(trainedDescriptor.pattern());
 				assertNotNull(lookupDescriptor.pattern());
 				assertEquals(trainedDescriptor.pattern().boundMask(), lookupDescriptor.pattern().boundMask(),
@@ -1247,7 +1257,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				long expectedInputs = sufficientEvidence ? 80L : 16L;
 				assertEquals(expectedInputs, exactCensus.getEvidenceCount());
 				assertEquals(2.0d / expectedInputs, exactCensus.getPassRatio(), 0.0d);
-				assertEquals((double) expectedInputs / (expectedInputs + 64.0d), exactCensus.getConfidenceScore(), 0.0d);
+				assertEquals((double) expectedInputs / (expectedInputs + 64.0d), exactCensus.getConfidenceScore(),
+						0.0d);
 				EvaluationStatistics.FilterPassEstimate learnedEstimate = read.statistics()
 						.estimateFilterPass(plannedEquivalentFilter);
 				assertEquals(sufficientEvidence ? EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER
@@ -1259,27 +1270,34 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				}
 
 				// A second VALUES table changes where the optimizer evaluates the condition and its population.
-				TupleExpr anchoredLookup = new LmdbQueryOptimizerPipeline(read.strategy(), read.source(), read.statistics())
-						.withPreparedQueryEntry(parseCompleteQuery(literalAnchoredQuery), null,
-								EmptyBindingSet.getInstance(), (prepared, cascades) -> prepared);
+				TupleExpr anchoredLookup = new LmdbQueryOptimizerPipeline(read.strategy(), read.source(),
+						read.statistics())
+								.withPreparedQueryEntry(parseCompleteQuery(literalAnchoredQuery), null,
+										EmptyBindingSet.getInstance(), (prepared, cascades) -> prepared);
 				Filter anchoredFilter = firstFilter(anchoredLookup);
 				var anchoredDescriptor = LmdbFilterOutcomeFeedbackDescriptor.captureSource(learned.outcomeOwnerToken(),
 						read.statistics().estimatorRuntime(), read.source(), null, anchoredFilter);
 				assertNotNull(anchoredDescriptor);
 				assertEquals(trainedDescriptor.read(), anchoredDescriptor.read());
-				assertNull(anchoredDescriptor.pattern(), "the normalized finite-table filter has no local statement population");
+				assertNull(anchoredDescriptor.pattern(),
+						"the normalized finite-table filter has no local statement population");
 				assertNotEquals(trainedDescriptor.exact(), anchoredDescriptor.exact(),
 						"equal condition text and read identity cannot authorize a different FILTER input");
-				EvaluationStatistics.FilterPassEstimate anchoredEstimate = read.statistics().estimateFilterPass(anchoredFilter);
+				EvaluationStatistics.FilterPassEstimate anchoredEstimate = read.statistics()
+						.estimateFilterPass(anchoredFilter);
 				assertFalse(Set.of(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
 						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
-						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN).contains(anchoredEstimate.getSource()),
+						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN)
+						.contains(anchoredEstimate.getSource()),
 						"the completed statement-side census must not train the finite VALUES-side condition");
-				List<BindingSet> anchoredRows = QueryResults.asList(read.strategy().precompile(anchoredLookup)
+				List<BindingSet> anchoredRows = QueryResults.asList(read.strategy()
+						.precompile(anchoredLookup)
 						.evaluate(EmptyBindingSet.getInstance()));
 				assertEquals(List.of("urn:test:user:0|u0|u0", "urn:test:user:1|u1|u1"), anchoredRows.stream()
 						.map(row -> row.getValue("s").stringValue() + "|" + row.getValue("name").stringValue()
-								+ "|" + row.getValue("target").stringValue()).sorted().toList(),
+								+ "|" + row.getValue("target").stringValue())
+						.sorted()
+						.toList(),
 						"the changed input population still returns the independently known exact bag");
 			}
 		} finally {
@@ -1319,13 +1337,15 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void rawGraphAndMissingPairedSourceCannotAuthorizeAFilterSample() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampling-authority").toFile();
 		LmdbStoreConfig config = sketchEnabledConfig().setOptimizerSamplingMaxMillis(5_000L)
-				.setOptimizerSamplingMaxRows(16).setBackgroundRawSamplingMaxMillisPerCycle(0L);
+				.setOptimizerSamplingMaxRows(16)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		LmdbStore sail = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(sail);
 		try {
 			loadInterleavedDateData(repository);
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, sail.getBackingStore());
-			LmdbEvaluationStatistics unbound = (LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics unbound = (LmdbEvaluationStatistics) sail.getBackingStore()
+					.getEvaluationStatistics();
 			assertFalse(unbound.estimatorRuntime().hasPairedPlanningAuthority());
 			assertFalse(unbound.estimatorRuntime().adaptiveEvidenceAllowed(),
 					"store identity and ready maintenance do not replace an actual bound query reader");
@@ -1336,14 +1356,22 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				bound = read.statistics();
 				Filter raw = firstFilter(DATE_RANGE_QUERY);
 				assertFalse(PlanningGraphDomains.domain(raw).allowsNativeEvidence());
-				int pending = ((LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics()).estimatorRuntime().filters().pendingBackgroundSamplingRequests();
+				int pending = ((LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics())
+						.estimatorRuntime()
+						.filters()
+						.pendingBackgroundSamplingRequests();
 				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC,
-						bound.estimateFilterPass(raw).getSource(), "binding a reader must not invent raw-parser graph authority");
-				assertEquals(pending, ((LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics()).estimatorRuntime().filters().pendingBackgroundSamplingRequests());
+						bound.estimateFilterPass(raw).getSource(),
+						"binding a reader must not invent raw-parser graph authority");
+				assertEquals(pending,
+						((LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics()).estimatorRuntime()
+								.filters()
+								.pendingBackgroundSamplingRequests());
 				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED,
 						bound.estimateFilterPass(qualifiedFirstFilter(DATE_RANGE_QUERY)).getSource());
 			}
-			assertFalse(bound.estimatorRuntime().adaptiveEvidenceAllowed(), "closed paired owners revoke evidence authority");
+			assertFalse(bound.estimatorRuntime().adaptiveEvidenceAllowed(),
+					"closed paired owners revoke evidence authority");
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1372,7 +1400,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				assertFiniteInDeclinesRawSampling(sail.getBackingStore(), filter);
 				StatementPattern pattern = (StatementPattern) filter.getArg();
 				StatisticsEstimate input = read.statistics().statementPattern(pattern, Set.of()).orElseThrow();
-				StatisticsEstimate filtered = read.statistics().filter(pattern, filter.getCondition(), input, Set.of())
+				StatisticsEstimate filtered = read.statistics()
+						.filter(pattern, filter.getCondition(), input, Set.of())
 						.orElseThrow();
 				assertEquals(0.0d, filtered.metrics().get("optimizer.filterComplete"), 0.0d,
 						"temporal term matches do not establish complete SPARQL value-equality evidence");
@@ -1402,15 +1431,20 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		Filter filter = selected[0];
 		assertNotNull(filter, "the actual temporal IN, not the aggregate HAVING filter, supplies this control");
 		LmdbFilterSelectivityStats stats = ((LmdbEvaluationStatistics) backing.getEvaluationStatistics())
-				.estimatorRuntime().filters();
-		StatementPattern pattern = StatementPatternCollector.process(filter.getArg()).stream()
-				.filter(candidate -> candidate.getObjectVar().getName().equals("date")).findFirst().orElseThrow();
+				.estimatorRuntime()
+				.filters();
+		StatementPattern pattern = StatementPatternCollector.process(filter.getArg())
+				.stream()
+				.filter(candidate -> candidate.getObjectVar().getName().equals("date"))
+				.findFirst()
+				.orElseThrow();
 		assertTrue(PlanningGraphDomains.domain(filter).allowsNativeEvidence());
 		assertTrue(PlanningGraphDomains.domain(pattern).allowsNativeEvidence());
 		int pending = stats.pendingBackgroundSamplingRequests();
 		assertEquals(-1.0d, stats.estimateLiveFilterPass(filter, pattern).passRatio());
 		assertEquals(-1.0d, stats.estimateCachedFilterPass(filter, pattern).passRatio());
-		assertEquals(pending, stats.pendingBackgroundSamplingRequests(), "a constant IN must not vote for raw sampling");
+		assertEquals(pending, stats.pendingBackgroundSamplingRequests(),
+				"a constant IN must not vote for raw sampling");
 	}
 
 	private static void assertDateSelection(SailRepository repository, String query) {
@@ -1427,7 +1461,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			expected.add(String.format("urn:test:encounter:%03d", i));
 		}
 		actual.sort(String::compareTo);
-		assertEquals(expected, actual, "both conditions select exactly the sixteen January rows, including multiplicity");
+		assertEquals(expected, actual,
+				"both conditions select exactly the sixteen January rows, including multiplicity");
 	}
 
 	private static void assertMedicalAggregateRows(SailRepository repository, String query) {
@@ -1454,7 +1489,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Filter filter) {
-				if (found[0] == null) { found[0] = filter; }
+				if (found[0] == null) {
+					found[0] = filter;
+				}
 				super.meet(filter);
 			}
 		});
@@ -1466,14 +1503,17 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		SailDataset owner = sail.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
 		try {
 			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(sail.getValueFactory(), owner);
-			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics();
-			EvaluationStrategy strategy = sail.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-					null, source, statistics, sail.getQueryExecutionPolicy());
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) sail.getBackingStore()
+					.getEvaluationStatistics();
+			EvaluationStrategy strategy = sail.getConnectionEvaluationStrategyFactory()
+					.createEvaluationStrategy(
+							null, source, statistics, sail.getQueryExecutionPolicy());
 			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
 			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
 			try {
-				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
-						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime()
+						.pinQueryPlanningReads(
+								borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
 				try {
 					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority());
 					assertTrue(statistics.estimatorRuntime().adaptiveEvidenceAllowed());
@@ -1493,8 +1533,12 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	private static void closeAfterFailure(Throwable primary, Runnable close) {
-		try { close.run(); } catch (RuntimeException | Error cleanup) {
-			if (cleanup != primary) { primary.addSuppressed(cleanup); }
+		try {
+			close.run();
+		} catch (RuntimeException | Error cleanup) {
+			if (cleanup != primary) {
+				primary.addSuppressed(cleanup);
+			}
 		}
 	}
 
@@ -1503,7 +1547,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			implements AutoCloseable {
 		@Override
 		public void close() {
-			try (owner; view; pin) { }
+			try (owner; view; pin) {
+			}
 		}
 	}
 

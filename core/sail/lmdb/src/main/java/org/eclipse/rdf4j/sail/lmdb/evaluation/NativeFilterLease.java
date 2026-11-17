@@ -479,7 +479,8 @@ final class NativeFilterLease {
 		finish(publishFeedback, primary, null);
 	}
 
-	private synchronized void finish(boolean publishFeedback, Throwable primary, Set<NativeBooleanFilter> closedFilters) {
+	private synchronized void finish(boolean publishFeedback, Throwable primary,
+			Set<NativeBooleanFilter> closedFilters) {
 		if (finished) {
 			return;
 		}
@@ -835,7 +836,8 @@ final class NativeFilterLease {
 		private void use(NativeScalarPlan.WorkerContext context) {
 			NativeLmdbQuerySource source = context == null ? null : context.source();
 			NativeExecutionContext execution = source instanceof SyntheticValueSource synthetic
-					? synthetic.executionContext() : null;
+					? synthetic.executionContext()
+					: null;
 			NativeExecutionContext owner = entry.owner.ownerContext;
 			if (entry.used && entry.contextual && owner != null) {
 				validateOwner(owner, execution);

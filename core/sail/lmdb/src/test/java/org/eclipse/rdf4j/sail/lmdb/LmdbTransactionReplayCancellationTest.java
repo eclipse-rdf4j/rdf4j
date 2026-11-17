@@ -85,7 +85,8 @@ class LmdbTransactionReplayCancellationTest {
 			CountDownLatch releaseCallback = new CountDownLatch(1);
 			CountDownLatch secondCloseEntered = new CountDownLatch(1);
 			LmdbStore store = new LmdbStore(new File(args[0]), new LmdbStoreConfig("spoc,posc")
-					.setSketchEstimatorEnabled(false).setMapGrowthReadDrainTimeoutMillis(50));
+					.setSketchEstimatorEnabled(false)
+					.setMapGrowthReadDrainTimeoutMillis(50));
 			store.setEvaluationStrategyFactory(new DefaultEvaluationStrategyFactory() {
 				@Override
 				public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
@@ -93,12 +94,18 @@ class LmdbTransactionReplayCancellationTest {
 					return new DefaultEvaluationStrategy(tripleSource, dataset, getFederatedServiceResolver(),
 							getQuerySolutionCacheThreshold(), statistics, isTrackResultSize()) {
 						private int compilationDepth;
+
 						@Override
 						public QueryEvaluationStep precompile(TupleExpr expression) {
 							boolean outer = compilationDepth++ == 0;
 							QueryEvaluationStep step;
-							try { step = super.precompile(expression); } finally { compilationDepth--; }
-							if (!outer) return step;
+							try {
+								step = super.precompile(expression);
+							} finally {
+								compilationDepth--;
+							}
+							if (!outer)
+								return step;
 							return bindings -> {
 								int identity = identities.incrementAndGet();
 								CloseableIteration<? extends BindingSet> source = step.evaluate(bindings);
@@ -106,10 +113,16 @@ class LmdbTransactionReplayCancellationTest {
 									source.close();
 									throw new AssertionError("FIXTURE: query source has no unexposed row");
 								}
-								LmdbSailStore.ReadViewLease view = store.getBackingStore().currentReadResourceViews().stream()
-										.filter(candidate -> candidate.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE))
-										.findFirst().orElseThrow(() -> new AssertionError("FIXTURE: query has no pinned native view"));
-								if (identity <= 2) pinnedViews.set(identity, view);
+								LmdbSailStore.ReadViewLease view = store.getBackingStore()
+										.currentReadResourceViews()
+										.stream()
+										.filter(candidate -> candidate
+												.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE))
+										.findFirst()
+										.orElseThrow(
+												() -> new AssertionError("FIXTURE: query has no pinned native view"));
+								if (identity <= 2)
+									pinnedViews.set(identity, view);
 								return new IterationWrapper<BindingSet>(source) {
 									@Override
 									public boolean requestCancellation() {
@@ -121,6 +134,7 @@ class LmdbTransactionReplayCancellationTest {
 												|| !held.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE));
 										return true;
 									}
+
 									@Override
 									protected void handleClose() {
 										if (armed.get()) {
@@ -150,12 +164,15 @@ class LmdbTransactionReplayCancellationTest {
 			boolean unresolved = false;
 			Throwable primary = null;
 			try {
-				store.init(); initialized = true;
+				store.init();
+				initialized = true;
 				var vf = SimpleValueFactory.getInstance();
 				try (SailConnection seed = store.getConnection()) {
 					seed.begin();
-					seed.addStatement(vf.createIRI("urn:replay:s1"), vf.createIRI("urn:replay:p1"), vf.createLiteral("a"));
-					seed.addStatement(vf.createIRI("urn:replay:s2"), vf.createIRI("urn:replay:p2"), vf.createLiteral("b"));
+					seed.addStatement(vf.createIRI("urn:replay:s1"), vf.createIRI("urn:replay:p1"),
+							vf.createLiteral("a"));
+					seed.addStatement(vf.createIRI("urn:replay:s2"), vf.createIRI("urn:replay:p2"),
+							vf.createLiteral("b"));
 					seed.commit();
 				}
 				LmdbGcTestMaintenance.awaitPostReady(store);
@@ -188,7 +205,9 @@ class LmdbTransactionReplayCancellationTest {
 							if (!triples.growMapForEstimatedWrite(size * 2, attempt)) {
 								throw new AssertionError("FIXTURE: map growth did not occur");
 							}
-						} finally { writer.completeTransaction(); }
+						} finally {
+							writer.completeTransaction();
+						}
 					}
 					return null;
 				});
@@ -196,14 +215,16 @@ class LmdbTransactionReplayCancellationTest {
 					throw new AssertionError("FIXTURE: replay did not claim and close its first delegate");
 				}
 				int firstId = firstClosing.get();
-				if (firstId != 1 && firstId != 2) throw new AssertionError("FIXTURE: invalid source identity");
+				if (firstId != 1 && firstId != 2)
+					throw new AssertionError("FIXTURE: invalid source identity");
 				CooperativeCancellation sibling = (CooperativeCancellation) (firstId == 1 ? second : first);
 				System.out.println("HIT_TRANSACTION_REPLAY_FIRST_CLOSE first=" + firstId);
 				cancellation = workers.submit(sibling::requestCancellation);
 				// Either the callback enters (the bug) or admission returns false without invoking it.
 				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 				while (callbackEntered.getCount() != 0 && !cancellation.isDone()) {
-					if (System.nanoTime() >= deadline) throw new AssertionError("FIXTURE: cancellation did not settle");
+					if (System.nanoTime() >= deadline)
+						throw new AssertionError("FIXTURE: cancellation did not settle");
 					Thread.onSpinWait();
 				}
 				boolean entered = callbackEntered.getCount() == 0;
@@ -220,7 +241,8 @@ class LmdbTransactionReplayCancellationTest {
 						+ " callbackId=" + callbackIdentity.get() + " closedDuringCallback=" + retiredDuringCallback
 						+ " lostNativePin=" + callbackLostNativePin.get());
 				if (accepted || entered || retiredDuringCallback || callbackLostNativePin.get()) {
-					throw new AssertionError("a claimed transaction replay admitted cancellation of its retiring sibling delegate");
+					throw new AssertionError(
+							"a claimed transaction replay admitted cancellation of its retiring sibling delegate");
 				}
 				System.out.println("REPLAY_CANCELLATION_COMPLETE");
 			} catch (Throwable failure) {
@@ -230,7 +252,8 @@ class LmdbTransactionReplayCancellationTest {
 				releaseFirstClose.countDown();
 				releaseCallback.countDown();
 				for (Future<?> task : new Future<?>[] { cancellation, growth }) {
-					if (task == null) continue;
+					if (task == null)
+						continue;
 					try {
 						task.get(10, TimeUnit.SECONDS);
 					} catch (TimeoutException failure) {
@@ -246,7 +269,8 @@ class LmdbTransactionReplayCancellationTest {
 				}
 				workers.shutdown();
 				try {
-					if (!workers.awaitTermination(10, TimeUnit.SECONDS)) unresolved = true;
+					if (!workers.awaitTermination(10, TimeUnit.SECONDS))
+						unresolved = true;
 				} catch (InterruptedException failure) {
 					Thread.currentThread().interrupt();
 					unresolved = true;
@@ -254,32 +278,66 @@ class LmdbTransactionReplayCancellationTest {
 				}
 				if (!unresolved) {
 					armed.set(false);
-					try { if (first != null) first.close(); } catch (Throwable failure) { primary = merge(primary, failure); }
-					try { if (second != null) second.close(); } catch (Throwable failure) { primary = merge(primary, failure); }
-					try { if (reader != null && reader.isActive()) reader.rollback(); } catch (Throwable failure) { primary = merge(primary, failure); }
-					try { if (reader != null) reader.close(); } catch (Throwable failure) { primary = merge(primary, failure); }
-					try { if (initialized) store.shutDown(); } catch (Throwable failure) { primary = merge(primary, failure); }
+					try {
+						if (first != null)
+							first.close();
+					} catch (Throwable failure) {
+						primary = merge(primary, failure);
+					}
+					try {
+						if (second != null)
+							second.close();
+					} catch (Throwable failure) {
+						primary = merge(primary, failure);
+					}
+					try {
+						if (reader != null && reader.isActive())
+							reader.rollback();
+					} catch (Throwable failure) {
+						primary = merge(primary, failure);
+					}
+					try {
+						if (reader != null)
+							reader.close();
+					} catch (Throwable failure) {
+						primary = merge(primary, failure);
+					}
+					try {
+						if (initialized)
+							store.shutDown();
+					} catch (Throwable failure) {
+						primary = merge(primary, failure);
+					}
 				} else {
 					System.out.println("UNRESOLVED_TRANSACTION_REPLAY pid=" + ProcessHandle.current().pid());
 					System.out.flush();
 					await(new CountDownLatch(1));
 				}
 			}
-			if (primary != null) throw new AssertionError("transaction replay cancellation probe failed", primary);
+			if (primary != null)
+				throw new AssertionError("transaction replay cancellation probe failed", primary);
 		}
 
 		private static Throwable merge(Throwable primary, Throwable extra) {
-			if (primary == null) return extra;
-			if (extra != null && extra != primary) primary.addSuppressed(extra);
+			if (primary == null)
+				return extra;
+			if (extra != null && extra != primary)
+				primary.addSuppressed(extra);
 			return primary;
 		}
 
 		private static void await(CountDownLatch latch) {
 			boolean interrupted = false;
 			for (;;) {
-				try { latch.await(); break; } catch (InterruptedException ignored) { interrupted = true; }
+				try {
+					latch.await();
+					break;
+				} catch (InterruptedException ignored) {
+					interrupted = true;
+				}
 			}
-			if (interrupted) Thread.currentThread().interrupt();
+			if (interrupted)
+				Thread.currentThread().interrupt();
 		}
 	}
 }

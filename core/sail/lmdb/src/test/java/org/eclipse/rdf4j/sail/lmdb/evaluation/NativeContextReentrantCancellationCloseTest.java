@@ -50,19 +50,45 @@ class NativeContextReentrantCancellationCloseTest {
 		AtomicInteger closeCalls = new AtomicInteger();
 		AtomicInteger stateCloses = new AtomicInteger();
 		CountDownLatch stateClosed = new CountDownLatch(1);
-		context.nativeState(new Object(), () -> (AutoCloseable) () -> { stateCloses.incrementAndGet(); stateClosed.countDown(); });
+		context.nativeState(new Object(), () -> (AutoCloseable) () -> {
+			stateCloses.incrementAndGet();
+			stateClosed.countDown();
+		});
 		class Source implements CloseableIteration<BindingSet>, CooperativeCancellation {
-			@Override public boolean hasNext() { return false; }
-			@Override public BindingSet next() { throw new NoSuchElementException(); }
-			@Override public void remove() { throw new UnsupportedOperationException(); }
-			@Override public boolean requestCancellation() {
-				cancellationCalls.incrementAndGet(); callbackThread.set(Thread.currentThread()); callbackEntered.countDown();
-				awaitLatch(allowReentry); reentering.countDown(); owner.get().close();
-				reentered.countDown(); callbackReturnedFromReentrantClose.countDown();
-				awaitLatch(allowCallbackReturn); return true;
+			@Override
+			public boolean hasNext() {
+				return false;
 			}
-			@Override public void close() {
-				closeCalls.incrementAndGet(); closeThread.set(Thread.currentThread()); sourceCloseEntered.countDown();
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				cancellationCalls.incrementAndGet();
+				callbackThread.set(Thread.currentThread());
+				callbackEntered.countDown();
+				awaitLatch(allowReentry);
+				reentering.countDown();
+				owner.get().close();
+				reentered.countDown();
+				callbackReturnedFromReentrantClose.countDown();
+				awaitLatch(allowCallbackReturn);
+				return true;
+			}
+
+			@Override
+			public void close() {
+				closeCalls.incrementAndGet();
+				closeThread.set(Thread.currentThread());
+				sourceCloseEntered.countDown();
 				awaitLatch(callbackReturnedFromReentrantClose);
 			}
 		}
@@ -70,7 +96,12 @@ class NativeContextReentrantCancellationCloseTest {
 		NativeContextClosingIteration result = new NativeContextClosingIteration(source, context);
 		owner.set(result);
 		try (var workers = Executors.newFixedThreadPool(2);
-				AutoCloseable cleanup = () -> { allowReentry.countDown(); callbackReturnedFromReentrantClose.countDown(); allowCallbackReturn.countDown(); result.close(); }) {
+				AutoCloseable cleanup = () -> {
+					allowReentry.countDown();
+					callbackReturnedFromReentrantClose.countDown();
+					allowCallbackReturn.countDown();
+					result.close();
+				}) {
 			var cancellation = workers.submit(result::requestCancellation);
 			assertTrue(callbackEntered.await(5, TimeUnit.SECONDS));
 			var closing = workers.submit(result::close);
@@ -112,11 +143,13 @@ class NativeContextReentrantCancellationCloseTest {
 
 	private static boolean waitingForCallback(Thread thread) {
 		ThreadInfo info = threadInfo(thread);
-		if (info == null || info.getThreadState() != Thread.State.WAITING) return false;
+		if (info == null || info.getThreadState() != Thread.State.WAITING)
+			return false;
 		boolean latch = false;
 		boolean sourceClose = false;
 		for (StackTraceElement frame : info.getStackTrace()) {
-			latch |= frame.getClassName().equals(CountDownLatch.class.getName()) && frame.getMethodName().equals("await");
+			latch |= frame.getClassName().equals(CountDownLatch.class.getName())
+					&& frame.getMethodName().equals("await");
 			sourceClose |= frame.getClassName().contains("NativeContextReentrantCancellationCloseTest$1Source")
 					&& frame.getMethodName().equals("close");
 		}
@@ -130,7 +163,8 @@ class NativeContextReentrantCancellationCloseTest {
 	private static void await(BooleanSupplier condition, String message) {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
 		while (!condition.getAsBoolean()) {
-			if (System.nanoTime() >= deadline) throw new AssertionError(message);
+			if (System.nanoTime() >= deadline)
+				throw new AssertionError(message);
 			Thread.onSpinWait();
 		}
 	}
@@ -138,8 +172,14 @@ class NativeContextReentrantCancellationCloseTest {
 	private static void awaitLatch(CountDownLatch latch) {
 		boolean interrupted = false;
 		while (true) {
-			try { latch.await(); break; } catch (InterruptedException failure) { interrupted = true; }
+			try {
+				latch.await();
+				break;
+			} catch (InterruptedException failure) {
+				interrupted = true;
+			}
 		}
-		if (interrupted) Thread.currentThread().interrupt();
+		if (interrupted)
+			Thread.currentThread().interrupt();
 	}
 }

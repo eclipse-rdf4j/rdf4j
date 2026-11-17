@@ -237,7 +237,8 @@ class LmdbRejectedOpenPublicationContractTest {
 			assertEquals(generation == Generation.CURRENT || repair,
 					((ValueStore) store.getValueFactory()).isValueReclamationEnabled());
 			assertEquals(1L, connection.size());
-			assertTrue(connection.hasStatement(original.getSubject(), original.getPredicate(), original.getObject(), false));
+			assertTrue(connection.hasStatement(original.getSubject(), original.getPredicate(), original.getObject(),
+					false));
 		} finally {
 			repository.shutDown();
 		}
@@ -259,7 +260,8 @@ class LmdbRejectedOpenPublicationContractTest {
 		}
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		assertTrue(properties.load());
-		assertEquals(initialVersion, Integer.parseInt(properties.getVersion()), "recovery must preserve the persisted generation format");
+		assertEquals(initialVersion, Integer.parseInt(properties.getVersion()),
+				"recovery must preserve the persisted generation format");
 	}
 
 	@ParameterizedTest(name = "{0}, repair={1}")

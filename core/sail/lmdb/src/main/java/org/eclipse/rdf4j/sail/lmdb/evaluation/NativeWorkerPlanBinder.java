@@ -39,18 +39,24 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 
 	static boolean canBind(SlotPlan input, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
 		if (facts == null) {
-			if (!(input instanceof NativeValuesFoldPlan)) { return canBindUncached(input, null); }
+			if (!(input instanceof NativeValuesFoldPlan)) {
+				return canBindUncached(input, null);
+			}
 			facts = new java.util.IdentityHashMap<>();
 		}
 		Boolean previous = facts.get(input);
-		if (previous != null) { return previous; }
+		if (previous != null) {
+			return previous;
+		}
 		boolean result = canBindUncached(input, facts);
 		facts.put(input, result);
 		return result;
 	}
 
 	static boolean canBindUncached(SlotPlan input, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
-		if (input instanceof NativeValuesFoldPlan guard) { return canBind(guard.folded, facts) && canBind(guard.original, facts); }
+		if (input instanceof NativeValuesFoldPlan guard) {
+			return canBind(guard.folded, facts) && canBind(guard.original, facts);
+		}
 		if (input instanceof NativeSubqueryPlan subquery) {
 			return subquery.workerBindable();
 		}
@@ -150,7 +156,9 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 
 	SlotPlan bind(SlotPlan input) throws IOException {
 		SlotPlan existing = plans.get(input);
-		if (existing != null) { return existing; }
+		if (existing != null) {
+			return existing;
+		}
 		SlotPlan result = bindUncached(input);
 		plans.put(input, result);
 		return result;
@@ -158,7 +166,8 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 
 	private SlotPlan bindUncached(SlotPlan input) throws IOException {
 		if (input instanceof NativeValuesFoldPlan guard) {
-			return new NativeValuesFoldPlan(bind(guard.folded), bind(guard.original), guard.inputNames, guard.inputSlots);
+			return new NativeValuesFoldPlan(bind(guard.folded), bind(guard.original), guard.inputNames,
+					guard.inputSlots);
 		}
 		SlotPlan replacement = replacement(input);
 		if (replacement != null) {

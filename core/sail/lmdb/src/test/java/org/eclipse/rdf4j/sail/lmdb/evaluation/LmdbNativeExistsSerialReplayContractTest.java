@@ -81,7 +81,8 @@ class LmdbNativeExistsSerialReplayContractTest {
 			  MINUS { ?patient med:name ?name . FILTER(CONTAINS(LCASE(STR(?name)), "test")) }
 			}
 			""";
-	@TempDir Path directory;
+	@TempDir
+	Path directory;
 
 	@Test
 	void repeatableMinusWitnessRetainsItsSerialReplayProof() throws Exception {
@@ -89,8 +90,10 @@ class LmdbNativeExistsSerialReplayContractTest {
 			Compiled compiled = compile(f, dataset, QUERY);
 			printPremises("repeatable-minus", compiled);
 			assertTrue(compiled.facts.repeatable(), "SETUP: the actual pinned witness AST must prove repeatability");
-			assertFalse(compiled.facts.mappingParameterized(), "SETUP: this witness uses local snapshot statements and pure string functions");
-			assertFalse(compiled.facts.mayRaiseQueryFatalError(), "SETUP: this fixture has no remote or fatal query effects");
+			assertFalse(compiled.facts.mappingParameterized(),
+					"SETUP: this witness uses local snapshot statements and pure string functions");
+			assertFalse(compiled.facts.mayRaiseQueryFatalError(),
+					"SETUP: this fixture has no remote or fatal query effects");
 			Map<List<String>, Long> scalar = bag(f.memory, QUERY);
 			assertEquals(1L, scalar.values().stream().mapToLong(Long::longValue).sum());
 			assertEquals(Map.of(List.of("count", "2", XSD.INTEGER.stringValue(), ""), 1L), scalar,
@@ -101,8 +104,10 @@ class LmdbNativeExistsSerialReplayContractTest {
 			Map<List<String>, Long> ordinary = bag(f.memory, body);
 			assertEquals(4L, ordinary.values().stream().mapToLong(Long::longValue).sum());
 			assertEquals(4, ordinary.size());
-			assertEquals(ordinary, bag(f.nativeRepository, body), "independent complete RDF domains, terms and multiplicities");
-			System.out.println("RDF4J_EXISTS_REPLAY_BAGS scalarRows=1 scalarCount=2 bodyRows=4 publicIncludeInferred=true componentPlane=EXPLICIT componentOnly=true");
+			assertEquals(ordinary, bag(f.nativeRepository, body),
+					"independent complete RDF domains, terms and multiplicities");
+			System.out.println(
+					"RDF4J_EXISTS_REPLAY_BAGS scalarRows=1 scalarCount=2 bodyRows=4 publicIncludeInferred=true componentPlane=EXPLICIT componentOnly=true");
 			assertTrue(compiled.predicate.capabilities().replaySafe(),
 					"SERIAL_REPLAY_TARGET: actual repeatable snapshot MINUS/NOT-EXISTS witness lost its serial replay proof");
 		} finally {
@@ -125,7 +130,9 @@ class LmdbNativeExistsSerialReplayContractTest {
 	void unresolvedFunctionWitnessRetainsTheConservativeBoundary() throws Exception {
 		try (Fixture f = fixture(); SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(f.store)) {
 			String uri = "urn:rdf4j:test:unregistered-exists-replay-function";
-			assertTrue(org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry.getInstance().get(uri).isEmpty());
+			assertTrue(org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry.getInstance()
+					.get(uri)
+					.isEmpty());
 			Compiled compiled = compile(f, dataset, notExistsQuery("<" + uri + ">(?name)"));
 			printPremises("unresolved-function", compiled);
 			assertFalse(compiled.facts.repeatable());
@@ -158,13 +165,15 @@ class LmdbNativeExistsSerialReplayContractTest {
 	void queryScopedSemanticPreparationRetainsItsExistingConservativeMode() throws Exception {
 		try (Fixture f = fixture(); SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(f.store)) {
 			LmdbNativeAggregatePlanner compiler = semanticCompiler(f, dataset);
-			FunctionCall now = new FunctionCall(new org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now().getURI());
+			FunctionCall now = new FunctionCall(
+					new org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now().getURI());
 			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(now, compiler.strategy);
 			assertTrue(descriptor.repeatable());
 			assertFalse(descriptor.shareableAcrossEvaluations());
 			NativeBooleanFilter predicate = compiler.compileSemanticBoolean(now);
 			assertTrue(compiler.requiresExecutionContext);
-			assertFalse(predicate.capabilities().replaySafe(), "this revision grants no new per-query evaluator capability");
+			assertFalse(predicate.capabilities().replaySafe(),
+					"this revision grants no new per-query evaluator capability");
 			assertFalse(predicate.capabilities().workerBindable());
 		}
 	}
@@ -174,7 +183,8 @@ class LmdbNativeExistsSerialReplayContractTest {
 		try (Fixture f = fixture(); SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(f.store)) {
 			LmdbNativeAggregatePlanner compiler = semanticCompiler(f, dataset);
 			Filter lexical = new Filter(new SingletonSet(), new Compare(Var.of("outside"),
-					new ValueConstant(f.nativeRepository.getValueFactory().createLiteral("test")), Compare.CompareOp.EQ));
+					new ValueConstant(f.nativeRepository.getValueFactory().createLiteral("test")),
+					Compare.CompareOp.EQ));
 			lexical.setConditionBindingScope(Filter.ConditionBindingScope.retain(Set.of()));
 			NativeBooleanFilter predicate = compiler.compileProjectedFilter(lexical);
 			assertTrue(predicate instanceof NativeValueOutcomeBooleanFilter);
@@ -185,13 +195,15 @@ class LmdbNativeExistsSerialReplayContractTest {
 			visible.setBinding("outside", f.nativeRepository.getValueFactory().createLiteral("test"));
 			RowState present = new RowState((NativeLmdbQuerySource) dataset, compiler.layout, visible);
 			assertTrue(LmdbNativeAggregateCompiler.initializeRow(present, visible, present.source, compiler.layout));
-			assertFalse(predicate.accept(present), "the explicitly excluded lexical name must remain absent to the condition");
+			assertFalse(predicate.accept(present),
+					"the explicitly excluded lexical name must remain absent to the condition");
 			QueryBindingSet presentNull = new QueryBindingSet();
 			presentNull.setBinding("outside", null);
 			assertTrue(presentNull.hasBinding("outside"));
 			assertEquals(null, presentNull.getValue("outside"));
 			RowState nullInput = new RowState((NativeLmdbQuerySource) dataset, compiler.layout, presentNull);
-			assertTrue(LmdbNativeAggregateCompiler.initializeRow(nullInput, presentNull, nullInput.source, compiler.layout));
+			assertTrue(LmdbNativeAggregateCompiler.initializeRow(nullInput, presentNull, nullInput.source,
+					compiler.layout));
 			assertFalse(predicate.accept(nullInput));
 			assertTrue(presentNull.hasBinding("outside"), "preparation/evaluation must not mutate caller membership");
 			assertEquals(null, presentNull.getValue("outside"));
@@ -212,14 +224,16 @@ class LmdbNativeExistsSerialReplayContractTest {
 
 	private static String notExistsQuery(String condition) {
 		return "PREFIX med: <" + NS + "> SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE { "
-				+ "?patient a med:Patient . FILTER NOT EXISTS { ?patient med:name ?name . FILTER(" + condition + ") } }";
+				+ "?patient a med:Patient . FILTER NOT EXISTS { ?patient med:name ?name . FILTER(" + condition
+				+ ") } }";
 	}
 
 	private static Compiled compile(Fixture f, SailDataset dataset, String query) {
 		var statistics = NativeQuerySourceAccess.evaluationStatistics(f.store);
 		var tripleSource = new SailDatasetTripleTermSource(f.nativeRepository.getValueFactory(), dataset);
 		var actual = NativeQuerySourceAccess.evaluationStrategy(f.store, tripleSource, statistics);
-		assertTrue(actual instanceof LmdbNativeEvaluationStrategy, "SETUP: the actual store connection factory must deliver native compilation");
+		assertTrue(actual instanceof LmdbNativeEvaluationStrategy,
+				"SETUP: the actual store connection factory must deliver native compilation");
 		LmdbNativeEvaluationStrategy strategy = (LmdbNativeEvaluationStrategy) actual;
 		strategy.setQueryEvaluationMode(f.store.getDefaultQueryEvaluationMode());
 		TupleExpr parsed = new SPARQLParser().parseQuery(query, null).getTupleExpr();
@@ -228,8 +242,17 @@ class LmdbNativeExistsSerialReplayContractTest {
 		List<Group> groups = new ArrayList<>();
 		List<Exists> witnesses = new ArrayList<>();
 		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override public void meet(Group node) { groups.add(node); super.meet(node); }
-			@Override public void meet(Exists node) { witnesses.add(node); super.meet(node); }
+			@Override
+			public void meet(Group node) {
+				groups.add(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Exists node) {
+				witnesses.add(node);
+				super.meet(node);
+			}
 		});
 		System.out.println("RDF4J_EXISTS_REPLAY_AST groups=" + groups.size() + " witnesses=" + witnesses.size()
 				+ " optimized=" + optimized.getClass().getSimpleName());
@@ -245,15 +268,20 @@ class LmdbNativeExistsSerialReplayContractTest {
 		assertTrue(result instanceof NativeGroupStep, "SETUP: actual package compiler must produce its group owner");
 		NativeGroupStep owner = (NativeGroupStep) result;
 		System.out.println("RDF4J_EXISTS_REPLAY_OWNER input=" + owner.arg.getClass().getName()
-				+ " physicalSource=" + source.getClass().getName() + " sameCompilerSource=" + (compiler.source == source));
-		assertTrue(owner.arg instanceof FilterPlan, "SETUP: this owning control requires the actual lexical anti-witness filter");
+				+ " physicalSource=" + source.getClass().getName() + " sameCompilerSource="
+				+ (compiler.source == source));
+		assertTrue(owner.arg instanceof FilterPlan,
+				"SETUP: this owning control requires the actual lexical anti-witness filter");
 		NativeBooleanFilter predicate = ((FilterPlan) owner.arg).filter;
 		NativeBooleanFilter leaf = predicate;
-		while (leaf instanceof RecordingNativeBooleanFilter recording) leaf = recording.delegate;
+		while (leaf instanceof RecordingNativeBooleanFilter recording)
+			leaf = recording.delegate;
 		assertTrue(leaf instanceof NegatedNativeBooleanFilter, "SETUP: preserve actual two-valued NOT EXISTS");
 		NativeBooleanFilter exists = ((NegatedNativeBooleanFilter) leaf).delegate;
-		while (exists instanceof RecordingNativeBooleanFilter recording) exists = recording.delegate;
-		assertTrue(exists instanceof ExistsFilter, "SETUP: witness body must use the actual compiled subplan capability");
+		while (exists instanceof RecordingNativeBooleanFilter recording)
+			exists = recording.delegate;
+		assertTrue(exists instanceof ExistsFilter,
+				"SETUP: witness body must use the actual compiled subplan capability");
 		return new Compiled(owner, predicate, (ExistsFilter) exists, facts);
 	}
 
@@ -261,23 +289,29 @@ class LmdbNativeExistsSerialReplayContractTest {
 		System.out.println("RDF4J_EXISTS_REPLAY_PREMISE case=" + label + " root=" + c.predicate.getClass().getName()
 				+ " capabilities=" + c.predicate.capabilities() + " witness=" + c.exists.subPlan.getClass().getName()
 				+ " memoSlots=" + Arrays.toString(c.exists.memoSlots) + " astRepeatable=" + c.facts.repeatable()
-				+ " astShareable=" + c.facts.shareableAcrossEvaluations() + " astMappingParameterized=" + c.facts.mappingParameterized()
+				+ " astShareable=" + c.facts.shareableAcrossEvaluations() + " astMappingParameterized="
+				+ c.facts.mappingParameterized()
 				+ " astFatal=" + c.facts.mayRaiseQueryFatalError() + " astScopeChange=" + c.facts.scopeChange());
 		if (c.exists.subPlan instanceof NativeSubqueryPlan lexical) {
-			System.out.println("RDF4J_EXISTS_REPLAY_LEXICAL workerBindable=" + lexical.workerBindable() + " descriptor=" + lexical.describe());
+			System.out.println("RDF4J_EXISTS_REPLAY_LEXICAL workerBindable=" + lexical.workerBindable() + " descriptor="
+					+ lexical.describe());
 		} else if (c.exists.subPlan instanceof FilterPlan filter) {
 			NativeBooleanFilter evaluator = filter.filter;
-			while (evaluator instanceof RecordingNativeBooleanFilter recording) evaluator = recording.delegate;
+			while (evaluator instanceof RecordingNativeBooleanFilter recording)
+				evaluator = recording.delegate;
 			System.out.println("RDF4J_EXISTS_REPLAY_EVALUATOR leaf=" + evaluator.getClass().getName()
 					+ " capabilities=" + evaluator.capabilities());
-			System.out.println("RDF4J_EXISTS_REPLAY_FILTER mask=" + filter.filterMask + " evaluator=" + filter.filter.getClass().getName()
+			System.out.println("RDF4J_EXISTS_REPLAY_FILTER mask=" + filter.filterMask + " evaluator="
+					+ filter.filter.getClass().getName()
 					+ " capabilities=" + filter.filter.capabilities() + " child=" + filter.arg.getClass().getName());
 		}
 	}
 
 	private Fixture fixture() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyEnabled(true).setDirectAdjacencyMode(DirectAdjacencyMode.PREFER).setDirectAdjacencyMaxBytes(1L << 30);
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30);
 		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(directory.resolve("store").toFile(), config);
 		SailRepository nativeRepository = new SailRepository(store), memory = new SailRepository(new MemoryStore());
@@ -292,7 +326,8 @@ class LmdbNativeExistsSerialReplayContractTest {
 					for (int p = 0; p < 5; p++) {
 						IRI patient = vf.createIRI(NS + "patient:" + p);
 						connection.add(patient, RDF.TYPE, vf.createIRI(NS + "Patient"));
-						if (p == 4) continue; // genuine zero-match OPTIONAL arm; the original value filter rejects it
+						if (p == 4)
+							continue; // genuine zero-match OPTIONAL arm; the original value filter rejects it
 						IRI encounter = vf.createIRI(NS + "encounter:" + p);
 						connection.add(patient, vf.createIRI(NS + "hasEncounter"), encounter);
 						for (int i = 0; i < 2; i++) {
@@ -300,8 +335,10 @@ class LmdbNativeExistsSerialReplayContractTest {
 							connection.add(encounter, vf.createIRI(NS + "hasObservation"), observation);
 							connection.add(observation, vf.createIRI(NS + "value"), vf.createLiteral(61 + p * 2 + i));
 						}
-						if (p == 0) connection.add(patient, vf.createIRI(NS + "name"), vf.createLiteral("Alice"));
-						if (p == 1) connection.add(patient, vf.createIRI(NS + "name"), vf.createLiteral("TEST"));
+						if (p == 0)
+							connection.add(patient, vf.createIRI(NS + "name"), vf.createLiteral("Alice"));
+						if (p == 1)
+							connection.add(patient, vf.createIRI(NS + "name"), vf.createLiteral("TEST"));
 						if (p == 3) {
 							connection.add(patient, vf.createIRI(NS + "name"), vf.createLiteral("ordinary"));
 							connection.add(patient, vf.createIRI(NS + "name"), vf.createLiteral("TeSt", "en"));
@@ -310,11 +347,22 @@ class LmdbNativeExistsSerialReplayContractTest {
 					connection.commit();
 				}
 			}
-			assertTrue(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS), store.getDirectAdjacencyReadinessDescription());
+			assertTrue(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS),
+					store.getDirectAdjacencyReadinessDescription());
 			return new Fixture(store, nativeRepository, memory);
 		} catch (Exception | Error failure) {
-			try { memory.shutDown(); } catch (Throwable close) { if (close != failure) failure.addSuppressed(close); }
-			try { nativeRepository.shutDown(); } catch (Throwable close) { if (close != failure) failure.addSuppressed(close); }
+			try {
+				memory.shutDown();
+			} catch (Throwable close) {
+				if (close != failure)
+					failure.addSuppressed(close);
+			}
+			try {
+				nativeRepository.shutDown();
+			} catch (Throwable close) {
+				if (close != failure)
+					failure.addSuppressed(close);
+			}
 			throw failure;
 		}
 	}
@@ -335,8 +383,13 @@ class LmdbNativeExistsSerialReplayContractTest {
 						Value value = bindings.getValue(name);
 						assertNotNull(value);
 						if (value instanceof Literal literal) {
-							row.add(literal.getLabel()); row.add(literal.getDatatype().stringValue()); row.add(literal.getLanguage().orElse(""));
-						} else { assertTrue(value instanceof IRI); row.add(value.stringValue()); }
+							row.add(literal.getLabel());
+							row.add(literal.getDatatype().stringValue());
+							row.add(literal.getLanguage().orElse(""));
+						} else {
+							assertTrue(value instanceof IRI);
+							row.add(value.stringValue());
+						}
 					}
 					result.merge(List.copyOf(row), 1L, Long::sum);
 				}
@@ -345,16 +398,32 @@ class LmdbNativeExistsSerialReplayContractTest {
 		return result;
 	}
 
-	private record Compiled(NativeGroupStep owner, NativeBooleanFilter predicate, ExistsFilter exists, NativeTupleFacts facts) { }
-	private record Fixture(LmdbStore store, SailRepository nativeRepository, SailRepository memory) implements AutoCloseable {
-		@Override public void close() throws Exception {
+	private record Compiled(NativeGroupStep owner, NativeBooleanFilter predicate, ExistsFilter exists,
+			NativeTupleFacts facts) {
+	}
+
+	private record Fixture(LmdbStore store, SailRepository nativeRepository, SailRepository memory)
+			implements AutoCloseable {
+		@Override
+		public void close() throws Exception {
 			Throwable failure = null;
-			try { memory.shutDown(); } catch (Throwable close) { failure = close; }
-			try { nativeRepository.shutDown(); } catch (Throwable close) {
-				if (failure == null) failure = close; else if (failure != close) failure.addSuppressed(close);
+			try {
+				memory.shutDown();
+			} catch (Throwable close) {
+				failure = close;
 			}
-			if (failure instanceof Exception exception) throw exception;
-			if (failure instanceof Error error) throw error;
+			try {
+				nativeRepository.shutDown();
+			} catch (Throwable close) {
+				if (failure == null)
+					failure = close;
+				else if (failure != close)
+					failure.addSuppressed(close);
+			}
+			if (failure instanceof Exception exception)
+				throw exception;
+			if (failure instanceof Error error)
+				throw error;
 		}
 	}
 }

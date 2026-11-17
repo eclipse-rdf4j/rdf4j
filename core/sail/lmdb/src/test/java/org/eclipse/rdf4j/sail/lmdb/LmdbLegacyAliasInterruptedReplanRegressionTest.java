@@ -119,7 +119,8 @@ class LmdbLegacyAliasInterruptedReplanRegressionTest {
 			assertEquals(explicit, statements(reopened, false), "all explicit statements must survive roll-forward");
 			assertEquals(all, statements(reopened, true), "all inferred statements must survive roll-forward");
 			ValueStore values = (ValueStore) reopened.getValueFactory();
-			assertEquals(newOwner, values.getId(SimpleValueFactory.getInstance().createIRI("urn:intervening-legacy-writer")));
+			assertEquals(newOwner,
+					values.getId(SimpleValueFactory.getInstance().createIRI("urn:intervening-legacy-writer")));
 			assertNotNull(values.getValue(newOwner), "the intervening owner must remain addressable");
 			var vf = SimpleValueFactory.getInstance();
 			long canonical = values.getId(vf.createLiteral("language value", "en"));
@@ -133,7 +134,9 @@ class LmdbLegacyAliasInterruptedReplanRegressionTest {
 
 	private static LmdbStoreConfig config() {
 		return new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
-				.setAutoGrow(true).setSketchEstimatorEnabled(false).setPredicateGuaranteeIndexEnabled(false);
+				.setAutoGrow(true)
+				.setSketchEstimatorEnabled(false)
+				.setPredicateGuaranteeIndexEnabled(false);
 	}
 
 	private static void createFixture(Path directory) throws IOException {
@@ -157,8 +160,9 @@ class LmdbLegacyAliasInterruptedReplanRegressionTest {
 				rows.add(NTriplesUtil.toNTriplesString(statement.getSubject()) + " "
 						+ NTriplesUtil.toNTriplesString(statement.getPredicate()) + " "
 						+ NTriplesUtil.toNTriplesString(statement.getObject())
-						+ (statement.getContext() == null ? "" : " "
-								+ NTriplesUtil.toNTriplesString(statement.getContext())));
+						+ (statement.getContext() == null ? ""
+								: " "
+										+ NTriplesUtil.toNTriplesString(statement.getContext())));
 			}
 		}
 		Collections.sort(rows);

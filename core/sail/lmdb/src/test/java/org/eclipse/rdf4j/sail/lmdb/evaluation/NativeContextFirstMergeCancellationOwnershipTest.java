@@ -58,40 +58,67 @@ class NativeContextFirstMergeCancellationOwnershipTest {
 		AtomicInteger callbacks = new AtomicInteger(), sourceCloses = new AtomicInteger();
 		AtomicBoolean observedClosed = new AtomicBoolean();
 		class Source implements CloseableIteration<BindingSet>, CooperativeCancellation {
-			@Override public boolean hasNext() { return false; }
-			@Override public BindingSet next() { throw new NoSuchElementException(); }
-			@Override public void remove() { throw new UnsupportedOperationException(); }
-			@Override public boolean requestCancellation() {
+			@Override
+			public boolean hasNext() {
+				return false;
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public boolean requestCancellation() {
 				int index = callbacks.getAndIncrement();
-				if (index >= callbackCount) throw new AssertionError("unexpected callback");
+				if (index >= callbackCount)
+					throw new AssertionError("unexpected callback");
 				entered.countDown();
-				if (index == 0) firstEntered.countDown();
+				if (index == 0)
+					firstEntered.countDown();
 				await(index == 0 ? releaseFirst : releaseSecond);
-				if (context.isClosed()) observedClosed.set(true);
+				if (context.isClosed())
+					observedClosed.set(true);
 				return true;
 			}
-			@Override public void close() { sourceCloses.incrementAndGet(); }
+
+			@Override
+			public void close() {
+				sourceCloses.incrementAndGet();
+			}
 		}
 		Source source = new Source();
 		NativeContextClosingIteration result = new NativeContextClosingIteration(source, context);
 		try (var workers = Executors.newFixedThreadPool(3);
-				AutoCloseable cleanup = () -> { releaseFirst.countDown(); releaseSecond.countDown(); result.close(); }) {
+				AutoCloseable cleanup = () -> {
+					releaseFirst.countDown();
+					releaseSecond.countDown();
+					result.close();
+				}) {
 			Future<Boolean> first = workers.submit(result::requestCancellation);
 			assertTrue(firstEntered.await(5, TimeUnit.SECONDS), "the first callback must be admitted first");
 			Future<Boolean> second = callbackCount == 2 ? workers.submit(result::requestCancellation) : null;
 			assertTrue(entered.await(5, TimeUnit.SECONDS), "all cancellation callbacks must be admitted");
 			workers.submit(result::close).get(5, TimeUnit.SECONDS);
 			assertAll(
-					() -> assertFalse(context.isClosed(), "the context must remain live while its callback is admitted"),
+					() -> assertFalse(context.isClosed(),
+							"the context must remain live while its callback is admitted"),
 					() -> assertEquals(0, stateCloses.get(), "native state must not retire under an admitted callback"),
-					() -> assertEquals(0, sourceCloses.get(), "the physical source must remain live during its callback"));
+					() -> assertEquals(0, sourceCloses.get(),
+							"the physical source must remain live during its callback"));
 			releaseFirst.countDown();
 			assertTrue(first.get(5, TimeUnit.SECONDS));
 			if (second != null) {
 				assertAll(
 						() -> assertFalse(context.isClosed(), "the remaining callback keeps the context alive"),
 						() -> assertEquals(0, stateCloses.get()),
-						() -> assertEquals(0, sourceCloses.get(), "the remaining callback retains the physical source"));
+						() -> assertEquals(0, sourceCloses.get(),
+								"the remaining callback retains the physical source"));
 				releaseSecond.countDown();
 				assertTrue(second.get(5, TimeUnit.SECONDS));
 			}
@@ -112,20 +139,50 @@ class NativeContextFirstMergeCancellationOwnershipTest {
 		AtomicInteger sourceCloses = new AtomicInteger(), callbacks = new AtomicInteger();
 		CountDownLatch callbackEntered = new CountDownLatch(1), releaseCallback = new CountDownLatch(1);
 		CountDownLatch rootClosed = new CountDownLatch(1), childClosed = new CountDownLatch(1);
-		root.nativeState(new Object(), () -> (AutoCloseable) () -> { rootCloses.incrementAndGet(); rootClosed.countDown(); });
-		child.nativeState(new Object(), () -> (AutoCloseable) () -> { childCloses.incrementAndGet(); childClosed.countDown(); });
+		root.nativeState(new Object(), () -> (AutoCloseable) () -> {
+			rootCloses.incrementAndGet();
+			rootClosed.countDown();
+		});
+		child.nativeState(new Object(), () -> (AutoCloseable) () -> {
+			childCloses.incrementAndGet();
+			childClosed.countDown();
+		});
 		class Source implements CloseableIteration<BindingSet>, CooperativeCancellation {
-			@Override public boolean hasNext() { return false; }
-			@Override public BindingSet next() { throw new NoSuchElementException(); }
-			@Override public void remove() { throw new UnsupportedOperationException(); }
-			@Override public boolean requestCancellation() {
-				callbacks.incrementAndGet(); callbackEntered.countDown(); await(releaseCallback); return true;
+			@Override
+			public boolean hasNext() {
+				return false;
 			}
-			@Override public void close() { sourceCloses.incrementAndGet(); }
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				callbacks.incrementAndGet();
+				callbackEntered.countDown();
+				await(releaseCallback);
+				return true;
+			}
+
+			@Override
+			public void close() {
+				sourceCloses.incrementAndGet();
+			}
 		}
 		NativeContextClosingIteration result = new NativeContextClosingIteration(new Source(), child);
 		try (var workers = Executors.newFixedThreadPool(2);
-				AutoCloseable cleanup = () -> { releaseCallback.countDown(); result.close(); root.close(); }) {
+				AutoCloseable cleanup = () -> {
+					releaseCallback.countDown();
+					result.close();
+					root.close();
+				}) {
 			var request = workers.submit(result::requestCancellation);
 			assertTrue(callbackEntered.await(5, TimeUnit.SECONDS), "the child callback must be admitted");
 			root.close();
@@ -152,11 +209,31 @@ class NativeContextFirstMergeCancellationOwnershipTest {
 		NativeExecutionContext context = new NativeExecutionContext();
 		AtomicInteger callbacks = new AtomicInteger(), closes = new AtomicInteger();
 		class Source implements CloseableIteration<BindingSet>, CooperativeCancellation {
-			@Override public boolean hasNext() { return false; }
-			@Override public BindingSet next() { throw new NoSuchElementException(); }
-			@Override public void remove() { throw new UnsupportedOperationException(); }
-			@Override public boolean requestCancellation() { callbacks.incrementAndGet(); return true; }
-			@Override public void close() { closes.incrementAndGet(); }
+			@Override
+			public boolean hasNext() {
+				return false;
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				callbacks.incrementAndGet();
+				return true;
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+			}
 		}
 		NativeContextClosingIteration result = new NativeContextClosingIteration(new Source(), context);
 		try {
@@ -175,11 +252,31 @@ class NativeContextFirstMergeCancellationOwnershipTest {
 		NativeExecutionContext context = new NativeExecutionContext();
 		AtomicInteger callbacks = new AtomicInteger(), closes = new AtomicInteger();
 		class Source implements CloseableIteration<BindingSet>, CooperativeCancellation {
-			@Override public boolean hasNext() { return false; }
-			@Override public BindingSet next() { throw new NoSuchElementException(); }
-			@Override public void remove() { throw new UnsupportedOperationException(); }
-			@Override public boolean requestCancellation() { callbacks.incrementAndGet(); return true; }
-			@Override public void close() { closes.incrementAndGet(); }
+			@Override
+			public boolean hasNext() {
+				return false;
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				callbacks.incrementAndGet();
+				return true;
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+			}
 		}
 		NativeContextClosingIteration result = new NativeContextClosingIteration(new Source(), context);
 		try (NativeExecutionContext.Lease lease = context.retainLease()) {
@@ -200,11 +297,31 @@ class NativeContextFirstMergeCancellationOwnershipTest {
 		NativeExecutionContext context = new NativeExecutionContext();
 		AtomicInteger callbacks = new AtomicInteger(), closes = new AtomicInteger();
 		class Source implements CloseableIteration<BindingSet>, CooperativeCancellation {
-			@Override public boolean hasNext() { return false; }
-			@Override public BindingSet next() { throw new NoSuchElementException(); }
-			@Override public void remove() { throw new UnsupportedOperationException(); }
-			@Override public boolean requestCancellation() { callbacks.incrementAndGet(); return true; }
-			@Override public void close() { closes.incrementAndGet(); }
+			@Override
+			public boolean hasNext() {
+				return false;
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				callbacks.incrementAndGet();
+				return true;
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+			}
 		}
 		NativeContextClosingIteration result = new NativeContextClosingIteration(new Source(), context);
 		result.close();
@@ -216,7 +333,14 @@ class NativeContextFirstMergeCancellationOwnershipTest {
 
 	private static void await(CountDownLatch latch) {
 		boolean interrupted = false;
-		while (true) try { latch.await(); break; } catch (InterruptedException e) { interrupted = true; }
-		if (interrupted) Thread.currentThread().interrupt();
+		while (true)
+			try {
+				latch.await();
+				break;
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		if (interrupted)
+			Thread.currentThread().interrupt();
 	}
 }

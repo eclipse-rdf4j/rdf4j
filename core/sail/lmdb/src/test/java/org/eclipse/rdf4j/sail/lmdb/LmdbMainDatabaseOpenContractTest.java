@@ -70,7 +70,8 @@ class LmdbMainDatabaseOpenContractTest {
 				assertEquals(noOpCandidate, laterWriter,
 						"a later real writer can consume the uncommitted candidate ID of a no-op writer");
 				Files.writeString(directory.resolve("native-main-contract.txt"),
-						mdb_version((IntBuffer) null, null, null) + "\ninitial=" + initial + "\nnoOpCandidate=" + noOpCandidate
+						mdb_version((IntBuffer) null, null, null) + "\ninitial=" + initial + "\nnoOpCandidate="
+								+ noOpCandidate
 								+ "\nafterNoOp=" + afterNoOp + "\nlaterWriter=" + laterWriter + "\n");
 			} finally {
 				mdb_env_close(environment);

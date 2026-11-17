@@ -134,7 +134,8 @@ public final class UploadThemeDataToRdf4jServer {
 						+ (rollbackSucceeded ? "Its transaction was rolled back."
 								: "Rollback of its transaction could not be confirmed."));
 				if (previousThemeCommitted) {
-					System.err.println("Earlier theme commits remain in the repository; rerunning this uploader is safe.");
+					System.err.println(
+							"Earlier theme commits remain in the repository; rerunning this uploader is safe.");
 				}
 				throw uploadFailure;
 			}

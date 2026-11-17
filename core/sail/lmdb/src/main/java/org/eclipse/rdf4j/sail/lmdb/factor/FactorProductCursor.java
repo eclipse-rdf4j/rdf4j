@@ -19,7 +19,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 /**
  * Opens only a requested subset of independent factors. Unopened siblings remain relations. Bounded workspace and
  * decoders within a live prefix, including replay after product EOF, are reused. Release readers before advancing the
- * producer, whose next operation may close its source. No allocation depends on degree. Each cursor owns independent iterator state.
+ * producer, whose next operation may close its source. No allocation depends on degree. Each cursor owns independent
+ * iterator state.
  */
 @Experimental
 public final class FactorProductCursor implements AutoCloseable {
@@ -280,10 +281,13 @@ public final class FactorProductCursor implements AutoCloseable {
 			readers[slot] = null;
 			boundBatches[slot] = null;
 			if (reader != null) {
-				try { reader.close(); }
-				catch (RuntimeException | Error problem) {
-					if (failure == null) failure = problem;
-					else if (failure != problem) failure.addSuppressed(problem);
+				try {
+					reader.close();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null)
+						failure = problem;
+					else if (failure != problem)
+						failure.addSuppressed(problem);
 				}
 			}
 		}
@@ -293,21 +297,27 @@ public final class FactorProductCursor implements AutoCloseable {
 				tupleReaders[slot] = null;
 				boundTuples[slot] = null;
 				if (reader != null) {
-					try { reader.close(); }
-					catch (RuntimeException | Error problem) {
-						if (failure == null) failure = problem;
-						else if (failure != problem) failure.addSuppressed(problem);
+					try {
+						reader.close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null)
+							failure = problem;
+						else if (failure != problem)
+							failure.addSuppressed(problem);
 					}
 				}
 			}
 		}
-		if (failure instanceof RuntimeException problem) throw problem;
-		if (failure instanceof Error problem) throw problem;
+		if (failure instanceof RuntimeException problem)
+			throw problem;
+		if (failure instanceof Error problem)
+			throw problem;
 	}
 
 	@Override
 	public void close() {
-		if (closed) return;
+		if (closed)
+			return;
 		closed = true;
 		releaseReaders();
 	}

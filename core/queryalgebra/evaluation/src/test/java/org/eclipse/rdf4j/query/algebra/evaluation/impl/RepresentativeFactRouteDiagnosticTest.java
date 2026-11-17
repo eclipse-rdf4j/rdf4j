@@ -41,10 +41,10 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
@@ -85,9 +85,14 @@ class RepresentativeFactRouteDiagnosticTest {
 		TupleExpr optimized = optimizerStrategy.optimize(new QueryRoot(expression.clone()), statistics, input);
 
 		for (PassSnapshot snapshot : recording.snapshots) {
-			trace.append("\nPASS ").append(snapshot.name()).append("\n")
-					.append("  x Var: ").append(statementObjectState(snapshot.expression(), caller, stored, prepared))
-					.append("\n").append(snapshot.expression()).append('\n');
+			trace.append("\nPASS ")
+					.append(snapshot.name())
+					.append("\n")
+					.append("  x Var: ")
+					.append(statementObjectState(snapshot.expression(), caller, stored, prepared))
+					.append("\n")
+					.append(snapshot.expression())
+					.append('\n');
 			if (snapshot.name().equals(recording.firstValuedPass)) {
 				appendEvaluation(trace, "first API-valued StatementPattern after " + snapshot.name(),
 						snapshot.expression().clone(), input, source, caller, stored, prepared);
@@ -112,9 +117,12 @@ class RepresentativeFactRouteDiagnosticTest {
 			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
 					EmptyBindingSet.getInstance());
 			OutputFacts facts = analysis.outputFacts(join, analysis.contextAt(join));
-			trace.append("\nORIENTATION ").append(names[index]).append("\n")
+			trace.append("\nORIENTATION ")
+					.append(names[index])
+					.append("\n")
 					.append("  analysis fixed x: ")
-					.append(label(facts.fixedValues().get("x"), upper, lower, null)).append('\n');
+					.append(label(facts.fixedValues().get("x"), upper, lower, null))
+					.append('\n');
 			appendEvaluation(trace, "raw join", new QueryRoot(join.clone()), EmptyBindingSet.getInstance(),
 					new EmptyTripleSource(), upper, lower, null);
 
@@ -144,7 +152,9 @@ class RepresentativeFactRouteDiagnosticTest {
 		OutputFacts naturalFacts = naturalAnalysis.outputFacts(natural, naturalAnalysis.contextAt(natural));
 		trace.append("  analysis fixed x after raw precompile: ")
 				.append(label(naturalFacts.fixedValues().get("x"), upper, lower, null))
-				.append("; join algorithm=").append(natural.getAlgorithmName()).append('\n');
+				.append("; join algorithm=")
+				.append(natural.getAlgorithmName())
+				.append('\n');
 		TupleExpr naturalJoinOnly = new QueryRoot(naturalFilter.clone());
 		new QueryJoinOptimizer(new EvaluationStatistics()).optimize(naturalJoinOnly, null,
 				EmptyBindingSet.getInstance());
@@ -202,10 +212,15 @@ class RepresentativeFactRouteDiagnosticTest {
 				rows.add(new QueryBindingSet(iteration.next()));
 			}
 		}
-		trace.append("\nSTAGE ").append(stage).append("\n  algorithms=")
-				.append(joinAlgorithms(expression)).append("\n  rows=")
+		trace.append("\nSTAGE ")
+				.append(stage)
+				.append("\n  algorithms=")
+				.append(joinAlgorithms(expression))
+				.append("\n  rows=")
 				.append(rows.stream().map(row -> rowSummary(row, first, second, third)).toList())
-				.append("\n  plan after precompile:\n").append(expression).append('\n');
+				.append("\n  plan after precompile:\n")
+				.append(expression)
+				.append('\n');
 		if (source instanceof RecordingSource recording) {
 			trace.append("  source events=").append(recording.events).append('\n');
 			recording.events.clear();
@@ -227,7 +242,8 @@ class RepresentativeFactRouteDiagnosticTest {
 		}
 		String identity = value == first ? "first" : value == second ? "second" : value == third ? "third" : "other";
 		String language = value.isLiteral() ? " lang=" + ((Literal) value).getLanguage().orElse("-") : "";
-		return identity + ':' + value.stringValue() + language + '@' + Integer.toHexString(System.identityHashCode(value));
+		return identity + ':' + value.stringValue() + language + '@'
+				+ Integer.toHexString(System.identityHashCode(value));
 	}
 
 	private static String joinAlgorithms(TupleExpr expression) {
@@ -337,7 +353,8 @@ class RepresentativeFactRouteDiagnosticTest {
 		public CloseableIteration<? extends Statement> getStatements(Resource subject,
 				org.eclipse.rdf4j.model.IRI predicate, Value object, Resource... contexts) {
 			events.add("lookup object=" + label(object, caller, null, prepared));
-			return new CloseableIteratorIteration<>(data.getStatements(subject, predicate, object, contexts).iterator());
+			return new CloseableIteratorIteration<>(
+					data.getStatements(subject, predicate, object, contexts).iterator());
 		}
 
 		@Override

@@ -420,8 +420,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
 				if (hasUnsafeExtensionReorder(joinArgs)) {
 					// An Extension may read a sibling's output or overwrite a name the sibling produces. Moving such a
-					// BIND into the priority prefix turns an ordered row transformation into an independent relation. Keep
-					// the original operands and their existing scope metadata: no BIND is extracted here, so applying the
+					// BIND into the priority prefix turns an ordered row transformation into an independent relation.
+					// Keep
+					// the original operands and their existing scope metadata: no BIND is extracted here, so applying
+					// the
 					// OPTIONAL fallback's new-scope mark would itself change the retained evaluation contract.
 					visitAt(node.getLeftArg());
 					visitAt(node.getRightArg());
@@ -841,8 +843,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Priority extraction is valid only when a BIND neither reads a sibling's possible output nor writes a name that
-		 * the sibling may produce. Unknown sibling domains cannot certify that the transformation is independent.
+		 * Priority extraction is valid only when a BIND neither reads a sibling's possible output nor writes a name
+		 * that the sibling may produce. Unknown sibling domains cannot certify that the transformation is independent.
 		 */
 		private boolean hasUnsafeExtensionReorder(List<TupleExpr> joinArgs) {
 			List<TupleExpr> extensions = getExtensionTupleExprs(joinArgs);

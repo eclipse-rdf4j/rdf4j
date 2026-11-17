@@ -224,6 +224,7 @@ final class LmdbFrontierReadSelection {
 		}
 		OptionalLong after = adjacencyStatisticsGeneration();
 		return after.isPresent() && after.getAsLong() == domains.generation()
-				? OptionalLong.of(bySubject ? domains.subjects() : domains.objects()) : OptionalLong.empty();
+				? OptionalLong.of(bySubject ? domains.subjects() : domains.objects())
+				: OptionalLong.empty();
 	}
 }

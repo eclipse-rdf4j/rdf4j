@@ -72,7 +72,8 @@ class LmdbProviderRecoveryBehaviorTest {
 			Path snapshot = directory.resolve("join-estimator.rjes/synopsis-v8.bin");
 			Files.copy(snapshot, evidence.resolve("original-v8-backup.bin"));
 
-			LmdbEvaluationStatistics before = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics before = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 			long revision = before.estimatorRuntime().snapshotVersion();
 			Filter filter = filter();
 			recordFilterOutcome(store, before, filter, 20L, 80L);
@@ -91,7 +92,8 @@ class LmdbProviderRecoveryBehaviorTest {
 			RuntimeFeedbackContract contract = new RuntimeFeedbackContract(
 					new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability, physical), prediction,
 					prediction, 1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY,
-					RuntimeFeedbackContract.SemanticKind.ORDINARY, RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED,
+					RuntimeFeedbackContract.SemanticKind.ORDINARY,
+					RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED,
 					RuntimeFeedbackContract.Access.EXACT_LOOKUP, physical.hashCode(), revision, revision, 1L,
 					RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL);
 			LmdbOperatorFeedbackStats operator;
@@ -110,7 +112,6 @@ class LmdbProviderRecoveryBehaviorTest {
 						"the typed operator evidence was published before the commit");
 			}
 
-
 			try (var connection = repository.getConnection()) {
 				var values = connection.getValueFactory();
 				connection.begin(IsolationLevels.READ_COMMITTED);
@@ -119,7 +120,8 @@ class LmdbProviderRecoveryBehaviorTest {
 				failAfterNative.set(true);
 				assertThrows(RuntimeException.class, connection::commit, "the failure follows the native commit");
 			}
-			LmdbEvaluationStatistics after = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics after = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 			recordFilterOutcome(store, after, filter(), 30L, 70L);
 			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 			EvaluationStatistics.FilterPassEstimate recovered;
@@ -133,14 +135,20 @@ class LmdbProviderRecoveryBehaviorTest {
 			} while (System.nanoTime() < deadline);
 			EvaluationStatistics.FilterPassEstimate observed = recovered;
 			assertAll("recovery restores new feedback without exposing old evidence",
-					() -> assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, observed.getSource()),
+					() -> assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
+							observed.getSource()),
 					() -> assertEquals(0.3d, observed.getPassRatio(), 0.000_001d),
-					() -> assertEquals(100L, observed.getEvidenceCount(), "the new observation is applied exactly once"),
-					() -> assertNull(operator.logicalPosterior(logical, applicability, FrontierCostDimension.OUTPUT_ROWS),
+					() -> assertEquals(100L, observed.getEvidenceCount(),
+							"the new observation is applied exactly once"),
+					() -> assertNull(
+							operator.logicalPosterior(logical, applicability, FrontierCostDimension.OUTPUT_ROWS),
 							"the retired provider cannot expose unmaintained evidence"),
 					() -> assertNull(((LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics())
-							.estimatorRuntime().feedback().logicalPosterior(logical, applicability,
-									FrontierCostDimension.OUTPUT_ROWS), "the current provider cannot expose stale evidence"));
+							.estimatorRuntime()
+							.feedback()
+							.logicalPosterior(logical, applicability,
+									FrontierCostDimension.OUTPUT_ROWS),
+							"the current provider cannot expose stale evidence"));
 		} finally {
 			repository.shutDown();
 		}
@@ -185,8 +193,9 @@ class LmdbProviderRecoveryBehaviorTest {
 			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
 			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
 			try {
-				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
-						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime()
+						.pinQueryPlanningReads(
+								borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
 				try {
 					statistics.bindExecutionSource(source, null);
 					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority(),
@@ -231,7 +240,9 @@ class LmdbProviderRecoveryBehaviorTest {
 	private static LmdbStoreConfig config() {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true)
 				.setSketchEstimatorMemoryBudgetBytes(4L * 1024L * 1024L)
-				.setBackgroundRawSamplingEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+				.setBackgroundRawSamplingEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		config.setExperimentalQueryOptimizations(true);
 		return config;
 	}
@@ -248,8 +259,10 @@ class LmdbProviderRecoveryBehaviorTest {
 		@Override
 		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketches) throws IOException, SailException {
-			LmdbSailStore.FilterSelectivityStatsFactory statsFactory = (path, triples, values, enabled, millis, rows, raw) -> {
-				LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(path, triples, values, enabled, millis,
+			LmdbSailStore.FilterSelectivityStatsFactory statsFactory = (path, triples, values, enabled, millis, rows,
+					raw) -> {
+				LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(path, triples, values, enabled,
+						millis,
 						rows, raw);
 				filterStats.set(stats);
 				return stats;
@@ -260,7 +273,8 @@ class LmdbProviderRecoveryBehaviorTest {
 						public void commit() throws IOException {
 							super.commit();
 							if (failAfterNative.getAndSet(false)) {
-								throw new IOException("test failure after native commit before learned-state callbacks");
+								throw new IOException(
+										"test failure after native commit before learned-state callbacks");
 							}
 						}
 					}, PersistentSetFactory::new, statsFactory);

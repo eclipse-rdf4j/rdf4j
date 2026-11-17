@@ -122,14 +122,16 @@ class LmdbComposedFactorPrimaryCensusTest {
 		assertThat(ready).as("benchmark-contract adjacency readiness precondition").isTrue();
 		assertThat(store.isExperimentalQueryOptimizations()).isTrue();
 		assertThat(store.isNativeQueryEngineEnabled())
-				.as("ambient JVM native-engine disable cannot be labelled benchmark-auto").isTrue();
+				.as("ambient JVM native-engine disable cannot be labelled benchmark-auto")
+				.isTrue();
 		assertThat(LmdbNativeJaninoCodegen.enabled()).isTrue();
 		assertThat(LmdbNativeParallelKernelAggregate.enabled()).isTrue();
 		assertThat(LmdbNativeParallelKernelRows.enabled()).isTrue();
 		assertThat(LmdbNativeEvaluationStrategy.forcedExecutionStrategyForCurrentThread()).isNull();
 		String parallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		assertThat(parallel == null || Boolean.parseBoolean(parallel))
-				.as("do not silently inherit the restricted diagnostic's legacy parallel-disable property").isTrue();
+				.as("do not silently inherit the restricted diagnostic's legacy parallel-disable property")
+				.isTrue();
 	}
 
 	@AfterEach
@@ -176,7 +178,8 @@ class LmdbComposedFactorPrimaryCensusTest {
 		List<BindingSet> rows = new ArrayList<>();
 		Map<String, Object> receipt = publicReceipt("PUBLIC_BAG_EVALUATION", query);
 		try {
-			try (var connection = repository.getConnection(); var result = connection.prepareTupleQuery(query).evaluate()) {
+			try (var connection = repository.getConnection();
+					var result = connection.prepareTupleQuery(query).evaluate()) {
 				while (result.hasNext()) {
 					MapBindingSet row = new MapBindingSet();
 					BindingSet current = result.next();
@@ -207,7 +210,8 @@ class LmdbComposedFactorPrimaryCensusTest {
 				metrics(explanation.toGenericPlanNode(), "root", nodes);
 				receipt.put("nodes", nodes);
 				receipt.put("selectedNativeStrategyRequired", false);
-				receipt.put("interpretation", "Actual fallback/declines remain evidence. Preview, bag and Telemetry are separate calls.");
+				receipt.put("interpretation",
+						"Actual fallback/declines remain evidence. Preview, bag and Telemetry are separate calls.");
 				write(label + "-receipt", receipt);
 			}
 		}
@@ -255,8 +259,9 @@ class LmdbComposedFactorPrimaryCensusTest {
 		receipt.put("querySha256", sha256(query));
 		receipt.put("sourceObjectIdentity", null);
 		receipt.put("nativeOwnerObjectIdentity", null);
-		receipt.put("sourceOwnerLimitation", "Public APIs expose plan/source descriptions and open/close metrics when present; "
-				+ "they do not expose the actual internal source/owner objects or a private lease census.");
+		receipt.put("sourceOwnerLimitation",
+				"Public APIs expose plan/source descriptions and open/close metrics when present; "
+						+ "they do not expose the actual internal source/owner objects or a private lease census.");
 		return receipt;
 	}
 
@@ -318,7 +323,8 @@ class LmdbComposedFactorPrimaryCensusTest {
 			return vf.createIRI(iri.stringValue());
 		}
 		if (value instanceof Literal literal) {
-			return literal.getLanguage().isPresent() ? vf.createLiteral(literal.getLabel(), literal.getLanguage().orElseThrow())
+			return literal.getLanguage().isPresent()
+					? vf.createLiteral(literal.getLabel(), literal.getLanguage().orElseThrow())
 					: vf.createLiteral(literal.getLabel(), vf.createIRI(literal.getDatatype().stringValue()));
 		}
 		throw new AssertionError("Unexpected term or null in the qualified IRI/integer fixture: " + value);
@@ -362,6 +368,7 @@ class LmdbComposedFactorPrimaryCensusTest {
 	}
 
 	private static String sha256(String value) throws Exception {
-		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+		return HexFormat.of()
+				.formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
 	}
 }

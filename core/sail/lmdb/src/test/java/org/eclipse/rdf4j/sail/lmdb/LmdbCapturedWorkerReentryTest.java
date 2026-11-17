@@ -50,7 +50,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 class LmdbCapturedWorkerReentryTest {
 
 	private enum Target {
-		CONNECTION, STORE
+		CONNECTION,
+		STORE
 	}
 
 	@ParameterizedTest
@@ -61,8 +62,9 @@ class LmdbCapturedWorkerReentryTest {
 		String classpath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
 		Path log = path.resolve("captured-worker-reentry-" + target + ".log");
 		Process child = new ProcessBuilder(java, "-cp", classpath, Probe.class.getName(),
-				path.resolve("store").toString(), target.name()).redirectErrorStream(true).redirectOutput(log.toFile())
-				.start();
+				path.resolve("store").toString(), target.name()).redirectErrorStream(true)
+						.redirectOutput(log.toFile())
+						.start();
 		System.out.println("CAPTURED_REENTRY_CHILD pid=" + child.pid() + " evidence=" + log);
 		assertTrue(child.waitFor(60, TimeUnit.SECONDS),
 				"unresolved child remains running: pid=" + child.pid() + " evidence=" + log);
@@ -129,14 +131,17 @@ class LmdbCapturedWorkerReentryTest {
 								if (!rows.hasNext()) {
 									throw new AssertionError("FIXTURE: scalar read must own a native row");
 								}
-								QueryExecutionContext.ReplayContext replay = QueryExecutionContext.captureReplayContext();
+								QueryExecutionContext.ReplayContext replay = QueryExecutionContext
+										.captureReplayContext();
 								if (replay == null || !replay.hasReplayScopes()) {
 									throw new AssertionError("FIXTURE: scalar read has no captured worker authority");
 								}
 								pending.set(worker.submit(() -> replay.run(() -> {
 									capturedWorker.set(Thread.currentThread());
-									if (getBackingStore().currentReadResourceViews().stream()
-											.noneMatch(view -> view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE))) {
+									if (getBackingStore().currentReadResourceViews()
+											.stream()
+											.noneMatch(view -> view
+													.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE))) {
 										throw new AssertionError("FIXTURE: worker has no captured native view");
 									}
 									System.out.println("HIT_CAPTURED_WORKER_WITH_NATIVE_VIEW");
@@ -167,7 +172,8 @@ class LmdbCapturedWorkerReentryTest {
 				var vf = SimpleValueFactory.getInstance();
 				try (SailConnection seed = store.getConnection()) {
 					seed.begin();
-					seed.addStatement(vf.createIRI("urn:reentry:s"), vf.createIRI("urn:reentry:p"), vf.createLiteral("o"));
+					seed.addStatement(vf.createIRI("urn:reentry:s"), vf.createIRI("urn:reentry:p"),
+							vf.createLiteral("o"));
 					seed.commit();
 				}
 				LmdbGcTestMaintenance.awaitPostReady(store);

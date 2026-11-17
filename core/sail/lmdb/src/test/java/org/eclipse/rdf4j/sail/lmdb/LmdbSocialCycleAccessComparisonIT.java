@@ -250,7 +250,7 @@ class LmdbSocialCycleAccessComparisonIT {
 							contexts.add(statement.getContext() == null ? "default"
 									: NTriplesUtil.toNTriplesString(statement.getContext()));
 							if (predicate.equals("follows")) {
-								if (statement.getObject()instanceof Resource object) {
+								if (statement.getObject() instanceof Resource object) {
 									incoming.computeIfAbsent(object, unused -> new LinkedHashSet<>())
 											.add(statement.getSubject());
 								} else {

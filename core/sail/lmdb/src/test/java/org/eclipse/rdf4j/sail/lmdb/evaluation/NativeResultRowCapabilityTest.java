@@ -53,20 +53,24 @@ import org.junit.jupiter.params.provider.MethodSource;
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class NativeResultRowCapabilityTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
-	private static final String[] NAMES = {"payload", "privateGraph"};
-	@TempDir File directory;
+	private static final String[] NAMES = { "payload", "privateGraph" };
+	@TempDir
+	File directory;
+
 	static Stream<Arguments> modes() {
 		return Stream.of(false, true).flatMap(lazy -> Stream.of(false, true).map(spill -> Arguments.of(lazy, spill)));
 	}
 
-	@ParameterizedTest(name = "lazy={0}, spill={1}") @MethodSource("modes")
+	@ParameterizedTest(name = "lazy={0}, spill={1}")
+	@MethodSource("modes")
 	void replayKeepsExactCustomRemoteAndColdNativeAuthorityUntilAcceptedReaderCloses(boolean lazy, boolean spill)
 			throws Exception {
 		String previous = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, spill ? "16384" : "1048576");
 		LmdbStore store = new LmdbStore(directory,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true));
-		SailRepository repository = new SailRepository(store); repository.init();
+		SailRepository repository = new SailRepository(store);
+		repository.init();
 		IRI subject = VF.createIRI("urn:capability:s"), predicate = VF.createIRI("urn:capability:p");
 		try (var connection = repository.getConnection()) {
 			connection.add(subject, predicate, VF.createTripleTerm(VF.createIRI("urn:capability:child"),
@@ -78,20 +82,26 @@ class NativeResultRowCapabilityTest {
 		OwnedDataset owner = context.nativeState(new Object(),
 				() -> new OwnedDataset(NativeQuerySourceAccess.openExplicitDataset(store)));
 		NativeLmdbQuerySource source = (NativeLmdbQuerySource) owner.dataset;
-		NativeResultReplay eager = null; NativeLazyResultReplay deferred = null; NativeResultCursor reader = null;
+		NativeResultReplay eager = null;
+		NativeLazyResultReplay deferred = null;
+		NativeResultCursor reader = null;
 		SourceRows producer = new SourceRows(context, List.of());
 		try {
 			long[] quad;
 			try (RecordIterator statements = source.statements(NativeLmdbQuerySource.UNKNOWN_ID,
-					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID)) {
-				quad = statements.next(); assertNotNull(quad); assertNull(statements.next());
+					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+					NativeLmdbQuerySource.UNKNOWN_ID)) {
+				quad = statements.next();
+				assertNotNull(quad);
+				assertNull(statements.next());
 			}
 			LmdbValue nativeSubject = (LmdbValue) source.lazyValue(quad[0]);
 			LmdbValue nativeObject = (LmdbValue) source.lazyValue(quad[2]);
 			// Public native shells carry the real returned revision/ID, with no invented resolver or privilege.
 			LmdbIRI coldSubject = new LmdbIRI(nativeSubject.getValueStoreRevision(), quad[0]);
 			LmdbTripleTerm coldTriple = new LmdbTripleTerm(nativeObject.getValueStoreRevision(), quad[2]);
-			assertFalse(coldSubject.isInitialized()); assertFalse(coldTriple.isInitialized());
+			assertFalse(coldSubject.isInitialized());
+			assertFalse(coldTriple.isInitialized());
 			CustomIRI custom = new CustomIRI("urn:capability:custom", owner);
 			Value remote = RemoteBNode.newResponseScope(new BlankNodeAllocationScope("remote-", ignored -> false),
 					VF, new Object(), true).map(VF.createBNode("answer"));
@@ -101,11 +111,13 @@ class NativeResultRowCapabilityTest {
 			Map<String, Value> capabilities = Map.of("custom", custom, "remote", remote,
 					"native", (Value) nativeSubject, "coldSubject", coldSubject, "coldTriple", coldTriple,
 					"initializedTriple", initializedTriple);
-			MapBindingSet supplied = new MapBindingSet(); capabilities.forEach(supplied::addBinding);
+			MapBindingSet supplied = new MapBindingSet();
+			capabilities.forEach(supplied::addBinding);
 			BindingSetOrigin origin = BindingSetOrigin.of(BindingSetOrigin.optimizationInput(supplied));
 			QueryBindingSet mapping = new QueryBindingSet();
 			mapping.addBinding("payload", VF.createLiteral(spill ? "payload".repeat(2048) : "tiny"));
-			BindingSet frame = BindingSetOrigin.with(GraphFrameBindings.supply(mapping, "privateGraph", subject), origin);
+			BindingSet frame = BindingSetOrigin.with(GraphFrameBindings.supply(mapping, "privateGraph", subject),
+					origin);
 			NativeResultRow.Schema schema = new NativeResultRow.Schema(NAMES);
 			for (Map.Entry<String, Value> entry : capabilities.entrySet()) {
 				assertTrue(BindingSetOrigin.of(frame).parameterValue(entry.getKey()) == entry.getValue(),
@@ -121,8 +133,11 @@ class NativeResultRowCapabilityTest {
 				eager = new NativeResultReplay(schema, context, context.cancellation(), ledger,
 						spill ? 16_384L : 1L << 20);
 				eager.append(NativeResultRow.fromBindingSet(schema, frame));
-				eager.append(NativeResultRow.fromBindingSet(schema, frame)); eager.finish();
-				assertEquals(spill, eager.spilled()); reader = eager.cursor(); eager.close();
+				eager.append(NativeResultRow.fromBindingSet(schema, frame));
+				eager.finish();
+				assertEquals(spill, eager.spilled());
+				reader = eager.cursor();
+				eager.close();
 			}
 			context.close();
 			assertFalse(context.isClosed(), "accepted reader keeps actual source and authority owner live");
@@ -136,22 +151,39 @@ class NativeResultRowCapabilityTest {
 				assertTrue(GraphFrameBindings.isSupplied(actual, "privateGraph"));
 				assertFalse(coldSubject.isInitialized(), "metadata ownership cannot force a lazy IRI payload");
 				assertFalse(coldTriple.isInitialized(), "metadata ownership cannot force nested native payloads");
-				assertEquals(0, custom.lexicalReads, "opaque metadata is retained by an owned handle, not stringification");
+				assertEquals(0, custom.lexicalReads,
+						"opaque metadata is retained by an owned handle, not stringification");
 				assertEquals(0, owner.closes);
 			}
-			if (lazy) { assertEquals(spill, NativeLazyResultReplay.SPILLS.get() > spills); }
-			reader.close(); reader = null;
-			assertTrue(context.isClosed()); assertEquals(1, owner.closes);
-			if (lazy) { assertEquals(1, producer.closes); }
+			if (lazy) {
+				assertEquals(spill, NativeLazyResultReplay.SPILLS.get() > spills);
+			}
+			reader.close();
+			reader = null;
+			assertTrue(context.isClosed());
+			assertEquals(1, owner.closes);
+			if (lazy) {
+				assertEquals(1, producer.closes);
+			}
 			assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
 			assertEquals(0L, ledger.usedBytes());
 		} finally {
-			if (reader != null) { reader.close(); }
-			if (eager != null) { eager.close(); }
-			if (deferred != null) { deferred.close(); }
-			context.close(); repository.shutDown();
-			if (previous == null) { System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY); }
-			else { System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previous); }
+			if (reader != null) {
+				reader.close();
+			}
+			if (eager != null) {
+				eager.close();
+			}
+			if (deferred != null) {
+				deferred.close();
+			}
+			context.close();
+			repository.shutDown();
+			if (previous == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previous);
+			}
 		}
 	}
 
@@ -160,10 +192,14 @@ class NativeResultRowCapabilityTest {
 		String previous = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "16384");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc"));
-		SailRepository repository = new SailRepository(store); repository.init();
+		SailRepository repository = new SailRepository(store);
+		repository.init();
 		IRI subject = VF.createIRI("urn:deep-native:s"), predicate = VF.createIRI("urn:deep-native:p");
-		try (var connection = repository.getConnection()) { connection.add(subject, predicate, subject); }
-		NativeExecutionContext context = new NativeExecutionContext(); var ledger = context.memoryLedger();
+		try (var connection = repository.getConnection()) {
+			connection.add(subject, predicate, subject);
+		}
+		NativeExecutionContext context = new NativeExecutionContext();
+		var ledger = context.memoryLedger();
 		OwnedDataset owner = context.nativeState(new Object(),
 				() -> new OwnedDataset(NativeQuerySourceAccess.openExplicitDataset(store)));
 		NativeLmdbQuerySource source = (NativeLmdbQuerySource) owner.dataset;
@@ -171,7 +207,8 @@ class NativeResultRowCapabilityTest {
 		try {
 			long subjectId;
 			try (RecordIterator statements = source.statements(NativeLmdbQuerySource.UNKNOWN_ID,
-					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID)) {
+					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+					NativeLmdbQuerySource.UNKNOWN_ID)) {
 				subjectId = statements.next()[0];
 			}
 			LmdbValue actual = (LmdbValue) source.lazyValue(subjectId);
@@ -183,64 +220,90 @@ class NativeResultRowCapabilityTest {
 				nested = new LmdbTripleTerm(actual.getValueStoreRevision(), custom, predicate, nested);
 			}
 			assertEquals(0, custom.lexicalReads);
-			MapBindingSet request = new MapBindingSet(); request.addBinding("external", nested);
-			QueryBindingSet row = new QueryBindingSet(); row.addBinding("payload", VF.createLiteral("tiny"));
-			BindingSet frame = BindingSetOrigin.with(row, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request)));
+			MapBindingSet request = new MapBindingSet();
+			request.addBinding("external", nested);
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("payload", VF.createLiteral("tiny"));
+			BindingSet frame = BindingSetOrigin.with(row,
+					BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request)));
 			SourceRows producer = new SourceRows(context, List.of(frame));
-			org.junit.jupiter.api.Assertions.assertThrows(org.eclipse.rdf4j.query.QueryEvaluationException.class, () -> {
-				try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] {"payload"}, context,
-						context.cancellation(), producer); NativeResultCursor reader = replay.cursor(context.cancellation())) {
-					while (reader.next() != null) { }
-				}
-			}, "the real replay byte policy must bound deep native metadata without stack/string expansion");
-			assertEquals(1, producer.position); assertEquals(1, producer.closes);
+			org.junit.jupiter.api.Assertions.assertThrows(org.eclipse.rdf4j.query.QueryEvaluationException.class,
+					() -> {
+						try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "payload" },
+								context,
+								context.cancellation(), producer);
+								NativeResultCursor reader = replay.cursor(context.cancellation())) {
+							while (reader.next() != null) {
+							}
+						}
+					}, "the real replay byte policy must bound deep native metadata without stack/string expansion");
+			assertEquals(1, producer.position);
+			assertEquals(1, producer.closes);
 			assertEquals(0, custom.lexicalReads, "sizing native triples cannot call an opaque child's lexical getter");
-			assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get()); assertEquals(0L, ledger.usedBytes());
+			assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
+			assertEquals(0L, ledger.usedBytes());
 		} finally {
-			context.close(); repository.shutDown();
-			if (previous == null) { System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY); }
-			else { System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previous); }
+			context.close();
+			repository.shutDown();
+			if (previous == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previous);
+			}
 		}
 		assertEquals(1, owner.closes);
 	}
 
-	@ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+	@ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(booleans = { false, true })
 	void borrowedAggregateReplayRetiresBeforeItsEnclosingSourceWithoutARetainCycle(boolean spill) throws Exception {
 		String previous = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, spill ? "16384" : "1048576");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc"));
-		SailRepository repository = new SailRepository(store); repository.init();
+		SailRepository repository = new SailRepository(store);
+		repository.init();
 		IRI subject = VF.createIRI("urn:borrowed-native:s"), predicate = VF.createIRI("urn:borrowed-native:p");
-		try (var connection = repository.getConnection()) { connection.add(subject, predicate, subject); }
+		try (var connection = repository.getConnection()) {
+			connection.add(subject, predicate, subject);
+		}
 		OwnedDataset datasetOwner = new OwnedDataset(NativeQuerySourceAccess.openExplicitDataset(store));
 		SyntheticValueSource source = SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) datasetOwner.dataset);
 		NativeExecutionContext context = source.executionContext();
-		context.nativeState(new Object(), () -> datasetOwner); var ledger = context.memoryLedger();
-		NativeSlotLayout layout = new NativeSlotLayout(Map.of("count", 0), null); layout.freeze(List.of("count"));
+		context.nativeState(new Object(), () -> datasetOwner);
+		var ledger = context.memoryLedger();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("count", 0), null);
+		layout.freeze(List.of("count"));
 		NativeGroupIteration group = new NativeGroupIteration(source, SlotPlan.empty(), layout, new int[0],
-				new AggregateSpec[] {AggregateSpec.star("count")}, false,
+				new AggregateSpec[] { AggregateSpec.star("count") }, false,
 				org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), null, null, false, null);
 		try {
 			long id;
 			try (RecordIterator statements = source.statements(NativeLmdbQuerySource.UNKNOWN_ID,
-					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID)) {
+					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+					NativeLmdbQuerySource.UNKNOWN_ID)) {
 				id = statements.next()[0];
 			}
 			Value actualCapability = source.lazyValue(id);
-			MapBindingSet request = new MapBindingSet(); request.addBinding("external", actualCapability);
+			MapBindingSet request = new MapBindingSet();
+			request.addBinding("external", actualCapability);
 			QueryBindingSet value = new QueryBindingSet();
 			value.addBinding("count", VF.createLiteral(new java.math.BigInteger(spill ? "9".repeat(8192) : "1")));
-			BindingSet frame = BindingSetOrigin.with(value, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request)));
+			BindingSet frame = BindingSetOrigin.with(value,
+					BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request)));
 			assertTrue(BindingSetOrigin.of(frame).parameterValue("external") == actualCapability);
 			try (NativeReplayBindingList.Builder builder = new NativeReplayBindingList.Builder(group, ledger)) {
-				builder.add(frame); builder.add(frame);
+				builder.add(frame);
+				builder.add(frame);
 				List<BindingSet> rows = builder.finish();
-				assertTrue(rows instanceof NativeReplayBindingList, "the actual owning builder published bounded replay");
+				assertTrue(rows instanceof NativeReplayBindingList,
+						"the actual owning builder published bounded replay");
 				java.util.Iterator<BindingSet> reader = rows.iterator();
-				assertTrue(reader.hasNext()); BindingSet result = reader.next();
+				assertTrue(reader.hasNext());
+				BindingSet result = reader.next();
 				assertTrue(BindingSetOrigin.of(result).parameterValue("external") == actualCapability,
 						"borrowed replay retains the actual source capability until the enclosing owner closes");
-				assertEquals(0, datasetOwner.closes); assertFalse(context.isClosed());
+				assertEquals(0, datasetOwner.closes);
+				assertFalse(context.isClosed());
 				assertTrue(ledger.usedBytes() > 0L, "the actual aggregate replay owns its result memory");
 				group.close();
 				assertFalse(reader.hasNext(), "the enclosing group closes its still-accepted borrowed replay reader");
@@ -249,11 +312,17 @@ class NativeResultRowCapabilityTest {
 				context.close();
 			}
 			assertTrue(context.isClosed(), "no borrowed replay lease can keep its enclosing source alive cyclically");
-			assertEquals(1, datasetOwner.closes); assertEquals(0L, ledger.usedBytes());
+			assertEquals(1, datasetOwner.closes);
+			assertEquals(0L, ledger.usedBytes());
 		} finally {
-			group.close(); context.close(); repository.shutDown();
-			if (previous == null) { System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY); }
-			else { System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previous); }
+			group.close();
+			context.close();
+			repository.shutDown();
+			if (previous == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previous);
+			}
 		}
 	}
 
@@ -269,12 +338,16 @@ class NativeResultRowCapabilityTest {
 
 	private void assertDistinctProducerReplay(boolean closePending) throws Exception {
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc"));
-		SailRepository repository = new SailRepository(store); repository.init();
+		SailRepository repository = new SailRepository(store);
+		repository.init();
 		IRI subject = VF.createIRI("urn:foreign-replay:s"), predicate = VF.createIRI("urn:foreign-replay:p");
-		try (var connection = repository.getConnection()) { connection.add(subject, predicate, subject); }
+		try (var connection = repository.getConnection()) {
+			connection.add(subject, predicate, subject);
+		}
 		OwnedDataset enclosingDataset = new OwnedDataset(NativeQuerySourceAccess.openExplicitDataset(store));
 		OwnedDataset actualDataset = new OwnedDataset(NativeQuerySourceAccess.openExplicitDataset(store));
-		SyntheticValueSource enclosing = SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) enclosingDataset.dataset);
+		SyntheticValueSource enclosing = SyntheticValueSource
+				.forEvaluation((NativeLmdbQuerySource) enclosingDataset.dataset);
 		SyntheticValueSource actual = SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) actualDataset.dataset);
 		NativeExecutionContext owner = enclosing.executionContext(), producerOwner = actual.executionContext();
 		owner.nativeState(new Object(), () -> enclosingDataset);
@@ -283,25 +356,38 @@ class NativeResultRowCapabilityTest {
 		// An actual accepted cursor may outlive the producer owner's close request. Its lease is handed off only
 		// while that cursor is still live; a closed unaccepted owner is never revived.
 		NativeExecutionContext.Lease accepted = closePending ? producerOwner.retainInternalLease() : null;
-		NativeSlotLayout layout = new NativeSlotLayout(Map.of("count", 0), null); layout.freeze(List.of("count"));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("count", 0), null);
+		layout.freeze(List.of("count"));
 		NativeGroupIteration group = new NativeGroupIteration(enclosing, SlotPlan.empty(), layout, new int[0],
-				new AggregateSpec[] {AggregateSpec.star("count")}, false,
+				new AggregateSpec[] { AggregateSpec.star("count") }, false,
 				org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), null, null, false, null);
 		try {
 			long id;
 			try (RecordIterator statements = actual.statements(NativeLmdbQuerySource.UNKNOWN_ID,
-					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID)) {
+					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+					NativeLmdbQuerySource.UNKNOWN_ID)) {
 				id = statements.next()[0];
 			}
 			Value capability = actual.lazyValue(id);
-			MapBindingSet request = new MapBindingSet(); request.addBinding("external", capability);
-			QueryBindingSet result = new QueryBindingSet(); result.addBinding("count", VF.createLiteral(1));
-			BindingSet frame = BindingSetOrigin.with(result, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request)));
+			MapBindingSet request = new MapBindingSet();
+			request.addBinding("external", capability);
+			QueryBindingSet result = new QueryBindingSet();
+			result.addBinding("count", VF.createLiteral(1));
+			BindingSet frame = BindingSetOrigin.with(result,
+					BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request)));
 			NativeResultCursor input = NativeResultSteps.open(bindings -> new NativeContextClosingIteration(
 
-					new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<BindingSet>(List.of(frame).iterator()) {
-						@Override protected void handleClose() {
-							try { super.handleClose(); } finally { if (accepted != null) { accepted.close(); } }
+					new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<BindingSet>(
+							List.of(frame).iterator()) {
+						@Override
+						protected void handleClose() {
+							try {
+								super.handleClose();
+							} finally {
+								if (accepted != null) {
+									accepted.close();
+								}
+							}
 						}
 					}, producerOwner, true, actual), org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
 			if (closePending) {
@@ -310,37 +396,94 @@ class NativeResultRowCapabilityTest {
 			}
 			List<BindingSet> replay = NativeReplayBindingList.copy(input, group, ledger);
 			assertTrue(replay instanceof NativeReplayBindingList);
-			assertFalse(producerOwner.isClosed(), "actual producer authority outlives its EOF while the enclosing replay owns it");
+			assertFalse(producerOwner.isClosed(),
+					"actual producer authority outlives its EOF while the enclosing replay owns it");
 			assertEquals(0, actualDataset.closes);
 			assertTrue(BindingSetOrigin.of(replay.getFirst()).parameterValue("external") == capability);
 			group.close();
-			assertTrue(producerOwner.isClosed()); assertEquals(1, actualDataset.closes);
-			assertEquals(0L, ledger.usedBytes()); assertEquals(0, enclosingDataset.closes);
-			owner.close(); assertTrue(owner.isClosed()); assertEquals(1, enclosingDataset.closes);
+			assertTrue(producerOwner.isClosed());
+			assertEquals(1, actualDataset.closes);
+			assertEquals(0L, ledger.usedBytes());
+			assertEquals(0, enclosingDataset.closes);
+			owner.close();
+			assertTrue(owner.isClosed());
+			assertEquals(1, enclosingDataset.closes);
 		} finally {
-			group.close(); owner.close();
-			if (accepted != null) { accepted.close(); }
-			producerOwner.close(); repository.shutDown();
+			group.close();
+			owner.close();
+			if (accepted != null) {
+				accepted.close();
+			}
+			producerOwner.close();
+			repository.shutDown();
 		}
 	}
 
 	private static final class OwnedDataset implements AutoCloseable {
-		final SailDataset dataset; int closes;
-		OwnedDataset(SailDataset dataset) { this.dataset = dataset; }
-		@Override public void close() { closes++; dataset.close(); }
+		final SailDataset dataset;
+		int closes;
+
+		OwnedDataset(SailDataset dataset) {
+			this.dataset = dataset;
+		}
+
+		@Override
+		public void close() {
+			closes++;
+			dataset.close();
+		}
 	}
+
 	private static final class CustomIRI extends SimpleIRI {
-		final OwnedDataset owner; int lexicalReads;
-		CustomIRI(String iri, OwnedDataset owner) { super(iri); this.owner = owner; }
-		@Override public String stringValue() { lexicalReads++; return super.stringValue(); }
-		@Override public String toString() { lexicalReads++; return super.toString(); }
+		final OwnedDataset owner;
+		int lexicalReads;
+
+		CustomIRI(String iri, OwnedDataset owner) {
+			super(iri);
+			this.owner = owner;
+		}
+
+		@Override
+		public String stringValue() {
+			lexicalReads++;
+			return super.stringValue();
+		}
+
+		@Override
+		public String toString() {
+			lexicalReads++;
+			return super.toString();
+		}
 	}
+
 	private static final class SourceRows implements NativeResultCursor {
-		final NativeExecutionContext context; List<BindingSet> rows; int position, closes;
-		SourceRows(NativeExecutionContext context, List<BindingSet> rows) { this.context = context; this.rows = rows; }
-		@Override public NativeResultRow next() { return position == rows.size() ? null : NativeResultRow.fromBindingSet(rows.get(position++)); }
-		@Override public NativeExecutionContext executionContext() { return context; }
-		@Override public NativeCancellationToken cancellation() { return context.cancellation(); }
-		@Override public void close() { closes++; }
+		final NativeExecutionContext context;
+		List<BindingSet> rows;
+		int position, closes;
+
+		SourceRows(NativeExecutionContext context, List<BindingSet> rows) {
+			this.context = context;
+			this.rows = rows;
+		}
+
+		@Override
+		public NativeResultRow next() {
+			return position == rows.size() ? null : NativeResultRow.fromBindingSet(rows.get(position++));
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return context;
+		}
+
+		@Override
+		public NativeCancellationToken cancellation() {
+			return context.cancellation();
+		}
+
+		@Override
+		public void close() {
+			closes++;
+		}
 	}
 }

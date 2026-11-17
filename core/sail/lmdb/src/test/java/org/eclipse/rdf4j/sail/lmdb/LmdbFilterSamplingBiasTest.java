@@ -156,12 +156,14 @@ class LmdbFilterSamplingBiasTest {
 			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), owner);
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
-			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-					null, source, statistics, store.getQueryExecutionPolicy());
+			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+					.createEvaluationStrategy(
+							null, source, statistics, store.getQueryExecutionPolicy());
 			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
 			view = borrowed.enterPlanningReadView().orElseThrow();
-			pin = statistics.estimatorRuntime().pinQueryPlanningReads(borrowed.pinnedReadTxn().orElseThrow(),
-					borrowed.pinnedValueSnapshot().orElseThrow());
+			pin = statistics.estimatorRuntime()
+					.pinQueryPlanningReads(borrowed.pinnedReadTxn().orElseThrow(),
+							borrowed.pinnedValueSnapshot().orElseThrow());
 			assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority());
 			assertTrue(statistics.estimatorRuntime().adaptiveEvidenceAllowed());
 			return new PlanningStatisticsRead(owner, view, pin, source, statistics, strategy);
@@ -191,9 +193,10 @@ class LmdbFilterSamplingBiasTest {
 			EvaluationStatistics.FilterPassEstimate sampled, String mode) {
 		int confidence = Double.compare(facade.getConfidenceScore(), sampled.getConfidenceScore());
 		assertTrue(confidence > 0 || confidence == 0 && facade.getEvidenceCount() >= sampled.getEvidenceCount(),
-					"the " + mode + " facade result must rank at least as high as its raw sample: facade=" + facade.getSource()
-							+ "/" + facade.getConfidenceScore() + "/" + facade.getEvidenceCount() + ", raw sample="
-							+ sampled.getConfidenceScore() + "/" + sampled.getEvidenceCount());
+				"the " + mode + " facade result must rank at least as high as its raw sample: facade="
+						+ facade.getSource()
+						+ "/" + facade.getConfidenceScore() + "/" + facade.getEvidenceCount() + ", raw sample="
+						+ sampled.getConfidenceScore() + "/" + sampled.getEvidenceCount());
 		if (facade.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED) {
 			assertEquals(sampled.getPassRatio(), facade.getPassRatio(), 1.0e-12d);
 			assertEquals(sampled.getEvidenceCount(), facade.getEvidenceCount());

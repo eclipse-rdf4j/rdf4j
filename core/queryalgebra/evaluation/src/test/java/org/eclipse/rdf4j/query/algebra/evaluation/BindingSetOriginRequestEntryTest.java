@@ -490,7 +490,8 @@ class BindingSetOriginRequestEntryTest {
 			if (metadata instanceof BindingSetOrigin) {
 				layers[0]++;
 			}
-		}, ignoredValue -> { });
+		}, ignoredValue -> {
+		});
 		return layers[0];
 	}
 

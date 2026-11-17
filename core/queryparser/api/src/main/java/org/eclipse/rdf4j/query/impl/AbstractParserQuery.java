@@ -68,7 +68,9 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter) {
-		if (LEGACY_HOOK_OWNER.get() == this) { return bindingsIter; }
+		if (LEGACY_HOOK_OWNER.get() == this) {
+			return bindingsIter;
+		}
 		QueryOperationDeadline deadline = QueryOperationContext.getDeadline().orElse(null);
 		if (getMaxExecutionTime() > 0) {
 			try (QueryOperationContext.Scope scope = QueryOperationContext.open(
@@ -81,7 +83,9 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter, QueryOperationDeadline deadline) {
-		if (deadline == null) { return bindingsIter; }
+		if (deadline == null) {
+			return bindingsIter;
+		}
 		deadline.throwIfExpired();
 		return new QueryInterruptIteration<>(new QueryOperationContextIteration<>(bindingsIter, deadline),
 				deadline.remainingMillis());
@@ -101,10 +105,16 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 
 	protected InterruptingTimeLimit startEvaluationTimeLimit(int timeoutSeconds) {
 		QueryOperationDeadline ambient = QueryOperationContext.getDeadline().orElse(null);
-		if (ambient != null) { ambient.throwIfExpired(); }
-		if (timeoutSeconds <= 0 && ambient == null) { return null; }
+		if (ambient != null) {
+			ambient.throwIfExpired();
+		}
+		if (timeoutSeconds <= 0 && ambient == null) {
+			return null;
+		}
 		long remaining = timeoutSeconds > 0 ? TimeUnit.SECONDS.toMillis(timeoutSeconds) : Long.MAX_VALUE;
-		if (ambient != null) { remaining = Math.min(remaining, ambient.remainingMillis()); }
+		if (ambient != null) {
+			remaining = Math.min(remaining, ambient.remainingMillis());
+		}
 		return InterruptingTimeLimit.start(remaining);
 	}
 

@@ -40,8 +40,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
@@ -59,13 +59,15 @@ class LmdbProviderClosePersistenceRegressionTest {
 		boolean shut = false;
 		try {
 			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
-			LmdbEvaluationStatistics before = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics before = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 			long revision = before.estimatorRuntime().snapshotVersion();
 			before.bindExecutionSnapshot(OptionalLong.of(revision));
 			Filter filter = filter();
 			before.recordFilterOutcome(filter, 20L, 80L);
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
-					before.estimateFilterPass(filter).getSource(), "the filter evidence was published before the commit");
+					before.estimateFilterPass(filter).getSource(),
+					"the filter evidence was published before the commit");
 
 			LogicalLearningKey logical = LogicalLearningKey.of("filter", "condition", "children", "predicates",
 					"v0", "none", "bag", "default");
@@ -78,7 +80,8 @@ class LmdbProviderClosePersistenceRegressionTest {
 			RuntimeFeedbackContract contract = new RuntimeFeedbackContract(
 					new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability, physical), prediction,
 					prediction, 1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY,
-					RuntimeFeedbackContract.SemanticKind.ORDINARY, RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED,
+					RuntimeFeedbackContract.SemanticKind.ORDINARY,
+					RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED,
 					RuntimeFeedbackContract.Access.EXACT_LOOKUP, physical.hashCode(), revision, revision, 1L,
 					RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL);
 			filter.setCostFeedbackTrackingEnabled(true);
@@ -113,8 +116,10 @@ class LmdbProviderClosePersistenceRegressionTest {
 				assertAll("the saved sidecars are usable after reopen",
 						() -> assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
 								current.estimateFilterPass(filter()).getSource()),
-						() -> assertNotNull(current.estimatorRuntime().feedback().logicalPosterior(logical,
-								applicability, FrontierCostDimension.OUTPUT_ROWS)));
+						() -> assertNotNull(current.estimatorRuntime()
+								.feedback()
+								.logicalPosterior(logical,
+										applicability, FrontierCostDimension.OUTPUT_ROWS)));
 			} finally {
 				second.shutDown();
 			}
@@ -143,7 +148,9 @@ class LmdbProviderClosePersistenceRegressionTest {
 
 	private static LmdbStoreConfig config() {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(false)
-				.setBackgroundRawSamplingEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+				.setBackgroundRawSamplingEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		config.setExperimentalQueryOptimizations(true);
 		config.setFrontierEstimatorMode(FrontierEstimatorMode.SHADOW);
 		return config;

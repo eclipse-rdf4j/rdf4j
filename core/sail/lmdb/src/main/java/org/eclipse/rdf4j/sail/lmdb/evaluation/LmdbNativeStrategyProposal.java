@@ -33,6 +33,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	interface AttemptOpener<T> {
 		T open(NativeFilterLease filters) throws IOException;
 	}
+
 	final Opener<T> opener;
 	private final AttemptOpener<T> attemptOpener;
 	private NativeFilterLease filterAttempt;

@@ -465,7 +465,10 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			return null;
 		}
 		Term[] normalized = normalizePatternTerms(sp, new Term[] { s, p, o, c });
-		s = normalized[0]; p = normalized[1]; o = normalized[2]; c = normalized[3];
+		s = normalized[0];
+		p = normalized[1];
+		o = normalized[2];
+		c = normalized[3];
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
@@ -653,7 +656,10 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			return null;
 		}
 		Term[] normalized = normalizePatternTerms(sp, new Term[] { s, p, o, c });
-		s = normalized[0]; p = normalized[1]; o = normalized[2]; c = normalized[3];
+		s = normalized[0];
+		p = normalized[1];
+		o = normalized[2];
+		c = normalized[3];
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
@@ -663,15 +669,17 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	}
 
 	/**
-	 * Lookup operands retain every original field. As in the ordinary statement converter, only the first occurrence
-	 * of a name can emit it; Var equality is a separate physical-field constraint and deliberately ignores constant.
+	 * Lookup operands retain every original field. As in the ordinary statement converter, only the first occurrence of
+	 * a name can emit it; Var equality is a separate physical-field constraint and deliberately ignores constant.
 	 */
 	private static Term[] normalizePatternTerms(StatementPattern pattern, Term[] terms) {
 		Var[] variables = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
 				pattern.getContextVar() };
 		for (int field = 0; field < terms.length; field++) {
 			Var variable = variables[field];
-			if (variable == null) { continue; }
+			if (variable == null) {
+				continue;
+			}
 			int first = -1;
 			for (int earlier = 0; earlier < field; earlier++) {
 				if (variables[earlier] != null && variable.getName().equals(variables[earlier].getName())) {
@@ -679,7 +687,9 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 					break;
 				}
 			}
-			if (first < 0) { continue; }
+			if (first < 0) {
+				continue;
+			}
 			Term term = terms[field], preceding = terms[first];
 			// Keep the existing shared-slot fast grammar for an ordinary repeated variable: binding the one output
 			// also checks its equal physical fields. Other duplicate occurrences read only the entry frame.

@@ -165,7 +165,8 @@ public final class KernelFactorCount implements AutoCloseable {
 				BorrowedFactorBatch.Cursor previous = readers[leader];
 				readers[leader] = null;
 				batches[leader] = null;
-				if (previous != null) previous.close();
+				if (previous != null)
+					previous.close();
 				readers[leader] = batch.cursor(WINDOW);
 				batches[leader] = batch;
 			}
@@ -201,7 +202,8 @@ public final class KernelFactorCount implements AutoCloseable {
 				BorrowedTupleBatch.Cursor previous = tupleReaders[leader];
 				tupleReaders[leader] = null;
 				tupleBatches[leader] = null;
-				if (previous != null) previous.close();
+				if (previous != null)
+					previous.close();
 				tupleReaders[leader] = batch.cursor(WINDOW);
 				tupleBatches[leader] = batch;
 			}
@@ -251,7 +253,8 @@ public final class KernelFactorCount implements AutoCloseable {
 
 	/** Release input decoder ownership while retaining bounded counting workspace for another live prefix. */
 	void release() {
-		if (closed) throw new IllegalStateException("factor counter closed");
+		if (closed)
+			throw new IllegalStateException("factor counter closed");
 		releaseReaders();
 	}
 
@@ -277,9 +280,13 @@ public final class KernelFactorCount implements AutoCloseable {
 
 	@Override
 	public void close() {
-		if (closed) return;
+		if (closed)
+			return;
 		closed = true;
-		try { releaseReaders(); }
-		finally { Arrays.fill(tupleColumns, null); }
+		try {
+			releaseReaders();
+		} finally {
+			Arrays.fill(tupleColumns, null);
+		}
 	}
 }

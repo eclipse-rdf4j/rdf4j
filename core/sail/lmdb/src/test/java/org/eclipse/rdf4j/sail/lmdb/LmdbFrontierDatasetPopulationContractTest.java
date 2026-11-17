@@ -165,7 +165,9 @@ class LmdbFrontierDatasetPopulationContractTest {
 					assertEquals(receipt.quadCounts().explicitQuads(), receipt.oracleRows(), receipt::describe);
 					receipt.globalTable().assertExactPhysicalTotals(receipt.quadCounts(), receipt.describe());
 					assertEquals(1, receipt.selectedLeaves().size(), receipt::describe);
-					receipt.selectedLeaves().get(0).assertExactSupportedPopulation(receipt.oracleRows(), receipt.describe());
+					receipt.selectedLeaves()
+							.get(0)
+							.assertExactSupportedPopulation(receipt.oracleRows(), receipt.describe());
 					receipt.assertNoFalseEmptyPopulation();
 				});
 			}
@@ -245,7 +247,10 @@ class LmdbFrontierDatasetPopulationContractTest {
 	}
 
 	private enum Placement {
-		NAMED_ONLY, DEFAULT_ONLY, MIXED, DUPLICATE_TRIPLES_ACROSS_CONTEXTS;
+		NAMED_ONLY,
+		DEFAULT_ONLY,
+		MIXED,
+		DUPLICATE_TRIPLES_ACROSS_CONTEXTS;
 
 		List<Statement> writes() {
 			return switch (this) {
@@ -390,15 +395,18 @@ class LmdbFrontierDatasetPopulationContractTest {
 					List<Statement> explicit = statements(connection, false);
 					List<Statement> inclusive = statements(connection, true);
 					assertEquals(uniqueQuads, new HashSet<>(explicit));
-					assertEquals(uniqueQuads.size(), explicit.size(), "repeated insertion of one quad is set semantics");
+					assertEquals(uniqueQuads.size(), explicit.size(),
+							"repeated insertion of one quad is set semantics");
 					assertEquals(uniqueQuads, new HashSet<>(statements(oracle, false)));
 					assertEquals(explicit.size(), inclusive.size(), "this fixture writes no inferred plane");
 					Set<TripleKey> triples = new HashSet<>();
 					for (Statement statement : explicit) {
-						triples.add(new TripleKey(statement.getSubject(), statement.getPredicate(), statement.getObject()));
+						triples.add(
+								new TripleKey(statement.getSubject(), statement.getPredicate(), statement.getObject()));
 					}
 					quadCounts = new QuadCounts(explicit.size(), inclusive.size(), inclusive.size() - explicit.size(),
-							explicit.stream().filter(statement -> statement.getContext() == null).count(), triples.size());
+							explicit.stream().filter(statement -> statement.getContext() == null).count(),
+							triples.size());
 				}
 			} catch (RuntimeException | Error failure) {
 				try {
@@ -438,7 +446,8 @@ class LmdbFrontierDatasetPopulationContractTest {
 				try (FrontierStatisticsView view = runtime.statisticsService().openCurrentView()) {
 					assertTrue(view.ready(), explanation::toString);
 					// A physical table query, not a selected-plan reconstruction: leave C unbound explicitly.
-					// All fixture statements have exactly this predicate/object; physical counts are recorded separately
+					// All fixture statements have exactly this predicate/object; physical counts are recorded
+					// separately
 					// from query bags, including cases where a selected default graph merge removes duplicate triples.
 					FrontierLeafProbe global = new FrontierLeafProbe(FrontierLeafProbe.BOTH_PLANES,
 							FrontierLeafProbe.PREDICATE | FrontierLeafProbe.OBJECT, 0L,
@@ -461,15 +470,19 @@ class LmdbFrontierDatasetPopulationContractTest {
 								pattern, FrontierLeafProbe.BOTH_PLANES);
 						legacyDiagnostics.add(new LegacyProbeReceipt(pattern.toString(), legacy,
 								legacy == null ? null : view.estimateLeaf(legacy),
-								legacy == null ? null : view.estimateLeaf(withPlane(legacy, FrontierLeafProbe.EXPLICIT)),
-								legacy == null ? null : view.estimateLeaf(withPlane(legacy, FrontierLeafProbe.INFERRED))));
+								legacy == null ? null
+										: view.estimateLeaf(withPlane(legacy, FrontierLeafProbe.EXPLICIT)),
+								legacy == null ? null
+										: view.estimateLeaf(withPlane(legacy, FrontierLeafProbe.INFERRED))));
 					}
 				}
 				Map<Map<String, Value>, Long> publicBag = bag(publicQuery.evaluate());
 				// Independently enter Sail with the parser-owned algebra, active Dataset and binding normalization.
 				// FROM/FROM NAMED are read through getActiveDataset(), not guessed from getDataset() or query text.
-				Map<Map<String, Value>, Long> sailBag = bag(connection.getSailConnection().evaluate(
-						owner.getParsedQuery().getTupleExpr().clone(), owner.getActiveDataset(), owner.getBindings(), false));
+				Map<Map<String, Value>, Long> sailBag = bag(connection.getSailConnection()
+						.evaluate(
+								owner.getParsedQuery().getTupleExpr().clone(), owner.getActiveDataset(),
+								owner.getBindings(), false));
 				Path artifact = Path.of(System.getProperty("rdf4j.population.receiptDirectory",
 						"target/frontier-population-receipts")).resolve(label + ".txt");
 				Receipt receipt = new Receipt(label, spec.query(), owner.getActiveDataset(), explanation.toString(),
@@ -493,7 +506,8 @@ class LmdbFrontierDatasetPopulationContractTest {
 	}
 
 	private static FrontierLeafProbe withPlane(FrontierLeafProbe probe, int planeMask) {
-		return new FrontierLeafProbe(planeMask, probe.boundMask(), probe.subjectId(), probe.predicateId(), probe.objectId(),
+		return new FrontierLeafProbe(planeMask, probe.boundMask(), probe.subjectId(), probe.predicateId(),
+				probe.objectId(),
 				probe.contextId(), probe.repeatedComponentPairMask(), probe.namedContextsOnly());
 	}
 

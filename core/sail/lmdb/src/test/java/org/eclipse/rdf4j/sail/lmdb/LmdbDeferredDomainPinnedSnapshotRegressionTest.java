@@ -65,7 +65,8 @@ class LmdbDeferredDomainPinnedSnapshotRegressionTest {
 	private static final IRI S1 = VF.createIRI("urn:domain-snapshot:one");
 	private static final IRI S2 = VF.createIRI("urn:domain-snapshot:two");
 	private static final IRI IRI_OBJECT = VF.createIRI("urn:domain-snapshot:object");
-	private static final Literal LITERAL_OBJECT = VF.createLiteral("a sufficiently long literal to stay in the dictionary");
+	private static final Literal LITERAL_OBJECT = VF
+			.createLiteral("a sufficiently long literal to stay in the dictionary");
 
 	@Test
 	void oldSnapshotDeclinesStaleDomainsAfterConcurrentDeleteAndPublication(
@@ -93,7 +94,8 @@ class LmdbDeferredDomainPinnedSnapshotRegressionTest {
 				Set<Long> oldBefore = objectIds(triples, old, predicateId);
 				Optional<RdfTermDomain> before;
 				boolean beforeRangeAvailable;
-				try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(old.tripleTxn(), old.valueSnapshot())) {
+				try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(old.tripleTxn(),
+						old.valueSnapshot())) {
 					before = triples.getKnownRdfTermDomain(predicateId);
 					beforeRangeAvailable = ranges.describeObjectRange(P, new PackedPredicateRange());
 				}
@@ -109,38 +111,50 @@ class LmdbDeferredDomainPinnedSnapshotRegressionTest {
 				Optional<RdfTermDomain> oldAfter;
 				Optional<RdfTermDomain> oldPersistedAfter;
 				boolean oldRangeAvailable;
-				try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(old.tripleTxn(), old.valueSnapshot())) {
+				try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(old.tripleTxn(),
+						old.valueSnapshot())) {
 					oldAfter = triples.getKnownRdfTermDomain(predicateId);
 					oldPersistedAfter = triples.getPersistedRdfTermDomain(predicateId);
 					oldRangeAvailable = ranges.describeObjectRange(P, new PackedPredicateRange());
 				}
 				Set<Long> oldAfterRows = objectIds(triples, old, predicateId);
 				Optional<RdfTermDomain> oldUnpinnedDirect;
-				try (LmdbSailStore.DatasetAdmission active = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, old)) {
+				try (LmdbSailStore.DatasetAdmission active = backing
+						.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, old)) {
 					oldUnpinnedDirect = statistics.getKnownRdfTermDomain(P);
 				}
 				try (LmdbSailStore.ReadView current = openView(backing)) {
 					Optional<RdfTermDomain> currentDomain;
 					PackedPredicateRange currentRange = new PackedPredicateRange();
 					boolean currentRangeAvailable;
-					try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(current.tripleTxn(), current.valueSnapshot())) {
+					try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(current.tripleTxn(),
+							current.valueSnapshot())) {
 						currentDomain = triples.getKnownRdfTermDomain(predicateId);
 						currentRangeAvailable = ranges.describeObjectRange(P, currentRange);
 					}
 					Set<Long> currentRows = objectIds(triples, current, predicateId);
 					assertAll(
-							() -> assertEquals(Set.of(iriId, literalId), oldBefore, "the old reader must include both kinds"),
-							() -> assertTrue(before.isEmpty(), "unqualified persisted domains cannot constrain startup reads"),
-							() -> assertFalse(beforeRangeAvailable, "the packed planner must not consume unqualified startup domains"),
-							() -> assertEquals(Set.of(iriId, literalId), oldAfterRows, "the pinned reader retains its complete snapshot"),
-							() -> assertTrue(oldAfter.isEmpty(), "a pre-qualification snapshot must not inherit later global authority"),
-							() -> assertTrue(oldPersistedAfter.isEmpty(), "direct persisted lookups must use the same qualification floor"),
-							() -> assertTrue(oldUnpinnedDirect.isEmpty(), "an active old dataset cannot borrow a fresh direct domain"),
-							() -> assertFalse(oldRangeAvailable, "the packed planner must not consume newer domain authority for an old snapshot"),
+							() -> assertEquals(Set.of(iriId, literalId), oldBefore,
+									"the old reader must include both kinds"),
+							() -> assertTrue(before.isEmpty(),
+									"unqualified persisted domains cannot constrain startup reads"),
+							() -> assertFalse(beforeRangeAvailable,
+									"the packed planner must not consume unqualified startup domains"),
+							() -> assertEquals(Set.of(iriId, literalId), oldAfterRows,
+									"the pinned reader retains its complete snapshot"),
+							() -> assertTrue(oldAfter.isEmpty(),
+									"a pre-qualification snapshot must not inherit later global authority"),
+							() -> assertTrue(oldPersistedAfter.isEmpty(),
+									"direct persisted lookups must use the same qualification floor"),
+							() -> assertTrue(oldUnpinnedDirect.isEmpty(),
+									"an active old dataset cannot borrow a fresh direct domain"),
+							() -> assertFalse(oldRangeAvailable,
+									"the packed planner must not consume newer domain authority for an old snapshot"),
 							() -> assertEquals(Set.of(iriId), currentRows, "the delete must commit before rebuild"),
 							() -> assertEquals(Optional.of(RdfTermDomain.IRI), currentDomain,
 									"the rebuilt current domain must reflect the committed delete"),
-							() -> assertTrue(currentRangeAvailable, "the packed planner must receive the current qualified domain"),
+							() -> assertTrue(currentRangeAvailable,
+									"the packed planner must receive the current qualified domain"),
 							() -> assertEquals(PackedPredicateRange.STATE_KNOWN, currentRange.state()),
 							() -> assertEquals(PackedPredicateRange.KIND_IRI, currentRange.kindBits()));
 				}
@@ -161,8 +175,10 @@ class LmdbDeferredDomainPinnedSnapshotRegressionTest {
 		CountDownLatch release = new CountDownLatch(1);
 		HeldStore store = new HeldStore(directory, entered, release);
 		SailRepository repository = new SailRepository(store);
-		ExecutorService writer = Executors.newSingleThreadExecutor(Thread.ofPlatform().daemon()
-				.name("domain-old-pin-writer").factory());
+		ExecutorService writer = Executors.newSingleThreadExecutor(Thread.ofPlatform()
+				.daemon()
+				.name("domain-old-pin-writer")
+				.factory());
 		try (AutoCloseable cleanup = () -> {
 			release.countDown();
 			writer.shutdown();
@@ -208,7 +224,8 @@ class LmdbDeferredDomainPinnedSnapshotRegressionTest {
 				assertFalse(ranges.describeObjectRange(P, new PackedPredicateRange()));
 			}
 			try (LmdbSailStore.ReadView current = openView(backing);
-					TripleStore.PlanningReadPin pin = runtime.pinPlanningReads(current.tripleTxn(), current.valueSnapshot())) {
+					TripleStore.PlanningReadPin pin = runtime.pinPlanningReads(current.tripleTxn(),
+							current.valueSnapshot())) {
 				assertEquals(Set.of(iriId), objectIds(triples, current, predicateId));
 				assertEquals(Optional.of(RdfTermDomain.IRI), triples.getKnownRdfTermDomain(predicateId));
 			}
@@ -216,13 +233,15 @@ class LmdbDeferredDomainPinnedSnapshotRegressionTest {
 	}
 
 	private static LmdbSailStore.ReadView openView(LmdbSailStore backing) {
-		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null)) {
 			admission.view().requireDictionaryTermSnapshot();
 			return admission.view().retain();
 		}
 	}
 
-	private static Set<Long> objectIds(TripleStore triples, LmdbSailStore.ReadView view, long predicate) throws IOException {
+	private static Set<Long> objectIds(TripleStore triples, LmdbSailStore.ReadView view, long predicate)
+			throws IOException {
 		Set<Long> ids = new HashSet<>();
 		try (RecordIterator records = triples.getTriples(view.tripleTxn(), -1, predicate, -1, -1, true)) {
 			long[] row;
@@ -294,8 +313,10 @@ class LmdbDeferredDomainPinnedSnapshotRegressionTest {
 	}
 
 	private static LmdbStoreConfig config(boolean enabled) {
-		return new LmdbStoreConfig("spoc,posc").setInlineLiterals(false).setSketchEstimatorEnabled(false)
-				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF).setPredicateGuaranteeIndexEnabled(enabled)
+		return new LmdbStoreConfig("spoc,posc").setInlineLiterals(false)
+				.setSketchEstimatorEnabled(false)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setPredicateGuaranteeIndexEnabled(enabled)
 				.setPredicateGuaranteeIndexAutoRebuild(true);
 	}
 

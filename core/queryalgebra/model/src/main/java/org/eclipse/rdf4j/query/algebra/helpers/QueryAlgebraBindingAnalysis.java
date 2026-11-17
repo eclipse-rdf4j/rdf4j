@@ -1133,7 +1133,8 @@ public final class QueryAlgebraBindingAnalysis {
 			Map<String, Set<ValueKind>> kinds = new HashMap<>();
 			if (path.getPathExpression() != null) {
 				// PathIteration clones and renames endpoint Vars for expansion, and replaces the context binding for
-				// each edge. A single widened frame models both the initial edge and every expansion without recursively
+				// each edge. A single widened frame models both the initial edge and every expansion without
+				// recursively
 				// re-analyzing the same nested path under a growing family of frames.
 				ReadOnlyContext pathInput = input.without(changingNames).withPossibleInputs(changingNames);
 				OutputFacts pathFacts = outputFacts(path.getPathExpression(), pathInput);
@@ -1145,7 +1146,8 @@ public final class QueryAlgebraBindingAnalysis {
 					// Child outputs that are only guaranteed are not necessarily preserved by PathIteration's AST
 					// rewrite: a ProjectionElem source name is metadata and is not renamed with endpoint Vars. A fixed
 					// child value under the widened frame is a stronger, input-independent proof and remains safe to
-					// propagate. This also keeps independent constant Extension outputs while declining renamed aliases.
+					// propagate. This also keeps independent constant Extension outputs while declining renamed
+					// aliases.
 					for (Map.Entry<String, Value> entry : pathFacts.fixedValues.entrySet()) {
 						String name = entry.getKey();
 						if (!changingNames.contains(name) && pathFacts.guaranteedOutputs.contains(name)) {
@@ -1163,7 +1165,8 @@ public final class QueryAlgebraBindingAnalysis {
 			guaranteed.removeAll(contextNames);
 			guaranteed.addAll(endpointNames);
 			Set<String> stableInputNames = intersection(input.guaranteedNames, possible);
-			// Endpoints pass through the source value preparer on the first step, while contexts can be replaced by each
+			// Endpoints pass through the source value preparer on the first step, while contexts can be replaced by
+			// each
 			// traversed edge. Neither field retains an arbitrary caller representative as an exact output value.
 			stableInputNames.removeAll(changingNames);
 			guaranteed.addAll(stableInputNames);
@@ -2748,7 +2751,8 @@ public final class QueryAlgebraBindingAnalysis {
 					&& visibleNames.equals(context.visibleNames) && maybeBoundNames.equals(context.maybeBoundNames)
 					&& guaranteedNames.equals(context.guaranteedNames)
 					&& exactValueMapsEqual(fixedValues, context.fixedValues)
-					&& valueKinds.equals(context.valueKinds) && exactValueMapsEqual(externalValues, context.externalValues)
+					&& valueKinds.equals(context.valueKinds)
+					&& exactValueMapsEqual(externalValues, context.externalValues)
 					&& externalGuaranteedNames.equals(context.externalGuaranteedNames);
 		}
 
@@ -2760,8 +2764,8 @@ public final class QueryAlgebraBindingAnalysis {
 			int h = hash;
 			if (h == 0) {
 				h = Objects.hash(visibleNames, maybeBoundNames, guaranteedNames, valueKinds,
-					externalGuaranteedNames, scopeIdentity, bindingDomainKnown,
-					System.identityHashCode(lateralInputs));
+						externalGuaranteedNames, scopeIdentity, bindingDomainKnown,
+						System.identityHashCode(lateralInputs));
 				h = 31 * h + exactValueMapHash(fixedValues);
 				h = 31 * h + exactValueMapHash(externalValues);
 				if (h == 0) {

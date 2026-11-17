@@ -58,7 +58,8 @@ class NativeResultRowProvenanceTest {
 		assertFrame(source, NativeResultRow.fromBindingSet(source.row()).toBindingSet());
 	}
 
-	@ParameterizedTest @ValueSource(booleans = {false, true})
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void localOverlayAuthoritySurvivesLazyProvenanceReceipt(boolean spill) {
 		String old = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, spill ? "16384" : "1048576");
@@ -72,8 +73,10 @@ class NativeResultRowProvenanceTest {
 		target.addAll(BindingSetOrigin.produced(localMapping, Set.of("written")));
 		Frame augmented = new Frame(target, source.hidden());
 		Producer producer = new Producer(List.of(augmented.row(), augmented.row()), context.cancellation());
-		try (context; NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] {"payload", "written"},
-				context, context.cancellation(), producer); NativeResultCursor reader = replay.cursor(context.cancellation())) {
+		try (context;
+				NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "payload", "written" },
+						context, context.cancellation(), producer);
+				NativeResultCursor reader = replay.cursor(context.cancellation())) {
 			assertFrame(augmented, reader.next().toBindingSet());
 			assertTrue(BindingSetOrigin.of(augmented.row()).isLocal("written"));
 			assertFalse(BindingSetOrigin.of(augmented.row()).isRequest("written"));
@@ -99,13 +102,15 @@ class NativeResultRowProvenanceTest {
 		assertFrame(new Frame(excluded, source.hidden()), actual);
 		assertNull(actual.getValue("privateGraph"));
 		assertFalse(GraphFrameBindings.isSupplied(actual, "privateGraph"));
-		MapBindingSet untrusted = new MapBindingSet(); untrusted.addBinding("privateGraph", GRAPH);
+		MapBindingSet untrusted = new MapBindingSet();
+		untrusted.addBinding("privateGraph", GRAPH);
 		BindingSet plain = NativeResultRow.fromBindingSet(untrusted).toBindingSet();
 		assertEquals(GRAPH, plain.getValue("privateGraph"));
 		assertFalse(GraphFrameBindings.isSupplied(plain, "privateGraph"));
 	}
 
-	@ParameterizedTest @ValueSource(booleans = {false, true})
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void eagerReplayPreservesTheSelectedDescriptorInResidentAndSpilledRows(boolean spill) {
 		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(4L << 20, 4L << 20);
 		NativeExecutionContext context = new NativeExecutionContext();
@@ -133,17 +138,21 @@ class NativeResultRowProvenanceTest {
 		assertEquals(0L, memory.usedBytes());
 	}
 
-	@ParameterizedTest @ValueSource(booleans = {false, true})
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void lazyReplayKeepsSourceDescriptorsAcrossAdvancementAndSpill(boolean spill) {
 		String old = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, spill ? "16384" : "1048576");
 		long files = NativeLazyResultReplay.OPEN_FILES.get(), spills = NativeLazyResultReplay.SPILLS.get();
-		NativeExecutionContext context = new NativeExecutionContext(); var ledger = context.memoryLedger();
+		NativeExecutionContext context = new NativeExecutionContext();
+		var ledger = context.memoryLedger();
 		String payload = spill ? "payload".repeat(2048) : "tiny";
 		Frame first = frame(payload, remote()), second = frame(payload, remote());
 		Producer producer = new Producer(List.of(first.row(), second.row()), context.cancellation());
-		try (context; NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] {"payload", "privateGraph"}, context,
-				context.cancellation(), producer)) {
+		try (context;
+				NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "payload", "privateGraph" },
+						context,
+						context.cancellation(), producer)) {
 			for (int pass = 0; pass < 2; pass++) {
 				try (NativeResultCursor reader = replay.cursor(context.cancellation())) {
 					assertFrame(first, reader.next().toBindingSet());
@@ -151,15 +160,20 @@ class NativeResultRowProvenanceTest {
 					assertNull(reader.next());
 				}
 			}
-			assertEquals(2, producer.position); assertEquals(1, producer.closes);
+			assertEquals(2, producer.position);
+			assertEquals(1, producer.closes);
 			assertEquals(spill, NativeLazyResultReplay.SPILLS.get() > spills);
-		} finally { restore(old); }
-		assertEquals(0L, ledger.usedBytes()); assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
+		} finally {
+			restore(old);
+		}
+		assertEquals(0L, ledger.usedBytes());
+		assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
 	}
 
 	static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> unknownModes() {
-		return java.util.stream.Stream.of(false, true).flatMap(lazy -> java.util.stream.Stream.of(false, true)
-				.map(spill -> org.junit.jupiter.params.provider.Arguments.of(lazy, spill)));
+		return java.util.stream.Stream.of(false, true)
+				.flatMap(lazy -> java.util.stream.Stream.of(false, true)
+						.map(spill -> org.junit.jupiter.params.provider.Arguments.of(lazy, spill)));
 	}
 
 	@ParameterizedTest(name = "lazy={0}, spill={1}")
@@ -168,7 +182,8 @@ class NativeResultRowProvenanceTest {
 		String old = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, spill ? "16384" : "1048576");
 		long files = NativeLazyResultReplay.OPEN_FILES.get(), spills = NativeLazyResultReplay.SPILLS.get();
-		NativeExecutionContext context = new NativeExecutionContext(); var ledger = context.memoryLedger();
+		NativeExecutionContext context = new NativeExecutionContext();
+		var ledger = context.memoryLedger();
 		MapBindingSet plain = new MapBindingSet();
 		plain.addBinding("payload", VF.createLiteral(spill ? "payload".repeat(2048) : "tiny"));
 		BindingSet tracked = BindingSetOrigin.with(plain, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
@@ -177,33 +192,50 @@ class NativeResultRowProvenanceTest {
 		assertTrue(BindingSetOrigin.of(BindingSetOrigin.requestInput(plain)).isRequest("payload"),
 				"an actual untracked caller mapping remains eligible for request admission");
 		Producer producer = new Producer(List.of(tracked, plain), context.cancellation());
-		NativeResultReplay eager = null; NativeLazyResultReplay deferred = null;
+		NativeResultReplay eager = null;
+		NativeLazyResultReplay deferred = null;
 		try {
 			if (lazy) {
-				deferred = new NativeLazyResultReplay(new String[] {"payload"}, context, context.cancellation(), producer);
+				deferred = new NativeLazyResultReplay(new String[] { "payload" }, context, context.cancellation(),
+						producer);
 			} else {
-				eager = new NativeResultReplay(new NativeResultRow.Schema("payload"), context, context.cancellation(), ledger,
+				eager = new NativeResultReplay(new NativeResultRow.Schema("payload"), context, context.cancellation(),
+						ledger,
 						spill ? 16_384L : 1L << 20);
-				eager.append(NativeResultRow.fromBindingSet(tracked)); eager.append(NativeResultRow.fromBindingSet(plain));
-				eager.finish(); assertEquals(spill, eager.spilled());
+				eager.append(NativeResultRow.fromBindingSet(tracked));
+				eager.append(NativeResultRow.fromBindingSet(plain));
+				eager.finish();
+				assertEquals(spill, eager.spilled());
 			}
 			try (NativeResultCursor reader = lazy ? deferred.cursor(context.cancellation()) : eager.cursor()) {
 				BindingSet first = reader.next().toBindingSet(), second = reader.next().toBindingSet();
-				assertEquals(plain, first); assertEquals(plain, second);
+				assertEquals(plain, first);
+				assertEquals(plain, second);
 				assertFalse(BindingSetOrigin.of(BindingSetOrigin.requestInput(first)).isRequest("payload"),
 						"tracked UNKNOWN must remain ineligible for promotion after actual replay");
 				assertTrue(BindingSetOrigin.of(BindingSetOrigin.requestInput(second)).isRequest("payload"),
 						"the common untracked row must not acquire a synthetic tracked origin");
 				assertNull(reader.next());
 			}
-			if (lazy) { assertEquals(spill, NativeLazyResultReplay.SPILLS.get() > spills); }
+			if (lazy) {
+				assertEquals(spill, NativeLazyResultReplay.SPILLS.get() > spills);
+			}
 		} finally {
-			if (deferred != null) { deferred.close(); }
-			if (eager != null) { eager.close(); }
-			context.close(); restore(old);
+			if (deferred != null) {
+				deferred.close();
+			}
+			if (eager != null) {
+				eager.close();
+			}
+			context.close();
+			restore(old);
 		}
-		assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get()); assertEquals(0L, ledger.usedBytes());
-		if (lazy) { assertEquals(2, producer.position); assertEquals(1, producer.closes); }
+		assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
+		assertEquals(0L, ledger.usedBytes());
+		if (lazy) {
+			assertEquals(2, producer.position);
+			assertEquals(1, producer.closes);
+		}
 	}
 
 	@Test
@@ -211,64 +243,86 @@ class NativeResultRowProvenanceTest {
 		String old = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "16384");
 		long files = NativeLazyResultReplay.OPEN_FILES.get();
-		NativeExecutionContext context = new NativeExecutionContext(); var ledger = context.memoryLedger();
+		NativeExecutionContext context = new NativeExecutionContext();
+		var ledger = context.memoryLedger();
 		Frame first = frame("payload".repeat(2048), remote());
 		Producer producer = new Producer(List.of(first.row(), frame("later", remote()).row()), context.cancellation());
-		try (context; NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] {"payload", "privateGraph"}, context,
-				context.cancellation(), producer); NativeResultCursor reader = replay.cursor(context.cancellation())) {
+		try (context;
+				NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "payload", "privateGraph" },
+						context,
+						context.cancellation(), producer);
+				NativeResultCursor reader = replay.cursor(context.cancellation())) {
 			assertFrame(first, reader.next().toBindingSet());
 			int before = producer.position;
 			assertTrue(replay.requestCancellation());
 			assertThrows(KernelQueryCancelledException.class, reader::next);
 			assertEquals(before, producer.position, "cancellation cannot replay or consume another source row");
-		} finally { restore(old); }
-		assertEquals(1, producer.closes); assertEquals(1, producer.cancellations);
-		assertEquals(0L, ledger.usedBytes()); assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
+		} finally {
+			restore(old);
+		}
+		assertEquals(1, producer.closes);
+		assertEquals(1, producer.cancellations);
+		assertEquals(0L, ledger.usedBytes());
+		assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
 	}
 
-	@ParameterizedTest @ValueSource(booleans = {false, true})
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void manyDistinctAuthoritiesRemainBoundedWithAndWithoutAQueryLedger(boolean withLedger) {
 		assertAuthorityBudget(withLedger, false);
 	}
 
-	@ParameterizedTest @ValueSource(booleans = {false, true})
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void largeAuthorityNamesRemainBoundedBeforeDictionaryPublication(boolean withLedger) {
 		assertAuthorityBudget(withLedger, true);
 	}
 
-	@ParameterizedTest @ValueSource(booleans = {false, true})
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void identicalPayloadWithoutAuthorityCompletesBySpillingUnderTheSamePolicies(boolean withLedger) {
 		String old = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		LmdbQueryMemoryManager prior = LmdbNativeHashJoin.queryMemoryOverride;
 		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(49_152L, 49_152L);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "65536");
-		if (withLedger) { LmdbNativeHashJoin.queryMemoryOverride = memory; }
+		if (withLedger) {
+			LmdbNativeHashJoin.queryMemoryOverride = memory;
+		}
 		long files = NativeLazyResultReplay.OPEN_FILES.get(), spills = NativeLazyResultReplay.SPILLS.get();
 		NativeExecutionContext context = withLedger ? new NativeExecutionContext() : null;
 		NativeCancellationToken cancellation = context == null ? new NativeCancellationToken() : context.cancellation();
 		Value payload = VF.createLiteral("p".repeat(32768));
 		java.util.ArrayList<BindingSet> rows = new java.util.ArrayList<>();
 		for (int index = 0; index < 64; index++) {
-			MapBindingSet row = new MapBindingSet(); row.addBinding("payload", payload); rows.add(row);
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("payload", payload);
+			rows.add(row);
 		}
 		Producer producer = new Producer(rows, cancellation);
-		try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] {"payload"}, context,
+		try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "payload" }, context,
 				cancellation, producer)) {
 			try (NativeResultCursor reader = replay.cursor(cancellation)) {
 				int count = 0;
 				for (NativeResultRow next; (next = reader.next()) != null; count++) {
 					assertEquals(payload, next.cell("payload").value());
 				}
-				assertEquals(rows.size(), count, "ordinary large payload must complete, independent of metadata admission");
+				assertEquals(rows.size(), count,
+						"ordinary large payload must complete, independent of metadata admission");
 			}
-			assertEquals(rows.size(), producer.position); assertEquals(1, producer.closes);
+			assertEquals(rows.size(), producer.position);
+			assertEquals(1, producer.closes);
 			assertTrue(NativeLazyResultReplay.SPILLS.get() > spills, "the control really spills under the same policy");
 		} finally {
-			if (context != null) { context.close(); }
-			LmdbNativeHashJoin.queryMemoryOverride = prior; restore(old);
+			if (context != null) {
+				context.close();
+			}
+			LmdbNativeHashJoin.queryMemoryOverride = prior;
+			restore(old);
 		}
 		assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
-		if (withLedger) { assertEquals(0L, memory.usedBytes()); }
+		if (withLedger) {
+			assertEquals(0L, memory.usedBytes());
+		}
 	}
 
 	@Test
@@ -278,33 +332,46 @@ class NativeResultRowProvenanceTest {
 		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(65_536L, 65_536L);
 		LmdbNativeHashJoin.queryMemoryOverride = memory;
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "65536");
-		NativeExecutionContext context = new NativeExecutionContext(); var ledger = context.memoryLedger();
+		NativeExecutionContext context = new NativeExecutionContext();
+		var ledger = context.memoryLedger();
 		long files = NativeLazyResultReplay.OPEN_FILES.get();
 		MapBindingSet request = new MapBindingSet();
 		request.addBinding("external", VF.createIRI("urn:metadata-cancel:" + "x".repeat(8192)));
-		QueryBindingSet row = new QueryBindingSet(); row.addBinding("payload", VF.createLiteral("tiny"));
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("payload", VF.createLiteral("tiny"));
 		BindingSet frame = BindingSetOrigin.with(row, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request)));
 		Producer producer = new Producer(List.of(frame), context.cancellation());
 		java.util.concurrent.atomic.AtomicInteger callbacks = new java.util.concurrent.atomic.AtomicInteger();
 		java.util.concurrent.atomic.AtomicInteger published = new java.util.concurrent.atomic.AtomicInteger();
 		try (context; var held = ledger.reserve(49_152L, new LmdbQueryMemoryManager.Reclaimable() {
-			@Override public boolean shed() {
-				assertEquals(1, producer.position, "the real query ledger reclaims during metadata admission, after one source pull");
-				callbacks.incrementAndGet(); context.cancellation().requestCancellation(); return true;
+			@Override
+			public boolean shed() {
+				assertEquals(1, producer.position,
+						"the real query ledger reclaims during metadata admission, after one source pull");
+				callbacks.incrementAndGet();
+				context.cancellation().requestCancellation();
+				return true;
 			}
 		})) {
 			assertTrue(held != null, "the reclaimable owner is admitted before replay construction");
 			assertThrows(KernelQueryCancelledException.class, () -> {
-				try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] {"payload"}, context,
-						context.cancellation(), producer); NativeResultCursor reader = replay.cursor(context.cancellation())) {
-					while (reader.next() != null) { published.incrementAndGet(); }
+				try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "payload" }, context,
+						context.cancellation(), producer);
+						NativeResultCursor reader = replay.cursor(context.cancellation())) {
+					while (reader.next() != null) {
+						published.incrementAndGet();
+					}
 				}
 			}, "cancellation raised by actual ledger reclamation must prevent metadata/row publication");
 			assertEquals(0, published.get(), "no row can be observed after metadata cancellation");
-			assertEquals(1, callbacks.get()); assertEquals(1, producer.position); assertEquals(1, producer.closes);
-			assertEquals(0L, ledger.usedBytes()); assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
+			assertEquals(1, callbacks.get());
+			assertEquals(1, producer.position);
+			assertEquals(1, producer.closes);
+			assertEquals(0L, ledger.usedBytes());
+			assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
 		} finally {
-			LmdbNativeHashJoin.queryMemoryOverride = prior; restore(old);
+			LmdbNativeHashJoin.queryMemoryOverride = prior;
+			restore(old);
 		}
 		assertEquals(0L, memory.usedBytes());
 	}
@@ -314,7 +381,9 @@ class NativeResultRowProvenanceTest {
 		LmdbQueryMemoryManager prior = LmdbNativeHashJoin.queryMemoryOverride;
 		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(49_152L, 49_152L);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "65536");
-		if (withLedger) { LmdbNativeHashJoin.queryMemoryOverride = memory; }
+		if (withLedger) {
+			LmdbNativeHashJoin.queryMemoryOverride = memory;
+		}
 		long files = NativeLazyResultReplay.OPEN_FILES.get();
 		NativeExecutionContext context = withLedger ? new NativeExecutionContext() : null;
 		NativeCancellationToken cancellation = context == null ? new NativeCancellationToken() : context.cancellation();
@@ -324,37 +393,50 @@ class NativeResultRowProvenanceTest {
 			MapBindingSet parameter = new MapBindingSet();
 			String name = largeNames ? "external:" + index + ":" + "n".repeat(8192) : "external";
 			Value value = largeNames ? VF.createIRI("urn:row-origin:" + index)
-					: VF.createTripleTerm(remote(), GRAPH, VF.createIRI("urn:row-origin:" + index + ":" + "x".repeat(8192)));
+					: VF.createTripleTerm(remote(), GRAPH,
+							VF.createIRI("urn:row-origin:" + index + ":" + "x".repeat(8192)));
 			parameter.addBinding(name, value);
-			QueryBindingSet row = new QueryBindingSet(); row.addBinding("payload", VF.createLiteral("p".repeat(32768)));
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("payload", VF.createLiteral("p".repeat(32768)));
 			frames.add(BindingSetOrigin.with(row, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(parameter))));
 		}
-		Producer producer = new Producer(frames, cancellation); producer.closeFailure = cleanup;
-		try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] {"payload"}, context,
+		Producer producer = new Producer(frames, cancellation);
+		producer.closeFailure = cleanup;
+		try (NativeLazyResultReplay replay = new NativeLazyResultReplay(new String[] { "payload" }, context,
 				cancellation, producer)) {
 			QueryEvaluationException failure;
 			try (NativeResultCursor reader = replay.cursor(cancellation)) {
-				failure = assertThrows(QueryEvaluationException.class, () -> { while (reader.next() != null) { } },
+				failure = assertThrows(QueryEvaluationException.class, () -> {
+					while (reader.next() != null) {
+					}
+				},
 						"retained authority must be bounded even when AggregateMemory has no ledger");
 			}
 			assertTrue(producer.position > 0 && producer.position < frames.size(), "refusal settles a consumed prefix");
-			assertArrayEquals(new Throwable[] {cleanup}, failure.getSuppressed());
+			assertArrayEquals(new Throwable[] { cleanup }, failure.getSuppressed());
 			int consumed = producer.position;
 			assertSame(failure, assertThrows(QueryEvaluationException.class, () -> replay.cursor(cancellation)));
 			assertEquals(consumed, producer.position, "a failed dictionary never retries consumed input");
 		} finally {
-			if (context != null) { context.close(); }
-			LmdbNativeHashJoin.queryMemoryOverride = prior; restore(old);
+			if (context != null) {
+				context.close();
+			}
+			LmdbNativeHashJoin.queryMemoryOverride = prior;
+			restore(old);
 		}
-		assertEquals(1, producer.closes); assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
-		if (withLedger) { assertEquals(0L, memory.usedBytes()); }
+		assertEquals(1, producer.closes);
+		assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
+		if (withLedger) {
+			assertEquals(0L, memory.usedBytes());
+		}
 	}
 
 	@Test
 	void requestOnlyOverlayClearsExcludedPayloadWhileARealParameterWriteSuppliesItsOwnValue() {
 		Frame original = frame("tiny", remote());
 		assertTrue(hidden(original.row()) == original.hidden());
-		MapBindingSet request = new MapBindingSet(); request.addBinding("hidden", original.hidden());
+		MapBindingSet request = new MapBindingSet();
+		request.addBinding("hidden", original.hidden());
 		BindingSetOrigin requestOnly = BindingSetOrigin.of(BindingSetOrigin.requestInput(request));
 		assertFalse(requestOnly.hasParameters());
 		BindingSetOrigin cleared = BindingSetOrigin.overlay(BindingSetOrigin.of(original.row()), requestOnly,
@@ -363,7 +445,8 @@ class NativeResultRowProvenanceTest {
 		assertNull(cleared.parameterValue("hidden"));
 		assertFalse(cleared.retainedParametersForTransport().containsKey("hidden"));
 		RemoteBNode replacement = remote();
-		MapBindingSet actualRequest = new MapBindingSet(); actualRequest.addBinding("hidden", replacement);
+		MapBindingSet actualRequest = new MapBindingSet();
+		actualRequest.addBinding("hidden", replacement);
 		BindingSetOrigin supplied = BindingSetOrigin.overlay(BindingSetOrigin.of(original.row()),
 				BindingSetOrigin.of(BindingSetOrigin.optimizationInput(actualRequest)), Set.of("hidden"));
 		assertTrue(supplied.parameterValue("hidden") == replacement);
@@ -371,33 +454,42 @@ class NativeResultRowProvenanceTest {
 		assertTrue(hidden(original.row()) == original.hidden(), "the source authority remains immutable");
 	}
 
-	private record Frame(BindingSet row, RemoteBNode hidden) { }
+	private record Frame(BindingSet row, RemoteBNode hidden) {
+	}
 
 	private static Frame frame(String payload, RemoteBNode hidden) {
-		MapBindingSet request = new MapBindingSet(); request.addBinding("visible", VISIBLE);
-		request.addBinding("hidden", hidden); request.addBinding("masked", MASKED);
+		MapBindingSet request = new MapBindingSet();
+		request.addBinding("visible", VISIBLE);
+		request.addBinding("hidden", hidden);
+		request.addBinding("masked", MASKED);
 		BindingSetOrigin full = BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request));
-		String[] retained = {"visible", "masked"};
+		String[] retained = { "visible", "masked" };
 		BindingSetOrigin restricted = BindingSetOrigin.projected(full, retained, retained,
 				BindingSetOrigin.of(EmptyBindingSet.getInstance())).producing(Set.of("masked"));
-		QueryBindingSet row = new QueryBindingSet(); row.addBinding("payload", VF.createLiteral(payload));
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("payload", VF.createLiteral(payload));
 		var graph = GraphFrameBindings.supply(row, "privateGraph", GRAPH);
 		return new Frame(BindingSetOrigin.with(graph, restricted), hidden);
 	}
+
 	private static RemoteBNode remote() {
 		return (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope("same-", ignored -> false),
 				VF, new Object(), true).map(VF.createBNode("remote"));
 	}
+
 	private static Value hidden(BindingSet row) {
 		// Transport retains the full payload without granting the excluded name request authority. A later
 		// request-only write deliberately clears an older payload; it cannot be used to reveal this map.
 		return BindingSetOrigin.of(row).retainedParametersForTransport().get("hidden");
 	}
+
 	private static void assertFrame(Frame expected, BindingSet actual) {
 		assertEquals(expected.row(), actual, "mapped RDF values are unchanged");
 		BindingSetOrigin origin = BindingSetOrigin.of(actual);
-		assertTrue(origin.isRequest("visible")); assertEquals(VISIBLE, origin.parameterValue("visible"));
-		assertTrue(origin.isLocal("masked")); assertNull(origin.parameterValue("masked"));
+		assertTrue(origin.isRequest("visible"));
+		assertEquals(VISIBLE, origin.parameterValue("visible"));
+		assertTrue(origin.isLocal("masked"));
+		assertNull(origin.parameterValue("masked"));
 		assertNull(origin.parameterValue("hidden"), "restricted authority remains excluded");
 		assertEquals(GraphFrameBindings.isSupplied(expected.row(), "privateGraph"),
 				GraphFrameBindings.isSupplied(actual, "privateGraph"));
@@ -410,18 +502,53 @@ class NativeResultRowProvenanceTest {
 				"a same-labelled foreign namespace cannot be merged");
 		assertEquals(expected.hidden().getID(), after.getID(), "the selected representative is retained");
 	}
+
 	private static void restore(String old) {
-		if (old == null) { System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY); }
-		else { System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, old); }
+		if (old == null) {
+			System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		} else {
+			System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, old);
+		}
 	}
+
 	private static final class Producer implements NativeResultCursor {
-		final List<BindingSet> rows; final NativeCancellationToken cancellation;
-		int position, closes, cancellations; RuntimeException closeFailure;
-		Producer(List<BindingSet> rows, NativeCancellationToken cancellation) { this.rows = rows; this.cancellation = cancellation; }
-		@Override public NativeResultRow next() { return position == rows.size() ? null : NativeResultRow.fromBindingSet(rows.get(position++)); }
-		@Override public NativeCancellationToken cancellation() { return cancellation; }
-		@Override public NativeExecutionContext executionContext() { return null; }
-		@Override public boolean requestCancellation() { cancellations++; return true; }
-		@Override public void close() { closes++; if (closeFailure != null) { throw closeFailure; } }
+		final List<BindingSet> rows;
+		final NativeCancellationToken cancellation;
+		int position, closes, cancellations;
+		RuntimeException closeFailure;
+
+		Producer(List<BindingSet> rows, NativeCancellationToken cancellation) {
+			this.rows = rows;
+			this.cancellation = cancellation;
+		}
+
+		@Override
+		public NativeResultRow next() {
+			return position == rows.size() ? null : NativeResultRow.fromBindingSet(rows.get(position++));
+		}
+
+		@Override
+		public NativeCancellationToken cancellation() {
+			return cancellation;
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return null;
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			cancellations++;
+			return true;
+		}
+
+		@Override
+		public void close() {
+			closes++;
+			if (closeFailure != null) {
+				throw closeFailure;
+			}
+		}
 	}
 }

@@ -111,93 +111,136 @@ class LmdbCancellationReadLineageTest {
 			CountDownLatch releaseCallback = new CountDownLatch(1);
 			LmdbStore store = new LmdbStore(new File(args[0]),
 					new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(false)) {
-				@Override protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				@Override
+				protected NotifyingSailConnection getConnectionInternal() throws SailException {
 					return new LmdbStoreConnection(this) {
-						@Override protected void onShutdownRequested() {
+						@Override
+						protected void onShutdownRequested() {
 							super.onShutdownRequested();
-							if (armed.get()) shutdownEntered.countDown();
+							if (armed.get())
+								shutdownEntered.countDown();
 						}
 					};
 				}
 			};
 			// Instrument inside the compiled query plan, preserving the replay-plan marker and its real view ownership.
 			store.setEvaluationStrategyFactory(new DefaultEvaluationStrategyFactory() {
-				@Override public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+				@Override
+				public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 						EvaluationStatistics statistics) {
 					return new DefaultEvaluationStrategy(tripleSource, dataset, getFederatedServiceResolver(),
 							getQuerySolutionCacheThreshold(), statistics, isTrackResultSize()) {
 						private int compilationDepth;
-						@Override public QueryEvaluationStep precompile(TupleExpr expression) {
+
+						@Override
+						public QueryEvaluationStep precompile(TupleExpr expression) {
 							boolean outer = compilationDepth++ == 0;
 							QueryEvaluationStep step;
-							try { step = super.precompile(expression); } finally { compilationDepth--; }
-							if (!outer) return step;
+							try {
+								step = super.precompile(expression);
+							} finally {
+								compilationDepth--;
+							}
+							if (!outer)
+								return step;
 							return bindings -> {
 								int identity = identities.incrementAndGet();
 								boolean sourceA = mode.equals("nested") && identity == 1;
 								boolean sourceB = identity == (mode.equals("nested") ? 2 : 1);
 								return new IterationWrapper<BindingSet>(step.evaluate(bindings)) {
-								@Override public boolean hasNext() {
-									if (armed.get() && sourceA && mode.equals("nested")) {
-										if (!resultB.get().hasNext()) throw new AssertionError("FIXTURE: nested B returned no row");
-									}
-									boolean available = super.hasNext();
-									if (sourceB && available) {
-										List<LmdbSailStore.ReadViewLease> views = store.getBackingStore().currentReadResourceViews();
-										LmdbSailStore.ReadViewLease owned = views.stream()
-												.filter(view -> view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE))
-												.findFirst().orElse(null);
-										if (!armed.get() && owned != null) bView.compareAndSet(null, owned);
-										if (armed.get() && mode.equals("nested")) {
-											boolean nested = StackWalker.getInstance().walk(frames -> frames.filter(frame ->
-													frame.getClassName().equals(LmdbStoreConnection.class.getName())
-															&& (frame.getMethodName().equals("executeTrackedRead")
-																	|| frame.getMethodName().equals("executeObservedRead"))).count() >= 2);
-											if (!nested || bView.get() == null) throw new AssertionError("FIXTURE: B is not nested under A");
-											bView.get().ensureNativeSnapshotsValid();
-											System.out.println("HIT_NESTED_B_SOURCE_AND_PIN");
-											workEntered.countDown();
-											await(releaseWork);
-										} else if (armed.get() && mode.equals("worker") && launchClaimed.compareAndSet(false, true)) {
-											QueryExecutionContext.ReplayContext context = QueryExecutionContext.captureReplayContext();
-											if (context == null || !context.hasReplayScopes() || bView.get() == null) {
-												throw new AssertionError("FIXTURE: B has no captured worker authority");
-											}
-											capturedWorker.set(workers.submit(() -> context.run(() -> {
-												List<LmdbSailStore.ReadViewLease> workerViews = store.getBackingStore().currentReadResourceViews();
-												if (workerViews.stream().noneMatch(view -> view == bView.get())
-														|| !bView.get().hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE)) {
-													throw new AssertionError("FIXTURE: worker did not activate B's exact pinned view");
-												}
+									@Override
+									public boolean hasNext() {
+										if (armed.get() && sourceA && mode.equals("nested")) {
+											if (!resultB.get().hasNext())
+												throw new AssertionError("FIXTURE: nested B returned no row");
+										}
+										boolean available = super.hasNext();
+										if (sourceB && available) {
+											List<LmdbSailStore.ReadViewLease> views = store.getBackingStore()
+													.currentReadResourceViews();
+											LmdbSailStore.ReadViewLease owned = views.stream()
+													.filter(view -> view
+															.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE))
+													.findFirst()
+													.orElse(null);
+											if (!armed.get() && owned != null)
+												bView.compareAndSet(null, owned);
+											if (armed.get() && mode.equals("nested")) {
+												boolean nested = StackWalker.getInstance()
+														.walk(frames -> frames.filter(frame -> frame.getClassName()
+																.equals(LmdbStoreConnection.class.getName())
+																&& (frame.getMethodName().equals("executeTrackedRead")
+																		|| frame.getMethodName()
+																				.equals("executeObservedRead")))
+																.count() >= 2);
+												if (!nested || bView.get() == null)
+													throw new AssertionError("FIXTURE: B is not nested under A");
 												bView.get().ensureNativeSnapshotsValid();
-												System.out.println("HIT_CAPTURED_B_WORKER_AND_PIN");
+												System.out.println("HIT_NESTED_B_SOURCE_AND_PIN");
 												workEntered.countDown();
 												await(releaseWork);
-											})));
-											awaitBounded(workEntered, "captured worker did not activate");
+											} else if (armed.get() && mode.equals("worker")
+													&& launchClaimed.compareAndSet(false, true)) {
+												QueryExecutionContext.ReplayContext context = QueryExecutionContext
+														.captureReplayContext();
+												if (context == null || !context.hasReplayScopes()
+														|| bView.get() == null) {
+													throw new AssertionError(
+															"FIXTURE: B has no captured worker authority");
+												}
+												capturedWorker.set(workers.submit(() -> context.run(() -> {
+													List<LmdbSailStore.ReadViewLease> workerViews = store
+															.getBackingStore()
+															.currentReadResourceViews();
+													if (workerViews.stream().noneMatch(view -> view == bView.get())
+															|| !bView.get()
+																	.hasNativePin(
+																			LmdbSailStore.MapResizeKind.TRIPLE_STORE)) {
+														throw new AssertionError(
+																"FIXTURE: worker did not activate B's exact pinned view");
+													}
+													bView.get().ensureNativeSnapshotsValid();
+													System.out.println("HIT_CAPTURED_B_WORKER_AND_PIN");
+													workEntered.countDown();
+													await(releaseWork);
+												})));
+												awaitBounded(workEntered, "captured worker did not activate");
+											}
+										}
+										return available;
+									}
+
+									@Override
+									public boolean requestCancellation() {
+										if (!sourceB)
+											throw new AssertionError("the callback reached a different source");
+										callbackReplayable.set(StackWalker.getInstance()
+												.walk(frames -> frames.anyMatch(frame -> frame.getClassName()
+														.endsWith("LmdbStoreConnection$ReplayableIteration")
+														&& frame.getMethodName().equals("requestCancellation"))));
+										bCallbacks.incrementAndGet();
+										callbackEntered.countDown();
+										callbackOrReturn.countDown();
+										await(releaseCallback);
+										if (bView.get() == null || !bView.get()
+												.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE)) {
+											throw new AssertionError("B callback lost its native view");
+										}
+										bView.get().ensureNativeSnapshotsValid();
+										return true;
+									}
+
+									@Override
+									protected void handleClose() {
+										try {
+											super.handleClose();
+										} finally {
+											if (sourceA)
+												aCloses.incrementAndGet();
+											if (sourceB)
+												bCloses.incrementAndGet();
 										}
 									}
-									return available;
-								}
-								@Override public boolean requestCancellation() {
-									if (!sourceB) throw new AssertionError("the callback reached a different source");
-									callbackReplayable.set(StackWalker.getInstance().walk(frames -> frames.anyMatch(frame ->
-											frame.getClassName().endsWith("LmdbStoreConnection$ReplayableIteration")
-													&& frame.getMethodName().equals("requestCancellation"))));
-									bCallbacks.incrementAndGet();
-									callbackEntered.countDown();
-									callbackOrReturn.countDown();
-									await(releaseCallback);
-									if (bView.get() == null || !bView.get().hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE)) {
-										throw new AssertionError("B callback lost its native view");
-									}
-									bView.get().ensureNativeSnapshotsValid();
-									return true;
-								}
-								@Override protected void handleClose() {
-									try { super.handleClose(); }
-									finally { if (sourceA) aCloses.incrementAndGet(); if (sourceB) bCloses.incrementAndGet(); }
-								}
 								};
 							};
 						}
@@ -212,7 +255,8 @@ class LmdbCancellationReadLineageTest {
 			boolean unresolved = false;
 			Throwable primary = null;
 			try {
-				store.init(); initialized = true;
+				store.init();
+				initialized = true;
 				var vf = SimpleValueFactory.getInstance();
 				try (SailConnection seed = store.getConnection()) {
 					seed.begin();
@@ -232,7 +276,8 @@ class LmdbCancellationReadLineageTest {
 				}
 				TupleExpr bQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 						"SELECT ?s WHERE { ?s <urn:lineage:b> ?o }", null).getTupleExpr();
-				b = connection.evaluate(bQuery, null, EmptyBindingSet.getInstance(), false); resultB.set(b);
+				b = connection.evaluate(bQuery, null, EmptyBindingSet.getInstance(), false);
+				resultB.set(b);
 				if (identities.get() != (mode.equals("nested") ? 2 : 1)) {
 					throw new AssertionError("FIXTURE: expected exact A/B query-plan sources");
 				}
@@ -242,19 +287,23 @@ class LmdbCancellationReadLineageTest {
 				}
 				b.next();
 				if (a != null) {
-					if (!a.hasNext()) throw new AssertionError("FIXTURE: A did not open");
+					if (!a.hasNext())
+						throw new AssertionError("FIXTURE: A did not open");
 					a.next();
 				}
 				TxnManager manager = store.getBackingStore().getTripleStore().getTxnManager();
 				long pinned = manager.minPinnedSnapshotRevision();
-				if (pinned == Long.MAX_VALUE) throw new AssertionError("FIXTURE: no native revision is pinned");
-				if (!(b instanceof CooperativeCancellation cancellation)) throw new AssertionError("FIXTURE: B is not cancellable");
+				if (pinned == Long.MAX_VALUE)
+					throw new AssertionError("FIXTURE: no native revision is pinned");
+				if (!(b instanceof CooperativeCancellation cancellation))
+					throw new AssertionError("FIXTURE: B is not cancellable");
 				armed.set(true);
 				CloseableIteration<? extends BindingSet> selected = mode.equals("nested") ? a : b;
 				pulling = workers.submit(selected::hasNext);
 				awaitBounded(workEntered, "nested read or captured worker did not enter");
 				if (mode.equals("worker")) {
-					if (!Boolean.TRUE.equals(pulling.get(10, TimeUnit.SECONDS))) throw new AssertionError("FIXTURE: foreground B had no row");
+					if (!Boolean.TRUE.equals(pulling.get(10, TimeUnit.SECONDS)))
+						throw new AssertionError("FIXTURE: foreground B had no row");
 					pullConsumed = true;
 					System.out.println("HIT_B_FOREGROUND_RETURNED_WORKER_STILL_ACTIVE");
 				}
@@ -267,126 +316,207 @@ class LmdbCancellationReadLineageTest {
 				}
 				System.out.println("HIT_CONNECTION_CLOSE_WITH_B_OWNERSHIP mode=" + mode + " pinned=" + pinned);
 				request = workers.submit(() -> {
-					try { return cancellation.requestCancellation(); }
-					finally { callbackOrReturn.countDown(); }
+					try {
+						return cancellation.requestCancellation();
+					} finally {
+						callbackOrReturn.countDown();
+					}
 				});
 				awaitBounded(callbackOrReturn, "cancellation did not decide");
 				if (callbackEntered.getCount() != 0) {
-					try { request.get(5, TimeUnit.SECONDS); }
-					catch (ExecutionException failure) { requestConsumed = true; throw new AssertionError("active B cancellation threw", failure.getCause()); }
+					try {
+						request.get(5, TimeUnit.SECONDS);
+					} catch (ExecutionException failure) {
+						requestConsumed = true;
+						throw new AssertionError("active B cancellation threw", failure.getCause());
+					}
 					requestConsumed = true;
 					throw new AssertionError("an active B source declined its own cancellation");
 				}
-				if (!callbackReplayable.get() || bCallbacks.get() != 1) throw new AssertionError("B's replayable callback was not reached once");
+				if (!callbackReplayable.get() || bCallbacks.get() != 1)
+					throw new AssertionError("B's replayable callback was not reached once");
 				System.out.println("HIT_B_CALLBACK_WITH_OWN_VIEW");
 				CloseableIteration<? extends BindingSet> ownedB = b;
 				closeB = workers.submit(ownedB::close);
 				closeB.get(10, TimeUnit.SECONDS);
-				if (bCloses.get() != 0) throw new AssertionError("B closed during its admitted callback");
+				if (bCloses.get() != 0)
+					throw new AssertionError("B closed during its admitted callback");
 				releaseWork.countDown();
-				if (!pullConsumed) { settlePull(pulling); pullConsumed = true; }
+				if (!pullConsumed) {
+					settlePull(pulling);
+					pullConsumed = true;
+				}
 				Future<?> worker = capturedWorker.get();
-				if (worker != null) settlePull(worker);
+				if (worker != null)
+					settlePull(worker);
 				if (bCloses.get() != 0 || closing.isDone()
 						|| !bView.get().hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE)) {
 					throw new AssertionError("B's admitted callback did not retain its source and reader");
 				}
 				releaseCallback.countDown();
-				if (!Boolean.TRUE.equals(request.get(10, TimeUnit.SECONDS))) throw new AssertionError("B did not accept cancellation");
+				if (!Boolean.TRUE.equals(request.get(10, TimeUnit.SECONDS)))
+					throw new AssertionError("B did not accept cancellation");
 				requestConsumed = true;
-				if (a != null) a.close();
-				closing.get(10, TimeUnit.SECONDS); closeConsumed = true;
+				if (a != null)
+					a.close();
+				closing.get(10, TimeUnit.SECONDS);
+				closeConsumed = true;
 				if (bCloses.get() != 1 || bCallbacks.get() != 1 || (a != null && aCloses.get() != 1)) {
 					throw new AssertionError("source/callback cleanup was not exactly once");
 				}
 				LmdbGcTestMaintenance.awaitNoPinnedTripleSnapshot(store);
 			} catch (Throwable failure) {
-				primary = failure; System.out.println("PRIMARY_DIAGNOSTIC"); failure.printStackTrace(System.out);
+				primary = failure;
+				System.out.println("PRIMARY_DIAGNOSTIC");
+				failure.printStackTrace(System.out);
 			} finally {
-				releaseWork.countDown(); releaseCallback.countDown();
+				releaseWork.countDown();
+				releaseCallback.countDown();
 				if (request != null && !requestConsumed) {
-					try { request.get(10, TimeUnit.SECONDS); }
-					catch (TimeoutException failure) { unresolved = true; primary = merge(primary, failure); }
-					catch (ExecutionException failure) { primary = merge(primary, failure.getCause()); }
+					try {
+						request.get(10, TimeUnit.SECONDS);
+					} catch (TimeoutException failure) {
+						unresolved = true;
+						primary = merge(primary, failure);
+					} catch (ExecutionException failure) {
+						primary = merge(primary, failure.getCause());
+					}
 				}
 				for (Future<?> future : new Future<?>[] { pullConsumed ? null : pulling, capturedWorker.get() }) {
-					if (future == null) continue;
-					try { settlePull(future); }
-					catch (TimeoutException failure) { unresolved = true; primary = merge(primary, failure); }
-					catch (Throwable failure) { primary = merge(primary, failure); }
+					if (future == null)
+						continue;
+					try {
+						settlePull(future);
+					} catch (TimeoutException failure) {
+						unresolved = true;
+						primary = merge(primary, failure);
+					} catch (Throwable failure) {
+						primary = merge(primary, failure);
+					}
 				}
 				if (closeB != null) {
-					try { closeB.get(10, TimeUnit.SECONDS); }
-					catch (TimeoutException failure) { unresolved = true; primary = merge(primary, failure); }
-					catch (ExecutionException failure) { primary = merge(primary, failure.getCause()); }
+					try {
+						closeB.get(10, TimeUnit.SECONDS);
+					} catch (TimeoutException failure) {
+						unresolved = true;
+						primary = merge(primary, failure);
+					} catch (ExecutionException failure) {
+						primary = merge(primary, failure.getCause());
+					}
 				}
 				if (!unresolved) {
 					for (CloseableIteration<? extends BindingSet> result : new CloseableIteration[] { b, a }) {
-						if (result == null) continue;
+						if (result == null)
+							continue;
 						Future<?> cleanup = workers.submit(result::close);
-						try { cleanup.get(10, TimeUnit.SECONDS); }
-						catch (TimeoutException failure) { unresolved = true; primary = merge(primary, failure); }
-						catch (ExecutionException failure) { primary = merge(primary, failure.getCause()); }
+						try {
+							cleanup.get(10, TimeUnit.SECONDS);
+						} catch (TimeoutException failure) {
+							unresolved = true;
+							primary = merge(primary, failure);
+						} catch (ExecutionException failure) {
+							primary = merge(primary, failure.getCause());
+						}
 					}
 				}
 				if (!unresolved && closing != null && !closeConsumed) {
-					try { closing.get(10, TimeUnit.SECONDS); }
-					catch (TimeoutException failure) { unresolved = true; primary = merge(primary, failure); }
-					catch (ExecutionException failure) { primary = merge(primary, failure.getCause()); }
+					try {
+						closing.get(10, TimeUnit.SECONDS);
+					} catch (TimeoutException failure) {
+						unresolved = true;
+						primary = merge(primary, failure);
+					} catch (ExecutionException failure) {
+						primary = merge(primary, failure.getCause());
+					}
 				} else if (!unresolved && connection != null && closing == null) {
-					SailConnection owner = connection; Future<?> cleanup = workers.submit(owner::close);
-					try { cleanup.get(10, TimeUnit.SECONDS); }
-					catch (TimeoutException failure) { unresolved = true; primary = merge(primary, failure); }
-					catch (ExecutionException failure) { primary = merge(primary, failure.getCause()); }
+					SailConnection owner = connection;
+					Future<?> cleanup = workers.submit(owner::close);
+					try {
+						cleanup.get(10, TimeUnit.SECONDS);
+					} catch (TimeoutException failure) {
+						unresolved = true;
+						primary = merge(primary, failure);
+					} catch (ExecutionException failure) {
+						primary = merge(primary, failure.getCause());
+					}
 				}
-				workers.shutdown(); if (!workers.awaitTermination(10, TimeUnit.SECONDS)) unresolved = true;
+				workers.shutdown();
+				if (!workers.awaitTermination(10, TimeUnit.SECONDS))
+					unresolved = true;
 				java.lang.ref.Reference.reachabilityFence(resultB.get());
 				if (unresolved) {
 					System.out.println("UNRESOLVED_OWNER pid=" + ProcessHandle.current().pid()
 							+ ": native store shutdown intentionally not attempted");
-					if (primary != null) primary.printStackTrace(System.out);
+					if (primary != null)
+						primary.printStackTrace(System.out);
 					System.out.flush();
 					await(new CountDownLatch(1));
 					throw new AssertionError("unresolved owner gate unexpectedly opened");
 				}
-				if (initialized) try { store.shutDown(); } catch (Throwable cleanup) { primary = merge(primary, cleanup); }
+				if (initialized)
+					try {
+						store.shutDown();
+					} catch (Throwable cleanup) {
+						primary = merge(primary, cleanup);
+					}
 			}
-			if (primary != null) throw new AssertionError("read-lineage probe failed", primary);
+			if (primary != null)
+				throw new AssertionError("read-lineage probe failed", primary);
 			System.out.println("READ_LINEAGE_COMPLETE " + mode);
 		}
 
 		private static void settlePull(Future<?> future) throws Exception {
-			try { future.get(10, TimeUnit.SECONDS); }
-			catch (ExecutionException failure) {
+			try {
+				future.get(10, TimeUnit.SECONDS);
+			} catch (ExecutionException failure) {
 				Throwable cause = failure.getCause();
-				if (!expectedCancellation(cause)) throw failure;
+				if (!expectedCancellation(cause))
+					throw failure;
 			}
 		}
 
 		private static boolean expectedCancellation(Throwable failure) {
 			for (Throwable current = failure; current != null; current = current.getCause()) {
-				if (current instanceof SailException && "The LMDB read operation was cancelled".equals(current.getMessage())) return true;
+				if (current instanceof SailException
+						&& "The LMDB read operation was cancelled".equals(current.getMessage()))
+					return true;
 				if (current instanceof org.eclipse.rdf4j.query.QueryInterruptedException
-						&& "Query evaluation was cancelled".equals(current.getMessage())) return true;
+						&& "Query evaluation was cancelled".equals(current.getMessage()))
+					return true;
 			}
 			return false;
 		}
 
 		private static void awaitBounded(CountDownLatch latch, String message) {
-			try { if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("FIXTURE: " + message); }
-			catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new AssertionError("FIXTURE: interrupted before " + message, failure); }
+			try {
+				if (!latch.await(10, TimeUnit.SECONDS))
+					throw new AssertionError("FIXTURE: " + message);
+			} catch (InterruptedException failure) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError("FIXTURE: interrupted before " + message, failure);
+			}
 		}
 
 		private static void await(CountDownLatch latch) {
 			boolean interrupted = false;
-			for (;;) try { latch.await(); break; } catch (InterruptedException failure) { interrupted = true; }
-			if (interrupted) Thread.currentThread().interrupt();
+			for (;;)
+				try {
+					latch.await();
+					break;
+				} catch (InterruptedException failure) {
+					interrupted = true;
+				}
+			if (interrupted)
+				Thread.currentThread().interrupt();
 		}
 
 		private static Throwable merge(Throwable primary, Throwable extra) {
-			if (extra == null || extra == primary) return primary;
-			if (primary == null) return extra;
-			primary.addSuppressed(extra); return primary;
+			if (extra == null || extra == primary)
+				return primary;
+			if (primary == null)
+				return extra;
+			primary.addSuppressed(extra);
+			return primary;
 		}
 	}
 }

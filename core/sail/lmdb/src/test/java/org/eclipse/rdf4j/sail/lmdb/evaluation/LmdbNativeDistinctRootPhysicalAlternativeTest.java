@@ -115,10 +115,12 @@ class LmdbNativeDistinctRootPhysicalAlternativeTest {
 				SlotPlan broad = compiler.compileTuple(broadPattern, false);
 				SlotPlan witness = compiler.compileTuple(witnessPattern, false);
 				SlotPlan rootDomain = compiler.compileTuple(rootDomainPattern, false);
-				assertTrue(broad instanceof PatternPlan && witness instanceof PatternPlan && rootDomain instanceof PatternPlan,
+				assertTrue(
+						broad instanceof PatternPlan && witness instanceof PatternPlan
+								&& rootDomain instanceof PatternPlan,
 						"SETUP: parsed stored patterns compile to native pattern plans");
 				compiler.layout.freeze(compiler.slotNames);
-			int rootSlot = compiler.existingSlot("root");
+				int rootSlot = compiler.existingSlot("root");
 				RowState row = new RowState(source, compiler.layout, EmptyBindingSet.getInstance());
 				assertTrue(LmdbNativeAggregateCompiler.initializeRow(row, row.base, source, compiler.layout));
 				AggregateSpec[] aggregates = { AggregateSpec.slot("count", rootSlot, true, AggKind.COUNT) };
@@ -126,40 +128,43 @@ class LmdbNativeDistinctRootPhysicalAlternativeTest {
 				// The candidate is built from the same parsed and compiled PatternPlans as the broad-first input. It
 				// demonstrates the supported physical form and exact COUNT(DISTINCT) semantics for a pattern-backed key
 				// domain before the chooser is asked to discover it from the deliberately broad compiler order.
-			SlotPlan broadPlan = new MultiJoinPlan(new SlotPlan[] { broad, witness, rootDomain }, new MaskedFilter[0]);
-			SlotPlan rootedPlan = new MultiJoinPlan(new SlotPlan[] { rootDomain, broad, witness }, new MaskedFilter[0]);
-			LmdbNativeWork.Chain broadWork = LmdbNativeWork.chain(((MultiJoinPlan) broadPlan).children, 3, row,
-					row.boundMask());
-			LmdbNativeWork.Chain rootedWork = LmdbNativeWork.chain(((MultiJoinPlan) rootedPlan).children, 3, row,
-					row.boundMask());
-			LmdbNativeKernelLowering.Lowered rootFirst = LmdbNativeKernelLowering.lowerAggregate(rootedPlan, row,
-					new int[0], aggregates, null);
+				SlotPlan broadPlan = new MultiJoinPlan(new SlotPlan[] { broad, witness, rootDomain },
+						new MaskedFilter[0]);
+				SlotPlan rootedPlan = new MultiJoinPlan(new SlotPlan[] { rootDomain, broad, witness },
+						new MaskedFilter[0]);
+				LmdbNativeWork.Chain broadWork = LmdbNativeWork.chain(((MultiJoinPlan) broadPlan).children, 3, row,
+						row.boundMask());
+				LmdbNativeWork.Chain rootedWork = LmdbNativeWork.chain(((MultiJoinPlan) rootedPlan).children, 3, row,
+						row.boundMask());
+				LmdbNativeKernelLowering.Lowered rootFirst = LmdbNativeKernelLowering.lowerAggregate(rootedPlan, row,
+						new int[0], aggregates, null);
 				assertNotNull(rootFirst, "SETUP: the root-domain candidate lowers through the native aggregate rung");
-			assertRootDomainExistsCount(rootFirst.kernel);
+				assertRootDomainExistsCount(rootFirst.kernel);
 
-			SlotPlan selectedInput = LmdbNativeNeutralRangeOrder.prepareAggregate(broadPlan, row, row.boundMask(),
-					aggregates);
-			LmdbNativeKernelLowering.Lowered selected = LmdbNativeKernelLowering.lowerAggregate(selectedInput, row,
-					new int[0], aggregates, null);
-			assertNotNull(selected, "SETUP: the deliberately broad-to-root aggregate must lower natively");
-			System.out.println("DISTINCT_ROOT_PHYSICAL_ALTERNATIVE {\"bagRows\":" + fullBag.size()
-					+ ",\"genericCount\":" + genericCount + ",\"nativeCount\":" + nativeCount
-					+ ",\"exactRootDomain\":" + eligibleRoots.size() + ",\"broadRelationRows\":"
-					+ broadRelation.size() + ",\"matchingRoots\":" + matchedRoots.size()
-					+ ",\"broadEstimatedWork\":" + quote(Double.toString(broadWork.estimatedWork()))
-					+ ",\"broadEstimatedPriceable\":" + broadWork.estimatedPriceable()
-					+ ",\"rootedEstimatedWork\":" + quote(Double.toString(rootedWork.estimatedWork()))
-					+ ",\"rootedEstimatedPriceable\":" + rootedWork.estimatedPriceable()
-					+ ",\"broadConservativeWork\":" + quote(broadWork.work().toString())
-					+ ",\"rootedConservativeWork\":" + quote(rootedWork.work().toString())
-					+ ",\"candidateShape\":" + quote(rootFirst.kernel.shapeKey())
-					+ ",\"currentShape\":" + quote(selected.kernel.shapeKey()) + "}");
+				SlotPlan selectedInput = LmdbNativeNeutralRangeOrder.prepareAggregate(broadPlan, row, row.boundMask(),
+						aggregates);
+				LmdbNativeKernelLowering.Lowered selected = LmdbNativeKernelLowering.lowerAggregate(selectedInput, row,
+						new int[0], aggregates, null);
+				assertNotNull(selected, "SETUP: the deliberately broad-to-root aggregate must lower natively");
+				System.out.println("DISTINCT_ROOT_PHYSICAL_ALTERNATIVE {\"bagRows\":" + fullBag.size()
+						+ ",\"genericCount\":" + genericCount + ",\"nativeCount\":" + nativeCount
+						+ ",\"exactRootDomain\":" + eligibleRoots.size() + ",\"broadRelationRows\":"
+						+ broadRelation.size() + ",\"matchingRoots\":" + matchedRoots.size()
+						+ ",\"broadEstimatedWork\":" + quote(Double.toString(broadWork.estimatedWork()))
+						+ ",\"broadEstimatedPriceable\":" + broadWork.estimatedPriceable()
+						+ ",\"rootedEstimatedWork\":" + quote(Double.toString(rootedWork.estimatedWork()))
+						+ ",\"rootedEstimatedPriceable\":" + rootedWork.estimatedPriceable()
+						+ ",\"broadConservativeWork\":" + quote(broadWork.work().toString())
+						+ ",\"rootedConservativeWork\":" + quote(rootedWork.work().toString())
+						+ ",\"candidateShape\":" + quote(rootFirst.kernel.shapeKey())
+						+ ",\"currentShape\":" + quote(selected.kernel.shapeKey()) + "}");
 
-			// Intended pre-fix red: the lowering preserves broad-first flat input and loses the root-domain witness
-			// alternative even though the exact source-bound candidate above is both semantically valid and cheaper.
-			assertRootDomainExistsCount(selected.kernel);
+				// Intended pre-fix red: the lowering preserves broad-first flat input and loses the root-domain witness
+				// alternative even though the exact source-bound candidate above is both semantically valid and
+				// cheaper.
+				assertRootDomainExistsCount(selected.kernel);
+			}
 		}
-	}
 	}
 
 	@Test
@@ -213,9 +218,9 @@ class LmdbNativeDistinctRootPhysicalAlternativeTest {
 				assertTrue(LmdbNativeAggregateCompiler.initializeRow(row, row.base, source, compiler.layout));
 				AggregateSpec[] aggregates = { AggregateSpec.slot("count", rootSlot, true, AggKind.COUNT) };
 
-			SlotPlan rootedPlan = new MultiJoinPlan(new SlotPlan[] { rootDomain, witness }, new MaskedFilter[0]);
-			LmdbNativeKernelLowering.Lowered rootFirst = LmdbNativeKernelLowering.lowerAggregate(rootedPlan, row,
-					new int[0], aggregates, null);
+				SlotPlan rootedPlan = new MultiJoinPlan(new SlotPlan[] { rootDomain, witness }, new MaskedFilter[0]);
+				LmdbNativeKernelLowering.Lowered rootFirst = LmdbNativeKernelLowering.lowerAggregate(rootedPlan, row,
+						new int[0], aggregates, null);
 				assertNotNull(rootFirst, "SETUP: the root-domain alternative lowers through the native aggregate rung");
 				assertRootDomainExistsCount(rootFirst.kernel);
 
@@ -261,7 +266,8 @@ class LmdbNativeDistinctRootPhysicalAlternativeTest {
 		try (Fixture fixture = new Fixture(directory)) {
 			long genericCount = fixture.count(query, false);
 			long nativeCount = fixture.count(query, true);
-			assertEquals(8L, genericCount, "the null-rejecting filter keeps nine witnessed roots and MINUS removes one");
+			assertEquals(8L, genericCount,
+					"the null-rejecting filter keeps nine witnessed roots and MINUS removes one");
 			assertEquals(genericCount, nativeCount, "the medical-shaped native aggregate preserves expected semantics");
 			try (SailRepositoryConnection connection = fixture.repository.getConnection()) {
 				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
@@ -292,7 +298,8 @@ class LmdbNativeDistinctRootPhysicalAlternativeTest {
 			BindingSet nativeResult = fixture.rows(query, true).get(0);
 			assertEquals(9L, ((Literal) generic.getValue("distinctRoots")).longValue());
 			assertEquals(450L, ((Literal) generic.getValue("witnessRows")).longValue());
-			assertEquals(generic, nativeResult, "the native plan retains both distinct-root and witness multiplicities");
+			assertEquals(generic, nativeResult,
+					"the native plan retains both distinct-root and witness multiplicities");
 		}
 	}
 
@@ -379,13 +386,14 @@ class LmdbNativeDistinctRootPhysicalAlternativeTest {
 			}, -1L);
 			assertSame(opaque, LmdbNativeNeutralRangeOrder.prepareAggregate(opaque, row, row.boundMask(),
 					new AggregateSpec[] { distinctRoot }),
-				"an opaque side-effecting filter remains a lexical barrier to reordering");
+					"an opaque side-effecting filter remains a lexical barrier to reordering");
 			assertEquals(0, opaqueCalls.get(), "preparation must never evaluate the side-effecting filter");
 		}
 	}
 
 	private static void assertRootDomainExistsCount(Kernel kernel) {
-		assertEquals(2, kernel.pipeline.size(), () -> "expected root domain plus existential witness: " + kernel.shapeKey());
+		assertEquals(2, kernel.pipeline.size(),
+				() -> "expected root domain plus existential witness: " + kernel.shapeKey());
 		assertTrue(kernel.pipeline.get(0) instanceof EnumerateDomain, kernel.shapeKey());
 		assertTrue(kernel.pipeline.get(1) instanceof Exists, kernel.shapeKey());
 		assertFalse(((Exists) kernel.pipeline.get(1)).negated, "the remaining flat join is a positive witness");
@@ -508,7 +516,10 @@ class LmdbNativeDistinctRootPhysicalAlternativeTest {
 	}
 
 	private static String quote(String value) {
-		return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
-				.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
+		return "\"" + value.replace("\\", "\\\\")
+				.replace("\"", "\\\"")
+				.replace("\n", "\\n")
+				.replace("\r", "\\r")
+				.replace("\t", "\\t") + "\"";
 	}
 }

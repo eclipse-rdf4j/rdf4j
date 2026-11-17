@@ -102,8 +102,11 @@ class LmdbLegacyPolicyStabilityTest {
 
 	private static SailRepository open(Path directory, boolean statistics) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
-				.setInlineLiterals(false).setAutoGrow(true).setValueDBSize(16L * 1024 * 1024)
-				.setTripleDBSize(16L * 1024 * 1024).setSketchEstimatorEnabled(statistics)
+				.setInlineLiterals(false)
+				.setAutoGrow(true)
+				.setValueDBSize(16L * 1024 * 1024)
+				.setTripleDBSize(16L * 1024 * 1024)
+				.setSketchEstimatorEnabled(statistics)
 				.setFrontierEstimatorMode(statistics ? FrontierEstimatorMode.AUTHORITATIVE : FrontierEstimatorMode.OFF);
 		config.setExperimentalQueryOptimizations(statistics);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
@@ -113,7 +116,13 @@ class LmdbLegacyPolicyStabilityTest {
 			LmdbTestUtil.awaitPostReadyInitialization(store, 20, TimeUnit.SECONDS);
 			return repository;
 		} catch (Throwable failure) {
-			try { repository.shutDown(); } catch (Throwable cleanup) { if (cleanup != failure) { failure.addSuppressed(cleanup); } }
+			try {
+				repository.shutDown();
+			} catch (Throwable cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
 			throw failure;
 		}
 	}

@@ -57,7 +57,7 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 	void modernOwnerReusesExactAndGeneralizedActualSurfacesWithoutRewritingTheirPayload(@TempDir Path directory)
 			throws Exception {
 		Filter recorded;
-			FilterDescriptorSurfaces descriptor;
+		FilterDescriptorSurfaces descriptor;
 		try (Fixture first = Fixture.modern(directory)) {
 			first.load();
 			try (Compiled compiled = first.compile(PATTERN)) {
@@ -83,9 +83,11 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 				assertEstimate(generalized, 8.0d / 11.0d, 11L, true);
 				assertEquals(descriptor.generalized().toString(), generalized.evidenceKey());
 			}
-			assertArrayEquals(bytes, Files.readAllBytes(file), "read-only exact/generalized lookup does not publish a replacement");
+			assertArrayEquals(bytes, Files.readAllBytes(file),
+					"read-only exact/generalized lookup does not publish a replacement");
 		}
-		assertArrayEquals(bytes, Files.readAllBytes(file), "clean reopen/close leaves the prior recognized payload intact");
+		assertArrayEquals(bytes, Files.readAllBytes(file),
+				"clean reopen/close leaves the prior recognized payload intact");
 	}
 
 	@Test
@@ -104,11 +106,14 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 			}
 			try (var connection = fixture.repository.getConnection()) {
 				connection.add(fixture.store.getValueFactory().createIRI("urn:filter-owner:new-miss"),
-						CanonicalIriCompatibilityProcess.PREDICATE, fixture.store.getValueFactory().createLiteral("miss"));
+						CanonicalIriCompatibilityProcess.PREDICATE,
+						fixture.store.getValueFactory().createLiteral("miss"));
 			}
-			assertNull(fixture.filters().estimateLearnedSurface(recorded), "the real public mutation invalidates prior exact input evidence");
+			assertNull(fixture.filters().estimateLearnedSurface(recorded),
+					"the real public mutation invalidates prior exact input evidence");
 			try (Compiled probe = fixture.compile(OTHER_PATTERN)) {
-				assertNull(fixture.filters().estimateLearnedSurface(probe.filter()), "the same reset also invalidates its generalized cell");
+				assertNull(fixture.filters().estimateLearnedSurface(probe.filter()),
+						"the same reset also invalidates its generalized cell");
 			}
 			fixture.ready();
 			try (Compiled fresh = fixture.compile(PATTERN)) {
@@ -128,7 +133,8 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 					assertTrue(rows.hasNext());
 					assertNotNull(rows.next().getValue("s"));
 				}
-				assertFalse(partial.filter().isCostFeedbackCompletedActual(), "early caller close is an incomplete producer");
+				assertFalse(partial.filter().isCostFeedbackCompletedActual(),
+						"early caller close is an incomplete producer");
 				assertNull(fixture.filters().estimateLearnedSurface(partial.filter()));
 			}
 			try (Compiled complete = fixture.compile(PATTERN)) {
@@ -151,8 +157,11 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 			var existingOverload = new LmdbFilterSelectivityStats(directory.resolve("join-estimator.rjes"),
 					triples, backing.valueStore(), false, 20L, 0, false,
 					backing.getSketchBasedJoinEstimator()::snapshotIdentity, 0, () -> true, () -> {
-						try { return triples.latestFrontierMutationSequence(); }
-						catch (java.io.IOException failure) { throw new UncheckedIOException(failure); }
+						try {
+							return triples.latestFrontierMutationSequence();
+						} catch (java.io.IOException failure) {
+							throw new UncheckedIOException(failure);
+						}
 					}, null, false);
 			assertEstimate(existingOverload.estimateLearnedSurface(recorded), 8.0d / 11.0d, 11L, false);
 			assertTrue(existingOverload.coldSynopsisFootprint().isEmpty());
@@ -238,7 +247,11 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 				return QueryResults.asList(rows).stream().map(row -> row.getValue("s").stringValue()).sorted().toList();
 			}
 		}
-		@Override public void close() { dataset.close(); }
+
+		@Override
+		public void close() {
+			dataset.close();
+		}
 	}
 
 	private static final class Fixture implements AutoCloseable {
@@ -246,24 +259,42 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 		final SailRepository repository;
 		final String predicate;
 
-		static Fixture modern(Path directory) throws Exception { return new Fixture(directory, PREDICATE); }
-		Fixture(Path directory) throws Exception { this(directory, CanonicalIriCompatibilityProcess.PREDICATE.stringValue()); }
+		static Fixture modern(Path directory) throws Exception {
+			return new Fixture(directory, PREDICATE);
+		}
+
+		Fixture(Path directory) throws Exception {
+			this(directory, CanonicalIriCompatibilityProcess.PREDICATE.stringValue());
+		}
 
 		Fixture(Path directory, String predicate) throws Exception {
 			this.predicate = predicate;
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
-					.setInlineLiterals(false).setAutoGrow(true).setValueDBSize(16L * 1024 * 1024)
-					.setTripleDBSize(16L * 1024 * 1024).setNativeEvaluationEnabled(false).setSketchEstimatorEnabled(true)
-					.setOptimizerSamplingEnabled(false).setBackgroundRawSamplingEnabled(false)
+					.setInlineLiterals(false)
+					.setAutoGrow(true)
+					.setValueDBSize(16L * 1024 * 1024)
+					.setTripleDBSize(16L * 1024 * 1024)
+					.setNativeEvaluationEnabled(false)
+					.setSketchEstimatorEnabled(true)
+					.setOptimizerSamplingEnabled(false)
+					.setBackgroundRawSamplingEnabled(false)
 					.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-					.setFrontierSynopsisBudgetBytes(64L * 1024 * 1024).setFrontierHeapBudgetBytes(128L * 1024 * 1024);
+					.setFrontierSynopsisBudgetBytes(64L * 1024 * 1024)
+					.setFrontierHeapBudgetBytes(128L * 1024 * 1024);
 			config.setExperimentalQueryOptimizations(true);
 			store = new LmdbStore(directory.toFile(), config);
 			repository = new SailRepository(store);
 			repository.init();
-			try { LmdbTestUtil.awaitPostReadyInitialization(store, 30L, TimeUnit.SECONDS); }
-			catch (Throwable failure) {
-				try { repository.shutDown(); } catch (Throwable cleanup) { if (cleanup != failure) { failure.addSuppressed(cleanup); } }
+			try {
+				LmdbTestUtil.awaitPostReadyInitialization(store, 30L, TimeUnit.SECONDS);
+			} catch (Throwable failure) {
+				try {
+					repository.shutDown();
+				} catch (Throwable cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
 				throw failure;
 			}
 		}
@@ -296,17 +327,22 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 		}
 
 		LmdbFilterSelectivityStats filters() {
-			return ((LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics()).estimatorRuntime().filters();
+			return ((LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics()).estimatorRuntime()
+					.filters();
 		}
 
 		List<String> expectedSubjects(long inputs, long matches) {
 			try (var connection = repository.getConnection();
-					var statements = connection.getStatements(null, store.getValueFactory().createIRI(predicate), null, false)) {
+					var statements = connection.getStatements(null, store.getValueFactory().createIRI(predicate), null,
+							false)) {
 				List<String> expected = new ArrayList<>();
 				long count = 0L;
 				while (statements.hasNext()) {
-					var statement = statements.next(); count++;
-					if (statement.getObject().isIRI()) { expected.add(statement.getSubject().stringValue()); }
+					var statement = statements.next();
+					count++;
+					if (statement.getObject().isIRI()) {
+						expected.add(statement.getSubject().stringValue());
+					}
 				}
 				assertEquals(inputs, count);
 				assertEquals(matches, expected.size());
@@ -315,16 +351,21 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 		}
 
 		Filter teach(Compiled compiled, long inputs, long matches) {
-			assertEquals(expectedSubjects(inputs, matches), compiled.subjects(), "exact real statement/type oracle bag");
+			assertEquals(expectedSubjects(inputs, matches), compiled.subjects(),
+					"exact real statement/type oracle bag");
 			assertEquals(inputs, compiled.filter().getArg().getResultSizeActual());
-			assertTrue(compiled.filter().isCostFeedbackCompletedActual(), "the actual generic producer fully completed");
+			assertTrue(compiled.filter().isCostFeedbackCompletedActual(),
+					"the actual generic producer fully completed");
 			descriptor(compiled.filter());
-			assertEstimate(filters().estimateLearnedSurface(compiled.filter()), (double) matches / inputs, inputs, false);
+			assertEstimate(filters().estimateLearnedSurface(compiled.filter()), (double) matches / inputs, inputs,
+					false);
 			return compiled.filter();
 		}
 
 		Compiled compile(String pattern) {
-			SailDataset dataset = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+			SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ);
 			try {
 				var source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
 				var pair = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
@@ -332,26 +373,43 @@ class LmdbPersistedFilterOwnerAdmissionTest {
 				assertTrue(pair.pinnedValueSnapshot().isPresent());
 				assertTrue(source.getSnapshotEpoch().isPresent());
 				var statistics = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
-				var strategy = assertInstanceOf(LmdbEvaluationStrategy.class, store.getConnectionEvaluationStrategyFactory()
-						.createEvaluationStrategy(null, source, statistics, store.getQueryExecutionPolicy()));
+				var strategy = assertInstanceOf(LmdbEvaluationStrategy.class,
+						store.getConnectionEvaluationStrategyFactory()
+								.createEvaluationStrategy(null, source, statistics, store.getQueryExecutionPolicy()));
 				strategy.setTrackResultSize(true);
-				TupleExpr parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query(predicate, pattern), null).getTupleExpr();
+				TupleExpr parsed = QueryParserUtil
+						.parseTupleQuery(QueryLanguage.SPARQL, query(predicate, pattern), null)
+						.getTupleExpr();
 				TupleExpr optimized = strategy.optimize(parsed, statistics, EmptyBindingSet.getInstance());
 				QueryEvaluationStep step = strategy.precompile(optimized);
 				assertTrue(statistics.feedbackPublicationAllowed());
 				var authority = LmdbFeedbackReadAuthority.capture(statistics.estimatorRuntime(), source, null);
-				assertNotNull(authority); assertTrue(authority.isCurrent());
+				assertNotNull(authority);
+				assertTrue(authority.isCurrent());
 				List<Filter> filters = new ArrayList<>();
 				optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-					@Override public void meet(Filter filter) { filters.add(filter); super.meet(filter); }
+					@Override
+					public void meet(Filter filter) {
+						filters.add(filter);
+						super.meet(filter);
+					}
 				});
-				Filter filter = filters.stream().filter(value -> value.getRuntimeFeedbackContract() != null
-						&& value.getRuntimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_FILTER)).findFirst().orElseThrow();
+				Filter filter = filters.stream()
+						.filter(value -> value.getRuntimeFeedbackContract() != null
+								&& value.getRuntimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_FILTER))
+						.findFirst()
+						.orElseThrow();
 				descriptor(filter);
 				return new Compiled(dataset, statistics, filter, step);
-			} catch (RuntimeException | Error failure) { dataset.close(); throw failure; }
+			} catch (RuntimeException | Error failure) {
+				dataset.close();
+				throw failure;
+			}
 		}
 
-		@Override public void close() { repository.shutDown(); }
+		@Override
+		public void close() {
+			repository.shutDown();
+		}
 	}
 }

@@ -45,19 +45,18 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
-import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.junit.jupiter.api.Test;
 
 /** Captures which physical join route chooses a representative for equal RDF values. */
@@ -181,7 +180,7 @@ class JoinRepresentativeRouteDiagnosticTest {
 		List<BindingSet> optimizedRows;
 		try (CloseableIteration<BindingSet> iteration = strategy.precompile(optimized)
 				.evaluate(EmptyBindingSet.getInstance())) {
-		optimizedRows = collect(iteration);
+			optimizedRows = collect(iteration);
 		}
 
 		System.out.println("numeric merge compatibility"
@@ -369,8 +368,8 @@ class JoinRepresentativeRouteDiagnosticTest {
 		assertThat(opaque.getBindingNames()).isEmpty();
 		assertThat(opaque.hasRepeatableBindingSets()).isFalse();
 		assertThat(ordinary).containsExactly("lower@en", "lower@en");
-		assertThat(optimizedJoins).allSatisfy(join ->
-				assertThat(join.getAlgorithmName()).isNotEqualTo("InnerMergeJoinIterator"));
+		assertThat(optimizedJoins)
+				.allSatisfy(join -> assertThat(join.getAlgorithmName()).isNotEqualTo("InnerMergeJoinIterator"));
 		assertThat(optimizedValues).containsExactlyElementsOf(ordinary);
 		assertThat(forcedValues).containsExactlyElementsOf(ordinary);
 		assertThat(forcedOuter.getAlgorithmName()).isNotEqualTo("InnerMergeJoinIterator");
@@ -575,7 +574,8 @@ class JoinRepresentativeRouteDiagnosticTest {
 
 	private static List<BindingSet> evaluate(TripleSource source, TupleExpr expression, BindingSet input) {
 		try (CloseableIteration<BindingSet> iteration = new StrictEvaluationStrategy(source, null)
-				.precompile(expression).evaluate(input)) {
+				.precompile(expression)
+				.evaluate(input)) {
 			return collect(iteration);
 		}
 	}
@@ -857,8 +857,9 @@ class JoinRepresentativeRouteDiagnosticTest {
 					.filter(statement -> subject == null || subject.equals(statement.getSubject()))
 					.filter(statement -> object == null || object.equals(statement.getObject()))
 					.filter(statement -> contexts == null || contexts.length == 0
-							|| java.util.Arrays.stream(contexts).anyMatch(context -> java.util.Objects.equals(context,
-									statement.getContext())))
+							|| java.util.Arrays.stream(contexts)
+									.anyMatch(context -> java.util.Objects.equals(context,
+											statement.getContext())))
 					.collect(java.util.stream.Collectors.toCollection(ArrayList::new));
 		}
 

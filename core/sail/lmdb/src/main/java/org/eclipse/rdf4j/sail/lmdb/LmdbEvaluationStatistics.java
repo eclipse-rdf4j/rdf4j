@@ -275,7 +275,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		if (!feedbackPublicationAllowed() || requiresReadAuthority && source != executionSource) {
 			return LmdbPreparedFilterOutcome.denied();
 		}
-		LmdbPreparedFilterOutcome prepared = filterServices.prepareNativeFilterOutcome(surface, origin, source, dataset);
+		LmdbPreparedFilterOutcome prepared = filterServices.prepareNativeFilterOutcome(surface, origin, source,
+				dataset);
 		return prepared == null ? LmdbPreparedFilterOutcome.denied() : prepared;
 	}
 

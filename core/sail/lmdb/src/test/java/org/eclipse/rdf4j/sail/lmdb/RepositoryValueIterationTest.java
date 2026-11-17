@@ -56,7 +56,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 class RepositoryValueIterationTest {
 
 	private enum CancellationOutcome {
-		ACCEPTED, DECLINED, FAILED
+		ACCEPTED,
+		DECLINED,
+		FAILED
 	}
 
 	@ParameterizedTest
@@ -128,7 +130,8 @@ class RepositoryValueIterationTest {
 					release.countDown();
 				}
 				if (outcome == CancellationOutcome.FAILED) {
-					ExecutionException error = assertThrows(ExecutionException.class, () -> request.get(5, TimeUnit.SECONDS));
+					ExecutionException error = assertThrows(ExecutionException.class,
+							() -> request.get(5, TimeUnit.SECONDS));
 					assertSame(callbackFailure, error.getCause());
 					assertEquals(List.of(drainFailure), List.of(error.getCause().getSuppressed()));
 				} else {

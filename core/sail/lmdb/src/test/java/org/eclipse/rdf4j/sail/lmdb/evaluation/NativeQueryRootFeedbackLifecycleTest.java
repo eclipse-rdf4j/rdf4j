@@ -81,19 +81,31 @@ class NativeQueryRootFeedbackLifecycleTest {
 	private static final String LENGTH_QUERY = "SELECT (STRLEN(?cat) AS ?length) WHERE { "
 			+ "{ SELECT (GROUP_CONCAT(?v; SEPARATOR=\"\") AS ?cat) WHERE { " + BODY + " } } }";
 	private static final String PARTIAL_QUERY = "SELECT (\"kept\" AS ?marker) WHERE { " + BODY + " } LIMIT 1";
-	@TempDir File directory;
+	@TempDir
+	File directory;
 
 	enum Transport {
-		RDF, TYPED_ADAPTER;
-		Opened open(QueryEvaluationStep step) { return NativeQueryRootFeedbackLifecycleTest.open(this, step); }
+		RDF,
+		TYPED_ADAPTER;
+
+		Opened open(QueryEvaluationStep step) {
+			return NativeQueryRootFeedbackLifecycleTest.open(this, step);
+		}
 	}
-	enum Stop { CLOSE, CANCEL }
+
+	enum Stop {
+		CLOSE,
+		CANCEL
+	}
 
 	static Stream<Arguments> rootCases() {
-		return Stream.of(Transport.values()).flatMap(transport -> Stream.of(
-				Arguments.of(transport, COUNT_QUERY, "count", "32"),
-				Arguments.of(transport, LENGTH_QUERY, "length", Integer.toString(IntStream.range(0, INPUTS)
-						.filter(i -> i % 4 == 0).map(i -> ("hit:" + i).length()).sum()))));
+		return Stream.of(Transport.values())
+				.flatMap(transport -> Stream.of(
+						Arguments.of(transport, COUNT_QUERY, "count", "32"),
+						Arguments.of(transport, LENGTH_QUERY, "length", Integer.toString(IntStream.range(0, INPUTS)
+								.filter(i -> i % 4 == 0)
+								.map(i -> ("hit:" + i).length())
+								.sum()))));
 	}
 
 	@ParameterizedTest
@@ -144,8 +156,10 @@ class NativeQueryRootFeedbackLifecycleTest {
 	@Test
 	void uninstrumentedPublicRootHasTheSameExactBagAndCompleteReceipt() throws Exception {
 		try (Fixture fixture = new Fixture(directory)) {
-			String expected = Integer.toString(IntStream.range(0, INPUTS).filter(i -> i % 4 == 0)
-					.map(i -> ("hit:" + i).length()).sum());
+			String expected = Integer.toString(IntStream.range(0, INPUTS)
+					.filter(i -> i % 4 == 0)
+					.map(i -> ("hit:" + i).length())
+					.sum());
 			assertEquals(List.of(expected), values(fixture.ordinary(queryRoot(LENGTH_QUERY)), "length"));
 			Prepared prepared = fixture.prepare(queryRoot(LENGTH_QUERY), false);
 			assertFalse(prepared.root().isExecutionSummaryEnabled());
@@ -158,8 +172,9 @@ class NativeQueryRootFeedbackLifecycleTest {
 	}
 
 	static Stream<Arguments> stops() {
-		return Stream.of(Transport.values()).flatMap(transport -> Stream.of(Stop.values())
-				.map(stop -> Arguments.of(transport, stop)));
+		return Stream.of(Transport.values())
+				.flatMap(transport -> Stream.of(Stop.values())
+						.map(stop -> Arguments.of(transport, stop)));
 	}
 
 	@ParameterizedTest
@@ -281,14 +296,20 @@ class NativeQueryRootFeedbackLifecycleTest {
 			Prepared prepared = fixture.prepare(queryRoot(COUNT_QUERY), true);
 			Opened rows = transport.open(prepared.step());
 			NativeExecutionContext context = rows.context();
-			if (context == null) { rows.close(); }
+			if (context == null) {
+				rows.close();
+			}
 			assertNotNull(context, "cleanup must belong to the actual returned public result");
 			IllegalStateException cleanup = new IllegalStateException("actual outer QueryRoot cleanup failure");
-			context.nativeState(cleanup, () -> (AutoCloseable) () -> { throw cleanup; });
+			context.nativeState(cleanup, () -> (AutoCloseable) () -> {
+				throw cleanup;
+			});
 			List<BindingSet> returned = new ArrayList<>();
 			IllegalStateException actual = assertThrows(IllegalStateException.class, () -> {
 				try (rows) {
-					for (BindingSet row; (row = rows.next()) != null;) { returned.add(row); }
+					for (BindingSet row; (row = rows.next()) != null;) {
+						returned.add(row);
+					}
 				}
 			});
 			assertSame(cleanup, actual);
@@ -321,7 +342,8 @@ class NativeQueryRootFeedbackLifecycleTest {
 		List<BindingSet> rows = new ArrayList<>();
 		for (int count : counts) {
 			QueryBindingSet row = new QueryBindingSet();
-			row.addBinding("count", fixture.store.getValueFactory().createLiteral(Integer.toString(count), CoreDatatype.XSD.INTEGER));
+			row.addBinding("count",
+					fixture.store.getValueFactory().createLiteral(Integer.toString(count), CoreDatatype.XSD.INTEGER));
 			rows.add(row);
 		}
 		values.setBindingSets(rows);
@@ -335,7 +357,9 @@ class NativeQueryRootFeedbackLifecycleTest {
 	private static List<BindingSet> drain(QueryEvaluationStep step) {
 		try (Opened rows = Transport.RDF.open(step)) {
 			List<BindingSet> returned = new ArrayList<>();
-			for (BindingSet row; (row = rows.next()) != null;) { returned.add(row); }
+			for (BindingSet row; (row = rows.next()) != null;) {
+				returned.add(row);
+			}
 			return returned;
 		}
 	}
@@ -349,36 +373,67 @@ class NativeQueryRootFeedbackLifecycleTest {
 		assertNotEquals(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK, path);
 	}
 
-	private record Prepared(QueryRoot root, Group group, Filter filter, QueryEvaluationStep step) { }
+	private record Prepared(QueryRoot root, Group group, Filter filter, QueryEvaluationStep step) {
+	}
 
 	private interface Opened extends AutoCloseable {
 		BindingSet next();
+
 		NativeExecutionContext context();
+
 		boolean cancel();
-		@Override void close();
+
+		@Override
+		void close();
 	}
 
 	private static Opened open(Transport transport, QueryEvaluationStep step) {
 		if (transport == Transport.TYPED_ADAPTER) {
 			NativeResultCursor cursor = NativeResultSteps.open(step, input());
 			return new Opened() {
-				@Override public BindingSet next() {
+				@Override
+				public BindingSet next() {
 					NativeResultRow row = cursor.next();
 					return row == null ? null : row.toBindingSet();
 				}
-				@Override public NativeExecutionContext context() { return cursor.executionContext(); }
-				@Override public boolean cancel() { return cursor.requestCancellation(); }
-				@Override public void close() { cursor.close(); }
+
+				@Override
+				public NativeExecutionContext context() {
+					return cursor.executionContext();
+				}
+
+				@Override
+				public boolean cancel() {
+					return cursor.requestCancellation();
+				}
+
+				@Override
+				public void close() {
+					cursor.close();
+				}
 			};
 		}
 		CloseableIteration<BindingSet> rows = step.evaluate(input());
 		return new Opened() {
-			@Override public BindingSet next() { return rows.hasNext() ? rows.next() : null; }
-			@Override public NativeExecutionContext context() { return NativeExecutionContextCarrier.contextOf(rows); }
-			@Override public boolean cancel() {
+			@Override
+			public BindingSet next() {
+				return rows.hasNext() ? rows.next() : null;
+			}
+
+			@Override
+			public NativeExecutionContext context() {
+				return NativeExecutionContextCarrier.contextOf(rows);
+			}
+
+			@Override
+			public boolean cancel() {
 				return rows instanceof CooperativeCancellation cancellation && cancellation.requestCancellation();
 			}
-			@Override public void close() { rows.close(); }
+
+			@Override
+			public void close() {
+				rows.close();
+			}
 		};
 	}
 
@@ -392,8 +447,11 @@ class NativeQueryRootFeedbackLifecycleTest {
 
 		Fixture(File directory) throws Exception {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)
-					.setFrontierEstimatorMode(FrontierEstimatorMode.OFF).setOptimizerSamplingEnabled(false)
-					.setBackgroundRawSamplingEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+					.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+					.setOptimizerSamplingEnabled(false)
+					.setBackgroundRawSamplingEnabled(false)
+					.setDirectAdjacencyEnabled(false)
+					.setValueOverlayEnabled(false);
 			config.setExperimentalQueryOptimizations(true);
 			store = new LmdbStore(directory, config);
 			repository = new SailRepository(store);
@@ -411,7 +469,8 @@ class NativeQueryRootFeedbackLifecycleTest {
 			dataset = NativeQuerySourceAccess.openExplicitDataset(store);
 			source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
 			statistics = NativeQuerySourceAccess.evaluationStatistics(store);
-			strategy = (LmdbNativeEvaluationStrategy) NativeQuerySourceAccess.evaluationStrategy(store, source, statistics);
+			strategy = (LmdbNativeEvaluationStrategy) NativeQuerySourceAccess.evaluationStrategy(store, source,
+					statistics);
 			assertNoLearning();
 		}
 
@@ -427,16 +486,25 @@ class NativeQueryRootFeedbackLifecycleTest {
 			Group[] group = { null };
 			Filter[] filter = { null };
 			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override protected void meetNode(QueryModelNode node) {
+				@Override
+				protected void meetNode(QueryModelNode node) {
 					node.setExecutionSummaryEnabled(summary);
 					super.meetNode(node);
 				}
-				@Override public void meet(Group node) {
-					if (group[0] == null) { group[0] = node; }
+
+				@Override
+				public void meet(Group node) {
+					if (group[0] == null) {
+						group[0] = node;
+					}
 					super.meet(node);
 				}
-				@Override public void meet(Filter node) {
-					if (filter[0] == null) { filter[0] = node; }
+
+				@Override
+				public void meet(Filter node) {
+					if (filter[0] == null) {
+						filter[0] = node;
+					}
 					super.meet(node);
 				}
 			});
@@ -457,8 +525,13 @@ class NativeQueryRootFeedbackLifecycleTest {
 			assertEquals(inputs, estimate.getEvidenceCount(), "only the complete selected logical census is reusable");
 		}
 
-		@Override public void close() {
-			try { dataset.close(); } finally { repository.shutDown(); }
+		@Override
+		public void close() {
+			try {
+				dataset.close();
+			} finally {
+				repository.shutDown();
+			}
 		}
 	}
 }

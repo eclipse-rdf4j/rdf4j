@@ -55,7 +55,8 @@ class LmdbFrontierReadPlaneOwnershipTest {
 				var outcome = cascades.optimizeWithResult(prepared, null, EmptyBindingSet.getInstance());
 				assertNotNull(outcome.cascadesPlan());
 				var detachedPrepared = LmdbCacheValueCopies.copy(outcome.detachedPreparedSource(), true);
-				assertNotNull(detachedPrepared, "the fixture must use the same detached value boundary as the pipeline");
+				assertNotNull(detachedPrepared,
+						"the fixture must use the same detached value boundary as the pipeline");
 				var work = PackedCascadesPlanner.detachedRefreshWork(detachedPrepared, outcome.goal(),
 						outcome.cascadesPlan().decisionSummary(), LmdbCacheValueCopies.CODEC).orElseThrow();
 				assertEquals(PackedPlanCache.structuralKey(detachedPrepared, LmdbCacheValueCopies.CODEC),
@@ -79,7 +80,8 @@ class LmdbFrontierReadPlaneOwnershipTest {
 				var revisions = read.runtime.capturePlanningRevisions();
 				var refresh = new LmdbDetachedPlanRefresh(read.runtime, recording, work,
 						LmdbPipelinePlanCache.DatasetIdentity.of(null), bindings, false, false, false,
-						read.strategy.getQueryEvaluationMode(), outcome.mode(), read.runtime.predicateRangeVersion(), range,
+						read.strategy.getQueryEvaluationMode(), outcome.mode(), read.runtime.predicateRangeVersion(),
+						range,
 						true, LmdbPlanAssumptions.NONE, revisions.dataRevision(), true, null, null, plane);
 				var first = refresh.execute();
 				assertNotNull(first.nextRefreshWork());

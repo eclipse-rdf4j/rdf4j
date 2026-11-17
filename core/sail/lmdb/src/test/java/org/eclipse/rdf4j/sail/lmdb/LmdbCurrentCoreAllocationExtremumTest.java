@@ -85,7 +85,8 @@ class LmdbCurrentCoreAllocationExtremumTest {
 			assertNull(LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.KEY));
 			assertNull(LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.ALLOCATION_KEY));
 		} else {
-			assertArrayEquals(proof, LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.KEY));
+			assertArrayEquals(proof,
+					LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.KEY));
 			assertArrayEquals(allocation, LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta",
 					ReferenceCountProof.ALLOCATION_KEY));
 		}

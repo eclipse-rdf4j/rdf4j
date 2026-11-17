@@ -41,7 +41,9 @@ class NativeValuesFoldPlanTest {
 		ProbePlan folded = new ProbePlan(2L), retained = new ProbePlan(2L);
 		NativeValuesFoldPlan guard = new NativeValuesFoldPlan(folded, retained, "target", 0);
 		RowState row = row(EmptyBindingSet.getInstance());
-		try (RowCursor result = guard.open(row)) { assertSame(folded.cursor, result); }
+		try (RowCursor result = guard.open(row)) {
+			assertSame(folded.cursor, result);
+		}
 		assertEquals(1, folded.opens);
 		assertEquals(0, retained.opens);
 		assertEquals(1, folded.closes);
@@ -58,7 +60,9 @@ class NativeValuesFoldPlanTest {
 		retained.opening = opening;
 		BindingSet input = input();
 		assertSame(opening, assertThrows(IOException.class, () -> guard.open(row(input))));
-		try (RowCursor result = guard.open(row)) { assertSame(folded.cursor, result); }
+		try (RowCursor result = guard.open(row)) {
+			assertSame(folded.cursor, result);
+		}
 		assertEquals(2, folded.opens, "a constrained opening cannot poison the ordinary later entry");
 	}
 
@@ -80,7 +84,9 @@ class NativeValuesFoldPlanTest {
 
 	@Test
 	void selectorAndBothLexicalInputsRemainInConservativeMasks() {
-		QueryEvaluationStep neverOpened = input -> { throw new AssertionError("metadata must not open a producer"); };
+		QueryEvaluationStep neverOpened = input -> {
+			throw new AssertionError("metadata must not open a producer");
+		};
 		SlotPlan lexical = new NativeSubqueryPlan(neverOpened, new int[] { 1 }, new String[] { "v" },
 				new int[] { 2 }, new String[] { "frame" });
 		SlotPlan values = SlotPlan.values(new ValuesRow[] { new ValuesRow(new int[] { 3 }, new long[] { 9L }) });
@@ -92,9 +98,20 @@ class NativeValuesFoldPlanTest {
 		NativeValuesFoldPlan finite = new NativeValuesFoldPlan(values, values, "target", 0);
 		assertEquals(1L | 8L, LmdbNativeAggregateCompiler.memoReadMask(finite));
 		NativeResultStep physical = new NativeResultStep() {
-			@Override public NativeResultCursor evaluateNative(BindingSet input) { throw new AssertionError("not opened"); }
-			@Override public org.eclipse.rdf4j.common.iteration.CloseableIteration<BindingSet> evaluate(BindingSet input) { throw new AssertionError("not opened"); }
-			@Override public boolean requiresPhysicalResults() { return true; }
+			@Override
+			public NativeResultCursor evaluateNative(BindingSet input) {
+				throw new AssertionError("not opened");
+			}
+
+			@Override
+			public org.eclipse.rdf4j.common.iteration.CloseableIteration<BindingSet> evaluate(BindingSet input) {
+				throw new AssertionError("not opened");
+			}
+
+			@Override
+			public boolean requiresPhysicalResults() {
+				return true;
+			}
 		};
 		SlotPlan typed = new NativeSubqueryPlan(physical, new int[0], new String[0], new int[0], new String[0]);
 		assertTrue(SlotPlan.requiresPhysicalCells(new NativeValuesFoldPlan(values, typed, "target", 0)),
@@ -106,9 +123,19 @@ class NativeValuesFoldPlanTest {
 		AtomicInteger forks = new AtomicInteger();
 		NativeLmdbQuerySource workerSource = mock(NativeLmdbQuerySource.class);
 		NativeBooleanFilter predicate = new NativeBooleanFilter() {
-			@Override public boolean accept(RowState row) { return true; }
-			@Override public boolean parallelWorkerForkable() { forks.incrementAndGet(); return true; }
-			@Override public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+			@Override
+			public boolean accept(RowState row) {
+				return true;
+			}
+
+			@Override
+			public boolean parallelWorkerForkable() {
+				forks.incrementAndGet();
+				return true;
+			}
+
+			@Override
+			public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
 				assertSame(workerSource, context.source());
 				return row -> true;
 			}
@@ -125,7 +152,8 @@ class NativeValuesFoldPlanTest {
 		JoinPlan borrowedJoin = assertInstanceOf(JoinPlan.class, borrowed.original);
 		assertSame(borrowedJoin.left, borrowedJoin.right);
 		attempt.discard();
-		try (NativeWorkerPlanBinder binder = new NativeWorkerPlanBinder(new NativeScalarPlan.WorkerContext(workerSource, null, null))) {
+		try (NativeWorkerPlanBinder binder = new NativeWorkerPlanBinder(
+				new NativeScalarPlan.WorkerContext(workerSource, null, null))) {
 			NativeValuesFoldPlan worker = assertInstanceOf(NativeValuesFoldPlan.class, binder.bind(original));
 			assertNotSame(original, worker);
 			assertSame(worker.folded, worker.original);
@@ -156,11 +184,36 @@ class NativeValuesFoldPlanTest {
 		IOException opening;
 		RuntimeException cleanup;
 		final RowCursor cursor = new RowCursor() {
-			@Override public boolean next() { return false; }
-			@Override public void close() { closes++; if (cleanup != null) { throw cleanup; } }
+			@Override
+			public boolean next() {
+				return false;
+			}
+
+			@Override
+			public void close() {
+				closes++;
+				if (cleanup != null) {
+					throw cleanup;
+				}
+			}
 		};
-		ProbePlan(long mask) { this.mask = mask; }
-		@Override public RowCursor open(RowState row) throws IOException { opens++; if (opening != null) { throw opening; } return cursor; }
-		@Override public long producedMask() { return mask; }
+
+		ProbePlan(long mask) {
+			this.mask = mask;
+		}
+
+		@Override
+		public RowCursor open(RowState row) throws IOException {
+			opens++;
+			if (opening != null) {
+				throw opening;
+			}
+			return cursor;
+		}
+
+		@Override
+		public long producedMask() {
+			return mask;
+		}
 	}
 }

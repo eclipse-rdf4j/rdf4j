@@ -67,7 +67,8 @@ class LmdbDeferredLearnedFeedbackRegressionTest {
 			early.recordFilterOutcome(filter(), 20L, 80L);
 			EvaluationStatistics.FilterPassEstimate oldObject = early.estimateFilterPass(filter());
 			EvaluationStatistics.FilterPassEstimate newObject = store.getBackingStore()
-					.getEvaluationStatistics().estimateFilterPass(filter());
+					.getEvaluationStatistics()
+					.estimateFilterPass(filter());
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, oldObject.getSource(),
 					"a query-owned statistics instance must see its committed observation after publication");
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, newObject.getSource(),
@@ -80,7 +81,6 @@ class LmdbDeferredLearnedFeedbackRegressionTest {
 		}
 	}
 
-
 	@Test
 	void freshFacadeLearnsAfterPublication(@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
 		CountDownLatch entered = new CountDownLatch(1);
@@ -92,7 +92,8 @@ class LmdbDeferredLearnedFeedbackRegressionTest {
 			assertTrue(entered.await(10, TimeUnit.SECONDS), "the real post-ready worker must be held");
 			release.countDown();
 			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
-			LmdbEvaluationStatistics fresh = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics fresh = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 			fresh.bindExecutionSnapshot(OptionalLong.of(fresh.estimatorRuntime().snapshotVersion()));
 			fresh.recordFilterOutcome(filter(), 20L, 80L);
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
@@ -113,7 +114,8 @@ class LmdbDeferredLearnedFeedbackRegressionTest {
 		repository.init();
 		try {
 			assertTrue(entered.await(10, TimeUnit.SECONDS), "the real post-ready worker must be held");
-			LmdbEvaluationStatistics early = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics early = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 			long oldEpoch = early.estimatorRuntime().snapshotVersion();
 			early.bindExecutionSnapshot(OptionalLong.of(oldEpoch));
 			try (var connection = repository.getConnection()) {
@@ -121,7 +123,8 @@ class LmdbDeferredLearnedFeedbackRegressionTest {
 				connection.add(values.createIRI("urn:test:person"), values.createIRI("urn:test:score"),
 						values.createLiteral(5));
 			}
-			assertNotEquals(oldEpoch, early.estimatorRuntime().snapshotVersion(), "the committed data revision must advance");
+			assertNotEquals(oldEpoch, early.estimatorRuntime().snapshotVersion(),
+					"the committed data revision must advance");
 			release.countDown();
 			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			early.recordFilterOutcome(filter(), 20L, 80L);

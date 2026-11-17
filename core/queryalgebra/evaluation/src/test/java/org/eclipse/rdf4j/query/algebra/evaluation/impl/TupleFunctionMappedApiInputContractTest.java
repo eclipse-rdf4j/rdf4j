@@ -55,8 +55,10 @@ class TupleFunctionMappedApiInputContractTest {
 	private static final Value OTHER = VF.createLiteral("other", "en");
 
 	static Stream<Arguments> mappedInputs() {
-		return Stream.of(Route.values()).flatMap(route -> Stream.of(Frame.values())
-				.flatMap(frame -> Stream.of(false, true).map(nullCell -> Arguments.of(route, frame, nullCell))));
+		return Stream.of(Route.values())
+				.flatMap(route -> Stream.of(Frame.values())
+						.flatMap(
+								frame -> Stream.of(false, true).map(nullCell -> Arguments.of(route, frame, nullCell))));
 	}
 
 	@ParameterizedTest(name = "{0}, {1}, null-cell={2}")
@@ -89,7 +91,8 @@ class TupleFunctionMappedApiInputContractTest {
 		List<BindingSet> expected = drain(plainStrategy().precompileRuntimeSubtree(ordinary,
 				new QueryEvaluationContext.Minimal(null)).evaluate(input));
 		assertEquals(frame == Frame.CONFLICTING_REQUEST ? 0 : 1, expected.size(), "ordinary constrained VALUES oracle");
-		if (!expected.isEmpty()) assertSame(callerValue, expected.getFirst().getValue("value"));
+		if (!expected.isEmpty())
+			assertSame(callerValue, expected.getFirst().getValue("value"));
 
 		TrackingFunction function = new TrackingFunction(output);
 		List<BindingSet> preparedInputs = new ArrayList<>();
@@ -108,25 +111,31 @@ class TupleFunctionMappedApiInputContractTest {
 				assertEquals(1, preparedInputs.size(), "actual ordinary tuple prepare hook");
 				BindingSet received = preparedInputs.getFirst();
 				assertTrue(received.hasBinding("value"));
-				assertSame(callerValue, received.getValue("value"), "materializeParameters must retain an existing mapping");
+				assertSame(callerValue, received.getValue("value"),
+						"materializeParameters must retain an existing mapping");
 				boolean promotedRequest = route == Route.REQUEST_ENTRY && frame == Frame.UNTRACKED;
 				if (promotedRequest) {
 					assertTrue(BindingSetOrigin.isTrackedInput(received));
-					assertTrue(BindingSetOrigin.of(received).isRequest("value"), "only the actual query entry grants REQUEST");
+					assertTrue(BindingSetOrigin.of(received).isRequest("value"),
+							"only the actual query entry grants REQUEST");
 				} else {
-					assertSame(input, received, "mapped parameters need no reification, replacement or entry promotion");
+					assertSame(input, received,
+							"mapped parameters need no reification, replacement or entry promotion");
 					assertEquals(BindingSetOrigin.isTrackedInput(input), BindingSetOrigin.isTrackedInput(received));
-					assertEquals(BindingSetOrigin.of(input).requestNames(), BindingSetOrigin.of(received).requestNames());
+					assertEquals(BindingSetOrigin.of(input).requestNames(),
+							BindingSetOrigin.of(received).requestNames());
 					assertEquals(BindingSetOrigin.of(input).localNames(), BindingSetOrigin.of(received).localNames());
 				}
 			}
 			actual = new ArrayList<>();
-			while (opened.hasNext()) actual.add(opened.next());
+			while (opened.hasNext())
+				actual.add(opened.next());
 		}
 		assertEquals(expected.size(), actual.size());
 		if (!actual.isEmpty()) {
 			BindingSet row = actual.getFirst();
-			assertEquals(Set.of("value"), row.getBindingNames()); assertSame(callerValue, row.getValue("value"));
+			assertEquals(Set.of("value"), row.getBindingNames());
+			assertSame(callerValue, row.getValue("value"));
 			if (route == Route.LEGACY_DIRECT) {
 				// The public legacy helper has no query-entry or declared-producer wrapper; keeping a
 				// mapping cannot invent authority. Both null and nonnull compatible cells make no write.
@@ -146,21 +155,30 @@ class TupleFunctionMappedApiInputContractTest {
 	}
 
 	private static TupleFunctionCall foldedCall() {
-		TupleFunctionCall call = new TupleFunctionCall(); call.setURI("urn:tuple-api-mapped:rows");
+		TupleFunctionCall call = new TupleFunctionCall();
+		call.setURI("urn:tuple-api-mapped:rows");
 		call.addResultVar(Var.of("value"));
 		new BindingAssignerOptimizer().optimize(new QueryRoot(call), null, binding(FOLDED));
 		Var folded = call.getResultVars().getFirst();
-		assertTrue(folded.hasValue()); assertTrue(folded.hasApiInputOrigin()); assertFalse(folded.isConstant());
-		assertSame(FOLDED, folded.getValue()); return call;
+		assertTrue(folded.hasValue());
+		assertTrue(folded.hasApiInputOrigin());
+		assertFalse(folded.isConstant());
+		assertSame(FOLDED, folded.getValue());
+		return call;
 	}
 
 	private static DefaultEvaluationStrategy observingStrategy(TrackingFunction function, List<BindingSet> inputs) {
-		TupleFunctionRegistry registry = new TupleFunctionRegistry(); registry.add(function);
+		TupleFunctionRegistry registry = new TupleFunctionRegistry();
+		registry.add(function);
 		return new DefaultEvaluationStrategy(new EmptyTripleSource(VF), null, null, 0L,
 				new EvaluationStatistics(), false, registry) {
-			@Override protected QueryEvaluationStep prepare(TupleFunctionCall expression, QueryEvaluationContext context) {
+			@Override
+			protected QueryEvaluationStep prepare(TupleFunctionCall expression, QueryEvaluationContext context) {
 				QueryEvaluationStep delegate = super.prepare(expression, context);
-				return bindings -> { inputs.add(bindings); return delegate.evaluate(bindings); };
+				return bindings -> {
+					inputs.add(bindings);
+					return delegate.evaluate(bindings);
+				};
 			}
 		};
 	}
@@ -170,23 +188,42 @@ class TupleFunctionMappedApiInputContractTest {
 	}
 
 	private static QueryBindingSet binding(Value value) {
-		QueryBindingSet result = new QueryBindingSet(); result.setBinding("value", value); return result;
+		QueryBindingSet result = new QueryBindingSet();
+		result.setBinding("value", value);
+		return result;
 	}
 
 	private static BindingSetAssignment values(Value value) {
-		BindingSetAssignment result = new BindingSetAssignment(); result.setBindingNames(Set.of("value"));
-		result.setBindingSets(List.of(new ListBindingSet(List.of("value"), value))); return result;
+		BindingSetAssignment result = new BindingSetAssignment();
+		result.setBindingNames(Set.of("value"));
+		result.setBindingSets(List.of(new ListBindingSet(List.of("value"), value)));
+		return result;
 	}
 
 	private static List<BindingSet> drain(CloseableIteration<BindingSet> rows) {
-		try (rows) { List<BindingSet> result = new ArrayList<>(); while (rows.hasNext()) result.add(rows.next()); return result; }
+		try (rows) {
+			List<BindingSet> result = new ArrayList<>();
+			while (rows.hasNext())
+				result.add(rows.next());
+			return result;
+		}
 	}
 
-	private enum Route { LEGACY_DIRECT, RUNTIME_SUBTREE, REQUEST_ENTRY }
+	private enum Route {
+		LEGACY_DIRECT,
+		RUNTIME_SUBTREE,
+		REQUEST_ENTRY
+	}
+
 	private enum Frame {
-		MATCHING_REQUEST, CONFLICTING_REQUEST, MATCHING_LOCAL_MASK, UNTRACKED;
+		MATCHING_REQUEST,
+		CONFLICTING_REQUEST,
+		MATCHING_LOCAL_MASK,
+		UNTRACKED;
+
 		BindingSet input() {
-			if (this == UNTRACKED) return binding(MATCH);
+			if (this == UNTRACKED)
+				return binding(MATCH);
 			if (this != MATCHING_LOCAL_MASK) {
 				return BindingSetOrigin.requestInput(binding(this == CONFLICTING_REQUEST ? OTHER : MATCH));
 			}
@@ -194,25 +231,51 @@ class TupleFunctionMappedApiInputContractTest {
 			assertFalse(hidden.hasBinding("value"));
 			assertSame(FOLDED, BindingSetOrigin.of(hidden).parameterValue("value"));
 			// Obtain the LOCAL mapped frame through an actual VALUES producer, retaining its masked old payload.
-			List<BindingSet> produced = drain(plainStrategy().precompileRuntimeSubtree(TupleFunctionMappedApiInputContractTest.values(MATCH),
-					new QueryEvaluationContext.Minimal(null)).evaluate(hidden));
-			assertEquals(1, produced.size()); return produced.getFirst();
+			List<BindingSet> produced = drain(
+					plainStrategy().precompileRuntimeSubtree(TupleFunctionMappedApiInputContractTest.values(MATCH),
+							new QueryEvaluationContext.Minimal(null)).evaluate(hidden));
+			assertEquals(1, produced.size());
+			return produced.getFirst();
 		}
 	}
 
 	private static final class TrackingFunction implements TupleFunction {
-		private final Value output; private int opens; private int closes;
-		private TrackingFunction(Value output) { this.output = output; }
-		@Override public String getURI() { return "urn:tuple-api-mapped:rows"; }
-		@Override public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory vf, Value... args) {
+		private final Value output;
+		private int opens;
+		private int closes;
+
+		private TrackingFunction(Value output) {
+			this.output = output;
+		}
+
+		@Override
+		public String getURI() {
+			return "urn:tuple-api-mapped:rows";
+		}
+
+		@Override
+		public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory vf, Value... args) {
 			opens++;
 			return new AbstractCloseableIteration<List<Value>>() {
 				private boolean emitted;
-				@Override public boolean hasNext() { return !isClosed() && !emitted; }
-				@Override public List<Value> next() {
-					if (!hasNext()) throw new java.util.NoSuchElementException(); emitted = true; return Arrays.asList(output);
+
+				@Override
+				public boolean hasNext() {
+					return !isClosed() && !emitted;
 				}
-				@Override protected void handleClose() { closes++; }
+
+				@Override
+				public List<Value> next() {
+					if (!hasNext())
+						throw new java.util.NoSuchElementException();
+					emitted = true;
+					return Arrays.asList(output);
+				}
+
+				@Override
+				protected void handleClose() {
+					closes++;
+				}
 			};
 		}
 	}

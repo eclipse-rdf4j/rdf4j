@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 
 /**
- * Selects an exact retained VALUES operand before consumption whenever its eliminated names are visible on entry.
- * Both alternatives are reusable templates. Only the selected branch is opened, and each opening observes its actual
- * lexical base and current native slots rather than the query's initial frame.
+ * Selects an exact retained VALUES operand before consumption whenever its eliminated names are visible on entry. Both
+ * alternatives are reusable templates. Only the selected branch is opened, and each opening observes its actual lexical
+ * base and current native slots rather than the query's initial frame.
  */
 final class NativeValuesFoldPlan implements SlotPlan {
 	final SlotPlan folded;
@@ -42,7 +42,9 @@ final class NativeValuesFoldPlan implements SlotPlan {
 		this.inputNames = inputNames.clone();
 		this.inputSlots = inputSlots.clone();
 		long mask = 0L;
-		for (int slot : inputSlots) { mask |= 1L << slot; }
+		for (int slot : inputSlots) {
+			mask |= 1L << slot;
+		}
 		this.inputMask = mask;
 		this.producedMask = folded.producedMask() | original.producedMask();
 	}
@@ -58,12 +60,16 @@ final class NativeValuesFoldPlan implements SlotPlan {
 	private boolean supplied(BindingSet bindings) {
 		BindingSetOrigin origin = BindingSetOrigin.of(bindings);
 		for (String name : inputNames) {
-			if (bindings.hasBinding(name) || origin.parameterValue(name) != null) { return true; }
+			if (bindings.hasBinding(name) || origin.parameterValue(name) != null) {
+				return true;
+			}
 		}
 		return false;
 	}
 
-	/** Resolves a root guard through input-preserving BIND arguments; join operands wait for their current slot frame. */
+	/**
+	 * Resolves a root guard through input-preserving BIND arguments; join operands wait for their current slot frame.
+	 */
 	static SlotPlan atEntry(SlotPlan plan, BindingSet bindings) {
 		while (plan instanceof NativeValuesFoldPlan guard) {
 			plan = guard.supplied(bindings) ? guard.original : guard.folded;
@@ -71,17 +77,50 @@ final class NativeValuesFoldPlan implements SlotPlan {
 		if (plan instanceof ExtensionPlan extension) {
 			// The argument opens before BIND copies run, so this unary edge carries the same invocation frame.
 			SlotPlan input = atEntry(extension.arg, bindings);
-			if (input != extension.arg) { return new ExtensionPlan(input, extension.copies); }
+			if (input != extension.arg) {
+				return new ExtensionPlan(input, extension.copies);
+			}
 		}
 		return plan;
 	}
 
-	@Override public RowCursor open(RowState row) throws IOException { return select(row).open(row); }
-	@Override public BatchCursor openBatch(RowState row, int capacity) throws IOException { return select(row).openBatch(row, capacity); }
-	@Override public LmdbNativeFactorCursor openFactors(RowState row) throws IOException { return select(row).openFactors(row); }
-	@Override public LmdbNativeFactorCursor openFactors(RowState row, long demand) throws IOException { return select(row).openFactors(row, demand); }
-	@Override public long producedMask() { return producedMask; }
-	@Override public double estimate(RowState row) { return select(row).estimate(row); }
-	@Override public LmdbNativeWork estimateWork(RowState row, long boundMask) { return select(row, boundMask).estimateWork(row, boundMask); }
-	@Override public double estimateRows(RowState row, long boundMask) { return select(row, boundMask).estimateRows(row, boundMask); }
+	@Override
+	public RowCursor open(RowState row) throws IOException {
+		return select(row).open(row);
+	}
+
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		return select(row).openBatch(row, capacity);
+	}
+
+	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
+		return select(row).openFactors(row);
+	}
+
+	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row, long demand) throws IOException {
+		return select(row).openFactors(row, demand);
+	}
+
+	@Override
+	public long producedMask() {
+		return producedMask;
+	}
+
+	@Override
+	public double estimate(RowState row) {
+		return select(row).estimate(row);
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		return select(row, boundMask).estimateWork(row, boundMask);
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		return select(row, boundMask).estimateRows(row, boundMask);
+	}
 }

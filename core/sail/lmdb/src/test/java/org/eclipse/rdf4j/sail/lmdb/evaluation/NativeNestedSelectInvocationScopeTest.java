@@ -24,11 +24,11 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -61,9 +61,11 @@ class NativeNestedSelectInvocationScopeTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI A = VF.createIRI("urn:select-boundary:a"), B = VF.createIRI("urn:select-boundary:b"),
 			MISSING = VF.createIRI("urn:select-boundary:missing"), P = VF.createIRI("urn:select-boundary:p"),
-			O = VF.createIRI("urn:ab"), G = VF.createIRI("urn:select-boundary:g"), OTHER = VF.createIRI("urn:select-boundary:other");
+			O = VF.createIRI("urn:ab"), G = VF.createIRI("urn:select-boundary:g"),
+			OTHER = VF.createIRI("urn:select-boundary:other");
 	private static final String BODY = "?s <urn:select-boundary:p> ?o";
-	private static final String COUNT = "SELECT ?result WHERE { { SELECT (COUNT(*) AS ?result) WHERE { " + BODY + " } } }";
+	private static final String COUNT = "SELECT ?result WHERE { { SELECT (COUNT(*) AS ?result) WHERE { " + BODY
+			+ " } } }";
 	private static final String LENGTH = "SELECT (STRLEN(?cat) AS ?result) WHERE { "
 			+ "{ SELECT (GROUP_CONCAT(?o; SEPARATOR='') AS ?cat) WHERE { " + BODY + " } } }";
 
@@ -72,19 +74,22 @@ class NativeNestedSelectInvocationScopeTest {
 				.flatMap(frame -> Stream.of(false, true).map(typed -> Arguments.of(frame, typed)));
 	}
 
-	@ParameterizedTest(name = "count, frame={0}, typed={1}") @MethodSource("frames")
+	@ParameterizedTest(name = "count, frame={0}, typed={1}")
+	@MethodSource("frames")
 	void nestedCountUsesItsOwnInputBeforeJoiningTheInvocation(String frame, boolean typed) {
 		assertParity(parse(COUNT), data(), input(frame, MISSING), typed,
 				frame.equals("REQUEST") ? 0L : 2L, false, true, true);
 	}
 
-	@ParameterizedTest(name = "summary, frame={0}, typed={1}") @MethodSource("frames")
+	@ParameterizedTest(name = "summary, frame={0}, typed={1}")
+	@MethodSource("frames")
 	void nestedLexicalSummaryUsesItsOwnInputBeforeOuterLengthConsumesIt(String frame, boolean typed) {
 		assertParity(parse(LENGTH), data(), input(frame, MISSING), typed,
 				frame.equals("REQUEST") ? 0L : 12L, false, true, true);
 	}
 
-	@ParameterizedTest(name = "uninstrumented, typed={0}") @ValueSource(booleans = { false, true })
+	@ParameterizedTest(name = "uninstrumented, typed={0}")
+	@ValueSource(booleans = { false, true })
 	void uninstrumentedNestedInputHasTheSameIndependentBag(boolean typed) {
 		assertParity(parse(COUNT), data(), input("LOCAL", MISSING), typed, 2L, false, false, true);
 		assertParity(parse(LENGTH), data(), input("LOCAL", MISSING), typed, 12L, false, false, true);
@@ -95,7 +100,8 @@ class NativeNestedSelectInvocationScopeTest {
 				.flatMap(frame -> Stream.of(false, true).map(typed -> Arguments.of(frame, typed)));
 	}
 
-	@ParameterizedTest(name = "top one, frame={0}, typed={1}") @MethodSource("topOneFrames")
+	@ParameterizedTest(name = "top one, frame={0}, typed={1}")
+	@MethodSource("topOneFrames")
 	void nestedTopOneJoinsOuterCompatibilityAfterGroupingAndLimit(String frame, boolean typed) {
 		String query = "SELECT ?result WHERE { { SELECT ?s (COUNT(*) AS ?result) WHERE { " + BODY
 				+ " } GROUP BY ?s ORDER BY ?s LIMIT 1 } }";
@@ -103,22 +109,37 @@ class NativeNestedSelectInvocationScopeTest {
 		assertParity(parse(query), data(), input(frame, B), typed, 1L, empty, true, false);
 	}
 
-	@ParameterizedTest(name = "lowered GRAPH, typed={0}") @ValueSource(booleans = { false, true })
+	@ParameterizedTest(name = "lowered GRAPH, typed={0}")
+	@ValueSource(booleans = { false, true })
 	void aSuppliedPrivateGraphStillCrossesTheIndependentSelectBoundary(boolean typed) {
 		TupleExpr root = parse(COUNT);
-		List<Projection> projections = new ArrayList<>(); List<StatementPattern> patterns = new ArrayList<>();
+		List<Projection> projections = new ArrayList<>();
+		List<StatementPattern> patterns = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override public void meet(Projection projection) { projections.add(projection); super.meet(projection); }
-			@Override public void meet(StatementPattern pattern) { patterns.add(pattern); }
+			@Override
+			public void meet(Projection projection) {
+				projections.add(projection);
+				super.meet(projection);
+			}
+
+			@Override
+			public void meet(StatementPattern pattern) {
+				patterns.add(pattern);
+			}
 		});
-		assertEquals(2, projections.size()); assertEquals(1, patterns.size());
+		assertEquals(2, projections.size());
+		assertEquals(1, patterns.size());
 		Projection inner = projections.getLast();
-		inner.setProjectionContext(Var.of("callerGraph")); inner.setInheritedGraphParameter("privateGraph");
+		inner.setProjectionContext(Var.of("callerGraph"));
+		inner.setInheritedGraphParameter("privateGraph");
 		StatementPattern old = patterns.getFirst();
 		StatementPattern named = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
-				old.getSubjectVar().clone(), old.getPredicateVar().clone(), old.getObjectVar().clone(), Var.of("privateGraph"));
-		named.setContextBindingOriginInherited(true); old.replaceWith(named);
-		QueryBindingSet values = new QueryBindingSet(input("LOCAL", MISSING)); values.setBinding("callerGraph", G);
+				old.getSubjectVar().clone(), old.getPredicateVar().clone(), old.getObjectVar().clone(),
+				Var.of("privateGraph"));
+		named.setContextBindingOriginInherited(true);
+		old.replaceWith(named);
+		QueryBindingSet values = new QueryBindingSet(input("LOCAL", MISSING));
+		values.setBinding("callerGraph", G);
 		BindingSet lowered = ProjectionQueryEvaluationStep.withInheritedGraphInput(inner, values,
 				new QueryEvaluationContext.Minimal((Dataset) null));
 		assertTrue(GraphFrameBindings.isSupplied(lowered, "privateGraph"));
@@ -126,10 +147,12 @@ class NativeNestedSelectInvocationScopeTest {
 				lowered, typed, 1L, false, true, true);
 	}
 
-	@ParameterizedTest(name = "LATERAL, typed={0}") @ValueSource(booleans = { false, true })
+	@ParameterizedTest(name = "LATERAL, typed={0}")
+	@ValueSource(booleans = { false, true })
 	void realLateralInputRemainsVisibleThroughTheProjectionsThatDeclareIt(boolean typed) {
 		String query = "SELECT ?result WHERE { VALUES ?s { <urn:select-boundary:missing> } LATERAL { "
-				+ "SELECT ?s ?result WHERE { { SELECT ?s (COUNT(*) AS ?result) WHERE { " + BODY + " } GROUP BY ?s } } } }";
+				+ "SELECT ?s ?result WHERE { { SELECT ?s (COUNT(*) AS ?result) WHERE { " + BODY
+				+ " } GROUP BY ?s } } } }";
 		assertParity(parse(query), data(), EmptyBindingSet.getInstance(), typed, 0L, true, true, false);
 		// The empty branch has no executed Group marker. A distinct real invocation with a stored subject
 		// proves that the same LATERAL/projection composition retains its actual nonfallback native child.
@@ -137,10 +160,11 @@ class NativeNestedSelectInvocationScopeTest {
 				data(), EmptyBindingSet.getInstance(), typed, 1L, false, true, false);
 	}
 
-
 	static Stream<Arguments> summaryCollisions() {
-		return Stream.of("UNTRACKED", "UNKNOWN", "LOCAL", "REQUEST").flatMap(frame -> Stream.of(false, true)
-				.flatMap(matching -> Stream.of(false, true).map(typed -> Arguments.of(frame, matching, typed))));
+		return Stream.of("UNTRACKED", "UNKNOWN", "LOCAL", "REQUEST")
+				.flatMap(frame -> Stream.of(false, true)
+						.flatMap(
+								matching -> Stream.of(false, true).map(typed -> Arguments.of(frame, matching, typed))));
 	}
 
 	@ParameterizedTest(name = "summary collision, frame={0}, matching={1}, typed={2}")
@@ -149,21 +173,22 @@ class NativeNestedSelectInvocationScopeTest {
 		MapBindingSet mapping = new MapBindingSet();
 		mapping.addBinding("cat", VF.createLiteral(matching ? "urn:aburn:ab" : "urn:acurn:ac"));
 		BindingSet input = switch (frame) {
-			case "UNTRACKED" -> mapping;
-			case "UNKNOWN" -> BindingSetOrigin.with(mapping, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
-			case "LOCAL" -> BindingSetOrigin.produced(mapping, Set.of("cat"));
-			default -> BindingSetOrigin.requestInput(mapping);
+		case "UNTRACKED" -> mapping;
+		case "UNKNOWN" -> BindingSetOrigin.with(mapping, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
+		case "LOCAL" -> BindingSetOrigin.produced(mapping, Set.of("cat"));
+		default -> BindingSetOrigin.requestInput(mapping);
 		};
 		assertParity(parse(LENGTH), data(), input, typed, 12L, !matching && !frame.equals("REQUEST"), true, true);
 	}
 
-
 	static Stream<Arguments> sameLexicalTerms() {
-		return Stream.of("LANGUAGE", "DATATYPE").flatMap(kind -> Stream.of(false, true)
-				.map(typed -> Arguments.of(kind, typed)));
+		return Stream.of("LANGUAGE", "DATATYPE")
+				.flatMap(kind -> Stream.of(false, true)
+						.map(typed -> Arguments.of(kind, typed)));
 	}
 
-	@ParameterizedTest(name = "same lexical RDF conflict, kind={0}, typed={1}") @MethodSource("sameLexicalTerms")
+	@ParameterizedTest(name = "same lexical RDF conflict, kind={0}, typed={1}")
+	@MethodSource("sameLexicalTerms")
 	void summaryCompatibilityAlsoPreservesLanguageAndDatatypeIdentity(String kind, boolean typed) {
 		MapBindingSet values = new MapBindingSet();
 		values.addBinding("cat", kind.equals("LANGUAGE") ? VF.createLiteral("urn:aburn:ab", "en")
@@ -172,110 +197,168 @@ class NativeNestedSelectInvocationScopeTest {
 				12L, true, true, true);
 	}
 
-	@ParameterizedTest(name = "duplicate grouped rows, typed={0}") @ValueSource(booleans = { false, true })
+	@ParameterizedTest(name = "duplicate grouped rows, typed={0}")
+	@ValueSource(booleans = { false, true })
 	void independentGroupedUnitsPreserveDuplicateOuterLengths(boolean typed) {
 		String query = "SELECT (STRLEN(?cat) AS ?result) WHERE { "
 				+ "{ SELECT (GROUP_CONCAT(?o; SEPARATOR='') AS ?cat) WHERE { " + BODY + " } GROUP BY ?s } }";
 		assertParity(parse(query), data(), input("LOCAL", MISSING), typed, 6L, 2, true, true);
 	}
 
-	@ParameterizedTest(name = "failed nullable projection, typed={0}") @ValueSource(booleans = { false, true })
+	@ParameterizedTest(name = "failed nullable projection, typed={0}")
+	@ValueSource(booleans = { false, true })
 	void anUnboundLocalProjectionIsExtendedOnlyAfterTheNestedUnit(boolean typed) {
 		String query = "SELECT ?nullable (STRLEN(?cat) AS ?result) WHERE { "
 				+ "{ SELECT ?cat (1 / 0 AS ?nullable) WHERE { "
 				+ "{ SELECT (GROUP_CONCAT(?o; SEPARATOR='') AS ?cat) WHERE { " + BODY + " } } } } }";
 		TupleExpr root = parse(query);
-		MapBindingSet input = new MapBindingSet(); input.addBinding("nullable", MISSING);
-		var source = new Source(data()); var context = new QueryEvaluationContext.Minimal((Dataset) null);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("nullable", MISSING);
+		var source = new Source(data());
+		var context = new QueryEvaluationContext.Minimal((Dataset) null);
 		var ordinary = new DefaultEvaluationStrategy(source,
 				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
 		List<BindingSet> expected;
-		try (var rows = ordinary.precompileRuntimeSubtree(root.clone(), context).evaluate(input)) { expected = QueryResults.asList(rows); }
-		assertEquals(1, expected.size()); assertEquals(Set.of("result", "nullable"), expected.getFirst().getBindingNames());
+		try (var rows = ordinary.precompileRuntimeSubtree(root.clone(), context).evaluate(input)) {
+			expected = QueryResults.asList(rows);
+		}
+		assertEquals(1, expected.size());
+		assertEquals(Set.of("result", "nullable"), expected.getFirst().getBindingNames());
 		assertEquals(MISSING, expected.getFirst().getValue("nullable"));
 		assertEquals(12L, ((Literal) expected.getFirst().getValue("result")).longValue());
-		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
 		assertNotNull(LmdbNativeAggregateCompiler.tryCompile(root, context, strategy, source));
-		var compiled = strategy.precompileRuntimeSubtree(root, context); int reads = source.reads();
+		var compiled = strategy.precompileRuntimeSubtree(root, context);
+		int reads = source.reads();
 		List<BindingSet> actual = new ArrayList<>();
 		if (typed) {
 			try (NativeResultCursor rows = NativeResultSteps.open(compiled, input)) {
 				for (NativeResultRow row; (row = rows.next()) != null;) {
 					assertEquals(NativeResultCell.Kind.RDF_TERM, row.cell("nullable").kind());
 					assertEquals(NativeResultCell.State.BOUND, row.cell("nullable").state());
-					assertEquals(MISSING, row.cell("nullable").value()); actual.add(row.toBindingSet());
+					assertEquals(MISSING, row.cell("nullable").value());
+					actual.add(row.toBindingSet());
 				}
 			}
-		} else { try (var rows = compiled.evaluate(input)) { actual = QueryResults.asList(rows); } }
-		assertEquals(expected, actual); assertTrue(source.reads() > reads); assertEquals(source.delegate.opened, source.delegate.closed);
-		assertEquals(BindingSetOrigin.of(expected.getFirst()).requestNames(), BindingSetOrigin.of(actual.getFirst()).requestNames());
-		assertEquals(BindingSetOrigin.of(expected.getFirst()).localNames(), BindingSetOrigin.of(actual.getFirst()).localNames());
+		} else {
+			try (var rows = compiled.evaluate(input)) {
+				actual = QueryResults.asList(rows);
+			}
+		}
+		assertEquals(expected, actual);
+		assertTrue(source.reads() > reads);
+		assertEquals(source.delegate.opened, source.delegate.closed);
+		assertEquals(BindingSetOrigin.of(expected.getFirst()).requestNames(),
+				BindingSetOrigin.of(actual.getFirst()).requestNames());
+		assertEquals(BindingSetOrigin.of(expected.getFirst()).localNames(),
+				BindingSetOrigin.of(actual.getFirst()).localNames());
 		assertEquals(reentered(expected.getFirst()), reentered(actual.getFirst()));
 	}
 
-
 	static Stream<Arguments> nullMarkerFrames() {
-		return Stream.of(false, true).flatMap(marker -> Stream.of(false, true)
-				.map(typed -> Arguments.of(marker, typed)));
+		return Stream.of(false, true)
+				.flatMap(marker -> Stream.of(false, true)
+						.map(typed -> Arguments.of(marker, typed)));
 	}
 
-	@ParameterizedTest(name = "nullMarker={0}, typed={1}") @MethodSource("nullMarkerFrames")
-	void aRealInvocationNullMarkerKeepsItsDomainAcrossScopeAndLaterStatementEvaluation(boolean nullMarker, boolean typed) {
+	@ParameterizedTest(name = "nullMarker={0}, typed={1}")
+	@MethodSource("nullMarkerFrames")
+	void aRealInvocationNullMarkerKeepsItsDomainAcrossScopeAndLaterStatementEvaluation(boolean nullMarker,
+			boolean typed) {
 		TupleExpr parsed = parse(COUNT);
 		Projection component = ((Projection) ((org.eclipse.rdf4j.query.algebra.QueryRoot) parsed).getArg()).clone();
 		// An internal non-subquery projection retains its real enclosing projection context. This is an
 		// evaluator-supported mapping boundary, not a new request entry or a synthetic context override.
 		component.setSubquery(false);
 		var holder = new org.eclipse.rdf4j.query.algebra.QueryRoot(new Projection(component,
-				new org.eclipse.rdf4j.query.algebra.ProjectionElemList(new org.eclipse.rdf4j.query.algebra.ProjectionElem("result"))));
-		assertTrue(org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator.hasEnclosingProjection(component,
-				new QueryEvaluationContext.Minimal((Dataset) null)));
-		QueryBindingSet input = new QueryBindingSet(); input.setBinding("guard", O);
-		if (nullMarker) { input.setBinding("marker", null); }
+				new org.eclipse.rdf4j.query.algebra.ProjectionElemList(
+						new org.eclipse.rdf4j.query.algebra.ProjectionElem("result"))));
+		assertTrue(
+				org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator.hasEnclosingProjection(component,
+						new QueryEvaluationContext.Minimal((Dataset) null)));
+		QueryBindingSet input = new QueryBindingSet();
+		input.setBinding("guard", O);
+		if (nullMarker) {
+			input.setBinding("marker", null);
+		}
 		assertEquals(nullMarker, input.hasBinding("marker"));
-		var source = new Source(data()); var context = new QueryEvaluationContext.Minimal((Dataset) null);
+		var source = new Source(data());
+		var context = new QueryEvaluationContext.Minimal((Dataset) null);
 		var ordinary = new DefaultEvaluationStrategy(source,
 				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
 		List<BindingSet> expected;
-		try (var rows = ordinary.precompileRuntimeSubtree(component, context).evaluate(input)) { expected = QueryResults.asList(rows); }
+		try (var rows = ordinary.precompileRuntimeSubtree(component, context).evaluate(input)) {
+			expected = QueryResults.asList(rows);
+		}
 		assertEquals(1, expected.size());
-		assertEquals(nullMarker, expected.getFirst().hasBinding("marker"), "ordinary mapping-domain contract, distinct from value presence");
+		assertEquals(nullMarker, expected.getFirst().hasBinding("marker"),
+				"ordinary mapping-domain contract, distinct from value presence");
 		assertEquals(null, expected.getFirst().getValue("marker"));
-		StatementPattern later = new StatementPattern(Var.of("marker"), Var.of("fixedPredicate", P, true, true), Var.of("fixedObject", O, true, true));
+		StatementPattern later = new StatementPattern(Var.of("marker"), Var.of("fixedPredicate", P, true, true),
+				Var.of("fixedObject", O, true, true));
 		List<BindingSet> expectedLater;
-		try (var rows = ordinary.precompileRuntimeSubtree(later.clone(), context).evaluate(expected.getFirst())) { expectedLater = QueryResults.asList(rows); }
-		assertEquals(nullMarker ? 0 : 2, expectedLater.size(), "a null marker forbids a later producer while true absence permits binding");
-		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
+		try (var rows = ordinary.precompileRuntimeSubtree(later.clone(), context).evaluate(expected.getFirst())) {
+			expectedLater = QueryResults.asList(rows);
+		}
+		assertEquals(nullMarker ? 0 : 2, expectedLater.size(),
+				"a null marker forbids a later producer while true absence permits binding");
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
 		assertNotNull(LmdbNativeAggregateCompiler.tryCompile(component, context, strategy, source));
-		var compiled = strategy.precompileRuntimeSubtree(component, context); int reads = source.reads();
+		var compiled = strategy.precompileRuntimeSubtree(component, context);
+		int reads = source.reads();
 		List<BindingSet> actual = new ArrayList<>();
 		if (typed) {
 			try (NativeResultCursor rows = NativeResultSteps.open(compiled, input)) {
-				for (NativeResultRow row; (row = rows.next()) != null;) { actual.add(row.toBindingSet()); }
+				for (NativeResultRow row; (row = rows.next()) != null;) {
+					actual.add(row.toBindingSet());
+				}
 			}
-		} else { try (var rows = compiled.evaluate(input)) { actual = QueryResults.asList(rows); } }
-		assertEquals(1, actual.size()); assertTrue(source.reads() > reads); assertEquals(source.delegate.opened, source.delegate.closed);
-		assertEquals(nullMarker, actual.getFirst().hasBinding("marker"), "schema UNBOUND is not the retained null-marker binding domain");
+		} else {
+			try (var rows = compiled.evaluate(input)) {
+				actual = QueryResults.asList(rows);
+			}
+		}
+		assertEquals(1, actual.size());
+		assertTrue(source.reads() > reads);
+		assertEquals(source.delegate.opened, source.delegate.closed);
+		assertEquals(nullMarker, actual.getFirst().hasBinding("marker"),
+				"schema UNBOUND is not the retained null-marker binding domain");
 		assertEquals(expected, actual);
-		assertEquals(BindingSetOrigin.of(expected.getFirst()).requestNames(), BindingSetOrigin.of(actual.getFirst()).requestNames());
-		assertEquals(BindingSetOrigin.of(expected.getFirst()).localNames(), BindingSetOrigin.of(actual.getFirst()).localNames());
+		assertEquals(BindingSetOrigin.of(expected.getFirst()).requestNames(),
+				BindingSetOrigin.of(actual.getFirst()).requestNames());
+		assertEquals(BindingSetOrigin.of(expected.getFirst()).localNames(),
+				BindingSetOrigin.of(actual.getFirst()).localNames());
 		List<BindingSet> actualLater;
-		try (var rows = ordinary.precompileRuntimeSubtree(later.clone(), context).evaluate(actual.getFirst())) { actualLater = QueryResults.asList(rows); }
-		assertEquals(expectedLater, actualLater, "real downstream statement evaluation observes the retained input domain");
+		try (var rows = ordinary.precompileRuntimeSubtree(later.clone(), context).evaluate(actual.getFirst())) {
+			actualLater = QueryResults.asList(rows);
+		}
+		assertEquals(expectedLater, actualLater,
+				"real downstream statement evaluation observes the retained input domain");
 		assertEquals(reentered(expected.getFirst()), reentered(actual.getFirst()));
 		assertSame(holder.getArg(), component.getParentNode(), "the actual ancestry remains intact");
 	}
 
-	private static TupleExpr parse(String query) { return new SPARQLParser().parseQuery(query, null).getTupleExpr(); }
-	private static List<Statement> data() { return List.of(VF.createStatement(A, P, O), VF.createStatement(B, P, O)); }
+	private static TupleExpr parse(String query) {
+		return new SPARQLParser().parseQuery(query, null).getTupleExpr();
+	}
+
+	private static List<Statement> data() {
+		return List.of(VF.createStatement(A, P, O), VF.createStatement(B, P, O));
+	}
+
 	private static BindingSet input(String frame, IRI value) {
-		if (frame.equals("ABSENT")) { return EmptyBindingSet.getInstance(); }
-		MapBindingSet values = new MapBindingSet(); values.addBinding("s", value);
+		if (frame.equals("ABSENT")) {
+			return EmptyBindingSet.getInstance();
+		}
+		MapBindingSet values = new MapBindingSet();
+		values.addBinding("s", value);
 		return switch (frame) {
-			case "UNTRACKED" -> values;
-			case "UNKNOWN" -> BindingSetOrigin.with(values, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
-			case "LOCAL" -> BindingSetOrigin.produced(values, Set.of("s"));
-			default -> BindingSetOrigin.requestInput(values);
+		case "UNTRACKED" -> values;
+		case "UNKNOWN" -> BindingSetOrigin.with(values, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
+		case "LOCAL" -> BindingSetOrigin.produced(values, Set.of("s"));
+		default -> BindingSetOrigin.requestInput(values);
 		};
 	}
 
@@ -291,7 +374,9 @@ class NativeNestedSelectInvocationScopeTest {
 		var ordinary = new DefaultEvaluationStrategy(source,
 				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
 		List<BindingSet> expected;
-		try (var rows = ordinary.precompileRuntimeSubtree(root.clone(), context).evaluate(input)) { expected = QueryResults.asList(rows); }
+		try (var rows = ordinary.precompileRuntimeSubtree(root.clone(), context).evaluate(input)) {
+			expected = QueryResults.asList(rows);
+		}
 		assertEquals(expectedRows, expected.size(), "ordinary independent SELECT and compatibility oracle");
 		for (BindingSet expectedRow : expected) {
 			assertEquals(Set.of("result"), expectedRow.getBindingNames());
@@ -300,11 +385,18 @@ class NativeNestedSelectInvocationScopeTest {
 		}
 		List<Group> groups = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override public void meet(Group group) { groups.add(group); super.meet(group); }
+			@Override
+			public void meet(Group group) {
+				groups.add(group);
+				super.meet(group);
+			}
 		});
 		assertEquals(1, groups.size());
-		if (summary) { groups.getFirst().setExecutionSummaryEnabled(true); }
-		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
+		if (summary) {
+			groups.getFirst().setExecutionSummaryEnabled(true);
+		}
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
 		if (completeRoot) {
 			assertNotNull(LmdbNativeAggregateCompiler.tryCompile(root, context, strategy, source),
 					"the actual aggregate stack is admitted without requesting a strategy");
@@ -320,9 +412,14 @@ class NativeNestedSelectInvocationScopeTest {
 					actual.add(row.toBindingSet());
 				}
 			}
-		} else { try (var rows = compiled.evaluate(input)) { actual = QueryResults.asList(rows); } }
+		} else {
+			try (var rows = compiled.evaluate(input)) {
+				actual = QueryResults.asList(rows);
+			}
+		}
 		assertEquals(expected, actual, "actual strategy entry bag precedes route/authority diagnostics");
-		assertTrue(source.reads() > readsBeforeNative, "actual native count/has/scan advances after oracle and preparation");
+		assertTrue(source.reads() > readsBeforeNative,
+				"actual native count/has/scan advances after oracle and preparation");
 		assertEquals(source.delegate.opened, source.delegate.closed, "every native record reader closes");
 		for (int index = 0; index < expected.size(); index++) {
 			BindingSet left = expected.get(index), right = actual.get(index);
@@ -342,8 +439,10 @@ class NativeNestedSelectInvocationScopeTest {
 	private static BindingSet materialized(BindingSet row, QueryEvaluationContext context) {
 		return BindingSetOrigin.materializeParameters(new QueryBindingSet(row), List.of(Var.of("s", MISSING)), context);
 	}
+
 	private static boolean reentered(BindingSet row) {
-		QueryBindingSet copy = new QueryBindingSet(row); copy.setBinding("future", O);
+		QueryBindingSet copy = new QueryBindingSet(row);
+		copy.setBinding("future", O);
 		return BindingSetOrigin.of(BindingSetOrigin.requestInput(copy)).isRequest("future");
 	}
 
@@ -351,17 +450,65 @@ class NativeNestedSelectInvocationScopeTest {
 	private static final class Source implements TripleSource, NativeLmdbQuerySource {
 		final LmdbNativeRepeatedStatementTermRoleTest.MemorySource delegate;
 		int counts;
-		Source(List<Statement> data) { delegate = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(data, MISSING); }
-		int reads() { return counts + delegate.opened; }
-		@Override public ValueFactory getValueFactory() { return VF; }
-		@Override public Object idSpace() { return delegate.idSpace(); }
-		@Override public long idOf(Value value) { return delegate.idOf(value); }
-		@Override public Value lazyValue(long id) { return delegate.lazyValue(id); }
-		@Override public boolean hasStatementsInSource() { return true; }
-		@Override public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o, Resource... c) { return delegate.getStatements(s, p, o, c); }
-		@Override public RecordIterator statements(long s, long p, long o, long g) { return delegate.statements(s, p, o, g); }
-		@Override public long count(long s, long p, long o, long g) { counts++; return delegate.count(s, p, o, g); }
-		@Override public boolean has(long s, long p, long o, long g) { counts++; return delegate.has(s, p, o, g); }
-		@Override public double estimate(long s, long p, long o, long g) { return delegate.estimate(s, p, o, g); }
+
+		Source(List<Statement> data) {
+			delegate = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(data, MISSING);
+		}
+
+		int reads() {
+			return counts + delegate.opened;
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
+
+		@Override
+		public Object idSpace() {
+			return delegate.idSpace();
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return delegate.idOf(value);
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			return delegate.lazyValue(id);
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o, Resource... c) {
+			return delegate.getStatements(s, p, o, c);
+		}
+
+		@Override
+		public RecordIterator statements(long s, long p, long o, long g) {
+			return delegate.statements(s, p, o, g);
+		}
+
+		@Override
+		public long count(long s, long p, long o, long g) {
+			counts++;
+			return delegate.count(s, p, o, g);
+		}
+
+		@Override
+		public boolean has(long s, long p, long o, long g) {
+			counts++;
+			return delegate.has(s, p, o, g);
+		}
+
+		@Override
+		public double estimate(long s, long p, long o, long g) {
+			return delegate.estimate(s, p, o, g);
+		}
 	}
 }

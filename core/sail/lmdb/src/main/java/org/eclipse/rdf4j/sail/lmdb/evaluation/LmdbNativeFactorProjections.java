@@ -187,14 +187,19 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 	private void releaseReaders() {
 		Throwable failure = null;
 		for (FactorProductCursor reader : readers) {
-			try { reader.release(); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem;
-				else if (failure != problem) failure.addSuppressed(problem);
+			try {
+				reader.release();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
 			}
 		}
-		if (failure instanceof RuntimeException problem) throw problem;
-		if (failure instanceof Error problem) throw problem;
+		if (failure instanceof RuntimeException problem)
+			throw problem;
+		if (failure instanceof Error problem)
+			throw problem;
 	}
 
 	@Override

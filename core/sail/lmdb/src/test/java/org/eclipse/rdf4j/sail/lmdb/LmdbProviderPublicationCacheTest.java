@@ -125,7 +125,9 @@ class LmdbProviderPublicationCacheTest {
 		private static LmdbStoreConfig config() {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(false)
 					.setFrontierEstimatorMode(FrontierEstimatorMode.SHADOW)
-					.setBackgroundRawSamplingEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+					.setBackgroundRawSamplingEnabled(false)
+					.setDirectAdjacencyEnabled(false)
+					.setValueOverlayEnabled(false);
 			config.setExperimentalQueryOptimizations(true);
 			return config;
 		}

@@ -147,7 +147,8 @@ final class RealEstateOracleFixtureProfile {
 		IRI viewingProperty = property(model, "fixture-viewing-property", viewingDistrict, null, null);
 		IRI matchingAgentWithPhone = agent(model, "fixture-viewing-agent-phone", viewingDistrict, "Viewing Agent 1",
 				"555-1001");
-		IRI matchingAgentNoPhone = agent(model, "fixture-viewing-agent-no-phone", viewingDistrict, "Viewing Agent 2", null);
+		IRI matchingAgentNoPhone = agent(model, "fixture-viewing-agent-no-phone", viewingDistrict, "Viewing Agent 2",
+				null);
 		IRI decoyAgent = agent(model, "fixture-viewing-agent-decoy", otherDistrict, "Decoy Agent", null);
 		viewing(model, "fixture-viewing-match-phone", viewingProperty, matchingAgentWithPhone, null);
 		viewing(model, "fixture-viewing-match-no-phone", viewingProperty, matchingAgentNoPhone, null);

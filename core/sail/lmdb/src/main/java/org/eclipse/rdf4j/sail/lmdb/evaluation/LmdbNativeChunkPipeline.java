@@ -1963,12 +1963,20 @@ final class LmdbNativeChunkPipeline {
 	}
 
 	static boolean bindTerm(Term term, long id, NativeBatch out, int row) {
-		if (term.readOnly) { return true; }
+		if (term.readOnly) {
+			return true;
+		}
 		if (term.isConstant()) {
-			if (term.constant != id) { return false; }
-			if (!term.bindConstant) { return true; }
+			if (term.constant != id) {
+				return false;
+			}
+			if (!term.bindConstant) {
+				return true;
+			}
 			long current = out.get(term.slot, row);
-			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			if (term.preserveExisting && current != UNKNOWN) {
+				return current != 0L;
+			}
 			return bindSlot(term.slot, id, out, row);
 		}
 		return term.slot < 0 || bindSlot(term.slot, id, out, row);

@@ -327,8 +327,9 @@ class LmdbLearnedSidecarJournalStampTest {
 			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
 			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
 			try {
-				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
-						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime()
+						.pinQueryPlanningReads(
+								borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
 				try {
 					statistics.bindExecutionSource(source, null);
 					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority(),

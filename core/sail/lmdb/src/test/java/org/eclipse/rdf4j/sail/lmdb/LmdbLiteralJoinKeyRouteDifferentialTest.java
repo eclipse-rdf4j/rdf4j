@@ -29,12 +29,12 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -112,24 +112,24 @@ class LmdbLiteralJoinKeyRouteDifferentialTest {
 					+ "\n  native experimental bag=" + nativeExperimental.bag);
 
 			assertAll("format-7 literal join key provenance and semantics",
-				() -> assertThat(stored.formatVersion).as("the reproduction uses format 7").isEqualTo(7),
-				() -> assertThat(stored.left.language).isEqualTo("\u017f"),
-				() -> assertThat(stored.right.language).isEqualTo("s"),
-				() -> assertThat(stored.left.internalId).isNotEqualTo(stored.right.internalId),
-				() -> assertThat(stored.left.value).isEqualTo("\"label\"@\u017f"),
-				() -> assertThat(stored.right.value).isEqualTo("\"label\"@s"),
-				() -> assertThat(memory.bag).as("the independent ordinary oracle finds the model-equal join")
-						.isEqualTo(Map.of("key=\"label\"@\u017f", 1L)),
-				() -> assertThat(genericDefault.bag).as("default generic LMDB preserves the ordinary bag")
-						.isEqualTo(memory.bag),
-				() -> assertThat(genericExperimental.bag)
-						.as("experimental generic LMDB preserves the ordinary bag and representative")
-						.isEqualTo(memory.bag),
-				() -> assertThat(nativeDefault.bag).as("default native LMDB preserves the ordinary bag")
-						.isEqualTo(memory.bag),
-				() -> assertThat(nativeExperimental.bag)
-						.as("experimental native LMDB preserves the ordinary bag and representative")
-						.isEqualTo(memory.bag));
+					() -> assertThat(stored.formatVersion).as("the reproduction uses format 7").isEqualTo(7),
+					() -> assertThat(stored.left.language).isEqualTo("\u017f"),
+					() -> assertThat(stored.right.language).isEqualTo("s"),
+					() -> assertThat(stored.left.internalId).isNotEqualTo(stored.right.internalId),
+					() -> assertThat(stored.left.value).isEqualTo("\"label\"@\u017f"),
+					() -> assertThat(stored.right.value).isEqualTo("\"label\"@s"),
+					() -> assertThat(memory.bag).as("the independent ordinary oracle finds the model-equal join")
+							.isEqualTo(Map.of("key=\"label\"@\u017f", 1L)),
+					() -> assertThat(genericDefault.bag).as("default generic LMDB preserves the ordinary bag")
+							.isEqualTo(memory.bag),
+					() -> assertThat(genericExperimental.bag)
+							.as("experimental generic LMDB preserves the ordinary bag and representative")
+							.isEqualTo(memory.bag),
+					() -> assertThat(nativeDefault.bag).as("default native LMDB preserves the ordinary bag")
+							.isEqualTo(memory.bag),
+					() -> assertThat(nativeExperimental.bag)
+							.as("experimental native LMDB preserves the ordinary bag and representative")
+							.isEqualTo(memory.bag));
 		} finally {
 			restoreProperty(NATIVE_ENGINE_PROPERTY, priorNativeProperty);
 		}
@@ -196,18 +196,20 @@ class LmdbLiteralJoinKeyRouteDifferentialTest {
 					Map.entry("left=<urn:iri-key:right:2>;predicate=<urn:iri-key:p:2>;right=<urn:iri-key:right:2>",
 							1L));
 			assertAll("stored IRI join remains correct through OPTIONAL and the SELECT projection",
-				() -> assertThat(memory.bag).as("independent ordinary bag and OPTIONAL absence").isEqualTo(expected),
-				() -> assertThat(generic.bag).as("generic LMDB bag and representatives").isEqualTo(expected),
-				() -> assertThat(nativeDefault.bag).as("default native LMDB bag and representatives").isEqualTo(expected),
-				() -> assertThat(nativeDefault.factory)
-						.as("the public route selected the configured native factory without forcing a plan")
-						.contains("LmdbNativeEvaluationStrategyFactory"),
-				() -> assertThat(generic.executedPlan)
-						.as("the ordinary generic evaluator naturally selected the IRI-key merge")
-						.contains("InnerMergeJoinIterator"),
-				() -> assertThat(nativeDefault.executedPlan)
-						.as("native explanation contains a completed actual invocation")
-						.contains("status: COMPLETED"));
+					() -> assertThat(memory.bag).as("independent ordinary bag and OPTIONAL absence")
+							.isEqualTo(expected),
+					() -> assertThat(generic.bag).as("generic LMDB bag and representatives").isEqualTo(expected),
+					() -> assertThat(nativeDefault.bag).as("default native LMDB bag and representatives")
+							.isEqualTo(expected),
+					() -> assertThat(nativeDefault.factory)
+							.as("the public route selected the configured native factory without forcing a plan")
+							.contains("LmdbNativeEvaluationStrategyFactory"),
+					() -> assertThat(generic.executedPlan)
+							.as("the ordinary generic evaluator naturally selected the IRI-key merge")
+							.contains("InnerMergeJoinIterator"),
+					() -> assertThat(nativeDefault.executedPlan)
+							.as("native explanation contains a completed actual invocation")
+							.contains("status: COMPLETED"));
 		} finally {
 			restoreProperty(NATIVE_ENGINE_PROPERTY, priorNativeProperty);
 		}
@@ -267,7 +269,8 @@ class LmdbLiteralJoinKeyRouteDifferentialTest {
 			LmdbTestUtil.awaitPostReadyInitialization(store, 60, TimeUnit.SECONDS);
 			if (nativeEnabled) {
 				assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
-						.as(store.getDirectAdjacencyReadinessDescription()).isTrue();
+						.as(store.getDirectAdjacencyReadinessDescription())
+						.isTrue();
 			}
 			String factory = store.getEvaluationStrategyFactory().getClass().getName();
 			return evaluate(repository, queryText, factory);
@@ -297,7 +300,9 @@ class LmdbLiteralJoinKeyRouteDifferentialTest {
 	}
 
 	private static String canonicalRow(BindingSet row) {
-		return row.getBindingNames().stream().sorted()
+		return row.getBindingNames()
+				.stream()
+				.sorted()
 				.map(name -> name + "=" + NTriplesUtil.toNTriplesString(row.getValue(name)))
 				.collect(java.util.stream.Collectors.joining(";"));
 	}

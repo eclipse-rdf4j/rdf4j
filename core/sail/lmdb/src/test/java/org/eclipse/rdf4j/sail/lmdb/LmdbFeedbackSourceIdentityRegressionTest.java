@@ -58,9 +58,11 @@ class LmdbFeedbackSourceIdentityRegressionTest {
 				LmdbEvaluationStatistics stats = (LmdbEvaluationStatistics) first.getBackingStore()
 						.getEvaluationStatistics();
 				long firstRevision = stats.estimatorRuntime().snapshotVersion();
-				try (SailDataset dataset = second.getBackingStore().getExplicitSailSource()
+				try (SailDataset dataset = second.getBackingStore()
+						.getExplicitSailSource()
 						.dataset(IsolationLevels.SNAPSHOT_READ)) {
-					SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(second.getValueFactory(), dataset);
+					SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(second.getValueFactory(),
+							dataset);
 					long foreignEpoch = source.getSnapshotEpoch().orElseThrow();
 					if (firstRevision == foreignEpoch) {
 						LmdbEvaluationStrategy.bindExecutionSnapshot(stats, source, null);
@@ -105,7 +107,8 @@ class LmdbFeedbackSourceIdentityRegressionTest {
 			try (var connection = repository.getConnection()) {
 				connection.setNamespace("metadata", "urn:feedback-owner:metadata:");
 			}
-			try (SailDataset dataset = store.getBackingStore().getExplicitSailSource()
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
 					.dataset(IsolationLevels.SNAPSHOT_READ)) {
 				SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
 				LmdbEvaluationStatistics stats = (LmdbEvaluationStatistics) store.getBackingStore()
@@ -113,8 +116,9 @@ class LmdbFeedbackSourceIdentityRegressionTest {
 				long revision = stats.estimatorRuntime().snapshotVersion();
 				assertNotEquals(revision, source.getSnapshotEpoch().orElseThrow(),
 						"a metadata-only commit advances the physical epoch without changing the data revision");
-				store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(null, source, stats,
-						store.getQueryExecutionPolicy());
+				store.getConnectionEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, source, stats,
+								store.getQueryExecutionPolicy());
 				assertTrue(stats.feedbackPublicationAllowed());
 				Filter filter = filter();
 				stats.recordFilterOutcome(filter, 30L, 70L);
@@ -129,8 +133,11 @@ class LmdbFeedbackSourceIdentityRegressionTest {
 
 	private static LmdbStore store(Path path, boolean nativeEvaluation) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(false)
-				.setNativeEvaluationEnabled(nativeEvaluation).setFrontierEstimatorMode(FrontierEstimatorMode.SHADOW)
-				.setBackgroundRawSamplingEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+				.setNativeEvaluationEnabled(nativeEvaluation)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.SHADOW)
+				.setBackgroundRawSamplingEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		config.setExperimentalQueryOptimizations(true);
 		return new LmdbStore(path.toFile(), config);
 	}

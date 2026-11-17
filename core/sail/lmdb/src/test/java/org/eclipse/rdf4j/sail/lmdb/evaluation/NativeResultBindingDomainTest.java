@@ -59,7 +59,8 @@ class NativeResultBindingDomainTest {
 	@Test
 	void mappingNullIsDistinctFromAbsentSchemaUnboundAndExpressionError() {
 		BindingSet present = frame("NULL", "tiny"), absent = frame("ABSENT", "tiny");
-		assertTrue(present.hasBinding("marker")); assertNull(present.getValue("marker"));
+		assertTrue(present.hasBinding("marker"));
+		assertNull(present.getValue("marker"));
 		assertFalse(absent.hasBinding("marker"));
 		NativeResultRow unbound = new NativeResultRow(SCHEMA, new NativeResultCell[] {
 				NativeResultCell.term(VF.createLiteral("tiny")), NativeResultCell.unbound() });
@@ -73,121 +74,168 @@ class NativeResultBindingDomainTest {
 	}
 
 	static Stream<Arguments> projections() {
-		return Stream.of("KEEP", "REMOVE", "ALIAS").flatMap(mode -> Stream.of("ABSENT", "NULL", "BOUND")
-				.map(frame -> Arguments.of(mode, frame)));
+		return Stream.of("KEEP", "REMOVE", "ALIAS")
+				.flatMap(mode -> Stream.of("ABSENT", "NULL", "BOUND")
+						.map(frame -> Arguments.of(mode, frame)));
 	}
 
-	@ParameterizedTest(name = "projection={0}, marker={1}") @MethodSource("projections")
+	@ParameterizedTest(name = "projection={0}, marker={1}")
+	@MethodSource("projections")
 	void aParentPreservingProjectionRetainsOnlyUnwrittenDomainNames(String mode, String state) {
 		var context = new QueryEvaluationContext.Minimal((Dataset) null);
 		var ordinary = ordinary();
 		QueryEvaluationStep identity = ordinary.precompileRuntimeSubtree(new SingletonSet(), context);
 		ProjectionElemList names = new ProjectionElemList(new ProjectionElem("payload"));
-		if (!mode.equals("KEEP")) { names.addElement(new ProjectionElem("marker", mode.equals("ALIAS") ? "copy" : "marker")); }
+		if (!mode.equals("KEEP")) {
+			names.addElement(new ProjectionElem("marker", mode.equals("ALIAS") ? "copy" : "marker"));
+		}
 		Projection projection = new Projection(new SingletonSet(), names);
 		new QueryRoot(new Projection(projection, new ProjectionElemList(new ProjectionElem("payload"))));
 		BindingSet input = frame(state, "tiny");
 		BindingSet expected = one(new ProjectionQueryEvaluationStep(projection, identity, context), input);
-		assertEquals(state.equals("BOUND") || state.equals("NULL") && !mode.equals("REMOVE"), expected.hasBinding("marker"));
+		assertEquals(state.equals("BOUND") || state.equals("NULL") && !mode.equals("REMOVE"),
+				expected.hasBinding("marker"));
 		assertEquals(mode.equals("ALIAS") && state.equals("BOUND"), expected.hasBinding("copy"));
 		var step = new NativeBindingSetProjectionStep(identity, projection, context);
 		try (NativeResultCursor rows = step.evaluateNative(input)) {
-			BindingSet actual = rows.next().toBindingSet(); assertNull(rows.next()); assertDomain(expected, actual);
-		}
-	}
-
-	@ParameterizedTest(name = "Extension marker={0}") @ValueSource(strings = { "ABSENT", "NULL", "BOUND" })
-	void realPostGroupCopyBindingRemovesFailedTargetsAndRetainsUnrelatedDomain(String state) {
-		var context = new QueryEvaluationContext.Minimal((Dataset) null);
-		var ordinary = ordinary(); Group group = countGroup();
-		Extension extension = new Extension(group, new ExtensionElem(Var.of("marker"), "copy"));
-		QueryBindingSet input = new QueryBindingSet(frame(state, "tiny")); input.setBinding("copy", VALUE);
-		BindingSet expected = one(ordinary.precompileRuntimeSubtree(extension.clone(), context), input);
-		assertEquals(state.equals("BOUND"), expected.hasBinding("copy"));
-		var strategy = new LmdbNativeEvaluationStrategy(source(), null, null, 0L, new EvaluationStatistics(), false);
-		QueryEvaluationStep groupStep = ordinary.precompileRuntimeSubtree(group, context);
-		QueryEvaluationStep step = NativeBindingSetExtensionStep.tryCreate(groupStep, extension, group, strategy, context);
-		assertNotNull(step, "the bridge is paired with its actual ordinarily compiled Group and matching descriptor");
-		try (NativeResultCursor rows = NativeResultSteps.open(step, input)) {
-			BindingSet actual = rows.next().toBindingSet(); assertNull(rows.next());
-			assertEquals(state.equals("BOUND"), actual.hasBinding("copy"), "failed BIND removes its target rather than creating a null marker");
+			BindingSet actual = rows.next().toBindingSet();
+			assertNull(rows.next());
 			assertDomain(expected, actual);
 		}
 	}
 
-	@ParameterizedTest(name = "Group marker={0}") @ValueSource(strings = { "ABSENT", "NULL", "BOUND" })
-	void anActualGroupKeepsInvocationDomainWhileOverwritingItsOwnResult(String state) {
+	@ParameterizedTest(name = "Extension marker={0}")
+	@ValueSource(strings = { "ABSENT", "NULL", "BOUND" })
+	void realPostGroupCopyBindingRemovesFailedTargetsAndRetainsUnrelatedDomain(String state) {
 		var context = new QueryEvaluationContext.Minimal((Dataset) null);
-		Group group = countGroup(); QueryBindingSet input = new QueryBindingSet(frame(state, "tiny")); input.setBinding("n", null);
-		BindingSet expected = one(ordinary().precompileRuntimeSubtree(group.clone(), context), input);
-		assertNotNull(expected.getValue("n"));
-		var source = source(); var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
-		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(group, context, strategy, source);
-		assertNotNull(step);
+		var ordinary = ordinary();
+		Group group = countGroup();
+		Extension extension = new Extension(group, new ExtensionElem(Var.of("marker"), "copy"));
+		QueryBindingSet input = new QueryBindingSet(frame(state, "tiny"));
+		input.setBinding("copy", VALUE);
+		BindingSet expected = one(ordinary.precompileRuntimeSubtree(extension.clone(), context), input);
+		assertEquals(state.equals("BOUND"), expected.hasBinding("copy"));
+		var strategy = new LmdbNativeEvaluationStrategy(source(), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep groupStep = ordinary.precompileRuntimeSubtree(group, context);
+		QueryEvaluationStep step = NativeBindingSetExtensionStep.tryCreate(groupStep, extension, group, strategy,
+				context);
+		assertNotNull(step, "the bridge is paired with its actual ordinarily compiled Group and matching descriptor");
 		try (NativeResultCursor rows = NativeResultSteps.open(step, input)) {
-			BindingSet actual = rows.next().toBindingSet(); assertNull(rows.next()); assertNotNull(actual.getValue("n")); assertDomain(expected, actual);
+			BindingSet actual = rows.next().toBindingSet();
+			assertNull(rows.next());
+			assertEquals(state.equals("BOUND"), actual.hasBinding("copy"),
+					"failed BIND removes its target rather than creating a null marker");
+			assertDomain(expected, actual);
 		}
 	}
 
+	@ParameterizedTest(name = "Group marker={0}")
+	@ValueSource(strings = { "ABSENT", "NULL", "BOUND" })
+	void anActualGroupKeepsInvocationDomainWhileOverwritingItsOwnResult(String state) {
+		var context = new QueryEvaluationContext.Minimal((Dataset) null);
+		Group group = countGroup();
+		QueryBindingSet input = new QueryBindingSet(frame(state, "tiny"));
+		input.setBinding("n", null);
+		BindingSet expected = one(ordinary().precompileRuntimeSubtree(group.clone(), context), input);
+		assertNotNull(expected.getValue("n"));
+		var source = source();
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
+		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(group, context, strategy, source);
+		assertNotNull(step);
+		try (NativeResultCursor rows = NativeResultSteps.open(step, input)) {
+			BindingSet actual = rows.next().toBindingSet();
+			assertNull(rows.next());
+			assertNotNull(actual.getValue("n"));
+			assertDomain(expected, actual);
+		}
+	}
 
-	@ParameterizedTest(name = "nullable declared output={0}") @ValueSource(strings = { "ABSENT", "NULL", "BOUND" })
+	@ParameterizedTest(name = "nullable declared output={0}")
+	@ValueSource(strings = { "ABSENT", "NULL", "BOUND" })
 	void aRealNullableSubqueryOutputKeepsSlotDomainUntilItsMarkRollsBack(String state) throws Exception {
 		var context = new QueryEvaluationContext.Minimal((Dataset) null);
 		Group group = new Group(new SingletonSet());
 		group.addGroupElement(new GroupElem("marker", new org.eclipse.rdf4j.query.algebra.Min(Var.of("missing"))));
 		BindingSet input = frame(state, "tiny");
-		var ordinary = ordinary(); QueryEvaluationStep prepared = ordinary.precompileRuntimeSubtree(group, context);
+		var ordinary = ordinary();
+		QueryEvaluationStep prepared = ordinary.precompileRuntimeSubtree(group, context);
 		BindingSet expected = one(prepared, input);
-		assertEquals(input.hasBinding("marker"), expected.hasBinding("marker"), "ordinary nullable Group keeps its invocation domain");
+		assertEquals(input.hasBinding("marker"), expected.hasBinding("marker"),
+				"ordinary nullable Group keeps its invocation domain");
 		var source = SyntheticValueSource.forEvaluation(source());
 		source.executionContext().initializeQueryBase(input);
-		NativeSlotLayout layout = new NativeSlotLayout(java.util.Map.of("marker", 0), null); layout.freeze(List.of("marker"));
+		NativeSlotLayout layout = new NativeSlotLayout(java.util.Map.of("marker", 0), null);
+		layout.freeze(List.of("marker"));
 		RowState row = new RowState(source, layout, org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
 		assertTrue(LmdbNativeAggregateCompiler.initializeRow(row, row.base, source, layout));
 		assertFalse(row.base.hasBinding("marker"), "no inherited base mapping can supply this target");
 		assertFalse(row.view.hasBinding("marker"), "the real entry initializer leaves this target absent before open");
 		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.id(0));
-		NativeSubqueryPlan plan = new NativeSubqueryPlan(prepared, new int[] { 0 }, new String[] { "marker" }, new int[0], new String[0]);
+		NativeSubqueryPlan plan = new NativeSubqueryPlan(prepared, new int[] { 0 }, new String[] { "marker" },
+				new int[0], new String[0]);
 		try (RowCursor cursor = plan.open(row)) {
 			assertTrue(cursor.next());
-			assertEquals(expected.hasBinding("marker"), row.view.hasBinding("marker"), "a declared nullable output has an actual mapping domain beyond base/schema");
+			assertEquals(expected.hasBinding("marker"), row.view.hasBinding("marker"),
+					"a declared nullable output has an actual mapping domain beyond base/schema");
 			assertEquals(expected.getValue("marker"), row.view.getValue("marker"));
 			assertEquals(expected.hasBinding("marker") ? 1 : 0, row.view.size());
 			assertEquals(expected.hasBinding("marker"), row.view.getBindingNames().contains("marker"));
 			assertFalse(cursor.next());
 			assertFalse(row.view.hasBinding("marker"), "rollback removes the actual imported marker event");
-		} finally { row.closeDecodedInputs(); source.executionContext().close(); }
+		} finally {
+			row.closeDecodedInputs();
+			source.executionContext().close();
+		}
 		assertEquals(0L, source.executionContext().memoryLedger().usedBytes());
 	}
 
 	@Test
 	void physicalGroupWithSummaryKeepsParentMarkerWhenANullableAggregateProducesNoValue() {
-		IRI p = VF.createIRI("urn:typed-domain:p"), o = VF.createIRI("urn:ab"), b = VF.createIRI("urn:typed-domain:second");
-		var source = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(List.of(VF.createStatement(VALUE, p, o), VF.createStatement(b, p, o)), VALUE);
+		IRI p = VF.createIRI("urn:typed-domain:p"), o = VF.createIRI("urn:ab"),
+				b = VF.createIRI("urn:typed-domain:second");
+		var source = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(
+				List.of(VF.createStatement(VALUE, p, o), VF.createStatement(b, p, o)), VALUE);
 		var context = new QueryEvaluationContext.Minimal((Dataset) null);
-		Group group = new Group(new org.eclipse.rdf4j.query.algebra.StatementPattern(Var.of("s"), Var.of("fixedPredicate", p, true, true), Var.of("o")));
+		Group group = new Group(new org.eclipse.rdf4j.query.algebra.StatementPattern(Var.of("s"),
+				Var.of("fixedPredicate", p, true, true), Var.of("o")));
 		group.addGroupElement(new GroupElem("marker", new org.eclipse.rdf4j.query.algebra.Min(Var.of("missing"))));
 		group.addGroupElement(new GroupElem("cat", new org.eclipse.rdf4j.query.algebra.GroupConcat(Var.of("o"))));
 		Extension extension = new Extension(group,
-				new ExtensionElem(new org.eclipse.rdf4j.query.algebra.FunctionCall(org.eclipse.rdf4j.model.vocabulary.FN.STRING_LENGTH.stringValue(), Var.of("cat")), "length"),
-				new ExtensionElem(new org.eclipse.rdf4j.query.algebra.MathExpr(new org.eclipse.rdf4j.query.algebra.ValueConstant(VF.createLiteral(1)),
-						new org.eclipse.rdf4j.query.algebra.ValueConstant(VF.createLiteral(0)), org.eclipse.rdf4j.query.algebra.MathExpr.MathOp.DIVIDE), "cat"));
-		QueryRoot consumer = new QueryRoot(new Projection(extension, new ProjectionElemList(new ProjectionElem("length"))));
+				new ExtensionElem(
+						new org.eclipse.rdf4j.query.algebra.FunctionCall(
+								org.eclipse.rdf4j.model.vocabulary.FN.STRING_LENGTH.stringValue(), Var.of("cat")),
+						"length"),
+				new ExtensionElem(new org.eclipse.rdf4j.query.algebra.MathExpr(
+						new org.eclipse.rdf4j.query.algebra.ValueConstant(VF.createLiteral(1)),
+						new org.eclipse.rdf4j.query.algebra.ValueConstant(VF.createLiteral(0)),
+						org.eclipse.rdf4j.query.algebra.MathExpr.MathOp.DIVIDE), "cat"));
+		QueryRoot consumer = new QueryRoot(
+				new Projection(extension, new ProjectionElemList(new ProjectionElem("length"))));
 		BindingSet input = frame("NULL", "tiny");
 		var ordinary = new DefaultEvaluationStrategy(source, null);
 		BindingSet expected = one(ordinary.precompileRuntimeSubtree(extension.clone(), context), input);
-		assertTrue(expected.hasBinding("marker")); assertNull(expected.getValue("marker")); assertFalse(expected.hasBinding("cat"));
+		assertTrue(expected.hasBinding("marker"));
+		assertNull(expected.getValue("marker"));
+		assertFalse(expected.hasBinding("cat"));
 		assertEquals(13L, ((org.eclipse.rdf4j.model.Literal) expected.getValue("length")).longValue());
 		NativeValuePositionAnalysis positions = NativeValuePositionAnalysis.analyze(consumer);
-		assertEquals(NativeAggregateResultDemand.LEXICAL_LENGTH, positions.aggregateDemand(group.getGroupElements().get(1)));
-		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
+		assertEquals(NativeAggregateResultDemand.LEXICAL_LENGTH,
+				positions.aggregateDemand(group.getGroupElements().get(1)));
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
 		QueryEvaluationStep groupStep = strategy.withValuePositions(positions,
 				() -> LmdbNativeAggregateCompiler.tryCompile(group, context, strategy, source));
-		assertNotNull(groupStep); assertTrue(((NativeResultStep) groupStep).requiresPhysicalResults());
-		QueryEvaluationStep step = NativeBindingSetExtensionStep.tryCreate(groupStep, extension, group, strategy, context); assertNotNull(step);
+		assertNotNull(groupStep);
+		assertTrue(((NativeResultStep) groupStep).requiresPhysicalResults());
+		QueryEvaluationStep step = NativeBindingSetExtensionStep.tryCreate(groupStep, extension, group, strategy,
+				context);
+		assertNotNull(step);
 		try (NativeResultCursor rows = NativeResultSteps.open(step, input)) {
-			BindingSet actual = rows.next().toBindingSet(); assertNull(rows.next());
-			assertFalse(actual.hasBinding("cat"), "the failed assignment remains absent/error, never a null-marker mapping");
+			BindingSet actual = rows.next().toBindingSet();
+			assertNull(rows.next());
+			assertFalse(actual.hasBinding("cat"),
+					"the failed assignment remains absent/error, never a null-marker mapping");
 			assertDomain(expected, actual);
 		}
 		assertEquals(source.opened, source.closed);
@@ -197,65 +245,136 @@ class NativeResultBindingDomainTest {
 		return Stream.of(false, true).flatMap(lazy -> Stream.of(false, true).map(spill -> Arguments.of(lazy, spill)));
 	}
 
-	@ParameterizedTest(name = "lazy={0}, spill={1}") @MethodSource("replayModes")
+	@ParameterizedTest(name = "lazy={0}, spill={1}")
+	@MethodSource("replayModes")
 	void residentAndSpilledRowsPreserveNullDomainWithoutConflatingSchemaAbsence(boolean lazy, boolean spill) {
 		String previous = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
 		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, spill ? "16384" : "1048576");
 		long files = NativeLazyResultReplay.OPEN_FILES.get(), spills = NativeLazyResultReplay.SPILLS.get();
-		NativeExecutionContext context = new NativeExecutionContext(); var ledger = context.memoryLedger();
+		NativeExecutionContext context = new NativeExecutionContext();
+		var ledger = context.memoryLedger();
 		String payload = spill ? "payload".repeat(4096) : "tiny";
 		List<BindingSet> inputs = List.of(frame("NULL", payload), frame("ABSENT", payload), frame("BOUND", payload));
 		Producer producer = new Producer(inputs, context.cancellation());
-		NativeResultReplay eager = null; NativeLazyResultReplay deferred = null;
+		NativeResultReplay eager = null;
+		NativeLazyResultReplay deferred = null;
 		try {
-			if (lazy) { deferred = new NativeLazyResultReplay(new String[] { "payload", "marker" }, context, context.cancellation(), producer); }
-			else {
-				eager = new NativeResultReplay(SCHEMA, context, context.cancellation(), ledger, spill ? 16384L : 1048576L);
-				for (BindingSet input : inputs) { eager.append(NativeResultRow.fromBindingSet(SCHEMA, input)); }
-				eager.finish(); assertEquals(spill, eager.spilled());
+			if (lazy) {
+				deferred = new NativeLazyResultReplay(new String[] { "payload", "marker" }, context,
+						context.cancellation(), producer);
+			} else {
+				eager = new NativeResultReplay(SCHEMA, context, context.cancellation(), ledger,
+						spill ? 16384L : 1048576L);
+				for (BindingSet input : inputs) {
+					eager.append(NativeResultRow.fromBindingSet(SCHEMA, input));
+				}
+				eager.finish();
+				assertEquals(spill, eager.spilled());
 			}
 			for (int pass = 0; pass < 2; pass++) {
 				try (NativeResultCursor reader = lazy ? deferred.cursor(context.cancellation()) : eager.cursor()) {
-					for (BindingSet expected : inputs) { assertDomain(expected, reader.next().toBindingSet()); }
+					for (BindingSet expected : inputs) {
+						assertDomain(expected, reader.next().toBindingSet());
+					}
 					assertNull(reader.next());
 				}
 			}
-			if (lazy) { assertEquals(spill, NativeLazyResultReplay.SPILLS.get() > spills); assertEquals(3, producer.position); assertEquals(1, producer.closes); }
+			if (lazy) {
+				assertEquals(spill, NativeLazyResultReplay.SPILLS.get() > spills);
+				assertEquals(3, producer.position);
+				assertEquals(1, producer.closes);
+			}
 		} finally {
-			if (deferred != null) { deferred.close(); } if (eager != null) { eager.close(); } context.close();
-			if (previous == null) { System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY); }
-			else { System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previous); }
+			if (deferred != null) {
+				deferred.close();
+			}
+			if (eager != null) {
+				eager.close();
+			}
+			context.close();
+			if (previous == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previous);
+			}
 		}
-		assertEquals(0L, ledger.usedBytes()); assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
+		assertEquals(0L, ledger.usedBytes());
+		assertEquals(files, NativeLazyResultReplay.OPEN_FILES.get());
 	}
 
-	private static Group countGroup() { Group group = new Group(new SingletonSet()); group.addGroupElement(new GroupElem("n", new Count(null))); return group; }
-	private static LmdbNativeRepeatedStatementTermRoleTest.MemorySource source() { return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(List.of(), VALUE); }
-	private static DefaultEvaluationStrategy ordinary() { return new DefaultEvaluationStrategy(source(), null); }
+	private static Group countGroup() {
+		Group group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("n", new Count(null)));
+		return group;
+	}
+
+	private static LmdbNativeRepeatedStatementTermRoleTest.MemorySource source() {
+		return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(List.of(), VALUE);
+	}
+
+	private static DefaultEvaluationStrategy ordinary() {
+		return new DefaultEvaluationStrategy(source(), null);
+	}
+
 	private static QueryBindingSet frame(String state, String payload) {
-		QueryBindingSet row = new QueryBindingSet(); row.setBinding("payload", VF.createLiteral(payload));
-		if (state.equals("NULL")) { row.setBinding("marker", null); }
-		else if (state.equals("BOUND")) { row.setBinding("marker", VALUE); }
+		QueryBindingSet row = new QueryBindingSet();
+		row.setBinding("payload", VF.createLiteral(payload));
+		if (state.equals("NULL")) {
+			row.setBinding("marker", null);
+		} else if (state.equals("BOUND")) {
+			row.setBinding("marker", VALUE);
+		}
 		return row;
 	}
+
 	private static BindingSet one(QueryEvaluationStep step, BindingSet input) {
-		try (var rows = step.evaluate(input)) { BindingSet row = rows.next(); assertFalse(rows.hasNext()); return row; }
+		try (var rows = step.evaluate(input)) {
+			BindingSet row = rows.next();
+			assertFalse(rows.hasNext());
+			return row;
+		}
 	}
+
 	private static void assertDomain(BindingSet expected, BindingSet actual) {
-		assertEquals(expected.hasBinding("marker"), actual.hasBinding("marker"), "null marker domain differs from absent potential schema name");
+		assertEquals(expected.hasBinding("marker"), actual.hasBinding("marker"),
+				"null marker domain differs from absent potential schema name");
 		assertEquals(expected.getBindingNames(), actual.getBindingNames());
-		assertEquals(expected.getValue("marker"), actual.getValue("marker"), "marker value differs even when its null domain is retained");
+		assertEquals(expected.getValue("marker"), actual.getValue("marker"),
+				"marker value differs even when its null domain is retained");
 		assertEquals(expected, actual);
 		assertEquals(BindingSetOrigin.isTrackedInput(expected), BindingSetOrigin.isTrackedInput(actual));
 		assertEquals(BindingSetOrigin.of(expected).requestNames(), BindingSetOrigin.of(actual).requestNames());
 		assertEquals(BindingSetOrigin.of(expected).localNames(), BindingSetOrigin.of(actual).localNames());
 	}
+
 	private static final class Producer implements NativeResultCursor {
-		final List<BindingSet> rows; final NativeCancellationToken token; int position, closes;
-		Producer(List<BindingSet> rows, NativeCancellationToken token) { this.rows = rows; this.token = token; }
-		@Override public NativeResultRow next() { return position == rows.size() ? null : NativeResultRow.fromBindingSet(SCHEMA, rows.get(position++)); }
-		@Override public NativeCancellationToken cancellation() { return token; }
-		@Override public NativeExecutionContext executionContext() { return null; }
-		@Override public void close() { closes++; }
+		final List<BindingSet> rows;
+		final NativeCancellationToken token;
+		int position, closes;
+
+		Producer(List<BindingSet> rows, NativeCancellationToken token) {
+			this.rows = rows;
+			this.token = token;
+		}
+
+		@Override
+		public NativeResultRow next() {
+			return position == rows.size() ? null : NativeResultRow.fromBindingSet(SCHEMA, rows.get(position++));
+		}
+
+		@Override
+		public NativeCancellationToken cancellation() {
+			return token;
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return null;
+		}
+
+		@Override
+		public void close() {
+			closes++;
+		}
 	}
 }

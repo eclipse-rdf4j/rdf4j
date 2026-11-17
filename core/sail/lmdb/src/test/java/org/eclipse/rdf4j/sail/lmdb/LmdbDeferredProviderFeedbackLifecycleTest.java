@@ -67,7 +67,6 @@ class LmdbDeferredProviderFeedbackLifecycleTest {
 		runQuery(path, Boundary.COMMIT_BEFORE_PUBLICATION);
 	}
 
-
 	@Test
 	void earlyQueryFinishingAfterCommitButBeforePublicationCannotTrainNewSnapshot(
 			@TempDir(cleanup = CleanupMode.NEVER) Path path) throws Exception {
@@ -84,7 +83,8 @@ class LmdbDeferredProviderFeedbackLifecycleTest {
 		repository.init();
 		try {
 			assertTrue(entered.await(10, TimeUnit.SECONDS));
-			LmdbEvaluationStatistics early = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics early = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 			early.bindExecutionSnapshot(OptionalLong.of(early.estimatorRuntime().snapshotVersion()));
 			Filter filter = filter();
 			early.recordFilterOutcome(filter, 20L, 80L);
@@ -137,7 +137,6 @@ class LmdbDeferredProviderFeedbackLifecycleTest {
 		}
 	}
 
-
 	@Test
 	void typedOperatorFinishedBeforePublicationRetainsItsObservation(
 			@TempDir(cleanup = CleanupMode.NEVER) Path path) throws Exception {
@@ -185,11 +184,13 @@ class LmdbDeferredProviderFeedbackLifecycleTest {
 			RuntimeFeedbackContract contract = new RuntimeFeedbackContract(
 					new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability, physical), prediction,
 					prediction, 1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY,
-					RuntimeFeedbackContract.SemanticKind.ORDINARY, RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED,
+					RuntimeFeedbackContract.SemanticKind.ORDINARY,
+					RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED,
 					RuntimeFeedbackContract.Access.EXACT_LOOKUP, physical.hashCode(), revision, revision, 1L,
 					RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL);
 			node.setRuntimeFeedbackContract(contract);
-			assertTrue(statistics.shouldTrackCostFeedback(node), "a valid typed contract is trackable for this snapshot");
+			assertTrue(statistics.shouldTrackCostFeedback(node),
+					"a valid typed contract is trackable for this snapshot");
 			RuntimeFeedbackTarget target = statistics.resolveRuntimeFeedbackTarget(node, contract);
 			assertTrue(target.active(), "the typed operator has an execution-local feedback target");
 			target.open();
@@ -220,7 +221,9 @@ class LmdbDeferredProviderFeedbackLifecycleTest {
 	}
 
 	private enum Boundary {
-		FINISH_BEFORE_PUBLICATION, COMMIT_BEFORE_PUBLICATION, COMMIT_AND_FINISH_BEFORE_PUBLICATION,
+		FINISH_BEFORE_PUBLICATION,
+		COMMIT_BEFORE_PUBLICATION,
+		COMMIT_AND_FINISH_BEFORE_PUBLICATION,
 		COMMIT_AFTER_PUBLICATION
 	}
 
@@ -237,7 +240,8 @@ class LmdbDeferredProviderFeedbackLifecycleTest {
 				release.countDown();
 				LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			}
-			try (SailDataset dataset = store.getBackingStore().getExplicitSailSource()
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
 					.dataset(IsolationLevels.SNAPSHOT_READ)) {
 				var source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
 				long queryEpoch = source.getSnapshotEpoch().orElseThrow();
@@ -246,7 +250,8 @@ class LmdbDeferredProviderFeedbackLifecycleTest {
 						.createEvaluationStrategy(null, source, stats, store.getQueryExecutionPolicy());
 				assertInstanceOf(LmdbEvaluationStrategy.class, strategy);
 				((LmdbEvaluationStrategy) strategy).setTrackResultSize(true);
-				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, QUERY, null).getTupleExpr();
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, QUERY, null)
+						.getTupleExpr();
 				TupleExpr optimized = strategy.optimize(expression, stats, EmptyBindingSet.getInstance());
 				QueryEvaluationStep step = strategy.precompile(optimized);
 				Filter typed = findFilter(optimized, true);

@@ -196,15 +196,22 @@ class StoreProperties {
 		this.fileOps = Objects.requireNonNull(fileOps, "fileOps");
 	}
 
-	StorePropertiesFileOps fileOperations() { return fileOps; }
+	StorePropertiesFileOps fileOperations() {
+		return fileOps;
+	}
 
 	synchronized void resolveOwnerIdentity(UUID identity) {
 		ownerIdentity = identity;
 		ownerIdentityResolved = true;
 	}
 
-	synchronized boolean hasResolvedOwnerIdentity() { return ownerIdentityResolved; }
-	synchronized UUID resolvedOwnerIdentity() { return ownerIdentity; }
+	synchronized boolean hasResolvedOwnerIdentity() {
+		return ownerIdentityResolved;
+	}
+
+	synchronized UUID resolvedOwnerIdentity() {
+		return ownerIdentity;
+	}
 
 	boolean isMemoryOnly() {
 		return propertiesFile == null;

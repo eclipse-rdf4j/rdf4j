@@ -48,7 +48,8 @@ import org.junit.jupiter.api.io.TempDir;
 class FactorExternalOwnershipBoundaryTest {
 	private static final String EX = "urn:factor-owner-boundary:";
 	private static final String QUERY = "SELECT ?s ?o ?t WHERE { ?s <" + EX + "p> ?o; <" + EX + "q> ?t }";
-	@TempDir Path directory;
+	@TempDir
+	Path directory;
 
 	@Test
 	void normalBoundFactorCursorRetiresOwnedSourcesOnEof(TestReporter reporter) throws Exception {
@@ -56,15 +57,19 @@ class FactorExternalOwnershipBoundaryTest {
 			Set<BorrowedFactorBatch.Source> sources = identities();
 			try (KernelPlan.FactorCursor input = owner.openFactors()) {
 				assertNotNull(input);
-				assertFalse(input.borrowedSourcesExternallyRetained(), "owning Bound cursor keeps the conservative KernelPlan interface default");
+				assertFalse(input.borrowedSourcesExternallyRetained(),
+						"owning Bound cursor keeps the conservative KernelPlan interface default");
 				assertEquals("BoundFactorCursor", input.getClass().getSimpleName());
-				assertTrue(input.next()); capture(input.factors(), sources);
+				assertTrue(input.next());
+				capture(input.factors(), sources);
 				assertFalse(sources.isEmpty(), "real borrowed Source acquisition is a fixture premise");
 				assertEquals(fixture.expected, drainBound(input, fixture.source, sources));
-				for (var source : sources) assertThrows(IllegalStateException.class, source::checkOpen);
+				for (var source : sources)
+					assertThrows(IllegalStateException.class, source::checkOpen);
 				assertFalse(input.next());
 			}
-			reporter.publishEntry("authority", "real PlanRequest/BoundPlan/BoundFactorCursor API diagnostic; EOF owns Runtime, no public winner claim");
+			reporter.publishEntry("authority",
+					"real PlanRequest/BoundPlan/BoundFactorCursor API diagnostic; EOF owns Runtime, no public winner claim");
 		}
 	}
 
@@ -73,7 +78,9 @@ class FactorExternalOwnershipBoundaryTest {
 		try (Fixture fixture = new Fixture(directory); KernelPlan owner = boundPlan(fixture.row, fixture.template)) {
 			Set<BorrowedFactorBatch.Source> oldSources = identities(), newSources = identities();
 			try (KernelPlan.FactorCursor old = owner.openFactors()) {
-				assertNotNull(old); assertTrue(old.next()); capture(old.factors(), oldSources);
+				assertNotNull(old);
+				assertTrue(old.next());
+				capture(old.factors(), oldSources);
 				assertFalse(old.borrowedSourcesExternallyRetained());
 				assertFalse(oldSources.isEmpty());
 				// Finish and close actual readers before asking this owning API to replace its producer.
@@ -82,14 +89,18 @@ class FactorExternalOwnershipBoundaryTest {
 					assertNotNull(replacement);
 					assertFalse(replacement.borrowedSourcesExternallyRetained());
 					assertFalse(old.next());
-					for (var source : oldSources) assertThrows(IllegalStateException.class, source::checkOpen);
-					assertTrue(replacement.next()); capture(replacement.factors(), newSources);
+					for (var source : oldSources)
+						assertThrows(IllegalStateException.class, source::checkOpen);
+					assertTrue(replacement.next());
+					capture(replacement.factors(), newSources);
 					assertFalse(newSources.isEmpty());
-					assertTrue(Collections.disjoint(oldSources, newSources), "a reopened child has newly owned Sources");
+					assertTrue(Collections.disjoint(oldSources, newSources),
+							"a reopened child has newly owned Sources");
 					assertEquals(fixture.expected, drainBound(replacement, fixture.source, newSources));
 				}
 			}
-			reporter.publishEntry("authority", "existing real owner reopen/close timing, with downstream readers already retired");
+			reporter.publishEntry("authority",
+					"existing real owner reopen/close timing, with downstream readers already retired");
 		}
 	}
 
@@ -114,28 +125,36 @@ class FactorExternalOwnershipBoundaryTest {
 				try (LmdbNativeFactorCursor input = leaf.openFactors(fixture.row)) {
 					assertInstanceOf(LmdbNativePackedFtree.GroupedRowCursor.class, input);
 					assertFalse(((LmdbNativePackedFtree.GroupedRowCursor) input).ownsRuntime);
-					assertTrue(input.borrowedSourcesExternallyRetained(), "exact owner-frame Leaf factory advertises the strong contract");
+					assertTrue(input.borrowedSourcesExternallyRetained(),
+							"exact owner-frame Leaf factory advertises the strong contract");
 					while (input.next()) {
-						var factors = input.factors(); capture(factors, sources);
+						var factors = input.factors();
+						capture(factors, sources);
 						try (FactorProductCursor decoder = new FactorProductCursor(3, 16)) {
 							decoder.bind(factors, factors.mask(), input.multiplicity());
 							while (decoder.next()) {
 								List<Value> values = new ArrayList<>();
 								for (int slot = 0; slot < 3; slot++) {
-									long id = (factors.mask() & 1L << slot) == 0 ? fixture.row.slots[slot] : decoder.value(slot);
+									long id = (factors.mask() & 1L << slot) == 0 ? fixture.row.slots[slot]
+											: decoder.value(slot);
 									assertNotEquals(UNKNOWN, id);
-									values.add(fixture.source.lazyValue(id, slot == 0 ? ValuePosition.SUBJECT : ValuePosition.OBJECT));
+									values.add(fixture.source.lazyValue(id,
+											slot == 0 ? ValuePosition.SUBJECT : ValuePosition.OBJECT));
 								}
 								actual.merge(List.copyOf(values), decoder.multiplicity(), Math::addExact);
 							}
 						}
 					}
 				}
-				assertFalse(sources.isEmpty()); assertEquals(fixture.expected, actual);
-				for (var source : sources) source.checkOpen();
+				assertFalse(sources.isEmpty());
+				assertEquals(fixture.expected, actual);
+				for (var source : sources)
+					source.checkOpen();
 			}
-			for (var source : sources) assertThrows(IllegalStateException.class, source::checkOpen);
-			reporter.publishEntry("authority", "actual frame-pinned external Leaf accepts its owner frame, rejects BoundPlan fork pre-consumption; no natural KernelPlan Leaf route asserted");
+			for (var source : sources)
+				assertThrows(IllegalStateException.class, source::checkOpen);
+			reporter.publishEntry("authority",
+					"actual frame-pinned external Leaf accepts its owner frame, rejects BoundPlan fork pre-consumption; no natural KernelPlan Leaf route asserted");
 		}
 	}
 
@@ -147,16 +166,21 @@ class FactorExternalOwnershipBoundaryTest {
 			var runtime = LmdbNativePackedFtree.Runtime.open(plan, fixture.row);
 			assertNotNull(runtime);
 			Set<BorrowedFactorBatch.Source> sources = identities();
-			try (runtime; LmdbNativeFactorCursor input = new LmdbNativePackedFtree.GroupedRowCursor(plan, fixture.row, runtime)) {
+			try (runtime;
+					LmdbNativeFactorCursor input = new LmdbNativePackedFtree.GroupedRowCursor(plan, fixture.row,
+							runtime)) {
 				assertTrue(((LmdbNativePackedFtree.GroupedRowCursor) input).ownsRuntime);
-				assertFalse(input.borrowedSourcesExternallyRetained(), "actual owning construction may retire every exposed Source");
-				assertTrue(input.next()); capture(input.factors(), sources);
+				assertFalse(input.borrowedSourcesExternallyRetained(),
+						"actual owning construction may retire every exposed Source");
+				assertTrue(input.next());
+				capture(input.factors(), sources);
 				assertFalse(sources.isEmpty(), "the actual owning producer acquired real physical Sources");
 				// No downstream Reader is left active when this owning producer is explicitly closed.
 				input.close();
 				assertFalse(input.borrowedSourcesExternallyRetained());
 				assertTrue(runtime.closed);
-				for (var source : sources) assertThrows(IllegalStateException.class, source::checkOpen);
+				for (var source : sources)
+					assertThrows(IllegalStateException.class, source::checkOpen);
 				assertEquals(0L, fixture.row.boundMask());
 			}
 		}
@@ -172,21 +196,34 @@ class FactorExternalOwnershipBoundaryTest {
 		var domains = new LmdbNativeKernelBindings.BoundDomains(new long[0][], new int[0], new int[0]);
 		return bindings.context(new NativeLmdbQuerySource.NativeAdjacency[0], domains, row, null).plans[0];
 	}
-	private static Set<BorrowedFactorBatch.Source> identities() { return Collections.newSetFromMap(new IdentityHashMap<>()); }
+
+	private static Set<BorrowedFactorBatch.Source> identities() {
+		return Collections.newSetFromMap(new IdentityHashMap<>());
+	}
+
 	private static void capture(FactorEnvironment factors, Set<BorrowedFactorBatch.Source> sources) {
 		for (long mask = factors.groupLeaders(); mask != 0; mask &= mask - 1) {
-			int slot = Long.numberOfTrailingZeros(mask); assertFalse(factors.isTuple(slot));
-			var source = factors.batch(slot).source(); source.checkOpen(); sources.add(source);
+			int slot = Long.numberOfTrailingZeros(mask);
+			assertFalse(factors.isTuple(slot));
+			var source = factors.batch(slot).source();
+			source.checkOpen();
+			sources.add(source);
 			assertTrue(sources.size() <= 3, "fixed actual plan edges bound Source identities");
 		}
 	}
+
 	private static Map<List<Value>, Long> drainBound(KernelPlan.FactorCursor input, NativeLmdbQuerySource source,
 			Set<BorrowedFactorBatch.Source> sources) {
 		Map<List<Value>, Long> actual = new HashMap<>();
-		do { capture(input.factors(), sources); currentBound(input, source, actual); } while (input.next());
+		do {
+			capture(input.factors(), sources);
+			currentBound(input, source, actual);
+		} while (input.next());
 		return actual;
 	}
-	private static void currentBound(KernelPlan.FactorCursor input, NativeLmdbQuerySource source, Map<List<Value>, Long> actual) {
+
+	private static void currentBound(KernelPlan.FactorCursor input, NativeLmdbQuerySource source,
+			Map<List<Value>, Long> actual) {
 		var factors = input.factors();
 		try (FactorProductCursor decoder = new FactorProductCursor(3, 16)) {
 			decoder.bind(factors, factors.mask(), input.multiplicity());
@@ -210,20 +247,26 @@ class FactorExternalOwnershipBoundaryTest {
 		RowState row;
 		MultiJoinPlan template;
 		Map<List<Value>, Long> expected;
+
 		Fixture(Path directory) throws Exception {
 			assertNull(LmdbNativeEvaluationStrategy.forcedExecutionStrategyForCurrentThread());
 			store = new LmdbStore(directory.resolve("native").toFile(), new LmdbStoreConfig("spoc,posc,ospc")
-					.setNativeEvaluationEnabled(true).setDirectAdjacencyEnabled(true).setDirectAdjacencyMode(DirectAdjacencyMode.PREFER));
-			nativeRepository = new SailRepository(store); memory = new SailRepository(new MemoryStore());
+					.setNativeEvaluationEnabled(true)
+					.setDirectAdjacencyEnabled(true)
+					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER));
+			nativeRepository = new SailRepository(store);
+			memory = new SailRepository(new MemoryStore());
 			try {
-				nativeRepository.init(); memory.init();
+				nativeRepository.init();
+				memory.init();
 				var vf = SimpleValueFactory.getInstance();
 				for (var repository : List.of(nativeRepository, memory)) {
 					try (var connection = repository.getConnection()) {
 						connection.begin();
 						for (int i = 0; i < 4; i++) {
 							var s = vf.createIRI(EX + "s" + i);
-							for (int j = 0; j < 2; j++) connection.add(s, vf.createIRI(EX + "p"), vf.createIRI(EX + "o" + i + j));
+							for (int j = 0; j < 2; j++)
+								connection.add(s, vf.createIRI(EX + "p"), vf.createIRI(EX + "o" + i + j));
 							connection.add(s, vf.createIRI(EX + "q"), vf.createIRI(EX + "t" + i));
 						}
 						connection.commit();
@@ -232,29 +275,53 @@ class FactorExternalOwnershipBoundaryTest {
 				assertTrue(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS));
 				expected = new HashMap<>();
 				try (var connection = memory.getConnection()) {
-					var query = connection.prepareTupleQuery(QUERY); query.setIncludeInferred(false);
+					var query = connection.prepareTupleQuery(QUERY);
+					query.setIncludeInferred(false);
 					try (var result = query.evaluate()) {
-						while (result.hasNext()) { var next = result.next(); expected.merge(List.of(next.getValue("s"), next.getValue("o"), next.getValue("t")), 1L, Math::addExact); }
+						while (result.hasNext()) {
+							var next = result.next();
+							expected.merge(List.of(next.getValue("s"), next.getValue("o"), next.getValue("t")), 1L,
+									Math::addExact);
+						}
 					}
 				}
 				assertEquals(8L, expected.values().stream().mapToLong(Long::longValue).sum());
-				dataset = NativeQuerySourceAccess.openExplicitDataset(store); source = (NativeLmdbQuerySource) dataset;
-				var layout = new NativeSlotLayout(Map.of("s", 0, "o", 1, "t", 2), null); layout.freeze(List.of("s", "o", "t"));
+				dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+				source = (NativeLmdbQuerySource) dataset;
+				var layout = new NativeSlotLayout(Map.of("s", 0, "o", 1, "t", 2), null);
+				layout.freeze(List.of("s", "o", "t"));
 				row = new RowState(source, layout, EmptyBindingSet.getInstance());
 				assertTrue(NativeRowSeeder.seed(row.slots, layout, EmptyBindingSet.getInstance(), source));
-				long p = source.idOf(vf.createIRI(EX + "p"), ValuePosition.PREDICATE), q = source.idOf(vf.createIRI(EX + "q"), ValuePosition.PREDICATE);
-				assertNotEquals(UNKNOWN, p); assertNotEquals(UNKNOWN, q);
+				long p = source.idOf(vf.createIRI(EX + "p"), ValuePosition.PREDICATE),
+						q = source.idOf(vf.createIRI(EX + "q"), ValuePosition.PREDICATE);
+				assertNotEquals(UNKNOWN, p);
+				assertNotEquals(UNKNOWN, q);
 				template = new MultiJoinPlan(new SlotPlan[] { pattern(p, 1), pattern(q, 2) }, new MaskedFilter[0]);
 			} catch (Exception | Error failure) {
-				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				try {
+					close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 				throw failure;
 			}
 		}
+
 		private static PatternPlan pattern(long predicate, int output) {
-			return new PatternPlan(Term.slot(0), Term.constant(predicate), Term.slot(output), Term.unbound(), ContextConstraint.UNRESTRICTED, false, Double.NaN);
+			return new PatternPlan(Term.slot(0), Term.constant(predicate), Term.slot(output), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, Double.NaN);
 		}
-		@Override public void close() {
-			assertAll(() -> { if (row != null) row.closeDecodedInputs(); }, () -> { if (dataset != null) dataset.close(); },
+
+		@Override
+		public void close() {
+			assertAll(() -> {
+				if (row != null)
+					row.closeDecodedInputs();
+			}, () -> {
+				if (dataset != null)
+					dataset.close();
+			},
 					nativeRepository::shutDown, memory::shutDown);
 		}
 	}

@@ -54,8 +54,8 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Baseline control for the close-before-install branch. This does not deterministically reproduce the small race
- * after ReplayableIteration.currentDelegate() checks isClosed() and before replaceDelegate() installs the plan.
+ * Baseline control for the close-before-install branch. This does not deterministically reproduce the small race after
+ * ReplayableIteration.currentDelegate() checks isClosed() and before replaceDelegate() installs the plan.
  */
 class LmdbReplayCloseBeforeInstallBaselineControlTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
@@ -91,7 +91,8 @@ class LmdbReplayCloseBeforeInstallBaselineControlTest {
 			AtomicReference<Future<?>> growthReference = new AtomicReference<>();
 			AtomicReference<Future<Boolean>> reopeningReadReference = new AtomicReference<>();
 			LmdbStore store = new LmdbStore(new File(args[0]), new LmdbStoreConfig("spoc,posc")
-					.setSketchEstimatorEnabled(false).setMapGrowthReadDrainTimeoutMillis(50));
+					.setSketchEstimatorEnabled(false)
+					.setMapGrowthReadDrainTimeoutMillis(50));
 			store.setEvaluationStrategyFactory(new DefaultEvaluationStrategyFactory() {
 				@Override
 				public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,

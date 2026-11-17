@@ -12,9 +12,9 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -35,13 +35,13 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
-import org.eclipse.rdf4j.query.algebra.Slice;
-import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
@@ -57,24 +57,66 @@ class NativeDuplicateProjectionParameterTest {
 	private static final Value SECOND = VF.createIRI("urn:duplicate:second");
 	private static final Value REQUEST = VF.createIRI("urn:duplicate:request");
 	private static final TripleSource TRIPLES = new TripleSource() {
-		@Override public ValueFactory getValueFactory() { return VF; }
-		@Override public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
-				Resource... contexts) { return new EmptyIteration<>(); }
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
+				Resource... contexts) {
+			return new EmptyIteration<>();
+		}
 	};
 	private static final NativeLmdbQuerySource SOURCE = new NativeLmdbQuerySource() {
-		@Override public Object idSpace() { return this; }
-		@Override public long idOf(Value value) { return UNKNOWN_ID; }
-		@Override public org.eclipse.rdf4j.sail.lmdb.RecordIterator statements(long s, long p, long o, long g) {
+		@Override
+		public Object idSpace() {
+			return this;
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return UNKNOWN_ID;
+		}
+
+		@Override
+		public org.eclipse.rdf4j.sail.lmdb.RecordIterator statements(long s, long p, long o, long g) {
 			return new org.eclipse.rdf4j.sail.lmdb.RecordIterator() {
-				@Override public long[] next() { return null; }
-				@Override public void close() { }
+				@Override
+				public long[] next() {
+					return null;
+				}
+
+				@Override
+				public void close() {
+				}
 			};
 		}
-		@Override public long count(long s, long p, long o, long g) { return 0L; }
-		@Override public boolean has(long s, long p, long o, long g) { return false; }
-		@Override public double estimate(long s, long p, long o, long g) { return 0D; }
-		@Override public Value lazyValue(long id) { throw new AssertionError("all VALUES use the real plan term catalog"); }
-		@Override public boolean hasStatementsInSource() { return true; }
+
+		@Override
+		public long count(long s, long p, long o, long g) {
+			return 0L;
+		}
+
+		@Override
+		public boolean has(long s, long p, long o, long g) {
+			return false;
+		}
+
+		@Override
+		public double estimate(long s, long p, long o, long g) {
+			return 0D;
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			throw new AssertionError("all VALUES use the real plan term catalog");
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
 	};
 
 	@Test
@@ -126,8 +168,10 @@ class NativeDuplicateProjectionParameterTest {
 	private static void assertOppositeAliases(long offset, long limit, List<BindingSet> expected) {
 		BindingSetAssignment values = new BindingSetAssignment();
 		values.setBindingNames(Set.of("x", "y"));
-		MapBindingSet first = row("x", FIRST); first.addBinding("y", SECOND);
-		MapBindingSet second = row("x", SECOND); second.addBinding("y", FIRST);
+		MapBindingSet first = row("x", FIRST);
+		first.addBinding("y", SECOND);
+		MapBindingSet second = row("x", SECOND);
+		second.addBinding("y", FIRST);
 		values.setBindingSets(List.of(first, second));
 		assertProjection(values, new ProjectionElemList(new ProjectionElem("x", "alias"),
 				new ProjectionElem("y", "alias")), expected, true, offset, limit);
@@ -148,8 +192,12 @@ class NativeDuplicateProjectionParameterTest {
 	private static void assertProjection(BindingSetAssignment values, ProjectionElemList columns,
 			List<BindingSet> expected, boolean ordered, long offset, long limit) {
 		TupleExpr modifiers = new Distinct(new Projection(values, columns));
-		if (ordered) { modifiers = new Order(modifiers, List.of(new OrderElem(Var.of("alias")))); }
-		if (offset != 0L || limit >= 0L) { modifiers = new Slice(modifiers, offset, limit); }
+		if (ordered) {
+			modifiers = new Order(modifiers, List.of(new OrderElem(Var.of("alias"))));
+		}
+		if (offset != 0L || limit >= 0L) {
+			modifiers = new Slice(modifiers, offset, limit);
+		}
 		QueryRoot expression = new QueryRoot(modifiers);
 		BindingSet input = BindingSetOrigin.optimizationInput(row("external", REQUEST));
 		DefaultEvaluationStrategy ordinary = new DefaultEvaluationStrategy(TRIPLES,
@@ -161,11 +209,14 @@ class NativeDuplicateProjectionParameterTest {
 				new EvaluationStatistics(), false);
 		expression.setExecutionSummaryEnabled(true);
 		values.setExecutionSummaryEnabled(true);
-		org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(expression,
+		org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(
+				expression,
 				new QueryEvaluationContext.Minimal((Dataset) null), nativeStrategy, SOURCE);
 		LmdbNativePhysicalPlan physical = assertInstanceOf(LmdbNativePhysicalPlan.class, step);
 		List<BindingSet> actual;
-		try (var result = step.evaluate(input)) { actual = QueryResults.asList(result); }
+		try (var result = step.evaluate(input)) {
+			actual = QueryResults.asList(result);
+		}
 		String path = expression.getStringMetricActual("nativeExecutionPath");
 		assertNotNull(path, expression::toString);
 		assertFalse(path.contains(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK), path);
@@ -175,6 +226,8 @@ class NativeDuplicateProjectionParameterTest {
 	}
 
 	private static MapBindingSet row(String name, Value value) {
-		MapBindingSet row = new MapBindingSet(); row.addBinding(name, value); return row;
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding(name, value);
+		return row;
 	}
 }

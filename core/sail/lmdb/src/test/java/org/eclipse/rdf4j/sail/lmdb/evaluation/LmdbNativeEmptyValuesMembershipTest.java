@@ -63,9 +63,13 @@ import org.junit.jupiter.params.provider.EnumSource;
 /** A disjunction cannot turn a zero-row VALUES relation into an identity relation. */
 @Timeout(60)
 class LmdbNativeEmptyValuesMembershipTest {
-	@TempDir File directory;
+	@TempDir
+	File directory;
 
-	enum Placement { WHOLE_FILTER, VALUES_WRAPPER }
+	enum Placement {
+		WHOLE_FILTER,
+		VALUES_WRAPPER
+	}
 
 	@ParameterizedTest
 	@EnumSource(Placement.class)
@@ -76,11 +80,15 @@ class LmdbNativeEmptyValuesMembershipTest {
 	@ParameterizedTest
 	@EnumSource(Placement.class)
 	void nonemptyValuesRetainBothDisjuncts(Placement placement) throws Exception {
-		assertOrdinaryAndNative(placement, true, List.of("urn:empty-membership:s0|hit:0", "urn:empty-membership:s1|miss:1"));
+		assertOrdinaryAndNative(placement, true,
+				List.of("urn:empty-membership:s0|hit:0", "urn:empty-membership:s1|miss:1"));
 	}
 
-
-	enum TargetRows { BOUND_ONLY, UNDEF_ONLY, BOUND_AND_UNDEF }
+	enum TargetRows {
+		BOUND_ONLY,
+		UNDEF_ONLY,
+		BOUND_AND_UNDEF
+	}
 
 	@ParameterizedTest(name = "{0}, {1}")
 	@org.junit.jupiter.params.provider.MethodSource("callerFrames")
@@ -89,7 +97,6 @@ class LmdbNativeEmptyValuesMembershipTest {
 		assertOrdinaryAndNative(placement, true,
 				List.of("urn:empty-membership:s0|hit:0"), targetRows);
 	}
-
 
 	@ParameterizedTest(name = "{0}, {1}")
 	@org.junit.jupiter.params.provider.MethodSource("callerFrames")
@@ -122,30 +129,37 @@ class LmdbNativeEmptyValuesMembershipTest {
 				true, false, false, null, true);
 	}
 
-	enum Composition { CLOSED_HIDDEN, CLOSED_PROJECTED, UNION }
+	enum Composition {
+		CLOSED_HIDDEN,
+		CLOSED_PROJECTED,
+		UNION
+	}
 
 	@ParameterizedTest(name = "{0}, {1}")
 	@org.junit.jupiter.params.provider.MethodSource("frameCompositions")
 	void subqueryAndUnionKeepTheirOwnValuesEntryFrames(Placement placement, Composition composition) throws Exception {
 		List<String> expected = switch (composition) {
-			case CLOSED_HIDDEN -> List.of("urn:empty-membership:s0|hit:0");
-			case CLOSED_PROJECTED -> List.of();
-			case UNION -> List.of("urn:empty-membership:s0|hit:0", "urn:empty-membership:s1|miss:1");
+		case CLOSED_HIDDEN -> List.of("urn:empty-membership:s0|hit:0");
+		case CLOSED_PROJECTED -> List.of();
+		case UNION -> List.of("urn:empty-membership:s0|hit:0", "urn:empty-membership:s1|miss:1");
 		};
 		assertOrdinaryAndNative(placement, true, expected, TargetRows.BOUND_ONLY, false, false, false, composition);
 	}
 
 	private static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> frameCompositions() {
-		return java.util.Arrays.stream(Placement.values()).flatMap(placement -> java.util.Arrays.stream(Composition.values())
-				.map(composition -> org.junit.jupiter.params.provider.Arguments.of(placement, composition)));
+		return java.util.Arrays.stream(Placement.values())
+				.flatMap(placement -> java.util.Arrays.stream(Composition.values())
+						.map(composition -> org.junit.jupiter.params.provider.Arguments.of(placement, composition)));
 	}
 
 	private static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> callerFrames() {
-		return java.util.Arrays.stream(Placement.values()).flatMap(placement -> java.util.Arrays.stream(TargetRows.values())
-				.map(targetRows -> org.junit.jupiter.params.provider.Arguments.of(placement, targetRows)));
+		return java.util.Arrays.stream(Placement.values())
+				.flatMap(placement -> java.util.Arrays.stream(TargetRows.values())
+						.map(targetRows -> org.junit.jupiter.params.provider.Arguments.of(placement, targetRows)));
 	}
 
-	private void assertOrdinaryAndNative(Placement placement, boolean nonempty, List<String> expected) throws Exception {
+	private void assertOrdinaryAndNative(Placement placement, boolean nonempty, List<String> expected)
+			throws Exception {
 		assertOrdinaryAndNative(placement, nonempty, expected, null);
 	}
 
@@ -165,8 +179,10 @@ class LmdbNativeEmptyValuesMembershipTest {
 	}
 
 	private void assertOrdinaryAndNative(Placement placement, boolean nonempty, List<String> expected,
-			TargetRows targetRows, boolean inLateral, boolean withoutFilter, boolean dataProducesTarget) throws Exception {
-		assertOrdinaryAndNative(placement, nonempty, expected, targetRows, inLateral, withoutFilter, dataProducesTarget, null);
+			TargetRows targetRows, boolean inLateral, boolean withoutFilter, boolean dataProducesTarget)
+			throws Exception {
+		assertOrdinaryAndNative(placement, nonempty, expected, targetRows, inLateral, withoutFilter, dataProducesTarget,
+				null);
 	}
 
 	private void assertOrdinaryAndNative(Placement placement, boolean nonempty, List<String> expected,
@@ -180,8 +196,11 @@ class LmdbNativeEmptyValuesMembershipTest {
 			TargetRows targetRows, boolean inLateral, boolean withoutFilter, boolean dataProducesTarget,
 			Composition composition, boolean undefLateral) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)
-				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF).setOptimizerSamplingEnabled(false)
-				.setBackgroundRawSamplingEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(directory, config);
 		SailRepository repository = new SailRepository(store);
@@ -190,8 +209,10 @@ class LmdbNativeEmptyValuesMembershipTest {
 			ValueFactory vf = store.getValueFactory();
 			try (var connection = repository.getConnection()) {
 				connection.begin();
-				connection.add(vf.createIRI("urn:empty-membership:s0"), vf.createIRI("urn:empty-membership:p"), vf.createLiteral("hit:0"));
-				connection.add(vf.createIRI("urn:empty-membership:s1"), vf.createIRI("urn:empty-membership:p"), vf.createLiteral("miss:1"));
+				connection.add(vf.createIRI("urn:empty-membership:s0"), vf.createIRI("urn:empty-membership:p"),
+						vf.createLiteral("hit:0"));
+				connection.add(vf.createIRI("urn:empty-membership:s1"), vf.createIRI("urn:empty-membership:p"),
+						vf.createLiteral("miss:1"));
 				connection.commit();
 			}
 			LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
@@ -202,29 +223,39 @@ class LmdbNativeEmptyValuesMembershipTest {
 						NativeQuerySourceAccess.evaluationStrategy(store, source, statistics));
 				QueryRoot root = query(vf, placement, nonempty);
 				if (dataProducesTarget) {
-					root.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
-						@Override public void meet(Extension data) {
-							data.addElement(new ExtensionElem(new ValueConstant(vf.createLiteral("hit:0")), "target"));
-						}
-					});
+					root.visit(
+							new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+								@Override
+								public void meet(Extension data) {
+									data.addElement(
+											new ExtensionElem(new ValueConstant(vf.createLiteral("hit:0")), "target"));
+								}
+							});
 				}
 				if (withoutFilter) {
-					root.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
-						@Override public void meet(Filter filter) { filter.replaceWith(filter.getArg()); }
-					});
+					root.visit(
+							new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+								@Override
+								public void meet(Filter filter) {
+									filter.replaceWith(filter.getArg());
+								}
+							});
 				}
 				if (targetRows != null) {
-					root.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
-						@Override public void meet(BindingSetAssignment assignment) {
-							BindingSet bound = new ListBindingSet(List.of("target"), vf.createLiteral("hit:0"));
-							BindingSet undef = new ListBindingSet(List.of("target"), (org.eclipse.rdf4j.model.Value) null);
-							assignment.setBindingSets(switch (targetRows) {
-								case BOUND_ONLY -> List.of(bound);
-								case UNDEF_ONLY -> List.of(undef);
-								case BOUND_AND_UNDEF -> List.of(bound, undef);
+					root.visit(
+							new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+								@Override
+								public void meet(BindingSetAssignment assignment) {
+									BindingSet bound = new ListBindingSet(List.of("target"), vf.createLiteral("hit:0"));
+									BindingSet undef = new ListBindingSet(List.of("target"),
+											(org.eclipse.rdf4j.model.Value) null);
+									assignment.setBindingSets(switch (targetRows) {
+									case BOUND_ONLY -> List.of(bound);
+									case UNDEF_ONLY -> List.of(undef);
+									case BOUND_AND_UNDEF -> List.of(bound, undef);
+									});
+								}
 							});
-						}
-					});
 				}
 				if (inLateral) {
 					TupleExpr right = ((Projection) ((Distinct) root.getArg()).getArg()).getArg();
@@ -245,13 +276,17 @@ class LmdbNativeEmptyValuesMembershipTest {
 								vf.createIRI("urn:empty-membership:s1"), vf.createLiteral("miss:1"))));
 						input = new org.eclipse.rdf4j.query.algebra.Union(input, sibling);
 					} else {
-						ProjectionElemList visible = new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("v"));
-						if (composition == Composition.CLOSED_PROJECTED) { visible.addElement(new ProjectionElem("target")); }
+						ProjectionElemList visible = new ProjectionElemList(new ProjectionElem("s"),
+								new ProjectionElem("v"));
+						if (composition == Composition.CLOSED_PROJECTED) {
+							visible.addElement(new ProjectionElem("target"));
+						}
 						Projection subquery = new Projection(input, visible, true);
 						subquery.setVariableScopeChange(true);
 						BindingSetAssignment caller = new BindingSetAssignment();
 						caller.setDeclaredBindingNames(Set.of("target"));
-						caller.setBindingSets(List.of(new ListBindingSet(List.of("target"), vf.createLiteral("miss:1"))));
+						caller.setBindingSets(
+								List.of(new ListBindingSet(List.of("target"), vf.createLiteral("miss:1"))));
 						input = new Join(caller, subquery);
 					}
 					root = new QueryRoot(new Distinct(new Projection(input,
@@ -267,31 +302,41 @@ class LmdbNativeEmptyValuesMembershipTest {
 				PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
 				QueryEvaluationStep prepared = nativeStrategy.precompile(root);
 				if (inLateral) {
-					var context = new org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.Minimal((org.eclipse.rdf4j.query.Dataset) null);
-					var planner = new LmdbNativeAggregatePlanner(context, nativeStrategy, (NativeLmdbQuerySource) dataset);
+					var context = new org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.Minimal(
+							(org.eclipse.rdf4j.query.Dataset) null);
+					var planner = new LmdbNativeAggregatePlanner(context, nativeStrategy,
+							(NativeLmdbQuerySource) dataset);
 					NativeRowsStep physical = assertInstanceOf(NativeRowsStep.class, planner.compileRowRoot(root));
 					LateralPlan lateral = assertInstanceOf(LateralPlan.class, physical.arg);
 					NativeValuesFoldPlan guarded = assertInstanceOf(NativeValuesFoldPlan.class, lateral.right);
 					assertEquals(List.of("target"), List.of(guarded.inputNames));
 					assertEquals(guarded.inputMask, lateral.rightInputMask & guarded.inputMask,
 							"the declared LATERAL input reaches the right operand frame");
-					assertEquals(undefLateral ? 0L : guarded.inputMask, SlotPlan.assuredMask(lateral.left) & guarded.inputMask,
+					assertEquals(undefLateral ? 0L : guarded.inputMask,
+							SlotPlan.assuredMask(lateral.left) & guarded.inputMask,
 							"bound VALUES inputs must survive left pruning; UNDEF must not invent assurance");
 					assertTrue(containsValues(guarded.original), "the fallback retains the actual VALUES rows");
 					FilterPlan gate = assertInstanceOf(FilterPlan.class, guarded.folded);
-					RecordingNativeBooleanFilter recorder = assertInstanceOf(RecordingNativeBooleanFilter.class, gate.filter);
-					assertInstanceOf(ValueSetFilter.class, recorder.delegate, "the target enters the real folded operand through a later native slot");
+					RecordingNativeBooleanFilter recorder = assertInstanceOf(RecordingNativeBooleanFilter.class,
+							gate.filter);
+					assertInstanceOf(ValueSetFilter.class, recorder.delegate,
+							"the target enters the real folded operand through a later native slot");
 				}
 
-				assertEquals(expected, rows(prepared), placement + " must preserve the exact VALUES relation and caller compatibility\n" + root);
+				assertEquals(expected, rows(prepared),
+						placement + " must preserve the exact VALUES relation and caller compatibility\n" + root);
 				if (nonempty) {
-					assertEquals("lmdb-native", root.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE));
-					assertNotEquals("genericHostedRoot", root.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND));
+					assertEquals("lmdb-native",
+							root.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE));
+					assertNotEquals("genericHostedRoot",
+							root.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND));
 				}
 				if (composition != null || inLateral) {
 					String actualPath = root.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH);
-					org.junit.jupiter.api.Assertions.assertNotNull(actualPath, "the composed query actually entered native execution");
-					org.junit.jupiter.api.Assertions.assertFalse(actualPath.contains(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK),
+					org.junit.jupiter.api.Assertions.assertNotNull(actualPath,
+							"the composed query actually entered native execution");
+					org.junit.jupiter.api.Assertions.assertFalse(
+							actualPath.contains(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK),
 							"the native result cannot be supplied by a semantic fallback: " + actualPath);
 				}
 				if (targetRows != null && !inLateral && (composition == null || composition == Composition.UNION)) {
@@ -304,19 +349,23 @@ class LmdbNativeEmptyValuesMembershipTest {
 					List<String> expectedDifferent = composition == Composition.UNION
 							? List.of("urn:empty-membership:s1|miss:1")
 							: targetRows == TargetRows.BOUND_ONLY ? List.of()
-							: List.of("urn:empty-membership:s0|hit:0", "urn:empty-membership:s1|miss:1");
+									: List.of("urn:empty-membership:s0|hit:0", "urn:empty-membership:s1|miss:1");
 					assertEquals(expectedDifferent, rows(ordinaryPrepared, different),
 							"bound VALUES conflict; UNDEF retains the caller's supplied target");
 					assertEquals(expectedDifferent, rows(prepared, different),
 							"a reusable fold cannot erase target compatibility or caller-filled UNDEF");
-					assertEquals(expected, rows(prepared), "the earlier caller frame must not poison a later ordinary opening");
+					assertEquals(expected, rows(prepared),
+							"the earlier caller frame must not poison a later ordinary opening");
 				}
 				if (composition == Composition.CLOSED_HIDDEN || composition == Composition.CLOSED_PROJECTED) {
 					org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet request = new org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet();
 					request.addBinding("target", vf.createLiteral("miss:1"));
-					assertEquals(List.of(), rows(ordinaryPrepared, request), "real query-entry parameters remain visible inside both SELECT variants");
-					assertEquals(List.of(), rows(prepared, request), "a closing SELECT hides sibling locals without erasing query-entry authority");
-					assertEquals(expected, rows(prepared), "subquery memo/frame state is independent across invocations");
+					assertEquals(List.of(), rows(ordinaryPrepared, request),
+							"real query-entry parameters remain visible inside both SELECT variants");
+					assertEquals(List.of(), rows(prepared, request),
+							"a closing SELECT hides sibling locals without erasing query-entry authority");
+					assertEquals(expected, rows(prepared),
+							"subquery memo/frame state is independent across invocations");
 				}
 			}
 		} finally {
@@ -324,13 +373,22 @@ class LmdbNativeEmptyValuesMembershipTest {
 		}
 	}
 
-
 	private static boolean containsValues(SlotPlan plan) {
-		if (plan instanceof ValuesPlan) { return true; }
-		if (plan instanceof JoinPlan join) { return containsValues(join.left) || containsValues(join.right); }
-		if (plan instanceof MultiJoinPlan join) { return java.util.Arrays.stream(join.children).anyMatch(LmdbNativeEmptyValuesMembershipTest::containsValues); }
-		if (plan instanceof FilterPlan filter) { return containsValues(filter.arg); }
-		if (plan instanceof ExtensionPlan extension) { return containsValues(extension.arg); }
+		if (plan instanceof ValuesPlan) {
+			return true;
+		}
+		if (plan instanceof JoinPlan join) {
+			return containsValues(join.left) || containsValues(join.right);
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			return java.util.Arrays.stream(join.children).anyMatch(LmdbNativeEmptyValuesMembershipTest::containsValues);
+		}
+		if (plan instanceof FilterPlan filter) {
+			return containsValues(filter.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return containsValues(extension.arg);
+		}
 		return false;
 	}
 
@@ -340,12 +398,15 @@ class LmdbNativeEmptyValuesMembershipTest {
 				new ExtensionElem(Var.of("raw"), "v"));
 		BindingSetAssignment values = new BindingSetAssignment();
 		values.setDeclaredBindingNames(Set.of("target"));
-		values.setBindingSets(nonempty ? List.of(new ListBindingSet(List.of("target"), vf.createLiteral("miss:1"))) : List.of());
+		values.setBindingSets(
+				nonempty ? List.of(new ListBindingSet(List.of("target"), vf.createLiteral("miss:1"))) : List.of());
 		Or condition = new Or(new Compare(Var.of("v"), Var.of("target")),
 				new Compare(Var.of("v"), new ValueConstant(vf.createLiteral("hit:0"))));
 		Filter filter = new Filter(placement == Placement.WHOLE_FILTER ? new Join(data, values) : values, condition);
 		filter.setConditionBindingScope(Filter.ConditionBindingScope.ALL);
-		if (placement == Placement.VALUES_WRAPPER) { filter.setRequiredInputBindingNames(Set.of("v")); }
+		if (placement == Placement.VALUES_WRAPPER) {
+			filter.setRequiredInputBindingNames(Set.of("v"));
+		}
 		TupleExpr input = placement == Placement.WHOLE_FILTER ? filter : new Join(data, filter);
 		return new QueryRoot(new Distinct(new Projection(input,
 				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("v")), false)));

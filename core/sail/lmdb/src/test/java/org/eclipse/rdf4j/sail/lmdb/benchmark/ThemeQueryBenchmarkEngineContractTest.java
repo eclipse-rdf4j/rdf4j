@@ -37,94 +37,94 @@ import org.junit.jupiter.params.provider.CsvSource;
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class ThemeQueryBenchmarkEngineContractTest {
 
-    private final Map<String, String> previous = new LinkedHashMap<>();
+	private final Map<String, String> previous = new LinkedHashMap<>();
 
-    @BeforeEach
-    void preserveProperties() {
-        for (String property : new String[] { "rdf4j.benchmark.profiling",
-                "rdf4j.lmdb.nativeQueryEngine.enabled", ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY,
-                ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY,
-                ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY,
-                ThemeQueryBenchmark.WAIT_FOR_VALUE_OVERLAY_PROPERTY }) {
-            previous.put(property, System.getProperty(property));
-        }
-        System.setProperty("rdf4j.benchmark.profiling", "true");
-        System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
-        System.clearProperty(ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY);
-        System.setProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, "false");
-        System.setProperty(ThemeQueryBenchmark.WAIT_FOR_VALUE_OVERLAY_PROPERTY, "false");
-    }
+	@BeforeEach
+	void preserveProperties() {
+		for (String property : new String[] { "rdf4j.benchmark.profiling",
+				"rdf4j.lmdb.nativeQueryEngine.enabled", ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY,
+				ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY,
+				ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY,
+				ThemeQueryBenchmark.WAIT_FOR_VALUE_OVERLAY_PROPERTY }) {
+			previous.put(property, System.getProperty(property));
+		}
+		System.setProperty("rdf4j.benchmark.profiling", "true");
+		System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+		System.clearProperty(ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY);
+		System.setProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, "false");
+		System.setProperty(ThemeQueryBenchmark.WAIT_FOR_VALUE_OVERLAY_PROPERTY, "false");
+	}
 
-    @AfterEach
-    void restoreProperties() {
-        previous.forEach((property, value) -> {
-            if (value == null) {
-                System.clearProperty(property);
-            } else {
-                System.setProperty(property, value);
-            }
-        });
-    }
+	@AfterEach
+	void restoreProperties() {
+		previous.forEach((property, value) -> {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+		});
+	}
 
-    @Test
-    void nestedDefaultsSelectTheCurrentPlannerNativeEngineAndDirectAdjacency() {
-        var config = ThemeQueryBenchmark.ConfigUtil.createConfig();
-        assertTrue(config.getNativeEvaluationEnabled());
-        assertTrue(config.isExperimentalQueryOptimizations());
-        assertTrue(config.getDirectAdjacencyEnabled());
-        assertEquals(Boolean.FALSE, config.getSketchEstimatorEnabled());
-        assertFalse(config.getValueOverlayEnabled());
-    }
+	@Test
+	void nestedDefaultsSelectTheCurrentPlannerNativeEngineAndDirectAdjacency() {
+		var config = ThemeQueryBenchmark.ConfigUtil.createConfig();
+		assertTrue(config.getNativeEvaluationEnabled());
+		assertTrue(config.isExperimentalQueryOptimizations());
+		assertTrue(config.getDirectAdjacencyEnabled());
+		assertEquals(Boolean.FALSE, config.getSketchEstimatorEnabled());
+		assertFalse(config.getValueOverlayEnabled());
+	}
 
-    @ParameterizedTest(name = "sketch={0}, adjacency wait={1}")
-    @CsvSource({ "false,absent", "false,false", "false,true", "true,false", "true,true" })
-    void finalConfigurationKeepsEngineAndAdjacencyIndependentOfSketchAndWait(boolean sketches, String wait,
-            @TempDir Path directory) throws Exception {
-        if ("absent".equals(wait)) {
-            System.clearProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
-        } else {
-            System.setProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, wait);
-        }
-        int[] loads = { 0 };
-        ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark(directory.toFile(), repository -> {
-            loads[0]++;
-            LmdbStore actual = (LmdbStore) repository.getSail();
-            assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, actual.getEvaluationStrategyFactory(),
-                    "The final createStoreConfig, rather than another package's ConfigUtil, owns the factory");
-            assertTrue(actual.isNativeQueryEngineEnabled());
-            assertTrue(actual.getQueryExecutionPolicy().experimentalQueryOptimizations(),
-                    "Disabling sketch estimation cannot turn off the current branch planner");
-            repository.init();
-            assertNotEquals("disabled", actual.getDirectAdjacencyReadinessDescription(),
-                    "The wait property controls waiting, not allocation/maintenance of the direct index");
-            try (var connection = repository.getConnection()) {
-                connection.begin();
-                connection.add(Values.iri("urn:engine-contract:s0"), Values.iri("urn:engine-contract:p"),
-                        Values.literal("first"), Values.iri("urn:engine-contract:g0"));
-                connection.add(Values.iri("urn:engine-contract:s1"), Values.iri("urn:engine-contract:p"),
-                        Values.literal("second"), Values.iri("urn:engine-contract:g1"));
-                connection.commit();
-                assertEquals(2L, connection.size());
-            }
-            assertEquals(sketches, actual.forceFlushSketchEstimator(),
-                    "Actual sketch owner remains independent of engine selection");
-        });
-        benchmark.themeName = "MEDICAL_RECORDS";
-        benchmark.z_queryIndex = 0;
-        benchmark.sketchEstimatorEnabled = sketches;
-        benchmark.queryExplanationLevel = "Telemetry";
-        benchmark.z_z_irMode = "auto";
-        try {
-            benchmark.setup();
-        } finally {
-            benchmark.tearDown();
-        }
-        assertEquals(1, loads[0]);
-        try {
-            benchmark.setup();
-        } finally {
-            benchmark.tearDown();
-        }
-        assertEquals(1, loads[0], "The actual configured store still reuses its completed dataset");
-    }
+	@ParameterizedTest(name = "sketch={0}, adjacency wait={1}")
+	@CsvSource({ "false,absent", "false,false", "false,true", "true,false", "true,true" })
+	void finalConfigurationKeepsEngineAndAdjacencyIndependentOfSketchAndWait(boolean sketches, String wait,
+			@TempDir Path directory) throws Exception {
+		if ("absent".equals(wait)) {
+			System.clearProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
+		} else {
+			System.setProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, wait);
+		}
+		int[] loads = { 0 };
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark(directory.toFile(), repository -> {
+			loads[0]++;
+			LmdbStore actual = (LmdbStore) repository.getSail();
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, actual.getEvaluationStrategyFactory(),
+					"The final createStoreConfig, rather than another package's ConfigUtil, owns the factory");
+			assertTrue(actual.isNativeQueryEngineEnabled());
+			assertTrue(actual.getQueryExecutionPolicy().experimentalQueryOptimizations(),
+					"Disabling sketch estimation cannot turn off the current branch planner");
+			repository.init();
+			assertNotEquals("disabled", actual.getDirectAdjacencyReadinessDescription(),
+					"The wait property controls waiting, not allocation/maintenance of the direct index");
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(Values.iri("urn:engine-contract:s0"), Values.iri("urn:engine-contract:p"),
+						Values.literal("first"), Values.iri("urn:engine-contract:g0"));
+				connection.add(Values.iri("urn:engine-contract:s1"), Values.iri("urn:engine-contract:p"),
+						Values.literal("second"), Values.iri("urn:engine-contract:g1"));
+				connection.commit();
+				assertEquals(2L, connection.size());
+			}
+			assertEquals(sketches, actual.forceFlushSketchEstimator(),
+					"Actual sketch owner remains independent of engine selection");
+		});
+		benchmark.themeName = "MEDICAL_RECORDS";
+		benchmark.z_queryIndex = 0;
+		benchmark.sketchEstimatorEnabled = sketches;
+		benchmark.queryExplanationLevel = "Telemetry";
+		benchmark.z_z_irMode = "auto";
+		try {
+			benchmark.setup();
+		} finally {
+			benchmark.tearDown();
+		}
+		assertEquals(1, loads[0]);
+		try {
+			benchmark.setup();
+		} finally {
+			benchmark.tearDown();
+		}
+		assertEquals(1, loads[0], "The actual configured store still reuses its completed dataset");
+	}
 }

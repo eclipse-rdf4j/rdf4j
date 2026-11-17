@@ -53,15 +53,18 @@ class LmdbDeferredDomainForeignWriterTest {
 			@TempDir(cleanup = CleanupMode.NEVER) Path evidence) throws Exception {
 		Path directory = evidence.resolve("store");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false)
-				.setSketchEstimatorEnabled(false).setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
-				.setPredicateGuaranteeIndexEnabled(true).setPredicateGuaranteeIndexAutoRebuild(true);
+				.setSketchEstimatorEnabled(false)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setPredicateGuaranteeIndexEnabled(true)
+				.setPredicateGuaranteeIndexAutoRebuild(true);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		AtomicBoolean childSettled = new AtomicBoolean(true);
 		try (AutoCloseable cleanup = () -> {
 			if (!childSettled.get()) {
 				RETAINED_OPEN_STORES.add(repository);
-				throw new IllegalStateException("External writer did not settle; native store and fixture were retained");
+				throw new IllegalStateException(
+						"External writer did not settle; native store and fixture were retained");
 			}
 			repository.shutDown();
 		}) {
@@ -97,15 +100,18 @@ class LmdbDeferredDomainForeignWriterTest {
 					assertAll("foreign generation authority is not borrowed by either read view",
 							() -> assertEquals(!foreign, oldAfter.isPresent(), "old paired view"),
 							() -> assertEquals(!foreign, currentAfter.isPresent(), "current paired view"),
-							() -> assertTrue(containsObject(triples, old, predicate, object), "old row remains visible"),
-							() -> assertTrue(containsObject(triples, current, predicate, object), "current row remains visible"));
+							() -> assertTrue(containsObject(triples, old, predicate, object),
+									"old row remains visible"),
+							() -> assertTrue(containsObject(triples, current, predicate, object),
+									"current row remains visible"));
 				}
 			}
 		}
 	}
 
 	private static LmdbSailStore.ReadView openView(LmdbSailStore backing) {
-		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null)) {
 			admission.view().requireDictionaryTermSnapshot();
 			return admission.view().retain();
 		}
@@ -132,7 +138,9 @@ class LmdbDeferredDomainForeignWriterTest {
 		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
 				"--enable-native-access=ALL-UNNAMED", "-ea", "-Djava.io.tmpdir=" + tmp,
 				"-cp", System.getProperty("java.class.path"), ForeignWriter.class.getName(), directory.toString())
-						.redirectErrorStream(true).redirectOutput(log.toFile()).start();
+						.redirectErrorStream(true)
+						.redirectOutput(log.toFile())
+						.start();
 		if (!child.waitFor(30, TimeUnit.SECONDS)) {
 			throw new AssertionError("foreign writer did not settle; retained child and store: " + log);
 		}

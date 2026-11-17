@@ -24,7 +24,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -36,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
@@ -316,7 +316,8 @@ class LmdbAsyncHandoffTest {
 					}
 					AtomicReference<InterruptingTimeLimit> timeLimit = new AtomicReference<>();
 					fixture.afterValueResolution = value -> {
-						if (timeLimit.get() == null && value instanceof Literal literal && "1024".equals(literal.getLabel())) {
+						if (timeLimit.get() == null && value instanceof Literal literal
+								&& "1024".equals(literal.getLabel())) {
 							// The real final object ID exists now: interrupt exactly before native queue admission.
 							InterruptingTimeLimit started = InterruptingTimeLimit.start(0);
 							timeLimit.set(started);
@@ -329,16 +330,21 @@ class LmdbAsyncHandoffTest {
 						expiredAdmissionReturned.set(true);
 						sink.flush();
 					} finally {
-						fixture.afterValueResolution = value -> {};
+						fixture.afterValueResolution = value -> {
+						};
 						InterruptingTimeLimit started = timeLimit.get();
-						if (started != null) { started.close(); }
+						if (started != null) {
+							started.close();
+						}
 					}
 				}
 			});
 			await(capacityReached);
 			assertTrue(timeLimitFired.get());
-			assertTrue(fixture.triples.executedSubjects.isEmpty(), "the native start gate must still own the full queue");
-			assertEquals(1025, fixture.submittedSubjects.size(), "the interrupted admission must already own its prepared subject ID");
+			assertTrue(fixture.triples.executedSubjects.isEmpty(),
+					"the native start gate must still own the full queue");
+			assertEquals(1025, fixture.submittedSubjects.size(),
+					"the interrupted admission must already own its prepared subject ID");
 			fixture.triples.releaseStart.countDown();
 			await(fixture.triples.rollbackEntered);
 			assertFalse(transaction.isDone(), "expiration must retain the native rollback acknowledgement");
@@ -654,7 +660,8 @@ class LmdbAsyncHandoffTest {
 
 		private final AtomicInteger valueCommits = new AtomicInteger();
 
-		private Consumer<Value> afterValueResolution = value -> {};
+		private Consumer<Value> afterValueResolution = value -> {
+		};
 
 		private Fixture(Path directory) throws IOException {
 			AtomicReference<ControlledTripleStore> store = new AtomicReference<>();

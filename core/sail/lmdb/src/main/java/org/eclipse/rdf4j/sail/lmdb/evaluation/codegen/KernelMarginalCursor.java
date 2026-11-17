@@ -557,10 +557,13 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 		windowBatch = null;
 		Throwable failure = KernelRuntime.closeResource(previous, null);
 		if (product != null) {
-			try { product.release(); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem;
-				else if (failure != problem) failure.addSuppressed(problem);
+			try {
+				product.release();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
 			}
 		}
 		KernelRuntime.rethrowCloseFailure(failure);

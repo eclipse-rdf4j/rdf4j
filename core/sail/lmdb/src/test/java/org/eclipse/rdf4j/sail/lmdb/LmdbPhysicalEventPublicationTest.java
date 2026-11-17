@@ -645,7 +645,7 @@ class LmdbPhysicalEventPublicationTest {
 			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics)
 					.withPreparedQueryEntry(new QueryRoot(expression(PREDICATE)), null, EmptyBindingSet.getInstance(),
 							(prepared, cascades) -> operation.apply(new NativeContext(runtime, strategy,
-								tripleSource, 2L, true)));
+									tripleSource, 2L, true)));
 		}
 	}
 
@@ -668,9 +668,9 @@ class LmdbPhysicalEventPublicationTest {
 			assertTrue(((LmdbEvaluationStatistics) statistics).feedbackPublicationAllowed(),
 					"COVERAGE_PREREQUISITE: the real admitted dataset must be a committed snapshot");
 			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics)
-				.withPreparedQueryEntry(new QueryRoot(expression(PREDICATE)), null, EmptyBindingSet.getInstance(),
-						(prepared, cascades) -> operation.apply(new NativeContext(runtime, strategy,
-								tripleSource, sourceRows, false)));
+					.withPreparedQueryEntry(new QueryRoot(expression(PREDICATE)), null, EmptyBindingSet.getInstance(),
+							(prepared, cascades) -> operation.apply(new NativeContext(runtime, strategy,
+									tripleSource, sourceRows, false)));
 		}
 	}
 

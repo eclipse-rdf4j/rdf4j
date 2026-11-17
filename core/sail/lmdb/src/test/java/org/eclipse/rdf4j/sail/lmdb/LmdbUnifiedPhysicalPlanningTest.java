@@ -106,7 +106,8 @@ class LmdbUnifiedPhysicalPlanningTest {
 						() -> assertTrue(runtimePlan != null && runtimePlan.contains("rowsMatchedActual: 32"),
 								"the selected access must report the rows that produce the result bag: " + runtimePlan),
 						() -> assertTrue(actual != null && runtimePlan != null && runtimePlan.contains(actual),
-								"the actual receipt must also be attached to the observed cursor event: " + runtimePlan));
+								"the actual receipt must also be attached to the observed cursor event: "
+										+ runtimePlan));
 			}
 		} finally {
 			repository.shutDown();

@@ -243,12 +243,20 @@ final class PatternBatchCursor implements BatchCursor {
 	}
 
 	boolean bindTerm(Term term, long id, NativeBatch batch, int row) {
-		if (term.readOnly) { return true; }
+		if (term.readOnly) {
+			return true;
+		}
 		if (term.isConstant()) {
-			if (term.constant != id) { return false; }
-			if (!term.bindConstant) { return true; }
+			if (term.constant != id) {
+				return false;
+			}
+			if (!term.bindConstant) {
+				return true;
+			}
 			long current = batch.get(term.slot, row);
-			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			if (term.preserveExisting && current != UNKNOWN) {
+				return current != 0L;
+			}
 			return bindSlot(term.slot, id, batch, row);
 		}
 		return term.slot < 0 || bindSlot(term.slot, id, batch, row);

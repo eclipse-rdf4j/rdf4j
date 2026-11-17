@@ -13,9 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -53,9 +53,13 @@ class LmdbDeferredDomainClosePressureTest {
 	void temporaryUnavailabilityDuringCloseDoesNotFailShutdown(boolean held, boolean failSync,
 			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false)
-				.setSketchEstimatorEnabled(false).setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
-				.setPredicateGuaranteeIndexEnabled(true).setPredicateGuaranteeIndexAutoRebuild(true)
-				.setForceSync(true).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+				.setSketchEstimatorEnabled(false)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setPredicateGuaranteeIndexEnabled(true)
+				.setPredicateGuaranteeIndexAutoRebuild(true)
+				.setForceSync(true)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		ProbeStore store = new ProbeStore(directory, config, failSync);
 		Throwable primary = null;
 		Thread closer = null;
@@ -118,7 +122,7 @@ class LmdbDeferredDomainClosePressureTest {
 			assertFalse(values.isNativeEnvironmentOpen());
 			// The backing store was deliberately closed above; the public wrapper may report that fact.
 			try {
-			store.shutDown();
+				store.shutDown();
 			} catch (SailException expected) {
 				Throwable cause = expected;
 				while (cause.getCause() != null) {
@@ -164,12 +168,16 @@ class LmdbDeferredDomainClosePressureTest {
 					store.shutDown();
 				} catch (SailException expected) {
 					Throwable cause = expected;
-					while (cause.getCause() != null) cause = cause.getCause();
-					if (!"LMDB store is closed or shutting down".equals(cause.getMessage())) throw expected;
+					while (cause.getCause() != null)
+						cause = cause.getCause();
+					if (!"LMDB store is closed or shutting down".equals(cause.getMessage()))
+						throw expected;
 				}
 			} catch (Exception | Error cleanup) {
-				if (primary == null) throw cleanup;
-				if (cleanup != primary) primary.addSuppressed(cleanup);
+				if (primary == null)
+					throw cleanup;
+				if (cleanup != primary)
+					primary.addSuppressed(cleanup);
 			}
 		}
 	}

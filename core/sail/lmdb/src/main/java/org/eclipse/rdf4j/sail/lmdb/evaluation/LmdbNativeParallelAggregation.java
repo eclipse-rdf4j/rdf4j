@@ -92,7 +92,8 @@ final class LmdbNativeParallelAggregation {
 			return results;
 		} catch (IOException | RuntimeException | Error failure) {
 			Throwable retained = results instanceof AutoCloseable resource
-					? KernelRuntime.closeResource(resource, failure) : failure;
+					? KernelRuntime.closeResource(resource, failure)
+					: failure;
 			retained = LmdbNativeDispatchLoop.finishFilters(proposal.filterAttempt(), retained);
 			retained = KernelRuntime.closeResource(proposal, retained);
 			retained = KernelRuntime.closeResource(contextLease, retained);

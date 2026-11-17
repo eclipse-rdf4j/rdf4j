@@ -88,7 +88,8 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 
 	/** A pinned internal operand retains the ancestry fact lost when its algebra root was detached. */
 	EvaluationScopedQueryEvaluationContext withEnclosingProjection() {
-		return hasEnclosingProjection() ? this : new EvaluationScopedQueryEvaluationContext(structural, queryScope, true);
+		return hasEnclosingProjection() ? this
+				: new EvaluationScopedQueryEvaluationContext(structural, queryScope, true);
 	}
 
 	static QueryEvaluationContext create(QueryEvaluationContext structural, LmdbNativeEvaluationStrategy strategy) {

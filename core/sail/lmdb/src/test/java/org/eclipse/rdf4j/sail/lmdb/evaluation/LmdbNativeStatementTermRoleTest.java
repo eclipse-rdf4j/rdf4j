@@ -33,10 +33,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -55,6 +54,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /** Statement field roles are determined by the constant flag, independently of generated names. */
@@ -69,8 +69,13 @@ class LmdbNativeStatementTermRoleTest {
 	private static final List<String> NAMES = List.of("subject", "predicate", "object", "graph");
 	private static final Statement DATA = VF.createStatement(S, P, O, G);
 	private static final TripleSource TRIPLES = new TripleSource() {
-		@Override public ValueFactory getValueFactory() { return VF; }
-		@Override public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
 				Resource... contexts) {
 			boolean context = contexts.length == 0 || java.util.Arrays.asList(contexts).contains(G);
 			boolean match = (s == null || S.equals(s)) && (p == null || P.equals(p))
@@ -80,13 +85,19 @@ class LmdbNativeStatementTermRoleTest {
 	};
 
 	private enum Input {
-		EMPTY, MATCHING, CONFLICTING, OPTIMIZED_PARAMETER
+		EMPTY,
+		MATCHING,
+		CONFLICTING,
+		OPTIMIZED_PARAMETER
 	}
 
 	static Stream<Arguments> roles() {
-		return java.util.stream.IntStream.range(0, 4).boxed().flatMap(field ->
-				Stream.of(false, true).flatMap(anonymous -> Stream.of(false, true).flatMap(constant ->
-						Stream.of(Input.values()).map(input -> Arguments.of(field, anonymous, constant, input)))));
+		return java.util.stream.IntStream.range(0, 4)
+				.boxed()
+				.flatMap(field -> Stream.of(false, true)
+						.flatMap(anonymous -> Stream.of(false, true)
+								.flatMap(constant -> Stream.of(Input.values())
+										.map(input -> Arguments.of(field, anonymous, constant, input)))));
 	}
 
 	@ParameterizedTest(name = "field={0}, anonymous={1}, constant={2}, input={3}")
@@ -101,10 +112,13 @@ class LmdbNativeStatementTermRoleTest {
 			supplied.addBinding("target", inputKind == Input.CONFLICTING ? CONFLICT : TERMS.get(field));
 		}
 		BindingSet input = inputKind == Input.OPTIMIZED_PARAMETER
-				? BindingSetOrigin.optimizationInput(supplied) : supplied;
+				? BindingSetOrigin.optimizationInput(supplied)
+				: supplied;
 		MapBindingSet expected = new MapBindingSet();
 		for (int i = 0; i < 4; i++) {
-			if (i != field) { expected.addBinding(NAMES.get(i), TERMS.get(i)); }
+			if (i != field) {
+				expected.addBinding(NAMES.get(i), TERMS.get(i));
+			}
 		}
 		// A fixed nonconstant occurrence still produces its field. Ordinary caller mappings are retained;
 		// constant occurrences neither introduce their spelling nor constrain an unrelated same-named input.
@@ -117,25 +131,30 @@ class LmdbNativeStatementTermRoleTest {
 	}
 
 	@ParameterizedTest(name = "anonymous={0}, patternFirst={1}")
-	@CsvSource({"false,false", "false,true", "true,false", "true,true"})
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
 	void fixedValuedProducerRetainsItsLogicalPositionAroundValues(boolean anonymous, boolean patternFirst) {
 		StatementPattern pattern = new StatementPattern(Scope.NAMED_CONTEXTS, Var.of("subject"),
 				Var.of("target", P, anonymous, false), Var.of("object"), Var.of("graph"));
 		BindingSetAssignment values = new BindingSetAssignment();
 		values.setBindingNames(java.util.Set.of("target"));
-		MapBindingSet supplied = new MapBindingSet(); supplied.addBinding("target", CONFLICT);
+		MapBindingSet supplied = new MapBindingSet();
+		supplied.addBinding("target", CONFLICT);
 		values.setBindingSets(List.of(supplied));
 		TupleExpr expression = patternFirst ? new Join(pattern, values) : new Join(values, pattern);
 		MapBindingSet expected = new MapBindingSet();
-		expected.addBinding("subject", S); expected.addBinding("object", O); expected.addBinding("graph", G);
+		expected.addBinding("subject", S);
+		expected.addBinding("object", O);
+		expected.addBinding("graph", G);
 		expected.addBinding("target", CONFLICT);
 		assertParity(expression, EmptyBindingSet.getInstance(), patternFirst ? List.of() : List.of(expected));
 	}
 
 	static Stream<Arguments> unvaluedConstantRoles() {
-		return java.util.stream.IntStream.range(0, 4).boxed().flatMap(field -> Stream.of(false, true)
-				.flatMap(anonymous -> Stream.of(Input.EMPTY, Input.MATCHING, Input.CONFLICTING)
-						.map(input -> Arguments.of(field, anonymous, input))));
+		return java.util.stream.IntStream.range(0, 4)
+				.boxed()
+				.flatMap(field -> Stream.of(false, true)
+						.flatMap(anonymous -> Stream.of(Input.EMPTY, Input.MATCHING, Input.CONFLICTING)
+								.map(input -> Arguments.of(field, anonymous, input))));
 	}
 
 	@ParameterizedTest(name = "field={0}, anonymous={1}, input={2}")
@@ -145,25 +164,36 @@ class LmdbNativeStatementTermRoleTest {
 		vars[field] = Var.of("target", null, anonymous, true);
 		StatementPattern pattern = new StatementPattern(Scope.NAMED_CONTEXTS, vars[0], vars[1], vars[2], vars[3]);
 		MapBindingSet input = new MapBindingSet();
-		if (inputKind != Input.EMPTY) { input.addBinding("target", inputKind == Input.CONFLICTING ? CONFLICT : TERMS.get(field)); }
+		if (inputKind != Input.EMPTY) {
+			input.addBinding("target", inputKind == Input.CONFLICTING ? CONFLICT : TERMS.get(field));
+		}
 		MapBindingSet expected = new MapBindingSet();
-		for (int i = 0; i < 4; i++) { if (i != field) { expected.addBinding(NAMES.get(i), TERMS.get(i)); } }
-		if (inputKind == Input.MATCHING) { expected.addBinding("target", TERMS.get(field)); }
+		for (int i = 0; i < 4; i++) {
+			if (i != field) {
+				expected.addBinding(NAMES.get(i), TERMS.get(i));
+			}
+		}
+		if (inputKind == Input.MATCHING) {
+			expected.addBinding("target", TERMS.get(field));
+		}
 		assertParity(pattern, input, inputKind == Input.CONFLICTING ? List.of() : List.of(expected));
 	}
 
 	@ParameterizedTest(name = "anonymous={0}, selectorFirst={1}")
-	@CsvSource({"false,false", "false,true", "true,false", "true,true"})
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
 	void unvaluedConstantReadsOnlyBindingsAvailableAtItsLogicalPosition(boolean anonymous, boolean selectorFirst) {
 		StatementPattern pattern = new StatementPattern(Scope.NAMED_CONTEXTS, Var.of("subject"),
 				Var.of("target", null, anonymous, true), Var.of("object"), Var.of("graph"));
 		BindingSetAssignment values = new BindingSetAssignment();
 		values.setBindingNames(java.util.Set.of("target"));
-		MapBindingSet supplied = new MapBindingSet(); supplied.addBinding("target", CONFLICT);
+		MapBindingSet supplied = new MapBindingSet();
+		supplied.addBinding("target", CONFLICT);
 		values.setBindingSets(List.of(supplied));
 		TupleExpr expression = selectorFirst ? new Join(pattern, values) : new Join(values, pattern);
 		MapBindingSet expected = new MapBindingSet();
-		expected.addBinding("subject", S); expected.addBinding("object", O); expected.addBinding("graph", G);
+		expected.addBinding("subject", S);
+		expected.addBinding("object", O);
+		expected.addBinding("graph", G);
 		expected.addBinding("target", CONFLICT);
 		assertParity(expression, EmptyBindingSet.getInstance(), selectorFirst ? List.of(expected) : List.of());
 	}
@@ -173,7 +203,8 @@ class LmdbNativeStatementTermRoleTest {
 		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT ?s ?o WHERE { GRAPH <urn:role:g> { ?s <urn:role:p> ?o } }", null).getTupleExpr();
 		MapBindingSet expected = new MapBindingSet();
-		expected.addBinding("s", S); expected.addBinding("o", O);
+		expected.addBinding("s", S);
+		expected.addBinding("o", O);
 		assertParity(expression, EmptyBindingSet.getInstance(), List.of(expected));
 	}
 
@@ -212,32 +243,82 @@ class LmdbNativeStatementTermRoleTest {
 
 	private static final class OneQuadSource implements NativeLmdbQuerySource {
 		private static final long[] QUAD = java.util.stream.LongStream.rangeClosed(1, 4)
-				.map(id -> ValueIds.createId(ValueIds.T_URI, id)).toArray();
+				.map(id -> ValueIds.createId(ValueIds.T_URI, id))
+				.toArray();
 		private static final long CONFLICT_ID = ValueIds.createId(ValueIds.T_URI, 5);
 		private static final Map<Value, Long> IDS = Map.of(S, QUAD[0], P, QUAD[1], O, QUAD[2], G, QUAD[3],
 				CONFLICT, CONFLICT_ID);
-		@Override public Object idSpace() { return this; }
-		@Override public long idOf(Value value) { return IDS.getOrDefault(value, UNKNOWN_ID); }
-		@Override public Value lazyValue(long id) {
-			if (id == CONFLICT_ID) { return CONFLICT; }
-			for (int i = 0; i < QUAD.length; i++) { if (QUAD[i] == id) { return TERMS.get(i); } }
+
+		@Override
+		public Object idSpace() {
+			return this;
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return IDS.getOrDefault(value, UNKNOWN_ID);
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			if (id == CONFLICT_ID) {
+				return CONFLICT;
+			}
+			for (int i = 0; i < QUAD.length; i++) {
+				if (QUAD[i] == id) {
+					return TERMS.get(i);
+				}
+			}
 			return null;
 		}
-		@Override public RecordIterator statements(long s, long p, long o, long g) {
+
+		@Override
+		public RecordIterator statements(long s, long p, long o, long g) {
 			return new RecordIterator() {
 				boolean available = matches(s, p, o, g);
-				@Override public long[] next() { if (!available) { return null; } available = false; return QUAD.clone(); }
-				@Override public void close() { available = false; }
+
+				@Override
+				public long[] next() {
+					if (!available) {
+						return null;
+					}
+					available = false;
+					return QUAD.clone();
+				}
+
+				@Override
+				public void close() {
+					available = false;
+				}
 			};
 		}
-		@Override public long count(long s, long p, long o, long g) { return matches(s, p, o, g) ? 1 : 0; }
-		@Override public boolean has(long s, long p, long o, long g) { return matches(s, p, o, g); }
-		@Override public double estimate(long s, long p, long o, long g) { return count(s, p, o, g); }
-		@Override public boolean hasStatementsInSource() { return true; }
+
+		@Override
+		public long count(long s, long p, long o, long g) {
+			return matches(s, p, o, g) ? 1 : 0;
+		}
+
+		@Override
+		public boolean has(long s, long p, long o, long g) {
+			return matches(s, p, o, g);
+		}
+
+		@Override
+		public double estimate(long s, long p, long o, long g) {
+			return count(s, p, o, g);
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
+
 		private static boolean matches(long s, long p, long o, long g) {
-			long[] requested = {s, p, o, g};
+			long[] requested = { s, p, o, g };
 			for (int i = 0; i < requested.length; i++) {
-				if (requested[i] != UNKNOWN_ID && requested[i] != QUAD[i]) { return false; }
+				if (requested[i] != UNKNOWN_ID && requested[i] != QUAD[i]) {
+					return false;
+				}
 			}
 			return true;
 		}

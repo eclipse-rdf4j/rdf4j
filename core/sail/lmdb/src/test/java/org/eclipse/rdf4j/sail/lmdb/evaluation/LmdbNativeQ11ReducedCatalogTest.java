@@ -46,12 +46,12 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import org.slf4j.LoggerFactory;
 
 /** Small real-store q11 characterization for optional correlation and native runtime telemetry. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -80,7 +80,8 @@ class LmdbNativeQ11ReducedCatalogTest {
 			loadFixture(memory);
 			loadFixture(lmdb);
 			assertThat(lmdbStore.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
-					.as(lmdbStore.getDirectAdjacencyReadinessDescription()).isTrue();
+					.as(lmdbStore.getDirectAdjacencyReadinessDescription())
+					.isTrue();
 
 			String queryText = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 11);
 			Map<Map<String, String>, Long> ordinaryBag = evaluate(memory, queryText);
@@ -113,8 +114,10 @@ class LmdbNativeQ11ReducedCatalogTest {
 						.map(ILoggingEvent::getFormattedMessage)
 						.filter(message -> message.startsWith("Direct adjacency usage for closed "))
 						.toList();
-				System.out.println("Q11_REDUCED_ORDINARY_ROWS=" + ordinaryBag.values().stream()
-						.mapToLong(Long::longValue).sum());
+				System.out.println("Q11_REDUCED_ORDINARY_ROWS=" + ordinaryBag.values()
+						.stream()
+						.mapToLong(Long::longValue)
+						.sum());
 				System.out.println("Q11_REDUCED_NATIVE_NODES=" + actualNodes);
 				System.out.println("Q11_REDUCED_NATIVE_INVOCATIONS=" + nativeInvocations);
 				System.out.println("Q11_REDUCED_EXECUTED_RESULT_SIZE=" + actualResultSize);
@@ -229,18 +232,26 @@ class LmdbNativeQ11ReducedCatalogTest {
 		assertThat(bag.keySet().stream().filter(row -> patient1.equals(row.get("root"))).count())
 				.as("the same patient is naturally revisited with different encounter/observation frames")
 				.isGreaterThan(1L);
-		assertThat(bag.keySet().stream().map(row -> row.get("root") + "|" + row.get("encounter") + "|"
-				+ row.get("observation")).distinct().count())
-				.as("the public q11 bindings contain distinct correlated base frames")
-				.isGreaterThan(1L);
+		assertThat(bag.keySet()
+				.stream()
+				.map(row -> row.get("root") + "|" + row.get("encounter") + "|"
+						+ row.get("observation"))
+				.distinct()
+				.count())
+						.as("the public q11 bindings contain distinct correlated base frames")
+						.isGreaterThan(1L);
 		assertThat(bag.keySet().stream().anyMatch(row -> row.containsKey("observationValue")))
-				.as("the fixture has a present observation value").isTrue();
+				.as("the fixture has a present observation value")
+				.isTrue();
 		assertThat(bag.keySet().stream().anyMatch(row -> !row.containsKey("observationValue")))
-				.as("the fixture has an optional observation value absence").isTrue();
+				.as("the fixture has an optional observation value absence")
+				.isTrue();
 		assertThat(bag.keySet().stream().anyMatch(row -> !row.containsKey("recordedOn")))
-				.as("the fixture has an optional encounter-date absence").isTrue();
+				.as("the fixture has an optional encounter-date absence")
+				.isTrue();
 		Set<String> matchingMedicationIds = new TreeSet<>();
-		bag.keySet().stream()
+		bag.keySet()
+				.stream()
 				.filter(row -> "\"MED-1001\"".equals(row.get("medicationCode")))
 				.map(row -> row.get("medication"))
 				.forEach(matchingMedicationIds::add);

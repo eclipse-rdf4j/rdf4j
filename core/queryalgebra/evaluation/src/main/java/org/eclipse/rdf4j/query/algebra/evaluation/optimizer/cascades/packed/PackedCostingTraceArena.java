@@ -882,11 +882,14 @@ final class PackedCostingTraceArena {
 		typedValues[start + MATERIALIZATION_LOOKUPS] = estimate.materializationLookups();
 		typedValues[start + MEMORY_SPILL_WORK] = estimate.memorySpillWork();
 		typedValues[start + OBJECTIVE_LOWER] = estimate.hasPartialObjective()
-				? estimate.partialObjectiveLower() : estimate.objectiveLower();
+				? estimate.partialObjectiveLower()
+				: estimate.objectiveLower();
 		typedValues[start + OBJECTIVE_POINT] = estimate.hasPartialObjective()
-				? estimate.partialObjectivePoint() : estimate.objectivePoint();
+				? estimate.partialObjectivePoint()
+				: estimate.objectivePoint();
 		typedValues[start + OBJECTIVE_UPPER] = estimate.hasPartialObjective()
-				? estimate.partialObjectiveUpper() : estimate.objectiveUpper();
+				? estimate.partialObjectiveUpper()
+				: estimate.objectiveUpper();
 		typedValues[start + PARTIAL_OBJECTIVE] = estimate.hasPartialObjective() ? 1.0d : 0.0d;
 		typedValues[start + PARTIAL_LIFECYCLE_COMPARISON] = estimate.partialLifecycleComparison();
 		typedValueSize += TYPED_VALUE_COUNT;
@@ -914,11 +917,14 @@ final class PackedCostingTraceArena {
 				&& sameDouble(typedValues[start + MATERIALIZATION_LOOKUPS], estimate.materializationLookups())
 				&& sameDouble(typedValues[start + MEMORY_SPILL_WORK], estimate.memorySpillWork())
 				&& sameDouble(typedValues[start + OBJECTIVE_LOWER], estimate.hasPartialObjective()
-						? estimate.partialObjectiveLower() : estimate.objectiveLower())
+						? estimate.partialObjectiveLower()
+						: estimate.objectiveLower())
 				&& sameDouble(typedValues[start + OBJECTIVE_POINT], estimate.hasPartialObjective()
-						? estimate.partialObjectivePoint() : estimate.objectivePoint())
+						? estimate.partialObjectivePoint()
+						: estimate.objectivePoint())
 				&& sameDouble(typedValues[start + OBJECTIVE_UPPER], estimate.hasPartialObjective()
-						? estimate.partialObjectiveUpper() : estimate.objectiveUpper())
+						? estimate.partialObjectiveUpper()
+						: estimate.objectiveUpper())
 				&& sameDouble(typedValues[start + PARTIAL_OBJECTIVE], estimate.hasPartialObjective() ? 1.0d : 0.0d)
 				&& sameDouble(typedValues[start + PARTIAL_LIFECYCLE_COMPARISON],
 						estimate.partialLifecycleComparison());
@@ -944,18 +950,23 @@ final class PackedCostingTraceArena {
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.materializationLookups()));
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.memorySpillWork()));
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.hasPartialObjective()
-				? estimate.partialObjectiveLower() : estimate.objectiveLower()));
+				? estimate.partialObjectiveLower()
+				: estimate.objectiveLower()));
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.hasPartialObjective()
-				? estimate.partialObjectivePoint() : estimate.objectivePoint()));
+				? estimate.partialObjectivePoint()
+				: estimate.objectivePoint()));
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.hasPartialObjective()
-				? estimate.partialObjectiveUpper() : estimate.objectiveUpper()));
+				? estimate.partialObjectiveUpper()
+				: estimate.objectiveUpper()));
 		hash = PackedPrimitiveHash.step(hash, estimate.hasPartialObjective() ? 1L : 0L);
 		return PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.partialLifecycleComparison()));
 	}
 
 	private static int retainedTypedValueCount(PackedCostEstimate estimate) {
-		return estimate.hasDependentCostComponents() || estimate.hasObjectiveInterval() || estimate.hasPartialObjective()
-				? TYPED_VALUE_COUNT : 0;
+		return estimate.hasDependentCostComponents() || estimate.hasObjectiveInterval()
+				|| estimate.hasPartialObjective()
+						? TYPED_VALUE_COUNT
+						: 0;
 	}
 
 	private static int decodedTypedValueStart(int encodedStart) {

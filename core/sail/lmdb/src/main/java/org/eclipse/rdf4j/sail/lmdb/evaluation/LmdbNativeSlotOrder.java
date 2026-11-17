@@ -398,7 +398,9 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	private static NativeSlotOrder currentOrder(SlotPlan input, RowState row) {
-		if (input instanceof NativeValuesFoldPlan guard) { return currentOrder(guard.select(row), row); }
+		if (input instanceof NativeValuesFoldPlan guard) {
+			return currentOrder(guard.select(row), row);
+		}
 		if (input instanceof NativeAliasJoinPlan) {
 			// The guarded alternative may drive the other operand, so the logical left order is not a proof.
 			return NativeSlotOrder.NONE;

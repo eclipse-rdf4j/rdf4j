@@ -191,7 +191,7 @@ class LmdbStoredTermOrderJoinCompatibilityTest {
 				connection.add(VF.createIRI("urn:stored-order:left-subject"), LEFT, upper);
 				connection.add(VF.createIRI("urn:stored-order:right-subject"), RIGHT, lower);
 			}
-	
+
 			String plan;
 			try (RepositoryConnection connection = repository.getConnection()) {
 				TupleQuery tupleQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, QUERY);
@@ -211,7 +211,8 @@ class LmdbStoredTermOrderJoinCompatibilityTest {
 
 			try (SailRepositoryConnection connection = (SailRepositoryConnection) repository.getConnection()) {
 				List<Value> storedKeys = List.of(storedObject(connection, LEFT), storedObject(connection, RIGHT));
-				int comparatorResult = connection.getSailConnection().getComparator()
+				int comparatorResult = connection.getSailConnection()
+						.getComparator()
 						.compare(storedKeys.get(0), storedKeys.get(1));
 				return new Observation(rows, plan, storedKeys, comparatorResult);
 			}
@@ -285,7 +286,8 @@ class LmdbStoredTermOrderJoinCompatibilityTest {
 						storedPredicates.add(statements.next().getPredicate());
 					}
 				}
-				int comparatorResult = connection.getSailConnection().getComparator()
+				int comparatorResult = connection.getSailConnection()
+						.getComparator()
 						.compare(storedPredicates.get(0), storedPredicates.get(1));
 				return new Observation(rows, plan, storedPredicates, comparatorResult);
 			}

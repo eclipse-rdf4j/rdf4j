@@ -50,57 +50,97 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class NativeExtraValuesSummaryCollisionTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
-	private static final IRI P = VF.createIRI("urn:extra-values:p"), O = VF.createIRI("urn:ab"), TAG = VF.createIRI("urn:extra-values:tag");
+	private static final IRI P = VF.createIRI("urn:extra-values:p"), O = VF.createIRI("urn:ab"),
+			TAG = VF.createIRI("urn:extra-values:tag");
+
 	static Stream<Arguments> cases() {
-		return Stream.of(false, true).flatMap(declared -> Stream.of(false, true).map(match -> Arguments.of(declared, match)));
+		return Stream.of(false, true)
+				.flatMap(declared -> Stream.of(false, true).map(match -> Arguments.of(declared, match)));
 	}
 
-	@ParameterizedTest(name = "cat in header={0}, RDF matches={1}") @MethodSource("cases")
+	@ParameterizedTest(name = "cat in header={0}, RDF matches={1}")
+	@MethodSource("cases")
 	void actualRepeatableValuesColumnsDemandRdfEqualityBeforeNestedSummaryConsumption(boolean declared, boolean match) {
 		var memory = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(List.of(
-				VF.createStatement(VF.createIRI("urn:extra-values:a"), P, O), VF.createStatement(VF.createIRI("urn:extra-values:b"), P, O)), TAG);
-		BindingSetAssignment values = values(declared, match); Group inner = concat(); QueryRoot expression = consumer(values, inner);
-		assertTrue(values.getPossibleBindingNames().contains("cat"), "the actual repeatable row really binds the extra column");
+				VF.createStatement(VF.createIRI("urn:extra-values:a"), P, O),
+				VF.createStatement(VF.createIRI("urn:extra-values:b"), P, O)), TAG);
+		BindingSetAssignment values = values(declared, match);
+		Group inner = concat();
+		QueryRoot expression = consumer(values, inner);
+		assertTrue(values.getPossibleBindingNames().contains("cat"),
+				"the actual repeatable row really binds the extra column");
 		var context = new QueryEvaluationContext.Minimal((Dataset) null);
 		var ordinary = new DefaultEvaluationStrategy(memory, null);
 		List<org.eclipse.rdf4j.query.BindingSet> expected;
-		try (var rows = ordinary.precompileRuntimeSubtree(expression.clone(), context).evaluate(EmptyBindingSet.getInstance())) { expected = QueryResults.asList(rows); }
+		try (var rows = ordinary.precompileRuntimeSubtree(expression.clone(), context)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			expected = QueryResults.asList(rows);
+		}
 		assertEquals(1, expected.size());
-		assertEquals(match ? 13L : 0L, ((org.eclipse.rdf4j.model.Literal) expected.getFirst().getValue("n")).longValue(),
+		assertEquals(match ? 13L : 0L,
+				((org.eclipse.rdf4j.model.Literal) expected.getFirst().getValue("n")).longValue(),
 				"same-length conflicting RDF values must not match merely through STRLEN");
-		var strategy = new LmdbNativeEvaluationStrategy(memory, null, null, 0L, new EvaluationStatistics(), false).forWorker(memory);
+		var strategy = new LmdbNativeEvaluationStrategy(memory, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(memory);
 		var positions = NativeValuePositionAnalysis.analyze(expression);
 		var compiled = strategy.withValuePositions(positions,
 				() -> LmdbNativeAggregateCompiler.tryCompile(expression, context, strategy, memory));
 		assertNotNull(compiled, "the ordinary aggregate consumer is the actual selected native candidate");
-		String plan = compiled instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan() : compiled.getClass().getSimpleName();
-		try (var rows = compiled.evaluate(EmptyBindingSet.getInstance())) { assertEquals(expected, QueryResults.asList(rows), plan); }
-		assertEquals(NativeAggregateResultDemand.FULL_VALUE, positions.aggregateDemand(inner.getGroupElements().getFirst()),
+		String plan = compiled instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+				: compiled.getClass().getSimpleName();
+		try (var rows = compiled.evaluate(EmptyBindingSet.getInstance())) {
+			assertEquals(expected, QueryResults.asList(rows), plan);
+		}
+		assertEquals(NativeAggregateResultDemand.FULL_VALUE,
+				positions.aggregateDemand(inner.getGroupElements().getFirst()),
 				"actual VALUES equality, regardless of declared header, is a full RDF observer");
 		assertEquals(memory.opened, memory.closed);
 	}
 
 	@Test
 	void uninspectedValuesCannotCertifyTheAbsenceOfAFutureRdfCollision() {
-		BindingSetAssignment values = new BindingSetAssignment(); values.setBindingNames(Set.of("tag"));
-		AtomicInteger iterators = new AtomicInteger(); QueryBindingSet row = row(true);
-		values.setBindingSets(() -> { iterators.incrementAndGet(); return List.<org.eclipse.rdf4j.query.BindingSet>of(row).iterator(); });
-		Group inner = concat(); QueryRoot expression = consumer(values, inner);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("tag"));
+		AtomicInteger iterators = new AtomicInteger();
+		QueryBindingSet row = row(true);
+		values.setBindingSets(() -> {
+			iterators.incrementAndGet();
+			return List.<org.eclipse.rdf4j.query.BindingSet>of(row).iterator();
+		});
+		Group inner = concat();
+		QueryRoot expression = consumer(values, inner);
 		var positions = NativeValuePositionAnalysis.analyze(expression);
 		assertEquals(0, iterators.get(), "demand analysis must not inspect/consume an unproved source");
-		assertEquals(NativeAggregateResultDemand.FULL_VALUE, positions.aggregateDemand(inner.getGroupElements().getFirst()),
+		assertEquals(NativeAggregateResultDemand.FULL_VALUE,
+				positions.aggregateDemand(inner.getGroupElements().getFirst()),
 				"a header is not proof that future rows cannot bind the aggregate name");
 	}
 
 	private static BindingSetAssignment values(boolean declared, boolean match) {
-		BindingSetAssignment values = new BindingSetAssignment(); values.setBindingNames(declared ? Set.of("tag", "cat") : Set.of("tag"));
-		values.setBindingSets(List.of(row(match))); return values;
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(declared ? Set.of("tag", "cat") : Set.of("tag"));
+		values.setBindingSets(List.of(row(match)));
+		return values;
 	}
-	private static QueryBindingSet row(boolean match) { QueryBindingSet row = new QueryBindingSet(); row.setBinding("tag", TAG); row.setBinding("cat", VF.createLiteral(match ? "urn:ab urn:ab" : "urn:ac urn:ac")); return row; }
-	private static Group concat() { Group group = new Group(new StatementPattern(Var.of("s"), Var.of("fixedP", P, true, true), Var.of("o"))); group.addGroupElement(new GroupElem("cat", new GroupConcat(Var.of("o")))); return group; }
+
+	private static QueryBindingSet row(boolean match) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.setBinding("tag", TAG);
+		row.setBinding("cat", VF.createLiteral(match ? "urn:ab urn:ab" : "urn:ac urn:ac"));
+		return row;
+	}
+
+	private static Group concat() {
+		Group group = new Group(new StatementPattern(Var.of("s"), Var.of("fixedP", P, true, true), Var.of("o")));
+		group.addGroupElement(new GroupElem("cat", new GroupConcat(Var.of("o"))));
+		return group;
+	}
+
 	private static QueryRoot consumer(BindingSetAssignment values, Group inner) {
 		Projection unit = new Projection(inner, new ProjectionElemList(new ProjectionElem("cat")));
-		Group outer = new Group(new Join(values, unit)); outer.addGroupElement(new GroupElem("n", new Sum(new FunctionCall(FN.STRING_LENGTH.stringValue(), Var.of("cat")))));
+		Group outer = new Group(new Join(values, unit));
+		outer.addGroupElement(
+				new GroupElem("n", new Sum(new FunctionCall(FN.STRING_LENGTH.stringValue(), Var.of("cat")))));
 		return new QueryRoot(new Projection(outer, new ProjectionElemList(new ProjectionElem("n"))));
 	}
 }

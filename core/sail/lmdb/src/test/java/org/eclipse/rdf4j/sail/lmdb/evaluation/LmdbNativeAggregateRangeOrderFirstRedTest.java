@@ -101,10 +101,12 @@ class LmdbNativeAggregateRangeOrderFirstRedTest {
 				Join logical = new Join(new Join(new Join(pattern("patient", encounter, "enc"),
 						pattern("enc", observation, "obs")),
 						new StatementPattern(Var.of("patient"), constant("_type", type),
-								constant("_class", patientClass))), pattern("obs", value, "value"));
+								constant("_class", patientClass))),
+						pattern("obs", value, "value"));
 				SlotPlan compiled = compiler.compileTuple(new Filter(logical,
 						new Compare(Var.of("value"), new ValueConstant(vf.createLiteral(60)),
-								Compare.CompareOp.GT)), false);
+								Compare.CompareOp.GT)),
+						false);
 				System.out.println("RDF4J_RANGE_ORDER_PROBE {\"stage\":\"compiled\",\"classification\":"
 						+ "\"EXPLICIT_COMPONENT_DIAGNOSTIC_NOT_PUBLIC_OWNER\",\"source\":"
 						+ quote(source.getClass().getName()) + ",\"idSpaceClass\":"
@@ -170,7 +172,8 @@ class LmdbNativeAggregateRangeOrderFirstRedTest {
 				assertEquals(beforeBag, alternativeBag, "same-live-source complete ID tuples/multiplicity agree");
 				assertEquals(8L, beforeBag.values().stream().mapToLong(Long::longValue).sum());
 				assertEquals(0L, row.boundMask(), "both component cursors restore their actual neutral ingress");
-				assertTrue(source.idSpace() == idSpace, "the real retained source stays authoritative through draining");
+				assertTrue(source.idSpace() == idSpace,
+						"the real retained source stays authoritative through draining");
 				System.out.println("RDF4J_RANGE_ORDER_PROBE {\"stage\":\"bags-before-target\",\"idBag\":"
 						+ quote(beforeBag.toString()) + ",\"rows\":8,\"rollbackBoundMask\":" + row.boundMask()
 						+ ",\"sourceStillSame\":" + (row.source == source && source.idSpace() == idSpace) + "}");
@@ -243,7 +246,10 @@ class LmdbNativeAggregateRangeOrderFirstRedTest {
 	}
 
 	private static String quote(String value) {
-		return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
-				.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
+		return "\"" + value.replace("\\", "\\\\")
+				.replace("\"", "\\\"")
+				.replace("\n", "\\n")
+				.replace("\r", "\\r")
+				.replace("\t", "\\t") + "\"";
 	}
 }

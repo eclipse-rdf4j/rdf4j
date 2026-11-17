@@ -64,11 +64,13 @@ class NativeAssignmentFactorAliasTest {
 	private static final long UNKNOWN = NativeLmdbQuerySource.UNKNOWN_ID;
 
 	static Stream<Arguments> cases() {
-		return Stream.of(false, true).flatMap(scanned -> Stream.of(false, true)
-				.map(guard -> Arguments.of(scanned, guard)));
+		return Stream.of(false, true)
+				.flatMap(scanned -> Stream.of(false, true)
+						.map(guard -> Arguments.of(scanned, guard)));
 	}
 
-	@ParameterizedTest @MethodSource("cases")
+	@ParameterizedTest
+	@MethodSource("cases")
 	void preparedVarAliasKeepsItsExpressionDomainInFactorCounts(boolean scanned, boolean guard) throws Exception {
 		Fixture fixture = fixture(scanned);
 		assertOrdinary(fixture, guard, guard ? 1L : 0L);
@@ -79,24 +81,33 @@ class NativeAssignmentFactorAliasTest {
 		RowState row = new RowState(step.source, step.layout, fixture.input);
 		assertTrue(LmdbNativeAggregateCompiler.initializeRow(row, fixture.input, step.source, step.layout));
 		try {
-			var lowered = LmdbNativeKernelLowering.lowerAggregate(step.arg, row, step.groupSlots, step.aggregates, group);
+			var lowered = LmdbNativeKernelLowering.lowerAggregate(step.arg, row, step.groupSlots, step.aggregates,
+					group);
 			assertNotNull(lowered, "normal native lowering must admit before testing its physical alias contract");
 			PlanRows producer = assertInstanceOf(PlanRows.class, lowered.kernel.pipeline.getFirst());
 			assertEquals(0, producer.plan, "the one actual lexical input owns the physical resource");
 			int copySlot = Arrays.asList(step.layout.slotNames()).indexOf("copy");
 			assertTrue(copySlot >= 0);
-			List<BindAlias> assignments = lowered.kernel.pipeline.stream().filter(BindAlias.class::isInstance)
-					.map(BindAlias.class::cast).filter(alias -> alias.dstCol < lowered.bindings.columnEngineSlots.length
-							&& lowered.bindings.columnEngineSlots[alias.dstCol] == copySlot).toList();
+			List<BindAlias> assignments = lowered.kernel.pipeline.stream()
+					.filter(BindAlias.class::isInstance)
+					.map(BindAlias.class::cast)
+					.filter(alias -> alias.dstCol < lowered.bindings.columnEngineSlots.length
+							&& lowered.bindings.columnEngineSlots[alias.dstCol] == copySlot)
+					.toList();
 			assertEquals(1, assignments.size(), "use the actual Var assignment emitted by the production lowerer");
 			BindAlias alias = assignments.getFirst();
 			assertEquals(Operand.ENTRY, alias.source.kind, "the actual invocation marker is the expression input");
 			long[] entries = Arrays.stream(lowered.bindings.entrySlotIds).mapToLong(slot -> row.slots[slot]).toArray();
 			assertEquals(0L, entries[alias.source.index]);
-			List<Node> pipeline = new ArrayList<>(); pipeline.add(producer); pipeline.add(alias);
+			List<Node> pipeline = new ArrayList<>();
+			pipeline.add(producer);
+			pipeline.add(alias);
 			long[] constants = Arrays.copyOf(lowered.bindings.constants, lowered.bindings.constants.length + 1);
 			constants[constants.length - 1] = UNKNOWN;
-			if (guard) { pipeline.add(new FilterCompareId(false, Operand.col(alias.dstCol), Operand.constant(constants.length - 1))); }
+			if (guard) {
+				pipeline.add(
+						new FilterCompareId(false, Operand.col(alias.dstCol), Operand.constant(constants.length - 1)));
+			}
 			Kernel shape = new Kernel(lowered.kernel.columnCount, pipeline, new Aggregate(new int[0],
 					new AggregateOutput[] { guard ? AggregateOutput.countStar() : AggregateOutput.count(alias.dstCol) },
 					null, OutputMods.none()));
@@ -117,7 +128,9 @@ class NativeAssignmentFactorAliasTest {
 					assertTrue(physical.groups.closed && physical.groups.cursorClosed && !physical.groups.scalarOpen);
 				}
 			}
-		} finally { row.closeDecodedInputs(); }
+		} finally {
+			row.closeDecodedInputs();
+		}
 		assertEquals(fixture.source.opened, fixture.source.closed);
 	}
 
@@ -131,28 +144,37 @@ class NativeAssignmentFactorAliasTest {
 			environment.bind(0, FactorPlanKernelContractTest.heap(source, 11L, 12L), 0, 0L);
 			FactorPlanKernelContractTest.both(shape,
 					() -> new FactorPlanKernelContractTest.Groups(new FactorEnvironment[] { environment },
-							new long[][] { { 0L } }, new long[] { 3L }, 0), new long[0], new long[][] { { 6L } });
+							new long[][] { { 0L } }, new long[] { 3L }, 0),
+					new long[0], new long[][] { { 6L } });
 		}
 	}
 
-	@ParameterizedTest @ValueSource(booleans = { false, true })
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void aNaturalCompiledDefaultFrameMatchesTheOrdinaryNullCount(boolean summary) throws Exception {
-		Fixture fixture = fixture(true); Group group = group(false);
+		Fixture fixture = fixture(true);
+		Group group = group(false);
 		List<BindingSet> expected = assertOrdinary(fixture, false, 0L);
 		group.setExecutionSummaryEnabled(summary);
-		var compiled = LmdbNativeAggregateCompiler.tryCompile(group, fixture.context, strategy(fixture.source), fixture.source);
+		var compiled = LmdbNativeAggregateCompiler.tryCompile(group, fixture.context, strategy(fixture.source),
+				fixture.source);
 		assertNotNull(compiled, "decline is a route finding, not a reached count mismatch");
 		assertInstanceOf(LmdbNativePhysicalPlan.class, compiled);
-		try (var rows = compiled.evaluate(fixture.input)) { assertEquals(expected, QueryResults.asList(rows)); }
+		try (var rows = compiled.evaluate(fixture.input)) {
+			assertEquals(expected, QueryResults.asList(rows));
+		}
 		if (summary) {
-			String path = group.getStringMetricActual("nativeExecutionPath"); assertNotNull(path);
+			String path = group.getStringMetricActual("nativeExecutionPath");
+			assertNotNull(path);
 			assertFalse(path.contains("generic"), "same executed Group must retain a real native route: " + path);
 		}
 		assertEquals(fixture.source.opened, fixture.source.closed);
 	}
 
 	private record Fixture(LmdbNativeRepeatedStatementTermRoleTest.MemorySource source,
-			QueryEvaluationContext context, QueryBindingSet input) { }
+			QueryEvaluationContext context, QueryBindingSet input) {
+	}
+
 	private static Fixture fixture(boolean scanned) {
 		var source = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(List.of(VF.createStatement(S, P, O)), O);
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
@@ -162,49 +184,95 @@ class NativeAssignmentFactorAliasTest {
 					Var.of("fixedP", P, true, true), Var.of("fixedO", O, true, true), Var.of("marker"));
 			try (var rows = new DefaultEvaluationStrategy(source, null).precompileRuntimeSubtree(pattern, context)
 					.evaluate(input)) {
-				assertTrue(rows.hasNext()); input = new QueryBindingSet(rows.next()); assertFalse(rows.hasNext());
+				assertTrue(rows.hasNext());
+				input = new QueryBindingSet(rows.next());
+				assertFalse(rows.hasNext());
 			}
-		} else { input.setBinding("marker", null); }
-		assertTrue(input.hasBinding("marker")); assertNull(input.getValue("marker"));
+		} else {
+			input.setBinding("marker", null);
+		}
+		assertTrue(input.hasBinding("marker"));
+		assertNull(input.getValue("marker"));
 		return new Fixture(source, context, input);
 	}
+
 	private static Group group(boolean guard) {
 		Projection unit = new Projection(new StatementPattern(Var.of("seed"), Var.of("fixedP", P, true, true),
 				Var.of("fixedO", O, true, true)), new ProjectionElemList(new ProjectionElem("seed")), true);
 		TupleExpr input = new Extension(unit, new ExtensionElem(Var.of("marker"), "copy"));
-		if (guard) { input = new Filter(input, new Not(new Bound(Var.of("copy")))); }
-		Group group = new Group(input); group.addGroupElement(new GroupElem("n", guard ? new Count(null) : new Count(Var.of("copy"))));
+		if (guard) {
+			input = new Filter(input, new Not(new Bound(Var.of("copy"))));
+		}
+		Group group = new Group(input);
+		group.addGroupElement(new GroupElem("n", guard ? new Count(null) : new Count(Var.of("copy"))));
 		return group;
 	}
+
 	private static LmdbNativeEvaluationStrategy strategy(LmdbNativeRepeatedStatementTermRoleTest.MemorySource source) {
-		return new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
+		return new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
 	}
+
 	private static List<BindingSet> assertOrdinary(Fixture fixture, boolean guard, long count) {
 		try (var rows = new DefaultEvaluationStrategy(fixture.source, null)
-				.precompileRuntimeSubtree(group(guard), fixture.context).evaluate(fixture.input)) {
-			List<BindingSet> expected = QueryResults.asList(rows); assertEquals(1, expected.size());
-			assertEquals(count, ((org.eclipse.rdf4j.model.Literal) expected.getFirst().getValue("n")).longValue()); return expected;
+				.precompileRuntimeSubtree(group(guard), fixture.context)
+				.evaluate(fixture.input)) {
+			List<BindingSet> expected = QueryResults.asList(rows);
+			assertEquals(1, expected.size());
+			assertEquals(count, ((org.eclipse.rdf4j.model.Literal) expected.getFirst().getValue("n")).longValue());
+			return expected;
 		}
 	}
+
 	private static final class CorrelatedGroups implements KernelPlan {
 		final FactorPlanKernelContractTest.Groups groups;
 		final long[] inputs;
+
 		CorrelatedGroups(FactorEnvironment environment, int outputs, int inputCount) {
 			inputs = new long[inputCount];
 			groups = new FactorPlanKernelContractTest.Groups(new FactorEnvironment[] { environment },
-					new long[][] { new long[outputs] }, new long[] { 3L }, java.util.stream.IntStream.range(0, outputs).toArray());
+					new long[][] { new long[outputs] }, new long[] { 3L },
+					java.util.stream.IntStream.range(0, outputs).toArray());
 		}
-		@Override public void setInput(int index, long value) { inputs[index] = value; }
-		@Override public long input(int index) { return inputs[index]; }
-		@Override public Cursor open() { return groups.open(); }
-		@Override public FactorCursor openFactors(int[] demand) { return groups.openFactors(demand); }
-		@Override public void close() { groups.close(); }
+
+		@Override
+		public void setInput(int index, long value) {
+			inputs[index] = value;
+		}
+
+		@Override
+		public long input(int index) {
+			return inputs[index];
+		}
+
+		@Override
+		public Cursor open() {
+			return groups.open();
+		}
+
+		@Override
+		public FactorCursor openFactors(int[] demand) {
+			return groups.openFactors(demand);
+		}
+
+		@Override
+		public void close() {
+			groups.close();
+		}
 	}
+
 	private static long execute(JaninoKernel kernel, Kernel shape, KernelPlan plan, long[] entries, long[] constants) {
-		KernelContext context = new KernelContext(null, constants, entries, null, null, null, new KernelPlan[] { plan }, 16);
+		KernelContext context = new KernelContext(null, constants, entries, null, null, null, new KernelPlan[] { plan },
+				16);
 		try {
-			kernel.bind(context); long[] output = new long[Math.max(1, shape.stride()) * 2];
-			assertEquals(1, kernel.fill(output, 2)); long value = output[0]; assertEquals(0, kernel.fill(output, 2)); return value;
-		} finally { kernel.close(); }
+			kernel.bind(context);
+			long[] output = new long[Math.max(1, shape.stride()) * 2];
+			assertEquals(1, kernel.fill(output, 2));
+			long value = output[0];
+			assertEquals(0, kernel.fill(output, 2));
+			return value;
+		} finally {
+			kernel.close();
+		}
 	}
 }

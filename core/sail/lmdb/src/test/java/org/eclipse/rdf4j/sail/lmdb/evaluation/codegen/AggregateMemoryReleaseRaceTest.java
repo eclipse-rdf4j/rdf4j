@@ -33,14 +33,19 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 /** A real manager reclaimer coordinates release versus terminal close without an internal testing hook. */
 class AggregateMemoryReleaseRaceTest {
-	private enum Action { CLOSE_AGGREGATE, CLOSE_LEDGER, RELEASE_CLAIM }
+	private enum Action {
+		CLOSE_AGGREGATE,
+		CLOSE_LEDGER,
+		RELEASE_CLAIM
+	}
 
 	@ParameterizedTest(name = "reentrant {0}")
 	@EnumSource(value = Action.class, names = { "CLOSE_AGGREGATE", "CLOSE_LEDGER" })
 	void releaseAlreadyWaitingAtManagerMustNotOverReleaseAfterReentrantClose(Action action) throws Exception {
 		Throwable failure = coordinatedRelease(action);
 		if (failure != null) {
-			throw new AssertionError("a release admitted before terminal close must settle without false over-release", failure);
+			throw new AssertionError("a release admitted before terminal close must settle without false over-release",
+					failure);
 		}
 	}
 
@@ -58,10 +63,12 @@ class AggregateMemoryReleaseRaceTest {
 			assertTrue(memory.tryReserve(128L));
 			IllegalArgumentException first = assertThrows(IllegalArgumentException.class, () -> memory.release(129L));
 			assertEquals("Cannot release more bytes than reserved", first.getMessage());
-			assertEquals(128L, query.usedBytes()); assertEquals(128L, manager.usedBytes());
+			assertEquals(128L, query.usedBytes());
+			assertEquals(128L, manager.usedBytes());
 			memory.release(64L);
 			assertThrows(IllegalArgumentException.class, () -> memory.release(65L));
-			assertEquals(64L, query.usedBytes()); assertEquals(64L, manager.usedBytes());
+			assertEquals(64L, query.usedBytes());
+			assertEquals(64L, manager.usedBytes());
 		}
 		assertEquals(0L, manager.usedBytes());
 	}
@@ -70,10 +77,12 @@ class AggregateMemoryReleaseRaceTest {
 	void directReservationReleaseKeepsItsStrictPublicContractAfterClose() {
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(128L, 128L);
 		try (var query = manager.openQuery()) {
-			var claim = query.reserve(128L, null); assertNotNull(claim);
+			var claim = query.reserve(128L, null);
+			assertNotNull(claim);
 			claim.close();
 			assertThrows(IllegalArgumentException.class, () -> claim.release(1L));
-			assertEquals(0L, query.usedBytes()); assertEquals(0L, manager.usedBytes());
+			assertEquals(0L, query.usedBytes());
+			assertEquals(0L, manager.usedBytes());
 		}
 	}
 
@@ -132,7 +141,8 @@ class AggregateMemoryReleaseRaceTest {
 
 	private static Throwable coordinatedRelease(Action action) throws Exception {
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(256L, 256L);
-		var owner = manager.openQuery(); var pressureOwner = manager.openQuery();
+		var owner = manager.openQuery();
+		var pressureOwner = manager.openQuery();
 		var memory = KernelRuntime.AggregateMemory.forLedger(owner);
 		CountDownLatch reclaimEntered = new CountDownLatch(1), act = new CountDownLatch(1);
 		AtomicInteger callbacks = new AtomicInteger();
@@ -144,14 +154,16 @@ class AggregateMemoryReleaseRaceTest {
 		try {
 			assertTrue(memory.tryReserve(128L));
 			assertNotNull(pressureOwner.reserve(128L, new LmdbQueryMemoryManager.Reclaimable() {
-				@Override public boolean shed() {
-					callbacks.incrementAndGet(); reclaimEntered.countDown();
+				@Override
+				public boolean shed() {
+					callbacks.incrementAndGet();
+					reclaimEntered.countDown();
 					awaitAction(act);
 					// This callback owns the actual manager monitor. No fixture lock substitutes for it.
 					switch (action) {
-						case CLOSE_AGGREGATE -> memory.close();
-						case CLOSE_LEDGER -> owner.close();
-						case RELEASE_CLAIM -> memory.release(128L);
+					case CLOSE_AGGREGATE -> memory.close();
+					case CLOSE_LEDGER -> owner.close();
+					case RELEASE_CLAIM -> memory.release(128L);
 					}
 					return true;
 				}
@@ -160,32 +172,48 @@ class AggregateMemoryReleaseRaceTest {
 			pressureThread = Thread.ofPlatform().daemon().name("aggregate-release-reclaimer").unstarted(pressure);
 			pressureThread.start();
 			assertTrue(reclaimEntered.await(5L, TimeUnit.SECONDS), "the real reservation invokes its reclaimer");
-			release = new FutureTask<>(() -> { memory.release(64L); return null; });
+			release = new FutureTask<>(() -> {
+				memory.release(64L);
+				return null;
+			});
 			releaseThread = Thread.ofPlatform().daemon().name("aggregate-release-waiter").unstarted(release);
 			releaseThread.start();
 			awaitManagerMonitor(releaseThread, pressureThread, manager);
 			act.countDown();
-			admitted = pressure.get(5L, TimeUnit.SECONDS); assertNotNull(admitted);
-			try { release.get(5L, TimeUnit.SECONDS); }
-			catch (ExecutionException failure) { releaseFailure = failure.getCause(); }
+			admitted = pressure.get(5L, TimeUnit.SECONDS);
+			assertNotNull(admitted);
+			try {
+				release.get(5L, TimeUnit.SECONDS);
+			} catch (ExecutionException failure) {
+				releaseFailure = failure.getCause();
+			}
 			assertEquals(1, callbacks.get());
 			assertEquals(0L, owner.usedBytes(), "close/release owns every original aggregate byte");
 			assertEquals(1L, pressureOwner.usedBytes(), "only the independent requesting claim remains");
 			assertEquals(1L, manager.usedBytes());
 			if (action != Action.RELEASE_CLAIM) {
-				assertFalse(memory.tryReserve(1L), "neither a closed aggregate nor a closed ledger can accept a late claim");
+				assertFalse(memory.tryReserve(1L),
+						"neither a closed aggregate nor a closed ledger can accept a late claim");
 			}
 		} finally {
 			// Always release the callback, even if a state witness or future fails. Bounded joins diagnose a
 			// lock-order regression without parking Surefire forever; these daemon workers own no native resources.
 			act.countDown();
-			if (pressureThread != null) { pressureThread.join(5_000L); }
-			if (releaseThread != null) { releaseThread.join(5_000L); }
+			if (pressureThread != null) {
+				pressureThread.join(5_000L);
+			}
+			if (releaseThread != null) {
+				releaseThread.join(5_000L);
+			}
 			boolean stopped = (pressureThread == null || !pressureThread.isAlive())
 					&& (releaseThread == null || !releaseThread.isAlive());
 			if (stopped) {
-				if (admitted != null) { admitted.close(); }
-				memory.close(); owner.close(); pressureOwner.close();
+				if (admitted != null) {
+					admitted.close();
+				}
+				memory.close();
+				owner.close();
+				pressureOwner.close();
 				assertEquals(0L, manager.usedBytes(), "all completed test owners release their accounting");
 			}
 			assertTrue(stopped, "release/close must not introduce manager/aggregate lock inversion");
@@ -194,8 +222,12 @@ class AggregateMemoryReleaseRaceTest {
 	}
 
 	private static void awaitAction(CountDownLatch action) {
-		try { assertTrue(action.await(10L, TimeUnit.SECONDS), "the test releases its reclaimer coordination gate"); }
-		catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AssertionError(interrupted); }
+		try {
+			assertTrue(action.await(10L, TimeUnit.SECONDS), "the test releases its reclaimer coordination gate");
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(interrupted);
+		}
 	}
 
 	private static void awaitManagerMonitor(Thread waiter, Thread reclaimer, LmdbQueryMemoryManager manager) {

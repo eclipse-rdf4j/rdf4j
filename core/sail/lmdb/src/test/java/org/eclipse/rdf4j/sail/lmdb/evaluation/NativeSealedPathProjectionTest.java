@@ -31,25 +31,25 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -148,7 +148,8 @@ class NativeSealedPathProjectionTest {
 				Arguments.of("<c> (:p|:q)+ <d>", "SELECT * WHERE { :n0 (:p|:q)+ :n4 }"),
 				Arguments.of("<c> (:p|:q)+ ?o . ?o :q ?v", "SELECT ?o ?v WHERE { :n0 (:p|:q)+ ?o . ?o :q ?v }"),
 				Arguments.of("OPTIONAL ?s :p* <c>", "SELECT ?s ?v WHERE { ?s :q ?v OPTIONAL { ?s :p* :n4 } }"),
-				Arguments.of("<c> :p* ?o OPTIONAL ?o :q ?v", "SELECT ?o ?v WHERE { :n0 :p* ?o OPTIONAL { ?o :q ?v } }"));
+				Arguments.of("<c> :p* ?o OPTIONAL ?o :q ?v",
+						"SELECT ?o ?v WHERE { :n0 :p* ?o OPTIONAL { ?o :q ?v } }"));
 	}
 
 	static Stream<Arguments> refused() {
@@ -181,7 +182,8 @@ class NativeSealedPathProjectionTest {
 		String explain = explain(query, null);
 		assertTrue(explain.contains("SealedProjection("), "executed plan is a sealed projection: " + label);
 		int at = explain.indexOf("SealedProjection(");
-		String line = explain.substring(at, explain.indexOf('\n', at) < 0 ? explain.length() : explain.indexOf('\n', at));
+		String line = explain.substring(at,
+				explain.indexOf('\n', at) < 0 ? explain.length() : explain.indexOf('\n', at));
 		assertTrue(line.contains("Path"), "a native path plan inside the sealed projection: " + line);
 	}
 

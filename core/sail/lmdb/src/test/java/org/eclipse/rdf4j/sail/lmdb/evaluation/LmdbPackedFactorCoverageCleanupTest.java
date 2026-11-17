@@ -71,8 +71,8 @@ class LmdbPackedFactorCoverageCleanupTest {
 		try (LmdbNativeFactorCursor cursor = LmdbNativePackedFtree.openLeaf(input, row)) {
 			assertNotNull(cursor, "the current generic capability fixture must reach the actual grouped producer");
 			assertTrue(cursor instanceof LmdbNativePackedFtree.GroupedRowCursor);
-			assertTrue(((LmdbNativePackedFtree.GroupedRowCursor) cursor).runtime.roots
-					instanceof LmdbNativePackedFtree.RunRootProducer);
+			assertTrue(
+					((LmdbNativePackedFtree.GroupedRowCursor) cursor).runtime.roots instanceof LmdbNativePackedFtree.RunRootProducer);
 			QueryEvaluationException failure = assertThrows(QueryEvaluationException.class, cursor::next);
 			assertSame(coverage, failure.getCause(), "cleanup must not replace the original coverage failure");
 			assertTrue(containsSuppressed(failure, cleanup));
@@ -86,7 +86,8 @@ class LmdbPackedFactorCoverageCleanupTest {
 
 	private static boolean containsSuppressed(Throwable root, Throwable wanted) {
 		for (Throwable failure : root.getSuppressed()) {
-			if (failure == wanted || containsSuppressed(failure, wanted)) return true;
+			if (failure == wanted || containsSuppressed(failure, wanted))
+				return true;
 		}
 		return false;
 	}

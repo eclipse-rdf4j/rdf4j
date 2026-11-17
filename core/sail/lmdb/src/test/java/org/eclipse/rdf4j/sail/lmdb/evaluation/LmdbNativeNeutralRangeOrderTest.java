@@ -21,10 +21,10 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -148,8 +148,13 @@ class LmdbNativeNeutralRangeOrderTest {
 					"a nested alias reads the proved inner pure-copy snapshot");
 			assertEquals(drain(original, row), drain(view, row));
 			NativeBooleanFilter pure = new NativeBooleanFilter() {
-				@Override public boolean accept(RowState ignored) { return true; }
-				@Override public NativePredicateCapabilities capabilities() {
+				@Override
+				public boolean accept(RowState ignored) {
+					return true;
+				}
+
+				@Override
+				public NativePredicateCapabilities capabilities() {
 					return NativePredicateCapabilities.snapshot(0L, true, true);
 				}
 			};
@@ -177,11 +182,14 @@ class LmdbNativeNeutralRangeOrderTest {
 			PatternPlan type = (PatternPlan) plan.children[3];
 			long patient = f.source.idOf(f.repository.getValueFactory().createIRI("urn:range-control:patient:0"));
 			PatternPlan singleton = new PatternPlan(Term.constant(patient), type.p, type.o, type.c, type.contexts,
-					type.namedContextScope, type.statementOrder, type.indexName, null, 1D, type.accessProfile, f.source);
+					type.namedContextScope, type.statementOrder, type.indexName, null, 1D, type.accessProfile,
+					f.source);
 			MultiJoinPlan pair = new MultiJoinPlan(new SlotPlan[] { ranged, singleton }, new MaskedFilter[0]);
 			SlotPlan[] alternative = { singleton, ranged };
-			assertTrue(LmdbNativeWork.chain(alternative, 2, row, 0L).estimatedWork()
-					< LmdbNativeWork.chain(pair.children, 2, row, 0L).estimatedWork(), "SETUP: selective real membership is cheaper");
+			assertTrue(
+					LmdbNativeWork.chain(alternative, 2, row, 0L)
+							.estimatedWork() < LmdbNativeWork.chain(pair.children, 2, row, 0L).estimatedWork(),
+					"SETUP: selective real membership is cheaper");
 			MultiJoinPlan view = (MultiJoinPlan) LmdbNativeNeutralRangeOrder.prepare(pair, row, 0L);
 			assertSame(singleton, view.children[0], "connectivity is not a ranking rule");
 			assertEquals(drain(pair, row), drain(view, row));
@@ -196,7 +204,6 @@ class LmdbNativeNeutralRangeOrderTest {
 		}
 	}
 
-
 	@Test
 	void aGenuinelySelectiveRangeRetainsItsFirstPosition() throws Exception {
 		try (Fixture f = fixture(false, 67, true)) {
@@ -205,8 +212,10 @@ class LmdbNativeNeutralRangeOrderTest {
 			long encounterPredicate = f.source.idOf(iri(f.repository.getValueFactory(), "hasEncounter"));
 			assertTrue(encounterPredicate != LmdbNativeAggregateCompiler.UNKNOWN);
 			PatternPlan encounter = (PatternPlan) Arrays.stream(original.children)
-					.filter(child -> child instanceof PatternPlan p && p.p.isConstant() && p.p.constant == encounterPredicate)
-					.findFirst().orElseThrow();
+					.filter(child -> child instanceof PatternPlan p && p.p.isConstant()
+							&& p.p.constant == encounterPredicate)
+					.findFirst()
+					.orElseThrow();
 			SlotPlan[] order = { original.children[0], encounter };
 			SlotPlan[] reverse = { order[1], order[0] };
 			PatternPlan ranged = (PatternPlan) order[0], other = (PatternPlan) order[1];
@@ -218,7 +227,8 @@ class LmdbNativeNeutralRangeOrderTest {
 			long rangeRows = drain(ranged, row).values().stream().mapToLong(Long::longValue).sum();
 			long otherRows = drain(other, row).values().stream().mapToLong(Long::longValue).sum();
 			System.out.println("RDF4J_SELECTIVE_RANGE_PREMISE "
-					+ "domain=" + domain + ";rangedStatic=" + ranged.staticEstimate + ";otherStatic=" + other.staticEstimate
+					+ "domain=" + domain + ";rangedStatic=" + ranged.staticEstimate + ";otherStatic="
+					+ other.staticEstimate
 					+ ";rangedProfile=" + ranged.accessProfile + ";rangeIndex=" + ranged.range.indexFieldSeq()
 					+ ";rangeField=" + ranged.range.firstVaryingField() + ";actualRangeRows=" + rangeRows
 					+ ";actualOtherRows=" + otherRows + ";rowMask=" + row.boundMask()
@@ -228,11 +238,13 @@ class LmdbNativeNeutralRangeOrderTest {
 			assertEquals(0L, row.boundMask());
 			assertEquals(1L, rangeRows, "the real ordered integer range contains only the generated value68");
 			assertEquals(4L, otherRows, "the comparison is the real independent four-row encounter relation");
-			assertTrue(Double.isFinite(ranged.staticEstimate), "ordinary optimizer metadata must reach the range compiler");
+			assertTrue(Double.isFinite(ranged.staticEstimate),
+					"ordinary optimizer metadata must reach the range compiler");
 			assertTrue(forwardQuote.estimatedPriceable());
 			assertTrue(reverseQuote.estimatedPriceable());
-			assertTrue(LmdbNativeWork.chain(order, 2, row, 0L).estimatedWork()
-					< LmdbNativeWork.chain(reverse, 2, row, 0L).estimatedWork(),
+			assertTrue(
+					LmdbNativeWork.chain(order, 2, row, 0L).estimatedWork() < LmdbNativeWork.chain(reverse, 2, row, 0L)
+							.estimatedWork(),
 					"SETUP: the actual finite expected-work quotes must price this selective range first");
 			MultiJoinPlan selective = new MultiJoinPlan(order, new MaskedFilter[0]);
 			assertSame(selective, LmdbNativeNeutralRangeOrder.prepare(selective, row, 0L));
@@ -249,19 +261,20 @@ class LmdbNativeNeutralRangeOrderTest {
 			RowState row = f.row(f.source, EmptyBindingSet.getInstance());
 			List<SlotPlan> members = new ArrayList<>();
 			members.add(original.children[0]);
-			LmdbNativeWork.Chain quote = LmdbNativeWork.chain(members.toArray(SlotPlan[]::new), members.size(), row, 0L);
+			LmdbNativeWork.Chain quote = LmdbNativeWork.chain(members.toArray(SlotPlan[]::new), members.size(), row,
+					0L);
 			// A bounded control over genuine repeated pattern occurrences, not fabricated IDs or a policy cap.
 			for (int count = 0; quote.estimatedPriceable() && count < 2 * Double.MAX_EXPONENT; count++) {
 				members.add(original.children[1]);
 				quote = LmdbNativeWork.chain(members.toArray(SlotPlan[]::new), members.size(), row, 0L);
 			}
-			assertTrue(!quote.estimatedPriceable(), "SETUP: repeated actual-source fanout must overflow the point channel");
+			assertTrue(!quote.estimatedPriceable(),
+					"SETUP: repeated actual-source fanout must overflow the point channel");
 			MultiJoinPlan unpriced = new MultiJoinPlan(members.toArray(SlotPlan[]::new), new MaskedFilter[0]);
 			assertSame(unpriced, LmdbNativeNeutralRangeOrder.prepare(unpriced, row, 0L));
 			assertTrue(!unpriced.estimateWork(row, 0L).known(), "an unknown expected price cannot invent a hard quote");
 		}
 	}
-
 
 	@Test
 	void reducerEncounterDemandsPreserveFloatingTiesAndConcatenation() throws Exception {
@@ -293,13 +306,16 @@ class LmdbNativeNeutralRangeOrderTest {
 					AggregateSpec aggregate = sensitive[i];
 					assertTrue(!aggregate.reducer.canReorderInput(), aggregate.kind.toString());
 					assertSame(f.plan, LmdbNativeNeutralRangeOrder.prepareAggregate(f.plan, row, 0L,
-							new AggregateSpec[] { count, aggregate }), "one encounter demand protects the entire input");
+							new AggregateSpec[] { count, aggregate }),
+							"one encounter demand protects the entire input");
 					Map<List<String>, Long> ordinary = aggregateBag(memory, queries[i]);
 					assertEquals(1L, ordinary.values().stream().mapToLong(Long::longValue).sum());
 					List<String> term = ordinary.keySet().iterator().next();
-					if (i < 2) assertEquals(0D, Double.parseDouble(term.get(1)));
-					else assertEquals(i < 4 ? "01" : "b|a|b", term.get(1),
-							"the ordinary owner fixes the tied lexical representative and concatenation sequence");
+					if (i < 2)
+						assertEquals(0D, Double.parseDouble(term.get(1)));
+					else
+						assertEquals(i < 4 ? "01" : "b|a|b", term.get(1),
+								"the ordinary owner fixes the tied lexical representative and concatenation sequence");
 					assertEquals(ordinary, aggregateBag(f.repository, queries[i]),
 							"public owners retain exact domain, lexical, datatype, language and multiplicity");
 				}
@@ -343,10 +359,12 @@ class LmdbNativeNeutralRangeOrderTest {
 	void foreignAndUnownedProfilesCannotAuthorizeTheActualPatternOperands() throws Exception {
 		try (Fixture f = fixture(false); Fixture foreign = fixture(false)) {
 			MultiJoinPlan original = (MultiJoinPlan) f.plan;
-			for (SlotPlan child : original.children) assertSame(f.source, ((PatternPlan) child).accessSource);
+			for (SlotPlan child : original.children)
+				assertSame(f.source, ((PatternPlan) child).accessSource);
 			assertTrue(f.source.idSpace() != foreign.source.idSpace(), "two genuine stores have distinct ID owners");
 			RowState foreignRow = new RowState(foreign.source, f.layout, EmptyBindingSet.getInstance());
-			assertTrue(LmdbNativeAggregateCompiler.initializeRow(foreignRow, foreignRow.base, foreign.source, f.layout));
+			assertTrue(
+					LmdbNativeAggregateCompiler.initializeRow(foreignRow, foreignRow.base, foreign.source, f.layout));
 			assertSame(original, LmdbNativeNeutralRangeOrder.prepare(original, foreignRow, 0L));
 			PatternPlan pattern = (PatternPlan) original.children[0];
 			PatternPlan unowned = new PatternPlan(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
@@ -367,9 +385,11 @@ class LmdbNativeNeutralRangeOrderTest {
 	void largeLayoutsAndUnseededPrimitiveCellsKeepTheirOriginalOrder() throws Exception {
 		try (Fixture f = fixture(false)) {
 			List<String> names = new ArrayList<>(Arrays.asList(f.layout.slotNames()));
-			while (names.size() <= Long.SIZE) names.add("unused" + names.size());
+			while (names.size() <= Long.SIZE)
+				names.add("unused" + names.size());
 			Map<String, Integer> indexes = new LinkedHashMap<>();
-			for (int i = 0; i < names.size(); i++) indexes.put(names.get(i), i);
+			for (int i = 0; i < names.size(); i++)
+				indexes.put(names.get(i), i);
 			NativeSlotLayout wide = new NativeSlotLayout(indexes, null);
 			wide.freeze(names);
 			RowState row = new RowState(f.source, wide, EmptyBindingSet.getInstance());
@@ -412,7 +432,8 @@ class LmdbNativeNeutralRangeOrderTest {
 
 	private Fixture fixture(boolean copy, int threshold, boolean optimize) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyEnabled(true).setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(directory.resolve("store-" + fixtureNumber++).toFile(), config);
@@ -437,24 +458,29 @@ class LmdbNativeNeutralRangeOrderTest {
 				}
 				connection.commit();
 			}
-			assertTrue(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS), store.getDirectAdjacencyReadinessDescription());
+			assertTrue(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS),
+					store.getDirectAdjacencyReadinessDescription());
 			dataset = NativeQuerySourceAccess.openExplicitDataset(store);
 			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
 			var tripleSource = new SailDatasetTripleTermSource(vf, dataset);
 			var statistics = new EvaluationStatistics();
 			var strategy = new LmdbNativeEvaluationStrategy(tripleSource, null, null, 0L, statistics, false);
-			var compiler = new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+			var compiler = new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+					source);
 			Join join = new Join(new Join(new Join(pattern(vf, "patient", "hasEncounter", "enc"),
 					pattern(vf, "enc", "hasObservation", "obs")),
 					new StatementPattern(Var.of("patient"), constant(vf, "type"), constant(vf, "Patient"))),
 					pattern(vf, "obs", "value", "value"));
-			TupleExpr expression = new Filter(join, new Compare(Var.of("value"), new ValueConstant(vf.createLiteral(threshold)), Compare.CompareOp.GT));
-			if (copy) expression = new Extension(
-					new Extension(expression, new ExtensionElem(Var.of("value"), "alias")),
-					new ExtensionElem(Var.of("alias"), "alias2"));
+			TupleExpr expression = new Filter(join,
+					new Compare(Var.of("value"), new ValueConstant(vf.createLiteral(threshold)), Compare.CompareOp.GT));
+			if (copy)
+				expression = new Extension(
+						new Extension(expression, new ExtensionElem(Var.of("value"), "alias")),
+						new ExtensionElem(Var.of("alias"), "alias2"));
 			if (optimize) {
 				// Install the ordinary optimizer's own estimates, not hand-written pattern cardinalities.
-				new QueryJoinOptimizer(statistics, tripleSource).optimize(expression, null, EmptyBindingSet.getInstance());
+				new QueryJoinOptimizer(statistics, tripleSource).optimize(expression, null,
+						EmptyBindingSet.getInstance());
 			}
 			SlotPlan plan = compiler.compileTuple(expression, false);
 			assertTrue(copy ? plan instanceof ExtensionPlan : plan instanceof MultiJoinPlan);
@@ -462,15 +488,31 @@ class LmdbNativeNeutralRangeOrderTest {
 			return new Fixture(repository, dataset, source, compiler.layout, plan);
 		} catch (Exception | Error failure) {
 			if (dataset != null) {
-				try { dataset.close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				try {
+					dataset.close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 			}
-			try { repository.shutDown(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+			try {
+				repository.shutDown();
+			} catch (Throwable closing) {
+				if (closing != failure)
+					failure.addSuppressed(closing);
+			}
 			throw failure;
 		}
 	}
 
-	private static IRI iri(ValueFactory vf, String name) { return vf.createIRI("urn:range-control:" + name); }
-	private static Var constant(ValueFactory vf, String name) { return Var.of("_" + name, iri(vf, name), true, true); }
+	private static IRI iri(ValueFactory vf, String name) {
+		return vf.createIRI("urn:range-control:" + name);
+	}
+
+	private static Var constant(ValueFactory vf, String name) {
+		return Var.of("_" + name, iri(vf, name), true, true);
+	}
+
 	private static StatementPattern pattern(ValueFactory vf, String s, String p, String o) {
 		return new StatementPattern(Var.of(s), constant(vf, p), Var.of(o));
 	}
@@ -480,7 +522,8 @@ class LmdbNativeNeutralRangeOrderTest {
 		try (RowCursor cursor = plan.open(row)) {
 			while (cursor.next()) {
 				List<Long> tuple = new ArrayList<>();
-				for (long id : row.slots) tuple.add(id);
+				for (long id : row.slots)
+					tuple.add(id);
 				result.merge(List.copyOf(tuple), 1L, Long::sum);
 			}
 		}
@@ -494,29 +537,82 @@ class LmdbNativeNeutralRangeOrderTest {
 			assertTrue(LmdbNativeAggregateCompiler.initializeRow(row, input, owner, layout));
 			return row;
 		}
-		@Override public void close() throws Exception {
+
+		@Override
+		public void close() throws Exception {
 			Throwable failure = null;
-			try { dataset.close(); } catch (Throwable closing) { failure = closing; }
-			try { repository.shutDown(); } catch (Throwable closing) {
-				if (failure == null) failure = closing; else if (failure != closing) failure.addSuppressed(closing);
+			try {
+				dataset.close();
+			} catch (Throwable closing) {
+				failure = closing;
 			}
-			if (failure instanceof Exception exception) throw exception;
-			if (failure instanceof Error error) throw error;
+			try {
+				repository.shutDown();
+			} catch (Throwable closing) {
+				if (failure == null)
+					failure = closing;
+				else if (failure != closing)
+					failure.addSuppressed(closing);
+			}
+			if (failure instanceof Exception exception)
+				throw exception;
+			if (failure instanceof Error error)
+				throw error;
 		}
 	}
 
 	private static final class RefusingSource implements NativeLmdbQuerySource {
 		final NativeLmdbQuerySource actual;
 		final Object space;
-		RefusingSource(NativeLmdbQuerySource actual, boolean opaque) { this.actual = actual; space = opaque ? new Object() : actual.idSpace(); }
-		@Override public long idOf(Value value) { return actual.idOf(value); }
-		@Override public Value lazyValue(long id) { return actual.lazyValue(id); }
-		@Override public Object idSpace() { return space; }
-		@Override public boolean hasCanonicalIds() { return false; }
-		@Override public RecordIterator statements(long s, long p, long o, long c) throws IOException { return actual.statements(s, p, o, c); }
-		@Override public long count(long s, long p, long o, long c) throws IOException { return actual.count(s, p, o, c); }
-		@Override public boolean has(long s, long p, long o, long c) throws IOException { return actual.has(s, p, o, c); }
-		@Override public boolean hasStatementsInSource() { return actual.hasStatementsInSource(); }
-		@Override public double estimate(long subj, long pred, long obj, long context) { return actual.estimate(subj, pred, obj, context); }
+
+		RefusingSource(NativeLmdbQuerySource actual, boolean opaque) {
+			this.actual = actual;
+			space = opaque ? new Object() : actual.idSpace();
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return actual.idOf(value);
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			return actual.lazyValue(id);
+		}
+
+		@Override
+		public Object idSpace() {
+			return space;
+		}
+
+		@Override
+		public boolean hasCanonicalIds() {
+			return false;
+		}
+
+		@Override
+		public RecordIterator statements(long s, long p, long o, long c) throws IOException {
+			return actual.statements(s, p, o, c);
+		}
+
+		@Override
+		public long count(long s, long p, long o, long c) throws IOException {
+			return actual.count(s, p, o, c);
+		}
+
+		@Override
+		public boolean has(long s, long p, long o, long c) throws IOException {
+			return actual.has(s, p, o, c);
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return actual.hasStatementsInSource();
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return actual.estimate(subj, pred, obj, context);
+		}
 	}
 }

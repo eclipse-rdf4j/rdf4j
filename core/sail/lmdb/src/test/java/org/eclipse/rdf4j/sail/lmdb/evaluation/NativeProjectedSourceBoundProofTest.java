@@ -71,17 +71,20 @@ class NativeProjectedSourceBoundProofTest {
 	static Stream<Arguments> bodies() {
 		return Stream.of("PATTERN", "LEXICAL_JOIN", "HASH_JOIN", "OPTIONAL", "MEMO_OPTIONAL", "UNION",
 				"UNION_OPTIONAL", "OPTIONAL_UNION", "NESTED_OPTIONAL", "BOUND_GUARD", "REPEATED_FIELD")
-				.flatMap(shape -> Stream.of(false, true).flatMap(experimental -> Stream.of(false, true)
-						.map(typed -> Arguments.of(shape, experimental, typed))));
+				.flatMap(shape -> Stream.of(false, true)
+						.flatMap(experimental -> Stream.of(false, true)
+								.map(typed -> Arguments.of(shape, experimental, typed))));
 	}
 
-	@ParameterizedTest(name = "{0}, experimental={1}, typed={2}") @MethodSource("bodies")
+	@ParameterizedTest(name = "{0}, experimental={1}, typed={2}")
+	@MethodSource("bodies")
 	void onlyTheProvedProjectedSourcesHaveLocalIffActualRdfValue(String shape, boolean experimental, boolean typed) {
 		var source = source();
 		TupleExpr body = body(shape);
 		var reference = new QueryRoot(body);
 		var input = EmptyBindingSet.getInstance();
-		assertTrue(input.isEmpty()); assertFalse(BindingSetOrigin.isTrackedInput(input));
+		assertTrue(input.isEmpty());
+		assertFalse(BindingSetOrigin.isTrackedInput(input));
 		var context = new QueryEvaluationContext.Minimal((Dataset) null);
 		var ordinary = new DefaultEvaluationStrategy(source, (FederatedServiceResolver) null);
 		ordinary.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
@@ -90,8 +93,10 @@ class NativeProjectedSourceBoundProofTest {
 			expected = QueryResults.asList(rows);
 		}
 		assertEquals(count(shape), expected.size(), "independent ordinary count/multiplicity premise");
-		if (shape.equals("HASH_JOIN")) assertEquals("HashJoinIteration", ((Join) body).getAlgorithmName());
-		if (shape.equals("MEMO_OPTIONAL")) assertEquals("MemoizedLeftJoinIteration", ((LeftJoin) body).getAlgorithmName());
+		if (shape.equals("HASH_JOIN"))
+			assertEquals("HashJoinIteration", ((Join) body).getAlgorithmName());
+		if (shape.equals("MEMO_OPTIONAL"))
+			assertEquals("MemoizedLeftJoinIteration", ((LeftJoin) body).getAlgorithmName());
 		assertInvariant(expected);
 		var initial = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
 		initial.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
@@ -100,16 +105,23 @@ class NativeProjectedSourceBoundProofTest {
 		List<BindingSet> actual = new ArrayList<>();
 		if (typed) {
 			try (NativeResultCursor rows = NativeResultSteps.open(step, input)) {
-				for (NativeResultRow row; (row = rows.next()) != null;) actual.add(row.toBindingSet());
+				for (NativeResultRow row; (row = rows.next()) != null;)
+					actual.add(row.toBindingSet());
 			}
-		} else { try (var rows = step.evaluate(input)) { actual = QueryResults.asList(rows); } }
-		assertEquals(bag(expected), bag(actual), "exact ordinary mappings and restricted origin, not all hidden declarations");
+		} else {
+			try (var rows = step.evaluate(input)) {
+				actual = QueryResults.asList(rows);
+			}
+		}
+		assertEquals(bag(expected), bag(actual),
+				"exact ordinary mappings and restricted origin, not all hidden declarations");
 		assertInvariant(actual);
 		assertTrue(source.opened > opened, "actual native-backed work; semantic-before-consumption is a valid route");
 		assertEquals(source.opened, source.closed);
 	}
 
-	@ParameterizedTest @ValueSource(strings = { "DECLARED_ONLY", "DISTINCT", "REDUCED", "FAILED_BIND", "NULL_CONTEXT", "REQUEST" })
+	@ParameterizedTest
+	@ValueSource(strings = { "DECLARED_ONLY", "DISTINCT", "REDUCED", "FAILED_BIND", "NULL_CONTEXT", "REQUEST" })
 	void outsideTheFamilyBoundnessCannotStandForLocalEvents(String shape) {
 		var source = source();
 		TupleExpr body;
@@ -129,7 +141,8 @@ class NativeProjectedSourceBoundProofTest {
 					Var.of("_p", P, true, true), Var.of("o"), Var.of("graph"));
 		} else {
 			observed = "external";
-			MapBindingSet values = new MapBindingSet(); values.addBinding(observed, V0);
+			MapBindingSet values = new MapBindingSet();
+			values.addBinding(observed, V0);
 			input = BindingSetOrigin.requestInput(values);
 			Projection closing = new Projection(pattern(P, "o", "_p"),
 					new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o"),
@@ -138,18 +151,22 @@ class NativeProjectedSourceBoundProofTest {
 		}
 		var ordinary = new DefaultEvaluationStrategy(source, (FederatedServiceResolver) null);
 		List<BindingSet> rows;
-		try (var iteration = ordinary.precompile(new QueryRoot(body)).evaluate(input)) { rows = QueryResults.asList(iteration); }
+		try (var iteration = ordinary.precompile(new QueryRoot(body)).evaluate(input)) {
+			rows = QueryResults.asList(iteration);
+		}
 		assertFalse(rows.isEmpty());
 		String name = observed;
 		if (shape.equals("REQUEST")) {
 			for (BindingSet row : rows) {
-				assertSame(input.getValue(name), row.getValue(name), "the closing projection exports the parent request value");
+				assertSame(input.getValue(name), row.getValue(name),
+						"the closing projection exports the parent request value");
 				assertTrue(BindingSetOrigin.of(row).requestNames().contains(name),
 						"the exported request stays under active request authority");
 				assertFalse(BindingSetOrigin.of(row).isLocal(name), "the parent request is not a local producer event");
 			}
 		} else {
-			assertTrue(rows.stream().anyMatch(row -> row.getValue(name) == null && BindingSetOrigin.of(row).isLocal(name)),
+			assertTrue(
+					rows.stream().anyMatch(row -> row.getValue(name) == null && BindingSetOrigin.of(row).isLocal(name)),
 					"a real ordinary counterexample; this operator/frame requires a separate event proof or fallback");
 		}
 	}
@@ -160,20 +177,27 @@ class NativeProjectedSourceBoundProofTest {
 			assertTrue(BindingSetOrigin.of(row).retainedParametersForTransport().isEmpty());
 			assertTrue(GraphFrameBindings.from(row).retainedParametersForTransport().isEmpty());
 			for (String name : OBSERVED) {
-				assertEquals(row.getValue(name) != null, row.hasBinding(name), "no null-domain marker in proved source " + name);
+				assertEquals(row.getValue(name) != null, row.hasBinding(name),
+						"no null-domain marker in proved source " + name);
 				assertEquals(row.getValue(name) != null, BindingSetOrigin.of(row).isLocal(name), name);
 			}
 		}
 	}
 
-	private record Observed(Map<String, Value> domain, Set<String> restrictedLocal, boolean tracked) { }
+	private record Observed(Map<String, Value> domain, Set<String> restrictedLocal, boolean tracked) {
+	}
+
 	private static Map<Observed, Integer> bag(List<BindingSet> rows) {
 		Map<Observed, Integer> result = new HashMap<>();
 		for (BindingSet row : rows) {
 			Map<String, Value> domain = new LinkedHashMap<>();
-			for (String name : row.getBindingNames()) if (row.hasBinding(name)) domain.put(name, row.getValue(name));
-			var local = new java.util.HashSet<>(BindingSetOrigin.of(row).localNames()); local.retainAll(OBSERVED);
-			result.merge(new Observed(Collections.unmodifiableMap(domain), Set.copyOf(local), BindingSetOrigin.isTrackedInput(row)), 1, Integer::sum);
+			for (String name : row.getBindingNames())
+				if (row.hasBinding(name))
+					domain.put(name, row.getValue(name));
+			var local = new java.util.HashSet<>(BindingSetOrigin.of(row).localNames());
+			local.retainAll(OBSERVED);
+			result.merge(new Observed(Collections.unmodifiableMap(domain), Set.copyOf(local),
+					BindingSetOrigin.isTrackedInput(row)), 1, Integer::sum);
 		}
 		return result;
 	}
@@ -183,15 +207,25 @@ class NativeProjectedSourceBoundProofTest {
 		return switch (shape) {
 		case "PATTERN" -> left;
 		case "LEXICAL_JOIN" -> new Join(left, right);
-		case "HASH_JOIN" -> { Join join = new Join(left, right); join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash"); yield join; }
+		case "HASH_JOIN" -> {
+			Join join = new Join(left, right);
+			join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+			yield join;
+		}
 		case "OPTIONAL" -> new LeftJoin(left, right);
-		case "MEMO_OPTIONAL" -> { LeftJoin optional = new LeftJoin(left, right); optional.setStringMetricPlanned("optimizer.leftJoinAlgorithmHint", "memoized"); yield optional; }
+		case "MEMO_OPTIONAL" -> {
+			LeftJoin optional = new LeftJoin(left, right);
+			optional.setStringMetricPlanned("optimizer.leftJoinAlgorithmHint", "memoized");
+			yield optional;
+		}
 		case "UNION" -> new Union(left, right);
 		case "UNION_OPTIONAL" -> new LeftJoin(left, new Union(right, right.clone()));
 		case "OPTIONAL_UNION" -> new Union(new LeftJoin(left, right), left.clone());
-		case "NESTED_OPTIONAL" -> new LeftJoin(new LeftJoin(left, right), new StatementPattern(Var.of("v"), Var.of("_r", R, true, true), Var.of("w")));
+		case "NESTED_OPTIONAL" -> new LeftJoin(new LeftJoin(left, right),
+				new StatementPattern(Var.of("v"), Var.of("_r", R, true, true), Var.of("w")));
 		case "BOUND_GUARD" -> new LeftJoin(left, pattern(P, "o", "_guard"));
-		case "REPEATED_FIELD" -> new LeftJoin(left, new StatementPattern(Var.of("s"), Var.of("_same", SAME, true, true), Var.of("s")));
+		case "REPEATED_FIELD" ->
+			new LeftJoin(left, new StatementPattern(Var.of("s"), Var.of("_same", SAME, true, true), Var.of("s")));
 		default -> throw new IllegalArgumentException(shape);
 		};
 	}
@@ -220,5 +254,7 @@ class NativeProjectedSourceBoundProofTest {
 		return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(data, V0);
 	}
 
-	private static IRI iri(String suffix) { return VF.createIRI("urn:bound-proof:", suffix); }
+	private static IRI iri(String suffix) {
+		return VF.createIRI("urn:bound-proof:", suffix);
+	}
 }

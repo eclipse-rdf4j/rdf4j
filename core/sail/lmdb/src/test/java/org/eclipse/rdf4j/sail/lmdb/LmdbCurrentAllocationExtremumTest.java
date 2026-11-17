@@ -69,7 +69,6 @@ class LmdbCurrentAllocationExtremumTest {
 			LmdbCompatibilityFixtures.nativePut(directory, "free_ids", upperKey, new byte[0]);
 		}
 
-
 		assertTrue(LmdbCompatibilityFixtures.nativeTransactionId(directory) > originalTransaction);
 		if (proofAbsent) {
 			LmdbCompatibilityFixtures.nativePut(directory, "gc_meta", ReferenceCountProof.KEY, null);

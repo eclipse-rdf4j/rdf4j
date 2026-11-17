@@ -38,7 +38,8 @@ class QueryOperationDeadlineTest {
 	void extremeOperationBudgetSaturatesAndKeepsEarliestSelection() {
 		AtomicLong nanoTime = new AtomicLong(100L);
 		QueryOperationDeadline owned = QueryOperationDeadline.after(100, TimeUnit.NANOSECONDS, nanoTime::get);
-		QueryOperationDeadline maximum = QueryOperationDeadline.after(Long.MAX_VALUE, TimeUnit.MILLISECONDS, nanoTime::get);
+		QueryOperationDeadline maximum = QueryOperationDeadline.after(Long.MAX_VALUE, TimeUnit.MILLISECONDS,
+				nanoTime::get);
 		assertThat(maximum.remainingNanos()).isEqualTo(Long.MAX_VALUE);
 		assertThat(maximum.remainingSeconds()).isEqualTo(Integer.MAX_VALUE);
 		assertThat(owned.earliest(maximum)).isSameAs(owned);
@@ -67,7 +68,8 @@ class QueryOperationDeadlineTest {
 					assertThat(nested.getDeadline()).isSameAs(earlier);
 				}
 				nanoTime.set(110L);
-				assertThatThrownBy(QueryOperationContext::throwIfDeadlineExpired).isInstanceOf(QueryInterruptedException.class);
+				assertThatThrownBy(QueryOperationContext::throwIfDeadlineExpired)
+						.isInstanceOf(QueryInterruptedException.class);
 			}
 			assertThat(QueryOperationContext.getDeadline()).containsSame(earlier);
 		}

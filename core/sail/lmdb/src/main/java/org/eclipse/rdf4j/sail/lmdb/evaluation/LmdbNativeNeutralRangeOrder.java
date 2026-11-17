@@ -148,7 +148,8 @@ final class LmdbNativeNeutralRangeOrder {
 			}
 		}
 		NativeLmdbQuerySource physical = row.source;
-		SyntheticValueSource synthetic = physical instanceof SyntheticValueSource ? (SyntheticValueSource) physical : null;
+		SyntheticValueSource synthetic = physical instanceof SyntheticValueSource ? (SyntheticValueSource) physical
+				: null;
 		if (synthetic != null) {
 			physical = synthetic.delegate;
 		}
@@ -159,7 +160,8 @@ final class LmdbNativeNeutralRangeOrder {
 			if (!(join.children[index] instanceof PatternPlan pattern) || pattern.accessProfile == null
 					|| pattern.accessSource != physical
 					|| pattern.readOnlyMask() != 0L || pattern.statementOrder != null || pattern.namedContextScope
-					|| pattern.contexts.isEmpty() || pattern.contexts.isFixed() || pattern.c.hasSlot() || pattern.c.isConstant()
+					|| pattern.contexts.isEmpty() || pattern.contexts.isFixed() || pattern.c.hasSlot()
+					|| pattern.c.isConstant()
 					|| !neutralPhysicalTerm(pattern.s, synthetic, row.slots.length)
 					|| !neutralPhysicalTerm(pattern.p, synthetic, row.slots.length)
 					|| !neutralPhysicalTerm(pattern.o, synthetic, row.slots.length)
@@ -259,7 +261,8 @@ final class LmdbNativeNeutralRangeOrder {
 		}
 		LmdbNativeWork.Chain alternative = LmdbNativeWork.chain(candidate, candidate.length, row, mask);
 		return alternative.estimatedPriceable() && alternative.estimatedWork() < incumbent.estimatedWork()
-				? candidate : null;
+				? candidate
+				: null;
 	}
 
 	/** A fixed predicate and opposite endpoint give the lowerer a sorted domain of the counted endpoint. */

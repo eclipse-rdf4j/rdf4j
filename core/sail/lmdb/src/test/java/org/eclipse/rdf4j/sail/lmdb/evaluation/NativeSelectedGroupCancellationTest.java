@@ -73,21 +73,34 @@ class NativeSelectedGroupCancellationTest {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("input", 0), null);
 		layout.freeze(List.of("input"));
 		ValuesRow[] values = new ValuesRow[ROWS];
-		for (int row = 0; row < ROWS; row++) { values[row] = new ValuesRow(new int[] { 0 }, new long[] { 10L }); }
+		for (int row = 0; row < ROWS; row++) {
+			values[row] = new ValuesRow(new int[] { 0 }, new long[] { 10L });
+		}
 		AtomicInteger calls = new AtomicInteger(), closes = new AtomicInteger();
 		AtomicReference<NativeCancellationToken> ownerCancellation = new AtomicReference<>();
 		RuntimeException cleanup = new IllegalStateException("selected GROUP filter release");
 		NativeBooleanFilter filter = new NativeBooleanFilter() {
-			@Override public boolean accept(RowState row) {
+			@Override
+			public boolean accept(RowState row) {
 				assertEquals(10L, row.slots[0]);
 				int count = calls.incrementAndGet();
-				if (!outcome.equals("complete") && count == ROWS) { ownerCancellation.get().requestCancellation(); }
+				if (!outcome.equals("complete") && count == ROWS) {
+					ownerCancellation.get().requestCancellation();
+				}
 				return true;
 			}
-			@Override public long batchReadMask() { return 1L; }
-			@Override public void close() {
+
+			@Override
+			public long batchReadMask() {
+				return 1L;
+			}
+
+			@Override
+			public void close() {
 				closes.incrementAndGet();
-				if (outcome.equals("cancel-close")) { throw cleanup; }
+				if (outcome.equals("cancel-close")) {
+					throw cleanup;
+				}
 			}
 		};
 		SlotPlan input = new FilterPlan(SlotPlan.values(values), filter, 1L, null);
@@ -107,24 +120,37 @@ class NativeSelectedGroupCancellationTest {
 				iteration.cancellation);
 		assertTrue(iteration.initialize(row));
 		try (NativeExecutionContext.Lease live = source.executionContext().retainActiveLease();
-				NativeGroupResultCursor owner = new NativeGroupResultCursor(summary, iteration, source.executionContext(), false)) {
+				NativeGroupResultCursor owner = new NativeGroupResultCursor(summary, iteration,
+						source.executionContext(), false)) {
 			if (outcome.equals("complete")) {
-				NativeResultRow result = owner.next(); assertNotNull(result);
+				NativeResultRow result = owner.next();
+				assertNotNull(result);
 				NativeResultCell cell = result.cell("cat");
-				if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) { assertEquals(ROWS, cell.codePointLength()); }
-				else { assertEquals(expected, cell.value().stringValue()); }
-				assertNull(owner.next()); assertEquals(ROWS, calls.get());
+				if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
+					assertEquals(ROWS, cell.codePointLength());
+				} else {
+					assertEquals(expected, cell.value().stringValue());
+				}
+				assertNull(owner.next());
+				assertEquals(ROWS, calls.get());
 			} else {
 				Throwable actual = assertThrows(RuntimeException.class, owner::next);
-				assertEquals(ROWS, calls.get(), "the owning cursor reached the filter producer for the full input population");
-				if (outcome.equals("cancel-close")) { assertSame(cleanup, actual); }
-				else { assertTrue(actual instanceof KernelQueryCancelledException); }
+				assertEquals(ROWS, calls.get(),
+						"the owning cursor reached the filter producer for the full input population");
+				if (outcome.equals("cancel-close")) {
+					assertSame(cleanup, actual);
+				} else {
+					assertTrue(actual instanceof KernelQueryCancelledException);
+				}
 				assertEquals(1, closes.get(), "terminal failure must retire the selected filter before next() returns");
 			}
 			assertFalse(source.executionContext().cancellation().isCancellationRequested(),
 					"a local GROUP owner stop cannot cancel the shared query scope");
 		} finally {
-			iteration.close(); iteration.aggContext.close(); row.closeDecodedInputs(); source.executionContext().close();
+			iteration.close();
+			iteration.aggContext.close();
+			row.closeDecodedInputs();
+			source.executionContext().close();
 		}
 		assertEquals(1, closes.get());
 	}
@@ -138,16 +164,25 @@ class NativeSelectedGroupCancellationTest {
 	private static String ordinaryConcat() {
 		List<BindingSet> rows = new ArrayList<>();
 		for (int row = 0; row < ROWS; row++) {
-			MapBindingSet mapping = new MapBindingSet(); mapping.addBinding("input", VF.createLiteral("x")); rows.add(mapping);
+			MapBindingSet mapping = new MapBindingSet();
+			mapping.addBinding("input", VF.createLiteral("x"));
+			rows.add(mapping);
 		}
-		BindingSetAssignment values = new BindingSetAssignment(); values.setBindingNames(Set.of("input")); values.setBindingSets(rows);
-		GroupConcat concat = new GroupConcat(new Var("input")); concat.setSeparator(new ValueConstant(VF.createLiteral("")));
-		Group group = new Group(values); group.addGroupElement(new GroupElem("cat", concat));
-		TripleSource source = mock(TripleSource.class); when(source.getValueFactory()).thenReturn(VF);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("input"));
+		values.setBindingSets(rows);
+		GroupConcat concat = new GroupConcat(new Var("input"));
+		concat.setSeparator(new ValueConstant(VF.createLiteral("")));
+		Group group = new Group(values);
+		group.addGroupElement(new GroupElem("cat", concat));
+		TripleSource source = mock(TripleSource.class);
+		when(source.getValueFactory()).thenReturn(VF);
 		var strategy = new DefaultEvaluationStrategy(source, (FederatedServiceResolver) null);
 		try (var result = strategy.precompile(group).evaluate(EmptyBindingSet.getInstance())) {
-			assertTrue(result.hasNext()); String value = result.next().getValue("cat").stringValue();
-			assertFalse(result.hasNext()); return value;
+			assertTrue(result.hasNext());
+			String value = result.next().getValue("cat").stringValue();
+			assertFalse(result.hasNext());
+			return value;
 		}
 	}
 }

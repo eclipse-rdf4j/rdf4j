@@ -582,7 +582,8 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 				assertThat(emitter.initialize(row)).isTrue();
 
 				Aggregate terminal = new Aggregate(new int[0],
-						new AggregateOutput[] { distinct ? AggregateOutput.countDistinct(1) : AggregateOutput.count(1) },
+						new AggregateOutput[] {
+								distinct ? AggregateOutput.countDistinct(1) : AggregateOutput.count(1) },
 						null, OutputMods.none());
 				Kernel kernel = new Kernel(2, List.of(new EnumerateDomain(0, 0), new EnumerateDomain(1, 1)), terminal);
 				KernelGroupLayout groupLayout = new KernelGroupLayout(new int[0],

@@ -58,7 +58,8 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 			originalIdentity = estimator.quadSnapshotIdentity();
 			assertEquals(CanonicalIriCompatibilityProcess.values().size(), predicateRows(estimator), 0.0d);
 			try (var children = Files.list(directory)) {
-				List<Path> alternates = children.filter(path -> path.getFileName().toString().startsWith(".rdf4j-estimator-"))
+				List<Path> alternates = children
+						.filter(path -> path.getFileName().toString().startsWith(".rdf4j-estimator-"))
 						.toList();
 				assertEquals(1, alternates.size(), "the legacy regular file requires one owned alternate");
 				alternate = alternates.getFirst();
@@ -88,12 +89,12 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 				"an estimator owner is not permission to rewrite an authentic format-2 policy");
 	}
 
-
 	@Test
 	void olderWriterLeavesUnknownRegularAndOwnedAlternateFilesUntouchedButCurrentReopenIsSafe(
 			@TempDir(cleanup = CleanupMode.NEVER) Path temporaryDirectory) throws Exception {
 		String classpath = System.getProperty("rdf4j.lmdb.canonical.compat.classpath.format2");
-		assumeTrue(classpath != null && !classpath.isBlank(), "Run with the authenticated RDF4J 6.1.0 process classpath");
+		assumeTrue(classpath != null && !classpath.isBlank(),
+				"Run with the authenticated RDF4J 6.1.0 process classpath");
 		LmdbCompatibilityFixtures.extract("canonical-iri-format-2.zip", temporaryDirectory);
 		Path directory = temporaryDirectory.resolve("store");
 		var metadata = CanonicalIriCompatibilityProcess.load(temporaryDirectory.resolve("manifest.properties"));
@@ -125,7 +126,8 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 			assertEquals(CanonicalIriCompatibilityProcess.values().size() + 1.0d,
 					predicateRows(estimator), 0.0d, "the owned alternate starts from the real eleven-row source");
 			try (var children = Files.list(directory)) {
-				List<Path> alternates = children.filter(path -> path.getFileName().toString().startsWith(".rdf4j-estimator-"))
+				List<Path> alternates = children
+						.filter(path -> path.getFileName().toString().startsWith(".rdf4j-estimator-"))
 						.toList();
 				assertEquals(1, alternates.size(), "the historical regular file is not replaced by the current owner");
 				alternate = alternates.getFirst();
@@ -145,8 +147,11 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 		Path output = temporaryDirectory.resolve("actual-release-writer.log");
 		Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
 				"-ea", "-cp", classpath, CanonicalIriCompatibilityProcess.class.getName(),
-				"verify-current-and-write", directory.toString(), temporaryDirectory.resolve("manifest.properties").toString())
-				.redirectErrorStream(true).redirectOutput(output.toFile()).start();
+				"verify-current-and-write", directory.toString(),
+				temporaryDirectory.resolve("manifest.properties").toString())
+						.redirectErrorStream(true)
+						.redirectOutput(output.toFile())
+						.start();
 		try {
 			assertTrue(process.waitFor(60, TimeUnit.SECONDS), "The pinned release writer did not finish: " + output);
 			assertEquals(0, process.exitValue(), () -> "The pinned release writer failed: " + output);
@@ -174,7 +179,8 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 			CanonicalIriCompatibilityProcess.verify(reopened, metadata);
 			try (var connection = reopened.getConnection()) {
 				assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.CURRENT_SUBJECT,
-						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.CURRENT_IRI, false));
+						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.CURRENT_IRI,
+						false));
 				assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.OLD_SUBJECT,
 						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.OLD_IRI, false));
 			}
@@ -197,7 +203,8 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 					&& evidence.rows().snapshotIdentity().equals(estimator.quadSnapshotIdentity());
 			assertTrue(exactCurrent || typedUnavailable,
 					"current reopen must be ready with exact 12-row evidence or report typed unavailability "
-							+ "when not ready; stale usable evidence is forbidden: ready=" + ready + ", evidence=" + evidence);
+							+ "when not ready; stale usable evidence is forbidden: ready=" + ready + ", evidence="
+							+ evidence);
 			assertArrayEquals(ownedReceipt, Files.readAllBytes(alternateOwner),
 					"current reopen must preserve the stable alternate owner receipt");
 			LmdbLegacyV4TestFixture.assertUnchanged(directory);
@@ -211,15 +218,17 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 	}
 
 	private static QuadEvidence predicateEvidence(SketchBasedJoinEstimator estimator) {
-		return estimator.synopsisService().probe(new QuadProbe(QuadProbe.PREDICATE, QuadProbe.SUBJECT, 0L,
-				QuadValueHash.hash(CanonicalIriCompatibilityProcess.PREDICATE), 0L, 0L,
-				estimator.quadSnapshotIdentity()));
+		return estimator.synopsisService()
+				.probe(new QuadProbe(QuadProbe.PREDICATE, QuadProbe.SUBJECT, 0L,
+						QuadValueHash.hash(CanonicalIriCompatibilityProcess.PREDICATE), 0L, 0L,
+						estimator.quadSnapshotIdentity()));
 	}
 
 	private static long countPredicateRows(SailRepository repository) {
 		long count = 0L;
 		try (var connection = repository.getConnection();
-				var statements = connection.getStatements(null, CanonicalIriCompatibilityProcess.PREDICATE, null, false)) {
+				var statements = connection.getStatements(null, CanonicalIriCompatibilityProcess.PREDICATE, null,
+						false)) {
 			while (statements.hasNext()) {
 				statements.next();
 				count++;
@@ -230,8 +239,11 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 
 	private static SailRepository open(Path directory) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
-				.setInlineLiterals(false).setAutoGrow(true).setValueDBSize(16L * 1024 * 1024)
-				.setTripleDBSize(16L * 1024 * 1024).setSketchEstimatorEnabled(true)
+				.setInlineLiterals(false)
+				.setAutoGrow(true)
+				.setValueDBSize(16L * 1024 * 1024)
+				.setTripleDBSize(16L * 1024 * 1024)
+				.setSketchEstimatorEnabled(true)
 				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
 		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
@@ -241,7 +253,13 @@ class LmdbLegacyAlternateEstimatorStabilityTest {
 			LmdbTestUtil.awaitPostReadyInitialization(store, 20, TimeUnit.SECONDS);
 			return repository;
 		} catch (Throwable failure) {
-			try { repository.shutDown(); } catch (Throwable cleanup) { if (cleanup != failure) { failure.addSuppressed(cleanup); } }
+			try {
+				repository.shutDown();
+			} catch (Throwable cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
 			throw failure;
 		}
 	}

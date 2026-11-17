@@ -28,8 +28,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
@@ -52,16 +52,21 @@ class NativePhysicalEntryAuthorityTest {
 
 	@Test
 	void trackedUnknownCannotShareAnUntrackedEmptyEntryReceipt() {
-		BindingSet tracked = BindingSetOrigin.with(new MapBindingSet(), BindingSetOrigin.of(EmptyBindingSet.getInstance()));
+		BindingSet tracked = BindingSetOrigin.with(new MapBindingSet(),
+				BindingSetOrigin.of(EmptyBindingSet.getInstance()));
 		assertTrue(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(tracked), tracked));
-		assertFalse(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(tracked), EmptyBindingSet.getInstance()));
+		assertFalse(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(tracked),
+				EmptyBindingSet.getInstance()));
 	}
 
 	@Test
 	void hiddenLocalNamesParticipateWithoutAParameterOrMappedValue() {
-		BindingSet first = BindingSetOrigin.with(new MapBindingSet(), BindingSetOrigin.of(EmptyBindingSet.getInstance()).producing(Set.of("first")));
-		BindingSet other = BindingSetOrigin.with(new MapBindingSet(), BindingSetOrigin.of(EmptyBindingSet.getInstance()).producing(Set.of("other")));
-		assertTrue(first.isEmpty()); assertFalse(BindingSetOrigin.of(first).hasParameters());
+		BindingSet first = BindingSetOrigin.with(new MapBindingSet(),
+				BindingSetOrigin.of(EmptyBindingSet.getInstance()).producing(Set.of("first")));
+		BindingSet other = BindingSetOrigin.with(new MapBindingSet(),
+				BindingSetOrigin.of(EmptyBindingSet.getInstance()).producing(Set.of("other")));
+		assertTrue(first.isEmpty());
+		assertFalse(BindingSetOrigin.of(first).hasParameters());
 		assertTrue(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(first), first));
 		assertFalse(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(first), other));
 	}
@@ -70,29 +75,43 @@ class NativePhysicalEntryAuthorityTest {
 	void fullHiddenGraphDescriptorParticipatesWhileItsMappingIsExcluded() {
 		var firstValue = VF.createIRI("urn:receipt:graph:first");
 		var otherValue = VF.createIRI("urn:receipt:graph:other");
-		BindingSet first = GraphFrameBindings.preserve(GraphFrameBindings.supply(new QueryBindingSet(), "privateGraph", firstValue), new QueryBindingSet());
-		BindingSet other = GraphFrameBindings.preserve(GraphFrameBindings.supply(new QueryBindingSet(), "privateGraph", otherValue), new QueryBindingSet());
-		assertTrue(first.isEmpty()); assertFalse(GraphFrameBindings.isSupplied(first, "privateGraph"));
+		BindingSet first = GraphFrameBindings.preserve(
+				GraphFrameBindings.supply(new QueryBindingSet(), "privateGraph", firstValue), new QueryBindingSet());
+		BindingSet other = GraphFrameBindings.preserve(
+				GraphFrameBindings.supply(new QueryBindingSet(), "privateGraph", otherValue), new QueryBindingSet());
+		assertTrue(first.isEmpty());
+		assertFalse(GraphFrameBindings.isSupplied(first, "privateGraph"));
 		assertTrue(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(first), first));
 		assertFalse(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(first), other));
 	}
 
 	static Stream<Arguments> capabilities() {
-		return Stream.of("CUSTOM", "REMOTE", "NATIVE").flatMap(kind -> Stream.of(false, true).map(mapped -> Arguments.of(kind, mapped)));
+		return Stream.of("CUSTOM", "REMOTE", "NATIVE")
+				.flatMap(kind -> Stream.of(false, true).map(mapped -> Arguments.of(kind, mapped)));
 	}
 
-	@ParameterizedTest(name = "{0}, mapped={1}") @MethodSource("capabilities")
-	void entryCapabilitiesKeepTheirExactRepresentativeWithoutDecoding(String kind, boolean mapped, @TempDir Path directory) throws Exception {
+	@ParameterizedTest(name = "{0}, mapped={1}")
+	@MethodSource("capabilities")
+	void entryCapabilitiesKeepTheirExactRepresentativeWithoutDecoding(String kind, boolean mapped,
+			@TempDir Path directory) throws Exception {
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc"));
-		SailRepository repository = new SailRepository(store); repository.init();
-		var subject = VF.createIRI("urn:receipt:native:s"); var predicate = VF.createIRI("urn:receipt:native:p");
-		try (var connection = repository.getConnection()) { connection.add(subject, predicate, subject); }
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		var subject = VF.createIRI("urn:receipt:native:s");
+		var predicate = VF.createIRI("urn:receipt:native:p");
+		try (var connection = repository.getConnection()) {
+			connection.add(subject, predicate, subject);
+		}
 		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
 			long id, otherId;
-			try (RecordIterator rows = source.statements(NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+			try (RecordIterator rows = source.statements(NativeLmdbQuerySource.UNKNOWN_ID,
+					NativeLmdbQuerySource.UNKNOWN_ID,
 					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID)) {
-				long[] row = rows.next(); assertNotNull(row); id = row[0]; otherId = row[1];
+				long[] row = rows.next();
+				assertNotNull(row);
+				id = row[0];
+				otherId = row[1];
 				assertTrue(id != otherId, "the native negative uses distinct real stored terms");
 			}
 			LmdbValue actualNative = (LmdbValue) source.lazyValue(id);
@@ -100,11 +119,21 @@ class NativePhysicalEntryAuthorityTest {
 			LmdbIRI nativeOther = new LmdbIRI(actualNative.getValueStoreRevision(), otherId);
 			LmdbIRI nativeSame = new LmdbIRI(actualNative.getValueStoreRevision(), id);
 			OpaqueIRI custom = new OpaqueIRI("urn:receipt:opaque"), customOther = new OpaqueIRI("urn:receipt:opaque");
-			BNode remote = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope("receipt-", ignored -> false),
-					VF, new Object(), true).map(VF.createBNode("answer"));
+			BNode remote = (BNode) RemoteBNode
+					.newResponseScope(new BlankNodeAllocationScope("receipt-", ignored -> false),
+							VF, new Object(), true)
+					.map(VF.createBNode("answer"));
 			assertNotNull(((RemoteBNode) remote).getProvenance());
-			Value value = switch (kind) { case "CUSTOM" -> custom; case "REMOTE" -> remote; default -> nativeValue; };
-			Value other = switch (kind) { case "CUSTOM" -> customOther; case "REMOTE" -> VF.createBNode(remote.getID()); default -> nativeOther; };
+			Value value = switch (kind) {
+			case "CUSTOM" -> custom;
+			case "REMOTE" -> remote;
+			default -> nativeValue;
+			};
+			Value other = switch (kind) {
+			case "CUSTOM" -> customOther;
+			case "REMOTE" -> VF.createBNode(remote.getID());
+			default -> nativeOther;
+			};
 			if (kind.equals("NATIVE")) {
 				assertEquals(nativeValue.getInternalID(), nativeSame.getInternalID());
 				assertSame(nativeValue.getValueStoreRevision(), nativeSame.getValueStoreRevision());
@@ -113,37 +142,74 @@ class NativePhysicalEntryAuthorityTest {
 				// A stronger capability proof may admit two real shells for the same revision+ID; conservative
 				// refusal is also valid. Neither decision may decode them merely to build an optional receipt.
 				NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(first), sameIdentity);
-				assertFalse(nativeValue.isInitialized()); assertFalse(nativeSame.isInitialized());
+				assertFalse(nativeValue.isInitialized());
+				assertFalse(nativeSame.isInitialized());
 			}
-			BindingSet frame = mapped ? mapped(value) : parameters(value), changed = mapped ? mapped(other) : parameters(other);
-			if (mapped) { assertSame(value, frame.getValue("hidden")); }
-			else { assertTrue(frame.isEmpty()); assertSame(value, BindingSetOrigin.of(frame).parameterValue("hidden")); }
-			assertFalse(nativeValue.isInitialized()); assertFalse(nativeOther.isInitialized());
+			BindingSet frame = mapped ? mapped(value) : parameters(value),
+					changed = mapped ? mapped(other) : parameters(other);
+			if (mapped) {
+				assertSame(value, frame.getValue("hidden"));
+			} else {
+				assertTrue(frame.isEmpty());
+				assertSame(value, BindingSetOrigin.of(frame).parameterValue("hidden"));
+			}
+			assertFalse(nativeValue.isInitialized());
+			assertFalse(nativeOther.isInitialized());
 			assertTrue(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(frame), frame));
-			assertFalse(nativeValue.isInitialized()); assertFalse(nativeOther.isInitialized());
+			assertFalse(nativeValue.isInitialized());
+			assertFalse(nativeOther.isInitialized());
 			assertFalse(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(frame), changed),
 					"a different real native term, remote trust scope or opaque representative changes entry authority");
-			assertFalse(nativeValue.isInitialized()); assertFalse(nativeOther.isInitialized());
-			assertEquals(0, custom.reads); assertEquals(0, customOther.reads);
-		} finally { repository.shutDown(); }
+			assertFalse(nativeValue.isInitialized());
+			assertFalse(nativeOther.isInitialized());
+			assertEquals(0, custom.reads);
+			assertEquals(0, customOther.reads);
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	private static BindingSet mapped(Value value) {
-		MapBindingSet request = new MapBindingSet(); request.addBinding("hidden", value);
+		MapBindingSet request = new MapBindingSet();
+		request.addBinding("hidden", value);
 		return BindingSetOrigin.requestInput(request);
 	}
 
 	private static BindingSet parameters(Value value) {
-		MapBindingSet request = new MapBindingSet(); request.addBinding("hidden", value);
+		MapBindingSet request = new MapBindingSet();
+		request.addBinding("hidden", value);
 		return BindingSetOrigin.optimizationInput(request);
 	}
 
 	private static final class OpaqueIRI extends SimpleIRI {
 		int reads;
-		OpaqueIRI(String iri) { super(iri); }
-		@Override public String stringValue() { reads++; throw new AssertionError("receipt cannot decode custom authority"); }
-		@Override public String toString() { reads++; throw new AssertionError("receipt cannot stringify custom authority"); }
-		@Override public int hashCode() { reads++; throw new AssertionError("receipt cannot hash custom authority"); }
-		@Override public boolean equals(Object other) { reads++; throw new AssertionError("receipt cannot equate custom authority"); }
+
+		OpaqueIRI(String iri) {
+			super(iri);
+		}
+
+		@Override
+		public String stringValue() {
+			reads++;
+			throw new AssertionError("receipt cannot decode custom authority");
+		}
+
+		@Override
+		public String toString() {
+			reads++;
+			throw new AssertionError("receipt cannot stringify custom authority");
+		}
+
+		@Override
+		public int hashCode() {
+			reads++;
+			throw new AssertionError("receipt cannot hash custom authority");
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			reads++;
+			throw new AssertionError("receipt cannot equate custom authority");
+		}
 	}
 }

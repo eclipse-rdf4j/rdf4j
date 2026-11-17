@@ -57,44 +57,59 @@ import org.junit.jupiter.params.provider.MethodSource;
 class NativeBGPGuardOriginTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI S = VF.createIRI("urn:guard-origin:s"), O = VF.createIRI("urn:guard-origin:o");
-	private static IRI predicate(int n) { return VF.createIRI("urn:guard-origin:p" + n); }
 
-	static Stream<Arguments> mappedCases() {
-		return Stream.of("LEFT", "RIGHT", "COMPOSITE", "HASH").flatMap(route -> Stream.of(false, true)
-				.flatMap(experimental -> Stream.of("UNTRACKED", "UNKNOWN", "REQUEST", "ABSENT")
-						.flatMap(frame -> Stream.of(false, true).map(typed -> Arguments.of(route, experimental, frame, typed)))));
+	private static IRI predicate(int n) {
+		return VF.createIRI("urn:guard-origin:p" + n);
 	}
 
-	@ParameterizedTest(name = "{0}, experimental={1}, frame={2}, typed={3}") @MethodSource("mappedCases")
-	void realBoundGuardAlgorithmsPreserveTheirActualProducerEvents(String route, boolean experimental, String frame, boolean typed) {
+	static Stream<Arguments> mappedCases() {
+		return Stream.of("LEFT", "RIGHT", "COMPOSITE", "HASH")
+				.flatMap(route -> Stream.of(false, true)
+						.flatMap(experimental -> Stream.of("UNTRACKED", "UNKNOWN", "REQUEST", "ABSENT")
+								.flatMap(frame -> Stream.of(false, true)
+										.map(typed -> Arguments.of(route, experimental, frame, typed)))));
+	}
+
+	@ParameterizedTest(name = "{0}, experimental={1}, frame={2}, typed={3}")
+	@MethodSource("mappedCases")
+	void realBoundGuardAlgorithmsPreserveTheirActualProducerEvents(String route, boolean experimental, String frame,
+			boolean typed) {
 		Join join;
-		if (route.equals("LEFT") || route.equals("HASH")) { join = new Join(pattern(0, false), pattern(1, false)); }
-		else {
+		if (route.equals("LEFT") || route.equals("HASH")) {
+			join = new Join(pattern(0, false), pattern(1, false));
+		} else {
 			Join left = new Join(pattern(0, false), pattern(1, false));
 			left.setResultSizeEstimate(1D); // Exact fixture cardinality: one subject satisfies every predicate.
-			join = new Join(left, route.equals("RIGHT") ? pattern(2, false) : new Join(pattern(2, false), pattern(3, false)));
+			join = new Join(left,
+					route.equals("RIGHT") ? pattern(2, false) : new Join(pattern(2, false), pattern(3, false)));
 		}
-		if (route.equals("HASH")) { join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash"); }
+		if (route.equals("HASH")) {
+			join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		}
 		QueryRoot root = new QueryRoot(new Projection(join, new ProjectionElemList(new ProjectionElem("x"))));
 		BindingSet input = input(frame, false);
 		String algorithm = !experimental ? route.equals("HASH") ? "HashJoinIteration" : "JoinIterator"
 				: switch (route) {
-					case "HASH" -> "HashJoinIteration";
-					case "LEFT" -> frame.equals("ABSENT") ? "JoinIterator" : "BoundStatementPatternLeftJoinIteration";
-					case "RIGHT" -> "BoundStatementPatternJoinIteration";
-					default -> "BoundStatementPatternGuardJoinIteration";
+				case "HASH" -> "HashJoinIteration";
+				case "LEFT" -> frame.equals("ABSENT") ? "JoinIterator" : "BoundStatementPatternLeftJoinIteration";
+				case "RIGHT" -> "BoundStatementPatternJoinIteration";
+				default -> "BoundStatementPatternGuardJoinIteration";
 				};
 		boolean local = !frame.equals("UNTRACKED") || experimental && !route.equals("HASH");
 		assertParity(root, input, experimental, typed, algorithm, Set.of("x"), local, false);
 	}
 
 	static Stream<Arguments> constantCases() {
-		return Stream.of(false, true).flatMap(experimental -> Stream.of("UNTRACKED", "UNKNOWN", "REQUEST")
-				.flatMap(frame -> Stream.of(false, true).map(typed -> Arguments.of(experimental, frame, typed))));
+		return Stream.of(false, true)
+				.flatMap(experimental -> Stream.of("UNTRACKED", "UNKNOWN", "REQUEST")
+						.flatMap(frame -> Stream.of(false, true)
+								.map(typed -> Arguments.of(experimental, frame, typed))));
 	}
 
-	@ParameterizedTest(name = "constant-only, experimental={0}, frame={1}, typed={2}") @MethodSource("constantCases")
-	void zeroOutputConstantGuardsStillHaveObservableDeclaredNameEvents(boolean experimental, String frame, boolean typed) {
+	@ParameterizedTest(name = "constant-only, experimental={0}, frame={1}, typed={2}")
+	@MethodSource("constantCases")
+	void zeroOutputConstantGuardsStillHaveObservableDeclaredNameEvents(boolean experimental, String frame,
+			boolean typed) {
 		Join join = new Join(pattern(0, true), pattern(1, true));
 		QueryRoot root = new QueryRoot(join); // No closing projection is allowed to discard the hidden producer names.
 		assertParity(root, input(frame, true), experimental, typed,
@@ -108,16 +123,21 @@ class NativeBGPGuardOriginTest {
 	}
 
 	private static BindingSet input(String frame, boolean empty) {
-		if (frame.equals("ABSENT")) { return EmptyBindingSet.getInstance(); }
+		if (frame.equals("ABSENT")) {
+			return EmptyBindingSet.getInstance();
+		}
 		MapBindingSet mapping = new MapBindingSet();
-		if (!empty) { mapping.addBinding("x", S); }
+		if (!empty) {
+			mapping.addBinding("x", S);
+		}
 		return switch (frame) {
-			case "UNTRACKED" -> mapping;
-			case "UNKNOWN" -> BindingSetOrigin.with(mapping, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
-			default -> {
-				MapBindingSet supplied = new MapBindingSet(); supplied.addBinding(empty ? "external" : "x", S);
-				yield BindingSetOrigin.with(mapping, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(supplied)));
-			}
+		case "UNTRACKED" -> mapping;
+		case "UNKNOWN" -> BindingSetOrigin.with(mapping, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
+		default -> {
+			MapBindingSet supplied = new MapBindingSet();
+			supplied.addBinding(empty ? "external" : "x", S);
+			yield BindingSetOrigin.with(mapping, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(supplied)));
+		}
 		};
 	}
 
@@ -131,11 +151,17 @@ class NativeBGPGuardOriginTest {
 		ordinary.setQueryExecutionPolicy(policy);
 		QueryRoot oracle = root.clone();
 		List<BindingSet> expected;
-		try (var rows = ordinary.precompileRuntimeSubtree(oracle, context).evaluate(input)) { expected = QueryResults.asList(rows); }
-		assertEquals(1, expected.size()); assertEquals(empty, expected.getFirst().isEmpty());
-		if (!empty) { assertEquals(S, expected.getFirst().getValue("x")); }
+		try (var rows = ordinary.precompileRuntimeSubtree(oracle, context).evaluate(input)) {
+			expected = QueryResults.asList(rows);
+		}
+		assertEquals(1, expected.size());
+		assertEquals(empty, expected.getFirst().isEmpty());
+		if (!empty) {
+			assertEquals(S, expected.getFirst().getValue("x"));
+		}
 		Join actualJoin = (Join) (empty ? oracle.getArg() : ((Projection) oracle.getArg()).getArg());
-		assertEquals(algorithm, actualJoin.getAlgorithmName(), "real ordinary runtime branch precedes the origin assertion");
+		assertEquals(algorithm, actualJoin.getAlgorithmName(),
+				"real ordinary runtime branch precedes the origin assertion");
 		for (String name : produced) {
 			// An empty mapping uses a fresh SP conversion, so the right row owns its declared constants but
 			// does not inherit unrelated hidden LOCAL flags from the left empty row. Parameter maps are separate.
@@ -155,27 +181,39 @@ class NativeBGPGuardOriginTest {
 		if (typed) {
 			assertInstanceOf(NativeResultStep.class, physical);
 			try (NativeResultCursor rows = NativeResultSteps.open(compiled, input)) {
-				for (NativeResultRow row; (row = rows.next()) != null;) { actual.add(row.toBindingSet()); }
+				for (NativeResultRow row; (row = rows.next()) != null;) {
+					actual.add(row.toBindingSet());
+				}
 			}
-		} else { try (var rows = compiled.evaluate(input)) { actual = QueryResults.asList(rows); } }
+		} else {
+			try (var rows = compiled.evaluate(input)) {
+				actual = QueryResults.asList(rows);
+			}
+		}
 		assertEquals(expected, actual);
-		assertTrue(source.nativeReads() > readsBefore, "real native count/lookup executes after compilation and ordinary evaluation");
+		assertTrue(source.nativeReads() > readsBefore,
+				"real native count/lookup executes after compilation and ordinary evaluation");
 		assertEquals(source.delegate.opened, source.delegate.closed);
 		for (String name : produced) {
-			assertEquals(BindingSetOrigin.of(expected.getFirst()).isLocal(name), BindingSetOrigin.of(actual.getFirst()).isLocal(name),
+			assertEquals(BindingSetOrigin.of(expected.getFirst()).isLocal(name),
+					BindingSetOrigin.of(actual.getFirst()).isLocal(name),
 					"native " + algorithm + " event " + name);
 		}
-		assertEquals(futureEntry(expected.getFirst()), futureEntry(actual.getFirst()), "retained hidden events control actual later request entry");
-		assertEquals(materialized(expected.getFirst(), context), materialized(actual.getFirst(), context), "hidden request maps remain gated by actual producer events");
+		assertEquals(futureEntry(expected.getFirst()), futureEntry(actual.getFirst()),
+				"retained hidden events control actual later request entry");
+		assertEquals(materialized(expected.getFirst(), context), materialized(actual.getFirst(), context),
+				"hidden request maps remain gated by actual producer events");
 	}
 
 	private static boolean futureEntry(BindingSet row) {
-		QueryBindingSet copy = new QueryBindingSet(row); copy.setBinding("future", S);
+		QueryBindingSet copy = new QueryBindingSet(row);
+		copy.setBinding("future", S);
 		return BindingSetOrigin.of(BindingSetOrigin.requestInput(copy)).isRequest("future");
 	}
 
 	private static BindingSet materialized(BindingSet row, QueryEvaluationContext context) {
-		QueryBindingSet copy = new QueryBindingSet(row); copy.removeBinding("x");
+		QueryBindingSet copy = new QueryBindingSet(row);
+		copy.removeBinding("x");
 		return BindingSetOrigin.materializeParameters(copy, List.of(Var.of("x", S), Var.of("external", S)), context);
 	}
 
@@ -183,21 +221,69 @@ class NativeBGPGuardOriginTest {
 	private static final class Source implements TripleSource, NativeLmdbQuerySource {
 		final LmdbNativeRepeatedStatementTermRoleTest.MemorySource delegate;
 		int counts;
+
 		Source() {
 			ArrayList<Statement> data = new ArrayList<>();
-			for (int n = 0; n < 4; n++) { data.add(VF.createStatement(S, predicate(n), O)); }
+			for (int n = 0; n < 4; n++) {
+				data.add(VF.createStatement(S, predicate(n), O));
+			}
 			delegate = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(data, S);
 		}
-		int nativeReads() { return counts + delegate.opened; }
-		@Override public ValueFactory getValueFactory() { return VF; }
-		@Override public Object idSpace() { return delegate.idSpace(); }
-		@Override public long idOf(Value value) { return delegate.idOf(value); }
-		@Override public Value lazyValue(long id) { return delegate.lazyValue(id); }
-		@Override public boolean hasStatementsInSource() { return true; }
-		@Override public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o, Resource... c) { return delegate.getStatements(s, p, o, c); }
-		@Override public RecordIterator statements(long s, long p, long o, long g) { return delegate.statements(s, p, o, g); }
-		@Override public long count(long s, long p, long o, long g) { counts++; return delegate.count(s, p, o, g); }
-		@Override public boolean has(long s, long p, long o, long g) { counts++; return delegate.has(s, p, o, g); }
-		@Override public double estimate(long s, long p, long o, long g) { return delegate.estimate(s, p, o, g); }
+
+		int nativeReads() {
+			return counts + delegate.opened;
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
+
+		@Override
+		public Object idSpace() {
+			return delegate.idSpace();
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return delegate.idOf(value);
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			return delegate.lazyValue(id);
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o, Resource... c) {
+			return delegate.getStatements(s, p, o, c);
+		}
+
+		@Override
+		public RecordIterator statements(long s, long p, long o, long g) {
+			return delegate.statements(s, p, o, g);
+		}
+
+		@Override
+		public long count(long s, long p, long o, long g) {
+			counts++;
+			return delegate.count(s, p, o, g);
+		}
+
+		@Override
+		public boolean has(long s, long p, long o, long g) {
+			counts++;
+			return delegate.has(s, p, o, g);
+		}
+
+		@Override
+		public double estimate(long s, long p, long o, long g) {
+			return delegate.estimate(s, p, o, g);
+		}
 	}
 }

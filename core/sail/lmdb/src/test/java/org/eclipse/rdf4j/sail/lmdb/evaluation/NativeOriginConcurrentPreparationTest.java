@@ -49,10 +49,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** One retained query may prepare independent origin-sensitive invocations concurrently on its pinned source. */
 class NativeOriginConcurrentPreparationTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
-	private static final IRI FIRST = VF.createIRI("urn:origin-concurrent:first"), SECOND = VF.createIRI("urn:origin-concurrent:second"),
-			P = VF.createIRI("urn:origin-concurrent:p"), Q = VF.createIRI("urn:origin-concurrent:q"), O = VF.createIRI("urn:origin-concurrent:o");
+	private static final IRI FIRST = VF.createIRI("urn:origin-concurrent:first"),
+			SECOND = VF.createIRI("urn:origin-concurrent:second"),
+			P = VF.createIRI("urn:origin-concurrent:p"), Q = VF.createIRI("urn:origin-concurrent:q"),
+			O = VF.createIRI("urn:origin-concurrent:o");
 
-	@ParameterizedTest(name = "experimental={0}") @ValueSource(booleans = { false, true })
+	@ParameterizedTest(name = "experimental={0}")
+	@ValueSource(booleans = { false, true })
 	void retainedOriginSensitiveQueryKeepsConcurrentFramesSeparate(boolean experimental) throws Exception {
 		var source = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(List.of(
 				VF.createStatement(FIRST, P, O), VF.createStatement(FIRST, Q, O),
@@ -68,9 +71,14 @@ class NativeOriginConcurrentPreparationTest {
 				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
 		ordinary.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
 		List<BindingSet> firstExpected, secondExpected;
-		try (var rows = ordinary.precompileRuntimeSubtree(inner, context).evaluate(first)) { firstExpected = QueryResults.asList(rows); }
-		try (var rows = ordinary.precompileRuntimeSubtree(inner, context).evaluate(second)) { secondExpected = QueryResults.asList(rows); }
-		assertEquals(List.of(first), firstExpected); assertEquals(List.of(second), secondExpected);
+		try (var rows = ordinary.precompileRuntimeSubtree(inner, context).evaluate(first)) {
+			firstExpected = QueryResults.asList(rows);
+		}
+		try (var rows = ordinary.precompileRuntimeSubtree(inner, context).evaluate(second)) {
+			secondExpected = QueryResults.asList(rows);
+		}
+		assertEquals(List.of(first), firstExpected);
+		assertEquals(List.of(second), secondExpected);
 		var initial = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
 		initial.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
 		var strategy = initial.forWorker(source);
@@ -83,19 +91,35 @@ class NativeOriginConcurrentPreparationTest {
 		int openedBeforeNative = source.opened;
 		CountDownLatch start = new CountDownLatch(1);
 		var executor = Executors.newFixedThreadPool(2);
-		Future<List<BindingSet>> one = executor.submit(() -> { start.await(); return drain(compiled, first, false); });
-		Future<List<BindingSet>> two = executor.submit(() -> { start.await(); return drain(compiled, second, true); });
+		Future<List<BindingSet>> one = executor.submit(() -> {
+			start.await();
+			return drain(compiled, first, false);
+		});
+		Future<List<BindingSet>> two = executor.submit(() -> {
+			start.await();
+			return drain(compiled, second, true);
+		});
 		try {
 			start.countDown();
 			List<BindingSet> firstActual = one.get(30, TimeUnit.SECONDS), secondActual = two.get(30, TimeUnit.SECONDS);
-			assertEquals(firstExpected, firstActual); assertEquals(secondExpected, secondActual);
-			assertEquals(BindingSetOrigin.of(firstExpected.getFirst()).isLocal("x"), BindingSetOrigin.of(firstActual.getFirst()).isLocal("x"));
-			assertEquals(BindingSetOrigin.of(secondExpected.getFirst()).isLocal("x"), BindingSetOrigin.of(secondActual.getFirst()).isLocal("x"));
-			assertEquals(BindingSetOrigin.isTrackedInput(firstExpected.getFirst()), BindingSetOrigin.isTrackedInput(firstActual.getFirst()));
-			assertEquals(BindingSetOrigin.isTrackedInput(secondExpected.getFirst()), BindingSetOrigin.isTrackedInput(secondActual.getFirst()));
-			assertTrue(source.opened > openedBeforeNative, "actual native-backed reads follow both ordinary oracles and compilation");
+			assertEquals(firstExpected, firstActual);
+			assertEquals(secondExpected, secondActual);
+			assertEquals(BindingSetOrigin.of(firstExpected.getFirst()).isLocal("x"),
+					BindingSetOrigin.of(firstActual.getFirst()).isLocal("x"));
+			assertEquals(BindingSetOrigin.of(secondExpected.getFirst()).isLocal("x"),
+					BindingSetOrigin.of(secondActual.getFirst()).isLocal("x"));
+			assertEquals(BindingSetOrigin.isTrackedInput(firstExpected.getFirst()),
+					BindingSetOrigin.isTrackedInput(firstActual.getFirst()));
+			assertEquals(BindingSetOrigin.isTrackedInput(secondExpected.getFirst()),
+					BindingSetOrigin.isTrackedInput(secondActual.getFirst()));
+			assertTrue(source.opened > openedBeforeNative,
+					"actual native-backed reads follow both ordinary oracles and compilation");
 		} finally {
-			start.countDown(); one.cancel(true); two.cancel(true); executor.shutdownNow(); executor.close();
+			start.countDown();
+			one.cancel(true);
+			two.cancel(true);
+			executor.shutdownNow();
+			executor.close();
 		}
 	}
 
@@ -104,14 +128,23 @@ class NativeOriginConcurrentPreparationTest {
 	}
 
 	private static MapBindingSet input(IRI subject, IRI external) {
-		MapBindingSet result = new MapBindingSet(); result.addBinding("x", subject); result.addBinding("external", external); return result;
+		MapBindingSet result = new MapBindingSet();
+		result.addBinding("x", subject);
+		result.addBinding("external", external);
+		return result;
 	}
 
 	private static List<BindingSet> drain(QueryEvaluationStep compiled, BindingSet input, boolean typed) {
-		if (!typed) { try (var rows = compiled.evaluate(input)) { return QueryResults.asList(rows); } }
+		if (!typed) {
+			try (var rows = compiled.evaluate(input)) {
+				return QueryResults.asList(rows);
+			}
+		}
 		List<BindingSet> result = new ArrayList<>();
 		try (NativeResultCursor rows = NativeResultSteps.open(compiled, input)) {
-			for (NativeResultRow row; (row = rows.next()) != null;) { result.add(row.toBindingSet()); }
+			for (NativeResultRow row; (row = rows.next()) != null;) {
+				result.add(row.toBindingSet());
+			}
 		}
 		return result;
 	}

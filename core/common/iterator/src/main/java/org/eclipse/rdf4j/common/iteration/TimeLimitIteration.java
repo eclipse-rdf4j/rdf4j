@@ -15,9 +15,9 @@ package org.eclipse.rdf4j.common.iteration;
 import java.lang.ref.WeakReference;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
@@ -45,7 +45,8 @@ import org.slf4j.LoggerFactory;
 public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 
 	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.common.iteration.TimeLimitIteration.";
-	private static final long DEFAULT_INTERRUPT_GRACE_MILLIS = Long.getLong(PROPERTY_PREFIX + "interruptGraceMillis", 2000L);
+	private static final long DEFAULT_INTERRUPT_GRACE_MILLIS = Long.getLong(PROPERTY_PREFIX + "interruptGraceMillis",
+			2000L);
 	private static final long DEFAULT_CLOSE_GRACE_MILLIS = Long.getLong(PROPERTY_PREFIX + "closeGraceMillis", 2000L);
 	private static final AsyncLauncher DEFAULT_ASYNC_LAUNCHER = task -> Thread.startVirtualThread(task);
 
@@ -120,9 +121,13 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		interruptTask.schedule(new TimeLimitScheduler.Deadline(timeLimitMillis, startNanos));
 	}
 
-	long interruptGraceMillis() { return interruptGraceMillis; }
+	long interruptGraceMillis() {
+		return interruptGraceMillis;
+	}
 
-	long closeGraceMillis() { return closeGraceMillis; }
+	long closeGraceMillis() {
+		return closeGraceMillis;
+	}
 
 	@Override
 	public boolean hasNext() {
@@ -359,8 +364,12 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			pendingInterrupt = interruptStep;
 			pendingClose = closeStep;
 		}
-		if (pendingInterrupt != null) { pendingInterrupt.cancel(); }
-		if (pendingClose != null) { pendingClose.cancel(); }
+		if (pendingInterrupt != null) {
+			pendingInterrupt.cancel();
+		}
+		if (pendingClose != null) {
+			pendingClose.cancel();
+		}
 		return failure;
 	}
 
@@ -429,7 +438,9 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private boolean hasActiveCallOnAnotherThread() {
 		Thread current = Thread.currentThread();
 		for (Thread thread : activeThreads) {
-			if (thread != current) { return true; }
+			if (thread != current) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -446,7 +457,9 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			timeoutCloseRequested = true;
 			claim = cancellationStarted ? null : newTimeoutCancellationClaim();
 		}
-		if (claim != null) { launchAsync(claim, "cooperative cancellation"); }
+		if (claim != null) {
+			launchAsync(claim, "cooperative cancellation");
+		}
 	}
 
 	/** The lifecycle lock protects each claim and the source ownership it represents. */
@@ -484,7 +497,8 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 				timeoutForwardingAvailable = false;
 				timeoutCancellationInFlight = false;
 				timeoutCancellationClaim = null;
-				cleanup = (closeHandled || timeoutObserved || !timeoutCloseRequested || forceCloseRequested) && claimDelegateCloseIfIdle();
+				cleanup = (closeHandled || timeoutObserved || !timeoutCloseRequested || forceCloseRequested)
+						&& claimDelegateCloseIfIdle();
 				lifecycleLock.notifyAll();
 			}
 			if (cleanup) {
@@ -565,7 +579,9 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			forceCloseRequested = true;
 			cleanup = claimDelegateCloseIfIdle();
 		}
-		if (cleanup) { closeDelegateAsync(); }
+		if (cleanup) {
+			closeDelegateAsync();
+		}
 	}
 
 	/**

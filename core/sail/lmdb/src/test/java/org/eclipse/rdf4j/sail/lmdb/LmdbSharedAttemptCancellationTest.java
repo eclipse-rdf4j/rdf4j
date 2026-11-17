@@ -59,7 +59,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 class LmdbSharedAttemptCancellationTest {
 
 	private enum CloseOrder {
-		OWNER_FIRST, BORROWER_FIRST
+		OWNER_FIRST,
+		BORROWER_FIRST
 	}
 
 	@ParameterizedTest
@@ -70,8 +71,9 @@ class LmdbSharedAttemptCancellationTest {
 		String classpath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
 		Path log = path.resolve("shared-attempt-" + order + ".log");
 		Process child = new ProcessBuilder(java, "-cp", classpath, Probe.class.getName(),
-				path.resolve("store").toString(), order.name()).redirectErrorStream(true).redirectOutput(log.toFile())
-				.start();
+				path.resolve("store").toString(), order.name()).redirectErrorStream(true)
+						.redirectOutput(log.toFile())
+						.start();
 		System.out.println("SHARED_ATTEMPT_CHILD pid=" + child.pid() + " evidence=" + log);
 		assertTrue(child.waitFor(60, TimeUnit.SECONDS),
 				"unresolved child remains running: pid=" + child.pid() + " evidence=" + log);
@@ -131,18 +133,24 @@ class LmdbSharedAttemptCancellationTest {
 										if (available && role == 1 && createBorrower.compareAndSet(false, true)) {
 											ownerView.set(pinnedView(store, null));
 											ownerValueScope.set(activeValueScope(store));
-											QueryExecutionContext.ReplayContext replay = QueryExecutionContext.captureReplayContext();
+											QueryExecutionContext.ReplayContext replay = QueryExecutionContext
+													.captureReplayContext();
 											if (replay == null || !replay.hasReplayScopes()) {
-												throw new AssertionError("FIXTURE: owner lacks an operation read scope");
+												throw new AssertionError(
+														"FIXTURE: owner lacks an operation read scope");
 											}
-											boolean nested = StackWalker.getInstance().walk(frames -> frames.anyMatch(frame ->
-													frame.getClassName().equals(LmdbStoreConnection.class.getName())
+											boolean nested = StackWalker.getInstance()
+													.walk(frames -> frames.anyMatch(frame -> frame.getClassName()
+															.equals(LmdbStoreConnection.class.getName())
 															&& frame.getMethodName().equals("executeTrackedRead")));
 											if (!nested) {
-												throw new AssertionError("FIXTURE: borrower was not created inside owner's read");
+												throw new AssertionError(
+														"FIXTURE: borrower was not created inside owner's read");
 											}
-											CloseableIteration<? extends BindingSet> borrower = connectionRef.get().evaluate(
-													borrowerQuery.clone(), null, EmptyBindingSet.getInstance(), false);
+											CloseableIteration<? extends BindingSet> borrower = connectionRef.get()
+													.evaluate(
+															borrowerQuery.clone(), null, EmptyBindingSet.getInstance(),
+															false);
 											borrowerRef.set(borrower);
 											if (!borrower.hasNext()) {
 												throw new AssertionError("FIXTURE: nested borrower has no rows");
@@ -164,13 +172,17 @@ class LmdbSharedAttemptCancellationTest {
 										callbacks.incrementAndGet();
 										callbackEntered.countDown();
 										await(releaseCallback);
-										LmdbSailStore.ReadViewLease view = role == 1 ? ownerView.get() : borrowerView.get();
-										if (view == null || !view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE)) {
+										LmdbSailStore.ReadViewLease view = role == 1 ? ownerView.get()
+												: borrowerView.get();
+										if (view == null
+												|| !view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE)) {
 											throw new AssertionError("admitted callback lost its own native reader");
 										}
-										ValueResolutionScope valueScope = role == 1 ? ownerValueScope.get() : borrowerValueScope.get();
+										ValueResolutionScope valueScope = role == 1 ? ownerValueScope.get()
+												: borrowerValueScope.get();
 										if (valueScope == null || !valueScope.isOpen()) {
-											throw new AssertionError("admitted callback lost its shared value-resolution owner");
+											throw new AssertionError(
+													"admitted callback lost its shared value-resolution owner");
 										}
 										view.ensureNativeSnapshotsValid();
 										return true;
@@ -288,8 +300,10 @@ class LmdbSharedAttemptCancellationTest {
 				}
 				if (!unresolved) {
 					for (CloseableIteration<? extends BindingSet> result : List.of(
-							borrower == null ? new org.eclipse.rdf4j.common.iteration.EmptyIteration<BindingSet>() : borrower,
-							owner == null ? new org.eclipse.rdf4j.common.iteration.EmptyIteration<BindingSet>() : owner)) {
+							borrower == null ? new org.eclipse.rdf4j.common.iteration.EmptyIteration<BindingSet>()
+									: borrower,
+							owner == null ? new org.eclipse.rdf4j.common.iteration.EmptyIteration<BindingSet>()
+									: owner)) {
 						try {
 							result.close();
 						} catch (Throwable failure) {
@@ -330,10 +344,13 @@ class LmdbSharedAttemptCancellationTest {
 
 		private static LmdbSailStore.ReadViewLease pinnedView(LmdbStore store, LmdbSailStore.ReadViewLease previous) {
 			List<LmdbSailStore.ReadViewLease> views = store.getBackingStore().currentReadResourceViews();
-			return views.stream().filter(view -> view != previous
-					&& view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE)).findFirst()
+			return views.stream()
+					.filter(view -> view != previous
+							&& view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE))
+					.findFirst()
 					.orElseGet(() -> views.stream()
-							.filter(view -> view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE)).findFirst()
+							.filter(view -> view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE))
+							.findFirst()
 							.orElseThrow(() -> new AssertionError("FIXTURE: no pinned native view")));
 		}
 

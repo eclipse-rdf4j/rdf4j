@@ -39,11 +39,11 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,8 +54,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.CleanupMode;
@@ -87,7 +87,8 @@ class LmdbLegacyAliasPlanGenerationRegressionTest {
 				ValueStore values = store.values.get();
 				assertNotNull(values);
 				long beforeId = values.lastTransactionId();
-				addedId.set(values.getId(SimpleValueFactory.getInstance().createIRI("urn:late-alias-plan:owner"), true));
+				addedId.set(
+						values.getId(SimpleValueFactory.getInstance().createIRI("urn:late-alias-plan:owner"), true));
 				assertTrue(values.lastTransactionId() > beforeId, "the real owner writer must commit a new generation");
 			}
 			if (step == LmdbLanguageTagVariantMerge.Step.SKETCH_INVALIDATED) {
@@ -104,8 +105,9 @@ class LmdbLegacyAliasPlanGenerationRegressionTest {
 			store.shutDown();
 		}
 		List<String> after = statementKeys(directory);
-		byte[] addedOwner = addedId.get() < 0L ? null : LmdbCompatibilityFixtures.nativeGet(directory, null,
-				LmdbCompatibilityFixtures.idKey(addedId.get()));
+		byte[] addedOwner = addedId.get() < 0L ? null
+				: LmdbCompatibilityFixtures.nativeGet(directory, null,
+						LmdbCompatibilityFixtures.idKey(addedId.get()));
 		Throwable cause = failure.get();
 		while (cause != null && cause.getCause() != null) {
 			cause = cause.getCause();
@@ -113,7 +115,8 @@ class LmdbLegacyAliasPlanGenerationRegressionTest {
 		Throwable root = cause;
 		assertAll(
 				() -> assertTrue(injected.get(), "the generation change must occur after the real planning pass"),
-				() -> assertFalse(enteredRewrite.get(), "the stale plan must fail before rewrite bookkeeping or mutation"),
+				() -> assertFalse(enteredRewrite.get(),
+						"the stale plan must fail before rewrite bookkeeping or mutation"),
 				() -> assertEquals(before, after, "the complete statement-key set must be unchanged on refusal"),
 				() -> assertNotNull(addedOwner, "the independently committed owner must survive"),
 				() -> assertTrue(root != null && String.valueOf(root.getMessage()).contains("changed while planning"),
@@ -204,7 +207,6 @@ class LmdbLegacyAliasPlanGenerationRegressionTest {
 		}
 	}
 
-
 	@Test
 	void directValueCreationCannotJoinMigrationWriterBetweenRewriteBatches(
 			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
@@ -234,8 +236,9 @@ class LmdbLegacyAliasPlanGenerationRegressionTest {
 			Future<Long> attempt = contender.submit(() -> {
 				caller.set(Thread.currentThread());
 				entered.countDown();
-				return store.values.get().getId(
-						SimpleValueFactory.getInstance().createIRI("urn:direct-between-batches:owner"), true);
+				return store.values.get()
+						.getId(
+								SimpleValueFactory.getInstance().createIRI("urn:direct-between-batches:owner"), true);
 			});
 			result.set(attempt);
 			try {
@@ -316,8 +319,10 @@ class LmdbLegacyAliasPlanGenerationRegressionTest {
 				caller.set(Thread.currentThread());
 				entered.countDown();
 				long[] ids = new long[1];
-				store.values.get().storeValues(new org.eclipse.rdf4j.model.Value[] {
-						SimpleValueFactory.getInstance().createIRI("urn:batch-between-batches:owner") }, ids, 1);
+				store.values.get()
+						.storeValues(new org.eclipse.rdf4j.model.Value[] {
+								SimpleValueFactory.getInstance().createIRI("urn:batch-between-batches:owner") }, ids,
+								1);
 				return ids[0];
 			});
 			result.set(attempt);
@@ -414,7 +419,8 @@ class LmdbLegacyAliasPlanGenerationRegressionTest {
 
 		private CapturedStore(Path directory) {
 			super(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
-					.setSketchEstimatorEnabled(false).setPredicateGuaranteeIndexEnabled(false));
+					.setSketchEstimatorEnabled(false)
+					.setPredicateGuaranteeIndexEnabled(false));
 		}
 
 		@Override

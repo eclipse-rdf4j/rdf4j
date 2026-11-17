@@ -217,7 +217,6 @@ class LmdbSelectedIndexAccessTest {
 		}
 	}
 
-
 	@Test
 	void namedIndexUsesThePinnedReaderGenerationAfterCutover(@TempDir Path directory) throws Exception {
 		try (TripleStore initial = new TripleStore(directory.toFile(), config("spoc"), null)) {
@@ -327,7 +326,6 @@ class LmdbSelectedIndexAccessTest {
 		result.sort(String::compareTo);
 		return result;
 	}
-
 
 	private static final class ControlledStore extends TripleStore {
 		private final CountDownLatch published = new CountDownLatch(1);

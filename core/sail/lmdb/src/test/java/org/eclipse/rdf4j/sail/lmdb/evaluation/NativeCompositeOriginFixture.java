@@ -27,94 +27,129 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 
 final class NativeCompositeOriginFixture {
-    static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
-    static final String EX = "urn:composite-origin:", MED = "http://example.com/theme/medical/";
-    static final String PREFIX = "PREFIX ex: <" + EX + "> ";
-    static final String REDUCED_Q11 = "PREFIX med: <" + MED + "> SELECT * WHERE { "
-            + "?root a med:Patient; med:hasEncounter ?encounter . "
-            + "?encounter a med:Encounter; med:hasObservation ?observation . "
-            + "OPTIONAL { ?root med:name ?patientName . OPTIONAL { ?root med:hasMedication ?medication . "
-            + "OPTIONAL { ?medication med:code ?medicationCode . OPTIONAL { ?medication med:dosage ?medicationDosage } } } } }";
-    static final String FULL_Q11 = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 11);
-    record Shape(String name, String query, int rows, boolean medical, boolean requiresComposed) {
-        Shape(String name, String query, int rows, boolean medical) { this(name, query, rows, medical, true); }
-        @Override public String toString() { return name; }
-    }
-    static List<Shape> shapes() {
-        return List.of(
-                new Shape("reduced-q11", REDUCED_Q11, 14, true),
-                new Shape("full-catalog-q11", FULL_Q11, 74, true),
-                new Shape("condition-rejects-actual-right-row", PREFIX + "SELECT ?s ?o ?v WHERE { ?s ex:p ?o "
-                        + "OPTIONAL { ?s ex:q ?v FILTER(?v = ex:keep) } }", 3, false, false),
-                new Shape("condition-expression-error", PREFIX + "SELECT ?s ?o ?v WHERE { ?s ex:p ?o "
-                        + "OPTIONAL { ?s ex:q ?v FILTER(?notProduced > 1) } }", 3, false, false),
-                new Shape("union-inside-optional-duplicates", PREFIX + "SELECT ?s ?o ?v WHERE { ?s ex:p ?o "
-                        + "OPTIONAL { { ?s ex:q ?v } UNION { ?s ex:q ?v } } }", 7, false),
-                new Shape("optional-inside-union-duplicates", PREFIX + "SELECT ?s ?o ?v WHERE { "
-                        + "{ ?s ex:p ?o OPTIONAL { ?s ex:q ?v } } UNION { ?s ex:p ?o } }", 7, false),
-                new Shape("repeated-statement-variable", PREFIX + "SELECT ?s ?o ?v WHERE { ?s ex:p ?o "
-                        + "OPTIONAL { ?s ex:same ?s . ?s ex:q ?v } }", 4, false),
-                new Shape("fully-bound-right-count-guard", PREFIX + "SELECT ?s ?o WHERE { ?s ex:p ?o "
-                        + "OPTIONAL { ?s ex:p ?o } }", 3, false),
-                new Shape("nullable-join-input-can-be-produced-later", PREFIX + "SELECT ?s ?o ?v ?w WHERE { "
-                        + "?s ex:p ?o OPTIONAL { ?s ex:q ?v } OPTIONAL { ?v ex:r ?w } }", 4, false));
-    }
-    static IRI iri(String name) { return VF.createIRI(EX, name); }
-    static IRI med(String name) { return VF.createIRI(MED, name); }
-    static List<Statement> miniData() {
-        return List.of(
-                VF.createStatement(iri("s0"), iri("p"), iri("o0")),
-                VF.createStatement(iri("s1"), iri("p"), iri("o1")),
-                VF.createStatement(iri("s2"), iri("p"), iri("o2")),
-                VF.createStatement(iri("s0"), iri("q"), iri("keep")),
-                VF.createStatement(iri("s0"), iri("q"), iri("drop")),
-                VF.createStatement(iri("s2"), iri("q"), iri("drop")),
-                VF.createStatement(iri("s0"), iri("same"), iri("s0")),
-                VF.createStatement(iri("s1"), iri("same"), iri("s0")),
-                VF.createStatement(iri("keep"), iri("r"), iri("r0")));
-    }
-    static List<Statement> medicalData() { return medicalData(false); }
-    static List<Statement> medicalData(boolean literals) {
-        List<Statement> data = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
-            data.add(VF.createStatement(med("p" + i), RDF.TYPE, med("Patient")));
-            data.add(VF.createStatement(med("p" + i), med("hasEncounter"), med("e" + i)));
-            data.add(VF.createStatement(med("e" + i), RDF.TYPE, med("Encounter")));
-        }
-        add(data, "e0", "hasObservation", med("o0")); add(data, "e0", "hasObservation", med("o1"));
-        add(data, "e1", "hasObservation", med("o2")); add(data, "e2", "hasObservation", med("o3"));
-        add(data, "p0", "name", object("Ada", literals)); add(data, "p0", "name", object("Ada II", literals));
-        add(data, "p0", "hasMedication", med("m0")); add(data, "p0", "hasMedication", med("m1"));
-        add(data, "m0", "code", object("C0", literals));
-        add(data, "m0", "dosage", object("D0", literals)); add(data, "m0", "dosage", object("D1", literals));
-        add(data, "p1", "hasMedication", med("ignoredMedicationWithoutName"));
-        add(data, "e0", "recordedOn", object("2026-01-01", literals));
-        add(data, "e0", "handledBy", med("practitioner"));
-        add(data, "practitioner", "name", object("Dr A", literals));
-        add(data, "practitioner", "name", object("Dr B", literals));
-        add(data, "e1", "handledBy", med("ignoredPractitionerWithoutDate"));
-        add(data, "e0", "hasCondition", med("c0")); add(data, "e1", "hasCondition", med("c1"));
-        add(data, "c0", "code", object("condition", literals));
-        add(data, "c0", "description", object("first", literals)); add(data, "c0", "description", object("second", literals));
-        add(data, "o0", "value", literals ? VF.createLiteral(1) : med("value1"));
-        add(data, "o0", "unit", object("U0", literals)); add(data, "o0", "unit", object("U1", literals));
-        add(data, "o1", "unit", object("ignoredUnitWithoutValue", literals));
-        add(data, "o2", "value", literals ? VF.createLiteral(2) : med("value2"));
-        return List.copyOf(data);
-    }
-    private static Value object(String label, boolean literals) {
-        return literals ? VF.createLiteral(label) : med(label.replace(" ", "_"));
-    }
-    private static void add(List<Statement> data, String subject, String predicate, Value object) {
-        data.add(VF.createStatement(med(subject), med(predicate), object));
-    }
-    static TupleExpr parse(String query) {
-        return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
-    }
-    static TupleExpr component(TupleExpr expression) {
-        TupleExpr node = expression;
-        while (node instanceof UnaryTupleOperator unary) { node = unary.getArg(); }
-        return node;
-    }
-    private NativeCompositeOriginFixture() { }
+	static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	static final String EX = "urn:composite-origin:", MED = "http://example.com/theme/medical/";
+	static final String PREFIX = "PREFIX ex: <" + EX + "> ";
+	static final String REDUCED_Q11 = "PREFIX med: <" + MED + "> SELECT * WHERE { "
+			+ "?root a med:Patient; med:hasEncounter ?encounter . "
+			+ "?encounter a med:Encounter; med:hasObservation ?observation . "
+			+ "OPTIONAL { ?root med:name ?patientName . OPTIONAL { ?root med:hasMedication ?medication . "
+			+ "OPTIONAL { ?medication med:code ?medicationCode . OPTIONAL { ?medication med:dosage ?medicationDosage } } } } }";
+	static final String FULL_Q11 = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 11);
+
+	record Shape(String name, String query, int rows, boolean medical, boolean requiresComposed) {
+		Shape(String name, String query, int rows, boolean medical) {
+			this(name, query, rows, medical, true);
+		}
+
+		@Override
+		public String toString() {
+			return name;
+		}
+	}
+
+	static List<Shape> shapes() {
+		return List.of(
+				new Shape("reduced-q11", REDUCED_Q11, 14, true),
+				new Shape("full-catalog-q11", FULL_Q11, 74, true),
+				new Shape("condition-rejects-actual-right-row", PREFIX + "SELECT ?s ?o ?v WHERE { ?s ex:p ?o "
+						+ "OPTIONAL { ?s ex:q ?v FILTER(?v = ex:keep) } }", 3, false, false),
+				new Shape("condition-expression-error", PREFIX + "SELECT ?s ?o ?v WHERE { ?s ex:p ?o "
+						+ "OPTIONAL { ?s ex:q ?v FILTER(?notProduced > 1) } }", 3, false, false),
+				new Shape("union-inside-optional-duplicates", PREFIX + "SELECT ?s ?o ?v WHERE { ?s ex:p ?o "
+						+ "OPTIONAL { { ?s ex:q ?v } UNION { ?s ex:q ?v } } }", 7, false),
+				new Shape("optional-inside-union-duplicates", PREFIX + "SELECT ?s ?o ?v WHERE { "
+						+ "{ ?s ex:p ?o OPTIONAL { ?s ex:q ?v } } UNION { ?s ex:p ?o } }", 7, false),
+				new Shape("repeated-statement-variable", PREFIX + "SELECT ?s ?o ?v WHERE { ?s ex:p ?o "
+						+ "OPTIONAL { ?s ex:same ?s . ?s ex:q ?v } }", 4, false),
+				new Shape("fully-bound-right-count-guard", PREFIX + "SELECT ?s ?o WHERE { ?s ex:p ?o "
+						+ "OPTIONAL { ?s ex:p ?o } }", 3, false),
+				new Shape("nullable-join-input-can-be-produced-later", PREFIX + "SELECT ?s ?o ?v ?w WHERE { "
+						+ "?s ex:p ?o OPTIONAL { ?s ex:q ?v } OPTIONAL { ?v ex:r ?w } }", 4, false));
+	}
+
+	static IRI iri(String name) {
+		return VF.createIRI(EX, name);
+	}
+
+	static IRI med(String name) {
+		return VF.createIRI(MED, name);
+	}
+
+	static List<Statement> miniData() {
+		return List.of(
+				VF.createStatement(iri("s0"), iri("p"), iri("o0")),
+				VF.createStatement(iri("s1"), iri("p"), iri("o1")),
+				VF.createStatement(iri("s2"), iri("p"), iri("o2")),
+				VF.createStatement(iri("s0"), iri("q"), iri("keep")),
+				VF.createStatement(iri("s0"), iri("q"), iri("drop")),
+				VF.createStatement(iri("s2"), iri("q"), iri("drop")),
+				VF.createStatement(iri("s0"), iri("same"), iri("s0")),
+				VF.createStatement(iri("s1"), iri("same"), iri("s0")),
+				VF.createStatement(iri("keep"), iri("r"), iri("r0")));
+	}
+
+	static List<Statement> medicalData() {
+		return medicalData(false);
+	}
+
+	static List<Statement> medicalData(boolean literals) {
+		List<Statement> data = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			data.add(VF.createStatement(med("p" + i), RDF.TYPE, med("Patient")));
+			data.add(VF.createStatement(med("p" + i), med("hasEncounter"), med("e" + i)));
+			data.add(VF.createStatement(med("e" + i), RDF.TYPE, med("Encounter")));
+		}
+		add(data, "e0", "hasObservation", med("o0"));
+		add(data, "e0", "hasObservation", med("o1"));
+		add(data, "e1", "hasObservation", med("o2"));
+		add(data, "e2", "hasObservation", med("o3"));
+		add(data, "p0", "name", object("Ada", literals));
+		add(data, "p0", "name", object("Ada II", literals));
+		add(data, "p0", "hasMedication", med("m0"));
+		add(data, "p0", "hasMedication", med("m1"));
+		add(data, "m0", "code", object("C0", literals));
+		add(data, "m0", "dosage", object("D0", literals));
+		add(data, "m0", "dosage", object("D1", literals));
+		add(data, "p1", "hasMedication", med("ignoredMedicationWithoutName"));
+		add(data, "e0", "recordedOn", object("2026-01-01", literals));
+		add(data, "e0", "handledBy", med("practitioner"));
+		add(data, "practitioner", "name", object("Dr A", literals));
+		add(data, "practitioner", "name", object("Dr B", literals));
+		add(data, "e1", "handledBy", med("ignoredPractitionerWithoutDate"));
+		add(data, "e0", "hasCondition", med("c0"));
+		add(data, "e1", "hasCondition", med("c1"));
+		add(data, "c0", "code", object("condition", literals));
+		add(data, "c0", "description", object("first", literals));
+		add(data, "c0", "description", object("second", literals));
+		add(data, "o0", "value", literals ? VF.createLiteral(1) : med("value1"));
+		add(data, "o0", "unit", object("U0", literals));
+		add(data, "o0", "unit", object("U1", literals));
+		add(data, "o1", "unit", object("ignoredUnitWithoutValue", literals));
+		add(data, "o2", "value", literals ? VF.createLiteral(2) : med("value2"));
+		return List.copyOf(data);
+	}
+
+	private static Value object(String label, boolean literals) {
+		return literals ? VF.createLiteral(label) : med(label.replace(" ", "_"));
+	}
+
+	private static void add(List<Statement> data, String subject, String predicate, Value object) {
+		data.add(VF.createStatement(med(subject), med(predicate), object));
+	}
+
+	static TupleExpr parse(String query) {
+		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+	}
+
+	static TupleExpr component(TupleExpr expression) {
+		TupleExpr node = expression;
+		while (node instanceof UnaryTupleOperator unary) {
+			node = unary.getArg();
+		}
+		return node;
+	}
+
+	private NativeCompositeOriginFixture() {
+	}
 }

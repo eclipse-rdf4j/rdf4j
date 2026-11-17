@@ -61,26 +61,33 @@ class NativeBGPOriginTopologyTest {
 			Y = VF.createIRI("urn:bgp-topology:y"), PARENT = VF.createIRI("urn:bgp-topology:parent");
 
 	static Stream<Arguments> joins() {
-		return Stream.of(false, true).flatMap(hash -> Stream.of("UNTRACKED", "UNKNOWN", "REQUEST", "ABSENT")
-				.flatMap(frame -> Stream.of(false, true).map(typed -> Arguments.of(hash, frame, typed))));
+		return Stream.of(false, true)
+				.flatMap(hash -> Stream.of("UNTRACKED", "UNKNOWN", "REQUEST", "ABSENT")
+						.flatMap(frame -> Stream.of(false, true).map(typed -> Arguments.of(hash, frame, typed))));
 	}
 
-	@ParameterizedTest(name = "hash={0}, frame={1}, typed={2}") @MethodSource("joins")
+	@ParameterizedTest(name = "hash={0}, frame={1}, typed={2}")
+	@MethodSource("joins")
 	void actualHashAndLexicalJoinTopologiesKeepTheirOwnOriginEvents(boolean hash, String frame, boolean typed) {
-		StatementPattern left = new StatementPattern(Var.of("_s", S, true, true), Var.of("_p", P, true, true), Var.of("y"));
+		StatementPattern left = new StatementPattern(Var.of("_s", S, true, true), Var.of("_p", P, true, true),
+				Var.of("y"));
 		Join join = new Join(left, pattern());
-		if (hash) { join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash"); }
+		if (hash) {
+			join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		}
 		QueryRoot root = project(join, true);
 		boolean localX = !hash || !frame.equals("UNTRACKED");
 		assertParity(root, input(frame), typed, localX, hash);
 	}
 
 	static Stream<Arguments> modifiers() {
-		return Stream.of("DISTINCT", "REDUCED").flatMap(modifier -> Stream.of("UNTRACKED", "UNKNOWN", "REQUEST", "ABSENT")
-				.flatMap(frame -> Stream.of(false, true).map(typed -> Arguments.of(modifier, frame, typed))));
+		return Stream.of("DISTINCT", "REDUCED")
+				.flatMap(modifier -> Stream.of("UNTRACKED", "UNKNOWN", "REQUEST", "ABSENT")
+						.flatMap(frame -> Stream.of(false, true).map(typed -> Arguments.of(modifier, frame, typed))));
 	}
 
-	@ParameterizedTest(name = "{0}, frame={1}, typed={2}") @MethodSource("modifiers")
+	@ParameterizedTest(name = "{0}, frame={1}, typed={2}")
+	@MethodSource("modifiers")
 	void distinctAndReducedOwnLocalProducerEventsBeforeProjection(String modifier, String frame, boolean typed) {
 		TupleExpr body = modifier.equals("DISTINCT") ? new Distinct(pattern()) : new Reduced(pattern());
 		assertParity(project(body, false), input(frame), typed, true, null);
@@ -97,15 +104,20 @@ class NativeBGPOriginTopologyTest {
 		QueryRoot root = new QueryRoot(new Projection(inner,
 				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("external"))));
 		assertTrue(ProjectionIterator.hasEnclosingProjection(inner, context));
-		MapBindingSet input = new MapBindingSet(); input.addBinding("x", S); input.addBinding("external", PARENT);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", S);
+		input.addBinding("external", PARENT);
 		assertFalse(BindingSetOrigin.isTrackedInput(input));
 		var ordinary = new DefaultEvaluationStrategy(source,
 				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
 		List<BindingSet> expected;
-		try (var rows = ordinary.precompileRuntimeSubtree(inner, context).evaluate(input)) { expected = QueryResults.asList(rows); }
+		try (var rows = ordinary.precompileRuntimeSubtree(inner, context).evaluate(input)) {
+			expected = QueryResults.asList(rows);
+		}
 		assertEquals(List.of(input), expected, "the actual inner projection retains its parent mapping");
 		assertSame(root.getArg(), inner.getParentNode(), "the ordinary oracle did not detach its model ancestry");
-		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
 		QueryEvaluationStep physical = LmdbNativeAggregateCompiler.tryCompile(inner, context, strategy, source);
 		assertInstanceOf(NativeResultStep.class, physical);
 		// Default preparation applies the bottom-up nested SELECT boundary as well as the projection mapper.
@@ -116,22 +128,32 @@ class NativeBGPOriginTopologyTest {
 		if (typed) {
 			java.util.ArrayList<BindingSet> result = new java.util.ArrayList<>();
 			try (NativeResultCursor rows = NativeResultSteps.open(compiled, input)) {
-				for (NativeResultRow row; (row = rows.next()) != null;) { result.add(row.toBindingSet()); }
+				for (NativeResultRow row; (row = rows.next()) != null;) {
+					result.add(row.toBindingSet());
+				}
 			}
 			actual = result;
-		} else { try (var rows = compiled.evaluate(input)) { actual = QueryResults.asList(rows); } }
+		} else {
+			try (var rows = compiled.evaluate(input)) {
+				actual = QueryResults.asList(rows);
+			}
+		}
 		assertEquals(expected, actual);
-		assertTrue(source.opened > openedBeforeNative, "the compiled component executes the actual native-backed source");
+		assertTrue(source.opened > openedBeforeNative,
+				"the compiled component executes the actual native-backed source");
 		assertEquals(source.opened, source.closed);
-		assertEquals(BindingSetOrigin.of(expected.getFirst()).isLocal("x"), BindingSetOrigin.of(actual.getFirst()).isLocal("x"));
-		assertEquals(BindingSetOrigin.isTrackedInput(expected.getFirst()), BindingSetOrigin.isTrackedInput(actual.getFirst()));
+		assertEquals(BindingSetOrigin.of(expected.getFirst()).isLocal("x"),
+				BindingSetOrigin.of(actual.getFirst()).isLocal("x"));
+		assertEquals(BindingSetOrigin.isTrackedInput(expected.getFirst()),
+				BindingSetOrigin.isTrackedInput(actual.getFirst()));
 	}
-
 
 	static Stream<Arguments> emptyEntryJoinModes() {
 		return Stream.of("EQUAL", "LEFT_BIGGER", "RIGHT_BIGGER")
-				.flatMap(size -> Stream.of(false, true).flatMap(hash -> Stream.of("FULL_ROW", "MAPPED_PROJECTION", "DECLARED_PROJECTION")
-						.flatMap(project -> Stream.of(false, true).map(typed -> Arguments.of(size, hash, project, typed)))));
+				.flatMap(size -> Stream.of(false, true)
+						.flatMap(hash -> Stream.of("FULL_ROW", "MAPPED_PROJECTION", "DECLARED_PROJECTION")
+								.flatMap(project -> Stream.of(false, true)
+										.map(typed -> Arguments.of(size, hash, project, typed)))));
 	}
 
 	@ParameterizedTest(name = "empty, sizes={0}, hash={1}, output={2}, typed={3}")
@@ -142,11 +164,13 @@ class NativeBGPOriginTopologyTest {
 		int rightCount = size.equals("RIGHT_BIGGER") ? 2 : 1;
 		var source = emptyEntrySource(leftCount, rightCount);
 		Join referenceJoin = emptyEntryJoin();
-		if (hash) referenceJoin.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		if (hash)
+			referenceJoin.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
 		QueryRoot referenceRoot = emptyEntryRoot(referenceJoin, output);
 		var context = new QueryEvaluationContext.Minimal((Dataset) null);
 		var input = EmptyBindingSet.getInstance();
-		assertTrue(input.isEmpty()); assertFalse(BindingSetOrigin.isTrackedInput(input));
+		assertTrue(input.isEmpty());
+		assertFalse(BindingSetOrigin.isTrackedInput(input));
 		var ordinary = new DefaultEvaluationStrategy(source,
 				(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
 		ordinary.setQueryExecutionPolicy(org.eclipse.rdf4j.query.QueryExecutionPolicy.of(false));
@@ -162,21 +186,26 @@ class NativeBGPOriginTopologyTest {
 		boolean probeIsLeft = leftCount > rightCount;
 		Set<String> locals = new java.util.HashSet<>(Set.of("s", "left", "right"));
 		if (!output.equals("MAPPED_PROJECTION")) {
-			if (!hash || probeIsLeft) locals.add("_leftPredicate");
-			if (!hash || !probeIsLeft) locals.add("_rightPredicate");
+			if (!hash || probeIsLeft)
+				locals.add("_leftPredicate");
+			if (!hash || !probeIsLeft)
+				locals.add("_rightPredicate");
 		}
 		for (BindingSet row : expected) {
 			assertEquals(Set.of("s", "left", "right"), row.getBindingNames());
-			assertFalse(row.hasBinding("_leftPredicate")); assertFalse(row.hasBinding("_rightPredicate"));
-			assertEquals(locals, BindingSetOrigin.of(row).localNames(), "actual full/selected-source origin, not union of declarations");
+			assertFalse(row.hasBinding("_leftPredicate"));
+			assertFalse(row.hasBinding("_rightPredicate"));
+			assertEquals(locals, BindingSetOrigin.of(row).localNames(),
+					"actual full/selected-source origin, not union of declarations");
 			assertTrue(BindingSetOrigin.isTrackedInput(row));
 		}
 		emptyEntryNativeParity(referenceRoot.clone(), input, context, source, expected, typed);
 	}
 
 	static Stream<Arguments> emptyEntryOptionalModes() {
-		return Stream.of(false, true).flatMap(memo -> Stream.of("FULL_ROW", "MAPPED_PROJECTION", "DECLARED_PROJECTION")
-				.flatMap(output -> Stream.of(false, true).map(typed -> Arguments.of(memo, output, typed))));
+		return Stream.of(false, true)
+				.flatMap(memo -> Stream.of("FULL_ROW", "MAPPED_PROJECTION", "DECLARED_PROJECTION")
+						.flatMap(output -> Stream.of(false, true).map(typed -> Arguments.of(memo, output, typed))));
 	}
 
 	@ParameterizedTest(name = "empty, optionalMemo={0}, output={1}, typed={2}")
@@ -185,7 +214,8 @@ class NativeBGPOriginTopologyTest {
 		var source = emptyEntrySource(2, 1);
 		var pair = emptyEntryJoin();
 		var optional = new org.eclipse.rdf4j.query.algebra.LeftJoin(pair.getLeftArg(), pair.getRightArg());
-		if (memo) optional.setStringMetricPlanned("optimizer.leftJoinAlgorithmHint", "memoized");
+		if (memo)
+			optional.setStringMetricPlanned("optimizer.leftJoinAlgorithmHint", "memoized");
 		QueryRoot root = emptyEntryRoot(optional, output);
 		var context = new QueryEvaluationContext.Minimal((Dataset) null);
 		var ordinary = new DefaultEvaluationStrategy(source,
@@ -194,15 +224,22 @@ class NativeBGPOriginTopologyTest {
 		var input = EmptyBindingSet.getInstance();
 		assertFalse(BindingSetOrigin.isTrackedInput(input));
 		List<BindingSet> expected;
-		try (var rows = ordinary.precompileRuntimeSubtree(root, context).evaluate(input)) { expected = QueryResults.asList(rows); }
+		try (var rows = ordinary.precompileRuntimeSubtree(root, context).evaluate(input)) {
+			expected = QueryResults.asList(rows);
+		}
 		assertEquals(2, expected.size());
 		assertEquals(memo ? "MemoizedLeftJoinIteration" : "LeftJoinIterator", optional.getAlgorithmName(),
 				"actual ordinary OPTIONAL protocol, with no forced native strategy");
 		Set<String> locals = new java.util.HashSet<>(Set.of("s", "left", "right"));
-		if (!output.equals("MAPPED_PROJECTION")) { locals.add("_leftPredicate"); if (!memo) locals.add("_rightPredicate"); }
+		if (!output.equals("MAPPED_PROJECTION")) {
+			locals.add("_leftPredicate");
+			if (!memo)
+				locals.add("_rightPredicate");
+		}
 		for (BindingSet row : expected) {
 			assertEquals(Set.of("s", "left", "right"), row.getBindingNames());
-			assertEquals(locals, BindingSetOrigin.of(row).localNames(), "memo delta addAll copies written names, not hidden RHS declarations");
+			assertEquals(locals, BindingSetOrigin.of(row).localNames(),
+					"memo delta addAll copies written names, not hidden RHS declarations");
 			assertTrue(BindingSetOrigin.isTrackedInput(row));
 		}
 		emptyEntryNativeParity(root.clone(), input, context, source, expected, typed);
@@ -215,33 +252,45 @@ class NativeBGPOriginTopologyTest {
 	}
 
 	private static QueryRoot emptyEntryRoot(TupleExpr body, String output) {
-		if (output.equals("FULL_ROW")) return new QueryRoot(body);
-		var columns = new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("left"), new ProjectionElem("right"));
+		if (output.equals("FULL_ROW"))
+			return new QueryRoot(body);
+		var columns = new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("left"),
+				new ProjectionElem("right"));
 		if (output.equals("DECLARED_PROJECTION")) {
-			columns.addElement(new ProjectionElem("_leftPredicate")); columns.addElement(new ProjectionElem("_rightPredicate"));
+			columns.addElement(new ProjectionElem("_leftPredicate"));
+			columns.addElement(new ProjectionElem("_rightPredicate"));
 		}
 		return new QueryRoot(new Projection(body, columns));
 	}
 
-	private static LmdbNativeRepeatedStatementTermRoleTest.MemorySource emptyEntrySource(int leftCount, int rightCount) {
+	private static LmdbNativeRepeatedStatementTermRoleTest.MemorySource emptyEntrySource(int leftCount,
+			int rightCount) {
 		var data = new java.util.ArrayList<org.eclipse.rdf4j.model.Statement>();
-		for (int i = 0; i < leftCount; i++) data.add(VF.createStatement(S, P, VF.createIRI("urn:bgp-empty-hidden:left" + i)));
-		for (int i = 0; i < rightCount; i++) data.add(VF.createStatement(S, Q, VF.createIRI("urn:bgp-empty-hidden:right" + i)));
+		for (int i = 0; i < leftCount; i++)
+			data.add(VF.createStatement(S, P, VF.createIRI("urn:bgp-empty-hidden:left" + i)));
+		for (int i = 0; i < rightCount; i++)
+			data.add(VF.createStatement(S, Q, VF.createIRI("urn:bgp-empty-hidden:right" + i)));
 		return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(data, S);
 	}
 
 	private record EmptyOriginSnapshot(java.util.Map<String, org.eclipse.rdf4j.model.Value> values, boolean tracked,
-			Set<String> locals, Set<String> requests) { }
+			Set<String> locals, Set<String> requests) {
+	}
 
 	private static java.util.Map<EmptyOriginSnapshot, Integer> emptyEntryBag(List<BindingSet> rows) {
 		java.util.Map<EmptyOriginSnapshot, Integer> bag = new java.util.HashMap<>();
 		for (BindingSet row : rows) {
 			java.util.Map<String, org.eclipse.rdf4j.model.Value> values = new java.util.HashMap<>();
-			for (String name : row.getBindingNames()) if (row.hasBinding(name)) values.put(name, row.getValue(name));
+			for (String name : row.getBindingNames())
+				if (row.hasBinding(name))
+					values.put(name, row.getValue(name));
 			var origin = BindingSetOrigin.of(row);
 			assertTrue(origin.retainedParametersForTransport().isEmpty());
-			assertTrue(org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.from(row).retainedParametersForTransport().isEmpty());
-			bag.merge(new EmptyOriginSnapshot(java.util.Collections.unmodifiableMap(values), BindingSetOrigin.isTrackedInput(row),
+			assertTrue(org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.from(row)
+					.retainedParametersForTransport()
+					.isEmpty());
+			bag.merge(new EmptyOriginSnapshot(java.util.Collections.unmodifiableMap(values),
+					BindingSetOrigin.isTrackedInput(row),
 					origin.localNames(), origin.requestNames()), 1, Integer::sum);
 		}
 		return bag;
@@ -258,11 +307,18 @@ class NativeBGPOriginTopologyTest {
 		if (typed) {
 			actual = new java.util.ArrayList<>();
 			try (NativeResultCursor cursor = NativeResultSteps.open(compiled, input)) {
-				for (NativeResultRow row; (row = cursor.next()) != null;) actual.add(row.toBindingSet());
+				for (NativeResultRow row; (row = cursor.next()) != null;)
+					actual.add(row.toBindingSet());
 			}
-		} else { try (var rows = compiled.evaluate(input)) { actual = QueryResults.asList(rows); } }
-		assertEquals(emptyEntryBag(expected), emptyEntryBag(actual), "exact ordinary mapping and complete LOCAL/request/tracked authority");
-		assertTrue(source.opened > opened, "native or semantic-before-consumption branch uses the actual native-backed source");
+		} else {
+			try (var rows = compiled.evaluate(input)) {
+				actual = QueryResults.asList(rows);
+			}
+		}
+		assertEquals(emptyEntryBag(expected), emptyEntryBag(actual),
+				"exact ordinary mapping and complete LOCAL/request/tracked authority");
+		assertTrue(source.opened > opened,
+				"native or semantic-before-consumption branch uses the actual native-backed source");
 		assertEquals(source.opened, source.closed);
 		assertEquals(emptyEntryBag(expected.stream().map(BindingSetOrigin::requestInput).toList()),
 				emptyEntryBag(actual.stream().map(BindingSetOrigin::requestInput).toList()));
@@ -274,17 +330,22 @@ class NativeBGPOriginTopologyTest {
 
 	private static QueryRoot project(TupleExpr body, boolean includeY) {
 		ProjectionElemList columns = new ProjectionElemList(new ProjectionElem("x"));
-		if (includeY) { columns.addElement(new ProjectionElem("y")); }
+		if (includeY) {
+			columns.addElement(new ProjectionElem("y"));
+		}
 		return new QueryRoot(new Projection(body, columns));
 	}
 
 	private static BindingSet input(String frame) {
-		if (frame.equals("ABSENT")) { return EmptyBindingSet.getInstance(); }
-		MapBindingSet mapping = new MapBindingSet(); mapping.addBinding("x", S);
+		if (frame.equals("ABSENT")) {
+			return EmptyBindingSet.getInstance();
+		}
+		MapBindingSet mapping = new MapBindingSet();
+		mapping.addBinding("x", S);
 		return switch (frame) {
-			case "UNTRACKED" -> mapping;
-			case "UNKNOWN" -> BindingSetOrigin.with(mapping, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
-			default -> BindingSetOrigin.with(mapping, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(mapping)));
+		case "UNTRACKED" -> mapping;
+		case "UNKNOWN" -> BindingSetOrigin.with(mapping, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
+		default -> BindingSetOrigin.with(mapping, BindingSetOrigin.of(BindingSetOrigin.optimizationInput(mapping)));
 		};
 	}
 
@@ -299,17 +360,21 @@ class NativeBGPOriginTopologyTest {
 		// A real runtime-subtree invocation preserves a supplied UNKNOWN/untracked contract; ordinary root
 		// request entry would promote the intentionally untracked mapped input before the owning join executes.
 		try (var rows = ordinary.precompileRuntimeSubtree(oracle, context).evaluate(input)) {
-			expected = rows.next(); assertFalse(rows.hasNext());
+			expected = rows.next();
+			assertFalse(rows.hasNext());
 		}
 		assertEquals(S, expected.getValue("x"));
 		assertEquals(localX, BindingSetOrigin.of(expected).isLocal("x"), "ordinary event topology is the oracle");
 		if (hash != null) {
 			Join prepared = (Join) ((Projection) oracle.getArg()).getArg();
-			assertEquals(hash, "HashJoinIteration".equals(prepared.getAlgorithmName()), "the actual ordinary hint route");
+			assertEquals(hash, "HashJoinIteration".equals(prepared.getAlgorithmName()),
+					"the actual ordinary hint route");
 			assertEquals(Y, expected.getValue("y"));
 		}
-		int opened = source.opened; root.setExecutionSummaryEnabled(true);
-		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
+		int opened = source.opened;
+		root.setExecutionSummaryEnabled(true);
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
 		QueryEvaluationStep compiled;
 		TupleExpr observed = root;
 		if (hash == null) {
@@ -326,9 +391,15 @@ class NativeBGPOriginTopologyTest {
 		}
 		BindingSet actual;
 		if (typed) {
-			try (NativeResultCursor rows = NativeResultSteps.open(compiled, input)) { actual = rows.next().toBindingSet(); assertNull(rows.next()); }
+			try (NativeResultCursor rows = NativeResultSteps.open(compiled, input)) {
+				actual = rows.next().toBindingSet();
+				assertNull(rows.next());
+			}
 		} else {
-			try (var rows = compiled.evaluate(input)) { actual = rows.next(); assertFalse(rows.hasNext()); }
+			try (var rows = compiled.evaluate(input)) {
+				actual = rows.next();
+				assertFalse(rows.hasNext());
+			}
 		}
 		assertEquals(expected, actual);
 		TupleExpr plannedOwner = observed;
@@ -353,20 +424,24 @@ class NativeBGPOriginTopologyTest {
 				"the actual planned owner has a physical alternative; a semantic descendant need not claim one");
 		assertTrue(source.opened > opened, "native-backed source advances after the ordinary oracle");
 		assertEquals(source.opened, source.closed);
-		assertEquals(localX, BindingSetOrigin.of(actual).isLocal("x"), "native must preserve the owning producer event");
+		assertEquals(localX, BindingSetOrigin.of(actual).isLocal("x"),
+				"native must preserve the owning producer event");
 		assertEquals(BindingSetOrigin.of(expected).isRequest("x"), BindingSetOrigin.of(actual).isRequest("x"));
 		assertEquals(afterNarrowing(expected, context), afterNarrowing(actual, context),
 				"origin remains observable by later projection fallback after the mapped source is narrowed");
 		assertEquals(BindingSetOrigin.of(BindingSetOrigin.requestInput(expected)).isRequest("x"),
-				BindingSetOrigin.of(BindingSetOrigin.requestInput(actual)).isRequest("x"), "real re-entry cannot grant different authority");
+				BindingSetOrigin.of(BindingSetOrigin.requestInput(actual)).isRequest("x"),
+				"real re-entry cannot grant different authority");
 	}
 
 	private static List<BindingSet> afterNarrowing(BindingSet row, QueryEvaluationContext context) {
-		QueryBindingSet source = new QueryBindingSet(row); source.removeBinding("x");
+		QueryBindingSet source = new QueryBindingSet(row);
+		source.removeBinding("x");
 		BindingSet reified = BindingSetOrigin.materializeParameters(source, List.of(Var.of("x", S)), context);
 		assertFalse(reified.hasBinding("x"), "a masked or nonexistent request parameter cannot be reified");
 		Projection projection = new Projection(new SingletonSet(), new ProjectionElemList(new ProjectionElem("x")));
-		MapBindingSet parent = new MapBindingSet(); parent.addBinding("x", PARENT);
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", PARENT);
 		try (var input = new CloseableIteratorIteration<BindingSet>(List.of(reified).iterator());
 				var rows = new ProjectionIterator(projection, input, parent, context, Set.of("x"))) {
 			return QueryResults.asList(rows);

@@ -787,12 +787,13 @@ public class ThemeQueryBenchmark {
 				.addReflectiveGetter("lmdbStore.writable", store, "isWritable")
 				.addReflectiveGetter("lmdbConfig.tripleIndexes", storeConfig, "getTripleIndexes")
 				.addReflectiveGetter("lmdbConfig.forceSync", storeConfig, "getForceSync")
-                .addReflectiveGetter("lmdbConfig.nativeEvaluationEnabled", storeConfig, "getNativeEvaluationEnabled")
-                .addReflectiveGetter("lmdbConfig.experimentalQueryOptimizations", storeConfig,
-                        "isExperimentalQueryOptimizations")
-                .addReflectiveGetter("lmdbConfig.sketchEstimatorEnabled", storeConfig, "getSketchEstimatorEnabled")
-                .addReflectiveGetter("lmdbConfig.directAdjacencyEnabled", storeConfig, "getDirectAdjacencyEnabled")
-                .addReflectiveGetter("lmdbStore.directAdjacencyReadiness", store, "getDirectAdjacencyReadinessDescription")
+				.addReflectiveGetter("lmdbConfig.nativeEvaluationEnabled", storeConfig, "getNativeEvaluationEnabled")
+				.addReflectiveGetter("lmdbConfig.experimentalQueryOptimizations", storeConfig,
+						"isExperimentalQueryOptimizations")
+				.addReflectiveGetter("lmdbConfig.sketchEstimatorEnabled", storeConfig, "getSketchEstimatorEnabled")
+				.addReflectiveGetter("lmdbConfig.directAdjacencyEnabled", storeConfig, "getDirectAdjacencyEnabled")
+				.addReflectiveGetter("lmdbStore.directAdjacencyReadiness", store,
+						"getDirectAdjacencyReadinessDescription")
 				.addReflectiveField("lmdbConfig.autoGrow", storeConfig, "autoGrow")
 				.addReflectiveGetter("lmdbConfig.valueDbSize", storeConfig, "getValueDBSize")
 				.addReflectiveGetter("lmdbConfig.tripleDbSize", storeConfig, "getTripleDBSize");

@@ -104,7 +104,8 @@ class LmdbComposedFactorCensusTest {
 	void setUp(TestInfo test) throws Exception {
 		SETTINGS.forEach((key, value) -> previous.put(key, System.setProperty(key, value)));
 		assertThat(LmdbNativeEvaluationStrategy.forcedExecutionStrategyForCurrentThread())
-				.as("this census must not inherit a pinned execution strategy").isNull();
+				.as("this census must not inherit a pinned execution strategy")
+				.isNull();
 		Path outputRoot = Path.of(System.getProperty("rdf4j.factorCensus.outputDirectory",
 				"target/composed-factor-census"));
 		Files.createDirectories(outputRoot);
@@ -112,7 +113,8 @@ class LmdbComposedFactorCensusTest {
 		System.out.println("COMPOSED_FACTOR_CENSUS " + output.toAbsolutePath().normalize());
 		store = new LmdbStore(temporaryDirectory.resolve("native").toFile(),
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
-						.setDirectAdjacencyEnabled(true).setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+						.setDirectAdjacencyEnabled(true)
+						.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 						.setDirectAdjacencyMaxBytes(1L << 30));
 		nativeRepository = new SailRepository(store);
 		memoryRepository = new SailRepository(new MemoryStore());
@@ -121,7 +123,8 @@ class LmdbComposedFactorCensusTest {
 		seed(nativeRepository);
 		seed(memoryRepository);
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
-				.as("the real fixture's preferred adjacency build must finish before source census").isTrue();
+				.as("the real fixture's preferred adjacency build must finish before source census")
+				.isTrue();
 		Files.writeString(output.resolve("rows.rq"), ROW_QUERY, StandardCharsets.UTF_8);
 		Files.writeString(output.resolve("groups.rq"), GROUP_QUERY, StandardCharsets.UTF_8);
 		Map<String, Object> fixture = new LinkedHashMap<>();
@@ -174,7 +177,8 @@ class LmdbComposedFactorCensusTest {
 		receipt.put("memoryGroups", records(memoryGroups));
 		receipt.put("nativeGroups", records(nativeGroups));
 		receipt.put("sourceObjectIdentity", null);
-		receipt.put("sourceIdentityLimitation", "Public query does not expose its source object; plans are separate invocations.");
+		receipt.put("sourceIdentityLimitation",
+				"Public query does not expose its source object; plans are separate invocations.");
 		write("public-results", receipt);
 		capturePlan("public-rows", ROW_QUERY);
 		capturePlan("public-groups", GROUP_QUERY);
@@ -189,7 +193,8 @@ class LmdbComposedFactorCensusTest {
 		Map<String, Object> receipt = new LinkedHashMap<>();
 		receipt.put("category", "REAL_EXPLICIT_SOURCE_NORMAL_PHYSICAL_DISPATCH_SEAM");
 		receipt.put("logicalOptimizerBypassed", true);
-		receipt.put("servingOnlyCounterAttribution", "UNKNOWN: existing kernel metrics can include actual attempted/probed work.");
+		receipt.put("servingOnlyCounterAttribution",
+				"UNKNOWN: existing kernel metrics can include actual attempted/probed work.");
 		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 			NativeLmdbQuerySource raw = (NativeLmdbQuerySource) dataset;
 			SyntheticValueSource source = SyntheticValueSource.forEvaluation(raw);
@@ -215,14 +220,17 @@ class LmdbComposedFactorCensusTest {
 					receipt.put("actualLongs", new TreeMap<>(target.getLongMetricsActual()));
 					receipt.put("actualDoubles", new TreeMap<>(target.getDoubleMetricsActual()));
 					receipt.put("offeredQuotesRaw", target.getStringMetricActual(NativeAggregateCostQuotes.METRIC));
-					receipt.put("selectedExecutionPath", target.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH));
+					receipt.put("selectedExecutionPath",
+							target.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH));
 					receipt.put("ledgerBytesAfterEvaluate", ledger.usedBytes());
 					unknownLeafCounts(receipt);
 					assertThat(actual).containsExactlyInAnyOrderElementsOf(expectedGroups());
 					assertThat(target.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
-							.as("the normal physical seam must record its actual serving path").isNotBlank();
+							.as("the normal physical seam must record its actual serving path")
+							.isNotBlank();
 					assertThat(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC))
-							.as("record offered quote evidence without requiring completeness or a selected strategy").isNotBlank();
+							.as("record offered quote evidence without requiring completeness or a selected strategy")
+							.isNotBlank();
 				}
 			} finally {
 				receipt.put("ledgerBytesAfterIterationCloseBeforeOwnerClose", ledger.usedBytes());
@@ -271,7 +279,8 @@ class LmdbComposedFactorCensusTest {
 				assertThat(row.encounterOrderRequired).isFalse();
 				assertThat(SlotPlan.encounterOrderReplaySafe(plan)).isTrue();
 				LmdbNativeFactorCursor actualInput = LmdbNativeFactorAlgebra.tryOpen(plan, row);
-				assertThat(actualInput).as("existing real factor algebra must admit this supported diagnostic").isNotNull();
+				assertThat(actualInput).as("existing real factor algebra must admit this supported diagnostic")
+						.isNotNull();
 				observed = new ObservedFactors(actualInput);
 				try (NativeFactorProjections input = new LmdbNativeFactorProjections(observed, row, demand.columns(),
 						demand.exactWeights())) {
@@ -303,7 +312,8 @@ class LmdbComposedFactorCensusTest {
 				receipt.put("projectionEvents", events);
 				receipt.put("projectionWeightSums", weightSums);
 				receipt.put("projectionChannels", java.util.stream.IntStream.range(0, demand.size())
-						.mapToObj(demand::channels).toList());
+						.mapToObj(demand::channels)
+						.toList());
 				receipt.put("factorPrefixes", observed.prefixes);
 				receipt.put("factorCursorNextCalls", observed.nextCalls);
 				receipt.put("factorCursorWrapperCloseCalls", observed.closeCalls);
@@ -410,7 +420,8 @@ class LmdbComposedFactorCensusTest {
 			return VF.createIRI(iri.stringValue());
 		}
 		if (value instanceof Literal literal) {
-			return literal.getLanguage().isPresent() ? VF.createLiteral(literal.getLabel(), literal.getLanguage().orElseThrow())
+			return literal.getLanguage().isPresent()
+					? VF.createLiteral(literal.getLabel(), literal.getLanguage().orElseThrow())
 					: VF.createLiteral(literal.getLabel(), VF.createIRI(literal.getDatatype().stringValue()));
 		}
 		throw new AssertionError("Unexpected RDF term in the deliberately IRI/integer fixture: " + value);
@@ -462,8 +473,10 @@ class LmdbComposedFactorCensusTest {
 		result.put("evaluationWrapper", "Production SyntheticValueSource.forEvaluation; real raw delegate retained.");
 		result.put("snapshotToken", raw instanceof NativeLmdbQuerySource.ParallelSource sibling
 				&& sibling.snapshotId() != NativeLmdbQuerySource.ParallelSource.UNKNOWN_SNAPSHOT_ID
-						? sibling.snapshotId() : null);
-		result.put("snapshotLimitation", "Known only when the actual source exposes ParallelSource.snapshotId; no substitute token.");
+						? sibling.snapshotId()
+						: null);
+		result.put("snapshotLimitation",
+				"Known only when the actual source exposes ParallelSource.snapshotId; no substitute token.");
 		return result;
 	}
 
@@ -518,7 +531,8 @@ class LmdbComposedFactorCensusTest {
 				receipt.put("querySha256", sha256(query));
 				receipt.put("nodes", nodes);
 				receipt.put("servingOnlyWork", null);
-				receipt.put("limitation", "A separate public explanation is not the earlier bag evaluation or the explicit-source seam.");
+				receipt.put("limitation",
+						"A separate public explanation is not the earlier bag evaluation or the explicit-source seam.");
 				write(name, receipt);
 			}
 		}
@@ -575,12 +589,14 @@ class LmdbComposedFactorCensusTest {
 	}
 
 	private static String identity(Object value) {
-		return value == null ? "UNKNOWN" : value.getClass().getName() + "@"
-				+ Integer.toUnsignedString(System.identityHashCode(value), 16);
+		return value == null ? "UNKNOWN"
+				: value.getClass().getName() + "@"
+						+ Integer.toUnsignedString(System.identityHashCode(value), 16);
 	}
 
 	private static String sha256(String value) throws Exception {
-		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+		return HexFormat.of()
+				.formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
 	}
 
 	private static final class ManualGroup {
@@ -633,7 +649,8 @@ class LmdbComposedFactorCensusTest {
 					descriptor.put("tuple", factors.isTuple(slot));
 					descriptor.put("representedGroupCardinality", factors.count(slot));
 					descriptor.put("borrowedBatchIdentity", identity(factors.isTuple(slot)
-							? factors.tupleBatch(slot) : factors.batch(slot)));
+							? factors.tupleBatch(slot)
+							: factors.batch(slot)));
 					descriptors.add(descriptor);
 				}
 				Map<String, Object> prefix = new LinkedHashMap<>();

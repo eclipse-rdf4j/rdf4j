@@ -400,7 +400,8 @@ final class LmdbNativePackedMorsels {
 		public LmdbNativeFactorCursor openFactors(RowState target) {
 			if (target != row)
 				throw new IllegalStateException("a morsel leaf cannot move to a different binding frame");
-			return orderedReplay ? null : LmdbNativePackedFtree.GroupedRowCursor.forExternalRuntime(packed, row, runtime);
+			return orderedReplay ? null
+					: LmdbNativePackedFtree.GroupedRowCursor.forExternalRuntime(packed, row, runtime);
 		}
 
 		@Override

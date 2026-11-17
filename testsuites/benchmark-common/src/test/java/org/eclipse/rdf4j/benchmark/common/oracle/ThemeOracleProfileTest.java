@@ -117,7 +117,8 @@ class ThemeOracleProfileTest {
 		assertDoesNotThrow(() -> ThemeOracleProfile.REAL_ESTATE.requireSupportedOrder(2,
 				parser.parseQuery(topLevelDistinctQuery, null).getTupleExpr()));
 		assertThrows(IllegalStateException.class, () -> ThemeOracleProfile.REAL_ESTATE.requireSupportedOrder(2,
-				parser.parseQuery(nestedLimitQuery, null).getTupleExpr()), "a sole nested slice cannot prove result order");
+				parser.parseQuery(nestedLimitQuery, null).getTupleExpr()),
+				"a sole nested slice cannot prove result order");
 		assertThrows(IllegalStateException.class,
 				() -> ThemeOracleProfile.REAL_ESTATE.requireSupportedOrder(2,
 						parser.parseQuery(nestedDistinctLimitQuery, null).getTupleExpr()),
@@ -130,7 +131,7 @@ class ThemeOracleProfileTest {
 				parser.parseQuery(nestedMultipleLimitQuery, null).getTupleExpr()));
 		assertThrows(IllegalStateException.class, () -> ThemeOracleProfile.REAL_ESTATE.requireSupportedOrder(2,
 				parser.parseQuery(nestedWithOuterLimitQuery, null).getTupleExpr()),
-			"a valid outer slice does not legitimize an additional nested slice");
+				"a valid outer slice does not legitimize an additional nested slice");
 	}
 
 	@Test

@@ -55,7 +55,8 @@ class NativeProjectionParameterAuthorityTest {
 		BindingSet first = input(FIRST);
 		BindingSet same = input(FIRST);
 		BindingSet different = input(SECOND);
-		BindingSet local = BindingSetOrigin.with(first, BindingSetOrigin.of(first).producing(java.util.Set.of("external")));
+		BindingSet local = BindingSetOrigin.with(first,
+				BindingSetOrigin.of(first).producing(java.util.Set.of("external")));
 		assertEquals(first, different, "ordinary BindingSet equality intentionally compares only the empty mapping");
 		assertTrue(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(first), same));
 		assertFalse(NativePhysicalOutputEvidence.sameEntry(NativeEntryBindings.snapshot(first), different),
@@ -67,10 +68,15 @@ class NativeProjectionParameterAuthorityTest {
 	@Test
 	void failedBindingKeepsItsLocalOnlyAuthorityAcrossAnEmptyQueryBase() {
 		var triples = new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {
-			@Override public org.eclipse.rdf4j.model.ValueFactory getValueFactory() { return SimpleValueFactory.getInstance(); }
-			@Override public org.eclipse.rdf4j.common.iteration.CloseableIteration<? extends org.eclipse.rdf4j.model.Statement>
-					getStatements(org.eclipse.rdf4j.model.Resource s, org.eclipse.rdf4j.model.IRI p, Value o,
-							org.eclipse.rdf4j.model.Resource... c) {
+			@Override
+			public org.eclipse.rdf4j.model.ValueFactory getValueFactory() {
+				return SimpleValueFactory.getInstance();
+			}
+
+			@Override
+			public org.eclipse.rdf4j.common.iteration.CloseableIteration<? extends org.eclipse.rdf4j.model.Statement> getStatements(
+					org.eclipse.rdf4j.model.Resource s, org.eclipse.rdf4j.model.IRI p, Value o,
+					org.eclipse.rdf4j.model.Resource... c) {
 				return new org.eclipse.rdf4j.common.iteration.EmptyIteration<>();
 			}
 		};
@@ -83,26 +89,34 @@ class NativeProjectionParameterAuthorityTest {
 						new org.eclipse.rdf4j.query.algebra.ValueConstant(vf.createLiteral(0)),
 						org.eclipse.rdf4j.query.algebra.MathExpr.MathOp.DIVIDE), "external"));
 		BindingSet local;
-		try (var rows = strategy.precompile(failed).evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance())) {
-			assertTrue(rows.hasNext()); local = rows.next(); assertFalse(rows.hasNext());
+		try (var rows = strategy.precompile(failed)
+				.evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance())) {
+			assertTrue(rows.hasNext());
+			local = rows.next();
+			assertFalse(rows.hasNext());
 		}
 		assertTrue(local.isEmpty());
 		assertTrue(BindingSetOrigin.of(local).isLocal("external"));
-		assertFalse(BindingSetOrigin.of(local).hasParameters(), "the failure produced local metadata without parameters");
+		assertFalse(BindingSetOrigin.of(local).hasParameters(),
+				"the failure produced local metadata without parameters");
 		try (NativeExecutionContext context = new NativeExecutionContext(QueryExecutionPolicy.DEFAULT)) {
 			context.initializeQueryBase(local);
 			assertTrue(context.queryBase().isEmpty());
 			assertTrue(BindingSetOrigin.of(context.queryBase()).isLocal("external"));
-			var projection = new org.eclipse.rdf4j.query.algebra.Projection(new org.eclipse.rdf4j.query.algebra.SingletonSet(),
-					new org.eclipse.rdf4j.query.algebra.ProjectionElemList(new org.eclipse.rdf4j.query.algebra.ProjectionElem("external")));
-			MapBindingSet parent = new MapBindingSet(); parent.addBinding("external", FIRST);
+			var projection = new org.eclipse.rdf4j.query.algebra.Projection(
+					new org.eclipse.rdf4j.query.algebra.SingletonSet(),
+					new org.eclipse.rdf4j.query.algebra.ProjectionElemList(
+							new org.eclipse.rdf4j.query.algebra.ProjectionElem("external")));
+			MapBindingSet parent = new MapBindingSet();
+			parent.addBinding("external", FIRST);
 			var evaluationContext = new org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.Minimal(
 					(org.eclipse.rdf4j.query.Dataset) null);
 			try (var source = new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
 					java.util.List.of(context.queryBase()).iterator());
 					var result = new org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator(projection,
 							source, parent, evaluationContext, java.util.Set.of("external"))) {
-				assertEquals(java.util.List.of(new MapBindingSet()), org.eclipse.rdf4j.query.QueryResults.asList(result),
+				assertEquals(java.util.List.of(new MapBindingSet()),
+						org.eclipse.rdf4j.query.QueryResults.asList(result),
 						"local source authority blocks mapped parent recovery at the real projection boundary");
 			}
 		}
@@ -110,8 +124,10 @@ class NativeProjectionParameterAuthorityTest {
 
 	@Test
 	void requestOnlyMetadataRemainsDistinctWithoutAParameterValue() {
-		MapBindingSet supplied = new MapBindingSet(); supplied.addBinding("external", FIRST);
-		var frame = new org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet(BindingSetOrigin.requestInput(supplied));
+		MapBindingSet supplied = new MapBindingSet();
+		supplied.addBinding("external", FIRST);
+		var frame = new org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet(
+				BindingSetOrigin.requestInput(supplied));
 		frame.removeBinding("external");
 		assertTrue(frame.isEmpty());
 		assertTrue(BindingSetOrigin.of(frame).isRequest("external"));
@@ -129,14 +145,17 @@ class NativeProjectionParameterAuthorityTest {
 	@Test
 	void anEmptyGraphCarrierCannotSupplyAnExcludedPrivateParameter() {
 		var graph = new org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet();
-		var supplied = org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.supply(graph, "privateGraph", FIRST);
+		var supplied = org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.supply(graph, "privateGraph",
+				FIRST);
 		supplied.removeBinding("privateGraph");
 		assertTrue(supplied.isEmpty());
-		assertFalse(org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.isSupplied(supplied, "privateGraph"));
+		assertFalse(org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.isSupplied(supplied,
+				"privateGraph"));
 		try (NativeExecutionContext context = new NativeExecutionContext(QueryExecutionPolicy.DEFAULT)) {
 			context.initializeQueryBase(supplied);
 			assertTrue(context.queryBase().isEmpty());
-			assertFalse(org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.isSupplied(context.queryBase(), "privateGraph"));
+			assertFalse(org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings
+					.isSupplied(context.queryBase(), "privateGraph"));
 			assertEquals(null, context.queryBase().getValue("privateGraph"));
 		}
 	}

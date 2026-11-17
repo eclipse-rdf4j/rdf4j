@@ -61,7 +61,7 @@ class RealEstateOracleFixtureCoverageTest {
 					+ "FILTER(?optRating IN (\"A\", \"B\", \"C\") || !BOUND(?optRating)) "
 					+ "} GROUP BY ?district";
 			QuerySolution belowHaving = rowByUri(select(dataset, q0BeforeHavingProbe), "district",
-				RE + "district/fixture-expensive-stock");
+					RE + "district/fixture-expensive-stock");
 			assertNotNull(belowHaving, "q0's low average witness must reach grouping before HAVING");
 			assertTrue(belowHaving.getLiteral("avgPrice").getDouble() <= 780_000.0);
 			assertFalse(q0.stream().anyMatch(row -> uriIs(row, "district", RE + "district/fixture-expensive-stock")),
@@ -71,7 +71,7 @@ class RealEstateOracleFixtureCoverageTest {
 					+ "OPTIONAL { ?p re:energyRating ?optRating . } "
 					+ "FILTER(?optRating IN (\"A\", \"B\", \"C\") || !BOUND(?optRating)) }";
 			QuerySolution unboundRating = rowByUri(select(dataset, q0RatingProbe), "p",
-				RE + "property/fixture-average-high-unbound");
+					RE + "property/fixture-average-high-unbound");
 			assertNotNull(unboundRating, "q0's OPTIONAL-unbound arm must be exercised");
 			assertFalse(unboundRating.contains("optRating"));
 
@@ -107,18 +107,21 @@ class RealEstateOracleFixtureCoverageTest {
 					+ "FILTER(?price >= 500000) FILTER NOT EXISTS { ?p re:soldDate ?sold . } "
 					+ "OPTIONAL { ?district re:name ?optName . } FILTER(?optName != \"\" || !BOUND(?optName)) }";
 			QuerySolution namedStock = rowByUri(select(dataset, q3NamedProbe), "district",
-				RE + "district/fixture-expensive-stock");
+					RE + "district/fixture-expensive-stock");
 			assertNotNull(namedStock);
 			assertTrue(namedStock.contains("optName"), "q3 must exercise a bound nonempty optional district name");
 			String q3EmptyNameProbe = "PREFIX re: <" + RE + "> SELECT ?p WHERE { "
-					+ "?p a re:Property ; re:inDistrict <" + RE + "district/fixture-expensive-empty-name> ; re:price ?price . "
+					+ "?p a re:Property ; re:inDistrict <" + RE
+					+ "district/fixture-expensive-empty-name> ; re:price ?price . "
 					+ "FILTER(?price >= 500000) FILTER NOT EXISTS { ?p re:soldDate ?sold . } }";
 			assertTrue(select(dataset, q3EmptyNameProbe).size() > 0,
 					"q3 bound-empty-name exclusion needs a real otherwise-eligible property witness");
-			assertFalse(q3.stream().anyMatch(row -> uriIs(row, "district", RE + "district/fixture-expensive-empty-name")),
+			assertFalse(
+					q3.stream().anyMatch(row -> uriIs(row, "district", RE + "district/fixture-expensive-empty-name")),
 					"q3 excludes a qualifying group with a bound empty district name");
 			String q3StockProbe = "PREFIX re: <" + RE + "> SELECT ?p WHERE { "
-					+ "?p a re:Property ; re:inDistrict <" + RE + "district/fixture-expensive-stock> ; re:price ?price . "
+					+ "?p a re:Property ; re:inDistrict <" + RE
+					+ "district/fixture-expensive-stock> ; re:price ?price . "
 					+ "FILTER(?price >= 500000) FILTER NOT EXISTS { ?p re:soldDate ?sold . } "
 					+ "OPTIONAL { <" + RE + "district/fixture-expensive-stock> re:name ?optName . } "
 					+ "FILTER(?optName != \"\" || !BOUND(?optName)) }";
@@ -153,7 +156,8 @@ class RealEstateOracleFixtureCoverageTest {
 			List<QuerySolution> q6 = select(dataset, ThemeQueryCatalog.queryFor(Theme.REAL_ESTATE, 6));
 			assertEquals(2, q6.get(0).getLiteral("count").getLong());
 			String q6Probe = "PREFIX re: <" + RE + "> SELECT ?viewing ?agent WHERE { "
-					+ "?viewing re:viewingOf/re:inDistrict <" + RE + "district/fixture-viewing-district> ; re:byAgent ?agent . "
+					+ "?viewing re:viewingOf/re:inDistrict <" + RE
+					+ "district/fixture-viewing-district> ; re:byAgent ?agent . "
 					+ "FILTER EXISTS { ?agent re:worksIn <" + RE + "district/fixture-viewing-district> . } "
 					+ "OPTIONAL { ?agent re:phone ?optPhone . } FILTER(?optPhone != \"\" || !BOUND(?optPhone)) }";
 			List<QuerySolution> q6Matches = select(dataset, q6Probe);
@@ -189,14 +193,15 @@ class RealEstateOracleFixtureCoverageTest {
 			assertEquals(2, q9Rows.stream().map(row -> row.getResource("offer").getURI()).distinct().count());
 			assertTrue(q9Rows.stream().allMatch(row -> row.contains("optName")),
 					"q9's named-district OPTIONAL binds its label");
-			assertTrue(q9Rows.stream().allMatch(row -> "Offer count district".equals(row.getLiteral("optName").getString())));
+			assertTrue(q9Rows.stream()
+					.allMatch(row -> "Offer count district".equals(row.getLiteral("optName").getString())));
 			String q9UnboundProbe = "PREFIX re: <" + RE + "> SELECT ?district ?optDistrictName WHERE { "
 					+ "?p a re:Property ; re:inDistrict ?district . ?offer re:offerFor ?p ; re:amount ?amount . "
 					+ "FILTER(?amount > 350000 || ?amount < 100000) "
 					+ "OPTIONAL { ?district re:name ?optDistrictName . } FILTER(?district = <"
 					+ RE + "district/fixture-offer-count-unnamed-district>) }";
 			QuerySolution unnamedOfferDistrict = rowByUri(select(dataset, q9UnboundProbe), "district",
-				RE + "district/fixture-offer-count-unnamed-district");
+					RE + "district/fixture-offer-count-unnamed-district");
 			assertNotNull(unnamedOfferDistrict);
 			assertFalse(unnamedOfferDistrict.contains("optDistrictName"),
 					"q9 keeps a real unbound district-name control");
@@ -205,7 +210,7 @@ class RealEstateOracleFixtureCoverageTest {
 					+ "FILTER(?amount > 350000 || ?amount < 100000) "
 					+ "OPTIONAL { ?district re:name ?optDistrictName . } }";
 			QuerySolution namedOfferDistrict = rowByUri(select(dataset, q9NamedProbe), "district",
-				RE + "district/fixture-offer-count-district");
+					RE + "district/fixture-offer-count-district");
 			assertNotNull(namedOfferDistrict);
 			assertTrue(namedOfferDistrict.contains("optDistrictName"),
 					"q9 must produce a bound optDistrictName as well as an unbound control");
@@ -237,10 +242,12 @@ class RealEstateOracleFixtureCoverageTest {
 			assertEquals(4, fullDossier.size(), "q11 preserves the two-viewing by two-offer cross-product");
 			assertEquals(4, fullDossier.stream()
 					.map(row -> row.getResource("viewing").getURI() + "|" + row.getResource("offer").getURI())
-					.distinct().count(), "q11 must retain all four distinct viewing/offer combinations");
-			assertTrue(fullDossier.stream().anyMatch(row -> row.contains("price") && row.contains("floorArea")
-					&& row.contains("agentName") && row.contains("agentPhone") && row.contains("viewing")
-					&& row.contains("feedbackScore") && row.contains("offer") && row.contains("offerAmount")),
+					.distinct()
+					.count(), "q11 must retain all four distinct viewing/offer combinations");
+			assertTrue(fullDossier.stream()
+					.anyMatch(row -> row.contains("price") && row.contains("floorArea")
+							&& row.contains("agentName") && row.contains("agentPhone") && row.contains("viewing")
+							&& row.contains("feedbackScore") && row.contains("offer") && row.contains("offerAmount")),
 					"q11 must produce a fully bound viewing/offer cross-product row");
 			QuerySolution partial = rowByUri(q11, "root", RE + "property/fixture-dossier-partial");
 			assertNotNull(partial);
@@ -283,7 +290,8 @@ class RealEstateOracleFixtureCoverageTest {
 		var jenaModel = dataset.getDefaultModel();
 		for (org.eclipse.rdf4j.model.Statement statement : RealEstateOracleFixtureProfile.generate()) {
 			jenaModel.add(resource(jenaModel, statement.getSubject()),
-					jenaModel.createProperty(statement.getPredicate().stringValue()), rdfNode(jenaModel, statement.getObject()));
+					jenaModel.createProperty(statement.getPredicate().stringValue()),
+					rdfNode(jenaModel, statement.getObject()));
 		}
 		dataset.commit();
 		dataset.end();

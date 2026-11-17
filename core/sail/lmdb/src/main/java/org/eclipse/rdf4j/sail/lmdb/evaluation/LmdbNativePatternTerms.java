@@ -88,9 +88,15 @@ final class Term {
 
 	/** Tests an original entry constraint without confusing a preserved output with its fixed scan field. */
 	boolean matchesEntryField(long current, long actual) {
-		if (isConstant() && constant != actual) { return false; }
-		if (!hasSlot() || isConstant() && !bindConstant || current == UNKNOWN) { return true; }
-		if (readOnly && current == 0L) { return true; }
+		if (isConstant() && constant != actual) {
+			return false;
+		}
+		if (!hasSlot() || isConstant() && !bindConstant || current == UNKNOWN) {
+			return true;
+		}
+		if (readOnly && current == 0L) {
+			return true;
+		}
 		return preserveExisting ? current != 0L : current == actual;
 	}
 

@@ -38,9 +38,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
-import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.junit.jupiter.api.Test;
@@ -84,7 +84,8 @@ class LmdbLearnedFilterSurfaceTest {
 				assertEquals(100L, generalized.getEvidenceCount());
 			}
 
-			EvaluationStatistics.FilterPassEstimate unbound = store.getBackingStore().getEvaluationStatistics()
+			EvaluationStatistics.FilterPassEstimate unbound = store.getBackingStore()
+					.getEvaluationStatistics()
 					.estimateFilterPass(filter("6"));
 			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, unbound.getSource(),
 					"an unbound statistics reader cannot consume current-owner feedback");
@@ -105,7 +106,8 @@ class LmdbLearnedFilterSurfaceTest {
 		LmdbStore reader = initializedStore(dataDir);
 		try {
 			try (PlanningStatisticsRead read = openPlanningStatistics(reader)) {
-				LmdbLearnedFilterEvidence evidence = read.statistics().estimatorRuntime()
+				LmdbLearnedFilterEvidence evidence = read.statistics()
+						.estimatorRuntime()
 						.learnedFilterEvidence(filter("6"));
 				assertNotNull(evidence, "the persisted learned template is present in the raw surface");
 				assertTrue(evidence.generalized());
@@ -117,7 +119,8 @@ class LmdbLearnedFilterSurfaceTest {
 				assertEquals(0.2d, estimate.getPassRatio(), 0.000_001d);
 				assertEquals(100L, estimate.getEvidenceCount());
 			}
-			EvaluationStatistics.FilterPassEstimate unbound = reader.getBackingStore().getEvaluationStatistics()
+			EvaluationStatistics.FilterPassEstimate unbound = reader.getBackingStore()
+					.getEvaluationStatistics()
 					.estimateFilterPass(filter("6"));
 			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, unbound.getSource(),
 					"an unbound statistics reader cannot consume persisted adaptive evidence");
@@ -238,7 +241,8 @@ class LmdbLearnedFilterSurfaceTest {
 		LmdbStore adaptiveReader = initializedStore(dataDir);
 		try {
 			try (PlanningStatisticsRead read = openPlanningStatistics(adaptiveReader)) {
-				LmdbLearnedFilterEvidence persisted = read.statistics().estimatorRuntime()
+				LmdbLearnedFilterEvidence persisted = read.statistics()
+						.estimatorRuntime()
 						.learnedFilterEvidence(filter("6"));
 				assertNotNull(persisted, "the adaptive sidecar contains evidence before the snapshot-only check");
 				assertTrue(persisted.generalized());
@@ -256,8 +260,8 @@ class LmdbLearnedFilterSurfaceTest {
 		try {
 			try (PlanningStatisticsRead read = openPlanningStatistics(snapshotOnly)) {
 				LmdbEvaluationStatistics statistics = read.statistics();
-			assertFalse(statistics.estimatorRuntime().adaptiveEvidenceAllowed(),
-					"snapshot-only policy must disable adaptive evidence before the lookup");
+				assertFalse(statistics.estimatorRuntime().adaptiveEvidenceAllowed(),
+						"snapshot-only policy must disable adaptive evidence before the lookup");
 				statistics.getCardinality(filter("6"));
 				EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter("6"));
 				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, estimate.getSource());
@@ -366,8 +370,9 @@ class LmdbLearnedFilterSurfaceTest {
 			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
 			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
 			try {
-				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
-						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime()
+						.pinQueryPlanningReads(
+								borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
 				try {
 					statistics.bindExecutionSource(source, null);
 					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority(),

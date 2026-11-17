@@ -146,7 +146,8 @@ class TupleFunctionResultVariableSemanticsTest {
 		assertTrue(resultOrigin.isRequest("payload"));
 		assertTrue(resultOrigin.isLocal("local"));
 		assertTrue(GraphFrameBindings.isSupplied(result, "privateGraph"));
-		assertSame(privateGraph, GraphFrameBindings.from(result).retainedParametersForTransport()
+		assertSame(privateGraph, GraphFrameBindings.from(result)
+				.retainedParametersForTransport()
 				.get("privateGraph"));
 		assertThat(function.closes).hasValue(1);
 	}
@@ -381,7 +382,8 @@ class TupleFunctionResultVariableSemanticsTest {
 		assertThat(resultOrigin.parameterValue("request")).isNull();
 		assertThat(resultOrigin.parameterValue("local")).isNull();
 		assertTrue(GraphFrameBindings.isSupplied(result, "privateGraph"));
-		assertSame(privateGraph, GraphFrameBindings.from(result).retainedParametersForTransport()
+		assertSame(privateGraph, GraphFrameBindings.from(result)
+				.retainedParametersForTransport()
 				.get("privateGraph"));
 		assertThat(function.closes).hasValue(1);
 	}

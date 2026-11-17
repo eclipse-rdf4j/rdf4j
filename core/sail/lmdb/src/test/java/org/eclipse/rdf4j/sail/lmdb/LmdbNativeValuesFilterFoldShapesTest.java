@@ -148,7 +148,8 @@ class LmdbNativeValuesFilterFoldShapesTest {
 				.containsExactlyElementsOf(expected);
 		String planned = explain(query);
 		String telemetry = explain(lmdbRepository, Explanation.Level.Telemetry, query);
-		assertThat(telemetry).as("the matching bag above must come from actual LMDB execution; planned diagnostics:\n" + planned)
+		assertThat(telemetry)
+				.as("the matching bag above must come from actual LMDB execution; planned diagnostics:\n" + planned)
 				.startsWith("LMDB native physical plan (executed)")
 				.contains("nativeExecutionPath=");
 	}

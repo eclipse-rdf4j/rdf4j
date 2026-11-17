@@ -54,8 +54,11 @@ class LmdbRetirementLivenessRegressionTest {
 		String key = "rdf4j.lmdb.valueGc.drainBatchSize";
 		String previous = System.getProperty(key);
 		System.setProperty(key, "2");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true).setInlineLiterals(false)
-				.setSketchEstimatorEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setInlineLiterals(false)
+				.setSketchEstimatorEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		ProbeStore store = new ProbeStore(directory, config);
 		SailRepository repository = new SailRepository(store);
 		ExecutorService writer = Executors.newSingleThreadExecutor();
@@ -90,7 +93,8 @@ class LmdbRetirementLivenessRegressionTest {
 				ids.add(id);
 			}
 			LmdbSailStore backing = store.getBackingStore();
-			try (LmdbSailStore.DatasetAdmission old = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+			try (LmdbSailStore.DatasetAdmission old = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+					null)) {
 				writer.submit(() -> {
 					try (var connection = repository.getConnection()) {
 						connection.begin(IsolationLevels.NONE);
@@ -154,8 +158,11 @@ class LmdbRetirementLivenessRegressionTest {
 
 	private static void verifyConcurrentWriterExclusion(Path directory, boolean explicitRecovery) throws Exception {
 		String indexes = explicitRecovery ? "spoc,posc,ospc" : "spoc,posc";
-		LmdbStoreConfig config = new LmdbStoreConfig(indexes).setForceSync(true).setInlineLiterals(false)
-				.setSketchEstimatorEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+		LmdbStoreConfig config = new LmdbStoreConfig(indexes).setForceSync(true)
+				.setInlineLiterals(false)
+				.setSketchEstimatorEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		ProbeStore store = new ProbeStore(directory, config);
 		SailRepository repository = new SailRepository(store);
 		ExecutorService removingWriter = Executors.newSingleThreadExecutor();
@@ -180,7 +187,8 @@ class LmdbRetirementLivenessRegressionTest {
 			long subjectId = values.getId(subject);
 			assertTrue(subjectId != LmdbValue.UNKNOWN_ID);
 			LmdbSailStore backing = store.getBackingStore();
-			try (LmdbSailStore.DatasetAdmission old = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+			try (LmdbSailStore.DatasetAdmission old = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+					null)) {
 				removingWriter.submit(() -> {
 					try (var connection = repository.getConnection()) {
 						connection.begin(IsolationLevels.NONE);

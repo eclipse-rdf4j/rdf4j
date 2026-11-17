@@ -25,6 +25,7 @@ import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -40,7 +41,6 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
-import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -105,10 +105,12 @@ class LmdbNativeRangeOrderWorkPublicTest {
 				Join logical = new Join(new Join(new Join(pattern(vf, "patient", "hasEncounter", "enc"),
 						pattern(vf, "enc", "hasObservation", "obs")),
 						new StatementPattern(Var.of("patient"), constant(vf, "_type", "type"),
-								constant(vf, "_class", "Patient"))), pattern(vf, "obs", "value", "value"));
+								constant(vf, "_class", "Patient"))),
+						pattern(vf, "obs", "value", "value"));
 				SlotPlan compiled = compiler.compileTuple(new Filter(logical,
 						new Compare(Var.of("value"), new ValueConstant(vf.createLiteral(60)),
-								Compare.CompareOp.GT)), false);
+								Compare.CompareOp.GT)),
+						false);
 				assertTrue(compiled instanceof MultiJoinPlan, "SETUP: actual range compilation admits four patterns");
 				MultiJoinPlan incumbent = (MultiJoinPlan) compiled;
 				compiler.layout.freeze(compiler.slotNames);
@@ -132,7 +134,8 @@ class LmdbNativeRangeOrderWorkPublicTest {
 				assertTrue(((PatternPlan) candidate[1]).canCommuteWith(candidate[2])
 						&& ((PatternPlan) candidate[2]).canCommuteWith(candidate[1]));
 				assertTrue(((PatternPlan) candidate[0]).range != null);
-				assertEquals(source.idOf(vf.createIRI("urn:range-order:value")), ((PatternPlan) candidate[0]).p.constant);
+				assertEquals(source.idOf(vf.createIRI("urn:range-order:value")),
+						((PatternPlan) candidate[0]).p.constant);
 				Object idSpace = source.idSpace();
 				Component first = component("V-E-H-T", incumbent, row);
 				Component second = component("V-H-E-T", new MultiJoinPlan(candidate, incumbent.filters), row);
@@ -147,7 +150,8 @@ class LmdbNativeRangeOrderWorkPublicTest {
 						"physicalCounterCoverage", "PARTIAL_UNPROVEN_NOT_EVERY_SELECTED_ACCESS",
 						"lowerObservedPhysicalRows", first.work.hasUncensoredPhysicalReceipts()
 								&& second.work.hasUncensoredPhysicalReceipts()
-								? second.work.physicalScanned < first.work.physicalScanned : null,
+										? second.work.physicalScanned < first.work.physicalScanned
+										: null,
 						"lowerSelectedAccessCalls", second.work.selectedCalls < first.work.selectedCalls,
 						"classification", "COMPONENT_CURSOR_ONLY_NOT_GENERATED_KERNEL_OR_PUBLIC_WINNER"));
 			}
@@ -197,7 +201,8 @@ class LmdbNativeRangeOrderWorkPublicTest {
 					assertEquals(1L, nativeCount.rows);
 					assertEquals(5L, nativeCount.countValue);
 					emit(map("case", "public-owner-config", "includeInferred", true, "plane", "BOTH_PUBLIC_ENTRY",
-							"strict", true, "experimentalPolicy", store.getQueryExecutionPolicy().experimentalQueryOptimizations(),
+							"strict", true, "experimentalPolicy",
+							store.getQueryExecutionPolicy().experimentalQueryOptimizations(),
 							"nativeEnabled", store.isNativeQueryEngineEnabled(), "directReadiness",
 							store.getDirectAdjacencyReadinessDescription(), "incomingBindings", List.of(),
 							"privateSourceSlotFrameFields", "UNEXPOSED_BY_PUBLIC_API_NOT_INFERRED_FROM_COMPONENT",
@@ -217,7 +222,8 @@ class LmdbNativeRangeOrderWorkPublicTest {
 
 	private static LmdbStore nativeStore(Path path) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyEnabled(true).setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		config.setExperimentalQueryOptimizations(true);
 		return new LmdbStore(path.toFile(), config);
@@ -237,7 +243,8 @@ class LmdbNativeRangeOrderWorkPublicTest {
 				for (int item = 0; item < 2; item++) {
 					IRI o = vf.createIRI("urn:range-order:observation:" + patient + ":" + item);
 					connection.add(e, vf.createIRI("urn:range-order:hasObservation"), o, graph);
-					connection.add(o, vf.createIRI("urn:range-order:value"), vf.createLiteral(61 + patient * 2 + item), graph);
+					connection.add(o, vf.createIRI("urn:range-order:value"), vf.createLiteral(61 + patient * 2 + item),
+							graph);
 				}
 			}
 			connection.commit();
@@ -249,13 +256,16 @@ class LmdbNativeRangeOrderWorkPublicTest {
 		IRI p = vf.createIRI("urn:range-order:patient:" + patient);
 		IRI e = vf.createIRI("urn:range-order:encounter:" + patient);
 		connection.begin();
-		connection.addInferredStatement(p, vf.createIRI("urn:range-order:type"), vf.createIRI("urn:range-order:Patient"), graph);
-		connection.addInferredStatement(p, vf.createIRI("urn:range-order:name"), vf.createLiteral("person " + patient), graph);
+		connection.addInferredStatement(p, vf.createIRI("urn:range-order:type"),
+				vf.createIRI("urn:range-order:Patient"), graph);
+		connection.addInferredStatement(p, vf.createIRI("urn:range-order:name"), vf.createLiteral("person " + patient),
+				graph);
 		connection.addInferredStatement(p, vf.createIRI("urn:range-order:hasEncounter"), e, graph);
 		for (int item = 0; item < 2; item++) {
 			IRI o = vf.createIRI("urn:range-order:observation:" + patient + ":" + item);
 			connection.addInferredStatement(e, vf.createIRI("urn:range-order:hasObservation"), o, graph);
-			connection.addInferredStatement(o, vf.createIRI("urn:range-order:value"), vf.createLiteral(61 + patient * 2 + item), graph);
+			connection.addInferredStatement(o, vf.createIRI("urn:range-order:value"),
+					vf.createLiteral(61 + patient * 2 + item), graph);
 		}
 		connection.commit();
 	}
@@ -285,7 +295,8 @@ class LmdbNativeRangeOrderWorkPublicTest {
 			invocation.complete();
 			row.probeWorkObserver = null;
 			row.runtimePlan = null;
-			emit(map("case", label, "classification", "EXPLICIT_COMPONENT_CURSOR", "boundMaskAfterClose", row.boundMask(),
+			emit(map("case", label, "classification", "EXPLICIT_COMPONENT_CURSOR", "boundMaskAfterClose",
+					row.boundMask(),
 					"rows", rows, "fullBag", bag, "work", work.receipt(), "actualRuntimePlan",
 					target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN)));
 		}
@@ -314,8 +325,10 @@ class LmdbNativeRangeOrderWorkPublicTest {
 				bag.merge(json(mapping), 1L, Long::sum);
 				BindingSetOrigin origin = BindingSetOrigin.of(row);
 				metadata.add(map("domain", new TreeSet<>(row.getBindingNames()), "tracked",
-						BindingSetOrigin.isTrackedInput(row), "local", origin.localNames(), "request", origin.requestNames(),
-						"retained", origin.retainedNamesForTransport(() -> { }), "parameters", origin.retainedParametersForTransport()));
+						BindingSetOrigin.isTrackedInput(row), "local", origin.localNames(), "request",
+						origin.requestNames(),
+						"retained", origin.retainedNamesForTransport(() -> {
+						}), "parameters", origin.retainedParametersForTransport()));
 				if (row.hasBinding("count")) {
 					count = ((Literal) row.getValue("count")).longValue();
 				}
@@ -336,7 +349,8 @@ class LmdbNativeRangeOrderWorkPublicTest {
 		List<String> paths = new ArrayList<>();
 		actualNodes(explanation.toGenericPlanNode(), "root", nodes, paths);
 		emit(map("case", label, "separateFromBagAndOtherTelemetry", true, "actualExplanationJSON", explanation.toJson(),
-				"actualEvaluatedAlgebra", String.valueOf(explanation.tupleExpr()), "nodes", nodes, "actualNativePaths", paths,
+				"actualEvaluatedAlgebra", String.valueOf(explanation.tupleExpr()), "nodes", nodes, "actualNativePaths",
+				paths,
 				"nativePathAvailability", paths.isEmpty() ? "UNEXPOSED_OR_NOT_SELECTED" : "ACTUAL_PATH_PRESENT",
 				"privateOwnerFields", "UNEXPOSED_NOT_INFERRED_FROM_COMPONENT"));
 		assertNoTimeout(explanation.toGenericPlanNode());
@@ -376,16 +390,22 @@ class LmdbNativeRangeOrderWorkPublicTest {
 	}
 
 	private static Object term(Value value) {
-		if (value == null) return map("state", "PRESENT_NULL");
-		if (value instanceof IRI iri) return map("kind", "IRI", "lexical", iri.stringValue());
-		if (value instanceof Literal literal) return map("kind", "LITERAL", "lexical", literal.getLabel(),
-				"datatype", literal.getDatatype().stringValue(), "language", literal.getLanguage().orElse(null),
-				"direction", literal.getBaseDirection().name());
+		if (value == null)
+			return map("state", "PRESENT_NULL");
+		if (value instanceof IRI iri)
+			return map("kind", "IRI", "lexical", iri.stringValue());
+		if (value instanceof Literal literal)
+			return map("kind", "LITERAL", "lexical", literal.getLabel(),
+					"datatype", literal.getDatatype().stringValue(), "language", literal.getLanguage().orElse(null),
+					"direction", literal.getBaseDirection().name());
 		throw new AssertionError("fixture emitted unsupported RDF term kind: " + value.getClass().getName());
 	}
 
-	private record Component(Map<String, Long> bag, long rows, Work work) { }
-	private record Bag(Map<String, Long> bag, long rows, long countValue) { }
+	private record Component(Map<String, Long> bag, long rows, Work work) {
+	}
+
+	private record Bag(Map<String, Long> bag, long rows, long countValue) {
+	}
 
 	private static final class Work implements NativeLmdbQuerySource.AdjacencyAccessObserver {
 		long selectedCalls;
@@ -414,8 +434,10 @@ class LmdbNativeRangeOrderWorkPublicTest {
 			if (physicalScanCount) {
 				physicalScanned = Math.addExact(physicalScanned, scanned);
 				physicalMeasurements++;
-			} else returnedRowMeasurements++;
-			if (censored) censoredMeasurements++;
+			} else
+				returnedRowMeasurements++;
+			if (censored)
+				censoredMeasurements++;
 			events.add(map("kind", "MEASUREMENT", "adjacency", adjacency, "scanned", scanned, "matched", matched,
 					"filtered", filtered, "censored", censored, "physicalScanCount", physicalScanCount));
 		}
@@ -440,7 +462,8 @@ class LmdbNativeRangeOrderWorkPublicTest {
 
 	private static Map<String, Object> map(Object... values) {
 		Map<String, Object> result = new LinkedHashMap<>();
-		for (int i = 0; i < values.length; i += 2) result.put((String) values[i], values[i + 1]);
+		for (int i = 0; i < values.length; i += 2)
+			result.put((String) values[i], values[i + 1]);
 		return result;
 	}
 
@@ -449,19 +472,27 @@ class LmdbNativeRangeOrderWorkPublicTest {
 	}
 
 	private static String json(Object value) {
-		if (value == null) return "null";
-		if (value instanceof Number || value instanceof Boolean) return value.toString();
+		if (value == null)
+			return "null";
+		if (value instanceof Number || value instanceof Boolean)
+			return value.toString();
 		if (value instanceof Map<?, ?> map) {
 			List<String> entries = new ArrayList<>();
-			for (var entry : map.entrySet()) entries.add(json(String.valueOf(entry.getKey())) + ":" + json(entry.getValue()));
+			for (var entry : map.entrySet())
+				entries.add(json(String.valueOf(entry.getKey())) + ":" + json(entry.getValue()));
 			return "{" + String.join(",", entries) + "}";
 		}
 		if (value instanceof Iterable<?> entries) {
 			List<String> result = new ArrayList<>();
-			for (Object entry : entries) result.add(json(entry));
+			for (Object entry : entries)
+				result.add(json(entry));
 			return "[" + String.join(",", result) + "]";
 		}
-		return "\"" + value.toString().replace("\\", "\\\\").replace("\"", "\\\"")
-				.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
+		return "\"" + value.toString()
+				.replace("\\", "\\\\")
+				.replace("\"", "\\\"")
+				.replace("\n", "\\n")
+				.replace("\r", "\\r")
+				.replace("\t", "\\t") + "\"";
 	}
 }

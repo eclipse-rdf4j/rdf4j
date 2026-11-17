@@ -117,9 +117,9 @@ class LmdbPreparedSparseBindingContinuationTest {
 			@Override
 			public void meet(Join join) {
 				if ("dependent-iteration".equals(join.getStringMetricPlanned("optimizer.physicalJoinImplementation"))
-						&& join.getLeftArg()instanceof Filter prefix
+						&& join.getLeftArg() instanceof Filter prefix
 						&& "not-exists".equals(prefix.getStringMetricPlanned("optimizer.semiAntiKind"))
-						&& join.getRightArg()instanceof StatementPattern member
+						&& join.getRightArg() instanceof StatementPattern member
 						&& member.getPredicateVar().hasValue()
 						&& MEMBER.equals(member.getPredicateVar().getValue().stringValue())
 						&& "prefix-extension".equals(member.getStringMetricPlanned("optimizer.costEventPhase"))
@@ -198,7 +198,7 @@ class LmdbPreparedSparseBindingContinuationTest {
 			@Override
 			public void meet(Extension extension) {
 				for (var element : extension.getElements()) {
-					if (element.getExpr()instanceof Var variable && !variable.hasValue()
+					if (element.getExpr() instanceof Var variable && !variable.hasValue()
 							&& extension.getArg().getAssuredBindingNames().contains(variable.getName())
 							&& !extension.getArg().getBindingNames().contains(element.getName())) {
 						result.add(element.getName());

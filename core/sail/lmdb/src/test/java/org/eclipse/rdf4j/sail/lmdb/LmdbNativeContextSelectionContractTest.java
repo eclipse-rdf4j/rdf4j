@@ -44,11 +44,10 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -60,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
@@ -130,7 +130,8 @@ class LmdbNativeContextSelectionContractTest {
 						assertTrue(presentNull.hasBinding("g"), "an actual present-null context marker");
 						assertEquals(Set.of("g"), presentNull.getBindingNames(), "the actual input domain includes g");
 						assertNull(presentNull.getValue("g"), "the present context marker's value is null");
-						comparePresentNullQueryEntry(fixture, read, input, selected, presentNull, "present-null QueryBindingSet " + scope,
+						comparePresentNullQueryEntry(fixture, read, input, selected, presentNull,
+								"present-null QueryBindingSet " + scope,
 								checks);
 						for (Resource value : new Resource[] { RDF4J.NIL, SESAME.NIL, G, BLANK, MISSING }) {
 							MapBindingSet bindings = new MapBindingSet();
@@ -258,7 +259,8 @@ class LmdbNativeContextSelectionContractTest {
 							count.addGroupElement(new GroupElem("n", new Count(null)));
 							compare(fixture, read, count, selected, EmptyBindingSet.getInstance(),
 									"raw fixed context COUNT " + scope + ";" + value, checks);
-							ZeroLengthPath zero = new ZeroLengthPath(scope, Var.of("s"), Var.of("o"), Var.of("g", value));
+							ZeroLengthPath zero = new ZeroLengthPath(scope, Var.of("s"), Var.of("o"),
+									Var.of("g", value));
 							compare(fixture, read, zero, selected, EmptyBindingSet.getInstance(),
 									"raw fixed context zero-length " + scope + ";" + value, checks);
 						}
@@ -268,11 +270,14 @@ class LmdbNativeContextSelectionContractTest {
 							"SELECT (COUNT(*) AS ?n) WHERE { GRAPH <" + RDF4J.NIL + "> { ?s a <" + TYPE + "> } }",
 							"SELECT * WHERE { ?s <" + RDF.TYPE + ">* ?o }",
 							"SELECT * WHERE { GRAPH <" + RDF4J.NIL + "> { ?s <" + RDF.TYPE + ">* ?o } }",
-							"SELECT * WHERE { VALUES ?g { <" + RDF4J.NIL + "> UNDEF } GRAPH ?g { ?s a <" + TYPE + "> } }",
-							"SELECT * WHERE { VALUES ?g { <" + G + "> UNDEF } OPTIONAL { GRAPH ?g { ?s a <" + TYPE + "> } } }",
+							"SELECT * WHERE { VALUES ?g { <" + RDF4J.NIL + "> UNDEF } GRAPH ?g { ?s a <" + TYPE
+									+ "> } }",
+							"SELECT * WHERE { VALUES ?g { <" + G + "> UNDEF } OPTIONAL { GRAPH ?g { ?s a <" + TYPE
+									+ "> } } }",
 							"SELECT * WHERE { { GRAPH <" + G + "> { ?s a <" + TYPE + "> } } UNION { GRAPH <"
 									+ RDF4J.NIL + "> { ?s a <" + TYPE + "> } } }" }) {
-						TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+						TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+								.getTupleExpr();
 						compare(fixture, read, input, selected, EmptyBindingSet.getInstance(), query, checks);
 					}
 				}
@@ -302,12 +307,14 @@ class LmdbNativeContextSelectionContractTest {
 								Var pathGraph = withContext ? Var.of("g", G, false, true) : null;
 								StatementPattern step = new StatementPattern(scope, Var.of("s"), Var.of("p", RDF.TYPE),
 										Var.of("o"), pathGraph == null ? null : pathGraph.clone());
-								ArbitraryLengthPath path = new ArbitraryLengthPath(scope, Var.of("s"), step, Var.of("o"),
+								ArbitraryLengthPath path = new ArbitraryLengthPath(scope, Var.of("s"), step,
+										Var.of("o"),
 										pathGraph, minimum);
 								assertEquals(scope, path.getScope());
 								assertEquals(withContext, path.getContextVar() != null);
 								compare(fixture, read, path, selected, EmptyBindingSet.getInstance(),
-										"declared arbitrary scope=" + scope + ";context=" + withContext + ";min=" + minimum,
+										"declared arbitrary scope=" + scope + ";context=" + withContext + ";min="
+												+ minimum,
 										checks);
 							}
 						}
@@ -347,14 +354,17 @@ class LmdbNativeContextSelectionContractTest {
 								} else if (scope == StatementPattern.Scope.DEFAULT_CONTEXTS && index == 4) {
 									expected.put(Map.of("o", MISSING), 1L);
 								}
-								String label = "empty graph zero scope=" + scope + ";context=" + withContext + ";endpoints=" + index;
+								String label = "empty graph zero scope=" + scope + ";context=" + withContext
+										+ ";endpoints=" + index;
 								if (index != 3 || selected.getDefaultGraphResources().isEmpty()
 										&& selected.getNamedGraphResources().isEmpty()) {
-									assertEquals(expected, publicBag(fixture.oracle, zero, selected, EmptyBindingSet.getInstance()),
+									assertEquals(expected,
+											publicBag(fixture.oracle, zero, selected, EmptyBindingSet.getInstance()),
 											"independent ordinary zero-length owner: " + label);
 								}
 								// Both-free enumeration in the ordinary owner has its own context-presence frame.
-								// Compare its complete real bag; an empty declared-scope set is not an empty-output oracle.
+								// Compare its complete real bag; an empty declared-scope set is not an empty-output
+								// oracle.
 								compare(fixture, read, zero, selected, EmptyBindingSet.getInstance(), label, checks);
 							}
 						}
@@ -445,7 +455,8 @@ class LmdbNativeContextSelectionContractTest {
 					assertEquals(StatementPattern.Scope.DEFAULT_CONTEXTS, path.getScope());
 					assertNull(path.getContextVar());
 					StatementPattern step = (StatementPattern) path.getPathExpression();
-					assertTrue(step.getPredicateVar().isConstant(), "a real fast-path-eligible constant predicate role");
+					assertTrue(step.getPredicateVar().isConstant(),
+							"a real fast-path-eligible constant predicate role");
 					assertEquals(stepScope, step.getScope());
 					Map<Map<String, Value>, Long> expected = new HashMap<>();
 					if (minimum == 0L) {
@@ -466,8 +477,9 @@ class LmdbNativeContextSelectionContractTest {
 							"independent full ordinary path bag: " + label);
 					compare(fixture, read, input, null, EmptyBindingSet.getInstance(), label, checks);
 					try (var connection = fixture.repository.getConnection()) {
-						Explanation receipt = connection.getSailConnection().explain(Explanation.Level.Telemetry,
-								root(input), null, EmptyBindingSet.getInstance(), false, 10);
+						Explanation receipt = connection.getSailConnection()
+								.explain(Explanation.Level.Telemetry,
+										root(input), null, EmptyBindingSet.getInstance(), false, 10);
 						TupleExpr executed = (TupleExpr) receipt.tupleExpr();
 						System.out.println("ALP-SELECTOR-RECEIPT native=" + nativeEvaluation + ";" + label
 								+ ";rootPath=" + executed.getStringMetricActual("nativeExecutionPath")
@@ -509,7 +521,8 @@ class LmdbNativeContextSelectionContractTest {
 							for (int shape = 0; shape < 4; shape++) {
 								ArbitraryLengthPath path = selectorPath(outerScope, outerGraph, childScope, childGraph,
 										minimum, shape);
-								String label = "outer/step selector recipe=" + recipe + ";shape=" + shape + ";min=" + minimum;
+								String label = "outer/step selector recipe=" + recipe + ";shape=" + shape + ";min="
+										+ minimum;
 								compare(fixture, read, path, selected, EmptyBindingSet.getInstance(), label, checks);
 								compare(fixture, read, pathProjection(path), selected, EmptyBindingSet.getInstance(),
 										"projected " + label, checks);

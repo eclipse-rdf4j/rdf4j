@@ -130,7 +130,8 @@ class PackedPlanningDeadlineOverrunTest {
 		long grace = 5L;
 		// Bounded by work, not run to completion: a search in which nothing is priced ends in the correlated
 		// lattice's unreachable-target failure, which is not what this test is about.
-		Planned longer = plan(filteredChain(), NO_DEADLINE, LONG_GRACE, neverPricedModel(), (int) (deadlineAt + grace + 1));
+		Planned longer = plan(filteredChain(), NO_DEADLINE, LONG_GRACE, neverPricedModel(),
+				(int) (deadlineAt + grace + 1));
 		assertTrue(longer.searchWork() > deadlineAt + grace, "fixture: the search outlasts the grace");
 
 		Planned planned = plan(filteredChain(), deadlineAt, grace, neverPricedModel(), 10_000);

@@ -85,7 +85,8 @@ final class LmdbNativePackedAlgebraAggregate {
 			results = collect(plan, row, groupSlots, aggregates, owner, true);
 		} else {
 			NativeFilterLease lease = new NativeFilterLease(owner.filterAttempt == null
-					? NativeFilterLease.parentOf(row) : owner.filterAttempt);
+					? NativeFilterLease.parentOf(row)
+					: owner.filterAttempt);
 			try {
 				SlotPlan attempt = lease.borrow(plan);
 				results = allowParallel ? LmdbNativePackedMorsels.tryAggregate(attempt, row, groupSlots, aggregates,

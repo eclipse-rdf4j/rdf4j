@@ -1426,27 +1426,28 @@ public class SnapshotSailStoreTest {
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		CountDownLatch releaseTimeoutThread = new CountDownLatch(1);
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
-		when(strategy.precompileFinalTupleResult(any(TupleExpr.class))).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
-			@Override
-			public boolean hasNext() {
-				evaluationStarted.countDown();
-				try {
-					releaseEvaluation.await();
-					return false;
-				} catch (InterruptedException interrupted) {
-					throw new IllegalStateException("evaluation observed the timeout interrupt", interrupted);
-				}
-			}
+		when(strategy.precompileFinalTupleResult(any(TupleExpr.class)))
+				.thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+					@Override
+					public boolean hasNext() {
+						evaluationStarted.countDown();
+						try {
+							releaseEvaluation.await();
+							return false;
+						} catch (InterruptedException interrupted) {
+							throw new IllegalStateException("evaluation observed the timeout interrupt", interrupted);
+						}
+					}
 
-			@Override
-			public BindingSet next() {
-				throw new NoSuchElementException();
-			}
+					@Override
+					public BindingSet next() {
+						throw new NoSuchElementException();
+					}
 
-			@Override
-			public void close() {
-			}
-		});
+					@Override
+					public void close() {
+					}
+				});
 		Sail sail = createExplainTestSail(strategy);
 		AtomicReference<Explanation> result = new AtomicReference<>();
 		AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -1496,24 +1497,29 @@ public class SnapshotSailStoreTest {
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		AtomicBoolean interruptedAtReturn = new AtomicBoolean();
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
-		when(strategy.precompileFinalTupleResult(any(TupleExpr.class))).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
-			@Override
-			public boolean hasNext() {
-				evaluationStarted.countDown();
-				try {
-					assertTrue(interruptEntered.await(10, TimeUnit.SECONDS), "the real watchdog must expire");
-					return false;
-				} catch (InterruptedException unexpected) {
-					throw new AssertionError("interrupt delivery must remain gated until close owns cleanup", unexpected);
-				}
-			}
+		when(strategy.precompileFinalTupleResult(any(TupleExpr.class)))
+				.thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+					@Override
+					public boolean hasNext() {
+						evaluationStarted.countDown();
+						try {
+							assertTrue(interruptEntered.await(10, TimeUnit.SECONDS), "the real watchdog must expire");
+							return false;
+						} catch (InterruptedException unexpected) {
+							throw new AssertionError("interrupt delivery must remain gated until close owns cleanup",
+									unexpected);
+						}
+					}
 
-			@Override
-			public BindingSet next() { throw new NoSuchElementException(); }
+					@Override
+					public BindingSet next() {
+						throw new NoSuchElementException();
+					}
 
-			@Override
-			public void close() {}
-		});
+					@Override
+					public void close() {
+					}
+				});
 		Sail sail = createExplainTestSail(strategy);
 		Thread evaluationThread = new Thread(() -> {
 			try (SailConnection connection = sail.getConnection()) {
@@ -1542,7 +1548,9 @@ public class SnapshotSailStoreTest {
 					}
 					super.interrupt();
 				} finally {
-					if (interrupted) { Thread.currentThread().interrupt(); }
+					if (interrupted) {
+						Thread.currentThread().interrupt();
+					}
 				}
 			}
 		};
@@ -1557,16 +1565,19 @@ public class SnapshotSailStoreTest {
 			}
 			assertEquals(Thread.State.BLOCKED, evaluationThread.getState(),
 					"explanation cleanup must already be waiting for the watchdog's interrupt delivery monitor");
-			assertTrue(java.util.Arrays.stream(evaluationThread.getStackTrace()).anyMatch(frame ->
-					frame.getClassName().endsWith("SailSourceConnection$QueryDeadlineCloseTask")
-							&& frame.getMethodName().equals("close")),
+			assertTrue(
+					java.util.Arrays.stream(evaluationThread.getStackTrace())
+							.anyMatch(frame -> frame.getClassName()
+									.endsWith("SailSourceConnection$QueryDeadlineCloseTask")
+									&& frame.getMethodName().equals("close")),
 					"the blocked owner must be closing its actual explanation timeout task");
 			releaseInterrupt.countDown();
 			evaluationThread.join(TimeUnit.SECONDS.toMillis(5));
 			assertFalse(evaluationThread.isAlive());
 			assertNull(failure.get());
 			assertTrue(result.get().toGenericPlanNode().getTimedOut());
-			assertFalse(interruptedAtReturn.get(), "a watchdog interrupt delivered during close must not leak to later work");
+			assertFalse(interruptedAtReturn.get(),
+					"a watchdog interrupt delivered during close must not leak to later work");
 		} finally {
 			releaseInterrupt.countDown();
 			if (evaluationThread.isAlive()) {

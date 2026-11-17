@@ -151,9 +151,11 @@ class LmdbNativeKernelPartitionSafetyTest {
 			String message) {
 		List<Node> nested = nestedExistsAndUnion(reader);
 		assertAll(message,
-				() -> assertEquals(expected, LmdbNativeKernelPartitions.partitionableRootAdjacency(List.of(root, nested.get(0))),
+				() -> assertEquals(expected,
+						LmdbNativeKernelPartitions.partitionableRootAdjacency(List.of(root, nested.get(0))),
 						"EXISTS nesting: " + message),
-				() -> assertEquals(expected, LmdbNativeKernelPartitions.partitionableRootAdjacency(List.of(root, nested.get(1))),
+				() -> assertEquals(expected,
+						LmdbNativeKernelPartitions.partitionableRootAdjacency(List.of(root, nested.get(1))),
 						"UNION nesting: " + message));
 	}
 
@@ -161,9 +163,11 @@ class LmdbNativeKernelPartitionSafetyTest {
 		EnumerateDomain root = new EnumerateDomain(0, 0);
 		List<Node> nested = nestedExistsAndUnion(reader);
 		assertAll(message,
-				() -> assertEquals(expected, LmdbNativeKernelPartitions.partitionableRootDomain(List.of(root, nested.get(0))),
+				() -> assertEquals(expected,
+						LmdbNativeKernelPartitions.partitionableRootDomain(List.of(root, nested.get(0))),
 						"EXISTS nesting: " + message),
-				() -> assertEquals(expected, LmdbNativeKernelPartitions.partitionableRootDomain(List.of(root, nested.get(1))),
+				() -> assertEquals(expected,
+						LmdbNativeKernelPartitions.partitionableRootDomain(List.of(root, nested.get(1))),
 						"UNION nesting: " + message));
 	}
 

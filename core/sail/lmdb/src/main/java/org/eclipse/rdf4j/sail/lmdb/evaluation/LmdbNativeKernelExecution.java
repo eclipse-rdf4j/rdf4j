@@ -1577,7 +1577,8 @@ final class LmdbNativeKernelExecution {
 					nestedAttemptStarted = true;
 					return retainedCursor = tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered,
 							scanPredicates, true,
-							parallelExecution, requestedTier, quotedReservation, wildcardFamily, suppressHash, consumerInput);
+							parallelExecution, requestedTier, quotedReservation, wildcardFamily, suppressHash,
+							consumerInput);
 				}
 				LmdbNativeAttemptMetrics.recordDecline(originalExpr,
 						rowRoute(false, distinctSlots != null, wildcardKernel), "disabled");
@@ -1685,7 +1686,8 @@ final class LmdbNativeKernelExecution {
 					nestedAttemptStarted = true;
 					return retainedCursor = tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered,
 							scanPredicates, true,
-							parallelExecution, requestedTier, quotedReservation, wildcardFamily, suppressHash, consumerInput);
+							parallelExecution, requestedTier, quotedReservation, wildcardFamily, suppressHash,
+							consumerInput);
 				}
 				if (ordered == null) {
 					LmdbNativeAttemptMetrics.recordDecline(originalExpr, pathTag,
@@ -2319,7 +2321,8 @@ final class LmdbNativeKernelExecution {
 				}
 				this.hashReservation = hashReservation;
 				this.fillRows = fillRows;
-				this.buffer = initialBuffer == null ? new long[Math.max(columnSlots.length, 1) * fillRows] : initialBuffer;
+				this.buffer = initialBuffer == null ? new long[Math.max(columnSlots.length, 1) * fillRows]
+						: initialBuffer;
 				this.bufferRows = initialRows;
 			} catch (RuntimeException | Error failure) {
 				for (MaskedFilter residual : this.residualFilters) {

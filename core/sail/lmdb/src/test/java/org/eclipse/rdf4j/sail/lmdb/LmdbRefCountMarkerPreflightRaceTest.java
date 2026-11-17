@@ -140,7 +140,9 @@ class LmdbRefCountMarkerPreflightRaceTest {
 		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
 				"--enable-native-access=ALL-UNNAMED", "-ea", "-Djava.io.tmpdir=" + temporary,
 				"-cp", System.getProperty("java.class.path"), ExternalWriter.class.getName(), directory.toString())
-						.redirectErrorStream(true).redirectOutput(log.toFile()).start();
+						.redirectErrorStream(true)
+						.redirectOutput(log.toFile())
+						.start();
 		if (!child.waitFor(30, TimeUnit.SECONDS)) {
 			child.destroyForcibly();
 			throw new IOException("independent native writer did not finish: " + log);

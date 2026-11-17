@@ -80,6 +80,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 					&& generation.manifest().generationId() >= minimumTrustedGeneration;
 		}
 	}
+
 	private volatile OwnerFreshness ownerFreshness = new OwnerFreshness(false, -1L);
 
 	private LmdbStatisticsService(Path directory, FrontierFileOps fileOps,
@@ -258,7 +259,8 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			FrontierStatisticsGeneration observed = current;
 			if (!freshness.trusts(observed)) {
 				return FrontierStatisticsLease.unavailable(freshness.requiresBase()
-						? FrontierFallbackReason.GENERATION_TOO_STALE : FrontierFallbackReason.NO_GENERATION);
+						? FrontierFallbackReason.GENERATION_TOO_STALE
+						: FrontierFallbackReason.NO_GENERATION);
 			}
 			FrontierStatisticsManifest manifest = observed.manifest();
 			if (snapshotEpoch < manifest.baseEpoch()
@@ -266,7 +268,10 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				return FrontierStatisticsLease.unavailable(FrontierFallbackReason.GENERATION_TOO_STALE);
 			}
 			if (observed.retain()) {
-				if (freshness != ownerFreshness) { observed.release(); continue; }
+				if (freshness != ownerFreshness) {
+					observed.release();
+					continue;
+				}
 				return FrontierStatisticsLease.ready(observed);
 			}
 		}
@@ -782,7 +787,8 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				? 0L
 				: Math.max(0L, clock.millis() - firstUncoveredMutationMillis);
 		FrontierFallbackReason fallback = !trusted
-				? ownerFreshness.requiresBase() ? FrontierFallbackReason.GENERATION_TOO_STALE : FrontierFallbackReason.NO_GENERATION
+				? ownerFreshness.requiresBase() ? FrontierFallbackReason.GENERATION_TOO_STALE
+						: FrontierFallbackReason.NO_GENERATION
 				: latestStoreSequence > observed.manifest().coveredSequence()
 						? lagMillis > maximumLagMillis
 								? FrontierFallbackReason.GENERATION_TOO_STALE
@@ -1043,7 +1049,9 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	}
 
 	private boolean hasCompleteMutationTail() {
-		if (ownerFreshness.requiresBase()) { return false; }
+		if (ownerFreshness.requiresBase()) {
+			return false;
+		}
 		FrontierStatisticsGeneration observed = current;
 		FrontierMutationTail tail = mutationTail;
 		long baseSequence = observed == null ? 0L : observed.manifest().coveredSequence();
@@ -1054,9 +1062,13 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		while (true) {
 			OwnerFreshness freshness = ownerFreshness;
 			// A mutation tail is not a proof of an empty old database, even when no old mapping survived startup.
-			if (freshness.requiresBase()) { return null; }
+			if (freshness.requiresBase()) {
+				return null;
+			}
 			FrontierStatisticsGeneration observed = current;
-			if (observed != null && !freshness.trusts(observed)) { return null; }
+			if (observed != null && !freshness.trusts(observed)) {
+				return null;
+			}
 			FrontierMutationTail tail = mutationTail;
 			long latestSequence = latestStoreSequence;
 			long baseSequence = observed == null ? 0L : observed.manifest().coveredSequence();
@@ -1070,7 +1082,8 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				}
 				lease = FrontierStatisticsLease.ready(observed);
 			}
-			if (freshness == ownerFreshness && observed == current && tail == mutationTail && latestSequence == latestStoreSequence) {
+			if (freshness == ownerFreshness && observed == current && tail == mutationTail
+					&& latestSequence == latestStoreSequence) {
 				return new TailOverlay(lease, tail);
 			}
 			if (lease != null) {

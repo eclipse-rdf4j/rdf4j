@@ -27,9 +27,9 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuildConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsManifest;
@@ -45,7 +45,8 @@ class LmdbLegacyFrontierOldWriterTest {
 	private static final long FRONTIER_BUDGET = 32L * 1024L * 1024L;
 
 	@Test
-	void currentOnlyReopenRetainsAnExactFrontierPredicateProbe(@TempDir(cleanup = CleanupMode.NEVER) Path temporaryDirectory)
+	void currentOnlyReopenRetainsAnExactFrontierPredicateProbe(
+			@TempDir(cleanup = CleanupMode.NEVER) Path temporaryDirectory)
 			throws Exception {
 		Fixture fixture = extract(temporaryDirectory, "current-only");
 		Properties metadata = CanonicalIriCompatibilityProcess.load(fixture.manifest());
@@ -109,9 +110,12 @@ class LmdbLegacyFrontierOldWriterTest {
 		Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
 				"-ea", "-cp", classpath, CanonicalIriCompatibilityProcess.class.getName(),
 				"verify-current-and-write", fixture.store().toString(), fixture.manifest().toString())
-				.redirectErrorStream(true).redirectOutput(subprocessLog.toFile()).start();
+						.redirectErrorStream(true)
+						.redirectOutput(subprocessLog.toFile())
+						.start();
 		try {
-			assertTrue(process.waitFor(60, TimeUnit.SECONDS), "The pinned release process did not finish: " + subprocessLog);
+			assertTrue(process.waitFor(60, TimeUnit.SECONDS),
+					"The pinned release process did not finish: " + subprocessLog);
 			assertEquals(0, process.exitValue(), () -> "The pinned release writer failed: " + subprocessLog);
 		} finally {
 			if (process.isAlive()) {
@@ -140,7 +144,8 @@ class LmdbLegacyFrontierOldWriterTest {
 			CanonicalIriCompatibilityProcess.verify(reopened, metadata);
 			try (var connection = reopened.getConnection()) {
 				assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.CURRENT_SUBJECT,
-						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.CURRENT_IRI, false));
+						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.CURRENT_IRI,
+						false));
 				assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.OLD_SUBJECT,
 						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.OLD_IRI, false));
 			}
@@ -154,130 +159,140 @@ class LmdbLegacyFrontierOldWriterTest {
 			reopened.shutDown();
 		}
 	}
-@Test
-void rollingBackAfterACompleteRebuildDoesNotServeTheOlderPredicatePopulation(
-		@TempDir(cleanup = CleanupMode.NEVER) Path temporaryDirectory) throws Exception {
-	String classpath = System.getProperty("rdf4j.lmdb.canonical.compat.classpath.format2");
-	assumeTrue(classpath != null && !classpath.isBlank(),
-			"Run with the authenticated RDF4J 6.1.0 process classpath");
-	Fixture fixture = extract(temporaryDirectory, "old-writer-rollback");
-	Properties metadata = CanonicalIriCompatibilityProcess.load(fixture.manifest());
-	long triplesBeforeClose;
-	long oldGenerationId;
-	int oldWidth;
-	Map<String, String> frontierBeforeOldWriter;
-	SailRepository first = open(fixture.store());
-	try {
-		CanonicalIriCompatibilityProcess.verify(first, metadata);
-		addCurrentStatement(first);
-		LmdbStore store = (LmdbStore) first.getSail();
-		awaitFrontierReady(store);
-		assertEquals(11L, countPredicateRows(first));
-		LmdbEvaluationStatistics evaluation = (LmdbEvaluationStatistics) store.getBackingStore()
-				.getEvaluationStatistics();
-		FrontierStatisticsManifest oldManifest = evaluation.estimatorRuntime().statisticsService()
-				.currentManifest().orElseThrow();
-		oldGenerationId = oldManifest.generationId();
-		oldWidth = oldManifest.width();
-		assertExactFrontierProbe(store, 11L, "retained old generation before the older writer");
-		triplesBeforeClose = store.getBackingStore().getTripleStore().lastTransactionId();
-		frontierBeforeOldWriter = frontierFiles(fixture.store());
-		assertTrue(!frontierBeforeOldWriter.isEmpty());
-		recordFrontierEvidence(fixture.root(), "rollback-before-old-writer", fixture.store(), store);
-	} finally {
-		first.shutDown();
-	}
 
-	Path subprocessLog = fixture.root().resolve("actual-release-writer.log");
-	Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-			"-ea", "-cp", classpath, CanonicalIriCompatibilityProcess.class.getName(),
-			"verify-current-and-write", fixture.store().toString(), fixture.manifest().toString())
-			.redirectErrorStream(true).redirectOutput(subprocessLog.toFile()).start();
-	try {
-		assertTrue(process.waitFor(60, TimeUnit.SECONDS), "The pinned release process did not finish: " + subprocessLog);
-		assertEquals(0, process.exitValue(), () -> "The pinned release writer failed: " + subprocessLog);
-	} finally {
-		if (process.isAlive()) {
-			process.destroyForcibly();
+	@Test
+	void rollingBackAfterACompleteRebuildDoesNotServeTheOlderPredicatePopulation(
+			@TempDir(cleanup = CleanupMode.NEVER) Path temporaryDirectory) throws Exception {
+		String classpath = System.getProperty("rdf4j.lmdb.canonical.compat.classpath.format2");
+		assumeTrue(classpath != null && !classpath.isBlank(),
+				"Run with the authenticated RDF4J 6.1.0 process classpath");
+		Fixture fixture = extract(temporaryDirectory, "old-writer-rollback");
+		Properties metadata = CanonicalIriCompatibilityProcess.load(fixture.manifest());
+		long triplesBeforeClose;
+		long oldGenerationId;
+		int oldWidth;
+		Map<String, String> frontierBeforeOldWriter;
+		SailRepository first = open(fixture.store());
+		try {
+			CanonicalIriCompatibilityProcess.verify(first, metadata);
+			addCurrentStatement(first);
+			LmdbStore store = (LmdbStore) first.getSail();
+			awaitFrontierReady(store);
+			assertEquals(11L, countPredicateRows(first));
+			LmdbEvaluationStatistics evaluation = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			FrontierStatisticsManifest oldManifest = evaluation.estimatorRuntime()
+					.statisticsService()
+					.currentManifest()
+					.orElseThrow();
+			oldGenerationId = oldManifest.generationId();
+			oldWidth = oldManifest.width();
+			assertExactFrontierProbe(store, 11L, "retained old generation before the older writer");
+			triplesBeforeClose = store.getBackingStore().getTripleStore().lastTransactionId();
+			frontierBeforeOldWriter = frontierFiles(fixture.store());
+			assertTrue(!frontierBeforeOldWriter.isEmpty());
+			recordFrontierEvidence(fixture.root(), "rollback-before-old-writer", fixture.store(), store);
+		} finally {
+			first.shutDown();
+		}
+
+		Path subprocessLog = fixture.root().resolve("actual-release-writer.log");
+		Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-ea", "-cp", classpath, CanonicalIriCompatibilityProcess.class.getName(),
+				"verify-current-and-write", fixture.store().toString(), fixture.manifest().toString())
+						.redirectErrorStream(true)
+						.redirectOutput(subprocessLog.toFile())
+						.start();
+		try {
+			assertTrue(process.waitFor(60, TimeUnit.SECONDS),
+					"The pinned release process did not finish: " + subprocessLog);
+			assertEquals(0, process.exitValue(), () -> "The pinned release writer failed: " + subprocessLog);
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+			}
+		}
+		StoreProperties discovery = new StoreProperties(fixture.store().toFile());
+		assertTrue(discovery.load());
+		LegacyStoreDiscovery.discover(fixture.store().toFile(), discovery);
+		assertTrue(discovery.verifiedTripleTransactionId > triplesBeforeClose);
+		Map<String, String> frontierAfterOldWriter = frontierFiles(fixture.store());
+		assertEquals(frontierBeforeOldWriter, frontierAfterOldWriter);
+
+		long changedFrontierBudget = 64L * 1024L * 1024L;
+		long changedHeapBudget = 128L * 1024L * 1024L;
+		FrontierStatisticsBuildConfig changedProfile = FrontierStatisticsBuildConfig.forBudgets(
+				changedFrontierBudget, changedHeapBudget);
+		assertNotEquals(oldWidth, changedProfile.cellCount(),
+				"the second owner must request a real Frontier dimension refresh");
+		SailRepository reopened = open(fixture.store(), changedFrontierBudget, changedHeapBudget);
+		try {
+			CanonicalIriCompatibilityProcess.verify(reopened, metadata);
+			try (var connection = reopened.getConnection()) {
+				assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.CURRENT_SUBJECT,
+						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.CURRENT_IRI,
+						false));
+				assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.OLD_SUBJECT,
+						CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.OLD_IRI, false));
+			}
+			assertEquals(12L, countPredicateRows(reopened), "the source data now contains twelve matching rows");
+			LmdbStore store = (LmdbStore) reopened.getSail();
+			awaitFrontierReady(store);
+			assertEquals(12L, countPredicateRows(reopened));
+			LmdbEvaluationStatistics evaluation = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			LmdbStatisticsService service = evaluation.estimatorRuntime().statisticsService();
+			FrontierStatisticsManifest newManifest = service.currentManifest().orElseThrow();
+			if (newManifest.generationId() <= oldGenerationId) {
+				FrontierStatisticsStatus rebuilt = store.rebuildFrontierStatistics();
+				assertEquals(FrontierStatisticsAvailability.READY, rebuilt.availability());
+				newManifest = service.currentManifest().orElseThrow();
+			}
+			assertTrue(newManifest.generationId() > oldGenerationId,
+					"a complete current-data generation must follow the authentic eleven-row generation");
+			assertEquals(oldGenerationId, newManifest.previousGenerationId(),
+					"the rollback target must be the recorded authentic eleven-row generation");
+			assertEquals(changedProfile.cellCount(), newManifest.width(),
+					"the selected dimensions prove a complete rebuild with the requested profile");
+			assertExactFrontierProbe(store, 12L, "after complete rebuild over twelve source rows");
+			recordFrontierEvidence(fixture.root(), "rollback-after-complete-rebuild", fixture.store(), store);
+
+			boolean rolledBack = service.rollback();
+			FrontierStatisticsStatus afterRollback = store.getBackingStore().frontierStatisticsStatus();
+			FrontierLeafEstimate afterRollbackEstimate = service.estimateLeafCurrent(
+					new FrontierLeafProbe(FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L,
+							evaluation.estimatorRuntime()
+									.valueStore()
+									.getId(CanonicalIriCompatibilityProcess.PREDICATE),
+							0L, 0L));
+			Files.writeString(fixture.root().resolve("rollback-generation-evidence.txt"),
+					"oldGeneration=" + oldGenerationId + System.lineSeparator()
+							+ "oldWidth=" + oldWidth + System.lineSeparator()
+							+ "rebuiltGeneration=" + newManifest.generationId() + System.lineSeparator()
+							+ "rebuiltPrevious=" + newManifest.previousGenerationId() + System.lineSeparator()
+							+ "rebuiltWidth=" + newManifest.width() + System.lineSeparator()
+							+ "rollbackReturned=" + rolledBack + System.lineSeparator()
+							+ "generationAfterRollback=" + afterRollback.generationId() + System.lineSeparator()
+							+ "actualRowsAfterRollback=" + countPredicateRows(reopened) + System.lineSeparator()
+							+ "estimateAfterRollback=" + afterRollbackEstimate + System.lineSeparator()
+							+ "frontierFiles=" + new TreeMap<>(frontierFiles(fixture.store())) + System.lineSeparator(),
+					java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+			recordFrontierEvidence(fixture.root(), "rollback-after-public-service-call", fixture.store(), store);
+			boolean exactCurrentEstimate = Double.compare(12.0d, afterRollbackEstimate.pointRows()) == 0
+					&& afterRollbackEstimate.confidence() == 1.0d
+					&& "frontier-v2-exact".equals(afterRollbackEstimate.source())
+					&& afterRollbackEstimate.fallbackReason() == FrontierFallbackReason.NONE;
+			boolean typedUnavailable = "frontier-v2-unavailable".equals(afterRollbackEstimate.source())
+					&& afterRollbackEstimate.confidence() == 0.0d
+					&& afterRollbackEstimate.fallbackReason() != FrontierFallbackReason.NONE;
+			assertTrue(exactCurrentEstimate || typedUnavailable,
+					"rollback must preserve exact current evidence or typed unavailability for twelve rows: "
+							+ afterRollbackEstimate);
+		} finally {
+			reopened.shutDown();
 		}
 	}
-	StoreProperties discovery = new StoreProperties(fixture.store().toFile());
-	assertTrue(discovery.load());
-	LegacyStoreDiscovery.discover(fixture.store().toFile(), discovery);
-	assertTrue(discovery.verifiedTripleTransactionId > triplesBeforeClose);
-	Map<String, String> frontierAfterOldWriter = frontierFiles(fixture.store());
-	assertEquals(frontierBeforeOldWriter, frontierAfterOldWriter);
 
-	long changedFrontierBudget = 64L * 1024L * 1024L;
-	long changedHeapBudget = 128L * 1024L * 1024L;
-	FrontierStatisticsBuildConfig changedProfile = FrontierStatisticsBuildConfig.forBudgets(
-			changedFrontierBudget, changedHeapBudget);
-	assertNotEquals(oldWidth, changedProfile.cellCount(),
-			"the second owner must request a real Frontier dimension refresh");
-	SailRepository reopened = open(fixture.store(), changedFrontierBudget, changedHeapBudget);
-	try {
-		CanonicalIriCompatibilityProcess.verify(reopened, metadata);
-		try (var connection = reopened.getConnection()) {
-			assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.CURRENT_SUBJECT,
-					CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.CURRENT_IRI, false));
-			assertTrue(connection.hasStatement(CanonicalIriCompatibilityProcess.OLD_SUBJECT,
-					CanonicalIriCompatibilityProcess.PREDICATE, CanonicalIriCompatibilityProcess.OLD_IRI, false));
-		}
-		assertEquals(12L, countPredicateRows(reopened), "the source data now contains twelve matching rows");
-		LmdbStore store = (LmdbStore) reopened.getSail();
-		awaitFrontierReady(store);
-		assertEquals(12L, countPredicateRows(reopened));
-		LmdbEvaluationStatistics evaluation = (LmdbEvaluationStatistics) store.getBackingStore()
-				.getEvaluationStatistics();
-		LmdbStatisticsService service = evaluation.estimatorRuntime().statisticsService();
-		FrontierStatisticsManifest newManifest = service.currentManifest().orElseThrow();
-		if (newManifest.generationId() <= oldGenerationId) {
-			FrontierStatisticsStatus rebuilt = store.rebuildFrontierStatistics();
-			assertEquals(FrontierStatisticsAvailability.READY, rebuilt.availability());
-			newManifest = service.currentManifest().orElseThrow();
-		}
-		assertTrue(newManifest.generationId() > oldGenerationId,
-				"a complete current-data generation must follow the authentic eleven-row generation");
-		assertEquals(oldGenerationId, newManifest.previousGenerationId(),
-				"the rollback target must be the recorded authentic eleven-row generation");
-		assertEquals(changedProfile.cellCount(), newManifest.width(),
-				"the selected dimensions prove a complete rebuild with the requested profile");
-		assertExactFrontierProbe(store, 12L, "after complete rebuild over twelve source rows");
-		recordFrontierEvidence(fixture.root(), "rollback-after-complete-rebuild", fixture.store(), store);
-
-		boolean rolledBack = service.rollback();
-		FrontierStatisticsStatus afterRollback = store.getBackingStore().frontierStatisticsStatus();
-		FrontierLeafEstimate afterRollbackEstimate = service.estimateLeafCurrent(
-				new FrontierLeafProbe(FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L,
-						evaluation.estimatorRuntime().valueStore().getId(CanonicalIriCompatibilityProcess.PREDICATE),
-						0L, 0L));
-		Files.writeString(fixture.root().resolve("rollback-generation-evidence.txt"),
-				"oldGeneration=" + oldGenerationId + System.lineSeparator()
-						+ "oldWidth=" + oldWidth + System.lineSeparator()
-						+ "rebuiltGeneration=" + newManifest.generationId() + System.lineSeparator()
-						+ "rebuiltPrevious=" + newManifest.previousGenerationId() + System.lineSeparator()
-						+ "rebuiltWidth=" + newManifest.width() + System.lineSeparator()
-						+ "rollbackReturned=" + rolledBack + System.lineSeparator()
-						+ "generationAfterRollback=" + afterRollback.generationId() + System.lineSeparator()
-						+ "actualRowsAfterRollback=" + countPredicateRows(reopened) + System.lineSeparator()
-						+ "estimateAfterRollback=" + afterRollbackEstimate + System.lineSeparator()
-						+ "frontierFiles=" + new TreeMap<>(frontierFiles(fixture.store())) + System.lineSeparator(),
-				java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
-		recordFrontierEvidence(fixture.root(), "rollback-after-public-service-call", fixture.store(), store);
-		boolean exactCurrentEstimate = Double.compare(12.0d, afterRollbackEstimate.pointRows()) == 0
-				&& afterRollbackEstimate.confidence() == 1.0d
-				&& "frontier-v2-exact".equals(afterRollbackEstimate.source())
-				&& afterRollbackEstimate.fallbackReason() == FrontierFallbackReason.NONE;
-		boolean typedUnavailable = "frontier-v2-unavailable".equals(afterRollbackEstimate.source())
-				&& afterRollbackEstimate.confidence() == 0.0d
-				&& afterRollbackEstimate.fallbackReason() != FrontierFallbackReason.NONE;
-		assertTrue(exactCurrentEstimate || typedUnavailable,
-				"rollback must preserve exact current evidence or typed unavailability for twelve rows: "
-						+ afterRollbackEstimate);
-	} finally {
-		reopened.shutDown();
-	}
-}
 	private static Fixture extract(Path temporaryDirectory, String name) throws Exception {
 		Path root = temporaryDirectory.resolve(name);
 		Files.createDirectories(root);
@@ -295,7 +310,8 @@ void rollingBackAfterACompleteRebuildDoesNotServeTheOlderPredicatePopulation(
 	private static long countPredicateRows(SailRepository repository) {
 		long count = 0L;
 		try (var connection = repository.getConnection();
-				var statements = connection.getStatements(null, CanonicalIriCompatibilityProcess.PREDICATE, null, false)) {
+				var statements = connection.getStatements(null, CanonicalIriCompatibilityProcess.PREDICATE, null,
+						false)) {
 			while (statements.hasNext()) {
 				statements.next();
 				count++;
@@ -341,7 +357,8 @@ void rollingBackAfterACompleteRebuildDoesNotServeTheOlderPredicatePopulation(
 
 	private static Map<String, String> frontierFiles(Path storeDirectory) throws Exception {
 		Path statisticsDirectory = storeDirectory.resolve("frontier-statistics-v2");
-		return Files.isDirectory(statisticsDirectory) ? LmdbCompatibilityFixtures.snapshot(statisticsDirectory) : Map.of();
+		return Files.isDirectory(statisticsDirectory) ? LmdbCompatibilityFixtures.snapshot(statisticsDirectory)
+				: Map.of();
 	}
 
 	private static SailRepository open(Path directory) throws Exception {
@@ -350,10 +367,13 @@ void rollingBackAfterACompleteRebuildDoesNotServeTheOlderPredicatePopulation(
 
 	private static SailRepository open(Path directory, long frontierBudget, long heapBudget) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
-				.setInlineLiterals(false).setAutoGrow(true).setValueDBSize(16L * 1024 * 1024)
+				.setInlineLiterals(false)
+				.setAutoGrow(true)
+				.setValueDBSize(16L * 1024 * 1024)
 				.setTripleDBSize(16L * 1024 * 1024)
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(frontierBudget).setFrontierHeapBudgetBytes(heapBudget);
+				.setFrontierSynopsisBudgetBytes(frontierBudget)
+				.setFrontierHeapBudgetBytes(heapBudget);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();

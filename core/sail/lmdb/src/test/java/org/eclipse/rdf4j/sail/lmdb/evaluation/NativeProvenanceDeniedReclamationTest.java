@@ -37,12 +37,24 @@ import org.junit.jupiter.params.provider.MethodSource;
 /** Real local payload and manager reclaimers can stop an owner without funding its requested claim. */
 class NativeProvenanceDeniedReclamationTest {
 	private static final long SHARED_BYTES = 32768L;
-	private enum Route { LOCAL_LIMIT, SHARED_MANAGER, PAYLOAD_AFTER_SHARED_DENIAL, SHARED_RETRY_CALLBACK }
-	private enum Stop { NONE, CANCEL, CLOSE }
+
+	private enum Route {
+		LOCAL_LIMIT,
+		SHARED_MANAGER,
+		PAYLOAD_AFTER_SHARED_DENIAL,
+		SHARED_RETRY_CALLBACK
+	}
+
+	private enum Stop {
+		NONE,
+		CANCEL,
+		CLOSE
+	}
 
 	static Stream<Arguments> terminalRoutes() {
-		return Stream.of(Route.values()).flatMap(route -> Stream.of(Stop.CANCEL, Stop.CLOSE)
-				.map(stop -> Arguments.of(route, stop)));
+		return Stream.of(Route.values())
+				.flatMap(route -> Stream.of(Stop.CANCEL, Stop.CLOSE)
+						.map(stop -> Arguments.of(route, stop)));
 	}
 
 	@ParameterizedTest(name = "{0}: {1}")
@@ -91,7 +103,8 @@ class NativeProvenanceDeniedReclamationTest {
 	@EnumSource(Route.class)
 	void aCallbackFailureStaysExactEvenWhenTheCallbackAlsoCancels(Route route) throws Exception {
 		Throwable primary = route == Route.SHARED_MANAGER || route == Route.SHARED_RETRY_CALLBACK
-				? new IllegalStateException("manager callback failed") : new IOException("payload callback failed");
+				? new IllegalStateException("manager callback failed")
+				: new IOException("payload callback failed");
 		try (Fixture fixture = new Fixture(route, Stop.CANCEL, false, primary)) {
 			Throwable actual = assertThrows(Throwable.class, () -> fixture.dictionary.intern(fixture.frame));
 			fixture.assertDeniedAndSettled();
@@ -134,7 +147,8 @@ class NativeProvenanceDeniedReclamationTest {
 				blocker = ledger.reserve(SHARED_BYTES - (enough ? 8192L : 512L), null);
 				assertNotNull(blocker);
 				reclaimable = ledger.reserve(enough ? 7680L : 256L, new LmdbQueryMemoryManager.Reclaimable() {
-					@Override public boolean shed() {
+					@Override
+					public boolean shed() {
 						callbacks++;
 						stopOwner();
 						if (Fixture.this.callbackFailure != null) {
@@ -145,7 +159,8 @@ class NativeProvenanceDeniedReclamationTest {
 				});
 				assertNotNull(reclaimable);
 			} else if (route == Route.PAYLOAD_AFTER_SHARED_DENIAL || route == Route.SHARED_RETRY_CALLBACK) {
-				// No shared reclaimer exists. The first claim is denied, then the dictionary asks its real payload owner.
+				// No shared reclaimer exists. The first claim is denied, then the dictionary asks its real payload
+				// owner.
 				blocker = ledger.reserve(SHARED_BYTES - payload.bytes() - 256L, null);
 				assertNotNull(blocker);
 			}
@@ -156,12 +171,19 @@ class NativeProvenanceDeniedReclamationTest {
 			callbacks++;
 			if (route == Route.SHARED_RETRY_CALLBACK) {
 				// A spill callback can expose a new legitimate manager-owned allocation before the retry.
-				if (enough) { payload.releaseLarge(); } else { payload.releaseSmall(); }
+				if (enough) {
+					payload.releaseLarge();
+				} else {
+					payload.releaseSmall();
+				}
 				reclaimable = ledger.reserve(enough ? 7168L : 128L, new LmdbQueryMemoryManager.Reclaimable() {
-					@Override public boolean shed() {
+					@Override
+					public boolean shed() {
 						callbacks++;
 						stopOwner();
-						if (callbackFailure != null) { throw (RuntimeException) callbackFailure; }
+						if (callbackFailure != null) {
+							throw (RuntimeException) callbackFailure;
+						}
 						return true;
 					}
 				});
@@ -169,14 +191,26 @@ class NativeProvenanceDeniedReclamationTest {
 				return;
 			}
 			stopOwner();
-			if (enough) { payload.releaseLarge(); } else { payload.releaseSmall(); }
-			if (callbackFailure instanceof IOException failure) { throw failure; }
-			if (callbackFailure != null) { throw (RuntimeException) callbackFailure; }
+			if (enough) {
+				payload.releaseLarge();
+			} else {
+				payload.releaseSmall();
+			}
+			if (callbackFailure instanceof IOException failure) {
+				throw failure;
+			}
+			if (callbackFailure != null) {
+				throw (RuntimeException) callbackFailure;
+			}
 		}
 
 		private void stopOwner() {
-			if (stop == Stop.CANCEL) { token.requestCancellation(); }
-			if (stop == Stop.CLOSE) { dictionary.close(); }
+			if (stop == Stop.CANCEL) {
+				token.requestCancellation();
+			}
+			if (stop == Stop.CLOSE) {
+				dictionary.close();
+			}
 		}
 
 		long ownedBytes() {
@@ -184,7 +218,9 @@ class NativeProvenanceDeniedReclamationTest {
 					+ (reclaimable == null ? 0L : reclaimable.bytes());
 		}
 
-		int expectedCallbacks() { return route == Route.SHARED_RETRY_CALLBACK ? 2 : 1; }
+		int expectedCallbacks() {
+			return route == Route.SHARED_RETRY_CALLBACK ? 2 : 1;
+		}
 
 		void assertDeniedAndSettled() {
 			assertEquals(expectedCallbacks(), callbacks,
@@ -204,7 +240,8 @@ class NativeProvenanceDeniedReclamationTest {
 			}
 		}
 
-		@Override public void close() {
+		@Override
+		public void close() {
 			Throwable failure = KernelRuntime.closeResource(dictionary, null);
 			failure = KernelRuntime.closeResource(reclaimable, failure);
 			failure = KernelRuntime.closeResource(blocker, failure);
@@ -213,7 +250,9 @@ class NativeProvenanceDeniedReclamationTest {
 			failure = KernelRuntime.closeResource(payloadMemory, failure);
 			failure = KernelRuntime.closeResource(ledger, failure);
 			assertEquals(0L, manager.usedBytes());
-			if (failure != null) { NativeContextClosingIteration.throwFailure(failure); }
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
 		}
 	}
 
@@ -233,7 +272,9 @@ class NativeProvenanceDeniedReclamationTest {
 			}
 		}
 
-		long bytes() { return bytes; }
+		long bytes() {
+			return bytes;
+		}
 
 		void releaseLarge() {
 			assertNotNull(large, "the callback consumes the actual large resident block once");
@@ -251,7 +292,8 @@ class NativeProvenanceDeniedReclamationTest {
 			memory.release(released);
 		}
 
-		@Override public void close() {
+		@Override
+		public void close() {
 			large = small = null;
 			long released = bytes;
 			bytes = 0L;

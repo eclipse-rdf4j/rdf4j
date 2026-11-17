@@ -119,7 +119,7 @@ class LmdbStatisticsGenerationRetirementTest {
 
 		assertEquals(FrontierStatisticsAvailability.NO_GENERATION, service.status().availability());
 		assertEquals(FrontierFallbackReason.GENERATION_TOO_STALE, service.status().fallbackReason());
-	try (FrontierStatisticsLease fenced = service.acquire(7L)) {
+		try (FrontierStatisticsLease fenced = service.acquire(7L)) {
 			assertFalse(fenced.ready());
 			assertEquals(FrontierFallbackReason.GENERATION_TOO_STALE, fenced.fallbackReason());
 		}

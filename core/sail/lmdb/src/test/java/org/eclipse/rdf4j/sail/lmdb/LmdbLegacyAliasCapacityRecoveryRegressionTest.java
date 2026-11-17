@@ -94,7 +94,8 @@ class LmdbLegacyAliasCapacityRecoveryRegressionTest {
 			assertTrue(batches.get() > 1, "the fixture must commit several independent statement batches");
 			assertTrue(injected.get(), "native capacity must fail after partial dictionary retirement begins");
 			assertNull(openFailure, "the migration must grow and replan after an unforecast map-full failure");
-			assertTrue(target.values.mapSizeBytes() > mapBeforeFailure.get(), "recovery must enlarge the real value map");
+			assertTrue(target.values.mapSizeBytes() > mapBeforeFailure.get(),
+					"recovery must enlarge the real value map");
 			assertEquals(expectedExplicit, statements(target, false), "all explicit statements must survive retry");
 			assertEquals(expectedAll, statements(target, true), "all inferred statements must survive retry");
 			var vf = SimpleValueFactory.getInstance();
@@ -116,7 +117,6 @@ class LmdbLegacyAliasCapacityRecoveryRegressionTest {
 			reopened.shutDown();
 		}
 	}
-
 
 	@Test
 	void mapFullWhileFencingThePlanGrowsBeforeAnyStatementRewrite(
@@ -216,8 +216,9 @@ class LmdbLegacyAliasCapacityRecoveryRegressionTest {
 				rows.add(NTriplesUtil.toNTriplesString(statement.getSubject()) + " "
 						+ NTriplesUtil.toNTriplesString(statement.getPredicate()) + " "
 						+ NTriplesUtil.toNTriplesString(statement.getObject())
-						+ (statement.getContext() == null ? "" : " "
-								+ NTriplesUtil.toNTriplesString(statement.getContext())));
+						+ (statement.getContext() == null ? ""
+								: " "
+										+ NTriplesUtil.toNTriplesString(statement.getContext())));
 			}
 		}
 		Collections.sort(rows);
@@ -229,7 +230,9 @@ class LmdbLegacyAliasCapacityRecoveryRegressionTest {
 
 		private CapturedStore(Path directory) {
 			super(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
-					.setAutoGrow(true).setSketchEstimatorEnabled(false).setPredicateGuaranteeIndexEnabled(false));
+					.setAutoGrow(true)
+					.setSketchEstimatorEnabled(false)
+					.setPredicateGuaranteeIndexEnabled(false));
 		}
 
 		@Override

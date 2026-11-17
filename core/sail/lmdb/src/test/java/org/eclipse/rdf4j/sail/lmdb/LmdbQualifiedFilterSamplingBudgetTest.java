@@ -141,8 +141,10 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 					() -> assertTrue(trace.delivered > 0, trace::toString),
 					() -> assertFalse(trace.censuses.isEmpty(), "the real bounded census must run"),
 					() -> assertFalse(trace.scans.isEmpty(), "the real native sample must run"),
-					() -> assertTrue(trace.delivered <= budget, "the row cap is global across planes and fallback: " + trace),
-					() -> assertTrue(trace.examined <= budget, "setup, boundary and sampled keys share one cap: " + trace),
+					() -> assertTrue(trace.delivered <= budget,
+							"the row cap is global across planes and fallback: " + trace),
+					() -> assertTrue(trace.examined <= budget,
+							"setup, boundary and sampled keys share one cap: " + trace),
 					() -> assertTrue(estimate.sampleSize() <= budget, trace::toString),
 					() -> assertTrue(trace.censuses.stream().allMatch(census -> census.cap <= budget), trace::toString),
 					() -> assertTrue(trace.censuses.stream().allMatch(census -> census.result.isEmpty()),
@@ -152,9 +154,11 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 			if (budget <= 31) {
 				// For these fixtures the existing adaptive budget admits the entire configured cap. The population
 				// exceeds it, every row is eligible, and there is no timeout or predicate failure to justify waste.
-				assertEquals(budget, trace.delivered, "an empty plane must not consume the populated plane's quota: " + trace);
+				assertEquals(budget, trace.delivered,
+						"an empty plane must not consume the populated plane's quota: " + trace);
 				if (planes != Planes.BOTH) {
-					assertEquals(budget, estimate.sampleSize(), "every single-plane eligible row contributes: " + trace);
+					assertEquals(budget, estimate.sampleSize(),
+							"every single-plane eligible row contributes: " + trace);
 				} else if (budget > 1) {
 					assertTrue(estimate.sampleSize() > 0 && estimate.sampleSize() <= budget,
 							"unqualified plane weights cannot inflate effective evidence: " + trace);
@@ -185,16 +189,20 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 					"the real opsc index has two separate ordered runs regardless of insertion layout");
 			long predicate = fixture.values().getStatementId(read.values, PREDICATE);
 			TripleStore triples = fixture.store.getBackingStore().getTripleStore();
-			assertEquals(32L, triples.boundedExactCardinality(read.txn, -1L, predicate, january, -1L, 64L).orElseThrow());
-			assertEquals(32L, triples.boundedExactCardinality(read.txn, -1L, predicate, november, -1L, 64L).orElseThrow());
+			assertEquals(32L,
+					triples.boundedExactCardinality(read.txn, -1L, predicate, january, -1L, 64L).orElseThrow());
+			assertEquals(32L,
+					triples.boundedExactCardinality(read.txn, -1L, predicate, november, -1L, 64L).orElseThrow());
 			PatternFilterSampleEstimate estimate = fixture.sample(read, filter);
 			assertAll(
 					() -> assertTrue(estimate.passRatio() > 0.0d && estimate.passRatio() < 1.0d,
-							"a distributed bounded sample must not collapse these two ordered runs to one: " + fixture.trace),
+							"a distributed bounded sample must not collapse these two ordered runs to one: "
+									+ fixture.trace),
 					() -> assertTrue(fixture.trace.objectIds.containsAll(Set.of(january, november)),
 							"real delivered rows must reach both object runs: " + fixture.trace),
 					() -> assertTrue(fixture.trace.delivered <= 16, fixture.trace::toString),
-					() -> assertTrue(estimate.sampleSize() > 0 && estimate.sampleSize() <= 16, fixture.trace::toString));
+					() -> assertTrue(estimate.sampleSize() > 0 && estimate.sampleSize() <= 16,
+							fixture.trace::toString));
 		}
 	}
 
@@ -222,7 +230,8 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 
 			Filter filter = positiveFilter();
 			PatternFilterSampleEstimate estimate = fixture.sample(read, filter);
-			assertFalse(fixture.trace.censuses.isEmpty(), "the actual qualified provider must attempt its bounded census");
+			assertFalse(fixture.trace.censuses.isEmpty(),
+					"the actual qualified provider must attempt its bounded census");
 			assertTrue(fixture.trace.delivered <= budget, fixture.trace::toString);
 			if (estimate.passRatio() >= 0.0d) {
 				// Within each plane the condition is constant, so neither plane has stochastic outcome uncertainty.
@@ -269,7 +278,8 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 			assertEquals((double) dominant / (dominant + minority), estimate.passRatio(), 1.0e-12,
 					"both planes have constant outcomes; exact mass determines their combined ratio");
 			assertTrue(estimate.sampleSize() > 0 && estimate.sampleSize() < fixture.trace.delivered,
-					"unequal plane weights cannot have the precision of equally weighted observations: " + fixture.trace);
+					"unequal plane weights cannot have the precision of equally weighted observations: "
+							+ fixture.trace);
 			assertTrue(fixture.trace.delivered <= budget, fixture.trace::toString);
 		}
 	}
@@ -311,7 +321,9 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 			for (PlaneRow row : fixture.trace.observed) {
 				int plane = row.explicit() ? 0 : 1;
 				matched[plane]++;
-				if (row.quad()[TripleIndex.SUBJ_IDX] == row.quad()[TripleIndex.OBJ_IDX]) { eligible[plane]++; }
+				if (row.quad()[TripleIndex.SUBJ_IDX] == row.quad()[TripleIndex.OBJ_IDX]) {
+					eligible[plane]++;
+				}
 			}
 			assertTrue(matched[0] > 0 && matched[1] > 0 && eligible[0] > 0 && eligible[1] > 0,
 					"both real pattern populations and eligible subpopulations must be sampled: " + fixture.trace);
@@ -335,10 +347,12 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 				assertEquals(-1.0d, estimate.passRatio(), 0.0d);
 				assertEquals(-1L, estimate.sampleSize());
 			} else {
-				assertTrue(eligibleCount >= minimumEvidence, "the positive case must satisfy actual evidence admission");
+				assertTrue(eligibleCount >= minimumEvidence,
+						"the positive case must satisfy actual evidence admission");
 				assertEquals(explicitFraction / (explicitFraction + inferredFraction), estimate.passRatio(), 1.0e-12,
 						"equal raw populations receive weights proportional to their sampled eligible fractions: matched="
-								+ java.util.Arrays.toString(matched) + ", eligible=" + java.util.Arrays.toString(eligible)
+								+ java.util.Arrays.toString(matched) + ", eligible="
+								+ java.util.Arrays.toString(eligible)
 								+ ", trace=" + fixture.trace);
 				assertTrue(estimate.sampleSize() > 0 && estimate.sampleSize() <= eligibleCount);
 			}
@@ -349,12 +363,15 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 	private static long[] countPlane(Fixture fixture, ReadSession read, long predicate, long matchingObject,
 			boolean explicit) throws IOException {
 		long[] totals = new long[2];
-		try (RecordIterator rows = fixture.store.getBackingStore().getTripleStore()
+		try (RecordIterator rows = fixture.store.getBackingStore()
+				.getTripleStore()
 				.getTriples(read.txn, -1L, predicate, -1L, -1L, explicit)) {
 			long[] row;
 			while ((row = rows.next()) != null) {
 				totals[0]++;
-				if (row[TripleIndex.OBJ_IDX] == matchingObject) { totals[1]++; }
+				if (row[TripleIndex.OBJ_IDX] == matchingObject) {
+					totals[1]++;
+				}
 			}
 		}
 		return totals;
@@ -370,9 +387,11 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 			PatternFilterSampleEstimate estimate = fixture.sample(read, filter);
 			assertAll(
 					() -> assertEquals(0.0d, estimate.passRatio(), 0.0d,
-							"an absent equality target is eligible for raw sampling; constant IN has a separate gate: " + fixture.trace),
+							"an absent equality target is eligible for raw sampling; constant IN has a separate gate: "
+									+ fixture.trace),
 					() -> assertTrue(estimate.sampleSize() >= 256 && estimate.sampleSize() <= 300,
-							"sufficient bounded zero-hit evidence must not be lost to an empty plane: " + fixture.trace),
+							"sufficient bounded zero-hit evidence must not be lost to an empty plane: "
+									+ fixture.trace),
 					() -> assertTrue(fixture.trace.delivered <= 300, fixture.trace::toString),
 					() -> assertEquals(estimate, read.stats().estimateCachedFilterPass(filter, pattern(filter))));
 		}
@@ -424,7 +443,8 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 	void truncatedPrefixZeroHitRequiresItsReportedEffectiveEvidence(@TempDir Path directory) throws Exception {
 		// One row beyond the configured ceiling keeps the prefix incomplete while its adaptive budget clears 256.
 		int population = 1_001;
-		try (Fixture fixture = Fixture.open(directory, 1_000, 20_000L, population, Planes.EXPLICIT, Distribution.NUMERIC,
+		try (Fixture fixture = Fixture.open(directory, 1_000, 20_000L, population, Planes.EXPLICIT,
+				Distribution.NUMERIC,
 				"spoc");
 				ReadSession read = fixture.openRead()) {
 			System.setProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY, "prefix");
@@ -449,9 +469,11 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 					() -> assertEquals(-1.0d, estimate.passRatio(), 0.0d,
 							"a budget below the zero-hit evidence threshold cannot publish certainty"),
 					() -> assertEquals(-1L, estimate.sampleSize()),
-					() -> assertEquals(-1.0d, read.stats().estimateCachedFilterPass(filter, pattern(filter)).passRatio()),
+					() -> assertEquals(-1.0d,
+							read.stats().estimateCachedFilterPass(filter, pattern(filter)).passRatio()),
 					() -> assertTrue(fixture.trace.delivered <= budget,
-							"an unsuccessful stratified pass cannot restart the global row budget in fallback: " + fixture.trace));
+							"an unsuccessful stratified pass cannot restart the global row budget in fallback: "
+									+ fixture.trace));
 		}
 	}
 
@@ -530,7 +552,8 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 								deadlineInterruptedWait.set(true);
 								admission.close();
 								Thread.currentThread().interrupt();
-								throw new QueryInterruptedException("interrupted while holding a real sampling admission", failure);
+								throw new QueryInterruptedException(
+										"interrupted while holding a real sampling admission", failure);
 							}
 						});
 						Filter filter = positiveFilter();
@@ -547,7 +570,8 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 				assertFalse(remainingInterrupt.get(), "the sampler settles its own time-limit interrupt");
 				assertEquals(0, fixture.trace.delivered);
 				assertNotNull(admittedLease.get());
-				assertTrue(admittedLease.get().isClosed(), "both the failed admission and its borrowed query owner settle");
+				assertTrue(admittedLease.get().isClosed(),
+						"both the failed admission and its borrowed query owner settle");
 				assertEquals(permits, fixture.values().getTxnManager().availableOrdinaryPermits());
 			} finally {
 				release.countDown();
@@ -723,8 +747,9 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 	}
 
 	private static Stream<Arguments> smallBudgetsAndPlanes() {
-		return Stream.of(Planes.values()).flatMap(plane -> Stream.of(1, 3, 7, 16, 31, 63)
-				.map(budget -> Arguments.of(plane, budget)));
+		return Stream.of(Planes.values())
+				.flatMap(plane -> Stream.of(1, 3, 7, 16, 31, 63)
+						.map(budget -> Arguments.of(plane, budget)));
 	}
 
 	private static Stream<Arguments> dateLayoutsAndPlanes() {
@@ -759,7 +784,9 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 	}
 
 	private enum Planes {
-		EXPLICIT, INFERRED, BOTH;
+		EXPLICIT,
+		INFERRED,
+		BOTH;
 
 		boolean explicit(int row) {
 			// Pairs give both date values to both planes for the interleaved fixture.
@@ -768,7 +795,9 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 	}
 
 	private enum Distribution {
-		NUMERIC, INTERLEAVED_DATES, CLUSTERED_DATES;
+		NUMERIC,
+		INTERLEAVED_DATES,
+		CLUSTERED_DATES;
 
 		Value value(int row, int population) {
 			return switch (this) {
@@ -793,9 +822,12 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 			previousMode = System.getProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY);
 			System.setProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY, "stratified");
 			LmdbStoreConfig config = new LmdbStoreConfig(indexes).setSketchEstimatorEnabled(true)
-					.setSketchEstimatorColdSynopsisCapacity(0).setOptimizerSamplingEnabled(true)
-					.setOptimizerSamplingMaxRows(budget).setOptimizerSamplingMaxMillis(millis)
-					.setBackgroundRawSamplingEnabled(false).setBackgroundRawSamplingMaxMillisPerCycle(0L);
+					.setSketchEstimatorColdSynopsisCapacity(0)
+					.setOptimizerSamplingEnabled(true)
+					.setOptimizerSamplingMaxRows(budget)
+					.setOptimizerSamplingMaxMillis(millis)
+					.setBackgroundRawSamplingEnabled(false)
+					.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 			config.setExperimentalQueryOptimizations(true);
 			store = new ProbeStore(directory.toFile(), config, trace);
 			repository = new SailRepository(store);
@@ -863,7 +895,11 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 				assertTrue(fixture.store.awaitSketchesReady(30L, TimeUnit.SECONDS));
 				return fixture;
 			} catch (Exception | Error failure) {
-				try { fixture.close(); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+				try {
+					fixture.close();
+				} catch (RuntimeException | Error cleanup) {
+					failure.addSuppressed(cleanup);
+				}
 				throw failure;
 			}
 		}
@@ -872,26 +908,33 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 			// The provider samples both physical planes, so the actual bound query source includes both too.
 			LmdbSailStore backing = store.getBackingStore();
 			SailDataset owner = UnionSailSourceTestSupport.dataset(backing.getExplicitSailSource(),
-				backing.getInferredSailSource(), IsolationLevels.SNAPSHOT_READ);
+					backing.getInferredSailSource(), IsolationLevels.SNAPSHOT_READ);
 			SailClosable view = null;
 			TripleStore.PlanningReadPin pin = null;
 			try {
 				SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), owner);
-				LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+				LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+						.getEvaluationStatistics();
 				LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
 				view = borrowed.enterPlanningReadView().orElseThrow();
 				ValueStore.ReadSnapshot values = borrowed.pinnedValueSnapshot().orElseThrow();
 				TxnManager.Txn txn = borrowed.pinnedReadTxn().orElseThrow();
 				pin = statistics.estimatorRuntime().pinQueryPlanningReads(txn, values);
-				EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-						null, source, statistics, store.getQueryExecutionPolicy());
-				assertTrue(statistics.feedbackPublicationAllowed(), "the actual both-plane source owns its current read");
+				EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+						.createEvaluationStrategy(
+								null, source, statistics, store.getQueryExecutionPolicy());
+				assertTrue(statistics.feedbackPublicationAllowed(),
+						"the actual both-plane source owns its current read");
 				assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority());
 				assertTrue(statistics.estimatorRuntime().adaptiveEvidenceAllowed());
 				return new ReadSession(owner, view, pin, source, txn, values, statistics, strategy);
 			} catch (RuntimeException | Error failure) {
-				if (pin != null) { closeOnFailure(failure, pin::close); }
-				if (view != null) { closeOnFailure(failure, view::close); }
+				if (pin != null) {
+					closeOnFailure(failure, pin::close);
+				}
+				if (view != null) {
+					closeOnFailure(failure, view::close);
+				}
 				closeOnFailure(failure, owner::close);
 				throw failure;
 			}
@@ -929,8 +972,12 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 	}
 
 	private static void closeOnFailure(Throwable failure, Runnable cleanup) {
-		try { cleanup.run(); } catch (RuntimeException | Error closing) {
-			if (closing != failure) { failure.addSuppressed(closing); }
+		try {
+			cleanup.run();
+		} catch (RuntimeException | Error closing) {
+			if (closing != failure) {
+				failure.addSuppressed(closing);
+			}
 		}
 	}
 
@@ -944,13 +991,16 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 
 		@Override
 		public void close() {
-			try (owner; view; pin) { }
+			try (owner; view; pin) {
+			}
 		}
 	}
 
-	private record Census(long cap, OptionalLong result) { }
+	private record Census(long cap, OptionalLong result) {
+	}
 
-	private record PlaneRow(boolean explicit, long[] quad) { }
+	private record PlaneRow(boolean explicit, long[] quad) {
+	}
 
 	private static final class Trace {
 		volatile boolean armed;
@@ -980,14 +1030,19 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 
 		void row(long[] row, boolean explicit) {
 			delivered++;
-			if (explicit) { explicitRows++; } else { inferredRows++; }
+			if (explicit) {
+				explicitRows++;
+			} else {
+				inferredRows++;
+			}
 			objectIds.add(row[TripleIndex.OBJ_IDX]);
 			observed.add(new PlaneRow(explicit, row.clone()));
 		}
 
 		@Override
 		public String toString() {
-			return "delivered=" + delivered + ", examined=" + examined + ", explicit=" + explicitRows + ", inferred=" + inferredRows
+			return "delivered=" + delivered + ", examined=" + examined + ", explicit=" + explicitRows + ", inferred="
+					+ inferredRows
 					+ ", explicitMetrics=" + (pairedResult == null ? null : pairedResult.explicit())
 					+ ", inferredMetrics=" + (pairedResult == null ? null : pairedResult.inferred())
 					+ ", pageQuote=" + (pairedResult == null ? null : pairedResult.exactPageQuote())
@@ -1013,8 +1068,11 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 						@Override
 						OptionalLong boundedExactCardinality(TxnManager.Txn txn, long subject, long predicate,
 								long object, long context, long cap) throws IOException {
-							OptionalLong result = super.boundedExactCardinality(txn, subject, predicate, object, context, cap);
-							if (trace.armed) { trace.censuses.add(new Census(cap, result)); }
+							OptionalLong result = super.boundedExactCardinality(txn, subject, predicate, object,
+									context, cap);
+							if (trace.armed) {
+								trace.censuses.add(new Census(cap, result));
+							}
 							return result;
 						}
 
@@ -1045,18 +1103,23 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 						@Override
 						public RecordIterator getTriples(TxnManager.Txn txn, long subject, long predicate, long object,
 								long context, boolean explicit) throws IOException {
-							return observed(super.getTriples(txn, subject, predicate, object, context, explicit), explicit, "prefix");
+							return observed(super.getTriples(txn, subject, predicate, object, context, explicit),
+									explicit, "prefix");
 						}
 
 						@Override
-						RecordIterator getTriples(TxnManager.Txn txn, StatementOrder order, long subject, long predicate,
+						RecordIterator getTriples(TxnManager.Txn txn, StatementOrder order, long subject,
+								long predicate,
 								long object, long context, boolean explicit) throws IOException {
-							return observed(super.getTriples(txn, order, subject, predicate, object, context, explicit), explicit,
+							return observed(super.getTriples(txn, order, subject, predicate, object, context, explicit),
+									explicit,
 									"ordered:" + order);
 						}
 
 						private RecordIterator observed(RecordIterator delegate, boolean explicit, String kind) {
-							if (!trace.armed) { return delegate; }
+							if (!trace.armed) {
+								return delegate;
+							}
 							trace.scans.add(kind + "(" + explicit + ")");
 							return new RecordIterator() {
 								@Override
@@ -1072,10 +1135,14 @@ class LmdbQualifiedFilterSamplingBudgetTest {
 								}
 
 								@Override
-								public void close() { delegate.close(); }
+								public void close() {
+									delegate.close();
+								}
 
 								@Override
-								public String getIndexName() { return delegate.getIndexName(); }
+								public String getIndexName() {
+									return delegate.getIndexName();
+								}
 
 								@Override
 								public boolean seekForward(long subject, long predicate, long object, long context) {

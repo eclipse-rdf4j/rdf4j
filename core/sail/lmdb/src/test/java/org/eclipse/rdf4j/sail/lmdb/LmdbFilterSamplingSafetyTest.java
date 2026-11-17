@@ -265,7 +265,8 @@ class LmdbFilterSamplingSafetyTest {
 			try {
 				assertTrue(passedInitialHealthCheck.await(10, TimeUnit.SECONDS),
 						"the cached reader must pass its initial provider check before reset");
-				AssertionError injected = new AssertionError("injected reset observer failure during cached filter read");
+				AssertionError injected = new AssertionError(
+						"injected reset observer failure during cached filter read");
 				store.stats.setLearnedStateObserver(new LmdbFilterSelectivityStats.LearnedStateObserver() {
 					@Override
 					public void learnedStateReset() {
@@ -315,7 +316,8 @@ class LmdbFilterSamplingSafetyTest {
 			try {
 				assertTrue(passedInitialHealthCheck.await(10, TimeUnit.SECONDS),
 						"the live sampler must pass its initial provider check before reset");
-				AssertionError injected = new AssertionError("injected reset observer failure during live filter sample");
+				AssertionError injected = new AssertionError(
+						"injected reset observer failure during live filter sample");
 				store.stats.setLearnedStateObserver(new LmdbFilterSelectivityStats.LearnedStateObserver() {
 					@Override
 					public void learnedStateReset() {

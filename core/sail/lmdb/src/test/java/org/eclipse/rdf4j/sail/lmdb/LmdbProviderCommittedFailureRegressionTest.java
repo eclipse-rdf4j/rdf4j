@@ -69,13 +69,15 @@ class LmdbProviderCommittedFailureRegressionTest {
 			Path snapshot = directory.resolve("join-estimator.rjes/synopsis-v8.bin");
 			Files.copy(snapshot, evidence.resolve("original-v8-backup.bin"));
 
-			LmdbEvaluationStatistics before = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics before = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 			long revision = before.estimatorRuntime().snapshotVersion();
 			before.bindExecutionSnapshot(OptionalLong.of(revision));
 			Filter filter = filter();
 			before.recordFilterOutcome(filter, 20L, 80L);
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
-					before.estimateFilterPass(filter).getSource(), "the filter evidence was published before the commit");
+					before.estimateFilterPass(filter).getSource(),
+					"the filter evidence was published before the commit");
 
 			LogicalLearningKey logical = LogicalLearningKey.of("filter", "condition", "children", "predicates",
 					"v0", "none", "bag", "default");
@@ -88,7 +90,8 @@ class LmdbProviderCommittedFailureRegressionTest {
 			RuntimeFeedbackContract contract = new RuntimeFeedbackContract(
 					new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability, physical), prediction,
 					prediction, 1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY,
-					RuntimeFeedbackContract.SemanticKind.ORDINARY, RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED,
+					RuntimeFeedbackContract.SemanticKind.ORDINARY,
+					RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED,
 					RuntimeFeedbackContract.Access.EXACT_LOOKUP, physical.hashCode(), revision, revision, 1L,
 					RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL);
 			filter.setCostFeedbackTrackingEnabled(true);
@@ -116,12 +119,14 @@ class LmdbProviderCommittedFailureRegressionTest {
 			try (var connection = repository.getConnection()) {
 				rows = connection.size();
 			}
-			LmdbEvaluationStatistics after = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
+			LmdbEvaluationStatistics after = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 			assertAll("a committed mutation that skipped learned-state maintenance cannot expose stale evidence",
 					() -> assertEquals(2L, rows, "the native commit actually landed"),
 					() -> assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
 							after.estimateFilterPass(filter()).getSource(), "stale filter evidence is unavailable"),
-					() -> assertNull(operator.logicalPosterior(logical, applicability, FrontierCostDimension.OUTPUT_ROWS),
+					() -> assertNull(
+							operator.logicalPosterior(logical, applicability, FrontierCostDimension.OUTPUT_ROWS),
 							"stale operator evidence is unavailable"));
 		} finally {
 			repository.shutDown();
@@ -147,7 +152,9 @@ class LmdbProviderCommittedFailureRegressionTest {
 	private static LmdbStoreConfig config() {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true)
 				.setSketchEstimatorMemoryBudgetBytes(4L * 1024L * 1024L)
-				.setBackgroundRawSamplingEnabled(false).setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+				.setBackgroundRawSamplingEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false);
 		config.setExperimentalQueryOptimizations(true);
 		return config;
 	}
@@ -169,7 +176,8 @@ class LmdbProviderCommittedFailureRegressionTest {
 						public void commit() throws IOException {
 							super.commit();
 							if (failAfterNative.getAndSet(false)) {
-								throw new IOException("test failure after native commit before learned-state callbacks");
+								throw new IOException(
+										"test failure after native commit before learned-state callbacks");
 							}
 						}
 					});

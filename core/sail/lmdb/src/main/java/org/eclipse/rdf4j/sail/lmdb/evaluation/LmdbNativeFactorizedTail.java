@@ -541,7 +541,8 @@ final class FactorizedTail {
 			boolean existenceOnly = !anyNonDistinct && valueColumnsPerBranch[b] == 0 && tailGroupPos < 0;
 			// the memo key covers everything the branch's result can depend on: the pattern's probe
 			// slots plus any prefix slots its filters read
-			int[] memoKeySlots = slotsOf(((pattern.producedMask() | pattern.readOnlyMask()) & boundByPrefix) | branchFilterReads[b]);
+			int[] memoKeySlots = slotsOf(
+					((pattern.producedMask() | pattern.readOnlyMask()) & boundByPrefix) | branchFilterReads[b]);
 			// scan-once (hash-join-style) mode needs exactly one row-varying correlated slot, count-only
 			// filter-free consumption, and a quad position for the key
 			long varyingMask = pattern.producedMask() & boundByPrefix & ~seedMask;

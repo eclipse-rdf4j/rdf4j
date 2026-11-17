@@ -54,7 +54,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 		OwnedPrefixes producer = new OwnedPrefixes(2, false, false, false);
 		List<List<Long>> actual = new ArrayList<>();
 		try (NativeFactorProjections input = projections(producer, row)) {
-			while (input.nextBatch()) actual.addAll(drainProjection(input));
+			while (input.nextBatch())
+				actual.addAll(drainProjection(input));
 		}
 		assertEquals(producer.expected(), actual);
 		producer.assertSettled();
@@ -67,12 +68,15 @@ class LmdbNativeFactorReaderLifetimeTest {
 		try (NativeFactorProjections input = new LmdbNativeFactorProjections(producer, row,
 				new int[][] { { 0 }, { 0, 1 } }, new boolean[] { true, true })) {
 			while (input.nextBatch()) {
-				while (input.next(0)) assertTrue(input.multiplicity() > 0L);
-				while (input.next(1)) assertTrue(input.multiplicity() > 0L);
+				while (input.next(0))
+					assertTrue(input.multiplicity() > 0L);
+				while (input.next(1))
+					assertTrue(input.multiplicity() > 0L);
 			}
 		}
 		producer.assertSettled();
-		for (Lifetime lifetime : producer.lifetimes) assertEquals(2, lifetime.opens);
+		for (Lifetime lifetime : producer.lifetimes)
+			assertEquals(2, lifetime.opens);
 	}
 
 	@Test
@@ -111,7 +115,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 						}
 					} else {
 						try (NativeFactorProjections input = projections(producer, row)) {
-							while (input.nextBatch()) actual.addAll(drainProjection(input));
+							while (input.nextBatch())
+								actual.addAll(drainProjection(input));
 						}
 					}
 					assertEquals(producer.expected(), actual);
@@ -136,7 +141,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 					}
 				} else {
 					try (NativeFactorProjections input = projections(producer, row)) {
-						while (input.nextBatch()) actual.addAll(drainProjection(input));
+						while (input.nextBatch())
+							actual.addAll(drainProjection(input));
 					}
 				}
 				assertEquals(producer.expected(), actual);
@@ -174,14 +180,17 @@ class LmdbNativeFactorReaderLifetimeTest {
 				try (LmdbNativeFactorCursor input = LmdbNativeFactorRows.expand(producer, row, 1L)) {
 					assertTrue(input.next());
 					row.cancellation.requestCancellation();
-					while (input.next()) { /* respect the production cancellation polling cadence */ }
+					while (input.next()) {
+						/* respect the production cancellation polling cadence */ }
 				}
 			} else {
 				try (NativeFactorProjections input = projections(producer, row)) {
 					assertTrue(input.nextBatch());
 					assertTrue(input.next(0));
 					row.cancellation.requestCancellation();
-					while (input.nextBatch()) while (input.next(0)) { /* respect bounded cancellation polling */ }
+					while (input.nextBatch())
+						while (input.next(0)) {
+							/* respect bounded cancellation polling */ }
 				}
 			}
 			assertTrue(producer.at < producer.count, "cancellation, not natural input EOF, must stop the consumer");
@@ -213,7 +222,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 				}
 			}
 			assertSame(body, thrown);
-			assertTrue(containsSuppressed(thrown, readerClose), "reader cleanup must not disappear behind source cleanup");
+			assertTrue(containsSuppressed(thrown, readerClose),
+					"reader cleanup must not disappear behind source cleanup");
 			assertTrue(containsSuppressed(thrown, sourceClose));
 			producer.assertSettled();
 		}
@@ -239,39 +249,65 @@ class LmdbNativeFactorReaderLifetimeTest {
 		RowState row = row();
 		OwnedPrefixes producer = new OwnedPrefixes(2, false, tuple, direct, independent, tuple);
 		SlotPlan plan = new SlotPlan() {
-			@Override public long producedMask() { return tuple || independent ? 3L : 1L; }
-			@Override public LmdbNativeFactorCursor openFactors(RowState ignored) { return producer; }
-			@Override public RowCursor open(RowState ignored) { throw new AssertionError("fixture must use grouped input"); }
+			@Override
+			public long producedMask() {
+				return tuple || independent ? 3L : 1L;
+			}
+
+			@Override
+			public LmdbNativeFactorCursor openFactors(RowState ignored) {
+				return producer;
+			}
+
+			@Override
+			public RowCursor open(RowState ignored) {
+				throw new AssertionError("fixture must use grouped input");
+			}
 		};
 		int[] incomplete = { 0 }, closes = { 0 };
 		NativeBooleanFilter filter = new NativeBooleanFilter() {
-			@Override public boolean accept(RowState state) { return state.slots[0] != UNKNOWN; }
-			@Override public void incompleteInput() { incomplete[0]++; }
-			@Override public void close() { closes[0]++; }
+			@Override
+			public boolean accept(RowState state) {
+				return state.slots[0] != UNKNOWN;
+			}
+
+			@Override
+			public void incompleteInput() {
+				incomplete[0]++;
+			}
+
+			@Override
+			public void close() {
+				closes[0]++;
+			}
 		};
 		List<List<Long>> actual = new ArrayList<>();
 		boolean sawSelection = false;
-		try (LmdbNativeFactorCursor selected = LmdbNativeFactorRows.filter(new FilterPlan(plan, filter, independent ? 3L : 1L), row)) {
+		try (LmdbNativeFactorCursor selected = LmdbNativeFactorRows
+				.filter(new FilterPlan(plan, filter, independent ? 3L : 1L), row)) {
 			assertTrue(selected != null && selected.getClass().getSimpleName().equals("SelectingFilter"),
 					"the production selection entry point must actually admit its selection path");
 			try (NativeFactorProjections input = projectionsFor(selected, row)) {
 				while (input.nextBatch()) {
 					if (selected.factors().mask() != 0L) {
 						int leader = Long.numberOfTrailingZeros(selected.factors().groupLeaders());
-						Object source = selected.factors().isTuple(leader) ? selected.factors().tupleBatch(leader).source()
+						Object source = selected.factors().isTuple(leader)
+								? selected.factors().tupleBatch(leader).source()
 								: selected.factors().batch(leader).source();
 						sawSelection |= source instanceof org.eclipse.rdf4j.sail.lmdb.factor.SelectedFactorSource
 								|| source instanceof org.eclipse.rdf4j.sail.lmdb.factor.SelectedTupleSource;
 					}
 					while (input.next(0)) {
 						long value = input.value(0), weight = input.multiplicity();
-						for (long repeat = 0; repeat < weight; repeat++) actual.add(List.of(value));
+						for (long repeat = 0; repeat < weight; repeat++)
+							actual.add(List.of(value));
 					}
 				}
 			}
 		}
 		assertEquals(producer.expected(), actual);
-		if (!independent) assertTrue(sawSelection, "the dependent selected-source decoder must really be reached");
+		if (!independent)
+			assertTrue(sawSelection, "the dependent selected-source decoder must really be reached");
 		assertEquals(1, incomplete[0], "the selection input retains its incomplete-input feedback receipt");
 		assertEquals(1, closes[0]);
 		producer.assertSettled();
@@ -288,7 +324,9 @@ class LmdbNativeFactorReaderLifetimeTest {
 		List<List<Long>> actual = new ArrayList<>();
 		try (var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor.open(kernel(producer), 2,
 				new int[] { 0 }, kernelCancellation())) {
-			while (input.next()) for (long i = 0; i < input.multiplicity(); i++) actual.add(List.of(input.values()[0]));
+			while (input.next())
+				for (long i = 0; i < input.multiplicity(); i++)
+					actual.add(List.of(input.values()[0]));
 		}
 		assertEquals(producer.expected(), actual);
 		producer.assertSettled();
@@ -299,7 +337,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 		for (boolean windows : new boolean[] { false, true }) {
 			OwnedPrefixes producer = new OwnedPrefixes(2, false, false, false);
 			List<List<Long>> actual = new ArrayList<>();
-			try (var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(kernel(producer), 2,
+			try (var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(kernel(producer),
+					2,
 					new int[][] { { 0 } }, new boolean[] { true }, kernelCancellation())) {
 				while (input.nextBatch()) {
 					if (windows) {
@@ -308,9 +347,13 @@ class LmdbNativeFactorReaderLifetimeTest {
 						while ((count = input.nextWindow(0)) != 0) {
 							long scale = input.windowScale();
 							for (int i = input.windowStart(); i < input.windowStart() + count; i++)
-								for (long repeat = 0; repeat < input.windowWeights()[i] * scale; repeat++) actual.add(List.of(input.windowValues()[i]));
+								for (long repeat = 0; repeat < input.windowWeights()[i] * scale; repeat++)
+									actual.add(List.of(input.windowValues()[i]));
 						}
-					} else while (input.next(0)) for (long i = 0; i < input.multiplicity(); i++) actual.add(List.of(input.value(0)));
+					} else
+						while (input.next(0))
+							for (long i = 0; i < input.multiplicity(); i++)
+								actual.add(List.of(input.value(0)));
 				}
 			}
 			assertEquals(producer.expected(), actual);
@@ -322,41 +365,88 @@ class LmdbNativeFactorReaderLifetimeTest {
 	void kernelIndependentReductionClosesCounterReadersBeforeProducerAdvance() {
 		OwnedPrefixes producer = new OwnedPrefixes(2, false, false, false);
 		var predicate = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate() {
-			@Override public int guardCount() { return 1; }
-			@Override public long dependencies(int guard) { return 1L; }
-			@Override public boolean test(int guard, long[] prefix) { return true; }
-			@Override public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int count) { }
+			@Override
+			public int guardCount() {
+				return 1;
+			}
+
+			@Override
+			public long dependencies(int guard) {
+				return 1L;
+			}
+
+			@Override
+			public boolean test(int guard, long[] prefix) {
+				return true;
+			}
+
+			@Override
+			public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int count) {
+			}
 		};
 		long total = 0L;
 		try (var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor.open(kernel(producer), 2,
 				new int[] { 0 }, kernelCancellation())) {
-			while (input.nextPrefix()) total += input.reduceIndependent(predicate);
+			while (input.nextPrefix())
+				total += input.reduceIndependent(predicate);
 		}
 		assertEquals(producer.expected().size(), total);
 		producer.assertSettled();
 	}
 
 	private static org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation kernelCancellation() {
-		return org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation.forOrdinaryExecution(() -> false, () -> false, () -> false);
+		return org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation.forOrdinaryExecution(() -> false,
+				() -> false, () -> false);
 	}
 
 	private static org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan kernel(OwnedPrefixes producer) {
 		return new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan() {
-			@Override public Cursor open() { throw new AssertionError("a grouped source must not use scalar fallback"); }
-			@Override public FactorCursor openFactors() {
+			@Override
+			public Cursor open() {
+				throw new AssertionError("a grouped source must not use scalar fallback");
+			}
+
+			@Override
+			public FactorCursor openFactors() {
 				return new FactorCursor() {
-					@Override public boolean next() { return producer.next(); }
-					@Override public int slot(int column) { return column; }
-					@Override public long scalar(int column) {
-						if ((producer.factors().mask() & (1L << column)) != 0L) throw new IllegalStateException("deferred column");
+					@Override
+					public boolean next() {
+						return producer.next();
+					}
+
+					@Override
+					public int slot(int column) {
+						return column;
+					}
+
+					@Override
+					public long scalar(int column) {
+						if ((producer.factors().mask() & (1L << column)) != 0L)
+							throw new IllegalStateException("deferred column");
 						return UNKNOWN;
 					}
-					@Override public long multiplicity() { return producer.multiplicity(); }
-					@Override public FactorEnvironment factors() { return producer.factors(); }
-					@Override public void close() { producer.close(); }
+
+					@Override
+					public long multiplicity() {
+						return producer.multiplicity();
+					}
+
+					@Override
+					public FactorEnvironment factors() {
+						return producer.factors();
+					}
+
+					@Override
+					public void close() {
+						producer.close();
+					}
 				};
 			}
-			@Override public void close() { producer.close(); }
+
+			@Override
+			public void close() {
+				producer.close();
+			}
 		};
 	}
 
@@ -374,7 +464,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 			assertFalse(input.nextBatch());
 		}
 		producer.assertSettled();
-		for (Lifetime lifetime : producer.lifetimes) assertEquals(1, lifetime.opens);
+		for (Lifetime lifetime : producer.lifetimes)
+			assertEquals(1, lifetime.opens);
 		assertEquals(0L, row.boundMask());
 	}
 
@@ -414,7 +505,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 			producer.readerCloseFailure = readerClose;
 			producer.sourceCloseFailure = sourceClose;
 			assertSame(readerClose, assertThrows(IllegalStateException.class, () -> {
-				while (input.next()) { /* finish exactly this prefix before reader retirement */ }
+				while (input.next()) {
+					/* finish exactly this prefix before reader retirement */ }
 			}));
 			assertTrue(containsSuppressed(readerClose, sourceClose));
 			assertEquals(1, producer.nextCalls);
@@ -433,15 +525,37 @@ class LmdbNativeFactorReaderLifetimeTest {
 			RowState row = row();
 			OwnedPrefixes producer = new OwnedPrefixes(2, false, tuple, direct, independent, tuple);
 			SlotPlan plan = new SlotPlan() {
-				@Override public long producedMask() { return tuple || independent ? 3L : 1L; }
-				@Override public LmdbNativeFactorCursor openFactors(RowState ignored) { return producer; }
-				@Override public RowCursor open(RowState ignored) { throw new AssertionError("grouped selection required"); }
+				@Override
+				public long producedMask() {
+					return tuple || independent ? 3L : 1L;
+				}
+
+				@Override
+				public LmdbNativeFactorCursor openFactors(RowState ignored) {
+					return producer;
+				}
+
+				@Override
+				public RowCursor open(RowState ignored) {
+					throw new AssertionError("grouped selection required");
+				}
 			};
 			int[] incomplete = { 0 }, closes = { 0 };
 			NativeBooleanFilter filter = new NativeBooleanFilter() {
-				@Override public boolean accept(RowState state) { return state.slots[0] != UNKNOWN; }
-				@Override public void incompleteInput() { incomplete[0]++; }
-				@Override public void close() { closes[0]++; }
+				@Override
+				public boolean accept(RowState state) {
+					return state.slots[0] != UNKNOWN;
+				}
+
+				@Override
+				public void incompleteInput() {
+					incomplete[0]++;
+				}
+
+				@Override
+				public void close() {
+					closes[0]++;
+				}
 			};
 			IllegalStateException readerClose = new IllegalStateException("selection-retirement-" + mode);
 			IllegalStateException sourceClose = new IllegalStateException("selection-input-close-" + mode);
@@ -452,7 +566,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 				producer.readerCloseFailure = readerClose;
 				producer.sourceCloseFailure = sourceClose;
 				assertSame(readerClose, assertThrows(IllegalStateException.class, () -> {
-					while (input.next()) { /* caller consumes only metadata and never opens a dependent reader */ }
+					while (input.next()) {
+						/* caller consumes only metadata and never opens a dependent reader */ }
 				}));
 				assertTrue(containsSuppressed(readerClose, sourceClose));
 				assertEquals(1, producer.nextCalls);
@@ -475,11 +590,14 @@ class LmdbNativeFactorReaderLifetimeTest {
 			producer.readerCloseFailure = readerClose;
 			producer.sourceCloseFailure = sourceClose;
 			if (mode == 0 || mode == 3) {
-				try (var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor.open(kernel(producer), 2,
+				try (var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor.open(
+						kernel(producer), 2,
 						mode == 0 ? new int[] { 0, 1 } : new int[] { 0 }, kernelCancellation())) {
-					if (mode == 0) assertSame(readerClose, assertThrows(IllegalStateException.class, () -> {
-						while (input.next()) { }
-					}));
+					if (mode == 0)
+						assertSame(readerClose, assertThrows(IllegalStateException.class, () -> {
+							while (input.next()) {
+							}
+						}));
 					else {
 						assertTrue(input.nextPrefix());
 						assertEquals(6L, input.reduceIndependent(allPredicate()));
@@ -488,16 +606,20 @@ class LmdbNativeFactorReaderLifetimeTest {
 					assertFalse(input.next());
 				}
 			} else {
-				try (var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(kernel(producer), 2,
+				try (var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(
+						kernel(producer), 2,
 						new int[][] { { 0 } }, new boolean[] { true }, kernelCancellation())) {
 					assertTrue(input.nextBatch());
-					if (mode == 1) assertSame(readerClose, assertThrows(IllegalStateException.class, () -> {
-						while (input.next(0)) { }
-						input.nextBatch();
-					}));
+					if (mode == 1)
+						assertSame(readerClose, assertThrows(IllegalStateException.class, () -> {
+							while (input.next(0)) {
+							}
+							input.nextBatch();
+						}));
 					else {
 						assertEquals(0, input.windowColumn(0));
-						while (input.nextWindow(0) != 0) { }
+						while (input.nextWindow(0) != 0) {
+						}
 						assertSame(readerClose, assertThrows(IllegalStateException.class, input::nextBatch));
 					}
 					assertFalse(input.nextBatch());
@@ -534,9 +656,11 @@ class LmdbNativeFactorReaderLifetimeTest {
 				LmdbNativeKernelIr.AggregateOutput.countStar(),
 				LmdbNativeKernelIr.AggregateOutput.countDistinct(0));
 		var executable = compiled
-				? GeneratedBorrowedFtreeContractTest.compile(shape.className(), LmdbNativeKernelEmitter.emit(shape), directory)
+				? GeneratedBorrowedFtreeContractTest.compile(shape.className(), LmdbNativeKernelEmitter.emit(shape),
+						directory)
 				: LmdbNativeKernelInterpreter.forAggregate(shape);
-		assertTrue(executable != null, "the actual emitter/interpreter must admit the fixture before lifetime attribution");
+		assertTrue(executable != null,
+				"the actual emitter/interpreter must admit the fixture before lifetime attribution");
 		long[][] actual = FactorPlanKernelContractTest.drain(executable, shape, kernel(producer), new long[0], null);
 		assertTrue(java.util.Arrays.deepEquals(new long[][] { { 12L, 4L } }, actual),
 				"two strict prefixes retain COUNT=12 and four distinct values through actual emitted/interpreted consumers");
@@ -545,10 +669,24 @@ class LmdbNativeFactorReaderLifetimeTest {
 
 	private static org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate allPredicate() {
 		return new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate() {
-			@Override public int guardCount() { return 1; }
-			@Override public long dependencies(int guard) { return 1L; }
-			@Override public boolean test(int guard, long[] prefix) { return true; }
-			@Override public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int count) { }
+			@Override
+			public int guardCount() {
+				return 1;
+			}
+
+			@Override
+			public long dependencies(int guard) {
+				return 1L;
+			}
+
+			@Override
+			public boolean test(int guard, long[] prefix) {
+				return true;
+			}
+
+			@Override
+			public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int count) {
+			}
 		};
 	}
 
@@ -564,7 +702,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 				product.bind(producer.factors(), demand, producer.multiplicity());
 				while (product.next()) {
 					last0 = product.value(0);
-					if (mode != 0) last1 = product.value(1);
+					if (mode != 0)
+						last1 = product.value(1);
 					lastWeight = product.multiplicity();
 					first.add(List.of(last0, last1, lastWeight));
 				}
@@ -573,14 +712,16 @@ class LmdbNativeFactorReaderLifetimeTest {
 				assertTrue(readers > 0, "natural product EOF does not end the same live prefix's reader ownership");
 				assertEquals(demand, product.expandedMask());
 				assertEquals(last0, product.value(0));
-				if (mode != 0) assertEquals(last1, product.value(1));
+				if (mode != 0)
+					assertEquals(last1, product.value(1));
 				assertEquals(lastWeight, product.multiplicity());
 				assertThrows(IllegalStateException.class, product::exactMultiplicity);
 				assertFalse(product.next());
 				product.bind(producer.factors(), demand, producer.multiplicity());
 				List<List<Long>> replay = new ArrayList<>();
-				while (product.next()) replay.add(List.of(product.value(0), mode == 0 ? UNKNOWN : product.value(1),
-						product.multiplicity()));
+				while (product.next())
+					replay.add(List.of(product.value(0), mode == 0 ? UNKNOWN : product.value(1),
+							product.multiplicity()));
 				assertEquals(first, replay, "same-prefix replay keeps exact unary/independent/tuple bags and weights");
 				assertEquals(opens, producer.lifetimes.get(0).opens, "same-live-prefix replay reuses its decoders");
 				assertEquals(readers, producer.lifetimes.get(0).readers);
@@ -631,14 +772,21 @@ class LmdbNativeFactorReaderLifetimeTest {
 			row.cancellation.requestCancellation();
 		};
 		SlotPlan source = new SlotPlan() {
-			@Override public RowCursor open(RowState active) {
+			@Override
+			public RowCursor open(RowState active) {
 				throw new AssertionError("the grouped external producer must remain on the actual factor path");
 			}
-			@Override public LmdbNativeFactorCursor openFactors(RowState active) {
+
+			@Override
+			public LmdbNativeFactorCursor openFactors(RowState active) {
 				assertSame(row, active);
 				return producer;
 			}
-			@Override public long producedMask() { return 3L; }
+
+			@Override
+			public long producedMask() {
+				return 3L;
+			}
 		};
 		LmdbNativeFactorCursor extended = LmdbNativeFactorAlgebra.open(
 				new ExtensionPlan(source, new CopyBinding[] { CopyBinding.slot(2, 0) }), row);
@@ -677,12 +825,14 @@ class LmdbNativeFactorReaderLifetimeTest {
 				String receipt = handoffReceipt(producer, row, callback);
 				assertTrue(row.cancellation.isCancellationRequested(), receipt);
 				assertArrayEquals(new int[] { 1, 1, 1, 2, 2 }, callback,
-						"the internal Expanded reader closes second, after outer Projections releases its reader; " + receipt);
+						"the internal Expanded reader closes second, after outer Projections releases its reader; "
+								+ receipt);
 				assertEquals(1, producer.nextCalls, "no later external prefix may be advanced; " + receipt);
 				assertEquals(1, producer.at, "no later external prefix may be acquired; " + receipt);
 				assertFalse(projections.next(0), "cancellation cannot publish another member; " + receipt);
 				assertThrows(IllegalStateException.class, () -> projections.value(0));
-				assertEquals(0L, row.boundMask(), "the existing row policy rolls back the cancelled prefix; " + receipt);
+				assertEquals(0L, row.boundMask(),
+						"the existing row policy rolls back the cancelled prefix; " + receipt);
 			}
 		}
 		producer.assertSettled();
@@ -702,12 +852,29 @@ class LmdbNativeFactorReaderLifetimeTest {
 	}
 
 	private enum HandoffConsumer {
-		PROJECTIONS, EXPANDED, SELECT_UNARY, SELECT_PRODUCT, SELECT_TUPLE, SELECT_DIRECT_TUPLE,
-		KERNEL_PRODUCT, KERNEL_COUNTER, MARGINAL_PRODUCT, MARGINAL_WINDOW;
+		PROJECTIONS,
+		EXPANDED,
+		SELECT_UNARY,
+		SELECT_PRODUCT,
+		SELECT_TUPLE,
+		SELECT_DIRECT_TUPLE,
+		KERNEL_PRODUCT,
+		KERNEL_COUNTER,
+		MARGINAL_PRODUCT,
+		MARGINAL_WINDOW;
 
-		boolean kernel() { return ordinal() >= KERNEL_PRODUCT.ordinal(); }
-		boolean selecting() { return ordinal() >= SELECT_UNARY.ordinal() && ordinal() <= SELECT_DIRECT_TUPLE.ordinal(); }
-		boolean tuple() { return this == SELECT_TUPLE || this == SELECT_DIRECT_TUPLE; }
+		boolean kernel() {
+			return ordinal() >= KERNEL_PRODUCT.ordinal();
+		}
+
+		boolean selecting() {
+			return ordinal() >= SELECT_UNARY.ordinal() && ordinal() <= SELECT_DIRECT_TUPLE.ordinal();
+		}
+
+		boolean tuple() {
+			return this == SELECT_TUPLE || this == SELECT_DIRECT_TUPLE;
+		}
+
 		boolean independent() {
 			return this == PROJECTIONS || this == EXPANDED || this == SELECT_PRODUCT
 					|| this == KERNEL_PRODUCT || this == KERNEL_COUNTER || this == MARGINAL_PRODUCT;
@@ -715,7 +882,9 @@ class LmdbNativeFactorReaderLifetimeTest {
 	}
 
 	@FunctionalInterface
-	private interface HandoffAdvance { boolean next() throws Exception; }
+	private interface HandoffAdvance {
+		boolean next() throws Exception;
+	}
 
 	/** Real generic Source/Reader owners; no source hook, clock, reflection, worker or native route is fabricated. */
 	private static final class CancellationHandoff implements AutoCloseable {
@@ -746,7 +915,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 				assertTrue(input.nextBatch());
 				for (int projection = 0; projection < 2; projection++) {
 					long rows = 0L;
-					while (input.next(projection)) rows += input.multiplicity();
+					while (input.next(projection))
+						rows += input.multiplicity();
 					assertEquals(12L, rows, "the complete first fixture prefix retains both independent weights");
 				}
 			} else if (consumer == HandoffConsumer.EXPANDED) {
@@ -760,17 +930,32 @@ class LmdbNativeFactorReaderLifetimeTest {
 				assertEquals(3L, row.boundMask(), "Expanded must actually have a live row trail to roll back");
 			} else if (consumer.selecting()) {
 				SlotPlan plan = new SlotPlan() {
-					@Override public long producedMask() { return consumer.tuple() || consumer.independent() ? 3L : 1L; }
-					@Override public LmdbNativeFactorCursor openFactors(RowState ignored) { return producer; }
-					@Override public RowCursor open(RowState ignored) { throw new AssertionError("grouped selection required"); }
+					@Override
+					public long producedMask() {
+						return consumer.tuple() || consumer.independent() ? 3L : 1L;
+					}
+
+					@Override
+					public LmdbNativeFactorCursor openFactors(RowState ignored) {
+						return producer;
+					}
+
+					@Override
+					public RowCursor open(RowState ignored) {
+						throw new AssertionError("grouped selection required");
+					}
 				};
 				NativeBooleanFilter filter = new NativeBooleanFilter() {
-					@Override public boolean accept(RowState state) {
+					@Override
+					public boolean accept(RowState state) {
 						return state.slots[0] == 12L && (!consumer.independent() || state.slots[1] == 102L);
 					}
-					@Override public void close() {
+
+					@Override
+					public void close() {
 						filterCloses[0]++;
-						if (failFilter) throw filterFailure;
+						if (failFilter)
+							throw filterFailure;
 					}
 				};
 				LmdbNativeFactorCursor input = LmdbNativeFactorRows.filter(
@@ -778,14 +963,17 @@ class LmdbNativeFactorReaderLifetimeTest {
 				owner = input;
 				assertEquals("SelectingFilter", input.getClass().getSimpleName());
 				advance = input::next;
-				assertTrue(input.next()); // only the final fixture member/combination passes, so the next call hands off
+				assertTrue(input.next()); // only the final fixture member/combination passes, so the next call hands
+											// off
 				assertEquals(12L, row.slots[0]);
 				assertTrue(row.boundMask() != 0L, "selection must actually mutate and later restore the row trail");
 			} else {
-				var cancellation = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation.forOrdinaryExecution(
-						() -> false, row.cancellation, () -> false);
+				var cancellation = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation
+						.forOrdinaryExecution(
+								() -> false, row.cancellation, () -> false);
 				if (consumer == HandoffConsumer.KERNEL_PRODUCT || consumer == HandoffConsumer.KERNEL_COUNTER) {
-					var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor.open(kernel(producer), 2,
+					var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor.open(kernel(producer),
+							2,
 							new int[] { 0, 1 }, cancellation);
 					owner = input;
 					advance = input::nextPrefix;
@@ -794,22 +982,27 @@ class LmdbNativeFactorReaderLifetimeTest {
 						assertEquals(12L, input.reduceIndependent(allPredicate()));
 					} else {
 						int combinations = 0;
-						while (input.nextBinding()) combinations++;
+						while (input.nextBinding())
+							combinations++;
 						assertEquals(6, combinations);
 					}
 				} else {
-					var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(kernel(producer), 2,
-							new int[][] { consumer == HandoffConsumer.MARGINAL_WINDOW ? new int[] { 0 } : new int[] { 0, 1 } },
+					var input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(
+							kernel(producer), 2,
+							new int[][] { consumer == HandoffConsumer.MARGINAL_WINDOW ? new int[] { 0 }
+									: new int[] { 0, 1 } },
 							new boolean[] { true }, cancellation);
 					owner = input;
 					advance = input::nextBatch;
 					assertTrue(input.nextBatch());
 					if (consumer == HandoffConsumer.MARGINAL_WINDOW) {
 						assertEquals(0, input.windowColumn(0));
-						while (input.nextWindow(0) != 0) { /* finish exactly the current channel, not its producer */ }
+						while (input.nextWindow(0) != 0) {
+							/* finish exactly the current channel, not its producer */ }
 					} else {
 						int combinations = 0;
-						while (input.next(0)) combinations++;
+						while (input.next(0))
+							combinations++;
 						assertEquals(6, combinations);
 					}
 				}
@@ -827,13 +1020,21 @@ class LmdbNativeFactorReaderLifetimeTest {
 			}
 			if (fromReaderClose) {
 				producer.readerCloseAction = () -> {
-					if (closeRequests++ == 0) firstCloseAtNext = producer.nextCalls;
+					if (closeRequests++ == 0)
+						firstCloseAtNext = producer.nextCalls;
 					row.cancellation.requestCancellation();
 				};
-			} else row.cancellation.requestCancellation();
+			} else
+				row.cancellation.requestCancellation();
 		}
 
-		@Override public void close() throws Exception { if (owner != null) owner.close(); else producer.close(); }
+		@Override
+		public void close() throws Exception {
+			if (owner != null)
+				owner.close();
+			else
+				producer.close();
+		}
 	}
 
 	private static void cancellationHandoff(HandoffConsumer consumer, boolean fromReaderClose, boolean cleanupFailures)
@@ -842,53 +1043,80 @@ class LmdbNativeFactorReaderLifetimeTest {
 		try {
 			input.prime();
 		} catch (Exception | Error setup) {
-			try { input.close(); } catch (Exception | Error cleanup) { if (cleanup != setup) setup.addSuppressed(cleanup); }
+			try {
+				input.close();
+			} catch (Exception | Error cleanup) {
+				if (cleanup != setup)
+					setup.addSuppressed(cleanup);
+			}
 			throw setup; // setup/priming failure is never relabelled as the requested cancellation first red
 		}
 		input.arm(fromReaderClose, cleanupFailures);
 		boolean published = false;
 		Throwable stepFailure = null, closeFailure = null;
-		try { published = input.advance.next(); } catch (Exception | Error failure) { stepFailure = failure; }
-		try { input.close(); } catch (Exception | Error failure) { closeFailure = failure; }
+		try {
+			published = input.advance.next();
+		} catch (Exception | Error failure) {
+			stepFailure = failure;
+		}
+		try {
+			input.close();
+		} catch (Exception | Error failure) {
+			closeFailure = failure;
+		}
 		final boolean publication = published;
 		final Throwable observed = stepFailure, closing = closeFailure;
-		org.junit.jupiter.api.Assertions.assertAll(consumer + "; readerClose=" + fromReaderClose + "; failures=" + cleanupFailures,
+		org.junit.jupiter.api.Assertions.assertAll(
+				consumer + "; readerClose=" + fromReaderClose + "; failures=" + cleanupFailures,
 				() -> assertFalse(publication, "a cancelled handoff must not publish another prefix"),
-				() -> assertEquals(1, input.producer.nextCalls, "no upstream next may follow pending/retirement cancellation"),
+				() -> assertEquals(1, input.producer.nextCalls,
+						"no upstream next may follow pending/retirement cancellation"),
 				() -> assertEquals(1, input.producer.at, "no second prefix may be acquired"),
-				() -> assertEquals(null, closing, "handoff must already settle ownership; explicit close is idempotent"),
+				() -> assertEquals(null, closing,
+						"handoff must already settle ownership; explicit close is idempotent"),
 				() -> {
 					assertTrue(input.row.cancellation.isCancellationRequested());
 					if (fromReaderClose) {
-						assertTrue(input.closeRequests > 0, "the legitimate owned Reader.close must request cancellation");
-						assertEquals(1, input.firstCloseAtNext, "retirement cancellation must precede any producer call");
+						assertTrue(input.closeRequests > 0,
+								"the legitimate owned Reader.close must request cancellation");
+						assertEquals(1, input.firstCloseAtNext,
+								"retirement cancellation must precede any producer call");
 					}
 				},
 				() -> {
 					boolean marginalCleanup = cleanupFailures && !fromReaderClose
-							&& (consumer == HandoffConsumer.MARGINAL_PRODUCT || consumer == HandoffConsumer.MARGINAL_WINDOW);
+							&& (consumer == HandoffConsumer.MARGINAL_PRODUCT
+									|| consumer == HandoffConsumer.MARGINAL_WINDOW);
 					if (marginalCleanup) {
-						// The marginal throwing-close boundary promotes real cleanup and preserves acyclic owner evidence.
+						// The marginal throwing-close boundary promotes real cleanup and preserves acyclic owner
+						// evidence.
 						assertSame(input.readerFailure, observed);
 						assertMarginalCancellationEvidence(observed, input.row.cancellation);
 					} else if (consumer.kernel() && !fromReaderClose) {
-						assertTrue(observed instanceof org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException,
+						assertTrue(
+								observed instanceof org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException,
 								"this direct kernel contract preserves its occurrence-local query signal: " + observed);
 						var signal = (org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException) observed;
 						assertTrue(signal.observedBy(input.row.cancellation));
 						assertSame(input.row.cancellation, signal.origin());
-					} else if (cleanupFailures) assertSame(input.readerFailure, observed);
+					} else if (cleanupFailures)
+						assertSame(input.readerFailure, observed);
 					else if (consumer.kernel()) {
-						assertTrue(observed instanceof org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException,
+						assertTrue(
+								observed instanceof org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException,
 								"kernel retirement observes actual query cancellation before advancing: " + observed);
-						assertTrue(((org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException) observed)
-								.observedBy(input.row.cancellation));
-					} else assertEquals(null, observed, "generic native-row cancellation is exhaustion when cleanup succeeds");
+						assertTrue(
+								((org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException) observed)
+										.observedBy(input.row.cancellation));
+					} else
+						assertEquals(null, observed,
+								"generic native-row cancellation is exhaustion when cleanup succeeds");
 					if (cleanupFailures) {
 						if (consumer.kernel() && !fromReaderClose && !marginalCleanup)
 							assertTrue(containsSuppressed(observed, input.readerFailure));
 						assertTrue(containsSuppressed(observed, input.sourceFailure));
-						if (consumer.selecting()) assertTrue(containsSuppressed(observed, input.filterFailure));
+						if (consumer.selecting())
+							assertTrue(containsSuppressed(observed, input.filterFailure));
 					}
 				},
 				() -> {
@@ -897,9 +1125,11 @@ class LmdbNativeFactorReaderLifetimeTest {
 					assertEquals(0L, input.row.boundMask());
 					assertEquals(UNKNOWN, input.row.slots[0]);
 					assertEquals(UNKNOWN, input.row.slots[1]);
-					if (consumer.selecting()) assertEquals(1, input.filterCloses[0]);
+					if (consumer.selecting())
+						assertEquals(1, input.filterCloses[0]);
 				},
-				() -> assertFalse(input.advance.next(), "the consumer remains terminal after cancellation/failed retirement"),
+				() -> assertFalse(input.advance.next(),
+						"the consumer remains terminal after cancellation/failed retirement"),
 				() -> assertEquals(1, input.producer.nextCalls, "terminal replay must not advance upstream"));
 	}
 
@@ -914,7 +1144,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 		assertEquals(null, signal.getCause());
 	}
 
-	private static void collectAcyclicCancellationEvidence(Throwable failure, IdentityHashMap<Throwable, Boolean> visits,
+	private static void collectAcyclicCancellationEvidence(Throwable failure,
+			IdentityHashMap<Throwable, Boolean> visits,
 			List<KernelQueryCancelledException> evidence) {
 		Boolean complete = visits.get(failure);
 		if (complete != null) {
@@ -933,7 +1164,8 @@ class LmdbNativeFactorReaderLifetimeTest {
 
 	private static boolean containsSuppressed(Throwable root, Throwable wanted) {
 		for (Throwable failure : root.getSuppressed())
-			if (failure == wanted || containsSuppressed(failure, wanted)) return true;
+			if (failure == wanted || containsSuppressed(failure, wanted))
+				return true;
 		return false;
 	}
 
@@ -946,8 +1178,10 @@ class LmdbNativeFactorReaderLifetimeTest {
 		while (input.next(0)) {
 			long value = input.value(0), weight = input.multiplicity();
 			long correlated = input.value(1);
-			if (correlated != UNKNOWN) assertEquals(value + 90L, correlated, "tuple columns remain zipped");
-			for (long i = 0; i < weight; i++) result.add(List.of(value));
+			if (correlated != UNKNOWN)
+				assertEquals(value + 90L, correlated, "tuple columns remain zipped");
+			for (long i = 0; i < weight; i++)
+				result.add(List.of(value));
 		}
 		return result;
 	}
@@ -957,8 +1191,10 @@ class LmdbNativeFactorReaderLifetimeTest {
 		while (input.next()) {
 			assertEquals(0L, input.factors().mask(), "requesting a tuple column expands the whole zipped group");
 			long weight = input.multiplicity();
-			if (row.slots[1] != UNKNOWN) assertEquals(row.slots[0] + 90L, row.slots[1], "tuple columns remain zipped");
-			for (long i = 0; i < weight; i++) result.add(List.of(row.slots[0]));
+			if (row.slots[1] != UNKNOWN)
+				assertEquals(row.slots[0] + 90L, row.slots[1], "tuple columns remain zipped");
+			for (long i = 0; i < weight; i++)
+				result.add(List.of(row.slots[0]));
 		}
 		return result;
 	}
@@ -985,20 +1221,35 @@ class LmdbNativeFactorReaderLifetimeTest {
 		return row;
 	}
 
-	private interface Owner { void close(); }
+	private interface Owner {
+		void close();
+	}
 
 	private static final class Lifetime {
 		final List<String> events = new ArrayList<>();
 		int readers, opens, closes, releases;
-		int opened() { readers++; events.add("reader-open"); return ++opens; }
-		void closed(RuntimeException failure) {
-			readers--; closes++; events.add("reader-close");
-			if (failure != null) throw failure;
+
+		int opened() {
+			readers++;
+			events.add("reader-open");
+			return ++opens;
 		}
+
+		void closed(RuntimeException failure) {
+			readers--;
+			closes++;
+			events.add("reader-close");
+			if (failure != null)
+				throw failure;
+		}
+
 		void released(RuntimeException failure) {
-			releases++; events.add("source-release");
-			if (readers != 0) throw new IllegalStateException("factor source released with " + readers + " live readers");
-			if (failure != null) throw failure;
+			releases++;
+			events.add("source-release");
+			if (readers != 0)
+				throw new IllegalStateException("factor source released with " + readers + " live readers");
+			if (failure != null)
+				throw failure;
 		}
 	}
 
@@ -1019,82 +1270,138 @@ class LmdbNativeFactorReaderLifetimeTest {
 		boolean closed;
 		RuntimeException bodyFailure, readerCloseFailure, sourceCloseFailure;
 		Runnable readerCloseAction;
+
 		OwnedPrefixes(int count, boolean reuse, boolean tuple, boolean direct) {
 			this(count, reuse, tuple, direct, false, false, false);
 		}
+
 		OwnedPrefixes(int count, boolean reuse, boolean tuple, boolean direct, boolean independent, boolean wideTuple) {
 			this(count, reuse, tuple, direct, independent, wideTuple, false);
 		}
+
 		OwnedPrefixes(int count, boolean reuse, boolean tuple, boolean direct, boolean independent, boolean wideTuple,
 				boolean singletonUnary) {
-			this.count = count; this.reuse = reuse; this.tuple = tuple; this.direct = direct;
-			this.independent = independent; this.wideTuple = wideTuple; this.singletonUnary = singletonUnary;
-			unary = new long[count][]; tuples = new long[count][]; seconds = new long[count][];
+			this.count = count;
+			this.reuse = reuse;
+			this.tuple = tuple;
+			this.direct = direct;
+			this.independent = independent;
+			this.wideTuple = wideTuple;
+			this.singletonUnary = singletonUnary;
+			unary = new long[count][];
+			tuples = new long[count][];
+			seconds = new long[count][];
 			for (int i = 0; i < count; i++) {
 				long value = 11L + 100L * i;
 				unary[i] = singletonUnary ? new long[] { value } : new long[] { value, value, value + 1L };
-				tuples[i] = wideTuple ? new long[] { value, value + 90L, value + 1L, value + 91L, value + 2L, value + 92L, value + 3L, value + 93L }
+				tuples[i] = wideTuple
+						? new long[] { value, value + 90L, value + 1L, value + 91L, value + 2L, value + 92L, value + 3L,
+								value + 93L }
 						: new long[] { value, value + 90L, value + 1L, value + 91L };
 				seconds[i] = new long[] { value + 90L, value + 91L };
 			}
 		}
+
 		@Override
 		public boolean next() {
 			nextCalls++;
-			if (closed) return false;
+			if (closed)
+				return false;
 			environment.clear();
-			if (!reuse) retire();
-			if (at == count) { close(); return false; }
+			if (!reuse)
+				retire();
+			if (at == count) {
+				close();
+				return false;
+			}
 			if (owner == null) {
-				Lifetime lifetime = new Lifetime(); lifetimes.add(lifetime);
-				if (tuple) { tupleSource = new TupleSource(this, lifetime); owner = tupleSource; }
-				else { unarySource = new UnarySource(this, lifetime); owner = unarySource; }
+				Lifetime lifetime = new Lifetime();
+				lifetimes.add(lifetime);
+				if (tuple) {
+					tupleSource = new TupleSource(this, lifetime);
+					owner = tupleSource;
+				} else {
+					unarySource = new UnarySource(this, lifetime);
+					owner = unarySource;
+				}
 			}
 			if (tuple) {
 				BorrowedTupleBatch batch = new BorrowedTupleBatch(tupleSource, 1);
-				batch.reset(1); batch.bind(0, at + 1L, tuples[at].length / 2L);
+				batch.reset(1);
+				batch.bind(0, at + 1L, tuples[at].length / 2L);
 				environment.bindTuple(new int[] { 0, 1 }, batch, 0, 0L);
 			} else {
 				BorrowedFactorBatch batch = new BorrowedFactorBatch(unarySource, 1);
-				batch.reset(1); batch.bindHeap(0, unary[at], 0, unary[at].length);
+				batch.reset(1);
+				batch.bindHeap(0, unary[at], 0, unary[at].length);
 				environment.bind(0, batch, 0, 0L);
 				if (independent) {
 					BorrowedFactorBatch second = new BorrowedFactorBatch(unarySource, 1);
-					second.reset(1); second.bindHeap(0, seconds[at], 0, seconds[at].length);
+					second.reset(1);
+					second.bindHeap(0, seconds[at], 0, seconds[at].length);
 					environment.bind(1, second, 0, 0L);
 				}
 			}
-			at++; return true;
+			at++;
+			return true;
 		}
+
 		void readerClosed(Lifetime lifetime, int readerId) {
-			try { lifetime.closed(readerCloseFailure); }
-			finally {
+			try {
+				lifetime.closed(readerCloseFailure);
+			} finally {
 				lastClosedReaderId = readerId;
 				lastCloseOrdinal = lifetime.closes;
 				if (readerCloseAction != null && (readerCloseTargetId < 0 || readerCloseTargetId == readerId))
 					readerCloseAction.run();
 			}
 		}
-		void retire() { Owner retiring = owner; owner = null; if (retiring != null) retiring.close(); }
-		@Override public long multiplicity() { return 2L; }
-		@Override public FactorEnvironment factors() { return environment; }
-		@Override public void close() {
-			if (closed) return; closed = true; closeCalls++; environment.clear(); retire();
+
+		void retire() {
+			Owner retiring = owner;
+			owner = null;
+			if (retiring != null)
+				retiring.close();
 		}
+
+		@Override
+		public long multiplicity() {
+			return 2L;
+		}
+
+		@Override
+		public FactorEnvironment factors() {
+			return environment;
+		}
+
+		@Override
+		public void close() {
+			if (closed)
+				return;
+			closed = true;
+			closeCalls++;
+			environment.clear();
+			retire();
+		}
+
 		List<List<Long>> expected() {
 			List<List<Long>> rows = new ArrayList<>();
 			for (int i = 0; i < count; i++) {
 				long[] values = unary[i];
 				if (tuple) {
 					values = new long[tuples[i].length / 2];
-					for (int j = 0; j < values.length; j++) values[j] = tuples[i][2 * j];
+					for (int j = 0; j < values.length; j++)
+						values[j] = tuples[i][2 * j];
 				}
-				for (long value : values) for (int copies = 0; copies < (independent ? seconds[i].length : 1); copies++) {
-					rows.add(List.of(value)); rows.add(List.of(value));
-				}
+				for (long value : values)
+					for (int copies = 0; copies < (independent ? seconds[i].length : 1); copies++) {
+						rows.add(List.of(value));
+						rows.add(List.of(value));
+					}
 			}
 			return rows;
 		}
+
 		void assertSettled() {
 			assertEquals(1, closeCalls);
 			for (Lifetime lifetime : lifetimes) {
@@ -1108,23 +1415,50 @@ class LmdbNativeFactorReaderLifetimeTest {
 	private static final class UnarySource extends BorrowedFactorBatch.Source implements Owner {
 		final OwnedPrefixes producer;
 		final Lifetime lifetime;
-		UnarySource(OwnedPrefixes producer, Lifetime lifetime) { super(lifetime); this.producer = producer; this.lifetime = lifetime; }
-		@Override protected void release() { lifetime.released(producer.sourceCloseFailure); }
-		@Override public BorrowedFactorBatch.Reader openReader() {
-			checkOpen(); int readerId = lifetime.opened();
+
+		UnarySource(OwnedPrefixes producer, Lifetime lifetime) {
+			super(lifetime);
+			this.producer = producer;
+			this.lifetime = lifetime;
+		}
+
+		@Override
+		protected void release() {
+			lifetime.released(producer.sourceCloseFailure);
+		}
+
+		@Override
+		public BorrowedFactorBatch.Reader openReader() {
+			checkOpen();
+			int readerId = lifetime.opened();
 			return new BorrowedFactorBatch.Reader() {
 				long[] values;
 				boolean closed;
-				@Override public void bind(BorrowedFactorBatch batch, int lane) {
-					checkOpen(); assertSame(UnarySource.this, batch.source()); values = batch.array(lane);
+
+				@Override
+				public void bind(BorrowedFactorBatch batch, int lane) {
+					checkOpen();
+					assertSame(UnarySource.this, batch.source());
+					values = batch.array(lane);
 				}
-				@Override public int copyFibers(long offset, int maximum, long[] target, long[] weights) {
-					checkOpen(); if (producer.bodyFailure != null) throw producer.bodyFailure;
+
+				@Override
+				public int copyFibers(long offset, int maximum, long[] target, long[] weights) {
+					checkOpen();
+					if (producer.bodyFailure != null)
+						throw producer.bodyFailure;
 					int from = Math.toIntExact(offset), count = Math.min(maximum, values.length - from);
-					System.arraycopy(values, from, target, 0, count); java.util.Arrays.fill(weights, 0, count, 1L); return count;
+					System.arraycopy(values, from, target, 0, count);
+					java.util.Arrays.fill(weights, 0, count, 1L);
+					return count;
 				}
-				@Override public void close() {
-					if (closed) return; closed = true; producer.readerClosed(lifetime, readerId);
+
+				@Override
+				public void close() {
+					if (closed)
+						return;
+					closed = true;
+					producer.readerClosed(lifetime, readerId);
 				}
 			};
 		}
@@ -1133,35 +1467,100 @@ class LmdbNativeFactorReaderLifetimeTest {
 	private static final class TupleSource extends BorrowedTupleBatch.Source implements Owner {
 		final OwnedPrefixes producer;
 		final Lifetime lifetime;
-		TupleSource(OwnedPrefixes producer, Lifetime lifetime) { super(2); this.producer = producer; this.lifetime = lifetime; }
-		@Override protected void release() { lifetime.released(producer.sourceCloseFailure); }
-		@Override protected void validate(long reference, long count) {
-			if (reference < 1L || reference > producer.count || count != producer.tuples[Math.toIntExact(reference - 1L)].length / 2L) throw new IllegalArgumentException("invalid fixture tuple descriptor");
+
+		TupleSource(OwnedPrefixes producer, Lifetime lifetime) {
+			super(2);
+			this.producer = producer;
+			this.lifetime = lifetime;
 		}
-		@Override public BorrowedTupleBatch.Reader openReader() {
-			checkOpen(); int readerId = lifetime.opened(); return producer.direct ? new Direct(readerId) : new Reader(readerId);
+
+		@Override
+		protected void release() {
+			lifetime.released(producer.sourceCloseFailure);
 		}
+
+		@Override
+		protected void validate(long reference, long count) {
+			if (reference < 1L || reference > producer.count
+					|| count != producer.tuples[Math.toIntExact(reference - 1L)].length / 2L)
+				throw new IllegalArgumentException("invalid fixture tuple descriptor");
+		}
+
+		@Override
+		public BorrowedTupleBatch.Reader openReader() {
+			checkOpen();
+			int readerId = lifetime.opened();
+			return producer.direct ? new Direct(readerId) : new Reader(readerId);
+		}
+
 		private class Reader implements BorrowedTupleBatch.Reader {
 			long[] rows;
 			boolean closed;
 			final int readerId;
-			Reader(int readerId) { this.readerId = readerId; }
-			@Override public void bind(long reference, long count) { checkOpen(); rows = producer.tuples[Math.toIntExact(reference - 1L)]; }
-			@Override public int copyRows(long offset, int maximum, long[] target, long[] weights) {
-				checkOpen(); if (producer.bodyFailure != null) throw producer.bodyFailure;
-				int from = Math.toIntExact(offset), count = Math.min(maximum, rows.length / 2 - from);
-				System.arraycopy(rows, 2 * from, target, 0, 2 * count); java.util.Arrays.fill(weights, 0, count, 1L); return count;
+
+			Reader(int readerId) {
+				this.readerId = readerId;
 			}
-			@Override public void close() { if (closed) return; closed = true; producer.readerClosed(lifetime, readerId); }
+
+			@Override
+			public void bind(long reference, long count) {
+				checkOpen();
+				rows = producer.tuples[Math.toIntExact(reference - 1L)];
+			}
+
+			@Override
+			public int copyRows(long offset, int maximum, long[] target, long[] weights) {
+				checkOpen();
+				if (producer.bodyFailure != null)
+					throw producer.bodyFailure;
+				int from = Math.toIntExact(offset), count = Math.min(maximum, rows.length / 2 - from);
+				System.arraycopy(rows, 2 * from, target, 0, 2 * count);
+				java.util.Arrays.fill(weights, 0, count, 1L);
+				return count;
+			}
+
+			@Override
+			public void close() {
+				if (closed)
+					return;
+				closed = true;
+				producer.readerClosed(lifetime, readerId);
+			}
 		}
+
 		private final class Direct extends Reader implements BorrowedTupleBatch.DirectReader {
 			int at;
-			Direct(int readerId) { super(readerId); }
-			@Override public void bind(long reference, long count) { super.bind(reference, count); at = -1; }
-			@Override public boolean nextTuple() { checkOpen(); return ++at < rows.length / 2; }
-			@Override public long[] rowArray() { return rows; }
-			@Override public int rowOffset() { return 2 * at; }
-			@Override public long tupleWeight() { return 1L; }
+
+			Direct(int readerId) {
+				super(readerId);
+			}
+
+			@Override
+			public void bind(long reference, long count) {
+				super.bind(reference, count);
+				at = -1;
+			}
+
+			@Override
+			public boolean nextTuple() {
+				checkOpen();
+				return ++at < rows.length / 2;
+			}
+
+			@Override
+			public long[] rowArray() {
+				return rows;
+			}
+
+			@Override
+			public int rowOffset() {
+				return 2 * at;
+			}
+
+			@Override
+			public long tupleWeight() {
+				return 1L;
+			}
 		}
 	}
 }

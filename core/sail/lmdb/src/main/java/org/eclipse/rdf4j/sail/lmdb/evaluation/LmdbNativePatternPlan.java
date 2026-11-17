@@ -928,12 +928,20 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	boolean bindTerm(Term term, long id, RowState row) {
-		if (term.readOnly) { return true; }
+		if (term.readOnly) {
+			return true;
+		}
 		if (term.isConstant()) {
-			if (term.constant != id) { return false; }
-			if (!term.bindConstant) { return true; }
+			if (term.constant != id) {
+				return false;
+			}
+			if (!term.bindConstant) {
+				return true;
+			}
 			long current = row.slots[term.slot];
-			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			if (term.preserveExisting && current != UNKNOWN) {
+				return current != 0L;
+			}
 			return row.bind(term.slot, id);
 		}
 		return term.slot < 0 || row.bind(term.slot, id);

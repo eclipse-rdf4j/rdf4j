@@ -48,7 +48,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 class LmdbCapturedScalarScopeTest {
 
 	private enum Scenario {
-		LIVE_WORKER, CLEANUP_DRAIN, ROLLBACK_CLEANUP_DRAIN
+		LIVE_WORKER,
+		CLEANUP_DRAIN,
+		ROLLBACK_CLEANUP_DRAIN
 	}
 
 	@ParameterizedTest
@@ -60,7 +62,9 @@ class LmdbCapturedScalarScopeTest {
 		Path log = path.resolve("captured-scalar-scope-" + scenario + ".log");
 		Process child = new ProcessBuilder(java, "-cp", classpath, Probe.class.getName(),
 				path.resolve("store").toString(), scenario.name())
-				.redirectErrorStream(true).redirectOutput(log.toFile()).start();
+						.redirectErrorStream(true)
+						.redirectOutput(log.toFile())
+						.start();
 		System.out.println("CAPTURED_SCALAR_CHILD pid=" + child.pid() + " evidence=" + log);
 		assertTrue(child.waitFor(60, TimeUnit.SECONDS),
 				"unresolved child remains running: pid=" + child.pid() + " evidence=" + log);
@@ -116,18 +120,23 @@ class LmdbCapturedScalarScopeTest {
 								}
 								ValueResolutionScope creatorScope = ValueResolutionScope.activeExposure(
 										(ValueStore) getBackingStore().getValueFactory());
-								QueryExecutionContext.ReplayContext replay = QueryExecutionContext.captureReplayContext();
-								if (creatorScope == null || !creatorScope.isOpen() || replay == null || !replay.hasReplayScopes()) {
+								QueryExecutionContext.ReplayContext replay = QueryExecutionContext
+										.captureReplayContext();
+								if (creatorScope == null || !creatorScope.isOpen() || replay == null
+										|| !replay.hasReplayScopes()) {
 									throw new AssertionError("FIXTURE: scalar read has no live captured owner");
 								}
 								scope.set(creatorScope);
 								pending.set(worker.submit(() -> replay.run(() -> {
 									ValueResolutionScope captured = ValueResolutionScope.activeExposure(
 											(ValueStore) getBackingStore().getValueFactory());
-									boolean pinned = getBackingStore().currentReadResourceViews().stream()
-											.anyMatch(view -> view.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE));
+									boolean pinned = getBackingStore().currentReadResourceViews()
+											.stream()
+											.anyMatch(view -> view
+													.hasNativePin(LmdbSailStore.MapResizeKind.TRIPLE_STORE));
 									if (captured != creatorScope || !pinned) {
-										throw new AssertionError("FIXTURE: worker did not activate the captured scope and native view");
+										throw new AssertionError(
+												"FIXTURE: worker did not activate the captured scope and native view");
 									}
 									System.out.println("HIT_CAPTURED_SCALAR_SCOPE_AND_NATIVE_VIEW");
 									workerEntered.countDown();
@@ -159,7 +168,8 @@ class LmdbCapturedScalarScopeTest {
 				var vf = SimpleValueFactory.getInstance();
 				try (SailConnection seed = store.getConnection()) {
 					seed.begin();
-					seed.addStatement(vf.createIRI("urn:scalar:s"), vf.createIRI("urn:scalar:p"), vf.createLiteral("o"));
+					seed.addStatement(vf.createIRI("urn:scalar:s"), vf.createIRI("urn:scalar:p"),
+							vf.createLiteral("o"));
 					seed.commit();
 				}
 				LmdbGcTestMaintenance.awaitPostReady(store);
@@ -202,7 +212,8 @@ class LmdbCapturedScalarScopeTest {
 					releaseCleanup.countDown();
 					closing.join(TimeUnit.SECONDS.toMillis(10));
 					if (closing.isAlive() || closeFailure.get() != null) {
-						throw new AssertionError("connection teardown did not complete after worker cleanup", closeFailure.get());
+						throw new AssertionError("connection teardown did not complete after worker cleanup",
+								closeFailure.get());
 					}
 					if (scenario == Scenario.ROLLBACK_CLEANUP_DRAIN && (owner.isActive() || !owner.isOpen())) {
 						throw new AssertionError("rollback must finish while leaving the connection open");
@@ -290,7 +301,8 @@ class LmdbCapturedScalarScopeTest {
 						if ((frame.getClassName().equals(LmdbStoreConnection.class.getName())
 								&& frame.getMethodName().equals("finishReadAttempt"))
 								|| (!requireNativeDrain
-										&& frame.getClassName().equals("org.eclipse.rdf4j.sail.helpers.AbstractSailConnection")
+										&& frame.getClassName()
+												.equals("org.eclipse.rdf4j.sail.helpers.AbstractSailConnection")
 										&& frame.getMethodName().equals("drainOperations"))) {
 							System.out.println("HIT_CONNECTION_DRAIN " + frame.getClassName() + "."
 									+ frame.getMethodName());

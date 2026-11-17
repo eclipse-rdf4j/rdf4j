@@ -86,7 +86,8 @@ class LmdbLegacyNoOpMarkerRegressionTest {
 			assertEquals(id, values.getId(literal), "normalization must keep the live owner identity");
 			try (var connection = repository.getConnection()) {
 				assertTrue(connection.hasStatement(subject, predicate, literal, false));
-				assertTrue(connection.hasStatement(subject, predicate, vf.createLiteral(literal.getLabel(), "en"), false));
+				assertTrue(
+						connection.hasStatement(subject, predicate, vf.createLiteral(literal.getLabel(), "en"), false));
 			}
 		} finally {
 			repository.shutDown();
@@ -96,7 +97,8 @@ class LmdbLegacyNoOpMarkerRegressionTest {
 		assertNull(LmdbCompatibilityFixtures.nativeGet(directory, null, canonicalKey),
 				"legacy normalization removes a separate canonical alias");
 		if (state == KeyState.RAW_ONLY) {
-			assertArrayEquals(HISTORICAL_MARKER, LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", MARKER_KEY),
+			assertArrayEquals(HISTORICAL_MARKER,
+					LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", MARKER_KEY),
 					"a truly unchanged owner graph must preserve the earlier reader's marker");
 		} else {
 			assertNull(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", MARKER_KEY),
@@ -115,6 +117,8 @@ class LmdbLegacyNoOpMarkerRegressionTest {
 	}
 
 	private enum KeyState {
-		RAW_ONLY, CANONICAL_ONLY, DUAL_KEY
+		RAW_ONLY,
+		CANONICAL_ONLY,
+		DUAL_KEY
 	}
 }

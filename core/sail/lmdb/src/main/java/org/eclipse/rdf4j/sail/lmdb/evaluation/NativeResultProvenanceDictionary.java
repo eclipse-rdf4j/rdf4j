@@ -45,7 +45,8 @@ final class NativeResultProvenanceDictionary implements AutoCloseable {
 	// IdentityHashMap + 64-reference table (600), and ArrayList + 10 slots (136) need 952 bytes before entries.
 	private static final long INITIAL_CONTAINER_BYTES = 1024L;
 	// Capture owns 32 identity keys (280), 32 state bytes (56), 16 pending references (152),
-	// and 536 bytes for its object, bound visitors and temporary iteration structures. Reserve all of it before allocation.
+	// and 536 bytes for its object, bound visitors and temporary iteration structures. Reserve all of it before
+	// allocation.
 	private static final long CAPTURE_WORKSPACE_BYTES = 1024L;
 	private static final long CAPTURE_FIXED_BYTES = 536L;
 	// Key/frame/boxed handle/hash node plus amortized map/list resize-overlap runway. Names are separate.
@@ -226,7 +227,6 @@ final class NativeResultProvenanceDictionary implements AutoCloseable {
 		memory.release(retainedBytes);
 		retainedBytes = 0L;
 	}
-
 
 	private Capture openCapture() throws IOException {
 		// Fund the Capture object as well as its arrays before construction starts.

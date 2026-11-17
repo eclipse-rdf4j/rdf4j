@@ -32,12 +32,12 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
-import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
@@ -55,14 +55,17 @@ class NativeLexicalOptionalNullDomainTest {
 			P = VF.createIRI("urn:optional-null:p"), Q = VF.createIRI("urn:optional-null:q"),
 			O = VF.createIRI("urn:optional-null:o"), G = VF.createIRI("urn:optional-null:g"),
 			OTHER = VF.createIRI("urn:optional-null:other"), FLAG = VF.createIRI("urn:optional-null:flag");
+
 	static Stream<Arguments> cases() {
 		return Stream.of(Arguments.of("ABSENT", "NULL"), Arguments.of("NULL", "NULL"),
 				Arguments.of("MATCH", "NULL"), Arguments.of("NULL", "BOUND"),
 				Arguments.of("MATCH", "BOUND"), Arguments.of("CONFLICT", "BOUND"));
 	}
 
-	@ParameterizedTest(name = "left={0}, right={1}") @MethodSource("cases")
-	void actualLexicalReplayPreservesNullDomainAndOrdinaryCompatibility(String leftKind, String rightKind) throws Exception {
+	@ParameterizedTest(name = "left={0}, right={1}")
+	@MethodSource("cases")
+	void actualLexicalReplayPreservesNullDomainAndOrdinaryCompatibility(String leftKind, String rightKind)
+			throws Exception {
 		IRI leftGraph = leftKind.equals("MATCH") ? G : leftKind.equals("CONFLICT") ? OTHER : null;
 		IRI rightGraph = rightKind.equals("BOUND") ? G : null;
 		var source = new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(List.of(
@@ -70,8 +73,11 @@ class NativeLexicalOptionalNullDomainTest {
 		LeftJoin expression = expression(leftKind, rightKind);
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
 		List<BindingSet> expected;
-		try (var rows = new DefaultEvaluationStrategy(source, null).precompileRuntimeSubtree(expression.clone(), context)
-				.evaluate(EmptyBindingSet.getInstance())) { expected = QueryResults.asList(rows); }
+		try (var rows = new DefaultEvaluationStrategy(source, null)
+				.precompileRuntimeSubtree(expression.clone(), context)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			expected = QueryResults.asList(rows);
+		}
 		assertEquals(leftKind.equals("CONFLICT") ? 1 : 2, expected.size());
 		assertEquals(L, expected.getFirst().getValue("left"));
 		assertEquals(leftKind.equals("CONFLICT") ? 0L : 1L,
@@ -82,8 +88,11 @@ class NativeLexicalOptionalNullDomainTest {
 		// Prove the source marker on the actual ordinary statement converter. A later HashJoin merge can
 		// deliberately omit a right-only null, so final domain is compared to its full ordinary oracle below.
 		try (var raw = new DefaultEvaluationStrategy(source, null).precompileRuntimeSubtree(
-				pattern("right", Q, "marker", rightKind.equals("BOUND")), context).evaluate(EmptyBindingSet.getInstance())) {
-			assertTrue(raw.hasNext()); BindingSet converted = raw.next(); assertFalse(raw.hasNext());
+				pattern("right", Q, "marker", rightKind.equals("BOUND")), context)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertTrue(raw.hasNext());
+			BindingSet converted = raw.next();
+			assertFalse(raw.hasNext());
 			assertTrue(converted.hasBinding("marker"));
 			assertEquals(rightGraph, converted.getValue("marker"));
 		}
@@ -91,12 +100,15 @@ class NativeLexicalOptionalNullDomainTest {
 		for (String name : List.of("left", "right", "marker", "flag")) {
 			owner.addGroupElement(new GroupElem("count_" + name, new Count(Var.of(name))));
 		}
-		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false).forWorker(source);
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false)
+				.forWorker(source);
 		NativeGroupStep compiled = assertInstanceOf(NativeGroupStep.class,
 				LmdbNativeAggregateCompiler.tryCompile(owner, context, strategy, source));
 		LeftJoinPlan plan = assertInstanceOf(LeftJoinPlan.class, compiled.arg);
-		assertNotNull(plan.lexicalSharedSlots, "the UNION closing SELECT naturally admits independent lexical materialization");
-		assertNull(plan.lexicalProblemSlots, "the materialized route is distinct from a lexical-frame correlated OPTIONAL");
+		assertNotNull(plan.lexicalSharedSlots,
+				"the UNION closing SELECT naturally admits independent lexical materialization");
+		assertNull(plan.lexicalProblemSlots,
+				"the materialized route is distinct from a lexical-frame correlated OPTIONAL");
 		RowState row = new RowState(compiled.source, compiled.layout, EmptyBindingSet.getInstance());
 		assertTrue(LmdbNativeAggregateCompiler.initializeRow(row, row.base, row.source, row.layout));
 		int openedBefore = source.opened;
@@ -105,14 +117,18 @@ class NativeLexicalOptionalNullDomainTest {
 			try (RowCursor cursor = plan.open(row)) {
 				assertTrue(cursor instanceof LexicalLeftJoinCursor || cursor instanceof FactorizedRowCursor,
 						"with the exact lexical plan premise, factor algebra wraps the same lexical replay cursor");
-				while (cursor.next()) { actual.add(domain(row.view)); }
+				while (cursor.next()) {
+					actual.add(domain(row.view));
+				}
 			}
 			assertEquals(bag(expected.stream().map(NativeLexicalOptionalNullDomainTest::domain).toList()), bag(actual));
 			assertTrue(source.opened > openedBefore, "the compiled native plan itself opened the source");
 			assertTrue(row.view.isEmpty(), "actual scope marks restore the entry mapping after cursor close");
 		} finally {
 			row.closeDecodedInputs();
-			if (compiled.source instanceof SyntheticValueSource synthetic) { synthetic.executionContext().close(); }
+			if (compiled.source instanceof SyntheticValueSource synthetic) {
+				synthetic.executionContext().close();
+			}
 		}
 		assertEquals(source.opened, source.closed);
 	}
@@ -121,23 +137,35 @@ class NativeLexicalOptionalNullDomainTest {
 		StatementPattern left = pattern("left", P, leftKind.equals("ABSENT") ? null : "marker",
 				leftKind.equals("MATCH") || leftKind.equals("CONFLICT"));
 		StatementPattern right = pattern("right", Q, "marker", rightKind.equals("BOUND"));
-		QueryBindingSet flag = new QueryBindingSet(); flag.setBinding("flag", FLAG);
-		BindingSetAssignment values = new BindingSetAssignment(); values.setBindingNames(Set.of("flag"));
+		QueryBindingSet flag = new QueryBindingSet();
+		flag.setBinding("flag", FLAG);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("flag"));
 		values.setBindingSets(List.of(flag));
 		Projection unit = new Projection(values, new ProjectionElemList(new ProjectionElem("flag")), true);
 		return new LeftJoin(left, new Union(right, unit));
 	}
+
 	private static StatementPattern pattern(String subject, IRI predicate, String context, boolean named) {
-		return new StatementPattern(named ? StatementPattern.Scope.NAMED_CONTEXTS : StatementPattern.Scope.DEFAULT_CONTEXTS,
+		return new StatementPattern(
+				named ? StatementPattern.Scope.NAMED_CONTEXTS : StatementPattern.Scope.DEFAULT_CONTEXTS,
 				Var.of(subject), Var.of(subject + "_p", predicate, true, true), Var.of(subject + "_o", O, true, true),
 				context == null ? null : Var.of(context));
 	}
+
 	private static Map<String, Value> domain(BindingSet row) {
 		Map<String, Value> result = new LinkedHashMap<>();
-		for (String name : row.getBindingNames()) { if (row.hasBinding(name)) { result.put(name, row.getValue(name)); } }
+		for (String name : row.getBindingNames()) {
+			if (row.hasBinding(name)) {
+				result.put(name, row.getValue(name));
+			}
+		}
 		return Collections.unmodifiableMap(result);
 	}
+
 	private static Map<Map<String, Value>, Long> bag(List<Map<String, Value>> rows) {
-		Map<Map<String, Value>, Long> result = new HashMap<>(); rows.forEach(row -> result.merge(row, 1L, Long::sum)); return result;
+		Map<Map<String, Value>, Long> result = new HashMap<>();
+		rows.forEach(row -> result.merge(row, 1L, Long::sum));
+		return result;
 	}
 }

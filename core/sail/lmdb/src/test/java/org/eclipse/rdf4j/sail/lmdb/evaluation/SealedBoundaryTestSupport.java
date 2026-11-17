@@ -43,100 +43,157 @@ import org.junit.jupiter.api.TestReporter;
 
 /** Public evaluator/source fixtures only; no runtime plan mutation or forced execution strategy. */
 final class SealedBoundaryTestSupport {
-    static final String NATIVE = "rdf4j.lmdb.nativeQueryEngine.enabled";
-    private SealedBoundaryTestSupport() { }
+	static final String NATIVE = "rdf4j.lmdb.nativeQueryEngine.enabled";
 
-    static void routeAssumptions() {
-        assertTrue(NativeRootPipeline.enabled(), "root pipeline must be enabled for the actual owning route");
-        assertFalse(Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceRootGeneric"), "forced generic mode is a setup mismatch");
-    }
-    static LmdbNativeRepeatedStatementTermRoleTest.MemorySource source(List<Statement> data) {
-        return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(data, NativeCompositeOriginFixture.iri("extra"));
-    }
-    static DefaultEvaluationStrategy ordinary(LmdbNativeRepeatedStatementTermRoleTest.MemorySource source, boolean experimental) {
-        var strategy = new DefaultEvaluationStrategy(source, (FederatedServiceResolver) null);
-        strategy.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental)); return strategy;
-    }
-    static LmdbNativeEvaluationStrategy nativeStrategy(LmdbNativeRepeatedStatementTermRoleTest.MemorySource source, boolean experimental) {
-        var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
-        strategy.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
-        assertNull(strategy.forcedExecutionStrategyName(), "the native owner must choose its actual strategy");
-        return strategy.forWorker(source);
-    }
-    static List<BindingSet> drain(QueryEvaluationStep step, BindingSet input, boolean typed) {
-        if (!typed) try (var rows = step.evaluate(input)) { return QueryResults.asList(rows); }
-        List<BindingSet> result = new ArrayList<>();
-        try (var rows = NativeResultSteps.open(step, input)) {
-            for (NativeResultRow row; (row = rows.next()) != null;) result.add(row.toBindingSet());
-        }
-        return result;
-    }
-    // These fixtures use lexical IRIs and built-in literals only. This is not a universal RDF representative proof.
-    // Explicit assertions separately preserve caller objects and hidden parameter/GRAPH handle identity.
-    private record Term(Value.Type type, String lexical, String language, String datatype, String direction) { }
-    private static Term representation(Value value) {
-        if (value == null) return null;
-        return value instanceof Literal literal ? new Term(value.getType(), literal.getLabel(), literal.getLanguage().orElse(null),
-                literal.getDatatype().stringValue(), literal.getBaseDirection() == null ? null : literal.getBaseDirection().toString())
-                : new Term(value.getType(), value.stringValue(), null, null, null);
-    }
-    private record Facts(Map<String, Term> domain, boolean tracked, Set<String> request, Set<String> local,
-            Map<String, Value> parameters, Map<String, Value> graphs) { }
-    private static Facts facts(BindingSet row) {
-        Map<String, Term> domain = new LinkedHashMap<>();
-        for (String name : row.getBindingNames()) if (row.hasBinding(name)) domain.put(name, representation(row.getValue(name)));
-        var origin = BindingSetOrigin.of(row);
-        return new Facts(Collections.unmodifiableMap(domain), BindingSetOrigin.isTrackedInput(row), origin.requestNames(), origin.localNames(),
-                origin.retainedParametersForTransport(), GraphFrameBindings.from(row).retainedParametersForTransport());
-    }
-    private static <T> Map<T, Integer> bag(List<T> rows) {
-        Map<T, Integer> result = new HashMap<>(); for (T row : rows) result.merge(row, 1, Integer::sum); return result;
-    }
-    static void assertRows(List<BindingSet> expected, List<BindingSet> actual) {
-        assertEquals(bag(expected.stream().map(SealedBoundaryTestSupport::facts).toList()),
-                bag(actual.stream().map(SealedBoundaryTestSupport::facts).toList()), "exact domain, fixture IRI lexical/literal fields, multiplicity and complete authority");
-        assertEquals(bag(expected.stream().map(BindingSetOrigin::requestInput).map(SealedBoundaryTestSupport::facts).toList()),
-                bag(actual.stream().map(BindingSetOrigin::requestInput).map(SealedBoundaryTestSupport::facts).toList()), "real re-entry preserves the selected descriptor");
-        for (BindingSet row : expected) {
-            Facts wanted = facts(row);
-            BindingSet selected = actual.stream().filter(candidate -> wanted.equals(facts(candidate))).findFirst().orElseThrow();
-            for (var value : BindingSetOrigin.of(row).retainedParametersForTransport().entrySet())
-                assertSame(value.getValue(), BindingSetOrigin.of(selected).retainedParametersForTransport().get(value.getKey()), "exact hidden parameter handle");
-            for (var value : GraphFrameBindings.from(row).retainedParametersForTransport().entrySet())
-                assertSame(value.getValue(), GraphFrameBindings.from(selected).retainedParametersForTransport().get(value.getKey()), "exact retained GRAPH handle");
-        }
-    }
-    static void assertSequence(List<BindingSet> expected, List<BindingSet> actual) {
-        assertRows(expected, actual);
-        assertEquals(expected.stream().map(SealedBoundaryTestSupport::facts).toList(),
-                actual.stream().map(SealedBoundaryTestSupport::facts).toList(), "ordinary sequence, including fixture lexical/literal fields and selected authority");
-    }
-    static void report(TupleExpr root, TestReporter reporter) {
-        var lines = new ArrayList<String>(); var pending = new java.util.ArrayDeque<TupleExpr>(); pending.push(root);
-        while (!pending.isEmpty()) {
-            TupleExpr node = pending.pop();
-            lines.add(node.getClass().getSimpleName() + " scope=" + org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.isVariableScopeChange(node)
-                    + " independent=" + node.isIndependentInputScope() + " path=" + node.getStringMetricActual("nativeExecutionPath")
-                    + " plan=" + node.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN));
-            for (TupleExpr child : org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.getChildren(node)) pending.push(child);
-        }
-        reporter.publishEntry("executedOwnerTree", String.join("\n", lines));
-    }
-    static void composedOwner(TupleExpr body) {
-        for (TupleExpr node = body; node != null; node = node.getParentNode() instanceof TupleExpr parent ? parent : null) {
-            String path = node.getStringMetricActual("nativeExecutionPath"), plan = node.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN);
-            if (path != null && !path.contains(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK) && !path.contains("nativeProjectionBoundary")
-                    && plan != null && plan.contains("LeftJoin(")) return;
-        }
-        assertTrue(false, "actual nonfallback sealed OPTIONAL owner, after exact results and source closure");
-    }
-    static void orderStage(TupleExpr root, boolean topK) {
-        String plan = root.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN), path = root.getStringMetricActual("nativeExecutionPath");
-        assertNotNull(plan, "actual prepared stage owner");
-        assertTrue(plan.contains("RootPipeline(stages=[") && plan.contains(topK ? "TopK(" : "Order(keys="), plan);
-        assertNotNull(path, "the same public root was evaluated and fully drained");
-        assertFalse(path.contains(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK), path);
-        // Source trace: projectionBoundary returns this fixed composed stage; only its child may be semantic.
-        // No unavailable per-node invocation metric or native-leaf assertion is substituted for that stage.
-    }
+	private SealedBoundaryTestSupport() {
+	}
+
+	static void routeAssumptions() {
+		assertTrue(NativeRootPipeline.enabled(), "root pipeline must be enabled for the actual owning route");
+		assertFalse(Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceRootGeneric"),
+				"forced generic mode is a setup mismatch");
+	}
+
+	static LmdbNativeRepeatedStatementTermRoleTest.MemorySource source(List<Statement> data) {
+		return new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(data,
+				NativeCompositeOriginFixture.iri("extra"));
+	}
+
+	static DefaultEvaluationStrategy ordinary(LmdbNativeRepeatedStatementTermRoleTest.MemorySource source,
+			boolean experimental) {
+		var strategy = new DefaultEvaluationStrategy(source, (FederatedServiceResolver) null);
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
+		return strategy;
+	}
+
+	static LmdbNativeEvaluationStrategy nativeStrategy(LmdbNativeRepeatedStatementTermRoleTest.MemorySource source,
+			boolean experimental) {
+		var strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0L, new EvaluationStatistics(), false);
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimental));
+		assertNull(strategy.forcedExecutionStrategyName(), "the native owner must choose its actual strategy");
+		return strategy.forWorker(source);
+	}
+
+	static List<BindingSet> drain(QueryEvaluationStep step, BindingSet input, boolean typed) {
+		if (!typed)
+			try (var rows = step.evaluate(input)) {
+				return QueryResults.asList(rows);
+			}
+		List<BindingSet> result = new ArrayList<>();
+		try (var rows = NativeResultSteps.open(step, input)) {
+			for (NativeResultRow row; (row = rows.next()) != null;)
+				result.add(row.toBindingSet());
+		}
+		return result;
+	}
+
+	// These fixtures use lexical IRIs and built-in literals only. This is not a universal RDF representative proof.
+	// Explicit assertions separately preserve caller objects and hidden parameter/GRAPH handle identity.
+	private record Term(Value.Type type, String lexical, String language, String datatype, String direction) {
+	}
+
+	private static Term representation(Value value) {
+		if (value == null)
+			return null;
+		return value instanceof Literal literal
+				? new Term(value.getType(), literal.getLabel(), literal.getLanguage().orElse(null),
+						literal.getDatatype().stringValue(),
+						literal.getBaseDirection() == null ? null : literal.getBaseDirection().toString())
+				: new Term(value.getType(), value.stringValue(), null, null, null);
+	}
+
+	private record Facts(Map<String, Term> domain, boolean tracked, Set<String> request, Set<String> local,
+			Map<String, Value> parameters, Map<String, Value> graphs) {
+	}
+
+	private static Facts facts(BindingSet row) {
+		Map<String, Term> domain = new LinkedHashMap<>();
+		for (String name : row.getBindingNames())
+			if (row.hasBinding(name))
+				domain.put(name, representation(row.getValue(name)));
+		var origin = BindingSetOrigin.of(row);
+		return new Facts(Collections.unmodifiableMap(domain), BindingSetOrigin.isTrackedInput(row),
+				origin.requestNames(), origin.localNames(),
+				origin.retainedParametersForTransport(), GraphFrameBindings.from(row).retainedParametersForTransport());
+	}
+
+	private static <T> Map<T, Integer> bag(List<T> rows) {
+		Map<T, Integer> result = new HashMap<>();
+		for (T row : rows)
+			result.merge(row, 1, Integer::sum);
+		return result;
+	}
+
+	static void assertRows(List<BindingSet> expected, List<BindingSet> actual) {
+		assertEquals(bag(expected.stream().map(SealedBoundaryTestSupport::facts).toList()),
+				bag(actual.stream().map(SealedBoundaryTestSupport::facts).toList()),
+				"exact domain, fixture IRI lexical/literal fields, multiplicity and complete authority");
+		assertEquals(bag(
+				expected.stream().map(BindingSetOrigin::requestInput).map(SealedBoundaryTestSupport::facts).toList()),
+				bag(actual.stream().map(BindingSetOrigin::requestInput).map(SealedBoundaryTestSupport::facts).toList()),
+				"real re-entry preserves the selected descriptor");
+		for (BindingSet row : expected) {
+			Facts wanted = facts(row);
+			BindingSet selected = actual.stream()
+					.filter(candidate -> wanted.equals(facts(candidate)))
+					.findFirst()
+					.orElseThrow();
+			for (var value : BindingSetOrigin.of(row).retainedParametersForTransport().entrySet())
+				assertSame(value.getValue(),
+						BindingSetOrigin.of(selected).retainedParametersForTransport().get(value.getKey()),
+						"exact hidden parameter handle");
+			for (var value : GraphFrameBindings.from(row).retainedParametersForTransport().entrySet())
+				assertSame(value.getValue(),
+						GraphFrameBindings.from(selected).retainedParametersForTransport().get(value.getKey()),
+						"exact retained GRAPH handle");
+		}
+	}
+
+	static void assertSequence(List<BindingSet> expected, List<BindingSet> actual) {
+		assertRows(expected, actual);
+		assertEquals(expected.stream().map(SealedBoundaryTestSupport::facts).toList(),
+				actual.stream().map(SealedBoundaryTestSupport::facts).toList(),
+				"ordinary sequence, including fixture lexical/literal fields and selected authority");
+	}
+
+	static void report(TupleExpr root, TestReporter reporter) {
+		var lines = new ArrayList<String>();
+		var pending = new java.util.ArrayDeque<TupleExpr>();
+		pending.push(root);
+		while (!pending.isEmpty()) {
+			TupleExpr node = pending.pop();
+			lines.add(node.getClass().getSimpleName() + " scope="
+					+ org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.isVariableScopeChange(node)
+					+ " independent=" + node.isIndependentInputScope() + " path="
+					+ node.getStringMetricActual("nativeExecutionPath")
+					+ " plan=" + node.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN));
+			for (TupleExpr child : org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.getChildren(node))
+				pending.push(child);
+		}
+		reporter.publishEntry("executedOwnerTree", String.join("\n", lines));
+	}
+
+	static void composedOwner(TupleExpr body) {
+		for (TupleExpr node = body; node != null; node = node.getParentNode() instanceof TupleExpr parent ? parent
+				: null) {
+			String path = node.getStringMetricActual("nativeExecutionPath"),
+					plan = node.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN);
+			if (path != null && !path.contains(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK)
+					&& !path.contains("nativeProjectionBoundary")
+					&& plan != null && plan.contains("LeftJoin("))
+				return;
+		}
+		assertTrue(false, "actual nonfallback sealed OPTIONAL owner, after exact results and source closure");
+	}
+
+	static void orderStage(TupleExpr root, boolean topK) {
+		String plan = root.getStringMetricPlanned(LmdbNativeExplain.PHYSICAL_PLAN),
+				path = root.getStringMetricActual("nativeExecutionPath");
+		assertNotNull(plan, "actual prepared stage owner");
+		assertTrue(plan.contains("RootPipeline(stages=[") && plan.contains(topK ? "TopK(" : "Order(keys="), plan);
+		assertNotNull(path, "the same public root was evaluated and fully drained");
+		assertFalse(path.contains(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK), path);
+		// Source trace: projectionBoundary returns this fixed composed stage; only its child may be semantic.
+		// No unavailable per-node invocation metric or native-leaf assertion is substituted for that stage.
+	}
 }

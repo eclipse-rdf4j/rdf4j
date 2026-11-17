@@ -47,11 +47,14 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 	private static final String QUERY = "SELECT ?s WHERE { ?s <" + CanonicalIriCompatibilityProcess.PREDICATE
 			+ "> ?o FILTER(REGEX(STR(?o), \"^(urn:|https://)\")) }";
 
-	@ParameterizedTest(name = "authenticated older writer={0}") @ValueSource(booleans = { false, true })
+	@ParameterizedTest(name = "authenticated older writer={0}")
+	@ValueSource(booleans = { false, true })
 	void aNewLegacyOwnerCannotAdoptPriorFilterCellsWithoutFreshPopulationProof(boolean olderWriter,
 			@TempDir(cleanup = CleanupMode.NEVER) Path evidence) throws Exception {
 		String classpath = System.getProperty("rdf4j.lmdb.canonical.compat.classpath.format2");
-		if (olderWriter) { assumeTrue(classpath != null && !classpath.isBlank(), "authenticated 6.1.0 classpath required"); }
+		if (olderWriter) {
+			assumeTrue(classpath != null && !classpath.isBlank(), "authenticated 6.1.0 classpath required");
+		}
 		LmdbCompatibilityFixtures.extract("canonical-iri-format-2.zip", evidence);
 		Path directory = evidence.resolve("store"), manifest = evidence.resolve("manifest.properties");
 		byte[] originalPolicy = Files.readAllBytes(directory.resolve("store.properties"));
@@ -64,7 +67,8 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 		try {
 			CanonicalIriCompatibilityProcess.verify(initial, CanonicalIriCompatibilityProcess.load(manifest));
 			try (var connection = initial.getConnection()) {
-				connection.add(CanonicalIriCompatibilityProcess.CURRENT_SUBJECT, CanonicalIriCompatibilityProcess.PREDICATE,
+				connection.add(CanonicalIriCompatibilityProcess.CURRENT_SUBJECT,
+						CanonicalIriCompatibilityProcess.PREDICATE,
 						CanonicalIriCompatibilityProcess.CURRENT_IRI);
 			}
 			LmdbStore store = (LmdbStore) initial.getSail();
@@ -73,7 +77,8 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 					store.rebuildFrontierStatistics().availability());
 			Population ordinary = population(initial);
 			assertEquals(11L, ordinary.inputs());
-			assertEquals(8, ordinary.iriSubjects().size(), "independent actual statement/type bag before query feedback");
+			assertEquals(8, ordinary.iriSubjects().size(),
+					"independent actual statement/type bag before query feedback");
 			try (Compiled compiled = compile(store)) {
 				recordedSurface = compiled.filter;
 				recordedDescriptor = assertInstanceOf(LmdbRuntimeFeedbackDescriptor.class,
@@ -100,7 +105,9 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 			}
 			store.getBackingStore().getSketchBasedJoinEstimator().persistIfDirty();
 			oldNativeTransaction = store.getBackingStore().getTripleStore().lastTransactionId();
-		} finally { initial.shutDown(); }
+		} finally {
+			initial.shutDown();
+		}
 		Path filterFile = directory.resolve("join-estimator.rjes.filters");
 		assertTrue(Files.isRegularFile(filterFile), "the observed FILTER service really persisted its sidecar");
 		byte[] filterBytes = Files.readAllBytes(filterFile);
@@ -108,16 +115,26 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 		if (olderWriter) {
 			Path output = evidence.resolve("authenticated-release-writer.log");
 			Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-					"-ea", "-cp", classpath, CanonicalIriCompatibilityProcess.class.getName(), "verify-current-and-write",
-					directory.toString(), manifest.toString()).redirectErrorStream(true).redirectOutput(output.toFile()).start();
+					"-ea", "-cp", classpath, CanonicalIriCompatibilityProcess.class.getName(),
+					"verify-current-and-write",
+					directory.toString(), manifest.toString()).redirectErrorStream(true)
+							.redirectOutput(output.toFile())
+							.start();
 			try {
 				assertTrue(process.waitFor(60, TimeUnit.SECONDS), "authenticated writer did not settle: " + output);
 				assertEquals(0, process.exitValue(), "authenticated writer failed: " + output);
-			} finally { if (process.isAlive()) { process.destroyForcibly(); } }
-			StoreProperties discovered = new StoreProperties(directory.toFile()); assertTrue(discovered.load());
+			} finally {
+				if (process.isAlive()) {
+					process.destroyForcibly();
+				}
+			}
+			StoreProperties discovered = new StoreProperties(directory.toFile());
+			assertTrue(discovered.load());
 			LegacyStoreDiscovery.discover(directory.toFile(), discovered);
-			assertTrue(discovered.verifiedTripleTransactionId > oldNativeTransaction, "a real older native commit occurred");
-			assertArrayEquals(filterBytes, Files.readAllBytes(filterFile), "the older writer cannot update the newer FILTER sidecar");
+			assertTrue(discovered.verifiedTripleTransactionId > oldNativeTransaction,
+					"a real older native commit occurred");
+			assertArrayEquals(filterBytes, Files.readAllBytes(filterFile),
+					"the older writer cannot update the newer FILTER sidecar");
 		}
 		SailRepository reopened = open(directory);
 		try {
@@ -125,11 +142,18 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 			assertSame(recordedDescriptor, recordedSurface.getRuntimeFeedbackContract().descriptor());
 			assertEquals(recordedEvidenceKey, recordedDescriptor.exactFilterSurfaceKey().toString());
 			assertNull(((LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics())
-					.estimatorRuntime().filters().estimateLearnedSurface(recordedSurface),
+					.estimatorRuntime()
+					.filters()
+					.estimateLearnedSurface(recordedSurface),
 					"lookup uses the original actually observed exact/generalized descriptor keys before any new plan or execution");
 			try (var connection = reopened.getConnection()) {
-				try (var rows = connection.getStatements(null, CanonicalIriCompatibilityProcess.PREDICATE, null, false)) {
-					long count = 0L; while (rows.hasNext()) { rows.next(); count++; }
+				try (var rows = connection.getStatements(null, CanonicalIriCompatibilityProcess.PREDICATE, null,
+						false)) {
+					long count = 0L;
+					while (rows.hasNext()) {
+						rows.next();
+						count++;
+					}
 					assertEquals(olderWriter ? 12L : 11L, count);
 				}
 			}
@@ -150,7 +174,9 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 				assertNotNull(fresh, "new current-owner complete observations must still teach the ordinary service");
 				assertEquals(olderWriter ? 9.0d / 12.0d : 8.0d / 11.0d, fresh.passRatio(), 1e-12);
 			}
-		} finally { reopened.shutDown(); }
+		} finally {
+			reopened.shutDown();
+		}
 	}
 
 	@Test
@@ -197,7 +223,9 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 				assertNotNull(learned);
 				assertEquals(8.0d / 11.0d, learned.passRatio(), 1e-12);
 			}
-		} finally { repository.shutDown(); }
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	private record Compiled(SailDataset dataset, LmdbEvaluationStatistics statistics, Filter filter,
@@ -207,9 +235,15 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 				return QueryResults.asList(rows).stream().map(row -> row.getValue("s").stringValue()).sorted().toList();
 			}
 		}
-		@Override public void close() { dataset.close(); }
+
+		@Override
+		public void close() {
+			dataset.close();
+		}
 	}
-	private record Population(long inputs, List<String> iriSubjects) { }
+
+	private record Population(long inputs, List<String> iriSubjects) {
+	}
 
 	private static Population population(SailRepository repository) {
 		try (var connection = repository.getConnection();
@@ -240,8 +274,11 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
 			assertTrue(source.getSnapshotEpoch().isPresent());
 			var pair = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
-			assertTrue(pair.pinnedReadTxn().isPresent()); assertTrue(pair.pinnedValueSnapshot().isPresent());
-			assertSame(pair.pinnedValueSnapshot().orElseThrow().valueStore()
+			assertTrue(pair.pinnedReadTxn().isPresent());
+			assertTrue(pair.pinnedValueSnapshot().isPresent());
+			assertSame(pair.pinnedValueSnapshot()
+					.orElseThrow()
+					.valueStore()
 					.valuePreparer(pair.pinnedValueSnapshot().orElseThrow()), source.getValuePreparer());
 			var statistics = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
 			var strategy = assertInstanceOf(LmdbEvaluationStrategy.class, store.getConnectionEvaluationStrategyFactory()
@@ -252,28 +289,58 @@ class LmdbLegacyPersistedFilterFreshnessTest {
 			QueryEvaluationStep step = strategy.precompile(optimized);
 			assertTrue(statistics.feedbackPublicationAllowed(), "the real paired source owns publication admission");
 			var authority = LmdbFeedbackReadAuthority.capture(statistics.estimatorRuntime(), source, null);
-			assertNotNull(authority, "the exact source has paired dictionary/statement readers and current owner admission");
+			assertNotNull(authority,
+					"the exact source has paired dictionary/statement readers and current owner admission");
 			assertTrue(authority.isCurrent());
-			List<Filter> filters = new ArrayList<>(); optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override public void meet(Filter filter) { filters.add(filter); super.meet(filter); }
+			List<Filter> filters = new ArrayList<>();
+			optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Filter filter) {
+					filters.add(filter);
+					super.meet(filter);
+				}
 			});
-			Filter filter = filters.stream().filter(value -> value.getRuntimeFeedbackContract() != null
-					&& value.getRuntimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_FILTER)).findFirst().orElseThrow();
+			Filter filter = filters.stream()
+					.filter(value -> value.getRuntimeFeedbackContract() != null
+							&& value.getRuntimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_FILTER))
+					.findFirst()
+					.orElseThrow();
 			assertNotNull(filter.getRuntimeFeedbackContract().descriptor(), "a real compiler prepared the destination");
 			return new Compiled(dataset, statistics, filter, step);
-		} catch (RuntimeException | Error failure) { dataset.close(); throw failure; }
+		} catch (RuntimeException | Error failure) {
+			dataset.close();
+			throw failure;
+		}
 	}
+
 	private static SailRepository open(Path directory) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
-				.setInlineLiterals(false).setAutoGrow(true).setValueDBSize(16L * 1024 * 1024)
-				.setTripleDBSize(16L * 1024 * 1024).setNativeEvaluationEnabled(false).setSketchEstimatorEnabled(true)
-				.setOptimizerSamplingEnabled(false).setBackgroundRawSamplingEnabled(false)
+				.setInlineLiterals(false)
+				.setAutoGrow(true)
+				.setValueDBSize(16L * 1024 * 1024)
+				.setTripleDBSize(16L * 1024 * 1024)
+				.setNativeEvaluationEnabled(false)
+				.setSketchEstimatorEnabled(true)
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingEnabled(false)
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
 				.setFrontierSynopsisBudgetBytes(64L * 1024 * 1024)
 				.setFrontierHeapBudgetBytes(128L * 1024 * 1024);
 		config.setExperimentalQueryOptimizations(true);
-		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config)); repository.init();
-		try { LmdbTestUtil.awaitPostReadyInitialization((LmdbStore) repository.getSail(), 30, TimeUnit.SECONDS); return repository; }
-		catch (Throwable failure) { try { repository.shutDown(); } catch (Throwable cleanup) { if (cleanup != failure) { failure.addSuppressed(cleanup); } } throw failure; }
+		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config));
+		repository.init();
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization((LmdbStore) repository.getSail(), 30, TimeUnit.SECONDS);
+			return repository;
+		} catch (Throwable failure) {
+			try {
+				repository.shutDown();
+			} catch (Throwable cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
 	}
 }

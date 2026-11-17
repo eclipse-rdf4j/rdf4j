@@ -584,7 +584,9 @@ final class MultiJoinPlan implements SlotPlan {
 					break;
 				}
 			}
-			if (!movable) { continue; }
+			if (!movable) {
+				continue;
+			}
 			exclusive[i] = produced[i] & ~sharedOrSeed;
 			boolean joinsRest = (produced[i] & sharedOrSeed) != 0L;
 			if (exclusive[i] != 0L && joinsRest && allowsSink(allowedSinks, ordered[i])) {
@@ -875,7 +877,9 @@ final class LateralPlan implements SlotPlan {
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
 		if ((SlotPlan.fixedValueOutputMask(right) & left.producedMask()) != 0L
-				|| right instanceof PatternPlan selector && (selector.readOnlyMask() & left.producedMask()) != 0L) { return null; }
+				|| right instanceof PatternPlan selector && (selector.readOnlyMask() & left.producedMask()) != 0L) {
+			return null;
+		}
 		if (right instanceof PatternPlan pattern) {
 			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenLateral(left, pattern, rightInputMask, row,
 					capacity);

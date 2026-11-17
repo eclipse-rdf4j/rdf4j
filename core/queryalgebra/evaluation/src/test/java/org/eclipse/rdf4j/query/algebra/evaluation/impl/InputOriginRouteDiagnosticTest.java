@@ -152,8 +152,10 @@ class InputOriginRouteDiagnosticTest {
 		if (value == null) {
 			return "null";
 		}
-		String identity = value == caller ? "caller" : value == stored ? "stored" : value == prepared ? "prepared"
-				: "other";
+		String identity = value == caller ? "caller"
+				: value == stored ? "stored"
+						: value == prepared ? "prepared"
+								: "other";
 		String language = value instanceof Literal literal ? literal.getLanguage().orElse("-") : "-";
 		return identity + ':' + value + " lang=" + language;
 	}

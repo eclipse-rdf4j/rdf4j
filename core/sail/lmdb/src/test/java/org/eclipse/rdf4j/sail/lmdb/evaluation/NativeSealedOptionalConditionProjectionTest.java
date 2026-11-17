@@ -75,7 +75,8 @@ class NativeSealedOptionalConditionProjectionTest {
 	void open() {
 		previousFlag = System.getProperty(FLAG);
 		repository = new SailRepository(
-				new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				new LmdbStore(directory.toFile(),
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		repository.init();
 		IRI p = iri("p"), q = iri("q"), r = iri("r");
 		try (SailRepositoryConnection c = repository.getConnection()) {
@@ -159,7 +160,8 @@ class NativeSealedOptionalConditionProjectionTest {
 				Arguments.of("two chained conditioned OPTIONALs",
 						"SELECT ?s ?v ?w ?z { ?s :p ?v OPTIONAL { ?s :q ?w FILTER(?w > ?v) } "
 								+ "OPTIONAL { ?s :r ?z FILTER(?z > ?v) } }"),
-				Arguments.of("projection subset s,w", "SELECT ?s ?w { ?s :p ?v OPTIONAL { ?s :q ?w FILTER(?w > ?v) } }"));
+				Arguments.of("projection subset s,w",
+						"SELECT ?s ?w { ?s :p ?v OPTIONAL { ?s :q ?w FILTER(?w > ?v) } }"));
 	}
 
 	/** Reported, not prescribed: bag and origin facts must match; the route is printed. */
@@ -177,14 +179,15 @@ class NativeSealedOptionalConditionProjectionTest {
 
 	/**
 	 * Conditions over right-side names only (and the right-only conjunct of a split conjunction) are relocated by the
-	 * optimizer into the right arm as a Filter node; they are not LeftJoin conditions and stay out of the sealed
-	 * route. Only the bag and "not sealed" are asserted here: origin-fact parity of a relocated right-arm filter has
-	 * a Q0 mismatch for some filters and is covered by NativeRelocatedOptionalFilterOriginScratchTest.
+	 * optimizer into the right arm as a Filter node; they are not LeftJoin conditions and stay out of the sealed route.
+	 * Only the bag and "not sealed" are asserted here: origin-fact parity of a relocated right-arm filter has a Q0
+	 * mismatch for some filters and is covered by NativeRelocatedOptionalFilterOriginScratchTest.
 	 */
 	static Stream<Arguments> relocated() {
 		return Stream.of(
 				Arguments.of("lang(?w) = en (right-only)", opt("lang(?w) = \"en\"")),
-				Arguments.of("datatype(?w) = xsd:integer && ?w != ?v (split)", opt("datatype(?w) = xsd:integer && ?w != ?v")),
+				Arguments.of("datatype(?w) = xsd:integer && ?w != ?v (split)",
+						opt("datatype(?w) = xsd:integer && ?w != ?v")),
 				Arguments.of("regex(str(?w), a) (right-only)", opt("regex(str(?w), \"a\")")),
 				Arguments.of("isNumeric(?w) && ?w + 1 > ?v (split)", opt("isNumeric(?w) && ?w + 1 > ?v")),
 				Arguments.of("?w > 5 (right-only)", opt("?w > 5")));
@@ -273,7 +276,8 @@ class NativeSealedOptionalConditionProjectionTest {
 			assertEquals(bag(query, false, binding), bag(query, true, binding), "bag with input " + input.getKey());
 			assertEquals(rowsWithProvenance(query, false, binding), rowsWithProvenance(query, true, binding),
 					"origin facts with input " + input.getKey());
-			assertFalse(explain(query, binding).contains("SealedProjection("), "not sealed with input " + input.getKey());
+			assertFalse(explain(query, binding).contains("SealedProjection("),
+					"not sealed with input " + input.getKey());
 		}
 	}
 
@@ -319,8 +323,9 @@ class NativeSealedOptionalConditionProjectionTest {
 		}
 		Map<Row, Integer> result = new HashMap<>();
 		try (SailRepositoryConnection c = repository.getConnection();
-				var rows = c.getSailConnection().evaluate(root, null,
-						input == null ? EmptyBindingSet.getInstance() : bindings, true)) {
+				var rows = c.getSailConnection()
+						.evaluate(root, null,
+								input == null ? EmptyBindingSet.getInstance() : bindings, true)) {
 			while (rows.hasNext()) {
 				BindingSet row = rows.next();
 				Map<String, Value> values = new LinkedHashMap<>();
