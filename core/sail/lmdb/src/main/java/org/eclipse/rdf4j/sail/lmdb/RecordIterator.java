@@ -32,6 +32,16 @@ public interface RecordIterator extends Closeable {
 	long[] next();
 
 	/**
+	 * Returns the next record while the caller already holds the transaction read lock protecting this iterator.
+	 * Implementations that do not have a lock-aware cursor path may delegate to {@link #next()}.
+	 *
+	 * @return A record, or {@code null} if all records have been returned.
+	 */
+	default long[] nextWithTxnReadLockHeld() {
+		return next();
+	}
+
+	/**
 	 * Fills the buffer with up to {@code maxRows} records of four longs each and returns the number of records written.
 	 * A return value smaller than {@code maxRows} means the iterator is exhausted. Implementations may amortize
 	 * per-record costs (locking, version checks) across the whole batch.
@@ -79,6 +89,22 @@ public interface RecordIterator extends Closeable {
 
 	default long getSourceRowsFilteredActual() {
 		return -1;
+	}
+
+	default long getDistinctCursorSkipCountActual() {
+		return -1;
+	}
+
+	default long getDistinctCursorSkipSeekCountActual() {
+		return -1;
+	}
+
+	/**
+	 * Requests that the iterator positions the underlying cursor at or after the supplied quad key on the next
+	 * {@link #next()} call. Implementations that cannot seek may return {@code false}.
+	 */
+	default boolean skipTo(long subject, long predicate, long object, long context) {
+		return false;
 	}
 
 	/**

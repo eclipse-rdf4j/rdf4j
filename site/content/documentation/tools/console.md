@@ -12,6 +12,12 @@ The RDF4J Console is a text console application for interacting with RDF4J. It c
 
 Rdf4j Console can be started using the `console.bat`/`.sh` scripts in the bin directory of the Rdf4j SDK. By default, the console will connect to the “default data directory”, which contains the console’s own set of repositories.
 
+On JDKs that provide it, the SDK launchers automatically resolve the incubating `jdk.incubator.vector` module for
+Frontier statistics batching. The startup warning for an incubating module is expected on JDK 25. Set
+`-Drdf4j.frontier.vector.enabled=false` to force the bit-exact scalar path, or
+`-Drdf4j.frontier.vector.minBatch=<count>` to override the default platform-adaptive crossover. Custom launchers must
+pass `--add-modules=jdk.incubator.vector` themselves to enable SIMD; omitting it retains scalar compatibility.
+
 The console is operated by typing commands. For example, to get an overview of the available commands, type:
 
    help
@@ -190,4 +196,3 @@ In addition, it is possible to toggle between using / showing the short prefix o
 ### Other commands
 
 Please check the documentation that is provided by the console itself for help on how to use the other commands. Most commands should be self explanatory.
-

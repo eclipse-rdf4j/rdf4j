@@ -104,11 +104,19 @@ public class LmdbNativeGenericBridgeScopeTest {
 	private static final String RECORD_LITERAL_NOW_URI = EX + "recordLiteralNow";
 	private static final String RECORD_SCALAR_OUTER_NOW_URI = EX + "recordScalarOuterNow";
 	private static final String RECORD_SCALAR_INNER_NOW_URI = EX + "recordScalarInnerNow";
+	private static final String RECORD_SCALAR_NESTED_NOW_URI = EX + "recordScalarNestedNow";
 
 	/** NOW() values the filter predicate observed, one entry per predicate invocation. */
 	private static final List<Value> RECORDED = Collections.synchronizedList(new ArrayList<>());
 	private static final List<Value> SCALAR_OUTER_NOW_RECORDED = Collections.synchronizedList(new ArrayList<>());
 	private static final List<Value> SCALAR_INNER_NOW_RECORDED = Collections.synchronizedList(new ArrayList<>());
+	private static final List<Value> SCALAR_NESTED_NOW_RECORDED = Collections.synchronizedList(new ArrayList<>());
+	/**
+	 * A deterministic function with a constant argument is folded while its subtree is prepared, so its call count is
+	 * the number of preparations of that subtree.
+	 */
+	private static final String COUNT_PREPARATION_URI = EX + "countPreparation";
+	private static final AtomicInteger PREPARATIONS = new AtomicInteger();
 
 	/** Records its argument (the NOW() literal) and accepts the row. Registered once per JVM. */
 	public static final class RecordNowFunction implements Function {
@@ -157,6 +165,26 @@ public class LmdbNativeGenericBridgeScopeTest {
 		FunctionRegistry.getInstance()
 				.add(recordLiteralNowFunction(RECORD_SCALAR_INNER_NOW_URI,
 						SCALAR_INNER_NOW_RECORDED));
+		FunctionRegistry.getInstance()
+				.add(recordLiteralNowFunction(RECORD_SCALAR_NESTED_NOW_URI,
+						SCALAR_NESTED_NOW_RECORDED));
+		FunctionRegistry.getInstance().add(new Function() {
+			@Override
+			public Determinism getDeterminism() {
+				return Determinism.DETERMINISTIC;
+			}
+
+			@Override
+			public String getURI() {
+				return COUNT_PREPARATION_URI;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+				PREPARATIONS.incrementAndGet();
+				return args[0];
+			}
+		});
 	}
 
 	@TempDir
@@ -165,9 +193,11 @@ public class LmdbNativeGenericBridgeScopeTest {
 	private LmdbStore store;
 	private SailRepository repository;
 	private SailDataset dataset;
+	private String previousNativeFlag;
 
 	@BeforeEach
 	public void setUp() {
+		previousNativeFlag = System.getProperty(NATIVE_FLAG);
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
@@ -191,11 +221,19 @@ public class LmdbNativeGenericBridgeScopeTest {
 
 	@AfterEach
 	public void tearDown() {
-		if (dataset != null) {
-			dataset.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
+		try {
+			if (dataset != null) {
+				dataset.close();
+			}
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			if (previousNativeFlag == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previousNativeFlag);
+			}
 		}
 	}
 
@@ -589,12 +627,10 @@ public class LmdbNativeGenericBridgeScopeTest {
 		Extension genericFirst = new Extension(genericInput, new ExtensionElem(genericNow, "genericNow"));
 		Intersection genericIsland = new Intersection(genericFirst, genericFirst.clone());
 		Extension nativeLater = new Extension(nativePattern, new ExtensionElem(nativeNow, "nativeNow"));
-		Projection rootProjection = new Projection(new Join(genericIsland, nativeLater),
-				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("genericNow"),
-						new ProjectionElem("nativeNow"), new ProjectionElem("genericObject"),
-						new ProjectionElem("nativeObject")),
-				false);
-		TupleExpr root = new QueryRoot(rootProjection);
+		// No root Projection: since the semantic projection boundary (2026-11-04), a Projection over a generic island
+		// that has no BGP producer or projection-authority proof runs behind that boundary. The unprojected join keeps
+		// the native host around the generic island that this test is about.
+		TupleExpr root = new QueryRoot(new Join(genericIsland, nativeLater));
 		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
 				0L, new EvaluationStatistics(), false);
 		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
@@ -722,6 +758,246 @@ public class LmdbNativeGenericBridgeScopeTest {
 			} else {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
+		}
+	}
+
+	@Test
+	public void scalarSubqueryInFilterSharesTheOuterNowScope() {
+		clearScalarRecorders();
+		ValueFactory vf = repository.getValueFactory();
+		Filter root = new Filter(seedInput(vf, "outerSeed", 1), scalarNowMatch(vf, innerNowProjection(vf)));
+		List<BindingSet> rows = evaluateStep(compileScalarRoot(new Projection(root,
+				new ProjectionElemList(new ProjectionElem("outerSeed")))));
+		assertThat(rows).as("the FILTER keeps the row only when the subquery saw the outer NOW").hasSize(1);
+		assertOneScalarNow(SCALAR_OUTER_NOW_RECORDED, SCALAR_INNER_NOW_RECORDED);
+	}
+
+	@Test
+	public void nestedScalarSubquerySharesTheOuterNowScope() {
+		clearScalarRecorders();
+		ValueFactory vf = repository.getValueFactory();
+		// The middle subquery keeps a row only when its own NOW equals the innermost subquery's NOW.
+		Extension middleNow = new Extension(seedInput(vf, "seed", 3),
+				new ExtensionElem(new FunctionCall(RECORD_SCALAR_INNER_NOW_URI, new FunctionCall("NOW")), "inner"));
+		Extension innermostNow = new Extension(seedInput(vf, "nestedSeed", 2), new ExtensionElem(
+				new FunctionCall(RECORD_SCALAR_NESTED_NOW_URI, new FunctionCall("NOW")), "nested"));
+		Projection innermost = new Projection(innermostNow,
+				new ProjectionElemList(new ProjectionElem("nested")));
+		Filter middleBody = new Filter(middleNow, new CompareAny(Var.of("inner"), innermost, CompareOp.EQ));
+		Projection middle = new Projection(middleBody, new ProjectionElemList(new ProjectionElem("inner")));
+		Extension root = new Extension(seedInput(vf, "outerSeed", 1),
+				new ExtensionElem(scalarNowMatch(vf, middle), "matched"));
+		List<BindingSet> rows = evaluateStep(compileScalarRoot(root));
+		assertThat(rows).hasSize(1);
+		assertThat(rows.getFirst().getValue("matched")).isEqualTo(BooleanLiteral.TRUE);
+		assertOneScalarNow(SCALAR_OUTER_NOW_RECORDED, SCALAR_INNER_NOW_RECORDED, SCALAR_NESTED_NOW_RECORDED);
+	}
+
+	@Test
+	public void scalarSubqueryUnderExistsSharesTheOuterNowScope() {
+		clearScalarRecorders();
+		ValueFactory vf = repository.getValueFactory();
+		Filter existsBody = new Filter(seedInput(vf, "existsSeed", 2), new CompareAny(
+				new FunctionCall(RECORD_SCALAR_NESTED_NOW_URI, new FunctionCall("NOW")), innerNowProjection(vf),
+				CompareOp.EQ));
+		Extension root = new Extension(new Filter(seedInput(vf, "outerSeed", 1), new Exists(existsBody)),
+				new ExtensionElem(new FunctionCall(RECORD_SCALAR_OUTER_NOW_URI, new FunctionCall("NOW")), "outerNow"));
+		List<BindingSet> rows = evaluateStep(compileScalarRoot(root));
+		assertThat(rows).as("EXISTS is true only when its scalar subquery saw the query's NOW").hasSize(1);
+		assertOneScalarNow(SCALAR_OUTER_NOW_RECORDED, SCALAR_NESTED_NOW_RECORDED, SCALAR_INNER_NOW_RECORDED);
+	}
+
+	@Test
+	public void retainedScalarSubqueryGetsOneNowPerEvaluationAndAFreshNowEachEvaluation() {
+		ValueFactory vf = repository.getValueFactory();
+		Extension root = new Extension(seedInput(vf, "outerSeed", 1),
+				new ExtensionElem(scalarNowMatch(vf, innerNowProjection(vf)), "matched"));
+		QueryEvaluationStep step = compileScalarRoot(root);
+		Value previousOuter = null;
+		Value previousInner = null;
+		for (int evaluation = 0; evaluation < 2; evaluation++) {
+			if (previousOuter != null) {
+				awaitClockTick();
+			}
+			clearScalarRecorders();
+			List<BindingSet> rows = evaluateStep(step);
+			assertThat(rows).hasSize(1);
+			assertThat(rows.getFirst().getValue("matched")).as("evaluation %s", evaluation)
+					.isEqualTo(BooleanLiteral.TRUE);
+			assertOneScalarNow(SCALAR_OUTER_NOW_RECORDED, SCALAR_INNER_NOW_RECORDED);
+			Value outer = SCALAR_OUTER_NOW_RECORDED.getFirst();
+			Value inner = SCALAR_INNER_NOW_RECORDED.getFirst();
+			if (previousOuter != null) {
+				assertThat(outer).as("each evaluation owns a fresh outer NOW object").isNotSameAs(previousOuter);
+				assertThat(inner).as("each evaluation owns a fresh scalar-subquery NOW object")
+						.isNotSameAs(previousInner);
+				assertThat(outer).as("the clock moved on, so the next evaluation's NOW differs")
+						.isNotEqualTo(previousOuter);
+				assertThat(inner).as("the clock moved on, so the next scalar-subquery NOW differs")
+						.isNotEqualTo(previousInner);
+			}
+			previousOuter = outer;
+			previousInner = inner;
+		}
+	}
+
+	@Test
+	public void retainedScalarSubqueryWhoseOnlyQueryScopeStateIsNowMatchesEveryEvaluation() {
+		// No recorder function: NOW alone must make the subquery evaluation-scoped, not a volatile neighbour.
+		ValueFactory vf = repository.getValueFactory();
+		Extension innerNow = new Extension(seedInput(vf, "seed", 3),
+				new ExtensionElem(new FunctionCall("NOW"), "inner"));
+		Projection subquery = new Projection(innerNow, new ProjectionElemList(new ProjectionElem("inner")));
+		Extension root = new Extension(seedInput(vf, "outerSeed", 1),
+				new ExtensionElem(new CompareAny(new FunctionCall("NOW"), subquery, CompareOp.EQ), "matched"));
+		QueryEvaluationStep step = compileScalarRoot(root);
+		for (int evaluation = 0; evaluation < 2; evaluation++) {
+			if (evaluation > 0) {
+				awaitClockTick();
+			}
+			List<BindingSet> rows = evaluateStep(step);
+			assertThat(rows).hasSize(1);
+			assertThat(rows.getFirst().getValue("matched"))
+					.as("evaluation %s: the subquery's NOW is this evaluation's NOW", evaluation)
+					.isEqualTo(BooleanLiteral.TRUE);
+		}
+	}
+
+	@Test
+	public void nowScalarSubqueryIsNotPreparedAgainForEveryOuterRow() {
+		ValueFactory vf = repository.getValueFactory();
+		Extension innerNow = new Extension(seedInput(vf, "seed", 3),
+				new ExtensionElem(new FunctionCall("NOW"), "inner"),
+				new ExtensionElem(new FunctionCall(COUNT_PREPARATION_URI,
+						new ValueConstant(vf.createLiteral("prepared"))), "preparation"));
+		Projection subquery = new Projection(innerNow,
+				new ProjectionElemList(new ProjectionElem("inner"), new ProjectionElem("preparation")));
+		int outerRows = 4;
+		Extension root = new Extension(seedInput(vf, "outerSeed", outerRows),
+				new ExtensionElem(new CompareAny(new FunctionCall("NOW"), subquery, CompareOp.EQ), "matched"));
+		int before = PREPARATIONS.get();
+		QueryEvaluationStep step = compileScalarRoot(root);
+		int preparations = PREPARATIONS.get() - before;
+		for (int evaluation = 0; evaluation < 2; evaluation++) {
+			int preparedBefore = PREPARATIONS.get();
+			long subqueryEvaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
+			List<BindingSet> rows = evaluateStep(step);
+			assertThat(rows).hasSize(outerRows)
+					.allSatisfy(row -> assertThat(row.getValue("matched")).isEqualTo(BooleanLiteral.TRUE));
+			assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - subqueryEvaluationsBefore)
+					.as("the scalar subquery runs once per outer row")
+					.isEqualTo(outerRows);
+			assertThat(PREPARATIONS.get() - preparedBefore)
+					.as("evaluation %s prepares the NOW-bearing subquery at most once, not once per outer row",
+							evaluation)
+					.isLessThanOrEqualTo(1);
+			preparations += PREPARATIONS.get() - preparedBefore;
+		}
+		assertThat(preparations).as("the preparation probe observes the subquery's preparation").isPositive();
+	}
+
+	@Test
+	public void projectionBoundaryOrderKeySharesTheArgumentNowAndRefreshesRetainedEvaluations() {
+		ValueFactory vf = repository.getValueFactory();
+		Order root = new Order(innerNowProjection(vf),
+				new OrderElem(new FunctionCall(RECORD_SCALAR_OUTER_NOW_URI, new FunctionCall("NOW"))));
+		assertOrderKeyNowPerEvaluation(compileScalarRoot(root), 3, SCALAR_OUTER_NOW_RECORDED,
+				SCALAR_INNER_NOW_RECORDED);
+	}
+
+	@Test
+	public void projectionBoundaryOrderKeyAloneGetsAFreshNowPerRetainedEvaluation() {
+		ValueFactory vf = repository.getValueFactory();
+		// A share-safe argument the native projection cannot prove (a deterministic extension function), so the
+		// projection stays a semantic boundary and only its ORDER key depends on the evaluation.
+		Extension deterministic = new Extension(seedInput(vf, "seed", 3), new ExtensionElem(
+				new FunctionCall(COUNT_PREPARATION_URI, new ValueConstant(vf.createLiteral("tag"))), "tag"));
+		Projection noNow = new Projection(deterministic,
+				new ProjectionElemList(new ProjectionElem("seed"), new ProjectionElem("tag")));
+		Order root = new Order(noNow,
+				new OrderElem(new FunctionCall(RECORD_SCALAR_OUTER_NOW_URI, new FunctionCall("NOW"))));
+		assertOrderKeyNowPerEvaluation(compileScalarRoot(root), 3, SCALAR_OUTER_NOW_RECORDED);
+	}
+
+	@SafeVarargs
+	private static void assertOrderKeyNowPerEvaluation(QueryEvaluationStep step, int rows,
+			List<Value>... recorded) {
+		Value previous = null;
+		for (int evaluation = 0; evaluation < 2; evaluation++) {
+			if (previous != null) {
+				awaitClockTick();
+			}
+			clearScalarRecorders();
+			assertThat(evaluateStep(step)).as("evaluation %s", evaluation).hasSize(rows);
+			assertOneScalarNow(recorded);
+			Value now = recorded[0].getFirst();
+			if (previous != null) {
+				assertThat(now).as("a retained ORDER key observes this evaluation's NOW")
+						.isNotSameAs(previous)
+						.isNotEqualTo(previous);
+			}
+			previous = now;
+		}
+	}
+
+	/** NOW has millisecond resolution: let the clock pass the previous evaluation's NOW before evaluating again. */
+	private static void awaitClockTick() {
+		long current = System.currentTimeMillis();
+		while (System.currentTimeMillis() == current) {
+			Thread.onSpinWait();
+		}
+	}
+
+	private static void clearScalarRecorders() {
+		SCALAR_OUTER_NOW_RECORDED.clear();
+		SCALAR_INNER_NOW_RECORDED.clear();
+		SCALAR_NESTED_NOW_RECORDED.clear();
+	}
+
+	private static BindingSetAssignment seedInput(ValueFactory vf, String name, int rows) {
+		BindingSetAssignment input = new BindingSetAssignment();
+		List<BindingSet> bindings = new ArrayList<>();
+		for (int i = 0; i < rows; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding(name, vf.createIRI(EX, name + i));
+			bindings.add(row);
+		}
+		input.setBindingSets(bindings);
+		return input;
+	}
+
+	private static Projection innerNowProjection(ValueFactory vf) {
+		Extension innerNow = new Extension(seedInput(vf, "seed", 3),
+				new ExtensionElem(new FunctionCall(RECORD_SCALAR_INNER_NOW_URI, new FunctionCall("NOW")), "inner"));
+		return new Projection(innerNow, new ProjectionElemList(new ProjectionElem("inner")));
+	}
+
+	private static CompareAny scalarNowMatch(ValueFactory vf, Projection subquery) {
+		return new CompareAny(new FunctionCall(RECORD_SCALAR_OUTER_NOW_URI, new FunctionCall("NOW")), subquery,
+				CompareOp.EQ);
+	}
+
+	/** Compiles with the native engine enabled for the rest of the test; tearDown restores the property. */
+	private QueryEvaluationStep compileScalarRoot(TupleExpr root) {
+		System.setProperty(NATIVE_FLAG, "true");
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+				new EvaluationStatistics(), false);
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(
+				new QueryRoot(root), new DelayedDatasetContext(), strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported()).as("the scalar-subquery root must compile natively").isTrue();
+		return outcome.step();
+	}
+
+	@SafeVarargs
+	private static void assertOneScalarNow(List<Value>... recorded) {
+		for (List<Value> values : recorded) {
+			assertThat(values).as("every scalar NOW recorder must run").isNotEmpty();
+		}
+		Value now = recorded[0].getFirst();
+		for (List<Value> values : recorded) {
+			assertThat(values).as("one NOW value per query execution, also inside scalar subqueries")
+					.allMatch(now::equals);
 		}
 	}
 

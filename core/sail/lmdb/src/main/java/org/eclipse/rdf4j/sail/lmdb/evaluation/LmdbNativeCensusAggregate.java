@@ -515,7 +515,10 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			graphContext = graph.getGraphName();
 			input = graph.getArg();
 		}
-		if (!(input instanceof StatementPattern pattern)) {
+		if (!(input instanceof StatementPattern pattern)
+				|| (graphContext == null && !NativeContextSelection.supportsCensus(pattern, context))
+				|| (graphContext != null && !NativeContextSelection.hasCompleteGraphSets(
+						context == null ? null : context.getDataset()))) {
 			return null;
 		}
 		Var[] vars = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),

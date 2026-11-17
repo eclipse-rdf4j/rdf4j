@@ -13,9 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
-import java.util.ArrayDeque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -29,12 +27,9 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
@@ -62,7 +57,8 @@ class LmdbBindingSourcePreservationTest {
 		Source source = new Source("x");
 		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
 				mock(TripleStore.class), null);
-		assertThat(statistics.estimateFactorCost(source.assignment(), Set.of())).isEmpty();
+		assertThat(statistics.estimateFactorCost(source.assignment(), Set.of()))
+				.hasValueSatisfying(cost -> assertThat(cost.hasExactOutputRows()).isFalse());
 		assertThat(source.opens).hasValue(0);
 		assertThat(source.rows).containsExactly(source.row);
 	}
@@ -72,15 +68,35 @@ class LmdbBindingSourcePreservationTest {
 		Source source = new Source("x");
 		BindingSetAssignment assignment = source.assignment();
 		String[] names = { "x" };
-		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
-		when(estimator.factorOutputRowsForJoinOrdering(assignment, names, 0L)).thenReturn(-1.0d);
 		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
-				mock(TripleStore.class), estimator);
+				mock(TripleStore.class), null);
 		assertThat(
 				statistics.estimateFactorCost(assignment, JoinFactorCostModel.CostContext.of(names, 0L, 1, 1, false)))
-						.isEmpty();
+						.hasValueSatisfying(cost -> assertThat(cost.hasExactOutputRows()).isFalse());
 		assertThat(source.opens).hasValue(0);
 		assertThat(source.rows).containsExactly(source.row);
+	}
+
+	@Test
+	void scopedFactorCostingDoesNotFingerprintUnknownBindingSources() {
+		for (boolean masked : List.of(false, true)) {
+			Source source = new Source("x");
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class),
+					mock(TripleStore.class), null);
+			BindingSetAssignment assignment = source.assignment();
+			try (var ignored = statistics.beginQueryOptimizationScope()) {
+				if (masked) {
+					assertThat(statistics.estimateFactorCost(assignment,
+							JoinFactorCostModel.CostContext.of(new String[] { "x" }, 0L, 1, 1, false)))
+									.hasValueSatisfying(cost -> assertThat(cost.hasExactOutputRows()).isFalse());
+				} else {
+					assertThat(statistics.estimateFactorCost(assignment, Set.of()))
+							.hasValueSatisfying(cost -> assertThat(cost.hasExactOutputRows()).isFalse());
+				}
+			}
+			assertThat(source.opens).hasValue(0);
+			assertThat(source.rows).containsExactly(source.row);
+		}
 	}
 
 	@Test
@@ -97,7 +113,7 @@ class LmdbBindingSourcePreservationTest {
 	void joinPlanningDoesNotOpenUnknownBindingSources() {
 		Source source = new Source("x");
 		QueryRoot root = new QueryRoot(new Join(source.assignment(), values("y")));
-		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null,
+		new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(root, null,
 				EmptyBindingSet.getInstance());
 		assertThat(source.opens).hasValue(0);
 		assertThat(source.rows).containsExactly(source.row);
@@ -106,20 +122,12 @@ class LmdbBindingSourcePreservationTest {
 	@Test
 	void deferredFilterPlacementDoesNotMaterializeUnknownBindingSources() {
 		Source source = new Source("extra");
-		DeferredFilter filter = new DeferredFilter(new Compare(Var.of("u"), Var.of("v"), Compare.CompareOp.NE),
-				Set.of("u", "v"), JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
-				new EvaluationStatistics.FilterPassEstimate(-1.0d,
-						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
-		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((expression, ignored) -> expression, Join::new,
-				(expression, filters, placement) -> {
-					TupleExpr result = expression;
-					for (DeferredFilter deferred : filters) {
-						result = new Filter(result, deferred.condition.clone());
-					}
-					return result;
-				});
-		placer.buildSegmentRoot(new ArrayDeque<>(List.of(values("u"), source.assignment(), values("v"))),
-				List.of(filter), Set.of());
+		QueryRoot root = new QueryRoot(new Filter(
+				new Join(new Join(values("u"), source.assignment()), values("v")),
+				new Compare(Var.of("u"), Var.of("v"), Compare.CompareOp.NE)));
+		new LmdbFilterHoistOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(root, null,
+				EmptyBindingSet.getInstance());
 		assertThat(source.opens).hasValue(0);
 		assertThat(source.rows).containsExactly(source.row);
 	}

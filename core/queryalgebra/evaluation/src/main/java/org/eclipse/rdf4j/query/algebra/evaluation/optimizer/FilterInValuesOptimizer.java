@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -28,7 +29,6 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -40,11 +40,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
-import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
 /**
- * Rewrites safe RDF-term equality IN filters into a finite VALUES semijoin anchor.
+ * Intersects safe RDF-term equality filters with an existing finite VALUES relation when its rows can be preserved.
  */
 final class FilterInValuesOptimizer implements QueryOptimizer {
 
@@ -89,26 +88,10 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			// A new leading VALUES row would become a local binding and could replace the producer's observable
+			// representative. The original FILTER remains authoritative unless an existing relation proves the domain.
 			if (mergeWithExistingValuesAnchor(filter, assignment)) {
 				analysis.invalidate();
-				return;
-			}
-
-			invalidateAncestorMergeJoins(filter);
-			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
-			analysis.invalidate();
-		}
-	}
-
-	/**
-	 * This optimizer runs after physical join planning. Introducing an unordered VALUES input changes the ordering
-	 * contract of every containing join, so an ancestor merge-join hint derived from the old subtree is no longer
-	 * valid. Descendant hints remain valid because their inputs are unchanged.
-	 */
-	private static void invalidateAncestorMergeJoins(QueryModelNode rewrittenNode) {
-		for (QueryModelNode parent = rewrittenNode.getParentNode(); parent != null; parent = parent.getParentNode()) {
-			if (parent instanceof Join join) {
-				join.setMergeJoin(false);
 			}
 		}
 	}
@@ -162,6 +145,12 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		if (bindingName == null) {
 			return false;
 		}
+		// A later assignment of the same name can replace a VALUES result, and pruning individual rows must not
+		// suppress query-fatal work. The injection proof is deliberately stronger than this intersection needs.
+		if (!QueryEvaluationUtility.permitsBindingInjection(filter.getArg(), Set.of(bindingName))
+				|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
+			return false;
+		}
 
 		BindingSetAssignment existingAssignment = findExistingValuesAnchor(filter.getArg(), bindingName);
 		if (existingAssignment == null) {
@@ -170,24 +159,30 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 		LinkedHashSet<Value> allowedValues = valuesForBinding(assignment, bindingName);
 		List<BindingSet> mergedBindingSets = new ArrayList<>();
+		Set<String> survivingPossibleNames = new HashSet<>();
 		for (BindingSet bindingSet : existingAssignment.getBindingSets()) {
 			Value value = bindingSet.getValue(bindingName);
 			if (allowedValues.contains(value)) {
 				mergedBindingSets.add(bindingSet);
+				for (String name : bindingSet.getBindingNames()) {
+					if (bindingSet.getValue(name) != null) {
+						survivingPossibleNames.add(name);
+					}
+				}
 			}
 		}
 
 		if (mergedBindingSets.isEmpty()) {
-			if (!QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
-				// skip the merge: the empty result may not suppress a query-fatal error in the argument
-				return false;
-			}
 			filter.replaceWith(new EmptySet());
 			return true;
 		}
+		// VALUES marks its complete possible-name set LOCAL even on an UNDEF row. Removing the only row binding a
+		// different column would otherwise resurrect a hidden request parameter in an accepted row.
+		if (!existingAssignment.getPossibleBindingNames().equals(survivingPossibleNames)) {
+			return false;
+		}
 
-		existingAssignment.setBindingSets(mergedBindingSets);
-		existingAssignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
+		existingAssignment.setBindingSets(List.copyOf(mergedBindingSets));
 		filter.replaceWith(filter.getArg().clone());
 		return true;
 	}
@@ -195,7 +190,8 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 	private static BindingSetAssignment findExistingValuesAnchor(TupleExpr tupleExpr, String bindingName) {
 		if (tupleExpr instanceof BindingSetAssignment assignment
 				&& assignment.hasRepeatableBindingSets()
-				&& Set.of(bindingName).equals(assignment.getBindingNames())) {
+				&& assignment.getPossibleBindingNames().contains(bindingName)
+				&& everyRowDefines(assignment, bindingName)) {
 			return assignment;
 		}
 		if (tupleExpr instanceof Join join) {
@@ -206,6 +202,15 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 			return findExistingValuesAnchor(join.getRightArg(), bindingName);
 		}
 		return null;
+	}
+
+	private static boolean everyRowDefines(BindingSetAssignment assignment, String bindingName) {
+		for (BindingSet row : assignment.getBindingSets()) {
+			if (row == null || row.getValue(bindingName) == null) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static String singleBindingName(BindingSetAssignment assignment) {
@@ -250,7 +255,6 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
-		assignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
 		List<String> bindingNames = List.of(bindingName);
 		List<BindingSet> bindingSets = new ArrayList<>(values.size());
 		for (Value value : values) {

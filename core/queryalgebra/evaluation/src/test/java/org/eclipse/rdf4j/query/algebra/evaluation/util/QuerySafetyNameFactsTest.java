@@ -25,6 +25,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 class QuerySafetyNameFactsTest {
@@ -101,8 +103,8 @@ class QuerySafetyNameFactsTest {
 		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
 
 		assertCheapFlags(root, snapshot);
-		// Change only VALUE bindings and an extension target before the first binding-injection query.
-		rightValues.setBindingNames(Set.of("afterDemand", "leftCondition"));
+		// Change a repeatable VALUES row and its header, plus an extension target, before the first name-fact read.
+		setBoundValues(rightValues, "afterDemand", "leftCondition");
 		extension.getElements().get(0).setName("newTarget");
 		snapshot.refreshFrom(rightValues);
 		snapshot.refreshFrom(extension);
@@ -114,7 +116,7 @@ class QuerySafetyNameFactsTest {
 		assertThat(snapshot.permitsBindingInjection(root, Set.of("newTarget"))).isFalse();
 
 		// Repeat the name-only changes after the name facts have already been materialized.
-		rightValues.setBindingNames(Set.of("guard", "leftCondition"));
+		setBoundValues(rightValues, "guard", "leftCondition");
 		extension.getElements().get(0).setName("target");
 		snapshot.refreshFrom(rightValues);
 		snapshot.refreshFrom(extension);
@@ -128,6 +130,19 @@ class QuerySafetyNameFactsTest {
 		assertThat(snapshot.permitsBindingInjection(root, Set.of("guard"))).isTrue();
 		assertThat(snapshot.permitsBindingInjection(root, Set.of("newFilterRead"))).isFalse();
 		assertCheapFlags(root, snapshot);
+	}
+
+	@Test
+	void headerOnlyValuesDoNotAssureBindingNamesForInjection() {
+		BindingSetAssignment headerOnly = headerOnlyValues("guard");
+		Filter filter = new Filter(headerOnly, new Bound(Var.of("guard")));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(filter);
+
+		assertThat(headerOnly.getDeclaredBindingNames()).containsExactly("guard");
+		assertThat(headerOnly.getAssuredBindingNames()).isEmpty();
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("guard")))
+				.as("a declared header without rows does not prove that every row binds the name")
+				.isFalse();
 	}
 
 	@Test
@@ -213,8 +228,23 @@ class QuerySafetyNameFactsTest {
 
 	private static BindingSetAssignment values(String... names) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingNames(Set.of(names));
+		setBoundValues(assignment, names);
 		return assignment;
+	}
+
+	private static BindingSetAssignment headerOnlyValues(String... names) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of(names));
+		return assignment;
+	}
+
+	private static void setBoundValues(BindingSetAssignment assignment, String... names) {
+		List<String> bindingNames = List.of(names);
+		Value[] values = bindingNames.stream()
+				.map(VALUE_FACTORY::createLiteral)
+				.toArray(Value[]::new);
+		assignment.setDeclaredBindingNames(Set.copyOf(bindingNames));
+		assignment.setBindingSets(List.of(new ListBindingSet(bindingNames, values)));
 	}
 
 	private static StatementPattern statementPattern(String subject, String predicate, String object) {

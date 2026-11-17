@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -57,12 +59,89 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ValueStoreTermBackgroundTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String TARGET = "spoc,cspo,posc,opsc";
-	@TempDir
+	@TempDir(cleanup = CleanupMode.NEVER)
 	Path directory;
 
 	@Test
+	void propertySaveDoesNotBlockOrLoseRealTermIndexPublication() throws Exception {
+		GateFileOps files = new GateFileOps();
+		StoreProperties properties = new StoreProperties(directory.toFile(), files);
+		// Stamp the owner's persisted format and capability marker exactly as LmdbOwningTestStoreMetadata does.
+		LmdbStoreFormat.forNewStore(new LmdbStoreConfig()).initializeProperties(properties);
+		LmdbStore.writeCoreLiteralReferenceMarker(directory);
+		seed(properties, 30);
+		properties.save();
+		Set<String> target = Set.of("spoc", "cspo", "ospc");
+		try (ClosingValueStore store = open(properties, "spoc,cspo,ospc");
+				var worker = Executors.newSingleThreadExecutor()) {
+			properties.setRdfTermDomainsVersion("rdf-term-domain-v6");
+			files.armed.set(true);
+			var save = worker.submit(properties::save);
+			try {
+				assertTrue(files.forced.await(15, TimeUnit.SECONDS), "save must force its actual temporary file");
+				store.startIndexRebuildAfterStoreInitialization();
+				assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.indexRebuildStatus());
+				assertEquals(target, TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()));
+				assertEquals(30, termCount(store));
+			} finally {
+				files.release.countDown();
+			}
+			save.get(15, TimeUnit.SECONDS);
+			properties.save();
+			StoreProperties reopened = new StoreProperties(directory.toFile());
+			assertTrue(reopened.load());
+			assertEquals("rdf-term-domain-v6", reopened.getRdfTermDomainsVersion());
+			assertEquals(target, TripleIndex.parseIndexSpecList(reopened.getTripleTermIndexes()),
+					"the real native term-index publication must remain dirty until the later save");
+			assertEquals(30, termCount(store));
+		}
+	}
+
+	private static final class GateFileOps implements StorePropertiesFileOps {
+		private final AtomicBoolean armed = new AtomicBoolean();
+		private final CountDownLatch forced = new CountDownLatch(1);
+		private final CountDownLatch release = new CountDownLatch(1);
+
+		@Override
+		public Path createDirectories(Path path) throws IOException {
+			return NioStorePropertiesFileOps.INSTANCE.createDirectories(path);
+		}
+
+		@Override
+		public void writeAndForce(Path path, byte[] bytes) throws IOException {
+			NioStorePropertiesFileOps.INSTANCE.writeAndForce(path, bytes);
+			if (armed.compareAndSet(true, false)) {
+				forced.countDown();
+				try {
+					if (!release.await(30, TimeUnit.SECONDS)) {
+						throw new IOException("properties test did not release the forced file");
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("properties save interrupted", interrupted);
+				}
+			}
+		}
+
+		@Override
+		public void moveAtomically(Path source, Path target) throws IOException {
+			NioStorePropertiesFileOps.INSTANCE.moveAtomically(source, target);
+		}
+
+		@Override
+		public void forceDirectory(Path path) throws IOException {
+			NioStorePropertiesFileOps.INSTANCE.forceDirectory(path);
+		}
+
+		@Override
+		public boolean deleteIfExists(Path path) throws IOException {
+			return NioStorePropertiesFileOps.INSTANCE.deleteIfExists(path);
+		}
+	}
+
+	@Test
 	void unchangedOldTermCohortWaitsWithoutSelfGeneratedProgressRetries() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 30);
 		CountDownLatch cleanup = new CountDownLatch(1);
 		AtomicReference<Thread> worker = new AtomicReference<>();
@@ -106,7 +185,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void terminalCleanupAcceptsACoalescedSuccessorRequest() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 30);
 		CountDownLatch finishing = new CountDownLatch(1);
 		CountDownLatch release = new CountDownLatch(1);
@@ -141,7 +220,7 @@ class ValueStoreTermBackgroundTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void failedTermJobRestartsOnlyAfterAnExplicitRequest(boolean fatal) throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 30);
 		AtomicInteger reads = new AtomicInteger();
 		AtomicReference<Thread> failedWorker = new AtomicReference<>();
@@ -177,7 +256,7 @@ class ValueStoreTermBackgroundTest {
 	@ParameterizedTest
 	@ValueSource(ints = { 0, 1, 2, 3, 4, 5 })
 	void explicitRetryReconcilesDurableTermManifestBeforeCleanupOrNewRequest(int variant) throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 30);
 		try (ClosingValueStore initial = open(properties, "spoc,cspo,posc")) {
 			initial.startIndexRebuildAfterStoreInitialization();
@@ -246,7 +325,7 @@ class ValueStoreTermBackgroundTest {
 	@ValueSource(booleans = { false, true })
 	void postPublicationReadersDoNotExtendTheRetiredTermGenerationWithoutWriters(boolean unknownCounts)
 			throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 30);
 		try (ClosingValueStore initial = open(properties, "spoc,cspo,posc")) {
 			initial.startIndexRebuildAfterStoreInitialization();
@@ -379,7 +458,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void closeCancelsCleanupWaitingForAHeldTermReader() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 20);
 		try (ClosingValueStore initial = open(properties, "spoc,cspo,posc")) {
 			initial.startIndexRebuildAfterStoreInitialization();
@@ -416,7 +495,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void heldStandaloneTermIteratorRetainsItsIndexUntilClose() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 20);
 		try (ClosingValueStore initial = open(properties, "spoc,cspo,posc")) {
 			initial.startIndexRebuildAfterStoreInitialization();
@@ -447,7 +526,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void mapGrowthWaitsForTheAdmittedBackgroundTermWriter() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 20);
 		try (ClosingValueStore store = open(properties, TARGET)) {
 			CountDownLatch writerActive = new CountDownLatch(1);
@@ -488,7 +567,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void stagingCopyRechecksDeletedRowsAndDualWritesInsertionsBehindProgress() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		List<TripleTerm> terms = seed(properties, 3000);
 		try (ClosingValueStore store = open(properties, TARGET)) {
 			CountDownLatch copiedRead = new CountDownLatch(1);
@@ -523,7 +602,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void stageCopyDoesNotCountDependenciesOrResurrectRetiredCspoPayloads() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		List<TripleTerm> terms = seed(properties, 20);
 		long dependency;
 		long retiredId;
@@ -550,7 +629,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void committedCopyProgressResumesAfterCrashImageAndKeepsOldReadersUsable() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		List<TripleTerm> terms = seed(properties, 3000);
 		Path crashed = directory.resolve("crashed/values");
 		try (ClosingValueStore store = open(properties, TARGET)) {
@@ -578,6 +657,8 @@ class ValueStoreTermBackgroundTest {
 			assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.indexRebuildStatus());
 		}
 		StoreProperties crashProperties = new StoreProperties(directory.resolve("crashed").toFile());
+		// The crash image keeps the owner's persisted format identity, as its owner sidecar would.
+		LmdbStoreFormat.forNewStore(new LmdbStoreConfig()).initializeProperties(crashProperties);
 		try (ClosingValueStore store = new ClosingValueStore(crashed.toFile(), crashProperties,
 				new LmdbStoreConfig().setTripleTermIndexes(TARGET))) {
 			assertEquals(Set.of("spoc", "cspo"),
@@ -591,7 +672,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void aCallerSkippingItsUnchangedCommitCannotDiscardTheMaintenanceWriter() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 30);
 		AtomicReference<Thread> worker = new AtomicReference<>();
 		AtomicReference<Throwable> callerFailure = new AtomicReference<>();
@@ -646,7 +727,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void queuedRequestsCoalesceAndRollbackDoesNotLeakIntoStaging() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		seed(properties, 30);
 		try (ClosingValueStore store = open(properties, TARGET)) {
 			store.requestTermIndexRebuild("spoc,cspo,psoc");
@@ -686,7 +767,7 @@ class ValueStoreTermBackgroundTest {
 
 	@Test
 	void oversizedDerivedBuildDescriptorKeepsCommittedQueriesUsableAndResetsInBackground() throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), new LmdbStoreConfig());
 		List<TripleTerm> terms = seed(properties, 20);
 		LmdbCompatibilityFixtures.nativePut(directory, "term_index_manifest", TermIndexBuild.KEY, new byte[8192]);
 		try (ClosingValueStore store = open(properties, TARGET)) {

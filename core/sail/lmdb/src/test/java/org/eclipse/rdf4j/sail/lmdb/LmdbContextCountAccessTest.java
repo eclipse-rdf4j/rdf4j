@@ -119,9 +119,9 @@ class LmdbContextCountAccessTest {
 				SailDataset inferredData = store.getBackingStore()
 						.getInferredSailSource()
 						.dataset(IsolationLevels.SNAPSHOT_READ)) {
-			assertThat(explicitData.getStatementCount(null, null, null, graph)).as("explicit %s", graph)
+			assertThat(explicitData.getStatementCount((Resource) null, null, null, graph)).as("explicit %s", graph)
 					.isEqualTo(explicit);
-			assertThat(inferredData.getStatementCount(null, null, null, graph)).as("inferred %s", graph)
+			assertThat(inferredData.getStatementCount((Resource) null, null, null, graph)).as("inferred %s", graph)
 					.isEqualTo(inferred);
 		}
 	}

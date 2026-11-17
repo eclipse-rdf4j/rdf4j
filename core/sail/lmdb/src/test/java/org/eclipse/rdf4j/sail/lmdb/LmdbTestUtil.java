@@ -18,8 +18,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class LmdbTestUtil {
 	private static final int DELETE_RETRY_ATTEMPTS = 5;
@@ -132,23 +134,18 @@ public final class LmdbTestUtil {
 	public static void awaitPostReadyInitialization(LmdbStore store, long timeout, TimeUnit unit)
 			throws IOException, InterruptedException {
 		LmdbSailStore backingStore = store.getBackingStore();
-		long started = System.nanoTime();
-		long budget = unit.toNanos(timeout);
-		while (true) {
-			String status = backingStore.postReadyMaintenanceStatus();
-			if (status.equals("READY")) {
-				return;
-			}
-			if (!status.equals("RUNNING") && !status.equals("NOT_STARTED")) {
-				throw new IOException("LMDB post-ready initialization did not complete: " + status);
-			}
-			if (Thread.interrupted()) {
-				throw new InterruptedException("Interrupted while waiting for LMDB post-ready initialization");
-			}
-			if (System.nanoTime() - started >= budget) {
-				throw new IOException("Timed out waiting for LMDB post-ready initialization: " + status);
-			}
-			Thread.yield();
+		try {
+			backingStore.awaitPostReadyInitialization(timeout, unit);
+		} catch (ExecutionException failure) {
+			throw new IOException("LMDB post-ready initialization did not complete: "
+					+ backingStore.postReadyMaintenanceStatus(), failure.getCause());
+		} catch (TimeoutException timeoutFailure) {
+			throw new IOException("Timed out waiting for LMDB post-ready initialization: "
+					+ backingStore.postReadyMaintenanceStatus(), timeoutFailure);
+		}
+		String status = backingStore.postReadyMaintenanceStatus();
+		if (!status.equals("READY")) {
+			throw new IOException("LMDB post-ready initialization did not complete: " + status);
 		}
 	}
 

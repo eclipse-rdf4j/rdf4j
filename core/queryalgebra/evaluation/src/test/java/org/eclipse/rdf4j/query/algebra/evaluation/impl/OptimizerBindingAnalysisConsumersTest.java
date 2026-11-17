@@ -284,17 +284,27 @@ class OptimizerBindingAnalysisConsumersTest {
 	}
 
 	@Test
-	void constantOptimizerKeepsAnAutomaticallyHiddenApiReadUnbound() throws Exception {
+	void constantOptimizerHonorsAutoDirectReadsAndExplicitlyHiddenApiInputs() throws Exception {
 		Value value = VF.createLiteral("value");
 		MapBindingSet bindings = new MapBindingSet();
 		bindings.addBinding("x", value);
-		Filter filter = new Filter(new SingletonSet(),
+		Filter automatic = new Filter(new SingletonSet(),
 				new Compare(Var.of("x"), new ValueConstant(value), Compare.CompareOp.EQ));
-		assertThat(evaluate(filter.clone(), bindings)).isEmpty();
-		new ConstantOptimizer(new DefaultEvaluationStrategy(new EmptyTripleSource(), null))
-				.optimize(filter, null, bindings);
-		assertThat(filter.getCondition()).isInstanceOf(Compare.class);
-		assertThat(evaluate(filter, bindings)).isEmpty();
+		Filter explicitlyHidden = automatic.clone();
+		explicitlyHidden.setConditionBindingScope(Filter.ConditionBindingScope.retain(Set.of()));
+		assertThat(evaluate(automatic.clone(), bindings)).containsExactly(bindings);
+		assertThat(evaluate(explicitlyHidden.clone(), bindings)).isEmpty();
+
+		ConstantOptimizer optimizer = new ConstantOptimizer(
+				new DefaultEvaluationStrategy(new EmptyTripleSource(), null));
+		optimizer.optimize(automatic, null, bindings);
+		optimizer.optimize(explicitlyHidden, null, bindings);
+
+		assertThat(automatic.getCondition()).isInstanceOf(ValueConstant.class);
+		assertThat(((ValueConstant) automatic.getCondition()).getValue()).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(evaluate(automatic, bindings)).containsExactly(bindings);
+		assertThat(explicitlyHidden.getCondition()).isInstanceOf(Compare.class);
+		assertThat(evaluate(explicitlyHidden, bindings)).isEmpty();
 	}
 
 	@Test

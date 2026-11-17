@@ -18,6 +18,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -47,12 +49,16 @@ import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Contains;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrEnds;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrStarts;
@@ -238,6 +244,91 @@ class AlgebraEvaluationSafetyTest {
 
 		assertThat(AlgebraEvaluationSafety.isRepeatable(values(new ArrayList<>(List.of(mutableRow))))).isFalse();
 		assertThat(AlgebraEvaluationSafety.isRepeatable(values(new ArrayList<>(List.of(customRow))))).isFalse();
+	}
+
+	@Test
+	void standardPathsHaveRecursiveReplayProofWithoutBecomingPureRelations() {
+		for (Scope scope : Scope.values()) {
+			for (long minimum : List.of(0L, 1L)) {
+				StatementPattern step = new StatementPattern(scope, Var.of("start"), Var.of("predicate"),
+						Var.of("end"), scope == Scope.NAMED_CONTEXTS ? Var.of("graph") : null);
+				ArbitraryLengthPath simple = path(scope, step, minimum);
+				ZeroLengthPath zero = new ZeroLengthPath(scope, Var.of("start"), Var.of("end"),
+						step.getContextVar() == null ? null : step.getContextVar().clone());
+				Filter filtered = new Filter(step.clone(), new Compare(Var.of("end"),
+						new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:end"))));
+				ArbitraryLengthPath nested = path(scope, new Union(simple.clone(),
+						new Join(zero.clone(), filtered)), minimum);
+				assertThat(AlgebraEvaluationSafety.isRepeatable(simple)).isTrue();
+				assertThat(AlgebraEvaluationSafety.isRepeatable(zero)).isTrue();
+				assertThat(AlgebraEvaluationSafety.isRepeatable(nested)).isTrue();
+				assertThat(AlgebraEvaluationSafety.isPureRelational(simple)).isFalse();
+				assertThat(AlgebraEvaluationSafety.isPureRelational(zero)).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void fixedPathEndpointsAndContextsRemainBindingReads() {
+		Value value = SimpleValueFactory.getInstance().createIRI("urn:fixed");
+		StatementPattern step = new StatementPattern(Var.of("start", value), Var.of("predicate"),
+				Var.of("end", value));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Scope.NAMED_CONTEXTS, step.getSubjectVar().clone(),
+				step, step.getObjectVar().clone(), Var.of("graph", value), 0);
+		path.setIndependentInputScope(true);
+		assertThat(AlgebraEvaluationSafety.isRepeatable(path)).isTrue();
+		assertThat(AlgebraEvaluationSafety.isRepeatable(new ZeroLengthPath(Scope.NAMED_CONTEXTS,
+				Var.of("start", value), Var.of("end", value), Var.of("graph", value)))).isTrue();
+	}
+
+	@Test
+	void everyNestedPathStepMustRetainTheExistingEffectProof() {
+		StatementPattern step = new StatementPattern(Var.of("start"), Var.of("predicate"), Var.of("end"));
+		Service service = new Service(Var.of("endpoint"), step.clone(), "", Map.of(), null, false);
+		List<TupleExpr> unsafe = List.of(service, new UnknownTupleExpr(),
+				new StatementPattern(Var.of("start"), Var.of("predicate"), Var.of("end")) {
+				},
+				new Filter(step.clone(), new FunctionCall(new Rand().getURI())),
+				new Filter(step.clone(), new FunctionCall(UNREGISTERED_FUNCTION_URI)),
+				new Extension(step.clone(), new ExtensionElem(new BNodeGenerator(), "allocated")),
+				new Filter(step.clone(), new Exists(service.clone())));
+		for (TupleExpr expression : unsafe) {
+			assertThat(AlgebraEvaluationSafety.isRepeatable(path(Scope.DEFAULT_CONTEXTS, expression, 1)))
+					.as("path child %s retains its effect barrier", expression.getClass().getSimpleName())
+					.isFalse();
+			assertThat(AlgebraEvaluationSafety.isRepeatable(path(Scope.DEFAULT_CONTEXTS,
+					new Union(step.clone(), path(Scope.DEFAULT_CONTEXTS, expression.clone(), 0)), 1)))
+							.as("a recursive path cannot conceal an effectful child")
+							.isFalse();
+		}
+	}
+
+	@Test
+	void unknownPathSubclassesRemainUnaudited() {
+		StatementPattern step = new StatementPattern(Var.of("start"), Var.of("predicate"), Var.of("end"));
+		ArbitraryLengthPath arbitrary = new ArbitraryLengthPath(Var.of("start"), step, Var.of("end"), 1) {
+		};
+		ZeroLengthPath zero = new ZeroLengthPath(Var.of("start"), Var.of("end")) {
+		};
+		assertThat(AlgebraEvaluationSafety.isRepeatable(arbitrary)).isFalse();
+		assertThat(AlgebraEvaluationSafety.isRepeatable(zero)).isFalse();
+	}
+
+	@Test
+	void nestedPathProofDoesNotOpenUnauditedValuesSources() {
+		AtomicInteger opens = new AtomicInteger();
+		BindingSetAssignment rows = values(() -> {
+			opens.incrementAndGet();
+			throw new AssertionError("repeatability inspection must not open an unknown source");
+		});
+		rows.setBindingNames(Set.of("start", "end"));
+		assertThat(AlgebraEvaluationSafety.isRepeatable(path(Scope.DEFAULT_CONTEXTS, rows, 1))).isFalse();
+		assertThat(opens.get()).isZero();
+	}
+
+	private static ArbitraryLengthPath path(Scope scope, TupleExpr step, long minimum) {
+		return new ArbitraryLengthPath(scope, Var.of("start"), step, Var.of("end"),
+				scope == Scope.NAMED_CONTEXTS ? Var.of("graph") : null, minimum);
 	}
 
 	private static BindingSetAssignment values(Iterable<BindingSet> rows) {

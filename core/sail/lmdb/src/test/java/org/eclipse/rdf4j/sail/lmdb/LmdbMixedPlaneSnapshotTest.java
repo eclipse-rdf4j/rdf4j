@@ -303,6 +303,7 @@ class LmdbMixedPlaneSnapshotTest {
 		Future<Integer> pendingRead = null;
 		Future<?> pendingClose = null;
 		try (SailConnection previous = store.getConnection(); SailConnection next = store.getConnection()) {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			TxnManager triples = store.getBackingStore().getTripleStore().getTxnManager();
 			if (level != IsolationLevels.NONE) {
 				previous.begin(level);
@@ -442,6 +443,7 @@ class LmdbMixedPlaneSnapshotTest {
 		// between the two samples reads as a leak.
 		LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
 		try (SailConnection reader = store.getConnection()) {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			TxnManager triples = store.getBackingStore().getTripleStore().getTxnManager();
 			TxnManager dictionary = ((ValueStore) store.getValueFactory()).getTxnManager();
 			int availableTriples = triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);

@@ -1,0 +1,129 @@
+{
+  "upstream_commit": "f0adec73f408062e89fb008bd9f5d15d30f4db14",
+  "generator": "LmdbSailStoreEstimatorPersistenceTest#generateMinimalLegacySnapshotForCompatibility",
+  "generator_source_sha256": "fb56e6f87570346411290c2913590fe07dd085b40e8f9147bba1fccfeedb874b",
+  "archive_sha256": "0712f9d8b1fd42a9c2c73a709ac7a8cb626d29706ce4da9969e7948395761815",
+  "archive_size": 7125,
+  "files": [
+    {
+      "path": "join-estimator.rjes/a/index.bin",
+      "size": 13,
+      "sha256": "fae50488b1346fece93fdcfcf296876d95fc54bf4a04d6fa4b353f56c40a253c",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/global.part1.sketches",
+      "size": 2208,
+      "sha256": "66b87d1d66de90233ee5a066e760085b8e368cc09664079174ece015363c1080",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/index.bin",
+      "size": 897,
+      "sha256": "1b514b6f4e26035e0d4ff705500e4fd80f4740e6f42054dba3dca034fe93b80c",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/pairs.part1.sketches",
+      "size": 1656,
+      "sha256": "8b9dee36c4c48a2b3389e399e6f311830bf397e107ba9d1abfc526fccc6aa359",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/pairs.part2.sketches",
+      "size": 1656,
+      "sha256": "85993617de05ace54b0c4f709ea2f51cd05c0d0ce5de5577aabaa15497fadf2f",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/singles.part1.sketches",
+      "size": 1104,
+      "sha256": "4dadd0cf54a3ca5b647897d8be1206ac2e801b4fdeaa33a184997a20cfcb335b",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/singles.part2.sketches",
+      "size": 1104,
+      "sha256": "4dadd0cf54a3ca5b647897d8be1206ac2e801b4fdeaa33a184997a20cfcb335b",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/singles.part3.sketches",
+      "size": 1104,
+      "sha256": "37c82df2b2f15690723212d40666d5bb7ef26c4cddd09e0932056d731d960f90",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/singles.part4.sketches",
+      "size": 1104,
+      "sha256": "dd87fece9127617d85062d76d35d4d03befb5178fc59a31e6fb058e591aca801",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/singles.part5.sketches",
+      "size": 1104,
+      "sha256": "7c82fdc4768c98e10984cedd407da1cac80b28c787d37be27b9c0723fb4bed15",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/singles.part6.sketches",
+      "size": 1104,
+      "sha256": "25d10c77cd4862568f288c3b643b3e9d6ed00013220f30d61b3272596314c5a2",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/singles.part7.sketches",
+      "size": 1104,
+      "sha256": "dd87fece9127617d85062d76d35d4d03befb5178fc59a31e6fb058e591aca801",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/b/singles.part8.sketches",
+      "size": 1104,
+      "sha256": "37c82df2b2f15690723212d40666d5bb7ef26c4cddd09e0932056d731d960f90",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "join-estimator.rjes/metadata.bin",
+      "size": 97,
+      "sha256": "39891f6c0ff8a953c05eb4300152acab0a6d6b3348cb7c43a4e1106a1e85fcd1",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "lmdbrdf.ver",
+      "size": 37,
+      "sha256": "9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "store.properties",
+      "size": 274,
+      "sha256": "ca3137a31b4de0fb4f899de8c5c19e27e0e7a6c13f8337defb5714c9a2798acf",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "triples/data.mdb",
+      "size": 163840,
+      "sha256": "4d189fbad6a686b817a303ce3484c93f22c59fb14a17dc02b5d17ff9c13fb6d8",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "triples/lock.mdb",
+      "size": 16512,
+      "sha256": "a4b589863f63b210c6c89ba7e82e3cd2d58c7ae1e995088d13e01241ab06e3cc",
+      "excluded_from_archive": true
+    },
+    {
+      "path": "values/data.mdb",
+      "size": 262144,
+      "sha256": "870e41d25136f8bef0c6779bfebb1e5216dedc7384cdb27b2fa6469759b52107",
+      "excluded_from_archive": false
+    },
+    {
+      "path": "values/lock.mdb",
+      "size": 16512,
+      "sha256": "82269c8ba388647e22f70070082ca65d210ed35f63a08923fe0d7f3be54e27f4",
+      "excluded_from_archive": true
+    }
+  ]
+}

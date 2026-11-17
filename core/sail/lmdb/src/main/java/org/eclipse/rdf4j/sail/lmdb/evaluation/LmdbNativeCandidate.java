@@ -30,7 +30,7 @@ import java.util.Set;
  *                   admitted, the dominated one is eliminated regardless of price
  */
 record LmdbNativeCandidate<T>(String id, LmdbNativeCostQuote quote, Opener<T> opener, Runnable release,
-		boolean lastResort, Set<String> dominates) {
+		boolean lastResort, Set<String> dominates, LmdbNativeStrategyProposal<T> proposal) {
 
 	@FunctionalInterface
 	interface Opener<T> {
@@ -47,23 +47,28 @@ record LmdbNativeCandidate<T>(String id, LmdbNativeCostQuote quote, Opener<T> op
 	}
 
 	static <T> LmdbNativeCandidate<T> of(String id, LmdbNativeCostQuote quote, Opener<T> opener) {
-		return new LmdbNativeCandidate<>(id, quote, opener, null, false, Set.of());
+		return new LmdbNativeCandidate<>(id, quote, opener, null, false, Set.of(), null);
 	}
 
 	static <T> LmdbNativeCandidate<T> of(String id, LmdbNativeCostQuote quote, Opener<T> opener, Runnable release) {
-		return new LmdbNativeCandidate<>(id, quote, opener, release, false, Set.of());
+		return new LmdbNativeCandidate<>(id, quote, opener, release, false, Set.of(), null);
+	}
+
+	LmdbNativeCandidate<T> withProposal(LmdbNativeStrategyProposal<T> owner) {
+		return new LmdbNativeCandidate<>(id, quote, opener, release, lastResort, dominates, owner);
 	}
 
 	LmdbNativeCandidate<T> withInputSpread(LmdbNativeRowSpread spread) {
-		return new LmdbNativeCandidate<>(id, quote.withInputSpread(spread), opener, release, lastResort, dominates);
+		return new LmdbNativeCandidate<>(id, quote.withInputSpread(spread), opener, release, lastResort, dominates,
+				proposal);
 	}
 
 	LmdbNativeCandidate<T> asLastResort() {
-		return new LmdbNativeCandidate<>(id, quote, opener, release, true, dominates);
+		return new LmdbNativeCandidate<>(id, quote, opener, release, true, dominates, proposal);
 	}
 
 	LmdbNativeCandidate<T> dominating(Set<String> ids) {
-		return new LmdbNativeCandidate<>(id, quote, opener, release, lastResort, ids);
+		return new LmdbNativeCandidate<>(id, quote, opener, release, lastResort, ids, proposal);
 	}
 
 	/** The id without a parenthesised variant suffix, which is what a forced strategy name refers to. */

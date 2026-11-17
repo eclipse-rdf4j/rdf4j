@@ -45,6 +45,36 @@ class LmdbOwningTestStoreMetadataTest {
 	}
 
 	@Test
+	void savedFreshOwnerSidecarStillAllowsItsFirstNativeInitialization() throws Exception {
+		LmdbStoreConfig config = config();
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config);
+		properties.save();
+		assertThat(properties.isLoaded())
+				.as("saving a live fresh owner does not turn it into a loaded reopen")
+				.isFalse();
+		assertThat(directory.resolve(StoreProperties.FILE_NAME)).isRegularFile();
+		assertThat(directory.resolve("values/data.mdb")).doesNotExist();
+		assertThat(directory.resolve("triples/data.mdb")).doesNotExist();
+
+		IRI iri = Values.iri("urn:owner-fixture:saved-fresh");
+		long id = seedPair(properties, iri);
+		assertThat(properties.isLoaded()).isFalse();
+		assertThat(directory.resolve("values/data.mdb")).isRegularFile();
+		assertThat(directory.resolve("triples/data.mdb")).isRegularFile();
+
+		StoreProperties reopened = LmdbOwningTestStoreMetadata.open(directory.toFile(), config);
+		assertThat(reopened.isLoaded()).isTrue();
+		ValueStore values = new ValueStore(directory.resolve("values").toFile(), reopened, config);
+		try (TripleStore triples = new TripleStore(directory.resolve("triples").toFile(), reopened, config,
+				values)) {
+			assertCapabilities(values.getFormat());
+			assertThat(values.getId(iri)).isEqualTo(id);
+		} finally {
+			values.close();
+		}
+	}
+
+	@Test
 	void initializedPairReopensWithTheSamePersistedCapabilitiesAndIds() throws Exception {
 		IRI iri = Values.iri("urn:owner-fixture:kept");
 		long id = seedPair(iri);
@@ -76,12 +106,19 @@ class LmdbOwningTestStoreMetadataTest {
 
 	@Test
 	void publishedMetadataWithoutNativeDataStillFailsWithoutMutation() throws Exception {
-		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config());
-		// Deliberately reproduce a damaged existing generation; never relax its production admission fence.
-		properties.save();
+		StoreProperties liveProperties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config());
+		// A persisted sidecar on the original live owner is still a fresh profile; model a damaged reopen by loading
+		// that durable metadata into a distinct owner before applying the existing-generation fence.
+		liveProperties.save();
+		assertThat(liveProperties.isLoaded()).isFalse();
+		assertThat(directory.resolve("values/data.mdb")).doesNotExist();
+		assertThat(directory.resolve("triples/data.mdb")).doesNotExist();
+		StoreProperties persistedProperties = new StoreProperties(directory.toFile());
+		assertThat(persistedProperties.load()).isTrue();
+		assertThat(persistedProperties.isLoaded()).isTrue();
 		var before = LmdbCompatibilityFixtures.snapshot(directory);
 		assertThatThrownBy(() -> {
-			ValueStore unexpected = new ValueStore(directory.resolve("values").toFile(), properties, config());
+			ValueStore unexpected = new ValueStore(directory.resolve("values").toFile(), persistedProperties, config());
 			unexpected.close();
 		}).isInstanceOf(IOException.class)
 				.hasMessage("Missing native ValueStore generation for existing LmdbStore format 7");
@@ -99,14 +136,23 @@ class LmdbOwningTestStoreMetadataTest {
 	}
 
 	private long seedPair(IRI iri) throws Exception {
+		return seedPair(LmdbOwningTestStoreMetadata.open(directory.toFile(), config()), iri);
+	}
+
+	private long seedPair(StoreProperties properties, IRI iri) throws Exception {
 		File owner = directory.toFile();
 		LmdbStoreConfig config = config();
-		StoreProperties properties = LmdbOwningTestStoreMetadata.open(owner, config);
 		ValueStore values = new ValueStore(directory.resolve("values").toFile(), properties, config);
 		try (TripleStore triples = new TripleStore(directory.resolve("triples").toFile(), properties, config, values)) {
 			triples.initializeNamespaceSnapshot(Map.of());
 			properties.save();
-			assertThat(properties.isLoaded()).isTrue();
+			assertThat(properties.isLoaded())
+					.as("saving a live fresh owner keeps it in the new-generation state")
+					.isFalse();
+			StoreProperties persisted = new StoreProperties(owner);
+			assertThat(persisted.load()).isTrue();
+			assertThat(persisted.isLoaded()).isTrue();
+			assertCapabilities(LmdbStoreFormat.resolve(owner, persisted, config));
 			assertCapabilities(values.getFormat());
 			triples.startTransaction();
 			values.startTransaction(true);

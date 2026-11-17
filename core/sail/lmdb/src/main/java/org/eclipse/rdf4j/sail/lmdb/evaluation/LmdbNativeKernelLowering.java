@@ -456,6 +456,12 @@ final class LmdbNativeKernelLowering {
 			this.strictOrderCompare = strictOrderCompare;
 		}
 
+		Lowered withConsumerInput(LmdbNativeInteriorPlans.Selection input) {
+			return input == null ? this
+					: new Lowered(kernel, bindings.withConsumerInput(input), planBridgeReason,
+							strictOrderCompare, distinctRowInput);
+		}
+
 		Lowered withTelemetry(Kernel.TelemetryMode mode) {
 			Kernel variant = kernel.withTelemetry(mode);
 			return variant == kernel ? this
@@ -1157,6 +1163,16 @@ final class LmdbNativeKernelLowering {
 					|| LmdbNativeKernelIr.weightedPlanCount(projected.kernel)))
 				return new Lowered(projected.kernel, projected.bindings, "agg:shared-factor-projections");
 		}
+		// A complete VALUES key domain can price repeated INNER/OPTIONAL payload work before any input is opened.
+		// Preserve ordinary IR for unknown/cheap domains and insufficient memory; automatic support routing is
+		// currently restricted to duplicate-sensitive COUNT, whose weighted producer contract is covered directly.
+		if (!preferScans && !scanVariablePredicates
+				&& LmdbNativeSupportJoin.preferCountAggregate(arg, row, aggregates)) {
+			Lowered support = lowerAggregateWithPlanProducer(arg, row, groupSlots, aggregates, having);
+			if (support != null) {
+				return new Lowered(support.kernel, support.bindings, "agg:costed-support-key-memo");
+			}
+		}
 		// Sticky (EXISTS-bearing) filters never flatten into a MultiJoinPlan — they arrive as FilterPlan wrappers
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
@@ -1746,7 +1762,8 @@ final class LmdbNativeKernelLowering {
 		 * the producer has matched. Keeping the two representations separate is what lets the native path retain the
 		 * exact lookup while preserving {@link PatternPlan#bind}'s compatibility semantics.
 		 */
-		private record PhysicalPattern(PatternPlan pattern, int[] constantSlots, long[] constantIds) {
+		private record PhysicalPattern(PatternPlan pattern, int[] constantSlots, long[] constantIds,
+				boolean[] preserveExisting) {
 		}
 
 		/**
@@ -1754,22 +1771,48 @@ final class LmdbNativeKernelLowering {
 		 * so range, context, order, and index promises remain attached to the physical pattern.
 		 */
 		private PhysicalPattern physicalPattern(PatternPlan original) {
+			return physicalPattern(original, null);
+		}
+
+		private PhysicalPattern physicalPattern(PatternPlan original, WitnessColumns witnessCols) {
+			if (original.hasFieldEqualities()) {
+				reason = reasonPrefix + "input-only-repeated-field-residual";
+				return null;
+			}
 			Term[] originalTerms = { original.s, original.p, original.o, original.c };
 			Term[] physicalTerms = originalTerms.clone();
 			int[] slots = new int[originalTerms.length];
 			long[] ids = new long[originalTerms.length];
+			boolean[] preserveExisting = new boolean[originalTerms.length];
 			int count = 0;
+			boolean rewritten = false;
 			for (int i = 0; i < originalTerms.length; i++) {
 				Term term = originalTerms[i];
+				if (term.readOnly) {
+					Operand input = witnessCols == null ? slotOperand(term.slot)
+							: witnessOperand(Term.slot(term.slot), witnessCols);
+					boolean entry = (entryMask & ~hiddenSlotMask & 1L << term.slot) != 0L
+							&& (witnessCols == null || !witnessCols.containsKey(term.slot));
+					if (input != null && !entry) {
+						reason = reasonPrefix + "input-only-selector-runtime-column";
+						return null;
+					}
+					long value = input == null ? LmdbNativeAggregateCompiler.UNKNOWN : term.lookup(row.slots);
+					physicalTerms[i] = value == LmdbNativeAggregateCompiler.UNKNOWN ? Term.unbound()
+							: Term.constant(value);
+					rewritten = true;
+					continue;
+				}
 				if (term.bindConstant && term.isConstant()) {
 					slots[count] = term.slot;
 					ids[count] = term.constant;
+					preserveExisting[count] = term.preserveExisting;
 					count++;
 					physicalTerms[i] = Term.constant(term.constant);
 				}
 			}
-			if (count == 0) {
-				return new PhysicalPattern(original, new int[0], new long[0]);
+			if (count == 0 && !rewritten) {
+				return new PhysicalPattern(original, new int[0], new long[0], new boolean[0]);
 			}
 			PatternPlan physical = new PatternPlan(physicalTerms[0], physicalTerms[1], physicalTerms[2],
 					physicalTerms[3],
@@ -1777,7 +1820,7 @@ final class LmdbNativeKernelLowering {
 					original.range,
 					original.staticEstimate, original.accessProfile);
 			return new PhysicalPattern(physical, java.util.Arrays.copyOf(slots, count),
-					java.util.Arrays.copyOf(ids, count));
+					java.util.Arrays.copyOf(ids, count), java.util.Arrays.copyOf(preserveExisting, count));
 		}
 
 		/**
@@ -1794,6 +1837,14 @@ final class LmdbNativeKernelLowering {
 					return false;
 				}
 				Operand existing = slotOperand(slot);
+				if (physical.preserveExisting[i]) {
+					int column = newColumn(slot);
+					appendPreservedOutput(slot, physical.constantIds[i], existing, column, currentDepthNodes());
+					if (assured) {
+						assuredMask |= 1L << slot;
+					}
+					continue;
+				}
 				int column = slotColumn[slot];
 				if (column < 0) {
 					column = newColumn(slot);
@@ -1811,6 +1862,18 @@ final class LmdbNativeKernelLowering {
 			return true;
 		}
 
+		private void appendPreservedOutput(int slot, long constant, Operand existing, int target, List<Node> pipeline) {
+			if (existing == null) {
+				pipeline.add(new LmdbNativeKernelIr.BindAlias(Operand.constant(constantIndex(constant)), target));
+				return;
+			}
+			// An occupied null marker is not a supplied RDF value (the generic unbound test rejects it).
+			pipeline.add(new LmdbNativeKernelIr.FilterCompareId(true, existing, Operand.constant(constantIndex(0L))));
+			int hook = bindHooks.size();
+			bindHooks.add(LmdbNativeKernelBindings.BindHook.preserveExistingOrConstant(slot, constant));
+			pipeline.add(new LmdbNativeKernelIr.BindHook(hook, new Operand[] { existing }, target, false));
+		}
+
 		/** Restores constant-slot bindings in an EXISTS/MINUS witness without replacing an outer correlated value. */
 		private boolean appendWitnessBindings(PhysicalPattern physical, WitnessColumns witnessCols,
 				List<Node> pipeline) {
@@ -1819,6 +1882,13 @@ final class LmdbNativeKernelLowering {
 				if (slot < 0 || slot >= slotColumn.length) {
 					reason = reasonPrefix + "constant-slot-range";
 					return false;
+				}
+				if (physical.preserveExisting[i]) {
+					Operand existing = witnessOperand(Term.slot(slot), witnessCols);
+					int column = scratchColumn();
+					witnessCols.put(slot, column);
+					appendPreservedOutput(slot, physical.constantIds[i], existing, column, pipeline);
+					continue;
 				}
 				boolean outer = (entryMask >>> slot & 1L) != 0L || slotColumn[slot] >= 0;
 				Operand existing = witnessOperand(Term.slot(slot), witnessCols);
@@ -1861,6 +1931,9 @@ final class LmdbNativeKernelLowering {
 				return lowerOptionalGroup(arm);
 			}
 			PhysicalPattern physical = physicalPattern((PatternPlan) arm);
+			if (physical == null) {
+				return false;
+			}
 			PatternPlan pattern = physical.pattern;
 			if (prefersPatternScan(pattern)) {
 				return lowerOptionalGroup(arm);
@@ -2151,7 +2224,7 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private record ScalarReuseKey(NativeScalarPlan plan, List<ScalarReuseOperand> operands,
-				boolean replaySafe, boolean setNullOnError) {
+				boolean replaySafe, boolean setNullOnError, boolean assignment) {
 			ScalarReuseKey {
 				operands = List.copyOf(operands);
 			}
@@ -2517,6 +2590,14 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private boolean lowerJoinOperand(SlotPlan plan, List<MaskedFilter> filters, RowState row, boolean top) {
+			if (plan instanceof NativeValuesFoldPlan guard) {
+				// A preceding kernel operand may bind the target later than this lowering pass. Keep the
+				// lexical cursor boundary until the actual value is available rather than choose at root entry.
+				if ((availableBindings() & guard.inputMask) != (row.boundMask() & guard.inputMask)) {
+					return lowerNativeOperator(plan);
+				}
+				plan = guard.select(row);
+			}
 			if (plan instanceof NativeAliasJoinPlan alias) {
 				long occupied = 0L;
 				for (long remaining = alias.freshMask; remaining != 0L; remaining &= remaining - 1) {
@@ -2581,7 +2662,7 @@ final class LmdbNativeKernelLowering {
 				if (tryLowerCyclicCore(multiJoin, row)) {
 					return lowerRegisteredFilters(multiFilters);
 				}
-				SlotPlan[] order = multiJoin.derivedPlanForLowering(row, availableBindings()).order;
+				SlotPlan[] order = multiJoin.derivedPlanForLowering(row, availableBindings(), false).order;
 				// Under DISTINCT sinking (plan 32 M4), branches whose fresh variables are all projected away
 				// contribute existence only — they lower to Exists semijoins AFTER the spine has produced their
 				// anchor variables, instead of multiplying rows the DISTINCT would collapse anyway.
@@ -3196,7 +3277,7 @@ final class LmdbNativeKernelLowering {
 				int target = newColumn(copy.targetSlot);
 				// Row-rung only: an alias of a maybe-null column is itself maybe-null. Without this the alias column
 				// looks assured, and a later OPTIONAL arm keyed on it would pass `operandMaybeNull` and probe with -1.
-				if (operandMaybeNull(source)) {
+				if (operandMaybeNull(source) || copy.assignment && copy.sourceSlot >= 0) {
 					optionalColMask |= 1L << target;
 				}
 				if (source.kind == Operand.COL && source.index < columnOrderedDomains.size()) {
@@ -3205,7 +3286,8 @@ final class LmdbNativeKernelLowering {
 						markOrderedDomain(target, orderedDomain);
 					}
 				}
-				currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(source, target));
+				currentDepthNodes()
+						.add(new LmdbNativeKernelIr.BindAlias(source, target, copy.assignment && copy.sourceSlot >= 0));
 			}
 			if (needsSolutionScope && bindHooks.size() > firstHook) {
 				// Like an ExtensionIterator's fresh target BindingSet: one identity per input occurrence, shared by
@@ -3420,7 +3502,8 @@ final class LmdbNativeKernelLowering {
 				}
 				operands.add(new ScalarReuseOperand(arg.kind, arg.index));
 			}
-			return new ScalarReuseKey(plan, operands, copy.encounterOrderReplaySafe, copy.setNullOnError);
+			return new ScalarReuseKey(plan, operands, copy.encounterOrderReplaySafe, copy.setNullOnError,
+					copy.assignment);
 		}
 
 		/**
@@ -3567,6 +3650,9 @@ final class LmdbNativeKernelLowering {
 		/** Lowers a pattern into the current depth (used directly and by the multi-value seed). */
 		private boolean lowerPatternInline(PatternPlan pattern) {
 			PhysicalPattern physical = physicalPattern(pattern);
+			if (physical == null) {
+				return false;
+			}
 			PatternPlan physicalPattern = physical.pattern;
 			// UNKNOWN is a wildcard binding in a join, never an adjacency key. The native scan binds nullable
 			// positions and checks already-bound terms using the same per-evaluation term authority.
@@ -4406,6 +4492,12 @@ final class LmdbNativeKernelLowering {
 				String consumer = null;
 				for (int next = at + 1; next < pipeline.size() && consumer == null; next++) {
 					Node candidate = pipeline.get(next);
+					if (candidate instanceof LmdbNativeKernelIr.BindAlias alias && alias.nullIsError) {
+						// Domain-driven enumeration is an identity proof, not just a read dependency. The
+						// normalized target can be UNKNOWN even when its source is an occupied null mapping.
+						aliases.clear(alias.dstCol);
+						continue;
+					}
 					if (candidate instanceof LmdbNativeKernelIr.BindAlias alias
 							&& alias.source.kind == LmdbNativeKernelIr.Operand.COL
 							&& aliases.get(alias.source.index)) {
@@ -5454,6 +5546,12 @@ final class LmdbNativeKernelLowering {
 					reason = "agg:witness-bind-target-bound";
 					return false;
 				}
+				// Witness-local aliases do not carry a nullable mapping-domain proof for later probes. A real
+				// Var assignment can turn occupied null into an absent target; keep that case in the exact row tier.
+				if (copy.assignment && copy.sourceSlot >= 0) {
+					reason = "agg:witness-bind-null-domain";
+					return false;
+				}
 				Operand source = copy.sourceSlot >= 0
 						? witnessOperand(Term.slot(copy.sourceSlot), witnessCols)
 						: Operand.constant(constantIndex(copy.constant));
@@ -5472,7 +5570,7 @@ final class LmdbNativeKernelLowering {
 				if (operandMaybeNull(source)) {
 					optionalColMask |= 1L << target;
 				}
-				pipeline.add(new LmdbNativeKernelIr.BindAlias(source, target));
+				pipeline.add(new LmdbNativeKernelIr.BindAlias(source, target, copy.assignment && copy.sourceSlot >= 0));
 			}
 			return true;
 		}
@@ -5744,7 +5842,10 @@ final class LmdbNativeKernelLowering {
 
 		private boolean lowerWitnessPatternPlan(PatternPlan pattern, WitnessColumns witnessCols,
 				List<Node> pipeline) {
-			PhysicalPattern physical = physicalPattern(pattern);
+			PhysicalPattern physical = physicalPattern(pattern, witnessCols);
+			if (physical == null) {
+				return false;
+			}
 			PatternPlan physicalPattern = physical.pattern;
 			if (witnessLocalMaybeNull(physicalPattern.s, witnessCols)
 					|| witnessLocalMaybeNull(physicalPattern.p, witnessCols)

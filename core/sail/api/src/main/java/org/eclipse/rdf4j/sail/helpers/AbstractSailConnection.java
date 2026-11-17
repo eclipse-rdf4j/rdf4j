@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -240,7 +241,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	/** Registers the executing task, rather than the thread that originally created the connection. */
-	final void beginOperation() {
+	@InternalUseOnly
+	protected final void beginOperation() {
 		synchronized (operationLock) {
 			verifyIsOpen();
 			OperationThread registration = operationThread.get();
@@ -391,6 +393,28 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	/**
+	 * Admits an owned cancellation callback while shutdown is draining. Once the final drain has completed it is too
+	 * late to acquire any connection-owned resources, so decline immediately instead of waiting for close. The caller
+	 * pairs a successful admission with {@link #endCancellationCallback()} on the same thread.
+	 */
+	@InternalUseOnly
+	protected final boolean beginCancellationCallback() {
+		synchronized (operationLock) {
+			if (closeDrained || closeCompleted) {
+				return false;
+			}
+			admitOperation(operationThread.get(), CancellationSignal.NONE);
+			return true;
+		}
+	}
+
+	/** Releases an admission made by {@link #beginCancellationCallback()}. */
+	@InternalUseOnly
+	protected final void endCancellationCallback() {
+		endOperation();
+	}
+
+	/**
 	 * Rolling back this connection's own uncommitted work is cleanup: it is admitted after cancellation, so a cancelled
 	 * workload can still release its transaction, but never after close, which rolls back itself.
 	 */
@@ -434,7 +458,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		blockClose.increment();
 	}
 
-	final void endOperation() {
+	@InternalUseOnly
+	protected final void endOperation() {
 		synchronized (operationLock) {
 			OperationThread registration = operationThread.get();
 			int depth = --registration.depth;
@@ -886,6 +911,29 @@ public abstract class AbstractSailConnection implements SailConnection {
 			CloseableIteration<? extends Statement> iteration = null;
 			try {
 				iteration = getStatementsInternal(subj, pred, obj, includeInferred, contexts);
+				return registerIteration(iteration);
+			} catch (Throwable t) {
+				if (iteration != null) {
+					iteration.close();
+				}
+				throw t;
+			}
+		} finally {
+			endOperation();
+		}
+	}
+
+	@Override
+	public final CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		flushPendingUpdates();
+
+		beginOperation();
+		try {
+			verifyIsOpen();
+			CloseableIteration<? extends Statement> iteration = null;
+			try {
+				iteration = getStatementsInternal(statementPattern, subj, pred, obj, includeInferred, contexts);
 				return registerIteration(iteration);
 			} catch (Throwable t) {
 				if (iteration != null) {
@@ -1538,6 +1586,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract CloseableIteration<? extends Statement> getStatementsInternal(Resource subj,
 			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException;
+
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		return getStatementsInternal(subj, pred, obj, includeInferred, contexts);
+	}
 
 	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementOrder order, Resource subj,
 			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {

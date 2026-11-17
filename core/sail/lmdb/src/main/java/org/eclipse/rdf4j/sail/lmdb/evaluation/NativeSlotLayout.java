@@ -80,6 +80,11 @@ final class NativeSlotLayout {
 		}
 	}
 
+	/** Whether a compile has fixed this layout; a frozen layout accepts no further position masks. */
+	boolean frozen() {
+		return frozen;
+	}
+
 	Integer slot(String name) {
 		return slotsByName.get(name);
 	}

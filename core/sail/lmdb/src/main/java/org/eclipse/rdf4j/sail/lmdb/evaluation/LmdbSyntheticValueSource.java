@@ -76,6 +76,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	 * Shared token for wrappers with the same complete synthetic term space; {@code null} means this source owns it.
 	 */
 	private final Object syntheticIdSpace;
+	private final NativeFilterLease filterParent;
 
 	/** Compile-scoped carrier: catalog resolution only, no runtime interning. */
 	SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog) {
@@ -93,17 +94,49 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	private SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
 			NativeExecutionContext context, Object syntheticIdSpace, QueryExecutionPolicy policy) {
+		this(delegate, catalog, context, syntheticIdSpace, policy, null);
+	}
+
+	private SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
+			NativeExecutionContext context, Object syntheticIdSpace, QueryExecutionPolicy policy,
+			NativeFilterLease filterParent) {
 		this.delegate = delegate;
 		this.catalog = catalog;
 		this.queryExecutionPolicy = policy;
 		this.context = context;
 		this.syntheticIdSpace = syntheticIdSpace;
+		this.filterParent = filterParent;
 		this.authority = context == null ? null
 				: new LmdbNativeTermAuthority(delegate, catalog, context, idSpace());
 		if (context != null) {
 			context.installEvaluationSource(this);
 			context.installQueryScopedValueRegistrar(this::retainQueryScopedValue);
 		}
+	}
+
+	/** Scoped attachment facade: exact authority/id space and root registrar remain owned by the original source. */
+	private SyntheticValueSource(SyntheticValueSource original, NativeFilterLease parent) {
+		this.delegate = original.delegate;
+		this.catalog = original.catalog;
+		this.queryExecutionPolicy = original.queryExecutionPolicy;
+		this.context = original.context;
+		this.authority = original.authority;
+		this.generatedKeyPlan = original.generatedKeyPlan;
+		this.generatedKeyAuthority = original.generatedKeyAuthority;
+		this.syntheticIdSpace = original.idSpace();
+		this.filterParent = parent;
+	}
+
+	NativeFilterLease filterParent() {
+		return filterParent;
+	}
+
+	static NativeFilterLease activeFilterParent(NativeExecutionContext owner) {
+		SyntheticValueSource active = ACTIVE_EVALUATION.get();
+		return active != null && active.context != null
+				&& active.context.filterOutcomeOwner() == owner.filterOutcomeOwner()
+						? active.filterParent
+						: null;
 	}
 
 	/** A fresh evaluation-scoped instance over the same store and catalog, owning its own runtime interner. */
@@ -113,7 +146,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			if (active.delegate == delegate && active.catalog == catalog && active.generatedKeyAuthority == null) {
 				return active;
 			}
-			return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(active.context));
+			SyntheticValueSource child = new SyntheticValueSource(delegate, catalog,
+					new NativeExecutionContext(active.context));
+			return active.filterParent == null ? child : new SyntheticValueSource(child, active.filterParent);
 		}
 		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(queryExecutionPolicy));
 	}
@@ -132,7 +167,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 					&& parent.generatedKeyAuthority == null;
 			NativeExecutionContext invocation = new NativeExecutionContext(parent.context, bindings, shareTerms);
 			return new SyntheticValueSource(delegate, catalog, invocation, shareTerms ? parent.idSpace() : null,
-					queryExecutionPolicy);
+					queryExecutionPolicy, parent.filterParent);
 		}
 		NativeExecutionContext invocation = new NativeExecutionContext(queryExecutionPolicy);
 		invocation.initializeQueryBase(bindings);
@@ -150,7 +185,8 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		}
 		NativeExecutionContext projectedContext = new NativeExecutionContext(context,
 				NativeEntryBindings.preserve(base, projected));
-		new SyntheticValueSource(delegate, catalog, projectedContext, idSpace(), queryExecutionPolicy);
+		NativeFilterLease parent = filterParent == null ? activeFilterParent(context) : filterParent;
+		new SyntheticValueSource(delegate, catalog, projectedContext, idSpace(), queryExecutionPolicy, parent);
 		return projectedContext;
 	}
 
@@ -257,12 +293,24 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	/** Makes this evaluation's context inheritable by semantic-native steps invoked recursively on the same thread. */
 	static EvaluationScope attachEvaluation(NativeLmdbQuerySource source) {
-		SyntheticValueSource active = source instanceof SyntheticValueSource ? (SyntheticValueSource) source : null;
+		return attachEvaluation(source, null);
+	}
+
+	static EvaluationScope attachEvaluation(NativeLmdbQuerySource source, NativeFilterLease parent) {
+		SyntheticValueSource active = source instanceof SyntheticValueSource synthetic ? synthetic : null;
 		SyntheticValueSource previous = ACTIVE_EVALUATION.get();
 		if (active != null) {
+			if (parent != null) {
+				active = new SyntheticValueSource(active, parent);
+			}
 			ACTIVE_EVALUATION.set(active);
 		}
 		return new EvaluationScope(previous, active != null);
+	}
+
+	/** The exact already-attached invocation facade, or null; never creates or substitutes an owner. */
+	static SyntheticValueSource activeEvaluation() {
+		return ACTIVE_EVALUATION.get();
 	}
 
 	/** True while a nested step is borrowing this context; only the outer evaluation owns its lifetime. */
@@ -408,6 +456,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public Object valueLookupScope() {
 		return delegate.valueLookupScope();
+	}
+
+	@Override
+	public boolean tryRetainDictionaryTermMembership() {
+		return delegate.tryRetainDictionaryTermMembership();
 	}
 
 	@Override
@@ -856,7 +909,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 				}
 				// Compile-scoped siblings have no runtime context yet, but already own the repository policy.
 				result[i] = new SyntheticParallelSource(opened[i], catalog, context, idSpace(), generatedKeyPlan,
-						queryExecutionPolicy);
+						queryExecutionPolicy, filterParent);
 			}
 			complete = true;
 			return result;
@@ -900,8 +953,8 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 		private SyntheticParallelSource(ParallelSource owned, PlanValueCatalog catalog,
 				NativeExecutionContext context, Object syntheticIdSpace, NativeGeneratedKeyPlan generatedKeyPlan,
-				QueryExecutionPolicy policy) {
-			super(owned, catalog, context, syntheticIdSpace, policy);
+				QueryExecutionPolicy policy, NativeFilterLease filterParent) {
+			super(owned, catalog, context, syntheticIdSpace, policy, filterParent);
 			this.owned = owned;
 			// All sibling facades share the query-owned runtime table through the context, but each receives a
 			// delegate-bound

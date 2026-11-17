@@ -64,6 +64,14 @@ class CorrelatedPathIdentityTest {
 						"VALUES ?x { <urn:missing> } FILTER EXISTS { ?x <urn:p>* ?x MINUS { ?x <urn:q> ?y } }", 1),
 				Arguments.of("subquery", "VALUES ?x { <urn:missing> } FILTER EXISTS { SELECT ?x { ?x <urn:p>* ?x } }",
 						1),
+				Arguments.of("hidden subquery name stays local",
+						"VALUES ?x { <urn:missing> } FILTER EXISTS { SELECT ?inner { "
+								+ "VALUES (?x ?inner) { (<urn:local> 1) } ?x <urn:p>* ?x } }",
+						0),
+				Arguments.of("nested entry recaptures hidden subquery name",
+						"VALUES ?x { <urn:missing> } FILTER EXISTS { SELECT ?inner { "
+								+ "VALUES (?x ?inner) { (<urn:local> 1) } FILTER EXISTS { ?x <urn:p>* ?x } } }",
+						1),
 				Arguments.of("sequence", "VALUES ?x { <urn:missing> } FILTER EXISTS { ?x (<urn:p>*/<urn:q>*) ?x }", 1),
 				Arguments.of("plain sequence", "VALUES ?x { <urn:missing> } FILTER EXISTS { ?x <urn:p>*/<urn:q>* ?x }",
 						1),

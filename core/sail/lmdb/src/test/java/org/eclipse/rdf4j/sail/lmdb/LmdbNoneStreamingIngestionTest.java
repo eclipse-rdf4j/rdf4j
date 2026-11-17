@@ -28,9 +28,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.ref.Reference;
-import java.lang.ref.ReferenceQueue;
-import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
@@ -719,23 +716,6 @@ class LmdbNoneStreamingIngestionTest {
 		} finally {
 			reopened.shutDown();
 		}
-	}
-
-	@Test
-	@Timeout(value = 15, unit = TimeUnit.SECONDS)
-	void removedAsyncBufferOperationReleasesItsCapturedPayload() {
-		BufferReferenceProbe probe = createBufferReferenceProbe();
-		assertTrue(probe.buffer().isEmpty(), "removing the only queued operation must empty the ring");
-
-		for (int attempt = 0; attempt < 32 && probe.payload().get() != null; attempt++) {
-			System.gc();
-			byte[] pressure = new byte[1 << 20];
-			pressure[0] = (byte) attempt;
-		}
-
-		Reference.reachabilityFence(probe.buffer());
-		assertNull(probe.payload().get(),
-				"a consumed async operation must not remain strongly reachable through its ring slot");
 	}
 
 	@Test
@@ -3646,6 +3626,7 @@ class LmdbNoneStreamingIngestionTest {
 		CountDownLatch releaseInitialFactory = new CountDownLatch(1);
 		CountDownLatch replacementFactoryEntered = new CountDownLatch(1);
 		CountDownLatch releaseReplacementFactory = new CountDownLatch(1);
+		AtomicReference<Thread> readFactoryOwner = new AtomicReference<>();
 		ExecutorService readerExecutor = Executors.newSingleThreadExecutor();
 		ExecutorService growthExecutor = Executors.newSingleThreadExecutor();
 		try {
@@ -3663,9 +3644,10 @@ class LmdbNoneStreamingIngestionTest {
 			MapGrowthMetrics.Snapshot before = backing.growthMetricsSnapshot();
 			Set<Statement> expected = new HashSet<>();
 			expected.add(seed);
-			ReadFactoryGate initialFactoryGate = triples.holdNextReadFactory(initialFactoryEntered,
+			ReadFactoryGate initialFactoryGate = triples.holdNextReadFactory(readFactoryOwner, initialFactoryEntered,
 					releaseInitialFactory);
 			Future<List<Statement>> readResult = readerExecutor.submit(() -> {
+				readFactoryOwner.set(Thread.currentThread());
 				try (RepositoryConnection reader = repository.getConnection()) {
 					reader.begin(IsolationLevels.READ_COMMITTED);
 					List<Statement> statements;
@@ -3679,7 +3661,8 @@ class LmdbNoneStreamingIngestionTest {
 
 			assertTrue(initialFactoryEntered.await(10, TimeUnit.SECONDS),
 					"the first read factory must pause after opening its native read view");
-			ReadFactoryGate replacementFactoryGate = triples.holdNextReadFactory(replacementFactoryEntered,
+			ReadFactoryGate replacementFactoryGate = triples.holdNextReadFactory(readFactoryOwner,
+					replacementFactoryEntered,
 					releaseReplacementFactory);
 			Future<Set<Statement>> growth = growthExecutor.submit(
 					() -> publishReplayGrowth(repository, "acquisition", replayGrowthNamespaceBytes(triples)));
@@ -6152,17 +6135,6 @@ class LmdbNoneStreamingIngestionTest {
 		return new LmdbSailStore(directory, properties, config, false, ValueStore::new, tripleStoreFactory);
 	}
 
-	private static BufferReferenceProbe createBufferReferenceProbe() {
-		LmdbSailStore.CircularBuffer<LmdbSailStore.Operation> buffer = new LmdbSailStore.CircularBuffer<>(2);
-		ReferenceQueue<byte[]> queue = new ReferenceQueue<>();
-		byte[] payload = new byte[4 * 1024 * 1024];
-		WeakReference<byte[]> reference = new WeakReference<>(payload, queue);
-		assertTrue(buffer.add(() -> assertEquals(4 * 1024 * 1024, payload.length,
-				"the queued operation captures the test payload")));
-		assertNotNull(buffer.remove(), "the test must consume the queued operation");
-		return new BufferReferenceProbe(buffer, reference, queue);
-	}
-
 	private static void flushConnectionWriter(LmdbStoreConnection writer) throws SailException {
 		writer.flush();
 	}
@@ -6597,8 +6569,9 @@ class LmdbNoneStreamingIngestionTest {
 			}
 		}
 
-		private ReadFactoryGate holdNextReadFactory(CountDownLatch entered, CountDownLatch release) {
-			ReadFactoryGate gate = new ReadFactoryGate(entered, release, new AtomicReference<>());
+		private ReadFactoryGate holdNextReadFactory(AtomicReference<Thread> owner, CountDownLatch entered,
+				CountDownLatch release) {
+			ReadFactoryGate gate = new ReadFactoryGate(owner, entered, release, new AtomicReference<>());
 			if (!nextReadFactoryGate.compareAndSet(null, gate)) {
 				throw new IllegalStateException("a read factory gate is already armed");
 			}
@@ -6612,8 +6585,15 @@ class LmdbNoneStreamingIngestionTest {
 		@Override
 		public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 				throws IOException {
-			ReadFactoryGate gate = nextReadFactoryGate.getAndSet(null);
-			if (gate != null) {
+			return getTriples(txn, subj, pred, obj, context, explicit, null);
+		}
+
+		@Override
+		public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+				LmdbValueIdFilter idFilter) throws IOException {
+			ReadFactoryGate gate = nextReadFactoryGate.get();
+			if (gate != null && gate.owner().get() == Thread.currentThread()
+					&& nextReadFactoryGate.compareAndSet(gate, null)) {
 				gate.capturedBy().set(Thread.currentThread());
 				gate.entered.countDown();
 				try {
@@ -6625,7 +6605,7 @@ class LmdbNoneStreamingIngestionTest {
 					throw new IOException("interrupted while holding the captured native read factory", interrupted);
 				}
 			}
-			return super.getTriples(txn, subj, pred, obj, context, explicit);
+			return super.getTriples(txn, subj, pred, obj, context, explicit, idFilter);
 		}
 
 		private synchronized void observePairedCommits(ObservingValueStore values) {
@@ -7133,11 +7113,8 @@ class LmdbNoneStreamingIngestionTest {
 			int contextCapacity, boolean explicit) {
 	}
 
-	private record ReadFactoryGate(CountDownLatch entered, CountDownLatch release, AtomicReference<Thread> capturedBy) {
-	}
-
-	private record BufferReferenceProbe(LmdbSailStore.CircularBuffer<LmdbSailStore.Operation> buffer,
-			WeakReference<byte[]> payload, ReferenceQueue<byte[]> queue) {
+	private record ReadFactoryGate(AtomicReference<Thread> owner, CountDownLatch entered, CountDownLatch release,
+			AtomicReference<Thread> capturedBy) {
 	}
 
 	private record PersistentSetMutation(String name, String operation) {

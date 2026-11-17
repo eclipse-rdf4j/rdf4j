@@ -33,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -41,7 +42,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+import java.util.stream.IntStream;
 
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -56,6 +60,272 @@ import org.lwjgl.util.lmdb.MDBVal;
 import org.mockito.MockedStatic;
 
 class TripleStoreBackgroundReindexTest {
+	enum FrontierRead {
+		COUNT,
+		MATCHES,
+		CONTAINS
+	}
+
+	@ParameterizedTest
+	@EnumSource(FrontierRead.class)
+	void pinnedFrontierReadsSurviveIndexCutover(FrontierRead read, @TempDir Path directory) throws Exception {
+		seed(directory, 20);
+		try (ControlledStore store = new ControlledStore(directory, "posc")) {
+			try (LmdbFrontierSnapshotSource pinned = new LmdbFrontierSnapshotSource(store)) {
+				store.startBackgroundIndexRebuild();
+				await(store.published);
+				try (Txn current = store.getTxnManager().createReadTxn()) {
+					assertEquals("posc", store.getIndexName(current, -1, 2, -1, -1),
+							"a new reader must use the published index generation");
+				}
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+						"the pinned Frontier reader must keep the old generation alive");
+
+				switch (read) {
+				case COUNT -> assertEquals(20L, pinned.rowCount(true));
+				case MATCHES -> {
+					List<Long> subjects = new ArrayList<>();
+					try (LmdbFrontierSnapshotSource.MatchBatch batch = pinned.openMatchBatch(true)) {
+						assertEquals(20L, batch.scanMatches(-1, 2, -1, -1, (subject, predicate, object, context) -> {
+							assertEquals(2L, predicate);
+							subjects.add(subject);
+						}));
+					}
+					assertEquals(20L, subjects.stream().distinct().count());
+				}
+				case CONTAINS -> {
+					try (LmdbFrontierSnapshotSource.MatchBatch batch = pinned.openMatchBatch(true)) {
+						assertTrue(batch.containsMatch(0, -1, 2, -1, -1,
+								(subject, predicate, object, context) -> subject == 1L));
+					}
+				}
+				}
+			}
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS),
+					"retirement must finish after the Frontier reader closes");
+			assertEquals(Set.of("posc"), store.explicitIndexEntryCounts().keySet());
+		}
+	}
+
+	enum PlanningRead {
+		EXACT,
+		SAMPLE,
+		CENSUS,
+		PINNED_SAMPLE,
+		PINNED_CENSUS
+	}
+
+	@ParameterizedTest
+	@EnumSource(PlanningRead.class)
+	void pinnedPlanningReadsSurviveIndexCutover(PlanningRead read, @TempDir Path directory) throws Exception {
+		seed(directory, 20);
+		try (ControlledStore store = new ControlledStore(directory, "posc")) {
+			try (Txn pinned = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+				store.startBackgroundIndexRebuild();
+				await(store.published);
+				assertEquals("spoc", store.getIndexName(pinned, -1, 2, -1, -1));
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+						"the admitted planning transaction must retain its index generation");
+				switch (read) {
+				case EXACT -> assertEquals(1L, store.exactStatementCount(pinned, 1L, 2L, 1_001L, 0L, true));
+				case SAMPLE -> {
+					List<long[]> rows = new ArrayList<>();
+					assertEquals(20, store.sampleTriplesStratified(pinned, -1L, 2L, -1L, -1L, true, 1, 25,
+							row -> {
+								rows.add(row);
+								return true;
+							}));
+					assertEquals(20L, rows.stream().map(row -> row[TripleIndex.SUBJ_IDX]).distinct().count());
+				}
+				case CENSUS -> assertEquals(21L,
+						store.boundedExactCardinality(pinned, -1L, 2L, -1L, -1L, 30L).orElseThrow());
+				case PINNED_SAMPLE -> {
+					try (TripleStore.PlanningReadPin ignored = store.pinPlanningTxn(pinned)) {
+						List<long[]> rows = new ArrayList<>();
+						assertEquals(20, store.sampleTriplesStratified(-1L, 2L, -1L, -1L, true, 1, 25,
+								row -> {
+									rows.add(row);
+									return true;
+								}));
+						assertEquals(20L, rows.stream().map(row -> row[TripleIndex.SUBJ_IDX]).distinct().count());
+					}
+				}
+				case PINNED_CENSUS -> {
+					try (TripleStore.PlanningReadPin ignored = store.pinPlanningTxn(pinned)) {
+						assertEquals(21L, store.boundedExactCardinality(-1L, 2L, -1L, -1L, 30L).orElseThrow());
+					}
+				}
+				}
+			}
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS),
+					"retirement must finish after the planning reader closes");
+			assertEquals(Set.of("posc"), store.explicitIndexEntryCounts().keySet());
+		}
+	}
+
+	@Test
+	void pinnedPageReadsSurviveIndexCutover(@TempDir Path directory) throws Exception {
+		seed(directory, 20);
+		try (ControlledStore store = new ControlledStore(directory, "posc", true)) {
+			try (Txn pinned = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0];
+					TripleStore.PlanningReadPin ignored = store.pinPlanningTxn(pinned)) {
+				store.startBackgroundIndexRebuild();
+				await(store.published);
+				assertEquals("spoc", store.getIndexName(pinned, -1, 2, -1, -1));
+				var oldEstimate = store.planningCardinalityEstimate(-1L, 2L, -1L, -1L);
+				assertTrue(oldEstimate.hardLowerBound() <= 21L);
+				assertTrue(oldEstimate.hardUpperBound() >= 21L,
+						"the old snapshot's true count must remain inside any certified bounds");
+			}
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			try (Txn current = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0];
+					TripleStore.PlanningReadPin ignored = store.pinPlanningTxn(current)) {
+				assertEquals("posc", store.getIndexName(current, -1, 2, -1, -1));
+				var currentEstimate = store.planningCardinalityEstimate(-1L, 2L, -1L, -1L);
+				assertTrue(currentEstimate.hardLowerBound() <= 21L);
+				assertTrue(currentEstimate.hardUpperBound() >= 21L);
+			}
+		}
+	}
+
+	@Test
+	void pinnedDistinctReadsSurviveIndexCutover(@TempDir Path directory) throws Exception {
+		seed(directory, 20);
+		try (ControlledStore store = new ControlledStore(directory, "posc")) {
+			try (Txn pinned = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+				store.startBackgroundIndexRebuild();
+				await(store.published);
+				StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+				new LmdbDistinctRequirement(Set.of("p"), Set.of("p"), Set.of(), "cutover-test").annotate(pattern);
+				assertEquals("posc", store.distinctCursorSkipPlan(pattern).orElseThrow().indexFieldSequence(),
+						"the current generation exposes a shortcut that the old snapshot cannot open");
+				var shortcut = store.getTriplesWithDistinctCursorSkip(pinned, pattern, -1L, -1L, -1L, -1L,
+						true, LmdbValueIdFilter.none());
+				try {
+					assertTrue(shortcut.isEmpty(), "an unavailable old-generation shortcut must use the generic path");
+				} finally {
+					if (shortcut.isPresent()) {
+						shortcut.orElseThrow().close();
+					}
+				}
+				assertEquals(20, count(store.getTriples(pinned, -1L, -1L, -1L, -1L, true)));
+				assertEquals(1, count(store.getTriples(pinned, -1L, -1L, -1L, -1L, false)));
+			}
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
+	void pinnedGraphReadsSurviveIndexCutover(@TempDir Path directory) throws Exception {
+		seed(directory, 20);
+		try (ControlledStore store = new ControlledStore(directory, "posc", true)) {
+			store.startTransaction();
+			store.storeTriple(31L, 2L, 1_031L, 7L, true);
+			store.storeTriple(32L, 2L, 1_032L, 9L, true);
+			store.commit();
+			try (Txn pinned = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+				store.startBackgroundIndexRebuild();
+				await(store.published);
+				assertTrue(store.graphRangeWork(pinned, "posc", true, -1L, 2L, -1L, -1L, Set.of(7L, 9L),
+						LmdbValueIdFilter.none(), true).isEmpty(),
+						"costing must decline a new-only physical layout on the old snapshot");
+				assertEquals(22, count(store.getTriples(pinned, -1L, 2L, -1L, -1L, true)));
+				try (Txn current = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+					assertTrue(store.graphRangeWork(current, "posc", true, -1L, 2L, -1L, -1L, Set.of(7L, 9L),
+							LmdbValueIdFilter.none(), true).isPresent(),
+							"the current generation should retain its graph costing path");
+				}
+			}
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
+	void trackedCursorSurvivesIndexCutoverAndCleanupAttempt(@TempDir Path directory) throws Exception {
+		try (TripleStore initial = new TripleStore(directory.toFile(), config("spoc"), null)) {
+			initial.startTransaction();
+			for (int subject = 1; subject <= 20; subject++) {
+				initial.storeTriple(subject, 2L, 1_021L - subject, 0L, true);
+			}
+			initial.commit();
+		}
+		try (ControlledStore store = new ControlledStore(directory, "posc")) {
+			List<Long> subjects = new ArrayList<>();
+			try (Txn tracked = store.getTxnManager().createReadTxn();
+					RecordIterator rows = store.getTriples(tracked, -1L, -1L, -1L, -1L, true)) {
+				long[] first = rows.next();
+				assertEquals(1L, first[TripleIndex.SUBJ_IDX]);
+				subjects.add(first[TripleIndex.SUBJ_IDX]);
+				store.startBackgroundIndexRebuild();
+				await(store.published);
+				await(store.cleanupAttempt);
+				long[] row;
+				while ((row = rows.next()) != null) {
+					subjects.add(row[TripleIndex.SUBJ_IDX]);
+				}
+			}
+			assertEquals(IntStream.rangeClosed(1, 20).mapToLong(value -> value).boxed().toList(), subjects,
+					"a renewed cursor must preserve its continuation even when the replacement has a different order");
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+		}
+	}
+
+	enum PostCutoverInsertion {
+		DIRECT,
+		ALIGNED
+	}
+
+	@ParameterizedTest
+	@EnumSource(PostCutoverInsertion.class)
+	void trackedCursorReflectsLaterMutationsInItsOriginalOrder(PostCutoverInsertion insertion,
+			@TempDir Path directory) throws Exception {
+		try (TripleStore initial = new TripleStore(directory.toFile(), config("spoc"), null)) {
+			initial.startTransaction();
+			for (int subject = 1; subject <= 20; subject++) {
+				initial.storeTriple(subject, 2L, 1_021L - subject, 0L, true);
+			}
+			initial.commit();
+		}
+		try (ControlledStore store = new ControlledStore(directory, "posc")) {
+			List<Long> subjects = new ArrayList<>();
+			try (Txn oldSnapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0];
+					Txn tracked = store.getTxnManager().createReadTxn();
+					RecordIterator rows = store.getTriples(tracked, -1L, -1L, -1L, -1L, true)) {
+				subjects.add(rows.next()[TripleIndex.SUBJ_IDX]);
+				store.startBackgroundIndexRebuild();
+				await(store.published);
+				await(store.cleanupAttempt);
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+						"the old snapshot must keep the original index available during this test");
+				synchronized (store.writerLock) {
+					store.startTransaction();
+					store.removeTriplesByContext(2L, 2L, 1_019L, 0L, true, ignored -> {
+					});
+					if (insertion == PostCutoverInsertion.DIRECT) {
+						store.storeTriple(21L, 2L, 1_000L, 0L, true);
+						store.storeTriple(22L, 2L, 999L, 0L, true);
+					} else {
+						store.storeTriplesAligned(new long[] { 21L, 22L }, new long[] { 2L, 2L },
+								new long[] { 1_000L, 999L }, new long[] { 0L, 0L }, 2, true);
+					}
+					store.commit();
+				}
+				long[] row;
+				while ((row = rows.next()) != null) {
+					subjects.add(row[TripleIndex.SUBJ_IDX]);
+				}
+			}
+			List<Long> expected = IntStream.rangeClosed(1, 22)
+					.filter(subject -> subject != 2)
+					.mapToLong(value -> value)
+					.boxed()
+					.toList();
+			assertEquals(expected, subjects,
+					"a renewed cursor must see later inserts and deletions in its original index order");
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+		}
+	}
+
 	@Test
 	void awaitIncludesFinalNativeCommitAndTerminalCallback(@TempDir Path directory) throws Exception {
 		seed(directory, 20);
@@ -296,7 +566,7 @@ class TripleStoreBackgroundReindexTest {
 				store.removeTriplesByContext(continuation[0], continuation[1], continuation[2], continuation[3],
 						true, quad -> {
 						});
-				store.storeTriple(0, 2, 9_000, 0, true); // behind the source continuation
+				store.storeTriple(1, 2, 9_000, 0, true); // behind the source continuation
 				store.storeTriple(700, 2, 1_700, 0, true); // inferred -> explicit promotion
 				store.storeTriple(801, 2, 1_801, 0, false);
 				store.storeTriplesAligned(new long[] { 1_001, 1_002 }, new long[] { 2, 2 },
@@ -318,7 +588,7 @@ class TripleStoreBackgroundReindexTest {
 				assertFalse(store.hasTriples(current, continuation[0], continuation[1], continuation[2],
 						continuation[3], true));
 				assertFalse(store.hasTriples(current, 9_999, 2, 10_999, 0, true));
-				assertTrue(store.hasTriples(current, 0, 2, 9_000, 0, true));
+				assertTrue(store.hasTriples(current, 1, 2, 9_000, 0, true));
 				assertEquals(602, count(store.getTriples(current, -1, -1, -1, -1, true)));
 			}
 			old.close();
@@ -655,7 +925,7 @@ class TripleStoreBackgroundReindexTest {
 				assertEquals(cut != CrashCut.FOREGROUND_COMMITTED,
 						store.hasTriples(reader, 1, 2, 1_001, 0, true));
 				assertEquals(cut == CrashCut.FOREGROUND_COMMITTED,
-						store.hasTriples(reader, 0, 2, 9_000, 0, true));
+						store.hasTriples(reader, 1, 2, 9_000, 0, true));
 			}
 		}
 	}
@@ -680,7 +950,7 @@ class TripleStoreBackgroundReindexTest {
 						startTransaction();
 						removeTriplesByContext(1, 2, 1_001, 0, true, quad -> {
 						});
-						storeTriple(0, 2, 9_000, 0, true);
+						storeTriple(1, 2, 9_000, 0, true);
 						commit();
 						halt(cut);
 					}
@@ -714,6 +984,7 @@ class TripleStoreBackgroundReindexTest {
 			throws Exception {
 		seed(directory, 60);
 		String fields = "spoc";
+		Set<String> permutations = new HashSet<>();
 		for (char a : fields.toCharArray()) {
 			for (char b : fields.toCharArray()) {
 				for (char c : fields.toCharArray()) {
@@ -721,35 +992,54 @@ class TripleStoreBackgroundReindexTest {
 						if (a == b || a == c || a == d || b == c || b == d || c == d) {
 							continue;
 						}
-						String permutation = new String(new char[] { a, b, c, d });
-						try (ControlledStore store = new ControlledStore(directory, permutation)) {
-							store.startBackgroundIndexRebuild();
-							assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS), store.indexRebuildStatus());
-							assertEquals(60L, store.explicitIndexEntryCounts().get(permutation));
-							int physical = LmdbUtil.readTransaction(store.env, (stack, txn) -> {
-								int main = LmdbUtil.openDatabaseWithTxn(txn, null, 0);
-								PointerBuffer cursor = stack.mallocPointer(1);
-								LmdbUtil.E(mdb_cursor_open(txn, main, cursor));
-								try {
-									MDBVal key = MDBVal.calloc(stack);
-									MDBVal data = MDBVal.calloc(stack);
-									int count = 0;
-									int rc = mdb_cursor_get(cursor.get(0), key, data, MDB_FIRST);
-									while (rc != MDB_NOTFOUND) {
-										LmdbUtil.E(rc);
-										count++;
-										rc = mdb_cursor_get(cursor.get(0), key, data, MDB_NEXT);
-									}
-									return count;
-								} finally {
-									mdb_cursor_close(cursor.get(0));
-								}
-							});
-							assertTrue(physical <= 50,
-									"All explicit/inferred permutations plus contexts/namespaces fit");
-						}
+						permutations.add(new String(new char[] { a, b, c, d }));
 					}
 				}
+			}
+		}
+		Set<String> auxiliaryDatabases = Set.of("contexts", TripleStore.NAMESPACE_DATABASE_NAME,
+				TripleStore.PREDICATE_OBJECT_DOMAINS_DB, TripleStore.PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB,
+				TripleStore.FRONTIER_MUTATION_JOURNAL_DB);
+		Set<String> recognizedDatabases = new HashSet<>(auxiliaryDatabases);
+		for (String permutation : permutations) {
+			recognizedDatabases.add(TripleIndex.nativeDatabaseName(permutation, true));
+			recognizedDatabases.add(TripleIndex.nativeDatabaseName(permutation, false));
+		}
+		assertEquals(24, permutations.size(), "all distinct quad permutations must be covered");
+		for (String permutation : permutations) {
+			try (ControlledStore store = new ControlledStore(directory, permutation)) {
+				store.startBackgroundIndexRebuild();
+				assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS), store.indexRebuildStatus());
+				assertEquals(60L, store.explicitIndexEntryCounts().get(permutation));
+				Set<String> physical = LmdbUtil.readTransaction(store.env, (stack, txn) -> {
+					int main = LmdbUtil.openDatabaseWithTxn(txn, null, 0);
+					PointerBuffer cursor = stack.mallocPointer(1);
+					LmdbUtil.E(mdb_cursor_open(txn, main, cursor));
+					try {
+						MDBVal key = MDBVal.calloc(stack);
+						MDBVal data = MDBVal.calloc(stack);
+						Set<String> names = new HashSet<>();
+						int rc = mdb_cursor_get(cursor.get(0), key, data, MDB_FIRST);
+						while (rc != MDB_NOTFOUND) {
+							LmdbUtil.E(rc);
+							ByteBuffer nativeName = key.mv_data().duplicate();
+							byte[] name = new byte[nativeName.remaining()];
+							nativeName.get(name);
+							names.add(new String(name, StandardCharsets.UTF_8));
+							rc = mdb_cursor_get(cursor.get(0), key, data, MDB_NEXT);
+						}
+						return names;
+					} finally {
+						mdb_cursor_close(cursor.get(0));
+					}
+				});
+				assertTrue(physical.containsAll(auxiliaryDatabases), "all auxiliary databases remain present");
+				assertTrue(physical.contains(TripleIndex.nativeDatabaseName(permutation, true)));
+				assertTrue(physical.contains(TripleIndex.nativeDatabaseName(permutation, false)));
+				Set<String> unexpected = new HashSet<>(physical);
+				unexpected.removeAll(recognizedDatabases);
+				assertEquals(Set.of(), unexpected,
+						"physical databases must be one of the explicit/inferred permutations or known auxiliaries");
 			}
 		}
 	}
@@ -811,6 +1101,7 @@ class TripleStoreBackgroundReindexTest {
 		final CountDownLatch release = new CountDownLatch(1);
 		final CountDownLatch copied = new CountDownLatch(1);
 		final CountDownLatch published = new CountDownLatch(1);
+		final CountDownLatch cleanupAttempt = new CountDownLatch(1);
 		final AtomicBoolean copyPaused = new AtomicBoolean();
 		final Set<String> target;
 		volatile boolean pauseRead;
@@ -821,7 +1112,11 @@ class TripleStoreBackgroundReindexTest {
 		int reads;
 
 		ControlledStore(Path directory, String indexes) throws Exception {
-			super(directory.toFile(), config(indexes), null);
+			this(directory, indexes, false);
+		}
+
+		ControlledStore(Path directory, String indexes, boolean pageEstimatorEnabled) throws Exception {
+			super(directory.toFile(), config(indexes, pageEstimatorEnabled), null);
 			target = TripleIndex.parseIndexSpecList(indexes);
 			setIndexRebuildWriter(work -> {
 				synchronized (writerLock) {
@@ -846,6 +1141,9 @@ class TripleStoreBackgroundReindexTest {
 
 		@Override
 		protected void afterIndexRebuildBatch() throws IOException {
+			if (Set.of("CLEANUP", "FINISHING").contains(indexRebuildStatus())) {
+				cleanupAttempt.countDown();
+			}
 			if (pauseAfterCopy && reads == 1 && copyPaused.compareAndSet(false, true)) {
 				copied.countDown();
 				awaitRelease();
@@ -886,9 +1184,13 @@ class TripleStoreBackgroundReindexTest {
 	}
 
 	private static LmdbStoreConfig config(String indexes) {
+		return config(indexes, false);
+	}
+
+	private static LmdbStoreConfig config(String indexes, boolean pageEstimatorEnabled) {
 		LmdbStoreConfig config = new LmdbStoreConfig(indexes);
 		config.setTripleDBSize(8L * 1024 * 1024);
-		config.setPageCardinalityEstimator(false);
+		config.setPageCardinalityEstimator(pageEstimatorEnabled);
 		return config;
 	}
 }

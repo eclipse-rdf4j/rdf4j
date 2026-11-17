@@ -1,0 +1,14 @@
+PREFIX social: <http://example.com/theme/social/>
+SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
+  VALUES ?b { <http://example.com/theme/social/user/3>
+              <http://example.com/theme/social/user/4>
+              <http://example.com/theme/social/user/5>
+              <http://example.com/theme/social/user/6> }
+  OPTIONAL { ?b social:name ?optName . BIND(?optName AS ?optAlias) }
+  FILTER(?optAlias != "")
+  ?a social:follows ?b .
+  ?d social:follows ?a .
+  ?c social:follows ?d .
+  ?b social:follows ?c .
+  FILTER(?a != ?b && ?b != ?c && ?c != ?d && ?d != ?a)
+}

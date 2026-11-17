@@ -58,6 +58,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private boolean sourceEnded;
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private int activeCalls;
+	private int activeCancellationCalls;
 	private volatile boolean cancellationRequested;
 	/** The thread inside hasNext or next; calls are serialized by this iteration's monitor. */
 	private Thread activeThread;
@@ -383,19 +384,40 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	 */
 	@Override
 	public boolean requestCancellation() {
-		if (closed.get()) {
-			return false;
-		}
-		cancellationRequested = true;
-		CooperativeCancellation.forward(source);
 		synchronized (lifetime) {
-			Thread thread = activeThread;
-			if (thread != null && thread != Thread.currentThread() && !interruptDelivered) {
-				interruptDelivered = true;
-				thread.interrupt();
+			if (closed.get()) {
+				return false;
+			}
+			activeCancellationCalls++;
+			cancellationRequested = true;
+		}
+		Throwable failure = null;
+		try {
+			CooperativeCancellation.forward(source);
+			return true;
+		} catch (RuntimeException | Error caught) {
+			failure = caught;
+			throw caught;
+		} finally {
+			synchronized (lifetime) {
+				Thread thread = activeThread;
+				if (thread != null && thread != Thread.currentThread() && !interruptDelivered) {
+					interruptDelivered = true;
+					thread.interrupt();
+				}
+				activeCancellationCalls--;
+			}
+			try {
+				drainIfIdle();
+			} catch (RuntimeException | Error cleanup) {
+				if (failure == null) {
+					throw cleanup;
+				}
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
 			}
 		}
-		return true;
 	}
 
 	void retireReaders() {
@@ -451,7 +473,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private void drainIfIdle() {
 		List<ValueResolutionScope> retired;
 		synchronized (lifetime) {
-			if (!closed.get() || activeCalls != 0 || drainClaimed) {
+			if (!closed.get() || activeCalls != 0 || activeCancellationCalls != 0 || drainClaimed) {
 				return;
 			}
 			drainClaimed = true;

@@ -1,0 +1,208 @@
+{
+  "archive": {
+    "bytes": 62478,
+    "compression": "ZIP_DEFLATED",
+    "compression_level": 9,
+    "local_header_sizes_known": true,
+    "member_count": 8,
+    "name": "legacy-predicate-domain-freshness-v2.zip",
+    "payloads_unchanged_from_v2": true,
+    "sha256": "c45d85ba9941129f9270e8cc673d01bc032e16764c0bce6d31cf2e8c36d33002"
+  },
+  "corpus_identity": {
+    "description": "The eight packaged regular files are byte-authenticated against the archived closed-store manifest. This packet preserves the exact v2 ZIP bytes.",
+    "original_fixture_manifest_role": "authenticated closed-store manifest for the eight corpus payloads",
+    "original_fixture_manifest_sha256": "3025d6b0feb2727443c57eab12b0781ae931d34928076caa59ccc80ca5403ae1",
+    "payload_bytes_repacked_or_regenerated_for_v3": false,
+    "source_archive_sha256": "3c523273a73a814232bbb820906da896478f3fca3f64168a5f66a299dccb1763"
+  },
+  "current_post_fix_verifier_identity": {
+    "candidate_test_compiled_or_executed": false,
+    "class_payloads": [
+      {
+        "class_sha256": "3fdea54aea5f23061baffefa4b8e880927835d19d5cea42249fcbf49c22a5fb6",
+        "entry": "org/eclipse/rdf4j/sail/lmdb/ValueStore.class",
+        "source_sha256": "90d27c8c64ebe50fa982930ad3b2533ef32a18db5d705c1d7a087e0d3154e103"
+      },
+      {
+        "class_sha256": "5b089c4a03f447a59b98888e2a121b5bafed1f44f318cf85896d4dd82832d795",
+        "entry": "org/eclipse/rdf4j/sail/lmdb/LmdbStore.class",
+        "source_sha256": "a07607b7dec9bdab1bfcba92da3ee16eb1a2b4b0da0accd42bfeb6737518456a"
+      },
+      {
+        "class_sha256": "711f72e455fdbc730999bd5e899aa3b8b170f95ee83edc79198f033516fdab4f",
+        "entry": "org/eclipse/rdf4j/sail/lmdb/config/LmdbStoreConfig.class",
+        "source_sha256": "b6f0438c49e4909e2f8ef9ffe372ae6bece6a47abcd1468376e4cec33709d564"
+      },
+      {
+        "class_sha256": "d57159190a2680f630d65d96ba7b0a6e97ff2d2e374e485a30806b8ffc34e172",
+        "entry": "org/eclipse/rdf4j/sail/lmdb/TripleStore.class",
+        "source_sha256": "0b3013d0ef15e554e050331a431c903859630a655956f3ac76127964097e1604"
+      }
+    ],
+    "installed_lmdb_jar_sha256": "b2a52b7c7a294c1621b2c1ddc8d6ff1cfcdecf8c99e6b605bea682ec25c0caf4",
+    "production_sources": {
+      "LmdbStore.java": "a07607b7dec9bdab1bfcba92da3ee16eb1a2b4b0da0accd42bfeb6737518456a",
+      "LmdbStoreConfig.java": "b6f0438c49e4909e2f8ef9ffe372ae6bece6a47abcd1468376e4cec33709d564",
+      "TripleStore.java": "0b3013d0ef15e554e050331a431c903859630a655956f3ac76127964097e1604",
+      "ValueStore.java": "90d27c8c64ebe50fa982930ad3b2533ef32a18db5d705c1d7a087e0d3154e103"
+    },
+    "role": "separate current post-fix verifier/repair identity; not the original corpus writer",
+    "source_class_closure_receipt_sha256": "61d827bc68c179f51cccf389b22d4c73f72f8da2203f03dcd8447420268d0a8c"
+  },
+  "delivery_scope": {
+    "archive_changed_from_v2": false,
+    "copied_production_writes": 0,
+    "main_checkout_writes": 0,
+    "maven_or_jvm_runs_for_v3": 0,
+    "source_reference_added": "LmdbDevelopBaselineCompatibilityTest.java.txt",
+    "test_candidate_changed_from_v2": false,
+    "test_candidate_sha256": "c1a99ad6b0b8882343b793f3d9bca6b46044608025dba8f14bda1653d700c90f"
+  },
+  "fixture_id": "legacy-predicate-domain-freshness-v2-corpus",
+  "members": [
+    {
+      "bytes": 25,
+      "name": "inline-false/namespaces.dat",
+      "sha256": "001ec6bc68659b8e3374ed6e2842dc2fca083ab71b1ad998aa1360e601ab2d61"
+    },
+    {
+      "bytes": 242,
+      "name": "inline-false/store.properties",
+      "sha256": "6f5358f8e368dfeabefce4d0e27d1ef7b7c14bf95364d670457390cb2c276f1e"
+    },
+    {
+      "bytes": 442368,
+      "name": "inline-false/triples/data.mdb",
+      "sha256": "0043c8bb2762fbd8b9ae5f3dd6151c21dbcc3034cfdd9cd5bf926edd8be1a9c6"
+    },
+    {
+      "bytes": 327680,
+      "name": "inline-false/values/data.mdb",
+      "sha256": "69f7f065f34aeb4ea84db910023e121b88328727c82bcbcac4f003340de13455"
+    },
+    {
+      "bytes": 25,
+      "name": "inline-true/namespaces.dat",
+      "sha256": "001ec6bc68659b8e3374ed6e2842dc2fca083ab71b1ad998aa1360e601ab2d61"
+    },
+    {
+      "bytes": 242,
+      "name": "inline-true/store.properties",
+      "sha256": "b366220140730c6117faebdd9ddc45ce5f93467c52230718eb70c93fbca01525"
+    },
+    {
+      "bytes": 442368,
+      "name": "inline-true/triples/data.mdb",
+      "sha256": "f6c217d27adefccd687502c52a702d9f8eaa61d4cb2de6df92fd7a68d8526603"
+    },
+    {
+      "bytes": 327680,
+      "name": "inline-true/values/data.mdb",
+      "sha256": "ea9a06ed716e7b50850137780ca48bad999c89d48508ca66be77f4a40f2c9029"
+    }
+  ],
+  "native_platform_facts": {
+    "cross_platform_validation": "NOT_PERFORMED; no universal portability claim.",
+    "persisted_lmdb_page_size_bytes": "NOT_RECORDED in the named receipts; not inferred from file size and no native reader was run."
+  },
+  "original_generation": {
+    "captured_test_and_helper_source": {
+      "bytes": 84968,
+      "helper_closure_receipt_sha256": "6487a6714ca8c835ec27878952f3ed08f27d68e8ebf162add2ad718307da4d46",
+      "operation": "The captured two-profile method invokes the pinned child create-versioned phase for inline=true and inline=false before subsequent current-process and pinned-writer phases.",
+      "publishable_copy": "LmdbDevelopBaselineCompatibilityTest.java.txt",
+      "publishable_copy_filename": "LmdbDevelopBaselineCompatibilityTest.java.txt",
+      "sha256": "d14918d074c44718b182cf4d470091c57b6a25277b144d9ef866fe12b2e9e63c",
+      "source_anchors": {
+        "alternating_selector_method": 160,
+        "baseline_fixture_writer": 1429,
+        "baseline_phase_dispatch": 1319,
+        "pinned_create_versioned_phase_invocation": 169
+      },
+      "source_filename": "LmdbDevelopBaselineCompatibilityTest.java"
+    },
+    "corpus_manifest_sha256": "3025d6b0feb2727443c57eab12b0781ae931d34928076caa59ccc80ca5403ae1",
+    "identity_status": "ORIGINAL_GENERATION_OPERATION_AND_HOST_AUTHENTICATED; PAYLOAD_BYTES_SEPARATELY_AUTHENTICATED; NO_BYTE_IDENTICAL_REGENERATION_CLAIM",
+    "pinned_writer_process_closure": {
+      "baseline_commit": "a7b7cedd1c954dc55fa8265f7e6fc4d215fdb1aa",
+      "classpath_entry_count": 122,
+      "classpath_tail_sha256": "1b6ac62daa415e1b605de78d813f06c95158692b167f2a099af4c61cb8db2c7f",
+      "current_production_entries": 0,
+      "helper_class_count": 2,
+      "old_lmdb_jar_sha256": "99e31060a43c662ec8022ebf7087f3be2609a1cbea39d5582e0160f20d45b3db",
+      "pinned_old_jar_count": 121
+    },
+    "preflight_source_records_for_current_side_of_captured_alternation": {
+      "TripleStore_source_attribution": "NOT_ASSERTED: no generation-side TripleStore source-to-class claim is made.",
+      "preflight_receipt_filename": "preflight.json",
+      "preflight_receipt_sha256": "9ff3cbcea6d5e54d8a86a71ab17afe93b7c969fda075ce0f2d97bad028fe1808",
+      "sources": {
+        "LmdbLanguageTagVariantMerge.java": "a5fee51ef3dfd0dd43ee3b5b3841da604440f221dae779e7855f3c8947bb02a4",
+        "LmdbStore.java": "a07607b7dec9bdab1bfcba92da3ee16eb1a2b4b0da0accd42bfeb6737518456a",
+        "ValueStore.java": "90d27c8c64ebe50fa982930ad3b2533ef32a18db5d705c1d7a087e0d3154e103"
+      }
+    },
+    "runtime": {
+      "argv_sha256": "293d7776f3e8d763c4fa3391e2d6d3f1354a2ec6acdf9e24130a3edb2ba78274",
+      "exit_code": 1,
+      "fixture_root_created": true,
+      "output_file_count": 20,
+      "output_file_role_counts": {
+        "LMDB_lock_files_excluded_from_archive": 4,
+        "packaged_store_payload_files": 8,
+        "phase_metadata_sidecars": 2,
+        "pinned_child_phase_logs_excluded_from_archive": 6
+      },
+      "output_inventory_note": "The authenticated runtime receipt records 20 outputs by role; local fixture paths, lock paths, and generated child-log names are intentionally omitted from this publishable sidecar.",
+      "receipt_filename": "verify.runtime.json",
+      "runtime_proposal": {
+        "filename": "RUNTIME-PROPOSAL.json",
+        "fixture_root_path_disclosed": false,
+        "same_fixture_root_as_verify_receipt": true,
+        "sha256": "8020266c31e3b52c563519fc68c305e112e527178bf77a3ebf61b6b2c086d842"
+      },
+      "selector": "LmdbDevelopBaselineCompatibilityTest#actualDevelopVersionedStoreSurvivesAlternatingOldAndCurrentProcesses",
+      "selector_result": "failed; authenticates operation/output creation, not a passing compatibility result",
+      "sha256": "36692b3d480577ac9832ec8c766e10c81225929b889268607b7c2492d0cae48f",
+      "status": "COMPLETED",
+      "test_report": {
+        "errors": 0,
+        "failures": 2,
+        "filename": "TEST-org.eclipse.rdf4j.sail.lmdb.LmdbDevelopBaselineCompatibilityTest.xml",
+        "sha256": "2c9689cacc823c36571aa91fcb6e3307f30f1cabfac1547f81ea3e89cd99030d",
+        "skipped": 0,
+        "tests": 2
+      }
+    }
+  },
+  "original_runtime_platform": {
+    "property_policy": "Only the eight named platform properties were extracted; no raw property dump is included.",
+    "source_report_sha256": "2c9689cacc823c36571aa91fcb6e3307f30f1cabfac1547f81ea3e89cd99030d",
+    "whitelisted_properties": {
+      "java.specification.version": "25",
+      "java.vendor": "Eclipse Adoptium",
+      "java.version": "25.0.1",
+      "os.arch": "aarch64",
+      "os.name": "Mac OS X",
+      "os.version": "26.6.2",
+      "sun.arch.data.model": "64",
+      "sun.cpu.endian": "little"
+    }
+  },
+  "repackaging": {
+    "byte_identical_store_regeneration_claim": false,
+    "operation": "Preserve the byte-identical v2 deterministic archive; no LMDB environment was opened or regenerated for v3.",
+    "reason": "A source/operation reference is provided, but regenerated LMDB transaction identifiers and environment metadata are not claimed to reproduce these exact bytes.",
+    "toolchain_for_v2_archive": {
+      "implementation": "CPython",
+      "python_version": "3.14.4",
+      "zlib_compile_version": "1.2.12",
+      "zlib_runtime_version": "1.2.12"
+    },
+    "v2_archive_recipe_sha256": "5180fe3c32225ed678d04a41f174a56996f34525b6fb6bba500202a87915aea5",
+    "zip_member_hashes_and_sizes": "Recorded in members; fixtures.sha256 contains only normal sha256sum file records."
+  },
+  "schema": "rdf4j-lmdb-fixture-provenance-v3",
+  "status": "ARTIFACT_ONLY_CANDIDATE_NOT_APPLIED_OR_COMPILED"
+}

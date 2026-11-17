@@ -25,6 +25,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -48,9 +49,16 @@ public final class RemoteBNode extends SimpleBNode {
 	private static final long serialVersionUID = 1L;
 	private final transient Registry registry;
 	private final transient Object localOwner;
+	private final transient CacheSnapshot cacheSnapshot;
 
 	private RemoteBNode(String alias, Registry registry, Object localOwner, Provenance provenance) {
+		this(alias, registry, localOwner, provenance, null);
+	}
+
+	private RemoteBNode(String alias, Registry registry, Object localOwner, Provenance provenance,
+			CacheSnapshot cacheSnapshot) {
 		super(alias);
+		this.cacheSnapshot = cacheSnapshot;
 		this.registry = Objects.requireNonNull(registry);
 		this.localOwner = Objects.requireNonNull(localOwner);
 		registry.register(this, provenance);
@@ -79,6 +87,109 @@ public final class RemoteBNode extends SimpleBNode {
 						&& firstOrigin.identityScope() != null
 						&& firstOrigin.identityScope() == secondOrigin.identityScope()
 						&& firstOrigin.remoteID().equals(secondOrigin.remoteID());
+	}
+
+	/**
+	 * Captures bounded trusted authority for an optional private cache. Only an actual wrapper can mint this snapshot.
+	 * A label, a serialized provenance record, or a null canonical namespace grants no authority.
+	 */
+	@InternalUseOnly
+	public CacheSnapshot snapshotForCache() {
+		Provenance provenance = getProvenance();
+		if (provenance == null || !terminalToken(localOwner) || !terminalToken(provenance.identityScope())) {
+			return null;
+		}
+		return new CacheSnapshot(getID(), localOwner, provenance);
+	}
+
+	private static boolean terminalToken(Object token) {
+		// Exact Object has no outgoing fields. An arbitrary owner's retained graph is not auditable here.
+		return token == null || token.getClass() == Object.class;
+	}
+
+	/** Immutable, privately minted cache identity; deliberately neither a serializer nor a transport scope. */
+	@InternalUseOnly
+	public static final class CacheSnapshot {
+		private final String alias;
+		private final Object localOwner;
+		private final Provenance provenance;
+
+		private CacheSnapshot(String alias, Object localOwner, Provenance provenance) {
+			this.alias = alias;
+			this.localOwner = localOwner;
+			this.provenance = new Provenance(provenance.identityScope(), provenance.remoteID(),
+					provenance.canonicalResultID());
+		}
+
+		/** Each copy has its own registry; extending an emitted value cannot extend a retained cache graph. */
+		public RemoteBNode materialize() {
+			return new RemoteBNode(alias, new Registry(), localOwner,
+					new Provenance(provenance.identityScope(), provenance.remoteID(), provenance.canonicalResultID()),
+					this);
+		}
+
+		public void visitRetainedObjects(BiConsumer<Object, Long> account) {
+			account.accept(this, 40L);
+			account.accept(localOwner, 16L);
+			if (provenance.identityScope() != null) {
+				account.accept(provenance.identityScope(), 16L);
+			}
+			account.accept(provenance, 32L);
+			account.accept(alias, 40L + 2L * alias.length());
+			account.accept(provenance.remoteID(), 40L + 2L * provenance.remoteID().length());
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof CacheSnapshot that) || !alias.equals(that.alias)) {
+				return false;
+			}
+			return localOwner == that.localOwner && sameProvenance(provenance, that.provenance)
+					|| provenance.canonicalResultID() && that.provenance.canonicalResultID()
+							&& provenance.identityScope() != null
+							&& provenance.identityScope() == that.provenance.identityScope()
+							&& provenance.remoteID().equals(that.provenance.remoteID());
+		}
+
+		@Override
+		public int hashCode() {
+			if (provenance.canonicalResultID() && provenance.identityScope() != null) {
+				// Preserve the existing canonical routing hash; exact snapshot equality still authenticates the alias.
+				return 31 * System.identityHashCode(provenance.identityScope()) + provenance.remoteID().hashCode();
+			}
+			return Objects.hash(System.identityHashCode(localOwner), alias,
+					System.identityHashCode(provenance.identityScope()), provenance.remoteID(),
+					provenance.canonicalResultID());
+		}
+	}
+
+	/** Accounts only an isolated cache copy minted above, never an arbitrary response registry. */
+	@InternalUseOnly
+	public boolean visitCacheRetainedObjects(BiConsumer<Object, Long> account) {
+		if (cacheSnapshot == null) {
+			return false;
+		}
+		synchronized (registry) {
+			if (registry.values.size() != 1) {
+				return false;
+			}
+			cacheSnapshot.visitRetainedObjects(account);
+			account.accept(this, 64L);
+			account.accept(registry, 32L);
+			account.accept(registry.expired, 64L);
+			// A fresh single-entry HashMap owns one default 16-slot table and one entry. Group these private
+			// implementation objects under the actual map identity; the registry is never shared with callers.
+			account.accept(registry.values, 48L + 24L + 16L * 8L + 48L);
+			for (Map.Entry<Key, Provenance> entry : registry.values.entrySet()) {
+				account.accept(entry.getKey(), 48L);
+				Provenance origin = entry.getValue();
+				account.accept(origin, 32L);
+			}
+			return true;
+		}
 	}
 
 	/**

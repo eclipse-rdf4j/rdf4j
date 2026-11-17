@@ -15,6 +15,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -65,6 +66,22 @@ public interface QueryEvaluationContext {
 	 */
 	default Set<String> getSubstitutionBindingNames() {
 		return Set.of();
+	}
+
+	/**
+	 * Captures the actual bound-name domain at one EXISTS entry while sharing the enclosing query state. Locally
+	 * introduced bindings do not join this immutable domain; a nested EXISTS captures its own entry independently.
+	 */
+	static QueryEvaluationContext withSubstitutionBindings(QueryEvaluationContext context, BindingSet bindings) {
+		Objects.requireNonNull(context, "context");
+		Objects.requireNonNull(bindings, "bindings");
+		Set<String> names = new HashSet<>();
+		for (String name : bindings.getBindingNames()) {
+			if (bindings.getValue(name) != null) {
+				names.add(name);
+			}
+		}
+		return new BindingSubstitutionQueryEvaluationContext(context, names);
 	}
 
 	/**

@@ -44,6 +44,9 @@ final class LeftJoinPlan implements SlotPlan {
 	final boolean lexicalHashKeys;
 	/** Optional variables removed from a non-well-designed OPTIONAL's dynamic entry frame. */
 	final int[] lexicalProblemSlots;
+	/** Evaluated on each compatible merged pair, outside independent right-operand materialization. */
+	final NativeBooleanFilter lexicalCondition;
+	final long lexicalConditionMask;
 
 	LeftJoinPlan(SlotPlan left, SlotPlan right) {
 		this(left, right, null, false, null);
@@ -59,12 +62,24 @@ final class LeftJoinPlan implements SlotPlan {
 
 	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
 			int[] lexicalProblemSlots) {
+		this(left, right, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots, null, 0L);
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
+			int[] lexicalProblemSlots, NativeBooleanFilter lexicalCondition, long lexicalConditionMask) {
 		this.left = left;
 		this.right = right;
 		this.producedMask = left.producedMask() | right.producedMask();
 		this.lexicalSharedSlots = lexicalSharedSlots;
 		this.lexicalHashKeys = lexicalHashKeys;
 		this.lexicalProblemSlots = lexicalProblemSlots;
+		this.lexicalCondition = lexicalCondition;
+		this.lexicalConditionMask = lexicalConditionMask;
+	}
+
+	LeftJoinPlan withChildren(SlotPlan left, SlotPlan right) {
+		return new LeftJoinPlan(left, right, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots,
+				lexicalCondition, lexicalConditionMask);
 	}
 
 	@Override
@@ -111,7 +126,7 @@ final class LeftJoinPlan implements SlotPlan {
 			return new LexicalFrameLeftJoinCursor(left, right, lexicalProblemSlots, row);
 		}
 		if (lexicalSharedSlots != null) {
-			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, row);
+			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, lexicalCondition, row);
 		}
 		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
 		RowCursor leftCursor = left.open(row);
@@ -347,9 +362,17 @@ final class LexicalLeftJoinCursor implements RowCursor {
 	private boolean closed;
 	private Throwable terminalFailure;
 	private int pollTick;
+	private final NativeBooleanFilter condition;
+	private final NativeScalarFilterAttempt scalarFilterAttempt;
+	private long scalarFilterCalls;
 
 	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots, RowState row)
 			throws IOException {
+		this(leftPlan, rightPlan, sharedSlots, null, row);
+	}
+
+	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots,
+			NativeBooleanFilter condition, RowState row) throws IOException {
 		this.row = row;
 		this.sharedSlots = sharedSlots;
 		this.rightSlots = slotsOf(rightPlan.producedMask());
@@ -360,6 +383,8 @@ final class LexicalLeftJoinCursor implements RowCursor {
 			closeSuppressing(rightRows, failure);
 			throw failure;
 		}
+		this.scalarFilterAttempt = row.scalarFilterAttempt;
+		this.condition = condition == null ? null : NativeFilterLease.openInput(condition, row, this);
 	}
 
 	private NativeResultReplay materializeRight(SlotPlan rightPlan) throws IOException {
@@ -427,8 +452,11 @@ final class LexicalLeftJoinCursor implements RowCursor {
 					while ((values = right.next()) != null) {
 						check();
 						if (sharedKeyMatches(values) && bindRight(values)) {
-							matchedLeft = true;
-							return true;
+							if (acceptCondition()) {
+								matchedLeft = true;
+								return true;
+							}
+							releaseRight();
 						}
 					}
 					check();
@@ -442,6 +470,9 @@ final class LexicalLeftJoinCursor implements RowCursor {
 				boolean next = left.next();
 				check();
 				if (!next) {
+					if (condition != null && !row.cancellation.isCancellationRequested()) {
+						condition.inputExhausted();
+					}
 					close();
 					return false;
 				}
@@ -459,6 +490,26 @@ final class LexicalLeftJoinCursor implements RowCursor {
 	private void check() {
 		row.cancellation.check();
 		LmdbNativeProbeDeadline.poll(++pollTick);
+	}
+
+	private boolean acceptCondition() {
+		if (condition == null) {
+			return true;
+		}
+		if (left instanceof FactorizedRowCursor factorized && factorized.multiplicity() != 1L) {
+			condition.incompleteInput();
+		}
+		RowCursor previous = row.expressionProducer;
+		row.expressionProducer = this;
+		try {
+			if (scalarFilterAttempt != null) {
+				scalarFilterCalls++;
+			}
+			// compileBoolean supplies SPARQL EBV/error rejection, as for the ordinary OPTIONAL arm.
+			return condition.accept(row);
+		} finally {
+			row.expressionProducer = previous;
+		}
 	}
 
 	private boolean sharedKeyMatches(NativeResultRow rightValues) {
@@ -546,6 +597,17 @@ final class LexicalLeftJoinCursor implements RowCursor {
 		right = null;
 		failure = KernelRuntime.closeResource(rightRows, failure);
 		failure = KernelRuntime.closeResource(left, failure);
+		if (condition != null) {
+			if (failure != null || terminalFailure != null) {
+				failure = KernelRuntime.closeResource(condition::incompleteInput, failure);
+			}
+			failure = KernelRuntime.closeResource(condition::close, failure);
+		}
+		if (scalarFilterAttempt != null && scalarFilterCalls != 0L) {
+			long calls = scalarFilterCalls;
+			failure = KernelRuntime.closeResource(() -> scalarFilterAttempt.record(calls), failure);
+			scalarFilterCalls = 0L;
+		}
 		if (failure != null) {
 			if (terminalFailure == null) {
 				terminalFailure = failure;

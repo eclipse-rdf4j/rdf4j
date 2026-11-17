@@ -75,6 +75,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -410,6 +411,113 @@ class FilterConditionSimplifierTest {
 		}));
 		filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of()));
 		assertThat(FilterBindingScope.allowsAllConditionBindings(filter)).isFalse();
+	}
+
+	@Test
+	void inheritedTupleVisitorDispatchCannotEraseExplicitConditionProjection() {
+		for (org.eclipse.rdf4j.query.algebra.TupleExpr body : opaqueConditionBodies()) {
+			for (boolean negated : List.of(false, true)) {
+				ValueExpr condition = negated ? new Not(new Exists(body.clone())) : new Exists(body.clone());
+				var observed = TupleExprs.conditionBindingDomain(condition);
+				Filter filter = new Filter(new SingletonSet(), condition);
+				filter.setConditionBindingScope(ConditionBindingScope.retain(observed.names()));
+				assertThat(FilterBindingScope.allowsAllConditionBindings(filter))
+						.as("%s through %s must retain its explicit condition input projection",
+								body.getClass().getSuperclass().getSimpleName(), negated ? "NOT EXISTS" : "EXISTS")
+						.isFalse();
+				assertThat(FilterBindingScope.conditionBindingReads(condition).complete()).isFalse();
+				filter.setConditionBindingScope(ConditionBindingScope.ALL);
+				assertThat(FilterBindingScope.allowsAllConditionBindings(filter))
+						.as("an explicitly unrestricted caller contract stays unrestricted")
+						.isTrue();
+			}
+		}
+	}
+
+	@Test
+	void nestedOpaqueExistsCannotBorrowACompleteValuesHeaderProjection() {
+		for (org.eclipse.rdf4j.query.algebra.TupleExpr opaque : opaqueConditionBodies()) {
+			BindingSetAssignment values = new BindingSetAssignment();
+			values.setDeclaredBindingNames(Set.of("declaredOnly"));
+			values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+			ValueExpr condition = new Not(new Exists(new Filter(values, new Exists(opaque))));
+			var reads = FilterBindingScope.conditionBindingReads(condition);
+			assertThat(reads.bindingNames()).contains("declaredOnly");
+			Filter filter = new Filter(new SingletonSet(), condition);
+			filter.setConditionBindingScope(ConditionBindingScope.retain(reads.bindingNames()));
+			assertThat(FilterBindingScope.allowsAllConditionBindings(filter))
+					.as("complete declarations cannot prove observations hidden by %s",
+							opaque.getClass().getSuperclass().getSimpleName())
+					.isFalse();
+			assertThat(reads.complete()).isFalse();
+		}
+	}
+
+	@Test
+	void builtInDeclarationsKeepExactProjectionCoverageAndStreamingValuesStayConservative() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("declaredOnly"));
+		values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		Extension extension = new Extension(values, new ExtensionElem(bool(true), "assigned"));
+		org.eclipse.rdf4j.query.algebra.Projection projection = new org.eclipse.rdf4j.query.algebra.Projection(
+				extension,
+				new org.eclipse.rdf4j.query.algebra.ProjectionElemList(
+						new org.eclipse.rdf4j.query.algebra.ProjectionElem("assigned", "projected")));
+		ValueExpr condition = new Not(new Exists(projection));
+		var reads = FilterBindingScope.conditionBindingReads(condition);
+		assertThat(reads.complete()).isTrue();
+		assertThat(reads.bindingNames()).containsExactlyInAnyOrder("declaredOnly", "assigned", "projected");
+		Filter filter = new Filter(new SingletonSet(), condition);
+		filter.setConditionBindingScope(ConditionBindingScope.retain(reads.bindingNames()));
+		assertThat(FilterBindingScope.allowsAllConditionBindings(filter)).isTrue();
+		filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of("assigned", "projected")));
+		assertThat(FilterBindingScope.allowsAllConditionBindings(filter)).isFalse();
+
+		AtomicInteger opened = new AtomicInteger();
+		BindingSetAssignment streaming = new BindingSetAssignment();
+		streaming.setDeclaredBindingNames(Set.of("declaredOnly"));
+		streaming.setBindingSets(() -> {
+			opened.incrementAndGet();
+			throw new AssertionError("condition projection must not acquire single-use VALUES rows");
+		});
+		Filter streamed = new Filter(new SingletonSet(),
+				new Exists(new Filter(new SingletonSet(), new Not(new Exists(streaming)))));
+		streamed.setConditionBindingScope(ConditionBindingScope.retain(Set.of("declaredOnly")));
+		assertThat(FilterBindingScope.allowsAllConditionBindings(streamed)).isFalse();
+		assertThat(FilterBindingScope.conditionBindingReads(streamed.getCondition()).complete()).isFalse();
+		assertThat(opened).hasValue(0);
+	}
+
+	/** These nodes intentionally inherit standard visitor dispatch instead of using meetOther. */
+	private static List<org.eclipse.rdf4j.query.algebra.TupleExpr> opaqueConditionBodies() {
+		BindingSetAssignment values = new BindingSetAssignment() {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("header", "customInput");
+			}
+		};
+		values.setDeclaredBindingNames(Set.of("header"));
+		values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		Join join = new Join(new SingletonSet(), new SingletonSet()) {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("customInput");
+			}
+		};
+		org.eclipse.rdf4j.query.algebra.Projection projection = new org.eclipse.rdf4j.query.algebra.Projection(
+				new SingletonSet(), new org.eclipse.rdf4j.query.algebra.ProjectionElemList()) {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("customInput");
+			}
+		};
+		StatementPattern statement = new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object")) {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("subject", "predicate", "object", "customInput");
+			}
+		};
+		return List.of(values, join, projection, statement);
 	}
 
 	@Test

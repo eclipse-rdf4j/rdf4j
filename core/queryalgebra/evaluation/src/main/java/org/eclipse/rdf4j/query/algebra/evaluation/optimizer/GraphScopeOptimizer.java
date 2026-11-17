@@ -37,6 +37,8 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		PlanningGraphDomain originalInputDomain = PlanningGraphDomains.ambientDomain(tupleExpr);
+		boolean[] loweredAny = { false };
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -56,15 +58,22 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 										.stream()
 										.noneMatch(GraphScopeOptimizer::isDefaultAlias))
 						&& isPositiveBasicGraphPattern(graph.getArg(), graph.getGraphName())) {
-					TupleExpr lowered = lowerBasicGraphPattern(graph.getArg(), graph.getGraphName());
+					boolean inheritedSelector = !graph.getGraphName().isConstant()
+							&& !graph.getArg().getBindingNames().contains(graph.getGraphName().getName());
+					TupleExpr lowered = lowerBasicGraphPattern(graph.getArg(), graph.getGraphName(), inheritedSelector);
 					// GRAPH receives invocation input, not bindings produced by an ordinary join sibling. Keep that
 					// boundary when the physical context lookup replaces its active-graph evaluator.
 					((VariableScopeChange) lowered).setVariableScopeChange(true);
+					lowered.setIndependentInputScope(true);
 					graph.replaceWith(lowered);
+					loweredAny[0] = true;
 					analysis.invalidate();
 				}
 			}
 		});
+		if (loweredAny[0]) {
+			PlanningGraphDomains.refresh(tupleExpr, originalInputDomain);
+		}
 	}
 
 	private static boolean isDefaultAlias(Value value) {
@@ -120,16 +129,19 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 	 */
 	public static TupleExpr lowerPositiveBasicGraphPattern(Graph graph) {
 		return canLowerPositiveBasicGraphPattern(graph)
-				? lowerBasicGraphPattern(graph.getArg().clone(), graph.getGraphName())
+				? lowerBasicGraphPattern(graph.getArg().clone(), graph.getGraphName(),
+						!graph.getGraphName().isConstant()
+								&& !graph.getArg().getBindingNames().contains(graph.getGraphName().getName()))
 				: null;
 	}
 
-	private static TupleExpr lowerBasicGraphPattern(TupleExpr expression, Var graphName) {
+	private static TupleExpr lowerBasicGraphPattern(TupleExpr expression, Var graphName, boolean inheritedSelector) {
 		if (expression instanceof StatementPattern statement) {
 			StatementPattern lowered = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
 					statement.getSubjectVar().clone(), statement.getPredicateVar().clone(),
 					statement.getObjectVar().clone(), graphName.clone());
 			lowered.setVariableScopeChange(statement.isVariableScopeChange());
+			lowered.setContextBindingOriginInherited(inheritedSelector);
 			lowered.setIndexName(statement.getIndexName());
 			if (statement.getStatementOrder() != null) {
 				lowered.setOrder(statement.getOrder());
@@ -137,8 +149,8 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 			return lowered;
 		}
 		Join join = (Join) expression;
-		join.setLeftArg(lowerBasicGraphPattern(join.getLeftArg(), graphName));
-		join.setRightArg(lowerBasicGraphPattern(join.getRightArg(), graphName));
+		join.setLeftArg(lowerBasicGraphPattern(join.getLeftArg(), graphName, inheritedSelector));
+		join.setRightArg(lowerBasicGraphPattern(join.getRightArg(), graphName, inheritedSelector));
 		return join;
 	}
 }

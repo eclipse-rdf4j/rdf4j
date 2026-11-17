@@ -90,18 +90,18 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 
 	@ParameterizedTest
 	@ValueSource(strings = { "", "00", "02", "0100", "5243465402" })
-	void unknownRefCountMarkerPreservesUntrustedOwners(String encoded) throws Exception {
+	void rejectsUnknownRefCountMarkerWithoutMutation(String encoded) throws Exception {
 		Path store = copyReleasedStore("unknown-count-marker");
 		LmdbCompatibilityFixtures.nativePut(store, "ref_counts", new byte[] { 0 },
 				HexFormat.of().parseHex(encoded));
 
-		assertUntrustedMarkerPreservesLiveOwners(store);
+		assertRejectedWithoutMutation(store, "Unsupported ValueStore ref-count metadata schema");
 		assertThat(LmdbCompatibilityFixtures.nativeGet(store, "ref_counts", new byte[] { 0 }))
 				.isEqualTo(HexFormat.of().parseHex(encoded));
 	}
 
 	@Test
-	void historicalRefCountMarkerInCurrentFormatPreservesUntrustedOwners() throws Exception {
+	void rejectsHistoricalRefCountMarkerInCurrentFormatWithoutMutation() throws Exception {
 		Path storeDirectory = directory.resolve("current-format-old-marker");
 		LmdbStore store = newStore(storeDirectory);
 		SailRepository repository = new SailRepository(store);
@@ -117,7 +117,9 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 		}
 		LmdbCompatibilityFixtures.nativePut(storeDirectory, "ref_counts", new byte[] { 0 }, new byte[] { 1 });
 
-		assertUntrustedMarkerPreservesLiveOwners(storeDirectory);
+		assertRejectedWithoutMutation(storeDirectory, "Unsupported ValueStore ref-count metadata schema");
+		assertThat(LmdbCompatibilityFixtures.nativeGet(storeDirectory, "ref_counts", new byte[] { 0 }))
+				.containsExactly((byte) 1);
 	}
 
 	@Test

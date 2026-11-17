@@ -108,6 +108,11 @@ public final class FilterCondition {
 			}
 		}
 		if (telemetry) {
+			// This is the measured condition population at its actual gates, independent of static-placement
+			// selectivity feedback and of output consumption tracked by the enclosing operator.
+			filter.setSourceRowsScannedActual(Math.max(0, filter.getSourceRowsScannedActual()) + scanned);
+			filter.setSourceRowsMatchedActual(Math.max(0, filter.getSourceRowsMatchedActual()) + matched);
+			filter.setSourceRowsFilteredActual(Math.max(0, filter.getSourceRowsFilteredActual()) + filtered);
 			add(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL, errors);
 			add(TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL, evaluations);
 			add(TelemetryMetricNames.EXPR_TRUE_COUNT_ACTUAL, trueCount);

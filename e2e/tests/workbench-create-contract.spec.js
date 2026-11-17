@@ -60,9 +60,10 @@ test.describe('repository creation contracts', () => {
 			'Triple',
 			'Value',
 			'Namespace',
+			'Predicate guarantee',
 			'Sketch estimator',
-			'Sketch estimator context',
 			'Sketch estimator throttle',
+			'Frontier',
 			'Optimizer sampling',
 			'Optimizer sampling max',
 			'Background raw sampling',
@@ -236,9 +237,21 @@ test.describe('repository creation contracts', () => {
                 await expect(form.locator('#create')).toBeDisabled();
             }
             if (type === 'lmdb') {
-                await expect(form.locator('input[id^="lmdb_sketchEstimatorEnabled-"]')).toHaveCount(3);
+                const sketchEstimatorOptions = form.locator('input[id^="lmdb_sketchEstimatorEnabled-"]');
+                await expect(sketchEstimatorOptions).toHaveCount(2);
+                const sketchEstimatorValues = await sketchEstimatorOptions.evaluateAll(inputs =>
+                    inputs.map(input => input.value).sort());
+                expect(sketchEstimatorValues, 'LMDB exposes the configured boolean choices').toEqual(['false', 'true']);
                 await expect(form.locator('input[id^="lmdb_sketchEstimatorEnabled-"]:checked'))
-                    .toHaveValue('__workbench_unset__');
+                    .toHaveValue('false');
+
+                const submittedSketchEstimatorValue = () => form.evaluate(element =>
+                    new FormData(element).get('Sketch estimator enabled'));
+                await expect.poll(submittedSketchEstimatorValue).toBe('false');
+                await form.locator('input[id^="lmdb_sketchEstimatorEnabled-"][value="true"]').check();
+                await expect.poll(submittedSketchEstimatorValue).toBe('true');
+                await form.locator('input[id^="lmdb_sketchEstimatorEnabled-"][value="false"]').check();
+                await expect.poll(submittedSketchEstimatorValue).toBe('false');
             }
         }
     });

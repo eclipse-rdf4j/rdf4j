@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -59,7 +61,7 @@ import org.eclipse.rdf4j.query.impl.RemoteBNode;
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
  * possible.
  */
-public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
+public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep, BindingSetOrigin.InputAware {
 
 	public static final EmptyIteration<? extends Statement> EMPTY_ITERATION = new EmptyIteration<>();
 
@@ -78,6 +80,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private BiConsumer<MutableBindingSet, Statement> convertStatementConverter;
 	private final QueryEvaluationContext context;
 	private final StatementOrder order;
+	private final long[] deferredIndexLookups;
 	private final Function<Value, Value> valuePreparer;
 	private final PreparedBindingAccess[] preparedBindingAccess;
 
@@ -92,8 +95,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final Var normalizedPredicateVar;
 	private final Var normalizedObjectVar;
 	private final Var normalizedContextVar;
+	private final List<Var> parameterVariables;
 
 	private volatile Map<DirectLookupKey, DirectLookupCacheEntry> directLookupCache;
+	private final Set<String> producedNames;
+	private final Set<String> producedNamesWithInheritedContext;
+	private final String inheritedContextName;
+	private Boolean requestEntry;
+
+	@Override
+	public void configureInputOrigin(boolean requestEntry) {
+		this.requestEntry = requestEntry;
+	}
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
@@ -101,6 +114,17 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			TripleSource tripleSource) {
 		super();
 		this.statementPatternForMetrics = statementPattern;
+		this.producedNames = Set.copyOf(statementPattern.getBindingNames());
+		this.inheritedContextName = statementPattern.isContextBindingOriginInherited()
+				? statementPattern.getContextVar().getName()
+				: null;
+		if (inheritedContextName == null) {
+			this.producedNamesWithInheritedContext = producedNames;
+		} else {
+			Set<String> localNames = new HashSet<>(producedNames);
+			localNames.remove(inheritedContextName);
+			this.producedNamesWithInheritedContext = Set.copyOf(localNames);
+		}
 		this.order = statementPattern.getStatementOrder();
 		this.context = context;
 		this.tripleSource = tripleSource;
@@ -160,6 +184,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		this.statementPattern = new StatementPattern(statementPattern.getScope(), subjVar, predVar, objVar, conVar);
 		this.statementPattern.setVariableScopeChange(statementPattern.isVariableScopeChange());
+		this.statementPattern.setIndependentInputScope(statementPattern.isIndependentInputScope());
+		this.statementPattern.setContextBindingOriginInherited(statementPattern.isContextBindingOriginInherited());
 
 		// First create the getters before removing duplicate vars since we need the getters when creating
 		// JoinStatementWithBindingSetIterator. If there are duplicate vars, for instance ?v1 as both subject and
@@ -202,6 +228,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		normalizedPredicateVar = predVar;
 		normalizedObjectVar = objVar;
 		normalizedContextVar = conVar;
+		List<Var> parameters = new ArrayList<>(4);
+		for (Var variable : new Var[] { subjVar, predVar, objVar, conVar }) {
+			if (variable != null && variable.hasValue() && !variable.isConstant()) {
+				parameters.add(variable);
+			}
+		}
+		this.parameterVariables = List.copyOf(parameters);
 
 		unboundTest = getUnboundTest(context, normalizedSubjectVar, normalizedPredicateVar, normalizedObjectVar,
 				normalizedContextVar);
@@ -217,6 +250,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			preparedBindingAccess = accesses.toArray(PreparedBindingAccess[]::new);
 		}
+
+		long[] indexLookups = new long[1];
+		deferredIndexLookups = statementPatternForMetrics.isRuntimeTelemetryEnabled()
+				&& RootCloseTelemetryRegistrar.register(statementPatternForMetrics,
+						() -> publishIndexLookupCount(indexLookups))
+								? indexLookups
+								: null;
 
 	}
 
@@ -280,6 +320,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	/** Returns an owned copy only when a statement input requires a store-native replacement. */
 	BindingSet prepareBindings(BindingSet bindings) {
+		bindings = BindingSetOrigin.materializeParameters(bindings, parameterVariables, context);
 		if (preparedBindingAccess == null || bindings.isEmpty() || unboundTest.test(bindings)) {
 			return bindings;
 		}
@@ -297,6 +338,27 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 		}
 		return prepared == null ? bindings : prepared;
+	}
+
+	BindingSet producedBindings(BindingSet bindings) {
+		return BindingSetOrigin.produced(bindings, producedNames(bindings));
+	}
+
+	private Set<String> producedNames(BindingSet input) {
+		// Physical lookup selection is unchanged. Only an explicitly certified, already supplied GRAPH selector is
+		// inherited; an unbound selector and every original body output are still newly LOCAL.
+		return inheritedContextName != null && input.getValue(inheritedContextName) != null
+				? producedNamesWithInheritedContext
+				: producedNames;
+	}
+
+	private boolean hasCompatibleInheritedContext(BindingSet input) {
+		if (inheritedContextName == null) {
+			return true;
+		}
+		Value supplied = input.getValue(inheritedContextName);
+		Value selected = statementPattern.getContextVar().getValue();
+		return supplied == null || selected == null || supplied.equals(selected);
 	}
 
 	// test if the variable must remain unbound for this solution see
@@ -367,14 +429,19 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		if (emptyGraph) {
+		if (requestEntry != null) {
+			bindings = requestEntry ? BindingSetOrigin.requestInput(bindings)
+					: BindingSetOrigin.with(bindings, BindingSetOrigin.of(bindings));
+		}
+		bindings = BindingSetOrigin.materializeParameters(bindings, parameterVariables, context);
+		if (emptyGraph || !hasCompatibleInheritedContext(bindings)) {
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
 			ConvertStatementToBindingSetIterator iteration = getIteration();
 			if (iteration == null) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
-			return iteration;
+			return BindingSetOrigin.produced(iteration, producedNames(bindings), bindings);
 
 		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
@@ -385,7 +452,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			if (iteration == null) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
-			return iteration;
+			return BindingSetOrigin.produced(iteration, producedNames(bindings), bindings);
 		}
 	}
 
@@ -462,10 +529,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			incrementIndexLookupCount();
 			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, order, (Resource) subject,
+						(IRI) predicate, object, contexts);
 
 			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			}
 
 			if (iteration instanceof IndexReportingIterator) {
@@ -508,7 +577,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	@Experimental
 	public boolean hasStatement(BindingSet bindings) {
-		if (emptyGraph) {
+		if (requestEntry != null) {
+			bindings = requestEntry ? BindingSetOrigin.requestInput(bindings)
+					: BindingSetOrigin.with(bindings, BindingSetOrigin.of(bindings));
+		}
+		bindings = BindingSetOrigin.materializeParameters(bindings, parameterVariables, context);
+		if (emptyGraph || !hasCompatibleInheritedContext(bindings)) {
 			return false;
 		}
 		if (unboundTest.test(bindings)) {
@@ -572,7 +646,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	long getFullyBoundStatementCount(BindingSet bindings) {
-		if (emptyGraph) {
+		if (emptyGraph || !hasCompatibleInheritedContext(bindings)) {
 			return 0;
 		}
 		if (bindings.isEmpty()) {
@@ -620,7 +694,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		try {
 			incrementIndexLookupCount();
-			long statementCount = tripleSource.getStatementCount((Resource) subject, (IRI) predicate, object, contexts);
+			long statementCount = tripleSource.getStatementCount(statementPatternForMetrics, (Resource) subject,
+					(IRI) predicate, object, contexts);
 			putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.count(statementCount));
 			return statementCount;
 		} catch (Throwable t) {
@@ -722,8 +797,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private CloseableIteration<? extends Statement> reopenUncachedIteration(Resource subject, IRI predicate,
 			Value object, Resource[] contexts) {
 		incrementIndexLookupCount();
-		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(subject, predicate, object,
-				contexts);
+		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(statementPatternForMetrics,
+				subject, predicate, object, contexts);
 		if (iteration instanceof IndexReportingIterator) {
 			String indexName = ((IndexReportingIterator) iteration).getIndexName();
 			statementPattern.setIndexName(indexName);
@@ -759,9 +834,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			incrementIndexLookupCount();
 			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, order, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			}
 			if (iteration instanceof IndexReportingIterator) {
 				String indexName = ((IndexReportingIterator) iteration).getIndexName();
@@ -823,7 +900,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		List<Consumer<MutableBindingSet>> originalValues = new ArrayList<>(4);
 		for (Var variable : new Var[] { normalizedSubjectVar, normalizedPredicateVar,
 				normalizedObjectVar, normalizedContextVar }) {
-			if (variable != null && variable.hasValue() && !variable.isConstant()) {
+			if (variable != null && variable.hasValue() && !variable.isConstant()
+					&& RemoteBNode.containsRemoteIdentity(variable.getValue())) {
 				BiConsumer<Value, MutableBindingSet> setter = context.setBinding(variable.getName());
 				Value original = variable.getValue();
 				originalValues.add(row -> setter.accept(original, row));
@@ -834,7 +912,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 		return (row, statement) -> {
 			converter.accept(row, statement);
-			// Optimizer-inlined bindings retain their captured values and authority, even with an empty input row.
+			// Only imported identities require restoration after the backend's statement conversion. Ordinary
+			// RDF terms keep the actual producer's representative; supplied runtime bindings are retained by
+			// the converter itself.
 			for (int i = 0; i < originalValues.size(); i++) {
 				originalValues.get(i).accept(row);
 			}
@@ -1012,12 +1092,24 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (!statementPatternForMetrics.isRuntimeTelemetryEnabled() && !statementPattern.isRuntimeTelemetryEnabled()) {
 			return;
 		}
-		long next = statementPatternForMetrics
-				.incrementLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL);
-		if (next < 0) {
-			next = Math.max(0L, statementPattern.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL))
-					+ 1L;
+		if (deferredIndexLookups != null) {
+			deferredIndexLookups[0] = deferredIndexLookups[0] == Long.MAX_VALUE
+					? Long.MAX_VALUE
+					: deferredIndexLookups[0] + 1L;
+			return;
 		}
+		long next = Math.max(0L,
+				statementPatternForMetrics.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL)) + 1L;
+		statementPatternForMetrics.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
+		statementPattern.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
+	}
+
+	private void publishIndexLookupCount(long[] indexLookups) {
+		long current = Math.max(0L,
+				statementPatternForMetrics.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL));
+		long increment = indexLookups[0];
+		long next = current > Long.MAX_VALUE - increment ? Long.MAX_VALUE : current + increment;
+		statementPatternForMetrics.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
 		statementPattern.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
 	}
 
@@ -1208,6 +1300,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
 		}
 
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
+		}
+
 		private IndexReportingIterator indexReporter() {
 			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
 		}
@@ -1305,6 +1409,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		public long getSourceRowsFilteredActual() {
 			IndexReportingIterator metrics = indexReporter();
 			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
 		}
 
 		private IndexReportingIterator indexReporter() {
@@ -1423,6 +1539,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
 			return locallySeenRows > 0 ? locallyFilteredRows : -1;
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
 		}
 
 		private IndexReportingIterator indexReporter() {

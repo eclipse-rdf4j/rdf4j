@@ -85,7 +85,7 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		if (hasCondition && mode != Mode.LEFT && mode != Mode.INNER) {
 			return false;
 		}
-		if (!(rightStep instanceof NativeBareRowsStep step)) {
+		if (!(rightStep instanceof NativeBareRowsStep step) || !step.bulk.inputSemantics.supportsAccumulation()) {
 			return false;
 		}
 		for (String name : sharedVariables) {

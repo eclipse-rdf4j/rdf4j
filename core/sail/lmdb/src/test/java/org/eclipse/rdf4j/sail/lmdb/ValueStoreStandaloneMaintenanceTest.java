@@ -52,7 +52,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@ValueSource(strings = { "REQUEST", "CONTINUATION" })
 	void independentCapacityReservationCannotBorrowApplicationCallbacks(String callback, @TempDir Path directory)
 			throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		Value value = VF.createIRI("urn:callback:owned-writer");
 		AtomicInteger foreignCallbacks = new AtomicInteger();
 		CompletableFuture<Boolean> reserved = new CompletableFuture<>();
@@ -117,7 +117,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@ParameterizedTest
 	@ValueSource(strings = { "posc", "opsc" })
 	void termCopyReaderExcludesConcurrentMapRemapping(String addedIndex, @TempDir Path directory) throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		Value nested = VF.createTripleTerm(VF.createIRI("urn:copy:inner"), VF.createIRI("urn:copy:predicate"),
 				VF.createLiteral("nested copy value"));
 		Value term = VF.createTripleTerm(VF.createIRI("urn:copy:outer"), VF.createIRI("urn:copy:predicate"), nested);
@@ -168,7 +168,7 @@ class ValueStoreStandaloneMaintenanceTest {
 
 	@Test
 	void readOnlyCapacityReservationCannotCheckpointTheHeldTermWriter(@TempDir Path directory) throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		Value term = VF.createTripleTerm(VF.createIRI("urn:reserve:subject"), VF.createIRI("urn:reserve:predicate"),
 				VF.createLiteral("held maintenance value"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
@@ -258,7 +258,7 @@ class ValueStoreStandaloneMaintenanceTest {
 
 	@Test
 	void releasedTermGrowthCannotConsumeANewStandaloneWriter(@TempDir Path directory) throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		Value term = VF.createTripleTerm(VF.createIRI("urn:growth:subject"), VF.createIRI("urn:growth:predicate"),
 				VF.createLiteral("committed before maintenance growth"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
@@ -340,7 +340,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@ValueSource(booleans = { false, true })
 	void waitingFrozenWriterCannotChangeTermCheckpointPolicy(boolean failedDecision, @TempDir Path directory)
 			throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		Value term = VF.createTripleTerm(VF.createIRI("urn:policy:subject"), VF.createIRI("urn:policy:predicate"),
 				VF.createLiteral("committed term"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
@@ -449,7 +449,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@ValueSource(booleans = { false, true })
 	void readerResetAfterCommitDoesNotConsumeTheNextTermWriter(boolean failAfterNativeCommit,
 			@TempDir Path directory) throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		Value term = VF.createTripleTerm(VF.createIRI("urn:reset:subject"), VF.createIRI("urn:reset:predicate"),
 				VF.createLiteral("owned term"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
@@ -518,7 +518,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	void remapCheckpointRetainsAdmissionUntilReplacementWriterLeavesTheBarrier(boolean rollback,
 			@TempDir Path directory)
 			throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
 				config("spoc,cspo"))) {
 			seed.startTransaction(true);
@@ -609,7 +609,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void shutdownOrClearDrainsTheAdmittedRemapContinuation(boolean clear, @TempDir Path directory) throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		Value seedValue = VF.createIRI("urn:remap:committed-prefix");
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
 				config("spoc,cspo"))) {
@@ -704,7 +704,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@Test
 	void cleanupResumesAfterTheRetirementWakePrecedesTheLastReadBarrierUnlock(@TempDir Path directory)
 			throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
 				config("spoc,cspo"))) {
 			seed.startTransaction(true);
@@ -774,7 +774,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@Test
 	void interruptedPotentialCreationReleasesItsAdmissionBeforeReadersStart(@TempDir Path directory)
 			throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
 				config("spoc,cspo"))) {
 			seed.startTransaction(true);
@@ -830,7 +830,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@Test
 	void readerAdmittedAfterNativeCommitPinsItsChosenGenerationUntilRelease(@TempDir Path directory)
 			throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
 				config("spoc,cspo,posc"))) {
 			seed.startTransaction(true);
@@ -882,7 +882,7 @@ class ValueStoreStandaloneMaintenanceTest {
 	@ValueSource(strings = { "IRI", "LONG_LITERAL", "NESTED_TERM" })
 	void potentialCreationAdmitsBeforeHoldingAReaderNeededByTermMaintenance(String kind, @TempDir Path directory)
 			throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		LmdbStoreConfig source = config("spoc,cspo");
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
 				source)) {
@@ -953,7 +953,7 @@ class ValueStoreStandaloneMaintenanceTest {
 
 	@Test
 	void standaloneCreationWaitsForAHeldTermWriterInsteadOfBorrowingIt(@TempDir Path directory) throws Exception {
-		StoreProperties properties = new StoreProperties(directory.toFile());
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory.toFile(), config("spoc,cspo"));
 		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
 				config("spoc,cspo"))) {
 			seed.startTransaction(true);
@@ -1078,7 +1078,7 @@ class ValueStoreStandaloneMaintenanceTest {
 		@Override
 		Long findIdInTransaction(byte[] data, boolean create, CoreDatatype coreDatatype, MemoryStack stack, long txn)
 				throws IOException {
-			if (create && pauseLookup.compareAndSet(true, false)) {
+			if (create && pauseLookup != null && pauseLookup.compareAndSet(true, false)) {
 				lookupEntered.countDown();
 				await(releaseLookup);
 			}

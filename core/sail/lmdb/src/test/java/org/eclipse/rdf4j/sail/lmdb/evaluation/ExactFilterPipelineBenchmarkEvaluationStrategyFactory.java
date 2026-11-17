@@ -20,9 +20,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryOptimizerPipeline;
 
 /**
@@ -42,7 +42,7 @@ public final class ExactFilterPipelineBenchmarkEvaluationStrategyFactory extends
 			EvaluationStatistics evaluationStatistics) {
 		EvaluationStatistics effectiveStatistics = evaluationStatistics == null ? new EvaluationStatistics()
 				: evaluationStatistics;
-		StrictEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(tripleSource, dataset,
+		LmdbEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(tripleSource, dataset,
 				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), effectiveStatistics,
 				isTrackResultSize());
 		QueryOptimizerPipeline pipeline = new LmdbQueryOptimizerPipeline(strategy, tripleSource, effectiveStatistics);

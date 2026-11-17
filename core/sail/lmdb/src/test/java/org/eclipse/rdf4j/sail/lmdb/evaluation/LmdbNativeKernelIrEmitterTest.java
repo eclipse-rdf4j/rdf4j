@@ -1892,6 +1892,185 @@ class LmdbNativeKernelIrEmitterTest {
 		assertRows(runInterpreted(ir, context().adjacencies(grouped)), expected, "interpreted aligned distinct");
 	}
 
+	@Test
+	void nestedDomainUnionDistinctRootMatchesCompiledAndInterpretedExecution() throws Exception {
+		String previousRewriteSetting = System.getProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY);
+		try {
+			System.setProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY, "true");
+			Kernel optimized = nestedDomainUnionCountKernel();
+			assertEquals(2, optimized.pipeline.size(), optimized.shapeKey());
+			assertTrue(optimized.pipeline.get(0) instanceof EnumerateDomain, optimized.shapeKey());
+			EnumerateDomain root = (EnumerateDomain) optimized.pipeline.get(0);
+			assertEquals(0, root.domain);
+			assertEquals(0, root.col);
+			assertTrue(root.sortedKeys, "the shared UNION root retains its sorted domain guarantee");
+			assertTrue(optimized.pipeline.get(1) instanceof Exists, optimized.shapeKey());
+			Exists positiveWitness = (Exists) optimized.pipeline.get(1);
+			assertFalse(positiveWitness.negated, "the factored root must use a positive witness");
+			assertTrue(positiveWitness.pipeline.getFirst() instanceof Union, optimized.shapeKey());
+			Union retainedBranches = (Union) positiveWitness.pipeline.getFirst();
+			assertEquals(2, retainedBranches.branches.size());
+			for (List<Node> branch : retainedBranches.branches) {
+				assertEquals(2, branch.size(), "each nonempty branch keeps its probe and nested anti-existence test");
+				assertTrue(branch.get(0) instanceof Probe);
+				assertTrue(branch.get(1) instanceof Exists);
+				assertTrue(((Exists) branch.get(1)).negated, "the nested witness remains NOT EXISTS");
+			}
+			assertEquals(0, ((Aggregate) optimized.terminal).outputs[0].orderedDomain,
+					"COUNT DISTINCT continues to use the shared root order proof");
+
+			System.setProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY, "false");
+			Kernel rewriteDisabled = nestedDomainUnionCountKernel();
+			assertTrue(rewriteDisabled.pipeline.getFirst() instanceof Union,
+					"the reference kernel must retain the original UNION");
+			assertEquals(-1, ((Aggregate) rewriteDisabled.terminal).outputs[0].orderedDomain,
+					"the rewrite-disabled reference keeps hashed COUNT DISTINCT");
+
+			long[][] innerDomains = { new long[0], new long[] { -1, 7, 7, 8 } };
+			int[] expectedCounts = { 4, 3 };
+			for (int i = 0; i < innerDomains.length; i++) {
+				long[][] expected = { { expectedCounts[i] } };
+				List<long[]> optimizedCompiled = run(optimized, nestedDomainUnionContext(innerDomains[i]));
+				List<long[]> optimizedInterpreted = runInterpreted(optimized,
+						nestedDomainUnionContext(innerDomains[i]));
+				List<long[]> referenceCompiled = run(rewriteDisabled, nestedDomainUnionContext(innerDomains[i]));
+				List<long[]> referenceInterpreted = runInterpreted(rewriteDisabled,
+						nestedDomainUnionContext(innerDomains[i]));
+				String fixture = i == 0 ? "empty inner domain" : "late match after duplicate and unbound keys";
+				assertRows(optimizedCompiled, expected, "optimized compiled: " + fixture);
+				assertRows(optimizedInterpreted, expected, "optimized interpreted: " + fixture);
+				assertRows(referenceCompiled, expected, "rewrite-disabled compiled: " + fixture);
+				assertRows(referenceInterpreted, expected, "rewrite-disabled interpreted: " + fixture);
+				assertArrayEquals(optimizedCompiled.getFirst(), optimizedInterpreted.getFirst(),
+						"compiled/interpreted optimized parity: " + fixture);
+				assertArrayEquals(optimizedCompiled.getFirst(), referenceCompiled.getFirst(),
+						"rewrite on/off compiled parity: " + fixture);
+				assertArrayEquals(referenceCompiled.getFirst(), referenceInterpreted.getFirst(),
+						"compiled/interpreted reference parity: " + fixture);
+			}
+		} finally {
+			if (previousRewriteSetting == null) {
+				System.clearProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY, previousRewriteSetting);
+			}
+		}
+	}
+
+	private static Kernel nestedDomainUnionCountKernel() {
+		Exists firstAnti = new Exists(true,
+				List.of(new EnumerateDomain(1, 3, false, null, false),
+						new Probe(1, Operand.col(3), 4),
+						new FilterCompareId(false, Operand.col(4), Operand.col(0))));
+		Exists secondAnti = new Exists(true,
+				List.of(new EnumerateDomain(1, 5, false, null, false),
+						new Probe(1, Operand.col(5), 6),
+						new FilterCompareId(false, Operand.col(6), Operand.col(0))));
+		Union branches = new Union(List.of(
+				List.of(new EnumerateDomain(0, 0, false, null, true), new Probe(0, Operand.col(0), 1), firstAnti),
+				List.of(new EnumerateDomain(0, 0, false, null, true), new Probe(2, Operand.col(0), 2), secondAnti)));
+		return new Kernel(7, List.of(branches),
+				new Aggregate(new int[0], new AggregateOutput[] { AggregateOutput.countDistinct(0) }, null,
+						OutputMods.none()));
+	}
+
+	private static ContextBuilder nestedDomainUnionContext(long[] innerDomain) {
+		NativeLmdbQuerySource.NativeAdjacency inner = new FixtureAdjacency(new long[][] { { 7, 99 }, { 8, 2 } });
+		return context().adjacencies(follows(), inner, follows()).domains(new long[] { 1, 1, 2, 3, 4, 9 }, innerDomain);
+	}
+
+	@Test
+	void asymmetricUnionContinuationResetsBranchColumnsForDistinctRootRewrite() throws Exception {
+		String previousRewriteSetting = System.getProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY);
+		try {
+			System.setProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY, "true");
+			Kernel optimized = asymmetricUnionContinuationCountKernel();
+			assertEquals(2, optimized.pipeline.size(), optimized.shapeKey());
+			assertTrue(optimized.pipeline.get(0) instanceof EnumerateDomain, optimized.shapeKey());
+			EnumerateDomain root = (EnumerateDomain) optimized.pipeline.get(0);
+			assertEquals(0, root.domain);
+			assertEquals(0, root.col);
+			assertTrue(root.sortedKeys, "the shared UNION root keeps its sorted domain proof");
+			assertTrue(optimized.pipeline.get(1) instanceof Exists, optimized.shapeKey());
+			Exists witness = (Exists) optimized.pipeline.get(1);
+			assertFalse(witness.negated, "the factored root uses a positive witness");
+			assertEquals(2, witness.pipeline.size(), optimized.shapeKey());
+			assertTrue(witness.pipeline.get(0) instanceof Union, optimized.shapeKey());
+			Union branches = (Union) witness.pipeline.get(0);
+			assertEquals(2, branches.branches.size());
+			for (List<Node> branch : branches.branches) {
+				assertEquals(2, branch.size(), "each arm keeps its probe and nested NOT EXISTS");
+				assertTrue(branch.get(0) instanceof Probe, optimized.shapeKey());
+				assertTrue(branch.get(1) instanceof Exists, optimized.shapeKey());
+				assertTrue(((Exists) branch.get(1)).negated, "the empty-domain anti-witness is retained");
+			}
+			assertTrue(witness.pipeline.get(1) instanceof FilterValue, optimized.shapeKey());
+			FilterValue continuation = (FilterValue) witness.pipeline.get(1);
+			assertTrue(continuation.reusable, "the common value filter is pure and reusable");
+			assertEquals(0, ((Aggregate) optimized.terminal).outputs[0].orderedDomain,
+					"COUNT DISTINCT retains the shared root ordering proof");
+
+			System.setProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY, "false");
+			Kernel rewriteDisabled = asymmetricUnionContinuationCountKernel();
+			assertTrue(rewriteDisabled.pipeline.getFirst() instanceof Union,
+					"the reference kernel retains the original UNION");
+			assertTrue(rewriteDisabled.pipeline.get(1) instanceof FilterValue,
+					"the common continuation remains after the unrewritten UNION");
+			assertEquals(-1, ((Aggregate) rewriteDisabled.terminal).outputs[0].orderedDomain,
+					"the rewrite-disabled reference keeps hashed COUNT DISTINCT");
+
+			long[][] expected = { { 1 } };
+			List<long[]> optimizedCompiled = run(optimized, asymmetricUnionContinuationContext());
+			List<long[]> optimizedInterpreted = runInterpreted(optimized, asymmetricUnionContinuationContext());
+			List<long[]> referenceCompiled = run(rewriteDisabled, asymmetricUnionContinuationContext());
+			List<long[]> referenceInterpreted = runInterpreted(rewriteDisabled,
+					asymmetricUnionContinuationContext());
+			assertRows(optimizedCompiled, expected,
+					"only arm B's expected value survives after arm A fails the shared continuation");
+			assertRows(optimizedInterpreted, expected, "optimized interpreted result");
+			assertRows(referenceCompiled, expected, "rewrite-disabled compiled reference");
+			assertRows(referenceInterpreted, expected, "rewrite-disabled interpreted reference");
+			assertArrayEquals(optimizedCompiled.getFirst(), optimizedInterpreted.getFirst(),
+					"compiled/interpreted optimized parity");
+			assertArrayEquals(optimizedCompiled.getFirst(), referenceCompiled.getFirst(),
+					"rewrite on/off compiled parity");
+			assertArrayEquals(referenceCompiled.getFirst(), referenceInterpreted.getFirst(),
+					"compiled/interpreted reference parity");
+		} finally {
+			if (previousRewriteSetting == null) {
+				System.clearProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelIr.DISTINCT_ROOT_EXISTS_PROPERTY, previousRewriteSetting);
+			}
+		}
+	}
+
+	private static Kernel asymmetricUnionContinuationCountKernel() {
+		Exists firstAnti = new Exists(true, List.of(new EnumerateDomain(1, 3, false, null, false)));
+		Exists secondAnti = new Exists(true, List.of(new EnumerateDomain(1, 4, false, null, false)));
+		Union branches = new Union(List.of(
+				List.of(new EnumerateDomain(0, 0, false, null, true), new Probe(0, Operand.col(0), 1), firstAnti),
+				List.of(new EnumerateDomain(0, 0, false, null, true), new Probe(1, Operand.col(0), 2), secondAnti)));
+		FilterValue continuation = new FilterValue(41, new Operand[] { Operand.col(1), Operand.col(2) }, true);
+		return new Kernel(5, List.of(branches, continuation),
+				new Aggregate(new int[0], new AggregateOutput[] { AggregateOutput.countDistinct(0) }, null,
+						OutputMods.none()));
+	}
+
+	private static ContextBuilder asymmetricUnionContinuationContext() {
+		TestHooks hooks = new TestHooks() {
+			@Override
+			public boolean testFilter(int filterId, long column1, long column2, long unused) {
+				return filterId == 41 && column1 == -1L && column2 == 42L;
+			}
+		};
+		return context()
+				.adjacencies(new FixtureAdjacency(new long[][] { { 1, 11 }, { 2, 12 } }),
+						new FixtureAdjacency(new long[][] { { 1, 41 }, { 2, 42 } }))
+				.domains(new long[] { 1, 1, 2, 2 }, new long[0])
+				.hooks(hooks);
+	}
+
 	/** Drains {@code LmdbNativeKernelInterpreter} over the same context the compiled harness uses. */
 	private static List<long[]> runInterpreted(Kernel ir, ContextBuilder context) {
 		JaninoKernel kernel = ir.terminal instanceof LmdbNativeKernelIr.Aggregate

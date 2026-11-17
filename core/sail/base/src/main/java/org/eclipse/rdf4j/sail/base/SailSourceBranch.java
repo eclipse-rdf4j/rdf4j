@@ -22,6 +22,7 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -989,7 +990,20 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			throws SailException {
 		// The caller owns the base until the entire reader graph has been constructed successfully.
 		AtomicBoolean adoptedBase = new AtomicBoolean();
-		SailDataset derivedFrom = new DelegatingSailDataset(base) {
+		final class AdoptedDataset extends DelegatingSailDataset implements SailDatasetReadComposition.Transparent {
+			AdoptedDataset() {
+				super(base);
+			}
+
+			@Override
+			public <T> Optional<T> resolveReadComposition(Class<T> leafCapability,
+					BiFunction<T, T, Optional<T>> unionCombiner) {
+				if (!adoptedBase.get()) {
+					throw new IllegalStateException("The dataset has not been adopted");
+				}
+				return SailDatasetReadComposition.resolveDataset(base, leafCapability, unionCombiner);
+			}
+
 			@Override
 			public void close() {
 				if (adoptedBase.get() && lease == null) {
@@ -1003,12 +1017,35 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					super.abandonUnobserved();
 				}
 			}
-		};
-		class SnapshotObserver extends DelegatingSailDataset {
+		}
+		SailDataset derivedFrom = new AdoptedDataset();
+		final class SnapshotObserver extends DelegatingSailDataset implements SailDatasetReadComposition.Transparent {
 			private boolean borrowed;
+			private final SailDataset compositionDelegate;
 
 			SnapshotObserver(SailDataset derivedFrom) {
 				super(derivedFrom);
+				compositionDelegate = derivedFrom;
+			}
+
+			@Override
+			public <T> Optional<T> resolveReadComposition(Class<T> leafCapability,
+					BiFunction<T, T, Optional<T>> unionCombiner) {
+				SailDataset delegate;
+				semaphore.lock();
+				try {
+					if (closed.get() || lease != null && (!borrowed || observerSnapshots.get(this) != lease
+							|| lease.borrowers <= 0 || lease.closed)) {
+						throw new IllegalStateException("The dataset observer is closed");
+					}
+					// Retirement alone does not invalidate a generation still held by this live borrower.
+					delegate = compositionDelegate;
+				} finally {
+					semaphore.unlock();
+				}
+				// RetainedSailDataset holds the observer alive; no arbitrary/native callback runs under the branch
+				// lock.
+				return SailDatasetReadComposition.resolveDataset(delegate, leafCapability, unionCombiner);
 			}
 
 			void register() {
@@ -2877,46 +2914,11 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 				}
 
-				if (changes.size() < 2) {
-					return;
-				}
-
-				// Find the same eligible suffix as reverse pairwise compaction, but keep its oldest model as
-				// the accumulator. Retired models cannot be disposed until the enclosing guards are released.
-				// Repeatedly copying a growing suffix into a new predecessor would retain quadratic payload.
-				List<Changeset> suffix = new ArrayList<>();
-				Iterator<Changeset> descending = changes.descendingIterator();
-				Changeset accumulator = descending.next();
-				suffix.add(accumulator);
-				while (descending.hasNext()) {
-					Changeset preceding = descending.next();
-					if (!canCompressInto(accumulator, preceding)) {
-						break;
-					}
-					suffix.add(preceding);
-					accumulator = preceding;
-				}
-				if (suffix.size() < 2) {
-					return;
-				}
-				// An accumulator may also alias a non-adjacent generation. Detect that before any write,
-				// rather than discovering the alias after an earlier fold has already changed its contents.
-				for (Changeset other : changes) {
-					if (other != accumulator && accumulator.sharesModelWith(other)) {
-						return;
-					}
-				}
-				for (int index = suffix.size() - 2; index >= 0; index--) {
-					Changeset source = suffix.get(index);
-					if (!canCompressInto(source, accumulator)) {
-						return;
-					}
-					prepare(source, accumulator);
-					flush(source, accumulator);
-					// Keep the source and untouched tail in order if preparation or application fails.
-					changes.remove(source);
-					StreamingWritePreflight.removed(source);
-					source.close();
+				// A merged block always ends up in its oldest member, so fold the mergeable suffix oldest-first: each
+				// generation is copied once. Merging newest-into-predecessor re-copies the growing tail at every step,
+				// which is quadratic when an open SERIALIZABLE observer has pinned one generation per write.
+				while (foldMergeableSuffix()) {
+					// Closing folded generations can release history leases on older ones, so scan again.
 				}
 
 			} finally {
@@ -2924,6 +2926,60 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			}
 
 		}
+	}
+
+	/**
+	 * Applies, oldest first, every generation of the longest mergeable suffix of {@link #changes} onto the suffix's
+	 * oldest member. A newer generation may be merged into its predecessor unless either is frozen, the predecessor is
+	 * retained by a reader or history holder, or both share one model. Caller holds the branch semaphore.
+	 *
+	 * @return whether at least one generation was merged
+	 */
+	private boolean foldMergeableSuffix() {
+		if (changes.size() < 2) {
+			return false;
+		}
+
+		// Find the same eligible suffix as reverse pairwise compaction, but keep its oldest model as
+		// the accumulator. Retired models cannot be disposed until the enclosing guards are released.
+		// Repeatedly copying a growing suffix into a new predecessor would retain quadratic payload.
+		List<Changeset> suffix = new ArrayList<>();
+		Iterator<Changeset> descending = changes.descendingIterator();
+		Changeset accumulator = descending.next();
+		suffix.add(accumulator);
+		while (descending.hasNext()) {
+			Changeset preceding = descending.next();
+			if (!canCompressInto(accumulator, preceding)) {
+				break;
+			}
+			suffix.add(preceding);
+			accumulator = preceding;
+		}
+		if (suffix.size() < 2) {
+			return false;
+		}
+		// An accumulator may also alias a non-adjacent generation. Detect that before any write,
+		// rather than discovering the alias after an earlier fold has already changed its contents.
+		for (Changeset other : changes) {
+			if (other != accumulator && accumulator.sharesModelWith(other)) {
+				return false;
+			}
+		}
+		boolean merged = false;
+		for (int index = suffix.size() - 2; index >= 0; index--) {
+			Changeset source = suffix.get(index);
+			if (!canCompressInto(source, accumulator)) {
+				return merged;
+			}
+			prepare(source, accumulator);
+			flush(source, accumulator);
+			// Keep the source and untouched tail in order if preparation or application fails.
+			changes.remove(source);
+			StreamingWritePreflight.removed(source);
+			source.close();
+			merged = true;
+		}
+		return merged;
 	}
 
 	private static boolean canCompressInto(Changeset source, Changeset destination) {

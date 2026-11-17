@@ -247,4 +247,3 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 		}
 	});
 }
-

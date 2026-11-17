@@ -16,6 +16,8 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 
@@ -40,32 +42,251 @@ final class LmdbNativeFactorAlgebra {
 
 	/** Structural admission only: never opens storage, evaluates an expression or changes the entry row. */
 	static boolean candidate(SlotPlan plan) {
+		return candidate(plan, null);
+	}
+
+	static boolean candidate(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
+		if (facts == null) {
+			if (!(plan instanceof NativeValuesFoldPlan)) {
+				return candidateUncached(plan, null);
+			}
+			facts = new java.util.IdentityHashMap<>();
+		}
+		Boolean previous = facts.get(plan);
+		if (previous != null) {
+			return previous;
+		}
+		boolean result = candidateUncached(plan, facts);
+		facts.put(plan, result);
+		return result;
+	}
+
+	static boolean candidateUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return candidate(guard.folded, facts) || candidate(guard.original, facts);
+		}
 		if (!enabled() || plan == null)
 			return false;
 		if (plan instanceof NativeAliasJoinPlan alias)
-			return candidate(alias.original);
+			return candidate(alias.original, facts);
 		if (plan instanceof UnionPlan || plan instanceof ExtensionPlan || plan instanceof LeftJoinPlan)
 			return true;
 		if (plan instanceof FilterPlan filter)
-			return candidate(filter.arg);
+			return candidate(filter.arg, facts);
 		if (plan instanceof EntryBindingCompatibilityPlan entry)
-			return candidate(entry.arg);
+			return candidate(entry.arg, facts);
 		if (plan instanceof RowDistinctPlan distinct)
-			return candidate(distinct.arg);
+			return candidate(distinct.arg, facts);
 		if (plan instanceof OrderedUnionPlan)
 			return true;
 		if (plan instanceof MinusPlan minus)
-			return candidate(minus.left) || candidate(minus.right);
+			return candidate(minus.left, facts) || candidate(minus.right, facts);
 		if (plan instanceof DrainGuardPlan guard)
-			return candidate(guard.delegate) || candidate(guard.drained);
+			return candidate(guard.delegate, facts) || candidate(guard.drained, facts);
 		if (plan instanceof JoinPlan join)
-			return candidate(join.left) || candidate(join.right);
+			return candidate(join.left, facts) || candidate(join.right, facts);
 		if (plan instanceof MultiJoinPlan join) {
 			for (SlotPlan child : join.children)
-				if (candidate(child))
+				if (candidate(child, facts))
 					return true;
 		}
 		return false;
+	}
+
+	/** A one-pass COUNT may compose scalar islands without granting them replay or flatten authority. */
+	static boolean onePassCandidate(SlotPlan plan, RowState row) {
+		return enabled() && !row.encounterOrderRequired && nativeRegion(plan, row, 0L) != null;
+	}
+
+	/** A shape and source certificate, independent of row counts and never obtained by opening storage early. */
+	private record NativeRegion(PatternPlan pattern, NativeLmdbQuerySource source, Object idSpace) {
+	}
+
+	private static NativeRegion nativeRegion(SlotPlan plan, RowState row, long earlierWrites) {
+		if (plan instanceof PatternPlan pattern) {
+			// Earlier operands may bind an endpoint. Qualification requires another genuinely free endpoint;
+			// the existing source, specialization, planner and runtime checks still decide each actual open.
+			if (row.source instanceof SyntheticValueSource values
+					&& values.anySynthetic(pattern.s.lookup(row.slots), pattern.p.lookup(row.slots),
+							pattern.o.lookup(row.slots), pattern.c.lookup(row.slots))) {
+				return null;
+			}
+			Object idSpace = row.source.idSpace();
+			if (idSpace == null) {
+				return null;
+			}
+			MultiJoinPlan single = LmdbNativePackedFtree.specializeEntry(
+					new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]), row);
+			return single != null && LmdbNativePackedFtree.Planner.singlePatternShape(
+					(PatternPlan) single.children[0], row, earlierWrites) && row.source.idSpace() == idSpace
+							? new NativeRegion(pattern, row.source, idSpace)
+							: null;
+		}
+		if (plan instanceof FilterPlan filter) {
+			return filter.filterMask >= 0L ? nativeRegion(filter.arg, row, earlierWrites) : null;
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			for (CopyBinding copy : extension.copies) {
+				if (!copy.encounterOrderReplaySafe) {
+					return null;
+				}
+			}
+			return nativeRegion(extension.arg, row, earlierWrites);
+		}
+		if (plan instanceof JoinPlan join) {
+			NativeRegion right = nativeRegion(join.right, row, earlierWrites | join.left.producedMask());
+			return right != null ? right
+					: SlotPlan.encounterOrderReplaySafe(join.right)
+							? nativeRegion(join.left, row, earlierWrites)
+							: null;
+		}
+		if (plan instanceof LeftJoinPlan optional) {
+			if (optional.lexicalProblemSlots != null || optional.lexicalSharedSlots != null) {
+				return null;
+			}
+			NativeRegion right = nativeRegion(optional.right, row, earlierWrites | optional.left.producedMask());
+			return right != null ? right
+					: SlotPlan.encounterOrderReplaySafe(optional.right)
+							? nativeRegion(optional.left, row, earlierWrites)
+							: null;
+		}
+		if (plan instanceof UnionPlan union) {
+			NativeRegion left = nativeRegion(union.left, row, earlierWrites);
+			return left != null ? left : nativeRegion(union.right, row, earlierWrites);
+		}
+		if (plan instanceof MultiJoinPlan multi && SlotPlan.encounterOrderReplaySafe(multi)) {
+			// A MultiJoin can choose a physical order. A certificate for one child must survive every legal
+			// preceding sibling, not merely the array's current order.
+			long[] prefixes = new long[multi.children.length + 1];
+			for (int i = 0; i < multi.children.length; i++) {
+				prefixes[i + 1] = prefixes[i] | multi.children[i].producedMask();
+			}
+			long suffix = 0L;
+			for (int i = multi.children.length - 1; i >= 0; i--) {
+				NativeRegion region = nativeRegion(multi.children[i], row, earlierWrites | prefixes[i] | suffix);
+				if (region != null) {
+					return region;
+				}
+				suffix |= multi.children[i].producedMask();
+			}
+		}
+		// No inspection or new capability for an opaque island, lexical scope, sorted merge or future operator.
+		return null;
+	}
+
+	/** Own one traversal. Selection has a physical capability certificate; actual opens are separate telemetry. */
+	static OnePass openOnePass(SlotPlan plan, RowState row) throws IOException {
+		NativeRegion region = nativeRegion(plan, row, 0L);
+		if (!enabled() || row.encounterOrderRequired || SlotPlan.requiresPhysicalCells(plan) || region == null) {
+			throw new IllegalStateException("one-pass packed input lacks a current native capability");
+		}
+		OnePass input = new OnePass(row, region);
+		try {
+			input.checkOwner(row);
+			input.input = logical(LmdbNativeFactorRows.asRows(open(plan, row, input), row), row);
+			return input;
+		} catch (IOException | RuntimeException | Error failure) {
+			closeSuppressing(input, failure);
+			throw failure;
+		}
+	}
+
+	static final class OnePass implements RowCursor {
+		final RowState row;
+		final NativeLmdbQuerySource source;
+		final Object idSpace;
+		final NativeRegion capability;
+		final int mark;
+		RowCursor input;
+		long packedRegions;
+		boolean exhausted;
+		boolean closed;
+
+		private OnePass(RowState row, NativeRegion capability) {
+			this.capability = capability;
+			this.row = row;
+			this.source = capability.source;
+			this.idSpace = capability.idSpace;
+			this.mark = row.mark();
+		}
+
+		private void checkOwner(RowState active) {
+			if (active != row || active.source != source || source.idSpace() != idSpace
+					|| source instanceof SyntheticValueSource values
+							&& (values.executionContext() == null || values.executionContext().isClosed())) {
+				throw new IllegalStateException("one-pass packed input outlived its evaluation source");
+			}
+		}
+
+		private LmdbNativeFactorCursor packed(LmdbNativeFactorCursor cursor, RowState active) {
+			try {
+				checkOwner(active);
+				if (closed || active.encounterOrderRequired) {
+					throw new IllegalStateException("packed region opened outside its one-pass owner");
+				}
+				packedRegions = Math.addExact(packedRegions, 1L);
+				return cursor;
+			} catch (RuntimeException | Error failure) {
+				closeSuppressing(cursor, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			try {
+				checkOwner(row);
+				if (!row.advance(input)) {
+					exhausted = !row.cancellation.isCancellationRequested();
+					close();
+					return false;
+				}
+				return true;
+			} catch (IOException | RuntimeException | Error failure) {
+				closeSuppressing(this, failure);
+				throw failure;
+			}
+		}
+
+		void requireComplete() {
+			checkOwner(row);
+			if (row.cancellation.isCancellationRequested()) {
+				throw KernelQueryCancelledException.INSTANCE;
+			}
+			if (!exhausted) {
+				throw new IllegalStateException("one-pass packed input did not reach natural exhaustion");
+			}
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			RowCursor closing = input;
+			input = null;
+			try {
+				if (closing != null) {
+					closing.close();
+				}
+			} finally {
+				row.rollback(mark);
+			}
+		}
+	}
+
+	private static LmdbNativeFactorCursor opaque(SlotPlan plan, RowState row) throws IOException {
+		boolean previous = row.encounterOrderRequired;
+		row.encounterOrderRequired = true;
+		try {
+			return LmdbNativeFactorRows.scalar(new Ordered(plan.open(row), row, true), row.slots.length);
+		} finally {
+			row.encounterOrderRequired = previous;
+		}
 	}
 
 	static LmdbNativeFactorCursor tryOpen(SlotPlan plan, RowState row) throws IOException {
@@ -78,10 +299,17 @@ final class LmdbNativeFactorAlgebra {
 		if (SlotPlan.requiresPhysicalCells(plan)) {
 			return null;
 		}
+		return open(plan, row, null);
+	}
+
+	private static LmdbNativeFactorCursor open(SlotPlan plan, RowState row, OnePass onePass) throws IOException {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return open(guard.select(row), row, onePass);
+		}
 		if (plan instanceof NativeAliasJoinPlan alias)
-			return open(alias.select(row), row);
+			return open(alias.select(row), row, onePass);
 		if (plan instanceof UnionPlan union)
-			return new Union(union, row);
+			return new Union(union, row, onePass);
 		if (plan instanceof OrderedUnionPlan) {
 			// The merge promises a particular branch order. Do not replace its children by reordered packed scans,
 			// even when the outer consumer is unordered; sorted merge correctness itself depends on that promise.
@@ -94,30 +322,34 @@ final class LmdbNativeFactorAlgebra {
 			}
 		}
 		if (plan instanceof ExtensionPlan extension)
-			return extension(extension, row);
+			return extension(extension, row, onePass);
 		if (plan instanceof LeftJoinPlan optional) {
 			if (optional.lexicalProblemSlots != null || optional.lexicalSharedSlots != null) {
 				// These two operators deliberately evaluate in a different binding frame. In particular, probing a
 				// non-well-designed OPTIONAL as an ordinary correlated left join would change its difference term.
+				if (onePass != null) {
+					return opaque(plan, row);
+				}
 				SlotPlan left = new Boundary(optional.left);
 				SlotPlan right = new Boundary(optional.right);
 				RowCursor cursor = optional.lexicalProblemSlots != null
 						? new LexicalFrameLeftJoinCursor(left, right, optional.lexicalProblemSlots, row)
-						: new LexicalLeftJoinCursor(left, right, optional.lexicalSharedSlots, row);
+						: new LexicalLeftJoinCursor(left, right, optional.lexicalSharedSlots, optional.lexicalCondition,
+								row);
 				return LmdbNativeFactorRows.scalar(cursor, row.slots.length);
 			}
-			return join(optional.left, optional.right, row, true);
+			return join(optional.left, optional.right, row, true, onePass);
 		}
 		if (plan instanceof JoinPlan join)
-			return join(join.left, join.right, row, false);
+			return join(join.left, join.right, row, false, onePass);
 		if (plan instanceof FilterPlan filter) {
 			long reads = filter.groupedReadMask();
 			if (reads < 0L) {
 				// An opaque predicate may observe a new RAND/UUID/BNODE value on every logical mapping.
 				return LmdbNativeFactorRows.scalar(new FilterCursor(
-						logical(openOrdered(filter.arg, row), row), filter.filter, row), row.slots.length);
+						logical(openOrdered(filter.arg, row, onePass), row), filter.filter, row), row.slots.length);
 			}
-			LmdbNativeFactorCursor input = open(filter.arg, row);
+			LmdbNativeFactorCursor input = open(filter.arg, row, onePass);
 			try {
 				return LmdbNativeFactorRows.restrict(input, filter.filter, row, reads);
 			} catch (RuntimeException | Error failure) {
@@ -126,9 +358,12 @@ final class LmdbNativeFactorAlgebra {
 			}
 		}
 		if (plan instanceof MultiJoinPlan multi) {
+			if (onePass != null && !SlotPlan.encounterOrderReplaySafe(multi)) {
+				return opaque(plan, row);
+			}
 			LmdbNativeFactorCursor packed = LmdbNativePackedFtree.openLeaf(multi, row);
 			if (packed != null)
-				return packed;
+				return onePass == null ? packed : onePass.packed(packed, row);
 			if (multi.children.length == 0)
 				return LmdbNativeFactorRows.scalar(multi.open(row), row.slots.length);
 			// A bound root can disconnect an otherwise connected BGP. Keep its independent regions factorized
@@ -143,30 +378,40 @@ final class LmdbNativeFactorAlgebra {
 						chain = new FilterPlan(chain, multi.filters[f].filter, multi.filters[f].mask);
 				}
 			}
-			return open(chain, row);
+			return open(chain, row, onePass);
 		}
 		if (plan instanceof PatternPlan pattern) {
 			LmdbNativeFactorCursor packed = LmdbNativePackedFtree.openLeaf(
 					new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]), row);
-			return packed != null ? packed : LmdbNativeFactorRows.scalar(pattern.open(row), row.slots.length);
+			if (packed != null) {
+				return onePass == null ? packed : onePass.packed(packed, row);
+			}
+			if (onePass != null && pattern == onePass.capability.pattern) {
+				throw new QueryEvaluationException("one-pass packed native region declined in its actual frame");
+			}
+			return LmdbNativeFactorRows.scalar(pattern.open(row), row.slots.length);
+		}
+		if (onePass != null) {
+			return opaque(plan, row);
 		}
 		LmdbNativeFactorCursor grouped = plan.openFactors(row);
 		return grouped != null ? grouped : LmdbNativeFactorRows.scalar(plan.open(row), row.slots.length);
 	}
 
-	private static LmdbNativeFactorCursor extension(ExtensionPlan plan, RowState row) throws IOException {
+	private static LmdbNativeFactorCursor extension(ExtensionPlan plan, RowState row, OnePass onePass)
+			throws IOException {
 		NativeExecutionPhaseEvent.activateInput("expressions", row.cancellation);
 		long reads = 0L;
 		for (CopyBinding copy : plan.copies) {
 			if (!copy.encounterOrderReplaySafe) {
 				return LmdbNativeFactorRows.scalar(new ExtensionCursor(
-						logical(openOrdered(plan.arg, row), row), plan.copies, row), row.slots.length);
+						logical(openOrdered(plan.arg, row, onePass), row), plan.copies, row), row.slots.length);
 			}
 			// Targets must be scalar too: assignment compatibility cannot be checked against a hidden factor.
 			// OR-ing -1 is intentional for a pure expression with an opaque dependency set.
 			reads |= copy.requiredMask() | (1L << copy.targetSlot);
 		}
-		LmdbNativeFactorCursor input = open(plan.arg, row);
+		LmdbNativeFactorCursor input = open(plan.arg, row, onePass);
 		try {
 			return new Extended(LmdbNativeFactorRows.expand(input, row, reads), plan.copies, row);
 		} catch (RuntimeException | Error failure) {
@@ -176,15 +421,21 @@ final class LmdbNativeFactorAlgebra {
 	}
 
 	private static LmdbNativeFactorCursor join(SlotPlan leftPlan, SlotPlan rightPlan, RowState row,
-			boolean optional) throws IOException {
+			boolean optional, OnePass onePass) throws IOException {
+		if (onePass == null) {
+			RowCursor memoized = LmdbNativeSupportJoin.tryOpen(leftPlan, rightPlan, row, optional);
+			if (memoized != null) {
+				return LmdbNativeFactorRows.scalar(memoized, row.slots.length);
+			}
+		}
 		boolean replaySafe = SlotPlan.encounterOrderReplaySafe(rightPlan);
-		LmdbNativeFactorCursor left = replaySafe ? open(leftPlan, row)
-				: LmdbNativeFactorRows.scalar(logical(openOrdered(leftPlan, row), row), row.slots.length);
+		LmdbNativeFactorCursor left = replaySafe ? open(leftPlan, row, onePass)
+				: LmdbNativeFactorRows.scalar(logical(openOrdered(leftPlan, row, onePass), row), row.slots.length);
 		try {
 			// Reads include correlation; writes include compatibility with a nullable UNION/OPTIONAL binding.
 			// Unknown reads expand everything, but do not grant permission to coalesce effectful invocations.
 			long demand = memoReadMask(rightPlan) | rightPlan.producedMask();
-			return new Joined(LmdbNativeFactorRows.expand(left, row, demand), rightPlan, row, optional);
+			return new Joined(LmdbNativeFactorRows.expand(left, row, demand), rightPlan, row, optional, onePass);
 		} catch (RuntimeException | Error failure) {
 			closeSuppressing(left, failure);
 			throw failure;
@@ -209,10 +460,14 @@ final class LmdbNativeFactorAlgebra {
 	 * this row; restoring it in finally also makes nested ordered boundaries and throwing expressions safe.
 	 */
 	static RowCursor openOrdered(SlotPlan plan, RowState row) throws IOException {
+		return openOrdered(plan, row, null);
+	}
+
+	private static RowCursor openOrdered(SlotPlan plan, RowState row, OnePass onePass) throws IOException {
 		boolean previous = row.encounterOrderRequired;
 		row.encounterOrderRequired = true;
 		try {
-			return new Ordered(LmdbNativeFactorRows.asRows(open(plan, row), row), row);
+			return new Ordered(LmdbNativeFactorRows.asRows(open(plan, row, onePass), row), row);
 		} finally {
 			row.encounterOrderRequired = previous;
 		}
@@ -221,11 +476,17 @@ final class LmdbNativeFactorAlgebra {
 	private static final class Ordered implements FactorizedRowCursor {
 		final RowCursor input;
 		final RowState row;
+		final boolean cancelAtOpaqueBoundary;
 		boolean closed;
 
 		Ordered(RowCursor input, RowState row) {
+			this(input, row, false);
+		}
+
+		Ordered(RowCursor input, RowState row, boolean cancelAtOpaqueBoundary) {
 			this.input = input;
 			this.row = row;
+			this.cancelAtOpaqueBoundary = cancelAtOpaqueBoundary;
 		}
 
 		@Override
@@ -235,7 +496,7 @@ final class LmdbNativeFactorAlgebra {
 			boolean previous = row.encounterOrderRequired;
 			row.encounterOrderRequired = true;
 			try {
-				return input.next();
+				return cancelAtOpaqueBoundary ? row.advance(input) : input.next();
 			} finally {
 				row.encounterOrderRequired = previous;
 			}
@@ -329,13 +590,15 @@ final class LmdbNativeFactorAlgebra {
 	private static final class Union implements LmdbNativeFactorCursor {
 		final UnionPlan plan;
 		final RowState row;
+		final OnePass onePass;
 		final int mark;
 		LmdbNativeFactorCursor current;
 		int branch;
 		boolean closed;
 		int tick;
 
-		Union(UnionPlan plan, RowState row) {
+		Union(UnionPlan plan, RowState row, OnePass onePass) {
+			this.onePass = onePass;
 			this.plan = plan;
 			this.row = row;
 			mark = row.mark();
@@ -352,7 +615,7 @@ final class LmdbNativeFactorAlgebra {
 						return false;
 					}
 					if (current == null)
-						current = open(branch == 0 ? plan.left : plan.right, row);
+						current = open(branch == 0 ? plan.left : plan.right, row, onePass);
 					while (current.next()) {
 						if (hasSolutions(current))
 							return true;
@@ -403,6 +666,7 @@ final class LmdbNativeFactorAlgebra {
 	private static final class Extended implements LmdbNativeFactorCursor {
 		final LmdbNativeFactorCursor input;
 		final CopyBinding[] copies;
+		final boolean sourcesExternallyRetained;
 		final RowState row;
 		int mark = -1;
 		int tick;
@@ -410,7 +674,20 @@ final class LmdbNativeFactorAlgebra {
 
 		Extended(LmdbNativeFactorCursor input, CopyBinding[] copies, RowState row) {
 			this.input = input;
-			this.copies = copies;
+			CopyBinding[] retainedCopies = null;
+			if (input.borrowedSourcesExternallyRetained() && copies != null) {
+				// Validate the exact snapshot that grants forwarding, never the caller's mutable array.
+				retainedCopies = copies.clone();
+				for (CopyBinding copy : retainedCopies) {
+					if (copy == null || copy.sourceSlot < 0 || copy.computed != null || copy.computedValue != null
+							|| copy.semanticValue != null) {
+						retainedCopies = null;
+						break;
+					}
+				}
+			}
+			sourcesExternallyRetained = retainedCopies != null;
+			this.copies = sourcesExternallyRetained ? retainedCopies : copies;
 			this.row = row;
 		}
 
@@ -455,6 +732,11 @@ final class LmdbNativeFactorAlgebra {
 		}
 
 		@Override
+		public boolean borrowedSourcesExternallyRetained() {
+			return sourcesExternallyRetained;
+		}
+
+		@Override
 		public long multiplicity() {
 			return input.multiplicity();
 		}
@@ -483,6 +765,7 @@ final class LmdbNativeFactorAlgebra {
 		final SlotPlan rightPlan;
 		final RowState row;
 		final boolean optional;
+		final OnePass onePass;
 		final FactorEnvironment result;
 		LmdbNativeFactorCursor right;
 		long leftWeight;
@@ -492,7 +775,8 @@ final class LmdbNativeFactorAlgebra {
 		boolean matched;
 		boolean closed;
 
-		Joined(LmdbNativeFactorCursor left, SlotPlan rightPlan, RowState row, boolean optional) {
+		Joined(LmdbNativeFactorCursor left, SlotPlan rightPlan, RowState row, boolean optional, OnePass onePass) {
+			this.onePass = onePass;
 			this.left = left;
 			this.rightPlan = rightPlan;
 			this.row = row;
@@ -539,7 +823,7 @@ final class LmdbNativeFactorAlgebra {
 					leftWeight = left.multiplicity();
 					matched = false;
 					rightMark = row.mark();
-					right = open(rightPlan, row);
+					right = open(rightPlan, row, onePass);
 				}
 			} catch (IOException | RuntimeException | Error failure) {
 				closeSuppressing(this, failure);

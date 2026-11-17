@@ -18,10 +18,14 @@ import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -44,6 +48,24 @@ class QueryEvaluationContextAllocationScopeTest {
 		}
 	}
 
+	@Test
+	void originDecoratorPreservesRequestLocalAndUnknownWhenCopyingRows() {
+		QueryEvaluationContext parent = new QueryEvaluationContext.Minimal((Dataset) null);
+		QueryEvaluationContext child = new OriginQueryEvaluationContext(parent);
+		MapBindingSet unknown = new MapBindingSet();
+		unknown.addBinding("outer", SimpleValueFactory.getInstance().createLiteral("value"));
+		BindingSet request = BindingSetOrigin.requestInput(unknown);
+		BindingSet local = BindingSetOrigin.with(request, BindingSetOrigin.of(request).producing(Set.of("outer")));
+		for (BindingSet input : new BindingSet[] { unknown, request, local }) {
+			BindingSet copied = child.createBindingSet(input);
+			assertThat(copied).isEqualTo(input);
+			assertThat(BindingSetOrigin.of(copied).isRequest("outer"))
+					.isEqualTo(BindingSetOrigin.of(input).isRequest("outer"));
+			assertThat(BindingSetOrigin.of(copied).isLocal("outer"))
+					.isEqualTo(BindingSetOrigin.of(input).isLocal("outer"));
+		}
+	}
+
 	private static Stream<Arguments> wrappers() {
 		Function<QueryEvaluationContext, QueryEvaluationContext> graph = parent -> new ActiveGraphQueryEvaluationContext(
 				parent, new QueryEvaluationContext.ActiveGraph(SimpleValueFactory.getInstance().createIRI("urn:graph"),
@@ -52,6 +74,24 @@ class QueryEvaluationContextAllocationScopeTest {
 				parent, Set.of("outer"));
 		Function<QueryEvaluationContext, QueryEvaluationContext> nested = graph.compose(substitution);
 		return Stream.of(
+				Arguments.of("origin",
+						(Function<QueryEvaluationContext, QueryEvaluationContext>) OriginQueryEvaluationContext::new),
+				Arguments.of("origin outside graph and substitution",
+						(Function<QueryEvaluationContext, QueryEvaluationContext>) parent -> new OriginQueryEvaluationContext(
+								nested.apply(parent))),
+				Arguments.of("graph and substitution outside origin",
+						(Function<QueryEvaluationContext, QueryEvaluationContext>) parent -> nested
+								.apply(new OriginQueryEvaluationContext(parent))),
+				Arguments.of("array outside origin",
+						(Function<QueryEvaluationContext, QueryEvaluationContext>) parent -> new ArrayBindingBasedQueryEvaluationContext(
+								new OriginQueryEvaluationContext(parent), new String[] { "outer" }, null)),
+				Arguments.of("capture outside origin",
+						(Function<QueryEvaluationContext, QueryEvaluationContext>) parent -> new ValueCapturingQueryEvaluationContext(
+								new OriginQueryEvaluationContext(parent), Function.identity())),
+				Arguments.of("planning outside origin",
+						(Function<QueryEvaluationContext, QueryEvaluationContext>) parent -> AdaptiveFilterEvaluationStep
+								.planningContext(
+										new SingletonSet(), new OriginQueryEvaluationContext(parent))),
 				Arguments.of("active graph", graph),
 				Arguments.of("EXISTS substitution", substitution),
 				Arguments.of("graph outside substitution", nested),

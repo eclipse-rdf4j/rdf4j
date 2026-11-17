@@ -57,6 +57,8 @@ import org.junit.jupiter.api.condition.OS;
 @EnabledOnOs({ OS.LINUX, OS.MAC })
 class ServerBootSignalIT {
 
+	private static final String TEST_OUTPUT_DIRECTORY_PROPERTY = "rdf4j.test.outputDirectory";
+
 	private static final int MIN_TEST_PORT = 32768;
 	private static final int PORT_ALLOCATION_ATTEMPTS = 100;
 
@@ -113,7 +115,7 @@ class ServerBootSignalIT {
 		Instant startedAt = Instant.now();
 
 		// Find the executable JAR
-		Path targetDir = projectRoot.resolve("target");
+		Path targetDir = resolveBuildDirectory(projectRoot);
 		Path jarPath = Files.list(targetDir)
 				.sorted(Comparator.comparing(Path::toString))
 				.filter(p -> p.toString().endsWith(".jar"))
@@ -185,6 +187,13 @@ class ServerBootSignalIT {
 		assertThat(process.exitValue())
 				.as(() -> "Process exit value after SIG" + signalName + ". Output:\n" + outputBuffer)
 				.isEqualTo(0);
+	}
+
+	private static Path resolveBuildDirectory(Path projectRoot) {
+		String configuredOutputDirectory = System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+		return configuredOutputDirectory == null || configuredOutputDirectory.isBlank()
+				? projectRoot.resolve("target")
+				: Path.of(configuredOutputDirectory);
 	}
 
 	private void startStreamGobbler(Process process, CountDownLatch started, StringBuilder outputBuffer) {

@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -43,6 +45,8 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -52,6 +56,16 @@ class LmdbStreamingBindingEvaluationTest {
 	@ParameterizedTest
 	@EnumSource
 	void singleUseBindingRowsSurviveEvaluationAndComposition(Shape shape, @TempDir File directory) {
+		assertSingleUseRows(shape, new LmdbStore(directory));
+	}
+
+	@ParameterizedTest
+	@EnumSource
+	void singleUseBindingRowsSurviveSharedEvaluationAndComposition(Shape shape) {
+		assertSingleUseRows(shape, new MemoryStore());
+	}
+
+	private static void assertSingleUseRows(Shape shape, Sail store) {
 		MapBindingSet first = new MapBindingSet();
 		first.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:stream:first"));
 		MapBindingSet second = new MapBindingSet();
@@ -60,12 +74,12 @@ class LmdbStreamingBindingEvaluationTest {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setDeclaredBindingNames(Set.of("x"));
 		assignment.setBindingSets(rows);
-		LmdbStore store = new LmdbStore(directory);
 		store.init();
 		try (var connection = store.getConnection();
 				var result = connection.evaluate(compose(shape, assignment), null, EmptyBindingSet.getInstance(),
 						false)) {
-			assertTrue(result.hasNext());
+			assertTrue(result.hasNext(), () -> "shape=" + shape + ", opened=" + rows.opens + ", consumed=" + rows.index
+					+ ", opening stacks=" + rows.openingStacks);
 			assertEquals(first, result.next());
 			assertTrue(result.hasNext());
 			assertEquals(second, result.next());
@@ -110,6 +124,7 @@ class LmdbStreamingBindingEvaluationTest {
 		private final List<BindingSet> rows;
 		private int index;
 		private int opens;
+		private final List<String> openingStacks = new ArrayList<>();
 
 		private SingleUseRows(List<BindingSet> rows) {
 			this.rows = rows;
@@ -118,6 +133,7 @@ class LmdbStreamingBindingEvaluationTest {
 		@Override
 		public Iterator<BindingSet> iterator() {
 			opens++;
+			openingStacks.add(Arrays.toString(Thread.currentThread().getStackTrace()));
 			return new Iterator<>() {
 				@Override
 				public boolean hasNext() {

@@ -30,30 +30,500 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+/**
+ * Explicit materialization retains batch locality while raw Sail evaluation remains deferred.
+ */
 class LmdbStoreConnectionValueMaterializationTest {
+
+	private static final ValueStore DEFAULT_VALUE_STORE = mock(ValueStore.class);
+
+	private static final ValueStoreRevision DEFAULT_REVISION = new InitOnResolveRevision(1, DEFAULT_VALUE_STORE);
 
 	@Test
 	void materializesBufferedRowsInInternalIdOrderAfterFirstResult() {
-		assertBufferedMaterializationOrder();
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 40, materialized);
+		RecordingLmdbValue shared10 = value("shared10", 10, materialized);
+		RecordingLmdbValue id20 = value("id20", 20, materialized);
+		RecordingLmdbValue id30 = value("id30", 30, materialized);
+		BindingSet firstRow = row("value", first);
+		BindingSet secondRow = row("late", id30, "shared", shared10);
+		BindingSet thirdRow = row("shared", shared10);
+		BindingSet fourthRow = row("value", id20);
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, secondRow, thirdRow, fourthRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
+			assertSame(firstRow, result.next());
+			assertEquals(List.of("first"), materialized);
+			assertSame(secondRow, result.next());
+			assertEquals(List.of("first", "shared10", "id20", "id30"), materialized);
+			assertSame(thirdRow, result.next());
+			assertSame(fourthRow, result.next());
+			assertFalse(result.hasNext());
+		}
+		assertEquals(1, shared10.initCount);
+	}
+
+	@Test
+	void usesRevisionBatchResolverForSingleRevisionKnownIds() {
+		List<String> materialized = new ArrayList<>();
+		RecordingRevision revision = new RecordingRevision(1);
+		RecordingLmdbValue first = value("first", 0, revision, materialized);
+		RecordingLmdbValue id30 = value("id30", 30, revision, materialized);
+		RecordingLmdbValue id10 = value("id10", 10, revision, materialized);
+		RecordingLmdbValue id20 = value("id20", 20, revision, materialized);
+		BindingSet firstRow = row("value", first);
+		BindingSet secondRow = row("value", id30);
+		BindingSet thirdRow = row("value", id10);
+		BindingSet fourthRow = row("value", id20);
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, secondRow, thirdRow, fourthRow), 16)) {
+			assertSame(firstRow, result.next());
+			assertEquals(List.of("first"), materialized);
+			assertSame(secondRow, result.next());
+			assertEquals(List.of("first", "id10", "id20", "id30"), materialized);
+			assertSame(thirdRow, result.next());
+			assertSame(fourthRow, result.next());
+			assertFalse(result.hasNext());
+		}
+		assertEquals(1, revision.resolveValuesCount);
+		assertEquals(List.of(10L, 20L, 30L), revision.resolvedIds);
+	}
+
+	@Test
+	void reusesCachedValueForDuplicateIdsInMutableBufferedRows() {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		RecordingLmdbValue canonical = value("canonical", 10, materialized);
+		RecordingLmdbValue duplicate = value("duplicate", 10, materialized);
+		BindingSet firstRow = row("value", first);
+		QueryBindingSet canonicalRow = row("value", canonical);
+		QueryBindingSet duplicateRow = row("value", duplicate);
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, canonicalRow, duplicateRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
+			assertSame(firstRow, result.next());
+			assertEquals(List.of("first"), materialized);
+			assertSame(canonicalRow, result.next());
+			assertEquals(List.of("first", "canonical"), materialized);
+			assertSame(canonical, canonicalRow.getValue("value"));
+			assertSame(canonical, duplicateRow.getValue("value"));
+			assertSame(duplicateRow, result.next());
+			assertFalse(result.hasNext());
+		}
+		assertEquals(1, canonical.initCount);
+		assertEquals(0, duplicate.initCount);
+	}
+
+	@Test
+	void keepsDuplicateIdsFromDifferentRevisionsSeparateInMutableBufferedRows() {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		RecordingLmdbValue firstRevisionValue = value("first-revision", 10, revision(1), materialized);
+		RecordingLmdbValue secondRevisionValue = value("second-revision", 10, revision(2), materialized);
+		BindingSet firstRow = row("value", first);
+		QueryBindingSet firstRevisionRow = row("value", firstRevisionValue);
+		QueryBindingSet secondRevisionRow = row("value", secondRevisionValue);
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, firstRevisionRow, secondRevisionRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
+			assertSame(firstRow, result.next());
+			assertSame(firstRevisionRow, result.next());
+			assertSame(firstRevisionValue, firstRevisionRow.getValue("value"));
+			assertSame(secondRevisionRow, result.next());
+			assertSame(secondRevisionValue, secondRevisionRow.getValue("value"));
+			assertFalse(result.hasNext());
+		}
+		assertEquals(List.of("first", "first-revision", "second-revision"), materialized);
+	}
+
+	@Test
+	void keepsKnownIdsWithNullRevisionsSeparateInMutableBufferedRows() {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		RecordingLmdbValue firstNullRevisionValue = value("first-null-revision", 10, null, materialized);
+		RecordingLmdbValue secondNullRevisionValue = value("second-null-revision", 10, null, materialized);
+		BindingSet firstRow = row("value", first);
+		QueryBindingSet firstNullRevisionRow = row("value", firstNullRevisionValue);
+		QueryBindingSet secondNullRevisionRow = row("value", secondNullRevisionValue);
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, firstNullRevisionRow, secondNullRevisionRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
+			assertSame(firstRow, result.next());
+			assertSame(firstNullRevisionRow, result.next());
+			assertSame(firstNullRevisionValue, firstNullRevisionRow.getValue("value"));
+			assertSame(secondNullRevisionRow, result.next());
+			assertSame(secondNullRevisionValue, secondNullRevisionRow.getValue("value"));
+			assertFalse(result.hasNext());
+		}
+		assertEquals(List.of("first", "first-null-revision", "second-null-revision"), materialized);
+	}
+
+	@Test
+	void skipsAlreadyInitializedValuesWhenDeduplicatingMutableBufferedRows() {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		ValueStoreRevision revision = revision(1);
+		LmdbIRI firstInitialized = new LmdbIRI(revision, "urn:first", 10);
+		LmdbIRI secondInitialized = new LmdbIRI(revision, "urn:second", 10);
+		BindingSet firstRow = row("value", first);
+		QueryBindingSet firstInitializedRow = row("value", firstInitialized);
+		QueryBindingSet secondInitializedRow = row("value", secondInitialized);
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, firstInitializedRow, secondInitializedRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
+			assertSame(firstRow, result.next());
+			assertSame(firstInitializedRow, result.next());
+			assertSame(firstInitialized, firstInitializedRow.getValue("value"));
+			assertSame(secondInitializedRow, result.next());
+			assertSame(secondInitialized, secondInitializedRow.getValue("value"));
+			assertFalse(result.hasNext());
+		}
+	}
+
+	@Test
+	void keepsUnknownIdsOutOfBufferedIdSort() {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		RecordingLmdbValue unknown = value("unknown", LmdbValue.UNKNOWN_ID, materialized);
+		RecordingLmdbValue id10 = value("id10", 10, materialized);
+		RecordingLmdbValue id20 = value("id20", 20, materialized);
+		BindingSet firstRow = row("value", first);
+		BindingSet secondRow = row("value", id20);
+		BindingSet thirdRow = row("value", unknown);
+		BindingSet fourthRow = row("value", id10);
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, secondRow, thirdRow, fourthRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
+			assertSame(firstRow, result.next());
+			assertEquals(List.of("first"), materialized);
+			assertSame(secondRow, result.next());
+			assertEquals(List.of("first", "id10", "id20", "unknown"), materialized);
+			assertSame(thirdRow, result.next());
+			assertSame(fourthRow, result.next());
+			assertFalse(result.hasNext());
+		}
+	}
+
+	@Test
+	void copiesCachedValueForDuplicateIdsInImmutableBufferedRows() {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		RecordingLmdbValue canonical = value("canonical", 10, materialized);
+		RecordingLmdbValue duplicate = value("duplicate", 10, materialized);
+		BindingSet firstRow = immutableRow("value", first);
+		BindingSet canonicalRow = immutableRow("value", canonical);
+		BindingSet duplicateRow = immutableRow("value", duplicate);
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, canonicalRow, duplicateRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
+			assertSame(firstRow, result.next());
+			assertEquals(List.of("first"), materialized);
+			assertSame(canonicalRow, result.next());
+			assertEquals(List.of("first", "canonical"), materialized);
+			assertSame(duplicateRow, result.next());
+			assertFalse(result.hasNext());
+		}
+		assertEquals(1, canonical.initCount);
+		assertEquals(0, duplicate.initCount);
+		assertEquals(1, duplicate.copyCount);
+		assertSame(canonical, duplicate.copiedFrom);
+	}
+
+	@Test
+	void rampsBufferedMaterializationBatchSizeAfterFirstResult() {
+		List<String> materialized = new ArrayList<>();
+		List<BindingSet> rows = new ArrayList<>();
+		int[] expectedBatchSizes = { LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE,
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE * 2,
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE * 4,
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE * 8,
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE * 16,
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE,
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE };
+		BindingSet firstRow = row("value", value("first", 0, materialized));
+		rows.add(firstRow);
+		int bufferedRows = 0;
+		for (int batchSize : expectedBatchSizes) {
+			for (int i = batchSize; i > 0; i--) {
+				int rowId = bufferedRows + i;
+				rows.add(row("value", value("buffered-" + rowId, rowId, materialized)));
+			}
+			bufferedRows += batchSize;
+		}
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(rows.toArray(BindingSet[]::new)), LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
+			assertSame(firstRow, result.next());
+			assertEquals(List.of("first"), materialized);
+			int nextRowIndex = 1;
+			int expectedMaterializedRows = 1;
+			for (int expectedBatchSize : expectedBatchSizes) {
+				assertSame(rows.get(nextRowIndex), result.next());
+				expectedMaterializedRows += expectedBatchSize;
+				assertEquals(expectedMaterializedRows, materialized.size());
+				for (int i = 1; i < expectedBatchSize; i++) {
+					assertSame(rows.get(nextRowIndex + i), result.next());
+				}
+				nextRowIndex += expectedBatchSize;
+			}
+			assertFalse(result.hasNext());
+		}
+	}
+
+	private static RecordingLmdbValue value(String name, long id, List<String> materialized) {
+		return value(name, id, DEFAULT_REVISION, materialized);
+	}
+
+	private static RecordingLmdbValue value(String name, long id, ValueStoreRevision revision,
+			List<String> materialized) {
+		return new RecordingLmdbValue(name, id, revision, materialized);
+	}
+
+	private static ValueStoreRevision revision(long revisionId) {
+		return new InitOnResolveRevision(revisionId, mock(ValueStore.class));
+	}
+
+	private static CloseableIteration<BindingSet> bindingSets(BindingSet... rows) {
+		return new CloseableIteration<>() {
+
+			private int index;
+
+			private boolean closed;
+
+			@Override
+			public boolean hasNext() {
+				return !closed && index < rows.length;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				return rows[index++];
+			}
+
+			@Override
+			public void close() {
+				closed = true;
+			}
+		};
+	}
+
+	private static final class RecordingRevision extends ValueStoreRevision.Base {
+
+		private final long revisionId;
+
+		private final ValueStore valueStore = mock(ValueStore.class);
+
+		private final List<Long> resolvedIds = new ArrayList<>();
+
+		private int resolveValuesCount;
+
+		private RecordingRevision(long revisionId) {
+			this.revisionId = revisionId;
+		}
+
+		@Override
+		public long getRevisionId() {
+			return revisionId;
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return valueStore;
+		}
+
+		@Override
+		public boolean resolveValue(long id, LmdbValue value) {
+			value.init();
+			return true;
+		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			resolveValuesCount++;
+			for (int i = 0; i < count; i++) {
+				LmdbValue value = values[order[i]];
+				resolvedIds.add(value.getInternalID());
+				value.init();
+			}
+		}
+	}
+
+	private static final class InitOnResolveRevision extends ValueStoreRevision.Base implements Serializable {
+
+		private static final long serialVersionUID = 1L;
+
+		private final long revisionId;
+
+		private final transient ValueStore valueStore;
+
+		private InitOnResolveRevision(long revisionId, ValueStore valueStore) {
+			this.revisionId = revisionId;
+			this.valueStore = valueStore;
+		}
+
+		@Override
+		public long getRevisionId() {
+			return revisionId;
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return valueStore;
+		}
+
+		@Override
+		public boolean resolveValue(long id, LmdbValue value) {
+			value.init();
+			return true;
+		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			for (int i = 0; i < count; i++) {
+				values[order[i]].init();
+			}
+		}
+	}
+
+	private static QueryBindingSet row(String bindingName, LmdbValue value) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding(bindingName, value);
+		return row;
+	}
+
+	private static BindingSet immutableRow(String bindingName, LmdbValue value) {
+		return new ListBindingSet(List.of(bindingName), value);
+	}
+
+	private static BindingSet row(String firstBindingName, LmdbValue firstValue, String secondBindingName,
+			LmdbValue secondValue) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding(firstBindingName, firstValue);
+		row.addBinding(secondBindingName, secondValue);
+		return row;
+	}
+
+	private static class RecordingLmdbValue implements LmdbValue {
+
+		private static final long serialVersionUID = 1L;
+
+		private final String name;
+
+		private final long id;
+
+		private final ValueStoreRevision revision;
+
+		private final List<String> materialized;
+
+		private boolean initialized;
+
+		private int initCount;
+
+		private int copyCount;
+
+		private LmdbValue copiedFrom;
+
+		private RecordingLmdbValue(String name, long id, ValueStoreRevision revision, List<String> materialized) {
+			this.name = name;
+			this.id = id;
+			this.revision = revision;
+			this.materialized = materialized;
+		}
+
+		@Override
+		public void setInternalID(long id, ValueStoreRevision revision) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public long getInternalID() {
+			return id;
+		}
+
+		@Override
+		public void init() {
+			initCount++;
+			initialized = true;
+			materialized.add(name);
+		}
+
+		@Override
+		public boolean isInitialized() {
+			return initialized;
+		}
+
+		@Override
+		public ValueStoreRevision getValueStoreRevision() {
+			return revision;
+		}
+
+		@Override
+		public void setFromInitializedValue(LmdbValue initializedValue) {
+			copyCount++;
+			copiedFrom = initializedValue;
+		}
+
+		@Override
+		public String stringValue() {
+			return name;
+		}
+
+		@Override
+		public String toString() {
+			return name;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof RecordingLmdbValue that)) {
+				return false;
+			}
+			return id == that.id && Objects.equals(name, that.name);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(name, id);
+		}
+
+		public String getNamespace() {
+			return "urn:materialized:";
+		}
+
+		public String getLocalName() {
+			return name;
+		}
+
+		@Override
+		public long retainedLexicalLength() {
+			return name.length();
+		}
 	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void connectionInitializesForeignDictionaryValuesBeforeReturningRows(boolean nativeEnabled,
-			@TempDir File dataDir) {
+	void connectionInitializesForeignDictionaryValuesBeforeReturningRows(boolean nativeEnabled, @TempDir File dataDir) {
 		List<String> materialized = new ArrayList<>();
 		ValueStoreRevision revision = new InitializingRevision();
 		List<RecordingLmdbValue> foreign = List.of(value("first", 40, revision, materialized),
@@ -93,10 +563,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 		CountDownLatch releaseCollection = new CountDownLatch(1);
 		CountDownLatch sourceClosed = new CountDownLatch(1);
 		BindingSet firstRow = row(value("first", 40, revision, materialized));
-		BindingSet secondRow = row(new BlockingLmdbValue("second", 30, revision, materialized,
-				collectionStarted, releaseCollection));
+		BindingSet secondRow = row(
+				new BlockingLmdbValue("second", 30, revision, materialized, collectionStarted, releaseCollection));
 		BindingSet thirdRow = row(value("third", 20, revision, materialized));
-
 		try (LmdbValueMaterializingIteration iteration = new LmdbValueMaterializingIteration(
 				new ListIteration(List.of(firstRow, secondRow, thirdRow), sourceClosed), 8)) {
 			assertSame(firstRow, iteration.next());
@@ -104,7 +573,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 			assertTrue(collectionStarted.await(30, TimeUnit.SECONDS));
 			CompletableFuture<Void> closing = CompletableFuture.runAsync(iteration::close);
 			assertTrue(sourceClosed.await(30, TimeUnit.SECONDS));
-
 			releaseCollection.countDown();
 			assertSame(secondRow, consuming.get(30, TimeUnit.SECONDS));
 			closing.get(30, TimeUnit.SECONDS);
@@ -121,7 +589,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 		RecordingLmdbValue id30 = value("id30", 30, revision, materialized);
 		RecordingLmdbValue id10 = value("id10", 10, revision, materialized);
 		RecordingLmdbValue id20 = value("id20", 20, revision, materialized);
-
 		BindingSet firstRow = row(first);
 		BindingSet secondRow = row(id30);
 		BindingSet thirdRow = row(id10);
@@ -130,7 +597,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 		assignment.setBindingSets(List.of(firstRow, secondRow, thirdRow, fourthRow));
 		List<BindingSet> assignmentRows = new ArrayList<>();
 		assignment.getBindingSets().forEach(assignmentRows::add);
-
 		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
 				new ListIteration(assignmentRows, new CountDownLatch(1)), 8)) {
 			assertEquivalentPreparedRow(assignmentRows.get(0), result.next());
@@ -146,11 +612,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 	private static void assertEquivalentPreparedRow(BindingSet expected, BindingSet actual) {
 		assertEquals(expected, actual);
 		assertSame(expected.getValue("value"), actual.getValue("value"));
-	}
-
-	private static RecordingLmdbValue value(String name, long id, ValueStoreRevision revision,
-			List<String> materialized) {
-		return new RecordingLmdbValue(name, id, revision, materialized);
 	}
 
 	private static QueryBindingSet row(LmdbValue value) {
@@ -187,95 +648,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 				values[order[i]].init();
 			}
 		}
-
-	}
-
-	private static class RecordingLmdbValue implements LmdbValue, IRI {
-
-		private static final long serialVersionUID = 1L;
-
-		private final String name;
-		private final long id;
-		private final ValueStoreRevision revision;
-		private final List<String> materialized;
-		private boolean initialized;
-
-		private RecordingLmdbValue(String name, long id, ValueStoreRevision revision, List<String> materialized) {
-			this.name = name;
-			this.id = id;
-			this.revision = revision;
-			this.materialized = materialized;
-		}
-
-		@Override
-		public void setInternalID(long id, ValueStoreRevision revision) {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
-		public long getInternalID() {
-			return id;
-		}
-
-		@Override
-		public boolean isInitialized() {
-			return initialized;
-		}
-
-		@Override
-		public String getNamespace() {
-			return "urn:materialized:";
-		}
-
-		@Override
-		public String getLocalName() {
-			return name;
-		}
-
-		@Override
-		public long retainedLexicalLength() {
-			return name.length();
-		}
-
-		@Override
-		public void init() {
-			if (!initialized) {
-				initialized = true;
-				materialized.add(name);
-			}
-		}
-
-		@Override
-		public ValueStoreRevision getValueStoreRevision() {
-			return revision;
-		}
-
-		@Override
-		public void setFromInitializedValue(LmdbValue initializedValue) {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
-		public String stringValue() {
-			init();
-			return "urn:materialized:" + name;
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (this == o) {
-				return true;
-			}
-			if (!(o instanceof RecordingLmdbValue that)) {
-				return false;
-			}
-			return id == that.id && Objects.equals(name, that.name);
-		}
-
-		@Override
-		public int hashCode() {
-			return Objects.hash(name, id);
-		}
 	}
 
 	private static final class BlockingLmdbValue extends RecordingLmdbValue {
@@ -283,6 +655,7 @@ class LmdbStoreConnectionValueMaterializationTest {
 		private static final long serialVersionUID = 1L;
 
 		private final CountDownLatch collectionStarted;
+
 		private final CountDownLatch releaseCollection;
 
 		private BlockingLmdbValue(String name, long id, ValueStoreRevision revision, List<String> materialized,
@@ -310,6 +683,7 @@ class LmdbStoreConnectionValueMaterializationTest {
 	private static final class ListIteration extends AbstractCloseableIteration<BindingSet> {
 
 		private final Iterator<BindingSet> rows;
+
 		private final CountDownLatch closed;
 
 		private ListIteration(List<BindingSet> rows, CountDownLatch closed) {

@@ -45,6 +45,8 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	private transient volatile long semanticVersion;
 
 	private volatile boolean initialized = false;
+	/** Guarded by this value's monitor; a copied payload is not published until its resolver returns. */
+	private transient boolean resolutionInProgress;
 	private transient volatile boolean externallyOwned;
 
 	@Override
@@ -55,11 +57,6 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	@Override
 	public boolean isExternallyOwned() {
 		return externallyOwned;
-	}
-
-	@Override
-	public boolean isInitialized() {
-		return initialized;
 	}
 
 	/*--------------*
@@ -122,6 +119,9 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		if (initializedValue instanceof LmdbBNode lmdbBNode) {
 			payloadChanged();
 			super.setID(lmdbBNode.getID());
+			if (!resolutionInProgress) {
+				initialized = true;
+			}
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbBNode");
 		}
@@ -154,11 +154,16 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					InternalIdentity resolving = identity;
-					boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
-					initialized = resolved;
-					if (resolved) {
-						resolving.revision().valueInitialized(resolving.id(), this);
+					resolutionInProgress = true;
+					try {
+						InternalIdentity resolving = identity;
+						boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
+						initialized = resolved;
+						if (resolved) {
+							resolving.revision().valueInitialized(resolving.id(), this);
+						}
+					} finally {
+						resolutionInProgress = false;
 					}
 				}
 			}
@@ -171,15 +176,25 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					InternalIdentity resolving = identity;
-					boolean resolved = resolver.resolve(resolving.id(), this);
-					initialized = resolved;
-					if (resolved) {
-						resolving.revision().valueInitialized(resolving.id(), this);
+					resolutionInProgress = true;
+					try {
+						InternalIdentity resolving = identity;
+						boolean resolved = resolver.resolve(resolving.id(), this);
+						initialized = resolved;
+						if (resolved) {
+							resolving.revision().valueInitialized(resolving.id(), this);
+						}
+					} finally {
+						resolutionInProgress = false;
 					}
 				}
 			}
 		}
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
 	}
 
 	@Override

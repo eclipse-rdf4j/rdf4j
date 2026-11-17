@@ -332,6 +332,93 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 	}
 
 	@Test
+	void compositeDictionaryRetentionRequiresItsLookupAndCapturedActiveSources() {
+		Object idSpace = new Object();
+		DictionaryRetentionSource lookup = new DictionaryRetentionSource(idSpace, false, true);
+		DictionaryRetentionSource active = new DictionaryRetentionSource(idSpace, true, false);
+		DictionaryRetentionSource inactive = new DictionaryRetentionSource(idSpace, false, false);
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(lookup, active, inactive));
+
+		assertThat(source.tryRetainDictionaryTermMembership())
+				.as("an active statement plane without retained dictionary membership declines")
+				.isFalse();
+		assertThat(lookup.retentionAttempts).hasValue(1);
+		assertThat(active.retentionAttempts).hasValue(1);
+		assertThat(inactive.retentionAttempts).hasValue(0);
+
+		active.canRetain = true;
+		active.active = false;
+		assertThat(source.tryRetainDictionaryTermMembership())
+				.as("the composite requires the active source set captured for this execution")
+				.isTrue();
+		assertThat(lookup.retentionAttempts).hasValue(2);
+		assertThat(active.retentionAttempts).hasValue(2);
+		assertThat(inactive.retentionAttempts).hasValue(0);
+	}
+
+	@Test
+	void compositeDictionaryRetentionRequiresOneStableLookupSnapshotAcrossEveryMember() {
+		Object idSpace = new Object();
+		Value value = SimpleValueFactory.getInstance().createIRI("urn:dictionary-snapshot-value");
+		Object lookupScope = new Object();
+		Object laterMemberScope = new Object();
+		SnapshotRetentionSource lookup = new SnapshotRetentionSource(idSpace, value, 101L, lookupScope);
+		SnapshotRetentionSource active = new SnapshotRetentionSource(idSpace, value, 202L, laterMemberScope);
+		NativeLmdbQuerySource composite = CompositeNativeLmdbQuerySource.combine(List.of(lookup, active));
+
+		assertThat(lookup.idOf(value)).isNotEqualTo(active.idOf(value));
+		assertThat(composite.idOf(value)).isEqualTo(lookup.idOf(value));
+		assertThat(composite.tryRetainDictionaryTermMembership())
+				.as("shared ID space does not make a later dictionary mapping part of the lookup snapshot")
+				.isFalse();
+		assertThat(lookup.retentionAttempts).hasValue(0);
+		assertThat(active.retentionAttempts).hasValue(0);
+
+		Object sharedScope = new Object();
+		SnapshotRetentionSource sameSnapshotLookup = new SnapshotRetentionSource(idSpace, value, 101L, sharedScope);
+		SnapshotRetentionSource sameSnapshotActive = new SnapshotRetentionSource(idSpace, value, 101L, sharedScope);
+		NativeLmdbQuerySource sameSnapshot = CompositeNativeLmdbQuerySource.combine(
+				List.of(sameSnapshotLookup, sameSnapshotActive));
+		assertThat(sameSnapshot.tryRetainDictionaryTermMembership())
+				.as("every contributing dictionary can retain the same authenticated lookup mapping")
+				.isTrue();
+		assertThat(sameSnapshotLookup.retentionAttempts).hasValue(1);
+		assertThat(sameSnapshotActive.retentionAttempts).hasValue(1);
+
+		SnapshotRetentionSource changingLookup = new SnapshotRetentionSource(idSpace, value, 101L, sharedScope);
+		SnapshotRetentionSource stableActive = new SnapshotRetentionSource(idSpace, value, 101L, sharedScope);
+		changingLookup.scopeAfterRetention = new Object();
+		NativeLmdbQuerySource changingLookupSnapshot = CompositeNativeLmdbQuerySource.combine(
+				List.of(changingLookup, stableActive));
+		assertThat(changingLookupSnapshot.tryRetainDictionaryTermMembership())
+				.as("a lookup token change while the source retains its snapshot invalidates the composite proof")
+				.isFalse();
+
+		SnapshotRetentionSource stableLookup = new SnapshotRetentionSource(idSpace, value, 101L, sharedScope);
+		SnapshotRetentionSource changingActive = new SnapshotRetentionSource(idSpace, value, 101L, sharedScope);
+		changingActive.scopeAfterRetention = new Object();
+		NativeLmdbQuerySource changingActiveSnapshot = CompositeNativeLmdbQuerySource.combine(
+				List.of(stableLookup, changingActive));
+		assertThat(changingActiveSnapshot.tryRetainDictionaryTermMembership())
+				.as("an active statement member must retain the lookup snapshot token across retention")
+				.isFalse();
+	}
+
+	@Test
+	void syntheticValueSourceDelegatesDictionaryRetentionToItsDelegate() {
+		Object idSpace = new Object();
+		DictionaryRetentionSource delegate = new DictionaryRetentionSource(idSpace, true, false);
+		SyntheticValueSource source = new SyntheticValueSource(delegate, new PlanValueCatalog.Builder().build());
+
+		assertThat(source.tryRetainDictionaryTermMembership()).isFalse();
+		assertThat(delegate.retentionAttempts).hasValue(1);
+
+		delegate.canRetain = true;
+		assertThat(source.tryRetainDictionaryTermMembership()).isTrue();
+		assertThat(delegate.retentionAttempts).hasValue(2);
+	}
+
+	@Test
 	void syntheticPredicateDeclinesExactCountAndRealPredicateDelegates() {
 		Object idSpace = new Object();
 		PredicateCountSource delegate = new PredicateCountSource(idSpace, OptionalLong.of(5L));
@@ -2072,6 +2159,73 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		@Override
 		public boolean hasStatementsInSource() {
 			return active;
+		}
+	}
+
+	private static final class DictionaryRetentionSource extends StubSource {
+		private boolean active;
+		private boolean canRetain;
+		private final AtomicInteger retentionAttempts = new AtomicInteger();
+
+		private DictionaryRetentionSource(Object idSpace, boolean active, boolean canRetain) {
+			super(idSpace);
+			this.active = active;
+			this.canRetain = canRetain;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return active;
+		}
+
+		@Override
+		public Object valueLookupScope() {
+			return idSpace;
+		}
+
+		@Override
+		public boolean tryRetainDictionaryTermMembership() {
+			retentionAttempts.incrementAndGet();
+			return canRetain;
+		}
+	}
+
+	private static final class SnapshotRetentionSource extends StubSource {
+		private final Value term;
+		private final long id;
+		private Object lookupScope;
+		private Object scopeAfterRetention;
+		private final AtomicInteger retentionAttempts = new AtomicInteger();
+
+		private SnapshotRetentionSource(Object idSpace, Value term, long id, Object lookupScope) {
+			super(idSpace);
+			this.term = term;
+			this.id = id;
+			this.lookupScope = lookupScope;
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return term.equals(value) ? id : NativeLmdbQuerySource.UNKNOWN_ID;
+		}
+
+		@Override
+		public Value lazyValue(long valueId) {
+			return valueId == id ? term : null;
+		}
+
+		@Override
+		public Object valueLookupScope() {
+			return lookupScope;
+		}
+
+		@Override
+		public boolean tryRetainDictionaryTermMembership() {
+			retentionAttempts.incrementAndGet();
+			if (scopeAfterRetention != null) {
+				lookupScope = scopeAfterRetention;
+			}
+			return true;
 		}
 	}
 

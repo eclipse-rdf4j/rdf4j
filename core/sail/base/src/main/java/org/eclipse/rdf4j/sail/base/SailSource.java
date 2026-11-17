@@ -441,6 +441,21 @@ public interface SailSource extends SailClosable {
 	SailDataset dataset(IsolationLevel level) throws SailException;
 
 	/**
+	 * Acquires a dataset for a read without an active transaction. The caller owns the returned dataset, not this
+	 * source. By default the dataset owns a new fork, preserving this source's branching and observation semantics.
+	 * Backing sources that support direct reads but cannot fork may override this method to return
+	 * {@link #dataset(IsolationLevel)} without transferring ownership of the backing source.
+	 *
+	 * @param level the requested isolation level
+	 * @return a dataset whose close releases the resources acquired for this read
+	 * @throws SailException if the read dataset cannot be acquired
+	 */
+	@InternalUseOnly
+	default SailDataset datasetForRead(IsolationLevel level) throws SailException {
+		return SourceClosingSailDataset.open(fork(), level);
+	}
+
+	/**
 	 * Opens a scope for acquiring one or more datasets from this source as one read view. Composite sources use this to
 	 * keep their child datasets on the same backing generation. Implementations that do not coordinate snapshots may
 	 * use the default no-op scope.

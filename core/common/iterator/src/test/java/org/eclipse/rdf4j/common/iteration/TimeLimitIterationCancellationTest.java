@@ -67,11 +67,13 @@ class TimeLimitIterationCancellationTest {
 	}
 
 	@Test
-	void expiredTimeLimitStillSignalsBeforeClosing() {
+	void expiredTimeLimitStillSignalsBeforeClosing() throws Exception {
 		CooperativeAggregate source = new CooperativeAggregate();
 		TimedIteration timed = new TimedIteration(source, 0, HOUR, HOUR);
 		assertSame(timed.timeout, assertThrows(IllegalStateException.class, timed::hasNext));
+		assertTrue(source.cancelled.await(5, TimeUnit.SECONDS));
 		timed.close();
+		assertTrue(source.closeFinished.await(5, TimeUnit.SECONDS));
 		assertEquals(1, source.cancellationCalls.get());
 		assertEquals(1, source.closeCalls.get());
 		assertFalse(source.closedBeforeCancellation);

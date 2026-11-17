@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 
 @Experimental
 final class RightMemoProbe {
@@ -47,12 +48,64 @@ final class RightMemoProbe {
 	GroupKey sweepProbeKey;
 	HashMap<GroupKey, long[][]> sweptRows;
 	boolean sweepPending;
+	/** Non-null only for a cost-admitted, query-budgeted support window. */
+	private LmdbQueryMemoryManager.AggregateReservation windowReservation;
+	boolean windowBudgetRefused;
+	long windowHits;
 
 	RightMemoProbe(SlotPlan right, int[] keySlots, int[] replaySlots) {
 		this.right = right;
 		this.keySlots = keySlots;
 		this.replaySlots = replaySlots;
 		this.probeKey = new GroupKey(new long[keySlots.length]);
+	}
+
+	/** Reuses the ordinary memo engine; the window owner has already priced its observed key domain. */
+	static RightMemoProbe forWindow(SlotPlan right, int[] keySlots, RowState row) {
+		LmdbQueryMemoryManager.AggregateReservation reservation = row.memoryScope
+				.ledger(LmdbNativeHashJoin.queryMemory())
+				.openAggregateReservation();
+		if (!reservation.tryReserve(256L)) {
+			reservation.close();
+			return null;
+		}
+		try {
+			RightMemoProbe probe = new RightMemoProbe(right, keySlots, slotsOf(right.producedMask()));
+			probe.windowReservation = reservation;
+			return probe;
+		} catch (RuntimeException | Error failure) {
+			reservation.close();
+			throw failure;
+		}
+	}
+
+	private boolean reserveWindowKey() {
+		if (windowReservation == null) {
+			return true;
+		}
+		// Key object, copied id array, map node/buckets and bucket-list overhead, including resize peaks.
+		if (windowBudgetRefused || !windowReservation.tryReserve(192L + 8L * keySlots.length)) {
+			windowBudgetRefused = true;
+			return false;
+		}
+		return true;
+	}
+
+	boolean reserveWindowRow(long bytes) {
+		if (windowReservation == null) {
+			return true;
+		}
+		if (!windowReservation.tryReserve(bytes)) {
+			windowBudgetRefused = true;
+			return false;
+		}
+		return true;
+	}
+
+	void releaseWindowRows(long bytes) {
+		if (windowReservation != null && bytes != 0L) {
+			windowReservation.release(bytes);
+		}
 	}
 
 	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
@@ -182,10 +235,16 @@ final class RightMemoProbe {
 			return null;
 		}
 		if (cached != null) {
+			if (windowReservation != null) {
+				windowHits++;
+			}
 			return cached.length == 0 ? EmptyCursor.INSTANCE : new MemoReplayCursor(row, replaySlots, cached);
 		}
+		if (!reserveWindowKey()) {
+			return null;
+		}
 		GroupKey storedKey = probeKey.storedCopy();
-		return new MemoRecordingCursor(right.open(row), row, replaySlots, rowsByKey, storedKey);
+		return new MemoRecordingCursor(right.open(row), row, replaySlots, rowsByKey, storedKey, this);
 	}
 
 	/**
@@ -304,31 +363,54 @@ final class RightMemoProbe {
 		if (sweptRows != null) {
 			sweptRows.clear();
 		}
+		if (windowReservation != null) {
+			windowReservation.close();
+			windowReservation = null;
+		}
 	}
 }
 
 @Experimental
-final class MemoRecordingCursor implements RowCursor {
+final class MemoRecordingCursor implements FactorizedRowCursor {
 	final RowCursor delegate;
 	final RowState row;
 	final int[] replaySlots;
 	final HashMap<GroupKey, long[][]> rowsByKey;
 	final GroupKey key;
+	final RightMemoProbe owner;
 	ArrayList<long[]> rows = new ArrayList<>();
 	boolean finished;
+	boolean closed;
+	long reservedRows;
+	long physicalWeight = 1L;
+	long repeat;
 
 	MemoRecordingCursor(RowCursor delegate, RowState row, int[] replaySlots,
-			HashMap<GroupKey, long[][]> rowsByKey, GroupKey key) {
+			HashMap<GroupKey, long[][]> rowsByKey, GroupKey key, RightMemoProbe owner) {
 		this.delegate = delegate;
 		this.row = row;
 		this.replaySlots = replaySlots;
 		this.rowsByKey = rowsByKey;
 		this.key = key;
+		this.owner = owner;
 	}
 
 	@Override
 	public boolean next() throws IOException {
+		if (closed || finished) {
+			return false;
+		}
+		if (repeat > 0L) {
+			repeat--;
+			return true;
+		}
 		if (delegate.next()) {
+			// Flattened/Projected transfer their remaining copies when multiplicity() is called. Read once.
+			physicalWeight = delegate instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+			if (physicalWeight <= 0L) {
+				throw new IllegalStateException("invalid memoized row weight");
+			}
+			repeat = physicalWeight - 1L;
 			record();
 			return true;
 		}
@@ -340,16 +422,27 @@ final class MemoRecordingCursor implements RowCursor {
 		if (rows == null) {
 			return;
 		}
-		if (rows.size() >= RightMemoProbe.MAX_MEMO_ROWS) {
-			rows = null;
-			rowsByKey.put(key, RightMemoProbe.TOO_LARGE);
+		// The payload array, its final weight, and both live reference arrays during list growth/toArray.
+		long bytes = 64L + 8L * (replaySlots.length + 1);
+		if (rows.size() >= RightMemoProbe.MAX_MEMO_ROWS || !owner.reserveWindowRow(bytes)) {
+			abandon();
 			return;
 		}
-		long[] values = new long[replaySlots.length];
+		reservedRows += bytes;
+		// The memo stores physical rows. Expanding or dropping their weights would change the result bag.
+		long[] values = new long[replaySlots.length + 1];
 		for (int i = 0; i < replaySlots.length; i++) {
 			values[i] = row.slots[replaySlots[i]];
 		}
+		values[replaySlots.length] = physicalWeight;
 		rows.add(values);
+	}
+
+	@Override
+	public long multiplicity() {
+		long remaining = repeat + 1L;
+		repeat = 0L;
+		return remaining;
 	}
 
 	void finish() {
@@ -365,17 +458,36 @@ final class MemoRecordingCursor implements RowCursor {
 
 	@Override
 	public void close() {
-		delegate.close();
+		if (closed) {
+			return;
+		}
+		closed = true;
+		repeat = 0L;
+		try {
+			delegate.close();
+		} finally {
+			if (!finished && rows != null) {
+				abandon();
+			}
+		}
+	}
+
+	private void abandon() {
+		rows = null;
+		rowsByKey.put(key, RightMemoProbe.TOO_LARGE);
+		owner.releaseWindowRows(reservedRows);
+		reservedRows = 0L;
 	}
 }
 
 @Experimental
-final class MemoReplayCursor implements RowCursor {
+final class MemoReplayCursor implements FactorizedRowCursor {
 	final RowState row;
 	final int[] replaySlots;
 	final long[][] rows;
 	int index;
 	int activeMark = -1;
+	long repeat;
 
 	MemoReplayCursor(RowState row, int[] replaySlots, long[][] rows) {
 		this.row = row;
@@ -385,17 +497,34 @@ final class MemoReplayCursor implements RowCursor {
 
 	@Override
 	public boolean next() {
+		if (repeat > 0L) {
+			repeat--;
+			return true;
+		}
 		release();
 		while (index < rows.length) {
 			long[] values = rows[index++];
 			int mark = row.mark();
 			if (bind(values)) {
 				activeMark = mark;
+				// Legacy full sweeps contain unit rows; per-key recordings carry an explicit final weight.
+				long weight = values.length > replaySlots.length ? values[replaySlots.length] : 1L;
+				if (weight <= 0L) {
+					throw new IllegalStateException("invalid replayed row weight");
+				}
+				repeat = weight - 1L;
 				return true;
 			}
 			row.rollback(mark);
 		}
 		return false;
+	}
+
+	@Override
+	public long multiplicity() {
+		long remaining = repeat + 1L;
+		repeat = 0L;
+		return remaining;
 	}
 
 	boolean bind(long[] values) {
@@ -410,6 +539,7 @@ final class MemoReplayCursor implements RowCursor {
 
 	@Override
 	public void close() {
+		repeat = 0L;
 		release();
 		index = rows.length;
 	}

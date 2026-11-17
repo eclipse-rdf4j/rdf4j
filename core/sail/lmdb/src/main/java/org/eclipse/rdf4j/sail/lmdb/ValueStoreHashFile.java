@@ -32,6 +32,10 @@ final class ValueStoreHashFile implements AutoCloseable {
 	static final String FILE_NAME = "hashes.dat";
 	static final String INTEGRITY_FILE_NAME = FILE_NAME + ".integrity";
 	private static final long SEGMENT_SIZE = 256L * 1024 * 1024;
+	// Segment lookup narrows its ordinal to int. Bound the last whole slot by that representation;
+	// multiplication, slot-end addition and segment rounding then all remain within signed long range.
+	private static final long MAX_SUPPORTED_ID = ((long) Integer.MAX_VALUE * SEGMENT_SIZE - Integer.BYTES)
+			/ Integer.BYTES;
 	private static final String INTEGRITY_VERSION = "2";
 	private static final String VERSION_KEY = "version";
 	private static final ValueLayout.OfInt HASH_LAYOUT = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
@@ -51,8 +55,12 @@ final class ValueStoreHashFile implements AutoCloseable {
 		open();
 	}
 
+	static boolean supportsId(long id) {
+		return id >= 0L && id <= MAX_SUPPORTED_ID;
+	}
+
 	synchronized int get(long id) throws IOException {
-		if (id < 0) {
+		if (!supportsId(id)) {
 			return 0;
 		}
 
@@ -65,7 +73,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 	}
 
 	synchronized void put(long id, int hash) throws IOException {
-		if (id < 0) {
+		if (!supportsId(id)) {
 			return;
 		}
 
@@ -75,7 +83,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 	}
 
 	synchronized void clear(long id) throws IOException {
-		if (id < 0) {
+		if (!supportsId(id)) {
 			return;
 		}
 

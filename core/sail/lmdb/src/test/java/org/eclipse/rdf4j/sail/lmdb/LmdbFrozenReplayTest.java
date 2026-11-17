@@ -2190,6 +2190,9 @@ class LmdbFrozenReplayTest {
 
 		try {
 			repository.init();
+			// Startup maintenance (deferred RDF-term-domain publication) commits its own native generation; it must
+			// finish before the test pins the generation around the failed isolated commit.
+			LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
 			store.getBackingStore().enableMultiThreading = false;
 			store.probe.reset();
 			store.addSailChangedListener(event -> notifications.incrementAndGet());
@@ -2875,6 +2878,9 @@ class LmdbFrozenReplayTest {
 				try (RepositoryConnection initial = repository.getConnection()) {
 					initial.add(seed);
 				}
+				// Startup maintenance (deferred RDF-term-domain publication) starts its own TripleStore transaction;
+				// it must finish before the probe counts the producer's physical attempts.
+				LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
 				store.getBackingStore().enableMultiThreading = true;
 				store.probe.reset();
 				long tripleMapBefore = store.probe.tripleStore.get().mapSizeBytes();
@@ -5061,6 +5067,24 @@ class LmdbFrozenReplayTest {
 			super(directory, config);
 			this.asyncQueueCapacity = asyncQueueCapacity;
 			this.captureNativeAdmission = captureNativeAdmission;
+		}
+
+		/**
+		 * Every test counts native attempts from its own first fixture commit. A fresh store's post-ready maintenance
+		 * (deferred RDF-term-domain publication) also starts triple-store transactions, and republishes when a fixture
+		 * commit lands inside its window, so the store is handed to the test only after that work has settled.
+		 */
+		@Override
+		public void init() throws SailException {
+			super.init();
+			try {
+				LmdbTestUtil.awaitBackgroundMaintenance(this, 30, TimeUnit.SECONDS);
+			} catch (IOException failure) {
+				throw new SailException(failure);
+			} catch (InterruptedException failure) {
+				Thread.currentThread().interrupt();
+				throw new SailException(failure);
+			}
 		}
 
 		@Override

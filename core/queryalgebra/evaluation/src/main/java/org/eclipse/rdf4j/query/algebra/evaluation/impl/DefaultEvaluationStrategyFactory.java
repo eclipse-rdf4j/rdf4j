@@ -47,6 +47,10 @@ public class DefaultEvaluationStrategyFactory extends AbstractEvaluationStrategy
 		this.collectionFactorySupplier = collectionFactory;
 	}
 
+	public Supplier<CollectionFactory> getCollectionFactorySupplier() {
+		return collectionFactorySupplier;
+	}
+
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {

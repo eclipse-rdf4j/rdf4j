@@ -24,6 +24,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 
 import org.eclipse.rdf4j.model.Literal.BaseDirection;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -47,16 +48,38 @@ class LmdbValuePublicationTest {
 	@ParameterizedTest
 	@EnumSource(PublicationCase.class)
 	void gettersWaitForCompleteRevisionResolution(PublicationCase publication) throws Exception {
+		assertGetterPublication(publication, false, false);
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void cachedPayloadCopyWaitsForCompleteRevisionResolution(PublicationCase publication) throws Exception {
+		assertGetterPublication(publication, true, false);
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void cachedPayloadCopyWaitsForExplicitResolverCompletion(PublicationCase publication) throws Exception {
+		assertGetterPublication(publication, true, true);
+	}
+
+	private static void assertGetterPublication(PublicationCase publication, boolean copiedPayload,
+			boolean explicitResolver) throws Exception {
 		CountDownLatch decoded = new CountDownLatch(1);
 		CountDownLatch complete = new CountDownLatch(1);
 		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
-			publication.decode(value);
+			if (copiedPayload) {
+				value.setFromInitializedValue(publication.ready(value.getValueStoreRevision(), id));
+			} else {
+				publication.decode(value);
+			}
 			decoded.countDown();
 			await(complete);
 			return true;
 		});
 		LmdbValue value = publication.lazy(revision, VALUE_ID);
-		FutureTask<String> firstResult = new FutureTask<>(() -> publication.read(value));
+		FutureTask<String> firstResult = new FutureTask<>(
+				() -> readWithResolver(publication, value, revision, explicitResolver));
 		Thread initializer = new Thread(firstResult, "lmdb-value-initializer");
 		CountDownLatch readerStarted = new CountDownLatch(1);
 		FutureTask<String> secondResult = new FutureTask<>(() -> {
@@ -85,19 +108,211 @@ class LmdbValuePublicationTest {
 	@ParameterizedTest
 	@EnumSource(PublicationCase.class)
 	void failedResolutionDoesNotPublishPayloadAndCanRetry(PublicationCase publication) {
+		assertFailedPublication(publication, false, false);
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void failedCopiedPayloadResolutionDoesNotPublishAndCanRetry(PublicationCase publication) {
+		assertFailedPublication(publication, true, false);
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void failedCopiedPayloadExplicitResolutionDoesNotPublishAndCanRetry(PublicationCase publication) {
+		assertFailedPublication(publication, true, true);
+	}
+
+	private static void assertFailedPublication(PublicationCase publication, boolean copiedPayload,
+			boolean explicitResolver) {
 		SailException failure = new SailException("decode interrupted before publication");
 		AtomicInteger attempts = new AtomicInteger();
 		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
-			publication.decode(value);
+			if (copiedPayload) {
+				value.setFromInitializedValue(publication.ready(value.getValueStoreRevision(), id));
+			} else {
+				publication.decode(value);
+			}
 			if (attempts.incrementAndGet() == 1) {
 				throw failure;
 			}
 			return true;
 		});
 		LmdbValue value = publication.lazy(revision, VALUE_ID);
-		assertSame(failure, assertThrows(SailException.class, () -> publication.read(value)));
-		assertEquals(publication.read(publication.ready(revision, VALUE_ID)), publication.read(value));
+		assertSame(failure, assertThrows(SailException.class,
+				() -> readWithResolver(publication, value, revision, explicitResolver)));
+		assertEquals(publication.read(publication.ready(revision, VALUE_ID)),
+				readWithResolver(publication, value, revision, explicitResolver));
 		assertEquals(2, revision.calls.get(), "Fields from an abandoned decode must not bypass the next resolution");
+	}
+
+	private static String readWithResolver(PublicationCase publication, LmdbValue value,
+			ResolvingRevision revision, boolean explicitResolver) {
+		if (explicitResolver) {
+			value.init(revision::resolveValue);
+		}
+		return publication.read(value);
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void explicitResolverInitializesWithoutConsultingRevision(PublicationCase publication) {
+		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
+			throw new AssertionError("Explicit resolution must use its supplied dictionary view");
+		});
+		LmdbValue value = publication.lazy(revision, VALUE_ID);
+		AtomicInteger explicitCalls = new AtomicInteger();
+		value.init((id, target) -> {
+			explicitCalls.incrementAndGet();
+			target.setFromInitializedValue(publication.ready(revision, id));
+			return true;
+		});
+
+		assertEquals(publication.read(publication.ready(revision, VALUE_ID)), publication.read(value));
+		assertTrue(value.isInitialized());
+		assertEquals(1, explicitCalls.get());
+		assertEquals(0, revision.calls.get());
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void explicitResolverFailureAfterCopyPreservesFailureAndRetries(PublicationCase publication) {
+		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
+			throw new AssertionError("Explicit resolution must use its supplied dictionary view");
+		});
+		LmdbValue value = publication.lazy(revision, VALUE_ID);
+		SailException failure = new SailException("explicit copied payload interrupted");
+		assertSame(failure, assertThrows(SailException.class, () -> value.init((id, target) -> {
+			target.setFromInitializedValue(publication.ready(revision, id));
+			throw failure;
+		})));
+		assertFalse(value.isInitialized());
+		value.init((id, target) -> {
+			target.setFromInitializedValue(publication.ready(revision, id));
+			return true;
+		});
+		assertEquals(publication.read(publication.ready(revision, VALUE_ID)), publication.read(value));
+		assertEquals(0, revision.calls.get());
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void explicitResolverFalseNeverFallsBackToRevision(PublicationCase publication) {
+		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
+			throw new AssertionError("A declined explicit resolution cannot consult another dictionary view");
+		});
+		LmdbValue value = publication.lazy(revision, VALUE_ID);
+		LmdbValue.Resolver declined = (id, target) -> {
+			target.setFromInitializedValue(publication.ready(revision, id));
+			return false;
+		};
+		if (publication == PublicationCase.LITERAL) {
+			assertThrows(AssertionError.class, () -> value.init(declined));
+		} else {
+			value.init(declined);
+		}
+		assertFalse(value.isInitialized());
+		assertEquals(0, revision.calls.get());
+		value.init((id, target) -> {
+			target.setFromInitializedValue(publication.ready(revision, id));
+			return true;
+		});
+		assertEquals(publication.read(publication.ready(revision, VALUE_ID)), publication.read(value));
+		assertEquals(0, revision.calls.get());
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void unsuccessfulCopiedPayloadResolutionLeavesValueUnpublished(PublicationCase publication) {
+		assertUnsuccessfulCopiedPublication(publication, false);
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void unsuccessfulCopiedPayloadExplicitResolutionLeavesValueUnpublished(PublicationCase publication) {
+		assertUnsuccessfulCopiedPublication(publication, true);
+	}
+
+	private static void assertUnsuccessfulCopiedPublication(PublicationCase publication, boolean explicitResolver) {
+		AtomicInteger attempts = new AtomicInteger();
+		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
+			value.setFromInitializedValue(publication.ready(value.getValueStoreRevision(), id));
+			return attempts.incrementAndGet() != 1;
+		});
+		LmdbValue value = publication.lazy(revision, VALUE_ID);
+		if (publication == PublicationCase.LITERAL) {
+			assertThrows(AssertionError.class, () -> {
+				if (explicitResolver) {
+					value.init(revision::resolveValue);
+				} else {
+					value.init();
+				}
+			});
+		} else if (explicitResolver) {
+			value.init(revision::resolveValue);
+		} else {
+			value.init();
+		}
+		assertFalse(value.isInitialized(), "A false resolver result cannot publish even a copied payload");
+		assertEquals(1, revision.calls.get());
+		assertEquals(publication.read(publication.ready(revision, VALUE_ID)),
+				readWithResolver(publication, value, revision, explicitResolver));
+		assertEquals(2, revision.calls.get());
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void copyingReadyPayloadOutsideResolutionPublishesWithoutAnotherDecode(PublicationCase publication) {
+		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
+			throw new AssertionError("A completed payload copy must not perform another dictionary resolution");
+		});
+		LmdbValue value = publication.lazy(revision, VALUE_ID);
+		LmdbValue ready = publication.ready(revision, VALUE_ID);
+		synchronized (value) {
+			value.setFromInitializedValue(ready);
+		}
+
+		assertEquals(publication.read(ready), publication.read(value));
+		assertTrue(value.isInitialized());
+		assertEquals(0, revision.calls.get());
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void completionNotificationCopyCannotUnpublishAResolvedValue(PublicationCase publication) {
+		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
+			value.setFromInitializedValue(publication.ready(value.getValueStoreRevision(), id));
+			return true;
+		}, (id, value) -> {
+			assertTrue(value.isInitialized(), "The completed resolver has published this value");
+			value.setFromInitializedValue(publication.ready(value.getValueStoreRevision(), id));
+			assertTrue(value.isInitialized(), "A notification's payload copy cannot withdraw completed publication");
+		});
+		LmdbValue value = publication.lazy(revision, VALUE_ID);
+
+		assertEquals(publication.read(publication.ready(revision, VALUE_ID)), publication.read(value));
+		assertEquals(1, revision.calls.get(), "A completed value must not reenter dictionary resolution");
+	}
+
+	@ParameterizedTest
+	@EnumSource(PublicationCase.class)
+	void nestedResolutionPublishesOnlyCompletedValues(PublicationCase publication) {
+		LmdbValue[] nested = new LmdbValue[1];
+		ResolvingRevision revision = new ResolvingRevision((id, value) -> {
+			value.setFromInitializedValue(publication.ready(value.getValueStoreRevision(), id));
+			if (id == VALUE_ID) {
+				nested[0].init();
+				assertTrue(nested[0].isInitialized(), "The nested value's own callback has completed");
+				assertFalse(value.isInitialized(), "A nested callback cannot publish its still-resolving caller");
+			}
+			return true;
+		});
+		LmdbValue value = publication.lazy(revision, VALUE_ID);
+		nested[0] = publication.lazy(revision, VALUE_ID + 1);
+
+		assertEquals(publication.read(publication.ready(revision, VALUE_ID)), publication.read(value));
+		assertTrue(value.isInitialized());
+		assertEquals(2, revision.calls.get());
 	}
 
 	@ParameterizedTest
@@ -201,10 +416,17 @@ class LmdbValuePublicationTest {
 
 	private static final class ResolvingRevision extends ValueStoreRevision.Base {
 		private final Resolver resolver;
+		private final BiConsumer<Long, LmdbValue> notification;
 		private final AtomicInteger calls = new AtomicInteger();
 
 		private ResolvingRevision(Resolver resolver) {
+			this(resolver, (id, value) -> {
+			});
+		}
+
+		private ResolvingRevision(Resolver resolver, BiConsumer<Long, LmdbValue> notification) {
 			this.resolver = resolver;
+			this.notification = notification;
 		}
 
 		@Override
@@ -221,6 +443,11 @@ class LmdbValuePublicationTest {
 		public boolean resolveValue(long id, LmdbValue value) {
 			calls.incrementAndGet();
 			return resolver.resolve(id, value);
+		}
+
+		@Override
+		public void valueInitialized(long id, LmdbValue value) {
+			notification.accept(id, value);
 		}
 	}
 

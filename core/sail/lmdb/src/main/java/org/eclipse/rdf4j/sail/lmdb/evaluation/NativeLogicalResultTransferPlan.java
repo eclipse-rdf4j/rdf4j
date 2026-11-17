@@ -64,6 +64,7 @@ final class NativeLogicalResultTransferPlan implements SlotPlan {
 			if (column == null) {
 				return null;
 			}
+			column = column.expressionValue();
 			NativePhysicalOutputEvidence.Column previous = projected.putIfAbsent(targetNames[index], column);
 			if (previous != null && !previous.equals(column)) {
 				// The row projector merges alternative definitions by boundness. No single summary definition is
@@ -100,6 +101,7 @@ final class NativeLogicalResultTransferPlan implements SlotPlan {
 				if (output == null) {
 					return null;
 				}
+				output = output.expressionValue();
 			} else if (copy.computed != null || copy.computedValue != null) {
 				NativeScalarPlan scalar = copy.scalarPlan();
 				if (scalar == null || !copy.encounterOrderReplaySafe || !scalar.canReuseAcrossSolutions(true)) {
@@ -145,7 +147,7 @@ final class NativeLogicalResultTransferPlan implements SlotPlan {
 	private static NativePhysicalOutputEvidence.Column rdfColumn(Object definition) {
 		return new NativePhysicalOutputEvidence.Column(definition, NativeResultCell.Kind.RDF_TERM,
 				NativePhysicalOutputEvidence.Domain.RDF_TERM, NativeAggregateResultDemand.FULL_VALUE,
-				List.of(NativeResultCell.State.BOUND, NativeResultCell.State.UNBOUND, NativeResultCell.State.ERROR));
+				NativePhysicalOutputEvidence.EXPRESSION_STATES);
 	}
 
 	NativePhysicalOutputEvidence evidence() {

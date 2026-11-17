@@ -100,12 +100,12 @@ public final class KernelRuntime {
 	 */
 	@Experimental
 	public static final class AggregateMemory implements MemoryAccount, AutoCloseable {
-		private final LmdbQueryMemoryManager.QueryLedger ledger;
-		private LmdbQueryMemoryManager.Reservation reservation;
-		private boolean closed;
+		private final LmdbQueryMemoryManager.AggregateReservation managed;
+		/** Legacy unbounded callers have no manager state; a volatile terminal bit is sufficient. */
+		private volatile boolean closed;
 
 		private AggregateMemory(LmdbQueryMemoryManager.QueryLedger ledger) {
-			this.ledger = ledger;
+			managed = ledger == null ? null : ledger.openAggregateReservation();
 		}
 
 		public static AggregateMemory forLedger(LmdbQueryMemoryManager.QueryLedger ledger) {
@@ -117,23 +117,7 @@ public final class KernelRuntime {
 			if (bytes < 0L) {
 				throw new IllegalArgumentException("allocation size must not be negative");
 			}
-			if (closed) {
-				return false;
-			}
-			if (bytes == 0L) {
-				return true;
-			}
-			if (ledger == null) {
-				return true;
-			}
-			if (reservation != null && reservation.bytes() == 0L) {
-				reservation = null;
-			}
-			if (reservation == null) {
-				reservation = ledger.reserve(bytes, null);
-				return reservation != null;
-			}
-			return reservation.tryGrow(bytes);
+			return managed == null ? !closed : managed.tryReserve(bytes);
 		}
 
 		@Override
@@ -141,24 +125,17 @@ public final class KernelRuntime {
 			if (bytes < 0L) {
 				throw new IllegalArgumentException("released size must not be negative");
 			}
-			if (bytes > 0L && ledger != null && reservation != null && !closed) {
-				reservation.release(bytes);
-				if (reservation.bytes() == 0L) {
-					reservation = null;
-				}
+			if (managed != null) {
+				managed.release(bytes);
 			}
 		}
 
 		@Override
 		public void close() {
-			if (closed) {
-				return;
-			}
-			closed = true;
-			LmdbQueryMemoryManager.Reservation owned = reservation;
-			reservation = null;
-			if (owned != null) {
-				owned.close();
+			if (managed == null) {
+				closed = true;
+			} else {
+				managed.close();
 			}
 		}
 	}
@@ -656,7 +633,8 @@ public final class KernelRuntime {
 	public static boolean testDateCompare(long candidate, long constant, int op, boolean constantOnLeft,
 			boolean checkBound, KernelHooks hooks, int filterId) {
 		if (candidate == -1L) {
-			return !checkBound && hooks.testFilter(filterId, candidate, -1L, -1L);
+			return checkBound ? recordFilterDecision(hooks, filterId, false)
+					: hooks.testFilter(filterId, candidate, -1L, -1L);
 		}
 		if (ValueIds.getIdType(candidate) == ValueIds.T_DATE && ValueIds.getIdType(constant) == ValueIds.T_DATE) {
 			long candidatePayload = ValueIds.getValue(candidate);
@@ -668,10 +646,15 @@ public final class KernelRuntime {
 				if (constantOnLeft) {
 					comparison = -comparison;
 				}
-				return compareResult(comparison, op);
+				return recordFilterDecision(hooks, filterId, compareResult(comparison, op));
 			}
 		}
 		return hooks.testFilter(filterId, candidate, -1L, -1L);
+	}
+
+	private static boolean recordFilterDecision(KernelHooks hooks, int filterId, boolean accepted) {
+		hooks.recordFilterDecision(filterId, accepted);
+		return accepted;
 	}
 
 	private static int dateKey(long payload) {
@@ -688,14 +671,14 @@ public final class KernelRuntime {
 	public static boolean testOrderedCompare(long candidate, long constant, int op, boolean constantOnLeft,
 			KernelHooks hooks, int filterId) {
 		if (candidate == -1L) {
-			return false;
+			return recordFilterDecision(hooks, filterId, false);
 		}
 		if (ValueIds.isOrderedInteger(candidate) && ValueIds.isOrderedInteger(constant)) {
 			int comparison = ValueIds.compareOrderedIntegers(candidate, constant);
 			if (constantOnLeft) {
 				comparison = -comparison;
 			}
-			return compareResult(comparison, op);
+			return recordFilterDecision(hooks, filterId, compareResult(comparison, op));
 		}
 		return hooks.testFilter(filterId, candidate, -1L, -1L);
 	}

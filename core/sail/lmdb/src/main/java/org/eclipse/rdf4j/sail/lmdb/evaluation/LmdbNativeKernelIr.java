@@ -373,6 +373,43 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
+	 * Input completion can certify hook inputs only in a fully draining relational pipeline. Witness, cached-plan,
+	 * factor, hash, path and nested branch kernels retain execution but require their own per-input proof.
+	 */
+	static boolean filterInputCompletionSupported(Kernel kernel) {
+		if (!(kernel.terminal instanceof Emit || kernel.terminal instanceof Aggregate)) {
+			return false;
+		}
+		for (Node node : kernel.pipeline) {
+			if (node instanceof EnumeratePredicates predicates
+					&& predicates.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+					|| node instanceof EnumerateWildcard enumeration
+							&& enumeration.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+					|| node instanceof SipDomainWildcard domain
+							&& domain.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+					|| node instanceof SipKeyWildcard key
+							&& key.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+				return false;
+			}
+			if (!(node instanceof EnumerateAdjKeys || node instanceof ScanQuad
+					|| node instanceof EnumerateTerms || node instanceof EnumerateDomain
+					|| node instanceof EnumerateNodeDomainIntersection || node instanceof EnumerateEntry
+					|| node instanceof SipDomainProbe || node instanceof SipKeyProbe
+					|| node instanceof SipDomainWildcard || node instanceof SipKeyWildcard
+					|| node instanceof Probe || node instanceof EnumeratePredicates
+					|| node instanceof EnumerateWildcard || node instanceof ProbeVariable || node instanceof ProbeClose
+					|| node instanceof Intersect || node instanceof FilterResidual || node instanceof FilterCompareId
+					|| node instanceof FilterEntryCompatible || node instanceof FilterInConstants
+					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+					|| node instanceof FilterFragmentCompare || node instanceof FilterValue
+					|| node instanceof BindAlias || node instanceof BindHook)) {
+				return false;
+			}
+		}
+		return kernel.aggregateProjections == null && kernel.factorCountGuards == null;
+	}
+
+	/**
 	 * Complete hash-state layout, shared by both execution tiers. Scratch widths are maxima: sibling regions may
 	 * rebuild the same table ID with different widths, but must never resize scratch inside a row loop.
 	 */
@@ -773,6 +810,11 @@ final class LmdbNativeKernelIr {
 		for (int i = 1; i < kernel.pipeline.size(); i++) {
 			Node node = kernel.pipeline.get(i);
 			if (node instanceof BindAlias alias) {
+				// This shortcut substitutes aliases and never executes them. A real Var assignment can map
+				// occupied RDF-null to expression UNKNOWN, so it is not an identity substitution.
+				if (alias.nullIsError) {
+					return null;
+				}
 				Operand value = resolveAlias(alias.source, aliases);
 				if (!prefixOperand(value, positions))
 					return null;
@@ -2625,14 +2667,28 @@ final class LmdbNativeKernelIr {
 		final Operand source;
 		final int dstCol;
 
+		/** A null mapping is not a successful RDF expression result; ordinary compatibility copies retain it. */
+		final boolean nullIsError;
+
 		BindAlias(Operand source, int dstCol) {
+			this(source, dstCol, false);
+		}
+
+		BindAlias(Operand source, int dstCol, boolean nullIsError) {
 			this.source = source;
 			this.dstCol = dstCol;
+			this.nullIsError = nullIsError;
 		}
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("ba(").append(source.token()).append("->").append(dstCol).append(");");
+			key.append("ba(")
+					.append(source.token())
+					.append("->")
+					.append(dstCol)
+					.append(':')
+					.append(nullIsError)
+					.append(");");
 		}
 
 		@Override
@@ -3640,9 +3696,13 @@ final class LmdbNativeKernelIr {
 			int source = column;
 			for (int i = pipeline.size() - 1; i >= 0; i--) {
 				Node node = pipeline.get(i);
-				if (node instanceof BindAlias alias && alias.dstCol == source
-						&& alias.source.kind == Operand.COL) {
-					source = alias.source.index;
+				if (node instanceof BindAlias alias && alias.dstCol == source) {
+					if (alias.nullIsError) {
+						return -1;
+					}
+					if (alias.source.kind == Operand.COL) {
+						source = alias.source.index;
+					}
 				}
 			}
 			return source;
@@ -3651,8 +3711,8 @@ final class LmdbNativeKernelIr {
 		private static boolean rewrittenAfterRoot(List<Node> pipeline, int column) {
 			for (int i = 1; i < pipeline.size(); i++) {
 				Node node = pipeline.get(i);
-				if (node instanceof BindAlias alias && alias.dstCol == column && alias.source.kind == Operand.COL
-						&& alias.source.index == column) {
+				if (node instanceof BindAlias alias && !alias.nullIsError && alias.dstCol == column
+						&& alias.source.kind == Operand.COL && alias.source.index == column) {
 					continue;
 				}
 				BitSet produced = new BitSet();
@@ -3726,10 +3786,19 @@ final class LmdbNativeKernelIr {
 			// (the common SPARQL shape "{ P } UNION { P . extra }").
 			if (root instanceof Union union) {
 				Node collapsed = collapseDistinctKeyUnion(union, rootCol, remainder);
-				if (collapsed == null) {
-					return new OptimizedKernel(List.copyOf(original), originalTerminal);
+				if (collapsed != null) {
+					root = collapsed;
+				} else {
+					FactoredDistinctUnion factored = factorDistinctKeyUnion(union, rootCol);
+					if (factored == null || !repeatableWitnessNodes(remainder)) {
+						return new OptimizedKernel(List.copyOf(original), originalTerminal);
+					}
+					root = factored.root();
+					ArrayList<Node> factoredRemainder = new ArrayList<>(remainder.size() + 1);
+					factoredRemainder.add(factored.witnesses());
+					factoredRemainder.addAll(remainder);
+					remainder = factoredRemainder;
 				}
-				root = collapsed;
 			}
 			if (!distinctKeyRoot(root, rootCol)) {
 				return new OptimizedKernel(List.copyOf(original), originalTerminal);
@@ -3869,9 +3938,110 @@ final class LmdbNativeKernelIr {
 				return h.domain == c.domain && h.col == c.col;
 			}
 			if (head instanceof EnumerateAdjKeys h && candidate instanceof EnumerateAdjKeys c) {
-				return h.adjacency == c.adjacency && h.keyCol == c.keyCol && c.valueCol < 0 && !c.ctxActive();
+				return h.adjacency == c.adjacency && h.keyCol == c.keyCol && h.valueCol < 0 && c.valueCol < 0
+						&& !h.ctxActive() && !c.ctxActive() && h.wildcard == c.wildcard
+						&& (!h.wildcard || h.bySubject == c.bySubject
+								&& h.runtimePredicate.kind == c.runtimePredicate.kind
+								&& h.runtimePredicate.index == c.runtimePredicate.index);
 			}
 			return nodeKey(head).equals(nodeKey(candidate));
+		}
+
+		private record FactoredDistinctUnion(Node root, Union witnesses) {
+		}
+
+		/**
+		 * Factor the same exact key enumeration from every UNION arm while retaining each arm as a witness. Moving from
+		 * branch-major to key-major execution may skip or reorder work under DISTINCT, so every retained operation must
+		 * have a repeatability proof. Empty tails stay with the existing, more restrictive bare-arm collapse.
+		 */
+		private static FactoredDistinctUnion factorDistinctKeyUnion(Union union, int rootCol) {
+			List<List<Node>> normalized = new ArrayList<>(union.branches.size());
+			Node root = null;
+			for (List<Node> branch : union.branches) {
+				List<Node> current = branch;
+				if (branch.getFirst() instanceof Union nested) {
+					FactoredDistinctUnion inner = factorDistinctKeyUnion(nested, rootCol);
+					if (inner == null) {
+						return null;
+					}
+					ArrayList<Node> expanded = new ArrayList<>(branch.size() + 1);
+					expanded.add(inner.root());
+					expanded.add(inner.witnesses());
+					expanded.addAll(branch.subList(1, branch.size()));
+					current = expanded;
+				}
+				if (current.size() < 2) {
+					return null;
+				}
+				Node candidate = current.getFirst();
+				if (candidate instanceof EnumerateAdjKeys keys && keys.wildcard
+						&& keys.runtimePredicate.kind == Operand.COL) {
+					// A mutable branch column is not a stable predicate binding for a shared enumeration.
+					return null;
+				}
+				if (root == null && distinctKeyRoot(candidate, rootCol)) {
+					root = candidate;
+				}
+				List<Node> tail = current.subList(1, current.size());
+				if (!repeatableWitnessNodes(tail)) {
+					return null;
+				}
+				for (Node node : tail) {
+					BitSet produced = new BitSet();
+					node.produced(produced);
+					if (produced.get(rootCol)) {
+						return null;
+					}
+				}
+				normalized.add(current);
+			}
+			if (root == null) {
+				return null;
+			}
+			List<List<Node>> tails = new ArrayList<>(normalized.size());
+			for (List<Node> branch : normalized) {
+				if (!sameKeyEnumeration(root, branch.getFirst())) {
+					return null;
+				}
+				tails.add(branch.subList(1, branch.size()));
+			}
+			return new FactoredDistinctUnion(root, new Union(tails));
+		}
+
+		private static boolean repeatableWitnessNodes(List<Node> nodes) {
+			return repeatableWitnessNodes(nodes, false);
+		}
+
+		private static boolean repeatableWitnessNodes(List<Node> nodes, boolean insideExistingWitness) {
+			for (Node node : nodes) {
+				if (node instanceof Exists exists) {
+					// The nested witness already owns its scratch columns and boolean short circuit. Its read-only
+					// producers need not satisfy the stricter outer suffix shape used by the new witness.
+					if (!repeatableWitnessNodes(exists.pipeline, true)) {
+						return false;
+					}
+				} else if (node instanceof Union union) {
+					for (List<Node> branch : union.branches) {
+						if (!repeatableWitnessNodes(branch, insideExistingWitness)) {
+							return false;
+						}
+					}
+				} else if ((!existentialSuffixNode(node)
+						&& !(insideExistingWitness && repeatableNestedWitnessProducer(node)))
+						|| node.reorderingBarrier()) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/** Snapshot-bound producers supported by an already-existing boolean witness. */
+		private static boolean repeatableNestedWitnessProducer(Node node) {
+			return node instanceof EnumerateDomain || node instanceof EnumerateEntry
+					|| node instanceof EnumerateNodeDomainIntersection || node instanceof SipDomainProbe
+					|| node instanceof SipKeyProbe
+					|| node instanceof EnumerateAdjKeys keys && !keys.wildcard;
 		}
 
 		/**

@@ -55,21 +55,30 @@ public interface JoinOrderPlanner {
 		public JoinOrderPlan(List<TupleExpr> orderedArgs, double estimatedFinalRows, double estimatedTotalWork,
 				List<String> diagnostics, Map<String, String> summaryStringMetrics,
 				Map<String, Double> summaryDoubleMetrics, List<PlanStep> steps) {
-			this.orderedArgs = List.copyOf(orderedArgs);
+			this(orderedArgs, estimatedFinalRows, estimatedTotalWork, diagnostics, summaryStringMetrics,
+					summaryDoubleMetrics, steps, false);
+		}
+
+		private JoinOrderPlan(List<TupleExpr> orderedArgs, double estimatedFinalRows, double estimatedTotalWork,
+				List<String> diagnostics, Map<String, String> summaryStringMetrics,
+				Map<String, Double> summaryDoubleMetrics, List<PlanStep> steps, boolean trustedImmutable) {
+			this.orderedArgs = trustedImmutable ? orderedArgs : List.copyOf(orderedArgs);
 			this.estimatedFinalRows = estimatedFinalRows;
 			this.estimatedTotalWork = estimatedTotalWork;
-			this.diagnostics = diagnostics == null || diagnostics.isEmpty()
-					? List.of()
-					: List.copyOf(diagnostics);
-			this.summaryStringMetrics = summaryStringMetrics == null || summaryStringMetrics.isEmpty()
-					? Map.of()
-					: Map.copyOf(summaryStringMetrics);
-			this.summaryDoubleMetrics = summaryDoubleMetrics == null || summaryDoubleMetrics.isEmpty()
-					? Map.of()
-					: Map.copyOf(summaryDoubleMetrics);
-			this.steps = steps == null || steps.isEmpty()
-					? List.of()
-					: List.copyOf(steps);
+			this.diagnostics = trustedImmutable
+					? diagnostics
+					: diagnostics == null || diagnostics.isEmpty() ? List.of() : List.copyOf(diagnostics);
+			this.summaryStringMetrics = trustedImmutable
+					? summaryStringMetrics
+					: summaryStringMetrics == null || summaryStringMetrics.isEmpty() ? Map.of()
+							: Map.copyOf(summaryStringMetrics);
+			this.summaryDoubleMetrics = trustedImmutable
+					? summaryDoubleMetrics
+					: summaryDoubleMetrics == null || summaryDoubleMetrics.isEmpty() ? Map.of()
+							: Map.copyOf(summaryDoubleMetrics);
+			this.steps = trustedImmutable
+					? steps
+					: steps == null || steps.isEmpty() ? List.of() : List.copyOf(steps);
 		}
 
 		public List<TupleExpr> getOrderedArgs() {
@@ -99,6 +108,7 @@ public interface JoinOrderPlanner {
 		public List<PlanStep> getSteps() {
 			return steps;
 		}
+
 	}
 
 	final class FilterConstraint {
@@ -398,19 +408,32 @@ public interface JoinOrderPlanner {
 		public PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
 				double stepWorkRows, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics,
 				List<Integer> appliedFilterIndexes) {
-			this.boundVarsBefore = Set.copyOf(boundVarsBefore);
+			this(boundVarsBefore, factorOutputRows, prefixOutputRows, stepWorkRows, stringMetrics, doubleMetrics,
+					appliedFilterIndexes, false);
+		}
+
+		private PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
+				double stepWorkRows, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics,
+				List<Integer> appliedFilterIndexes, boolean trustedImmutable) {
+			this.boundVarsBefore = trustedImmutable ? boundVarsBefore : Set.copyOf(boundVarsBefore);
 			this.factorOutputRows = factorOutputRows;
 			this.prefixOutputRows = prefixOutputRows;
 			this.stepWorkRows = stepWorkRows;
-			this.stringMetrics = stringMetrics == null || stringMetrics.isEmpty()
-					? Map.of()
-					: Map.copyOf(stringMetrics);
-			this.doubleMetrics = doubleMetrics == null || doubleMetrics.isEmpty()
-					? Map.of()
-					: Map.copyOf(doubleMetrics);
-			this.appliedFilterIndexes = appliedFilterIndexes == null || appliedFilterIndexes.isEmpty()
-					? List.of()
-					: List.copyOf(appliedFilterIndexes);
+			this.stringMetrics = trustedImmutable
+					? stringMetrics
+					: stringMetrics == null || stringMetrics.isEmpty()
+							? Map.of()
+							: Map.copyOf(stringMetrics);
+			this.doubleMetrics = trustedImmutable
+					? doubleMetrics
+					: doubleMetrics == null || doubleMetrics.isEmpty()
+							? Map.of()
+							: Map.copyOf(doubleMetrics);
+			this.appliedFilterIndexes = trustedImmutable
+					? appliedFilterIndexes
+					: appliedFilterIndexes == null || appliedFilterIndexes.isEmpty()
+							? List.of()
+							: List.copyOf(appliedFilterIndexes);
 		}
 
 		public Set<String> getBoundVarsBefore() {

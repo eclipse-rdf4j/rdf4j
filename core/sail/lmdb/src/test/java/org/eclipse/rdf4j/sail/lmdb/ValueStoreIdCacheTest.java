@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.InternalIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -66,7 +67,7 @@ class ValueStoreIdCacheTest {
 			Thread writer = Thread.currentThread();
 			LmdbBNode value = new LmdbBNode(store.getRevision(), "racing-native-identity") {
 				@Override
-				public long getInternalID() {
+				public InternalIdentity getInternalIdentity() {
 					if (Thread.currentThread() != writer && firstRead.compareAndSet(true, false)) {
 						identityEntered.countDown();
 						try {
@@ -76,7 +77,7 @@ class ValueStoreIdCacheTest {
 							throw new AssertionError(interrupted);
 						}
 					}
-					return super.getInternalID();
+					return super.getInternalIdentity();
 				}
 			};
 			var lookup = reader.submit(() -> store.getId(value));
@@ -852,12 +853,29 @@ class ValueStoreIdCacheTest {
 				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "a")));
 				int initialProbes = store.alternativeProbes;
 				store.resetCounts();
-				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "b")));
-				assertEquals(0, store.namespaceProbes, "ordinary namespace lookup must reuse the exact prefix key");
-				assertTrue(store.alternativeProbes > 0);
-				assertTrue(store.alternativeProbes < initialProbes);
-				assertEquals(3, store.readTransactions,
-						"one before/fallback/after snapshot bracket covers all prefixes");
+				TxnManager manager = store.getTxnManager();
+				long ordinaryBefore = manager.ordinaryAdmissions();
+				long reservedBefore = manager.reservedAdmissions();
+				store.observeNamespaceRoute = true;
+				try {
+					assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "b")));
+					assertEquals(0, store.namespaceProbes, "ordinary namespace lookup must reuse the exact prefix key");
+					assertTrue(store.alternativeProbes > 0);
+					assertTrue(store.alternativeProbes < initialProbes);
+					assertEquals(2, store.readTransactions,
+							"one physical fallback reader supplies the before token; one after-scope check remains");
+					assertEquals(2, manager.ordinaryAdmissions() - ordinaryBefore,
+							"the fallback and after validation must each acquire one actual ordinary read lease");
+					assertEquals(0, manager.reservedAdmissions() - reservedBefore,
+							"an uncontended namespace miss must not borrow the reserved reader");
+					assertEquals(1, store.observedScopeChecks, "only the after check calls the public scope entry");
+					assertEquals(store.alternativeProbes, store.alternativeProbesAtScopeCheck,
+							"the scope validation must follow every physical prefix probe");
+					assertEquals(1, store.alternativeProbeTransactions.size(),
+							"every fallback prefix probe must use the same already-admitted native reader");
+				} finally {
+					store.observeNamespaceRoute = false;
+				}
 			}
 		}
 	}
@@ -1370,12 +1388,17 @@ class ValueStoreIdCacheTest {
 		private int alternativeSeeks;
 		private Set<Long> watchedNamespaceHashes = Set.of();
 		private int watchedNamespaceProbes;
+		private boolean observeNamespaceRoute;
+		private int observedScopeChecks;
+		private int alternativeProbesAtScopeCheck;
+		private final Set<Long> alternativeProbeTransactions = new HashSet<>();
 		private int failAfterProbeType = -1;
 		private boolean failNextCommit;
 		private int abortedWriters;
 		private volatile boolean pauseAfterProbe;
 		private CountDownLatch probeCompleted;
 		private CountDownLatch resumeProbe;
+		private boolean instrumented;
 
 		CountingValueStore(File directory, LmdbStoreConfig config) throws IOException {
 			// Exercise the released mixed-split compatibility cache; fresh sessions require a canonical store.
@@ -1384,12 +1407,27 @@ class ValueStoreIdCacheTest {
 
 		CountingValueStore(File directory, LmdbStoreConfig config, int version) throws IOException {
 			// These tests create empty stores with trusted counts and explicitly exercise reclamation invalidation.
-			super(directory, new StoreProperties().setVersion(Integer.toString(version)),
-					config.setLegacyReferenceCountRepairEnabled(true));
+			super(directory, writerProperties(version, config), config.setLegacyReferenceCountRepairEnabled(true));
+			// Format-2 startup seeds core datatypes through these hooks before this subclass's field initializers
+			// have run; the instrumentation observes only work issued after the fixture is fully constructed.
+			instrumented = true;
+		}
+
+		/** The persisted writer identity of a real store of {@code version}; format 2 has no capability keys. */
+		private static StoreProperties writerProperties(int version, LmdbStoreConfig config) {
+			StoreProperties properties = new StoreProperties();
+			if (version == LmdbStoreFormat.LEGACY_VERSION) {
+				return properties.setVersion(Integer.toString(version));
+			}
+			LmdbStoreFormat.forBulkGeneration(version, config).initializeProperties(properties);
+			return properties;
 		}
 
 		@Override
 		int commitWriteTransaction(long transaction) {
+			if (!instrumented) {
+				return super.commitWriteTransaction(transaction);
+			}
 			if (failNextCommit) {
 				failNextCommit = false;
 				mdb_txn_abort(transaction);
@@ -1400,6 +1438,10 @@ class ValueStoreIdCacheTest {
 
 		@Override
 		void abortWriteTransaction(long transaction) {
+			if (!instrumented) {
+				super.abortWriteTransaction(transaction);
+				return;
+			}
 			abortedWriters++;
 			super.abortWriteTransaction(transaction);
 		}
@@ -1407,6 +1449,9 @@ class ValueStoreIdCacheTest {
 		@Override
 		Long findIdInTransaction(byte[] data, boolean create, CoreDatatype coreDatatype, MemoryStack stack, long txn)
 				throws IOException {
+			if (!instrumented) {
+				return super.findIdInTransaction(data, create, coreDatatype, stack, txn);
+			}
 			if (data[0] == ValueStoreRecordCodec.NAMESPACE_VALUE) {
 				namespaceProbes++;
 			} else {
@@ -1428,7 +1473,13 @@ class ValueStoreIdCacheTest {
 
 		@Override
 		int probeIriAlternative(long txn, MDBVal key, MDBVal value) {
+			if (!instrumented) {
+				return super.probeIriAlternative(txn, key, value);
+			}
 			alternativeProbes++;
+			if (observeNamespaceRoute) {
+				alternativeProbeTransactions.add(txn);
+			}
 			if (!watchedNamespaceHashes.isEmpty()) {
 				ByteBuffer encoded = key.mv_data();
 				if (encoded.hasRemaining() && encoded.get(encoded.position()) == ValueStoreRecordCodec.HASH_KEY
@@ -1440,13 +1491,31 @@ class ValueStoreIdCacheTest {
 		}
 
 		@Override
+		public Object valueLookupScope() throws IOException {
+			if (!instrumented) {
+				return super.valueLookupScope();
+			}
+			if (observeNamespaceRoute) {
+				observedScopeChecks++;
+				alternativeProbesAtScopeCheck = alternativeProbes;
+			}
+			return super.valueLookupScope();
+		}
+
+		@Override
 		int seekIriAlternative(long cursor, MDBVal key, MDBVal value, int operation) {
+			if (!instrumented) {
+				return super.seekIriAlternative(cursor, key, value, operation);
+			}
 			alternativeSeeks++;
 			return super.seekIriAlternative(cursor, key, value, operation);
 		}
 
 		@Override
 		<T> T readTransaction(long env, LmdbUtil.Transaction<T> transaction) throws IOException {
+			if (!instrumented) {
+				return super.readTransaction(env, transaction);
+			}
 			readTransactions++;
 			int probesBefore = valueProbes + namespaceProbes;
 			T result = super.readTransaction(env, transaction);
@@ -1478,6 +1547,9 @@ class ValueStoreIdCacheTest {
 			alternativeProbes = 0;
 			alternativeSeeks = 0;
 			watchedNamespaceProbes = 0;
+			observedScopeChecks = 0;
+			alternativeProbesAtScopeCheck = 0;
+			alternativeProbeTransactions.clear();
 		}
 	}
 }

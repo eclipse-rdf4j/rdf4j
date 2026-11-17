@@ -37,6 +37,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -121,6 +122,11 @@ final class TxnManager {
 	private final Semaphore readerSlots = new Semaphore(POOL_SIZE - 1, true);
 	/** Reserved for short callbacks whose caller already holds a transaction. */
 	private final Semaphore priorityReaderSlot = new Semaphore(1, true);
+	/** Admissions granted from the ordinary / reserved slot; diagnostics for lease-accounting tests. */
+	private final LongAdder ordinaryAdmissions = new LongAdder();
+	private final LongAdder reservedAdmissions = new LongAdder();
+	/** Distinguishes successive leases of one recycled {@link Txn} (see {@link Txn#isLive(long)}). */
+	private final AtomicLong leaseSequence = new AtomicLong();
 	/** Ordinary permit demand advertised before the final pressure scan, through admission or cancellation. */
 	private final AtomicInteger ordinaryReaderAdmissions = new AtomicInteger();
 
@@ -192,6 +198,35 @@ final class TxnManager {
 	}
 
 	/**
+	 * Wraps a transaction this manager owns into a non-owning view: it mirrors the target's native handle, version and
+	 * value pool, so cursors opened through it renew exactly like cursors on the target, while closing the view is a
+	 * no-op and consumes no reader permit. Planner-time reads use it to run on the query's pinned dataset transaction.
+	 */
+	Txn planningView(Txn target) {
+		return new Txn(target);
+	}
+
+	/** Number of reader admissions granted from the ordinary slots so far. */
+	long ordinaryAdmissions() {
+		return ordinaryAdmissions.sum();
+	}
+
+	/** Number of reader admissions granted from the single reserved slot so far. */
+	long reservedAdmissions() {
+		return reservedAdmissions.sum();
+	}
+
+	/** Currently free ordinary reader slots. */
+	int availableOrdinaryPermits() {
+		return readerSlots.availablePermits();
+	}
+
+	/** Currently free reserved reader slots (one or zero). */
+	int availableReservedPermits() {
+		return priorityReaderSlot.availablePermits();
+	}
+
+	/**
 	 * Creates a new tracked read-only transaction. Tracked transactions are reset on every write commit.
 	 */
 	Txn createReadTxn() throws IOException {
@@ -256,6 +291,42 @@ final class TxnManager {
 	ReaderReservation reserveReadTxn(boolean resetOnWrite) throws IOException {
 		checkNotClosed();
 		return new ReaderReservation(resetOnWrite, acquireReaderPermit(false));
+	}
+
+	/** Attempts to reserve an ordinary reader without waiting or reclaiming another reader. */
+	ReaderReservation tryReserveReadTxn(boolean resetOnWrite) throws IOException {
+		Semaphore permit = tryAcquireReaderPermit(false, false);
+		return permit == null ? null : new ReaderReservation(resetOnWrite, permit);
+	}
+
+	/**
+	 * Attempts an actual ordinary native reader without waiting for a permit, native barrier, or native reader table. A
+	 * caller coordinating multiple environments must return every successful reader before waiting to retry.
+	 */
+	Txn tryCreateImmediateReadTxn() throws IOException {
+		Semaphore permit = tryAcquireReaderPermit(false, false);
+		if (permit == null) {
+			return null;
+		}
+		long stamp = lockManager.tryReadLock();
+		if (stamp == 0L) {
+			releaseReaderPermit(permit);
+			return null;
+		}
+		try {
+			return createReadTxnInternal(false, permit, true, false);
+		} finally {
+			lockManager.unlockRead(stamp);
+		}
+	}
+
+	/** Waits without retaining a permit while the native-operation barrier is unavailable. */
+	void awaitImmediateReadOpportunity() throws IOException {
+		try (ReaderReservation ignored = reserveReadTxn(false)) {
+			// A previously exhausted ordinary slot is available again.
+		}
+		long stamp = acquireReadBarrier();
+		lockManager.unlockRead(stamp);
 	}
 
 	/** Reserves a complete family before acquiring any publication or native-operation barrier. */
@@ -375,16 +446,21 @@ final class TxnManager {
 
 	private Txn createReadTxnInternal(boolean resetOnWrite, Semaphore readerPermit, boolean currentSnapshot)
 			throws IOException {
+		return createReadTxnInternal(resetOnWrite, readerPermit, currentSnapshot, true);
+	}
 
+	private Txn createReadTxnInternal(boolean resetOnWrite, Semaphore readerPermit,
+			boolean currentSnapshot, boolean waitForNativeReader) throws IOException {
 		boolean permitConsumed = false;
 		try {
+			checkReaderInterrupted();
 			checkNotClosed();
 			// Fast path: recycle an idle reader. The permit guarantees that either the pool is non-empty or that
 			// starting a new transaction stays within POOL_SIZE.
 			Txn pooled = pollPooled();
 			if (pooled != null) {
 				try {
-					pooled.reuse(resetOnWrite, readerPermit, currentSnapshot);
+					pooled.reuse(resetOnWrite, readerPermit, currentSnapshot, waitForNativeReader);
 				} catch (IOException | RuntimeException | Error e) {
 					discardPooled(pooled);
 					throw e;
@@ -400,7 +476,8 @@ final class TxnManager {
 			}
 
 			checkNotClosed();
-			Txn txn = new Txn(startReadTxn(), /* owned= */ true, resetOnWrite, readerPermit);
+			Txn txn = new Txn(startReadTxn(waitForNativeReader), /* owned= */ true, resetOnWrite,
+					readerPermit);
 			open.add(txn);
 			if (managerClosed) {
 				// lost the race against close(): do not leak the native transaction
@@ -443,15 +520,21 @@ final class TxnManager {
 		}
 
 		Txn[] openPinnedFamily(LongSupplier dataRevision) throws IOException {
-			return openPinnedFamily(dataRevision, false);
+			return openPinnedFamily(dataRevision, false, true);
 		}
 
 		/** Starts the complete pre-admitted family inside the caller's native read interval. */
 		Txn[] openPinnedFamilyUnderReadLock(LongSupplier dataRevision) throws IOException {
-			return openPinnedFamily(dataRevision, true);
+			return openPinnedFamily(dataRevision, true, true);
 		}
 
-		private Txn[] openPinnedFamily(LongSupplier dataRevision, boolean underReadLock) throws IOException {
+		/** Attempts all native starts once; failure returns the complete family before the caller retries. */
+		Txn[] tryOpenPinnedFamilyUnderReadLock(LongSupplier dataRevision) throws IOException {
+			return openPinnedFamily(dataRevision, true, false);
+		}
+
+		private Txn[] openPinnedFamily(LongSupplier dataRevision, boolean underReadLock,
+				boolean waitForNativeReader) throws IOException {
 			Semaphore permits;
 			int count;
 			synchronized (this) {
@@ -477,12 +560,15 @@ final class TxnManager {
 						throw new IOException("Interrupted while pinning a read transaction family", interrupted);
 					}
 				}
-				long revision = dataRevision.getAsLong();
+				long revision = dataRevision == null ? -1L : dataRevision.getAsLong();
 				for (int i = 0; i < count; i++) {
 					unassigned--;
-					Txn txn = createReadTxnInternal(false, permits, true);
+					Txn txn = createReadTxnInternal(false, permits, true, waitForNativeReader);
 					transactions[i] = txn;
-					txn.setSnapshotRevision(revision);
+					if (dataRevision != null) {
+						txn.setSnapshotRevision(revision);
+					}
+					checkReaderInterrupted();
 				}
 				return transactions;
 			} catch (IOException | RuntimeException | Error failure) {
@@ -587,6 +673,24 @@ final class TxnManager {
 			}
 		}
 
+		/**
+		 * Starts an already-reserved reader once under the caller's native read barrier. A full native reader table
+		 * fails immediately, consuming and returning the permit; the supplied scope defines its own admission rules.
+		 */
+		synchronized <T> T tryStartPinnedUnderReadLock(LongSupplier dataRevision,
+				Function<Txn, T> snapshotFactory, ReaderStartScopeFactory scopeFactory) throws IOException {
+			if (readerPermit == null || remaining != 1) {
+				throw new IllegalStateException("Reader reservation has already been consumed or closed");
+			}
+			if (dataRevision != null && resetOnWrite) {
+				throw new IllegalStateException("A pinned read transaction must be untracked for write commits");
+			}
+			Semaphore permit = readerPermit;
+			readerPermit = null;
+			remaining = 0;
+			return startScopedReadTxn(resetOnWrite, permit, dataRevision, snapshotFactory, scopeFactory, false);
+		}
+
 		@Override
 		public void close() {
 			Semaphore permit;
@@ -605,6 +709,87 @@ final class TxnManager {
 
 	<T> T doWith(Transaction<T> transaction) throws IOException {
 		return doWith(transaction, false);
+	}
+
+	/** Returns null without waiting when a permit, native barrier, or native reader slot is unavailable. */
+	<T> T tryDoWithImmediate(Transaction<T> transaction) throws IOException {
+		Semaphore permit = tryAcquireReaderPermit(false, false);
+		if (permit == null) {
+			return null;
+		}
+		long stamp = lockManager.tryReadLock();
+		if (stamp == 0L) {
+			releaseReaderPermit(permit);
+			return null;
+		}
+		try {
+			Txn txn;
+			try {
+				txn = createReadTxnInternal(true, permit, true, false);
+			} catch (NativeReadersFullException unavailable) {
+				return null;
+			}
+			try (txn; MemoryStack stack = stackPush()) {
+				return transaction.exec(stack, txn.get());
+			}
+		} finally {
+			lockManager.unlockRead(stamp);
+		}
+	}
+
+	/**
+	 * Uses an exclusively owned, already admitted reader for a fresh short operation. This keeps the reader permit
+	 * throughout a larger admission scope without borrowing another permit while a store lock is held.
+	 */
+	<T> T doWithFreshReader(Txn txn, Transaction<T> transaction) throws IOException {
+		if (!txn.belongsTo(this) || txn.isView()) {
+			throw new IllegalArgumentException("Fresh reader must belong to this transaction manager");
+		}
+		long lease = txn.lease();
+		long stamp;
+		try {
+			stamp = acquireReadBarrierInterruptibly();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while acquiring the native read barrier", interrupted);
+		}
+		try {
+			synchronized (txn.nativeReadMonitor()) {
+				txn.ensureSnapshotValid(lease);
+				txn.refreshCurrent();
+				try (MemoryStack stack = stackPush()) {
+					return transaction.exec(stack, txn.get());
+				}
+			}
+		} finally {
+			lockManager.unlockRead(stamp);
+		}
+	}
+
+	/** Attempts scoped reader admission once, without waiting for a permit, native barrier, or native slot. */
+	<T> T tryDoWithImmediate(Transaction<T> transaction, ReaderStartScopeFactory scopeFactory) throws IOException {
+		Semaphore permit = tryAcquireReaderPermit(false, false);
+		if (permit == null) {
+			return null;
+		}
+		long stamp = lockManager.tryReadLock();
+		if (stamp == 0L) {
+			releaseReaderPermit(permit);
+			return null;
+		}
+		try {
+			Txn txn;
+			try {
+				txn = startScopedReadTxn(true, permit, null, Function.identity(), scopeFactory, false);
+			} catch (NativeReadersFullException unavailable) {
+				return null;
+			}
+			try (txn; MemoryStack stack = stackPush()) {
+				return transaction.exec(stack, txn.get());
+			}
+		} finally {
+			lockManager.unlockRead(stamp);
+		}
 	}
 
 	/**
@@ -694,6 +879,12 @@ final class TxnManager {
 	private <T> T startScopedReadTxn(boolean resetOnWrite, Semaphore permit,
 			LongSupplier dataRevision, Function<Txn, T> snapshotFactory, ReaderStartScopeFactory scopeFactory)
 			throws IOException {
+		return startScopedReadTxn(resetOnWrite, permit, dataRevision, snapshotFactory, scopeFactory, true);
+	}
+
+	private <T> T startScopedReadTxn(boolean resetOnWrite, Semaphore permit,
+			LongSupplier dataRevision, Function<Txn, T> snapshotFactory, ReaderStartScopeFactory scopeFactory,
+			boolean waitForNativeReader) throws IOException {
 		boolean permitTransferred = false;
 		Txn txn = null;
 		try {
@@ -703,7 +894,7 @@ final class TxnManager {
 				permitTransferred = true;
 				// The caller's scope pairs current metadata with the native snapshot. An idle pooled handle may
 				// still hold an earlier snapshot after a lower-level writer checkpoint, so renew it before capture.
-				txn = createReadTxnInternal(resetOnWrite, permit, true);
+				txn = createReadTxnInternal(resetOnWrite, permit, true, waitForNativeReader);
 				if (dataRevision != null) {
 					txn.setSnapshotRevision(dataRevision.getAsLong());
 				}
@@ -997,17 +1188,25 @@ final class TxnManager {
 
 	private Semaphore tryAcquireReaderPermit(boolean underReadLock)
 			throws IOException {
+		return tryAcquireReaderPermit(underReadLock, true);
+	}
+
+	private Semaphore tryAcquireReaderPermit(boolean underReadLock, boolean reclaimIdle) throws IOException {
+		checkReaderInterrupted();
 		checkNotClosed();
 		boolean acquired = false;
 		boolean keepPermit = false;
 		try {
 			acquired = readerSlots.tryAcquire(1, 0, TimeUnit.NANOSECONDS);
-			if (!acquired) {
+			if (!acquired && reclaimIdle) {
 				reclaimIdleReaders(1, underReadLock);
 				acquired = readerSlots.tryAcquire(1, 0, TimeUnit.NANOSECONDS);
 			}
 			checkNotClosed();
 			keepPermit = acquired;
+			if (acquired) {
+				ordinaryAdmissions.increment();
+			}
 			return acquired ? readerSlots : null;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
@@ -1056,6 +1255,7 @@ final class TxnManager {
 				throw new IOException("Transaction manager is closed");
 			}
 			keepPermit = true;
+			(slots == readerSlots ? ordinaryAdmissions : reservedAdmissions).add(count);
 			return slots;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
@@ -1116,10 +1316,15 @@ final class TxnManager {
 	// transaction start / renew, with a single unified readers-full retry
 	// ---------------------------------------------------------------------------------------------
 
-	private long startReadTxn() throws IOException {
+	private long startReadTxn(boolean waitForNativeReader) throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
-			int rc = withReadersFullRetry(() -> mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+			int rc = waitForNativeReader
+					? withReadersFullRetry(() -> mdb_txn_begin(env, NULL, MDB_RDONLY, pp))
+					: mdb_txn_begin(env, NULL, MDB_RDONLY, pp);
+			if (!waitForNativeReader && rc == MDB_READERS_FULL) {
+				throw new NativeReadersFullException();
+			}
 			if (rc != MDB_SUCCESS) {
 				E(rc);
 			}
@@ -1127,10 +1332,71 @@ final class TxnManager {
 		}
 	}
 
-	private void renewReadTxn(long txn) throws IOException {
-		int rc = withReadersFullRetry(() -> mdb_txn_renew(txn));
+	private void renewReadTxn(long txn, boolean waitForNativeReader) throws IOException {
+		int rc = waitForNativeReader ? withReadersFullRetry(() -> mdb_txn_renew(txn)) : mdb_txn_renew(txn);
+		if (!waitForNativeReader && rc == MDB_READERS_FULL) {
+			throw new NativeReadersFullException();
+		}
 		if (rc != MDB_SUCCESS) {
 			E(rc);
+		}
+	}
+
+	static final class NativeReadersFullException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		private NativeReadersFullException() {
+			super("LMDB native reader table is full");
+		}
+	}
+
+	/** Waits for native reader capacity without retaining a transaction permit or native barrier. */
+	final class NativeReaderRetry {
+		private final long expiresAt = System.nanoTime() + READERS_FULL_TIMEOUT_NANOS;
+		private long backoff = TimeUnit.MILLISECONDS.toNanos(BACKOFF_MIN_MILLIS);
+
+		void awaitNext() throws IOException {
+			checkReaderInterrupted();
+			checkNotClosed();
+			if (Thread.currentThread().isInterrupted()) {
+				throw new IOException("Interrupted while waiting for a free LMDB reader slot");
+			}
+			long remaining = expiresAt - System.nanoTime();
+			if (remaining <= 0L) {
+				E(MDB_READERS_FULL);
+			}
+			readersFullWaiters.incrementAndGet();
+			try {
+				// Native cleanup still needs the remap/close fence, but it must never wait for it or retain it
+				// while sleeping for another process to release a reader. No family permits or sink are held here.
+				long stamp = lockManager.tryReadLock();
+				if (stamp != 0L) {
+					try (MemoryStack stack = stackPush()) {
+						checkNotClosed();
+						closePooledReaders();
+						checkForDeadReaders(stack.mallocInt(1));
+					} finally {
+						lockManager.unlockRead(stamp);
+					}
+				}
+				checkReaderInterrupted();
+				remaining = expiresAt - System.nanoTime();
+				if (remaining <= 0L) {
+					E(MDB_READERS_FULL);
+				}
+				awaitReaderRelease(Math.min(backoff, remaining));
+			} finally {
+				readersFullWaiters.decrementAndGet();
+			}
+			checkReaderInterrupted();
+			checkNotClosed();
+			backoff = Math.min(backoff << 1, TimeUnit.MILLISECONDS.toNanos(BACKOFF_MAX_MILLIS));
+		}
+	}
+
+	private static void checkReaderInterrupted() throws IOException {
+		if (Thread.currentThread().isInterrupted()) {
+			throw new IOException("Interrupted while waiting for a free LMDB reader slot");
 		}
 	}
 
@@ -1313,7 +1579,8 @@ final class TxnManager {
 
 	final class Txn implements Closeable {
 
-		private final long txn;
+		/** Native handle; {@code 0} once the transaction was aborted by this manager. */
+		private long txn;
 		/** {@code false} for foreign transactions wrapped via {@link TxnManager#createTxn(long)}. */
 		private final boolean owned;
 		/** The admission semaphore for this lease; may change when this transaction is recycled. */
@@ -1344,6 +1611,8 @@ final class TxnManager {
 		// Advances whenever this pooled handle changes owner, so a record iterator of a previous owner cannot pass
 		// the snapshot check on a recycled reader.
 		private volatile long lease;
+		/** Target of a non-owning planner view; null for native owners. */
+		private final Txn viewOf;
 
 		private Txn(long txn, boolean owned, boolean resetOnWrite, Semaphore readerPermit) {
 			this.txn = txn;
@@ -1351,21 +1620,35 @@ final class TxnManager {
 			this.resetOnWrite = resetOnWrite;
 			this.readerPermit = readerPermit;
 			this.nativeTransactionId = txn == NULL ? 0L : mdb_txn_id(txn);
+			this.viewOf = null;
+			this.lease = leaseSequence.incrementAndGet();
+		}
+
+		private Txn(Txn viewOf) {
+			this.txn = 0L;
+			this.owned = false;
+			this.resetOnWrite = false;
+			this.readerPermit = null;
+			this.viewOf = viewOf;
+			this.lease = viewOf.lease;
 		}
 
 		long get() {
-			return closed ? NULL : txn;
+			return closed ? NULL : viewOf == null ? txn : viewOf.get();
 		}
 
 		boolean isReadOnly() {
-			return owned;
+			return viewOf == null ? owned : viewOf.isReadOnly();
 		}
 
 		Object valueLookupScope() {
-			return valueLookupScope;
+			return viewOf == null ? valueLookupScope : viewOf.valueLookupScope();
 		}
 
 		Object valueLookupScope(Object dictionaryGeneration) {
+			if (viewOf != null) {
+				return viewOf.valueLookupScope(dictionaryGeneration);
+			}
 			Object view = valueLookupScope;
 			if (view == null || dictionaryGeneration == null) {
 				return null;
@@ -1390,7 +1673,7 @@ final class TxnManager {
 
 		/** The native transaction ID captured at the last activation; meaningful while {@link #isNativeActive()}. */
 		long nativeTransactionId() {
-			return nativeTransactionId;
+			return viewOf == null ? nativeTransactionId : viewOf.nativeTransactionId();
 		}
 
 		// Record-iterator buffers of this reader are handed back and forth under this monitor; the shared
@@ -1402,6 +1685,9 @@ final class TxnManager {
 
 		/** Caller holds this reader's monitor. */
 		MDBVal takeVal() {
+			if (viewOf != null) {
+				return viewOf.takeVal();
+			}
 			if (spareValCount > 0) {
 				MDBVal val = spareVals[--spareValCount];
 				spareVals[spareValCount] = null;
@@ -1412,6 +1698,10 @@ final class TxnManager {
 
 		/** Caller holds this reader's monitor. */
 		void giveVal(MDBVal val) {
+			if (viewOf != null) {
+				viewOf.giveVal(val);
+				return;
+			}
 			if (spareValCount < spareVals.length) {
 				spareVals[spareValCount++] = val;
 			} else {
@@ -1421,6 +1711,9 @@ final class TxnManager {
 
 		/** Caller holds this reader's monitor. */
 		ByteBuffer takeKeyBuffer() {
+			if (viewOf != null) {
+				return viewOf.takeKeyBuffer();
+			}
 			if (spareKeyCount > 0) {
 				ByteBuffer bb = spareKeys[--spareKeyCount];
 				spareKeys[spareKeyCount] = null;
@@ -1431,6 +1724,10 @@ final class TxnManager {
 
 		/** Caller holds this reader's monitor. */
 		void giveKeyBuffer(ByteBuffer bb) {
+			if (viewOf != null) {
+				viewOf.giveKeyBuffer(bb);
+				return;
+			}
 			if (spareKeyCount < spareKeys.length) {
 				spareKeys[spareKeyCount++] = bb;
 			} else {
@@ -1452,16 +1749,60 @@ final class TxnManager {
 		}
 
 		long version() {
-			return version;
+			return viewOf == null ? version : viewOf.version;
+		}
+
+		/** The lease this transaction currently represents; compare with {@link #isLive(long)} later. */
+		long leaseId() {
+			return lease;
+		}
+
+		/**
+		 * Whether this transaction is still the lease identified by {@code leaseId}: owned by this manager, neither
+		 * closed nor parked idle in the reuse pool, and not recycled into a new lease since. In {@link Mode#RESET} a
+		 * closed transaction keeps a live native handle and may be handed to another caller, so a stale reference
+		 * cannot be detected from the handle alone.
+		 */
+		synchronized boolean isLive(long leaseId) {
+			return owned && !closed && !idle && lease == leaseId;
+		}
+
+		/** Manager identity for borrowed capabilities; this does not acquire or renew the transaction. */
+		boolean belongsTo(TxnManager expected) {
+			return TxnManager.this == expected;
+		}
+
+		/** Whether this lease is renewed onto the newest snapshot on every write commit (tracked reader). */
+		boolean isTracked() {
+			return owned && resetOnWrite;
+		}
+
+		/** Whether this reader, including a borrowed view, can renew on a later commit. */
+		boolean renewsOnWrite() {
+			return viewOf == null ? owned && resetOnWrite : viewOf.renewsOnWrite();
+		}
+
+		/** Whether this is a non-owning view of another transaction. */
+		boolean isView() {
+			return viewOf != null;
+		}
+
+		/** The native owner serializes snapshot reads with retirement, including borrowed planner views. */
+		Object nativeReadMonitor() {
+			return viewOf == null ? this : viewOf.nativeReadMonitor();
 		}
 
 		/** The current owner lease of this pooled handle; captured by record iterators at construction. */
 		long lease() {
-			return lease;
+			return viewOf == null ? lease : viewOf.lease();
 		}
 
 		/** As {@link #ensureSnapshotValid()}, additionally rejecting a handle recycled since {@code expectedLease}. */
 		void ensureSnapshotValid(long expectedLease) {
+			if (viewOf != null) {
+				viewOf.ensureSnapshotValid(expectedLease);
+				return;
+			}
 			if (lease != expectedLease) {
 				throw new SailException(
 						"SNAPSHOT transaction was recycled for another owner; retry the read operation");
@@ -1488,7 +1829,7 @@ final class TxnManager {
 		}
 
 		long snapshotRevision() {
-			return snapshotRevision;
+			return viewOf == null ? snapshotRevision : viewOf.snapshotRevision();
 		}
 
 		synchronized void setSnapshotRevision(long revision) {
@@ -1511,7 +1852,7 @@ final class TxnManager {
 		// This observational probe also runs under the growth coordinator lock. Native access and state
 		// transitions retain their own guards; taking this monitor here would invert term declaration's order.
 		boolean isNativeActive() {
-			return active && !closed;
+			return viewOf == null ? active && !closed : viewOf.isNativeActive();
 		}
 
 		synchronized void invalidateAndReset(LmdbSailStore.MapResizeKind kind) {
@@ -1523,6 +1864,10 @@ final class TxnManager {
 		}
 
 		void ensureSnapshotValid() {
+			if (viewOf != null) {
+				viewOf.ensureSnapshotValid(lease);
+				return;
+			}
 			if (snapshotInvalidated) {
 				String message = "SNAPSHOT transaction invalidated: the store's memory map was resized "
 						+ "during the transaction; retry the transaction";
@@ -1549,7 +1894,7 @@ final class TxnManager {
 		}
 
 		Pool getValuePool() {
-			return valuePool;
+			return viewOf == null ? valuePool : viewOf.valuePool;
 		}
 
 		@Override
@@ -1601,7 +1946,13 @@ final class TxnManager {
 			}
 		}
 
-		/** Toggles the active state, e.g. around a map resize. */
+		/**
+		 * Toggles the active state, e.g. around a map resize.
+		 * <p>
+		 * The version advances exactly once per lost snapshot: when an active reader is deactivated. Advancing before
+		 * the native reset invalidates pinned readers even if the later reactivation fails, and reactivation does not
+		 * advance the same invalidation generation a second time.
+		 */
 		synchronized void setActive(boolean active) throws IOException {
 			if (closed) {
 				return;
@@ -1614,8 +1965,8 @@ final class TxnManager {
 					// idle readers stay reset; they are renewed lazily in reuse()
 					activate();
 				}
+			} else if (this.active) {
 				version++;
-			} else {
 				if (snapshotBound) {
 					snapshotInvalidated = true;
 					snapshotInvalidationKind = mapResizeKind;
@@ -1628,8 +1979,8 @@ final class TxnManager {
 		// -- internals, all called with the monitor held -------------------------------------------
 
 		/** Prepares a pooled transaction for reuse. */
-		private synchronized void reuse(boolean resetOnWrite, Semaphore readerPermit, boolean currentSnapshot)
-				throws IOException {
+		private synchronized void reuse(boolean resetOnWrite, Semaphore readerPermit, boolean currentSnapshot,
+				boolean waitForNativeReader) throws IOException {
 			if (stale || currentSnapshot) {
 				resetNative();
 				stale = false;
@@ -1645,13 +1996,17 @@ final class TxnManager {
 			this.version++;
 			this.idle = false;
 			this.closed = false;
-			lease++;
-			activate();
+			this.lease = leaseSequence.incrementAndGet();
+			activate(waitForNativeReader);
 		}
 
 		private void activate() throws IOException {
+			activate(true);
+		}
+
+		private void activate(boolean waitForNativeReader) throws IOException {
 			if (!active && !closed) {
-				renewReadTxn(txn);
+				renewReadTxn(txn, waitForNativeReader);
 				nativeTransactionId = mdb_txn_id(txn);
 				active = true;
 				valueLookupScope = new Object();
@@ -1705,8 +2060,9 @@ final class TxnManager {
 					abortAndMarkClosed();
 					return true;
 				}
-				// already reclaimed by close(); permit accounting is done there
-				closed = true;
+				// Already reclaimed by close(), which aborts the native transaction once this monitor is released.
+				// Do not mark it closed here, otherwise that abort would be skipped and the reader slot leaked.
+				// Permit accounting is done there.
 				return false;
 			case NONE:
 				// the caller takes over responsibility for the native transaction
@@ -1722,6 +2078,8 @@ final class TxnManager {
 			releaseSpares();
 			if (!closed) {
 				mdb_txn_abort(txn);
+				// the native handle is released; expose that to callers that still hold this reference
+				txn = 0L;
 			}
 			active = false;
 			idle = false;

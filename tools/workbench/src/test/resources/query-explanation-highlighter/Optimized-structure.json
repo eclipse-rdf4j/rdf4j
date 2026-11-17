@@ -7,6 +7,9 @@
   "longMetricsPlanned": {
     "plannedWorkRows": 2500
   },
+  "stringMetricsPlanned": {
+    "plannedEstimateUsage": "join_order_candidate"
+  },
   "stringMetricsActual": {
     "joinType": "cross join"
   },

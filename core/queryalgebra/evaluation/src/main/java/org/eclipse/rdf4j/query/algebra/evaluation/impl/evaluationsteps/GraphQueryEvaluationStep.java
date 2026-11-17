@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -190,6 +191,8 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 							// context scan or child iterator can be closed or advanced.
 							if (existing == null) {
 								addGraph.accept(selected, result);
+								BindingSetOrigin.set(result,
+										BindingSetOrigin.of(row).producing(Set.of(graphName.getName())));
 							} else if (existing != selected) {
 								setGraph.accept(selected, result);
 							}

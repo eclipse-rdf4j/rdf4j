@@ -455,7 +455,8 @@ class LmdbGrowthLifecycleRegressionTest {
 				.setValueDBSize(1024L * 1024)
 				.setMapGrowthReadDrainTimeoutMillis(0)
 				.setAutoGrow(true);
-		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(), new StoreProperties(dataDir.toFile()), config,
+		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(),
+				LmdbOwningTestStoreMetadata.open(dataDir.toFile(), config), config,
 				false, (dir, properties, cfg) -> {
 					ValueStore valueStore = new ValueStore(dir, properties, cfg);
 					dictionary.set(valueStore);
@@ -545,7 +546,8 @@ class LmdbGrowthLifecycleRegressionTest {
 				.setValueDBSize(1024L * 1024)
 				.setMapGrowthReadDrainTimeoutMillis(0)
 				.setAutoGrow(true);
-		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(), new StoreProperties(dataDir.toFile()), config,
+		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(),
+				LmdbOwningTestStoreMetadata.open(dataDir.toFile(), config), config,
 				false, (dir, properties, cfg) -> {
 					ValueStore valueStore = new ValueStore(dir, properties, cfg);
 					dictionary.set(valueStore);
@@ -681,7 +683,8 @@ class LmdbGrowthLifecycleRegressionTest {
 		AtomicInteger valueStoreCalls = new AtomicInteger();
 		AtomicBoolean blockFirstValue = new AtomicBoolean(true);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBulkOperationSize(0);
-		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(), new StoreProperties(dataDir.toFile()), config,
+		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(),
+				LmdbOwningTestStoreMetadata.open(dataDir.toFile(), config), config,
 				false,
 				(dir, properties, cfg) -> new BlockingValueStore(dir, properties, cfg, mutationEntered, releaseMutation,
 						closeEnvironmentEntered, valueStoreCalls, blockFirstValue),

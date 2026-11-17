@@ -12,9 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -25,12 +29,17 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.Arm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalBNode;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalBinding;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalIri;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalLiteral;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalTerm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.EvaluationResult;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.ExceptionCategory;
@@ -39,6 +48,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -96,6 +106,26 @@ class IndependentSparqlOracleTest {
 		for (EvaluationResult result : results.values()) {
 			assertThat(result.rows()).hasSize(3);
 			assertThat(result.multiset().values()).containsExactlyInAnyOrder(2L, 1L);
+		}
+	}
+
+	@Test
+	void isomorphicInputBlankNodesCompareWithOneGlobalBijection() throws Exception {
+		AtomicInteger arm = new AtomicInteger();
+		String query = "SELECT ?subject ?object WHERE { ?subject <" + EX + "edge> ?object }";
+		try (IndependentSparqlOracle blankNodeOracle = IndependentSparqlOracle
+				.builder(dataRoot.resolve("blank-node-bijection"))
+				.load(connection -> {
+					String suffix = "arm-" + arm.getAndIncrement();
+					ValueFactory valueFactory = connection.getValueFactory();
+					var shared = valueFactory.createBNode(suffix + "-shared");
+					connection.add(shared, valueFactory.createIRI(EX, "edge"), valueFactory.createLiteral("first"));
+					connection.add(shared, valueFactory.createIRI(EX, "edge"), valueFactory.createLiteral("second"));
+				})
+				.build()) {
+			Map<Arm, EvaluationResult> results = blankNodeOracle.assertEquivalent(query, ResultOrder.UNORDERED);
+
+			assertThat(results.values()).allSatisfy(result -> assertThat(result.rows()).hasSize(2));
 		}
 	}
 
@@ -158,6 +188,54 @@ class IndependentSparqlOracleTest {
 								Literal.BaseDirection.RTL));
 			});
 		}
+	}
+
+	@Test
+	void comparisonsRejectInconsistentCanonicalLiteralMetadata() {
+		List<Executable> checks = new ArrayList<>();
+		for (ResultOrder order : ResultOrder.values()) {
+			for (Literal.BaseDirection direction : Literal.BaseDirection.values()) {
+				String datatype = direction == Literal.BaseDirection.NONE ? RDF.LANGSTRING.stringValue()
+						: RDF.DIRLANGSTRING.stringValue();
+				CanonicalLiteral valid = new CanonicalLiteral("value", datatype, Optional.of("en"), direction);
+				CanonicalLiteral inconsistent = new CanonicalLiteral("value", XSD.STRING.stringValue(),
+						Optional.of("en"), direction);
+				for (boolean nested : new boolean[] { false, true }) {
+					CanonicalTerm validTerm = wrapLiteral(valid, nested);
+					CanonicalTerm invalidTerm = wrapLiteral(inconsistent, nested);
+					EvaluationResult expected = canonicalResult(Arm.MEMORY_STANDARD, validTerm);
+					EvaluationResult actual = canonicalResult(Arm.LMDB_PRODUCTION, invalidTerm);
+					EvaluationResult invalidExpected = canonicalResult(Arm.MEMORY_STANDARD, invalidTerm);
+					EvaluationResult validActual = canonicalResult(Arm.LMDB_PRODUCTION, validTerm);
+					String description = order + ", " + direction.name() + ", nested=" + nested;
+
+					IndependentSparqlOracle.assertSameOutcome("canonical control", order, expected, validActual);
+					checks.add(() -> assertThrows(AssertionError.class,
+							() -> IndependentSparqlOracle.assertSameOutcome("canonical mismatch", order, expected,
+									actual),
+							description));
+					checks.add(() -> assertThrows(AssertionError.class,
+							() -> IndependentSparqlOracle.assertSameOutcome("both malformed", order, invalidExpected,
+									actual),
+							description + ", both malformed"));
+				}
+			}
+		}
+		assertAll(checks);
+	}
+
+	private static CanonicalTerm wrapLiteral(CanonicalLiteral literal, boolean nested) {
+		if (!nested) {
+			return literal;
+		}
+		CanonicalIri predicate = new CanonicalIri(EX + "nested-predicate");
+		CanonicalBNode subject = new CanonicalBNode("nested-subject");
+		return new CanonicalTripleTerm(subject, predicate, new CanonicalTripleTerm(subject, predicate, literal));
+	}
+
+	private static EvaluationResult canonicalResult(Arm arm, CanonicalTerm value) {
+		var row = new CanonicalBindingSet(List.of(new CanonicalBinding("v", value)));
+		return new EvaluationResult(arm, List.of("v"), List.of(row), null);
 	}
 
 	@Test

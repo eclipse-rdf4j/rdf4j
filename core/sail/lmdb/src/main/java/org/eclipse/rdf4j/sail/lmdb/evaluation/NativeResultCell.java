@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 
 /** A physical aggregate result; summaries never impersonate RDF values or term IDs. */
 final class NativeResultCell {
@@ -25,10 +26,14 @@ final class NativeResultCell {
 	enum State {
 		BOUND,
 		UNBOUND,
-		ERROR
+		ERROR,
+		/** A mapping-domain member whose RDF value is null; not an absent expression result. */
+		PRESENT_NULL
 	}
 
 	private static final NativeResultCell UNBOUND = new NativeResultCell(Kind.RDF_TERM, State.UNBOUND, null, 0L);
+	private static final NativeResultCell PRESENT_NULL = new NativeResultCell(Kind.RDF_TERM, State.PRESENT_NULL, null,
+			0L);
 	private static final NativeResultCell ERROR = new NativeResultCell(Kind.RDF_TERM, State.ERROR, null, 0L);
 	private static final NativeResultCell SUMMARY_UNBOUND = new NativeResultCell(Kind.LEXICAL_SUMMARY, State.UNBOUND,
 			null, 0L);
@@ -48,6 +53,25 @@ final class NativeResultCell {
 
 	static NativeResultCell term(Value value) {
 		return new NativeResultCell(Kind.RDF_TERM, State.BOUND, Objects.requireNonNull(value, "RDF term"), 0L);
+	}
+
+	static NativeResultCell fromBinding(BindingSet bindings, String name) {
+		Value value = bindings.getValue(name);
+		return value != null ? term(value) : bindings.hasBinding(name) ? presentNull() : unbound();
+	}
+
+	static NativeResultCell presentNull() {
+		return PRESENT_NULL;
+	}
+
+	/** Mapping-domain membership, independently of whether an RDF value or summary is available. */
+	boolean hasBinding() {
+		return state == State.BOUND || state == State.PRESENT_NULL;
+	}
+
+	/** Reading a null marker as an expression does not produce another mapping-domain marker. */
+	NativeResultCell expressionValue() {
+		return state == State.PRESENT_NULL ? unbound() : this;
 	}
 
 	static NativeResultCell lexicalLength(long codePointLength) {

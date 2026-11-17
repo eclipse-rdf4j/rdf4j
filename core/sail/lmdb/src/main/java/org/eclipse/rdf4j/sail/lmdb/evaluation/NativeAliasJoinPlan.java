@@ -113,6 +113,8 @@ final class NativeAliasJoinPlan implements SlotPlan {
 		}
 		if (original instanceof LeftJoinPlan left && cloned instanceof LeftJoinPlan right) {
 			return left.lexicalHashKeys == right.lexicalHashKeys
+					&& (left.lexicalCondition == null) == (right.lexicalCondition == null)
+					&& left.lexicalConditionMask == right.lexicalConditionMask
 					&& Arrays.equals(left.lexicalSharedSlots, right.lexicalSharedSlots)
 					&& Arrays.equals(left.lexicalProblemSlots, right.lexicalProblemSlots)
 					&& sameOrderedShape(left.left, right.left) && sameOrderedShape(left.right, right.right);
@@ -167,7 +169,9 @@ final class NativeAliasJoinPlan implements SlotPlan {
 	}
 
 	static SlotPlan create(SlotPlan left, SlotPlan right) {
-		if (!(left instanceof ExtensionPlan) || !movable(right)) {
+		if (!(left instanceof ExtensionPlan) || !movable(right)
+				|| (SlotPlan.fixedValueOutputMask(left) & right.producedMask()) != 0L
+				|| (SlotPlan.fixedValueOutputMask(right) & left.producedMask()) != 0L) {
 			return new JoinPlan(left, right);
 		}
 		List<CopyBinding[]> layers = new ArrayList<>();
@@ -257,7 +261,8 @@ final class NativeAliasJoinPlan implements SlotPlan {
 			}
 			return true;
 		}
-		return plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan
+		return plan instanceof PatternPlan pattern && pattern.readOnlyMask() == 0L
+				|| plan instanceof MultiValuePatternPlan multi && memoReadMask(multi) == multi.producedMask()
 				|| plan instanceof ValuesPlan values && values.bindsAllSlotsEveryRow;
 	}
 

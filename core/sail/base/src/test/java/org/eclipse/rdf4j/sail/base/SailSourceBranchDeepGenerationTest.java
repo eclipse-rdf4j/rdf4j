@@ -72,7 +72,8 @@ class SailSourceBranchDeepGenerationTest {
 					}
 					assertThat(read(dataset.getStatements((Resource) null, (IRI) null, (Value) null, context)))
 							.containsExactlyInAnyOrderElementsOf(expected);
-					assertThat(dataset.getStatementCount(null, null, null, context)).isEqualTo(expected.size());
+					assertThat(dataset.getStatementCount((Resource) null, null, null, context))
+							.isEqualTo(expected.size());
 				}
 				assertThat(dataset.getStatementCount(null, null, null)).isEqualTo(fixture.expectedStatements.size());
 			}

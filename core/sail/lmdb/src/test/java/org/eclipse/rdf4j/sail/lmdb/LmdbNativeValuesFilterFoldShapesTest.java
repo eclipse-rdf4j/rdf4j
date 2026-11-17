@@ -108,12 +108,16 @@ class LmdbNativeValuesFilterFoldShapesTest {
 				.as("LMDB rows must equal MemoryStore rows for:\n" + query + "\n" + rendered)
 				.isEqualTo(expected);
 
+		// A ValuesInputGuard prints two branches: the folded plan that runs when the guard admits the input, and the
+		// retained (unfolded) fallback. The fold expectations are about the folded branch; KEEP_VALUES looks at
+		// the whole text.
+		String folded = foldedPlan(rendered);
 		switch (expectation) {
-		case DOMAIN_DRIVE -> assertThat(rendered)
+		case DOMAIN_DRIVE -> assertThat(folded)
 				.as("VALUES consumed only by an equality FILTER must become exact-domain probes:\n" + query)
 				.contains(EXACT_DOMAIN_DRIVE)
 				.doesNotContain(VALUES_TABLE);
-		case NO_VALUES_TABLE -> assertThat(rendered)
+		case NO_VALUES_TABLE -> assertThat(folded)
 				.as("a single-row VALUES must be inlined, not joined as a table:\n" + query)
 				.doesNotContain(VALUES_TABLE);
 		case KEEP_VALUES -> {
@@ -124,6 +128,30 @@ class LmdbNativeValuesFilterFoldShapesTest {
 			}
 		}
 		}
+	}
+
+	@Test
+	void nonDistinctExistingValuesFilterKeepsUserBagMultiplicityInNativeExecution() {
+		String query = PREFIXES + """
+				SELECT ?e ?code WHERE {
+				  VALUES ?code { "DX-200" "DX-200" }
+				  ?e a ex:Condition ; ex:code ?code .
+				  FILTER(?code = "DX-200")
+				}
+				""";
+		List<String> expected = rows(memoryRepository, query);
+		assertThat(expected).hasSize(4).as("two matching statements crossed with two user VALUES rows");
+		assertThat(new java.util.HashSet<>(expected)).hasSize(2);
+		List<String> actual = rows(lmdbRepository, query);
+		assertThat(actual)
+				.as("LMDB must retain the ordinary VALUES bag:\n" + query)
+				.containsExactlyElementsOf(expected);
+		String planned = explain(query);
+		String telemetry = explain(lmdbRepository, Explanation.Level.Telemetry, query);
+		assertThat(telemetry)
+				.as("the matching bag above must come from actual LMDB execution; planned diagnostics:\n" + planned)
+				.startsWith("LMDB native physical plan (executed)")
+				.contains("nativeExecutionPath=");
 	}
 
 	@Test
@@ -606,13 +634,68 @@ class LmdbNativeValuesFilterFoldShapesTest {
 		shapes.add(Arguments.of(name, Expectation.KEEP_VALUES, body));
 	}
 
+	private static final String GUARD = "ValuesInputGuard(";
+	private static final String FOLDED_MARK = ", folded=";
+	private static final String RETAINED_MARK = ", retained=";
+
+	/**
+	 * Replaces every {@code ValuesInputGuard(names=.., folded=F, retained=R)} by {@code F}, recursively, and asserts
+	 * that each guard states a non-empty retained branch. Branches are delimited by balanced parentheses, so nested
+	 * plans cannot cut a branch short. Text without a guard is returned unchanged.
+	 */
+	private static String foldedPlan(String rendered) {
+		StringBuilder out = new StringBuilder();
+		int at = 0;
+		while (true) {
+			int guard = rendered.indexOf(GUARD, at);
+			if (guard < 0) {
+				out.append(rendered, at, rendered.length());
+				return out.toString();
+			}
+			out.append(rendered, at, guard);
+			int foldedStart = rendered.indexOf(FOLDED_MARK, guard);
+			assertThat(foldedStart).as("a ValuesInputGuard names its folded branch: " + rendered).isGreaterThan(guard);
+			foldedStart += FOLDED_MARK.length();
+			int foldedEnd = endOfBranch(rendered, foldedStart, RETAINED_MARK);
+			int retainedStart = foldedEnd + RETAINED_MARK.length();
+			int retainedEnd = endOfBranch(rendered, retainedStart, ")");
+			assertThat(rendered.substring(retainedStart, retainedEnd))
+					.as("a ValuesInputGuard keeps its retained fallback branch: " + rendered)
+					.isNotBlank();
+			out.append(foldedPlan(rendered.substring(foldedStart, foldedEnd)));
+			at = retainedEnd + 1;
+		}
+	}
+
+	/** Index of the first {@code terminator} at parenthesis depth zero, scanning from {@code from}. */
+	private static int endOfBranch(String text, int from, String terminator) {
+		int depth = 0;
+		for (int i = from; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (depth == 0 && text.startsWith(terminator, i)) {
+				return i;
+			}
+			if (c == '(') {
+				depth++;
+			} else if (c == ')') {
+				depth--;
+				assertThat(depth).as("unbalanced ValuesInputGuard branch in: " + text).isGreaterThanOrEqualTo(0);
+			}
+		}
+		throw new AssertionError("unterminated ValuesInputGuard branch in: " + text);
+	}
+
 	private static String explain(String query) {
 		return explain(lmdbRepository, query);
 	}
 
 	private static String explain(Repository repository, String query) {
+		return explain(repository, Explanation.Level.Optimized, query);
+	}
+
+	private static String explain(Repository repository, Explanation.Level level, String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
+			return connection.prepareTupleQuery(query).explain(level).toString();
 		}
 	}
 

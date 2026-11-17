@@ -388,19 +388,24 @@ public class LmdbNativeLateralDifferentialTest {
 
 	@Test
 	public void killSwitchRestoresIslandRoute() {
-		String query = PREFIX + "SELECT * WHERE { ?a ex:knows ?b . LATERAL { ?b ex:name ?n } }";
-		EvaluationResult withNative = oracle.evaluate(Arm.LMDB_PRODUCTION, query);
-		String previous = System.getProperty("rdf4j.lmdb.nativeLateral.enabled");
-		System.setProperty("rdf4j.lmdb.nativeLateral.enabled", "false");
-		try {
-			EvaluationResult withIsland = oracle.evaluate(Arm.LMDB_PRODUCTION, query);
-			assertThat(withIsland.failure()).isNull();
-			assertThat(withIsland.multiset()).isEqualTo(withNative.multiset());
-		} finally {
-			if (previous == null) {
-				System.clearProperty("rdf4j.lmdb.nativeLateral.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.nativeLateral.enabled", previous);
+		for (String query : List.of(
+				PREFIX + "SELECT * WHERE { ?a ex:knows ?b . LATERAL { ?b ex:name ?n } }",
+				PREFIX + "SELECT * WHERE { { ?a ex:knows ?b . LATERAL { ?b ex:name ?n } } UNION { ?a ex:name ?n } }",
+				PREFIX + "SELECT * WHERE { ?a ex:name ?n . OPTIONAL { ?a ex:knows ?b . LATERAL { ?b ex:score ?t . FILTER(?t > 20) } } }")) {
+			EvaluationResult withNative = oracle.evaluate(Arm.LMDB_PRODUCTION, query);
+			assertThat(withNative.failure()).isNull();
+			String previous = System.getProperty("rdf4j.lmdb.nativeLateral.enabled");
+			System.setProperty("rdf4j.lmdb.nativeLateral.enabled", "false");
+			try {
+				EvaluationResult withIsland = oracle.evaluate(Arm.LMDB_PRODUCTION, query);
+				assertThat(withIsland.failure()).isNull();
+				assertThat(withIsland.multiset()).isEqualTo(withNative.multiset());
+			} finally {
+				if (previous == null) {
+					System.clearProperty("rdf4j.lmdb.nativeLateral.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeLateral.enabled", previous);
+				}
 			}
 		}
 	}

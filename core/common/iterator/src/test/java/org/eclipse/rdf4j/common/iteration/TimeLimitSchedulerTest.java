@@ -19,10 +19,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
@@ -128,6 +130,27 @@ class TimeLimitSchedulerTest {
 			canceledAfterDispatch.cancel();
 			dispatched.get(0).run();
 			assertFalse(fired.get());
+		}
+	}
+
+	@Test
+	void dispatchThatQueuesThenThrowsCannotRunTheTimeoutTwice() {
+		AtomicInteger attempts = new AtomicInteger();
+		AtomicInteger actions = new AtomicInteger();
+		List<Runnable> queued = new ArrayList<>();
+		try (CapturingExecutor executor = new CapturingExecutor()) {
+			TimeLimitScheduler.Task task = new TimeLimitScheduler.Task(actions::incrementAndGet, executor, action -> {
+				queued.add(action);
+				if (attempts.incrementAndGet() == 1) {
+					throw new RejectedExecutionException("accepted before throwing");
+				}
+			});
+			task.schedule(new TimeLimitScheduler.Deadline(0, System.nanoTime()));
+			executor.latest().run();
+			assertEquals(2, attempts.get());
+			assertEquals(0, actions.get(), "dispatch failure must not run the callback inline");
+			queued.forEach(Runnable::run);
+			assertEquals(1, actions.get(), "both accepted copies share one execution claim");
 		}
 	}
 

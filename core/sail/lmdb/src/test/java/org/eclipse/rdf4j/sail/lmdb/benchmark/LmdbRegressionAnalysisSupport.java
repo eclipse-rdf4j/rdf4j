@@ -38,7 +38,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 final class LmdbRegressionAnalysisSupport {
 
-	private static final Path DEFAULT_OUTPUT_DIRECTORY = Path.of("target", "lmdb-regression-plan-capture");
+	private static final Path DEFAULT_OUTPUT_DIRECTORY = BenchmarkPathSupport
+			.resolveTarget("lmdb-regression-plan-capture");
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "regression-analysis-support";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
@@ -192,7 +193,7 @@ final class LmdbRegressionAnalysisSupport {
 	}
 
 	private static PreparedThemeStore prepareThemeStore(Path dataDir, Theme theme) throws Exception {
-		LmdbStoreConfig storeConfig = ConfigUtil.createConfig();
+		LmdbStoreConfig storeConfig = ConfigUtil.createPlanCaptureConfig();
 		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/cold";
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(

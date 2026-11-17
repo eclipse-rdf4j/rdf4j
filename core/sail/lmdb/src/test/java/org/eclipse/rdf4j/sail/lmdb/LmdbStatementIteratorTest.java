@@ -13,20 +13,33 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -34,6 +47,141 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbStatementIteratorTest {
+
+	@Test
+	void cachesAdjacentQuadComponentLookupsWithoutCheckingIndexName() throws IOException {
+		LmdbResource subject = mock(LmdbResource.class);
+		LmdbIRI predicate = mock(LmdbIRI.class);
+		LmdbValue object = mock(LmdbValue.class);
+		LmdbResource context = mock(LmdbResource.class);
+		Statement statement = mock(Statement.class);
+		AtomicInteger predicateLookups = new AtomicInteger();
+		ValueStore valueStore = valueStore(subject, predicate, object, context, predicateLookups);
+
+		when(valueStore.createStatement(any(Resource.class), any(IRI.class), any(Value.class),
+				nullable(Resource.class)))
+						.thenReturn(statement);
+
+		try (LmdbStatementIterator iterator = new LmdbStatementIterator(new ArrayRecordIterator(
+				new long[][] {
+						{ 1L, 2L, 3L, 9L },
+						{ 1L, 2L, 3L, 9L },
+						{ 1L, 2L, 3L, 9L },
+				}), valueStore)) {
+			assertNotNull(iterator.next());
+			assertNotNull(iterator.next());
+			assertNotNull(iterator.next());
+			assertFalse(iterator.hasNext());
+		}
+
+		verify(valueStore).getLazyValue(1L);
+		assertEquals(1, predicateLookups.get());
+		verify(valueStore).getLazyValue(3L);
+		verify(valueStore).getLazyValue(9L);
+	}
+
+	@Test
+	void cachesNullContextWithoutValueStoreLookup() throws IOException {
+		LmdbResource subject = mock(LmdbResource.class);
+		LmdbIRI predicate = mock(LmdbIRI.class);
+		LmdbValue object = mock(LmdbValue.class);
+		Statement statement = mock(Statement.class);
+		AtomicInteger predicateLookups = new AtomicInteger();
+		ValueStore valueStore = valueStore(subject, predicate, object, null, predicateLookups);
+
+		when(valueStore.createStatement(any(Resource.class), any(IRI.class), any(Value.class),
+				nullable(Resource.class)))
+						.thenReturn(statement);
+
+		try (LmdbStatementIterator iterator = new LmdbStatementIterator(new ArrayRecordIterator(
+				new long[][] {
+						{ 1L, 2L, 3L, 0L },
+						{ 1L, 2L, 3L, 0L },
+				}), valueStore)) {
+			assertNotNull(iterator.next());
+			assertNotNull(iterator.next());
+			assertFalse(iterator.hasNext());
+		}
+
+		verify(valueStore, never()).getLazyValue(0L);
+	}
+
+	@Test
+	void usesKnownValuesWithoutLazyValueLookups() throws IOException {
+		LmdbResource subject = mock(LmdbResource.class);
+		LmdbIRI predicate = mock(LmdbIRI.class);
+		LmdbValue object = mock(LmdbValue.class);
+		LmdbResource context = mock(LmdbResource.class);
+		Statement statement = mock(Statement.class);
+		ValueStore valueStore = mock(ValueStore.class);
+
+		when(valueStore.createStatement(any(Resource.class), any(IRI.class), any(Value.class),
+				nullable(Resource.class)))
+						.thenReturn(statement);
+
+		try (LmdbStatementIterator iterator = new LmdbStatementIterator(new ArrayRecordIterator(
+				new long[][] {
+						{ 1L, 2L, 3L, 9L },
+				}), valueStore, 1L, subject, 2L, predicate, 3L, object, 9L, context)) {
+			assertNotNull(iterator.next());
+			assertFalse(iterator.hasNext());
+		}
+
+		verify(valueStore, never()).getLazyValue(anyLong());
+		verify(valueStore, never()).getLazyPredicate(anyLong());
+	}
+
+	private ValueStore valueStore(LmdbResource subject, LmdbIRI predicate, LmdbValue object, LmdbResource context,
+			AtomicInteger predicateLookups) throws IOException {
+		return mock(ValueStore.class, invocation -> {
+			String methodName = invocation.getMethod().getName();
+			if ("getLazyPredicate".equals(methodName)) {
+				predicateLookups.incrementAndGet();
+				return predicate;
+			}
+			if ("getLazyValue".equals(methodName)) {
+				long id = invocation.getArgument(0);
+				if (id == 1L) {
+					return subject;
+				}
+				if (id == 3L) {
+					return object;
+				}
+				if (id == 9L) {
+					return context;
+				}
+			}
+			return null;
+		});
+	}
+
+	private static final class ArrayRecordIterator implements RecordIterator {
+
+		private final long[][] quads;
+		private int next;
+
+		private ArrayRecordIterator(long[][] quads) {
+			this.quads = quads;
+		}
+
+		@Override
+		public long[] next() {
+			if (next == quads.length) {
+				return null;
+			}
+			return quads[next++];
+		}
+
+		@Override
+		public void close() {
+			next = quads.length;
+		}
+
+		@Override
+		public String getIndexName() {
+			throw new AssertionError("LmdbStatementIterator must not inspect the record iterator index");
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
@@ -154,6 +302,22 @@ class LmdbStatementIteratorTest {
 					LmdbStatementIterator iterator = new LmdbStatementIterator(repeated(quad), values, snapshot)) {
 				assertFalse(snapshot.hasStableIds());
 				assertEquals(expected, iterator.next().getObject());
+				snapshot.close();
+				assertThrows(SailException.class, iterator::next);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unpairedSnapshotCannotServePrefetchedRowAfterCapabilityCloses(boolean context, @TempDir File directory)
+			throws Exception {
+		try (ClosingValueStore values = new ClosingValueStore(new File(directory, "values"), new LmdbStoreConfig())) {
+			long[] quad = storeQuad(values, context, Values.literal("prefetched-unpaired-object"));
+			try (ValueStore.ReadSnapshotReservation reservation = values.reserveReadSnapshot();
+					ValueStore.ReadSnapshot snapshot = reservation.start();
+					LmdbStatementIterator iterator = new LmdbStatementIterator(repeated(quad), values, snapshot)) {
+				assertTrue(iterator.hasNext(), "prefetch must retain the pending row before closing its capability");
 				snapshot.close();
 				assertThrows(SailException.class, iterator::next);
 			}

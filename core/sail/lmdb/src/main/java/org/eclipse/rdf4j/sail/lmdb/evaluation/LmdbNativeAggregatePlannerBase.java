@@ -71,6 +71,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QuerySafetySnapshot;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -358,6 +359,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 	CopyBinding[] configureExtensionErrorMode(Extension extension, CopyBinding[] copies) {
 		for (CopyBinding copy : copies) {
 			copy.setNullOnError = false;
+			copy.assignment = true;
 		}
 		return copies;
 	}
@@ -426,17 +428,39 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	NativeBooleanFilter recordFilterOutcomes(Filter filter, NativeBooleanFilter delegate) {
-		if (filter == null || strategy.evaluationStatistics() == null) {
+		return recordFilterOutcomes(filter, delegate, filter, true);
+	}
+
+	/** Folding preserves duplicate-insensitive results, not the eliminated join's row population. */
+	NativeBooleanFilter recordFoldedValuesFilterOutcomes(Filter surface, NativeBooleanFilter delegate, Filter origin) {
+		return recordFilterOutcomes(surface, delegate, origin, false);
+	}
+
+	private NativeBooleanFilter recordFilterOutcomes(Filter surface, NativeBooleanFilter delegate, Filter origin,
+			boolean logicalInputPopulation) {
+		if (surface == null || strategy.evaluationStatistics() == null) {
 			return delegate;
 		}
-		return new RecordingNativeBooleanFilter(delegate, filter, strategy.evaluationStatistics(),
-				AdaptiveFilterMetadata.forFilter(nextAdaptiveFilterId++, filter));
+		requiresExecutionContext = true;
+		return new RecordingNativeBooleanFilter(delegate, surface, strategy.evaluationStatistics(),
+				AdaptiveFilterMetadata.forFilter(nextAdaptiveFilterId++, surface),
+				strategy.prepareFilterOutcomeFeedback(surface, origin), logicalInputPopulation);
+	}
+
+	/** A diagnostic surface only: the folded recorder separately withholds logical completion. */
+	Filter feedbackFilterForValuesFold(Filter filter) {
+		return feedbackFilterForValuesInput(filter.getArg().clone(), filter);
 	}
 
 	Filter feedbackFilterForValuesFold(TupleExpr dataExpr, Filter valuesFilter) {
-		Filter feedback = new Filter(new Join(dataExpr.clone(), valuesFilter.getArg().clone()),
-				valuesFilter.getCondition().clone());
+		return feedbackFilterForValuesInput(new Join(dataExpr.clone(), valuesFilter.getArg().clone()), valuesFilter);
+	}
+
+	private Filter feedbackFilterForValuesInput(TupleExpr input, Filter valuesFilter) {
+		Filter feedback = new Filter(input, valuesFilter.getCondition().clone());
 		feedback.setConditionBindingScope(FilterBindingScope.resolve(valuesFilter));
+		PlanningGraphDomains.compose(feedback.getArg());
+		PlanningGraphDomains.compose(feedback);
 		return feedback;
 	}
 
@@ -1259,7 +1283,60 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	ContextConstraint compileContextConstraint(StatementPattern sp, Dataset dataset) {
+		Var contextVar = sp.getContextVar();
+		Set<Resource> graphs = selectedContextGraphs(sp.getScope(), dataset);
+		if (contextVar != null && contextVar.hasValue() && graphs != null) {
+			Value value = contextVar.getValue();
+			// Dataset membership is over the original RDF graph name, before any default-context conversion.
+			if (!(value instanceof Resource) || !(value.isIRI() || value.isBNode()) || !graphs.contains(value)) {
+				return ContextConstraint.EMPTY;
+			}
+			// A selected member is sent to getStatements as its original graph name, including either NIL IRI.
+			long id = idOf(value, ValuePosition.CONTEXT);
+			return id == UNKNOWN ? ContextConstraint.EMPTY : new ContextConstraint(new long[] { id });
+		}
 		return compileContextConstraint(sp.getScope(), dataset);
+	}
+
+	/** A nonempty original selected set, or null when store-default/active-graph selection applies. */
+	private Set<Resource> selectedContextGraphs(Scope scope, Dataset dataset) {
+		if (dataset == null || context.getActiveGraph() != null && scope == Scope.DEFAULT_CONTEXTS) {
+			return null;
+		}
+		Set<Resource> graphs = scope == Scope.DEFAULT_CONTEXTS ? dataset.getDefaultGraphResources()
+				: dataset.getNamedGraphResources();
+		return graphs == null || graphs.isEmpty() ? null : graphs;
+	}
+
+	/** Keep the existing output/entry role while probing the selected member's original physical graph name. */
+	Term selectedContextTerm(StatementPattern pattern, Term term) {
+		Var variable = pattern.getContextVar();
+		if (term == null || variable == null || !variable.hasValue()
+				|| selectedContextGraphs(pattern.getScope(), context.getDataset()) == null) {
+			return term;
+		}
+		long id = idOf(variable.getValue(), ValuePosition.CONTEXT);
+		return id == UNKNOWN ? null : term.withConstant(id);
+	}
+
+	/** A selected fixed graph keeps its physical lookup and named producer independently. */
+	Term compileStatementContextTerm(StatementPattern pattern) {
+		Var variable = pattern.getContextVar();
+		if (variable != null && variable.hasValue()
+				&& selectedContextGraphs(pattern.getScope(), context.getDataset()) != null) {
+			if (!validValueForField(variable.getValue(), NativePatternField.CONTEXT)) {
+				return null;
+			}
+			if (!variable.isConstant()) {
+				layout.patternPosition(variable.getName(), 1 << NativePatternField.CONTEXT.ordinal());
+			}
+			long id = idOf(variable.getValue(), ValuePosition.CONTEXT);
+			if (id == UNKNOWN) {
+				return null;
+			}
+			return variable.isConstant() ? Term.constant(id) : Term.fixedValueSlot(slot(variable.getName()), id);
+		}
+		return compileTerm(variable, NativePatternField.CONTEXT);
 	}
 
 	ContextConstraint compileContextConstraint(Scope scope, Dataset dataset) {
@@ -1315,7 +1392,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		if (var == null) {
 			return Term.unbound();
 		}
-		if (!var.isConstant() && (!var.hasValue() || !var.isAnonymous())) {
+		if (!var.isConstant()) {
 			layout.patternPosition(var.getName(), 1 << field.ordinal());
 		}
 		if (var.hasValue()) {
@@ -1330,17 +1407,15 @@ abstract class LmdbNativeAggregatePlannerBase {
 			if (id == UNKNOWN) {
 				return null;
 			}
-			if (var.isAnonymous()) {
+			if (var.isConstant()) {
 				return Term.constant(id);
 			}
-			// a named var carrying an optimizer-assigned value (e.g. an inlined prepared-query binding)
-			// must both constrain the scan and still emit the binding under its name, exactly like the
-			// generic engine; compiling it as a bare constant would make the name invisible to filters
-			// and drop it from result rows
-			return Term.constantSlot(slot(var.getName()), id);
+			// Anonymous spelling does not erase a variable's producer role. The generic converter preserves any
+			// earlier mapping under this name while continuing to probe the occurrence's fixed field value.
+			return Term.fixedValueSlot(slot(var.getName()), id);
 		}
 		if (var.isConstant()) {
-			return Term.unbound();
+			return Term.inputSlot(slot(var.getName()));
 		}
 		return Term.slot(slot(var.getName()));
 	}

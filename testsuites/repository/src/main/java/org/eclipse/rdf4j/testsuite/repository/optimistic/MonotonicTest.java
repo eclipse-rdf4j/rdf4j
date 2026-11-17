@@ -33,6 +33,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.jupiter.api.Timeout;
 
 public class MonotonicTest {
 
@@ -126,6 +127,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_independentPattern() {
 		a.begin(level);
 		b.begin(level);
@@ -140,6 +142,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safePattern() {
 		a.begin(level);
 		b.begin(level);
@@ -151,6 +154,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_afterPattern() {
 		a.begin(level);
 		b.begin(level);
@@ -163,6 +167,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_afterInsertDataPattern() {
 		a.begin(level);
 		b.begin(level);
@@ -175,6 +180,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedPattern() {
 		a.begin(level);
 		b.begin(level);
@@ -187,6 +193,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -208,6 +215,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -227,6 +235,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_mergeQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -249,6 +258,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_mergeInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -269,6 +279,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -291,6 +302,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -311,6 +323,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeOptionalQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -335,6 +348,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeOptionalInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -354,6 +368,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_mergeOptionalQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -379,6 +394,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_mergeOptionalInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -399,6 +415,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedOptionalQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -424,6 +441,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedOptionalInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -444,6 +462,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeFilterQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -466,6 +485,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeFilterInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -486,6 +506,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_mergeOptionalFilterQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
@@ -513,6 +534,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_mergeOptionalFilterInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
@@ -536,6 +558,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedOptionalFilterQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
@@ -562,6 +585,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedOptionalFilterInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
@@ -585,6 +609,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeRangeQuery() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -613,6 +638,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeRangeInsert() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -640,6 +666,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_mergeRangeQuery() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -669,6 +696,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_mergeRangeInsert() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -697,6 +725,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedRangeQuery() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -726,6 +755,7 @@ public class MonotonicTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedRangeInsert() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);

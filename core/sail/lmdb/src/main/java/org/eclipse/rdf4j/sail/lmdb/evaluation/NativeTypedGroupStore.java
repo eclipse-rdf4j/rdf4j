@@ -552,12 +552,19 @@ final class NativeTypedGroupStore implements AutoCloseable {
 						long kindState = encoded[2 + 2 * index];
 						NativeResultCell.Kind kind = NativeResultCell.Kind.values()[(int) (kindState / 256L)];
 						NativeResultCell.State state = NativeResultCell.State.values()[(int) (kindState % 256L)];
-						cells[index] = state == NativeResultCell.State.BOUND
-								? kind == NativeResultCell.Kind.RDF_TERM
-										? NativeResultCell.term(values.valueOf(encoded[3 + 2 * index]))
-										: NativeResultCell.lexicalLength(encoded[3 + 2 * index])
-								: state == NativeResultCell.State.ERROR ? NativeResultCell.error(kind)
-										: NativeResultCell.unbound(kind);
+						cells[index] = switch (state) {
+						case BOUND -> kind == NativeResultCell.Kind.RDF_TERM
+								? NativeResultCell.term(values.valueOf(encoded[3 + 2 * index]))
+								: NativeResultCell.lexicalLength(encoded[3 + 2 * index]);
+						case ERROR -> NativeResultCell.error(kind);
+						case UNBOUND -> NativeResultCell.unbound(kind);
+						case PRESENT_NULL -> {
+							if (kind != NativeResultCell.Kind.RDF_TERM) {
+								throw new IOException("Null mapping marker cannot be a lexical summary");
+							}
+							yield NativeResultCell.presentNull();
+						}
+						};
 					}
 					check();
 					emitted++;

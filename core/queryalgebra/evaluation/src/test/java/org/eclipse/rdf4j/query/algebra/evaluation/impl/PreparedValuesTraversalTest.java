@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
@@ -31,6 +32,14 @@ class PreparedValuesTraversalTest {
 	void preparationTraversalScalesLinearlyForDeepQueriesWithoutValues() {
 		int small = preparationVisits(64);
 		int large = preparationVisits(128);
+		assertTrue(large <= 3L * small,
+				"doubling query depth must not quadruple preparation walks: " + small + " -> " + large);
+	}
+
+	@Test
+	void preparationTraversalScalesLinearlyForDeepExperimentalQueriesWithoutValues() {
+		int small = preparationVisits(64, true);
+		int large = preparationVisits(128, true);
 		assertTrue(large <= 3L * small,
 				"doubling query depth must not quadruple preparation walks: " + small + " -> " + large);
 	}
@@ -62,12 +71,19 @@ class PreparedValuesTraversalTest {
 	}
 
 	private static int preparationVisits(int depth) {
+		return preparationVisits(depth, false);
+	}
+
+	private static int preparationVisits(int depth, boolean experimental) {
 		AtomicInteger visits = new AtomicInteger();
 		TupleExpr expression = new SingletonSet();
 		for (int i = 0; i < depth; i++) {
 			expression = new CountingJoin(expression, new SingletonSet(), visits);
 		}
-		new DefaultEvaluationStrategy(new EmptyTripleSource(), null).precompile(new QueryRoot(expression));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setQueryExecutionPolicy(
+				experimental ? QueryExecutionPolicy.EXPERIMENTAL : QueryExecutionPolicy.DEFAULT);
+		strategy.precompile(new QueryRoot(expression));
 		return visits.get();
 	}
 

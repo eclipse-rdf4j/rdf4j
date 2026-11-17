@@ -567,42 +567,85 @@ class LmdbValueGcOwnershipTest {
 
 	@ParameterizedTest
 	@ValueSource(strings = { "gc_meta", "ref_counts" })
-	void unknownGcSchemaRejectsWhileUnknownCountCertificateDefersWithoutWriting(String database) throws Exception {
+	void unknownGcOrCountSchemaRejectsWithoutWriting(String database) throws Exception {
 		writeLegacyProperties();
 		LmdbStore store = new LmdbStore(directory.toFile(), config());
 		store.init();
 		store.shutDown();
 		writeFutureSchema(database);
 		byte[] before = Files.readAllBytes(directory.resolve("values/data.mdb"));
+		byte[] certificate = database.equals("ref_counts")
+				? LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 })
+				: null;
+		assertThatThrownBy(new LmdbStore(directory.toFile(), config())::init).isInstanceOf(SailException.class);
+		assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(before);
 		if (database.equals("ref_counts")) {
-			byte[] certificate = LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 });
-			LmdbStore conservative = new LmdbStore(directory.toFile(), config());
-			try {
-				conservative.init();
-				assertThat(conservative.getStartupStatus().exactReferenceCounts()).isFalse();
-				assertThat(conservative.getStartupStatus().referenceCountVerificationPending()).isTrue();
-			} finally {
-				conservative.shutDown();
-			}
 			assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 }))
-					.as("ordinary open and close preserve the unrecognized count-certificate payload")
+					.as("unsupported count-certificate payload must be preserved by refusal")
 					.isEqualTo(certificate);
-		} else {
-			assertThatThrownBy(new LmdbStore(directory.toFile(), config())::init).isInstanceOf(SailException.class);
-			assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(before);
-		}
-		if (database.equals("ref_counts")) {
-			before = Files.readAllBytes(directory.resolve("values/data.mdb"));
 			LmdbStore.verifyStoreOffline(directory.toFile(), config());
 			assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(before);
-			LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), config());
-			LmdbStore verified = new LmdbStore(directory.toFile(), config());
-			try {
-				verified.init();
-				assertThat(verified.getStartupStatus().exactReferenceCounts()).isTrue();
-			} finally {
-				verified.shutDown();
-			}
+			assertThatThrownBy(() -> LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), config()))
+					.isInstanceOf(SailException.class);
+			assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(before);
+		}
+	}
+
+	@Test
+	void recognizedUnknownCountsKeepRetirementsUntilOfflineReconstruction() throws Exception {
+		writeLegacyProperties();
+		LmdbStoreConfig settings = config().setInlineLiterals(false);
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		IRI subject = values.createIRI("urn:unknown-repair:subject");
+		IRI predicate = values.createIRI("urn:unknown-repair:predicate");
+		IRI object = values.createIRI("urn:unknown-repair:object");
+		LmdbStore seed = new LmdbStore(directory.toFile(), settings);
+		seed.init();
+		try (NotifyingSailConnection connection = seed.getConnection()) {
+			connection.begin();
+			connection.addStatement(subject, predicate, object);
+			connection.commit();
+		} finally {
+			seed.shutDown();
+		}
+		LmdbCompatibilityFixtures.nativePut(directory, "ref_counts", new byte[] { 0 }, null);
+		LmdbCompatibilityFixtures.nativePut(directory, "gc_meta", ReferenceCountProof.KEY, null);
+		LmdbStore conservative = new LmdbStore(directory.toFile(), settings);
+		conservative.init();
+		try (NotifyingSailConnection connection = conservative.getConnection()) {
+			ValueStore dictionary = (ValueStore) conservative.getValueFactory();
+			assertThat(conservative.getStartupStatus().exactReferenceCounts()).isFalse();
+			assertThat(conservative.getStartupStatus().referenceCountVerificationPending()).isTrue();
+			assertThat(dictionary.isValueReclamationEnabled()).isFalse();
+			connection.begin();
+			connection.removeStatements(subject, predicate, object);
+			connection.commit();
+			assertThat(dictionary.getId(subject)).as("UNKNOWN counts cannot reclaim the retired subject")
+					.isNotEqualTo(LmdbValue.UNKNOWN_ID);
+		} finally {
+			conservative.shutDown();
+		}
+		LmdbStore unknownReopen = new LmdbStore(directory.toFile(), settings);
+		unknownReopen.init();
+		try {
+			ValueStore dictionary = (ValueStore) unknownReopen.getValueFactory();
+			assertThat(unknownReopen.getStartupStatus().exactReferenceCounts()).isFalse();
+			assertThat(dictionary.isValueReclamationEnabled()).isFalse();
+			assertThat(dictionary.getId(subject)).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+		} finally {
+			unknownReopen.shutDown();
+		}
+		byte[] beforeVerify = Files.readAllBytes(directory.resolve("values/data.mdb"));
+		LmdbStore.verifyStoreOffline(directory.toFile(), settings);
+		assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(beforeVerify);
+		LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), settings);
+		LmdbStore repaired = new LmdbStore(directory.toFile(), settings);
+		repaired.init();
+		try (NotifyingSailConnection connection = repaired.getConnection()) {
+			assertThat(repaired.getStartupStatus().exactReferenceCounts()).isTrue();
+			assertThat(connection.hasStatement(subject, predicate, object, false)).isFalse();
+		} finally {
+			repaired.shutDown();
 		}
 	}
 

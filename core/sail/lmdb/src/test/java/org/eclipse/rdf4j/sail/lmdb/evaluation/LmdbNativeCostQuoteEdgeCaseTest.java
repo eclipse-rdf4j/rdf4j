@@ -50,6 +50,13 @@ class LmdbNativeCostQuoteEdgeCaseTest {
 		LmdbNativeCostVector vector = LmdbNativeCostVectors.pattern(pattern, null, 0L);
 		assertThat(vector.low(Feature.INDEX_SEEK)).as("each fixed graph needs its own index seek")
 				.isEqualTo(3D);
+		var quote = LmdbNativeAccessFacts.forPattern(pattern, null).quote(pattern.physicalMask(0L));
+		assertThat(quote.quantities().sources()).isEqualTo(1D);
+		assertThat(quote.quantities().sourceScans()).isEqualTo(3D);
+		assertThat(quote.quantities().indexSeeks().lower()).isEqualTo(3D);
+		assertThat(quote.vector(1, 1).low(Feature.INDEX_SEEK))
+				.as("a compatibility consumer may request a single context-scan projection")
+				.isEqualTo(1D);
 	}
 
 	@Test

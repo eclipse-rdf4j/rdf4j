@@ -28,6 +28,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Test isolation behavior on removal operations
@@ -72,6 +73,7 @@ public class RemoveIsolationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testRemoveOptimisticIsolation() {
 		con.begin(level);
 
@@ -89,6 +91,7 @@ public class RemoveIsolationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testRemoveIsolation() {
 		con.begin(level);
 

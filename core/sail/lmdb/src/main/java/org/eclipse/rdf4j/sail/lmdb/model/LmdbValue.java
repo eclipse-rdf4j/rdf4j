@@ -139,7 +139,11 @@ public interface LmdbValue extends Value {
 	 */
 	void init();
 
-	/** Initializes through a resolver sharing the caller's native read transaction. */
+	/**
+	 * Initializes this value using the supplied resolver, sharing the caller's native read transaction.
+	 *
+	 * @param resolver resolves this value's internal ID into this value object
+	 */
 	@Experimental
 	default void init(Resolver resolver) {
 		init();
@@ -184,7 +188,7 @@ public interface LmdbValue extends Value {
 	/**
 	 * Sets this value's data from an initialized value.
 	 * <p>
-	 * This must be only called within a synchronized block in the init() method of the uninitialized value.
+	 * This must be called while holding the monitor of the uninitialized value.
 	 *
 	 * @param initializedValue the initialized value to copy data from
 	 */

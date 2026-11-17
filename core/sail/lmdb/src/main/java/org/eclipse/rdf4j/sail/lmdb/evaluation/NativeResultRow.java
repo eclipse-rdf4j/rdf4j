@@ -51,12 +51,18 @@ final class NativeResultRow {
 
 	private final Schema schema;
 	private final NativeResultCell[] cells;
+	private final NativeRowProvenance provenance;
 
 	NativeResultRow(String[] names, NativeResultCell[] cells) {
 		this(new Schema(names), cells);
 	}
 
 	NativeResultRow(Schema schema, NativeResultCell[] cells) {
+		this(schema, cells, NativeRowProvenance.EMPTY);
+	}
+
+	NativeResultRow(Schema schema, NativeResultCell[] cells, NativeRowProvenance provenance) {
+		this.provenance = Objects.requireNonNull(provenance, "row provenance");
 		this.schema = Objects.requireNonNull(schema, "result schema");
 		if (cells.length != schema.size()) {
 			throw new IllegalArgumentException("Result cell count does not match schema");
@@ -75,10 +81,17 @@ final class NativeResultRow {
 	static NativeResultRow fromBindingSet(Schema schema, BindingSet bindings) {
 		NativeResultCell[] cells = new NativeResultCell[schema.size()];
 		for (int index = 0; index < cells.length; index++) {
-			var value = bindings.getValue(schema.name(index));
-			cells[index] = value == null ? NativeResultCell.unbound() : NativeResultCell.term(value);
+			cells[index] = NativeResultCell.fromBinding(bindings, schema.name(index));
 		}
-		return new NativeResultRow(schema, cells);
+		return new NativeResultRow(schema, cells, NativeRowProvenance.from(bindings));
+	}
+
+	NativeResultRow withProvenance(NativeRowProvenance provenance) {
+		return this.provenance == provenance ? this : new NativeResultRow(schema, cells, provenance);
+	}
+
+	NativeRowProvenance provenance() {
+		return provenance;
 	}
 
 	Schema schema() {
@@ -104,8 +117,10 @@ final class NativeResultRow {
 			}
 			if (cell.state() == NativeResultCell.State.BOUND) {
 				bindings.addBinding(schema.name(index), cell.value());
+			} else if (cell.state() == NativeResultCell.State.PRESENT_NULL) {
+				bindings.addBinding(schema.name(index), null);
 			}
 		}
-		return bindings;
+		return provenance.apply(bindings);
 	}
 }

@@ -36,6 +36,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Various tests on linear execution of updates.
@@ -133,6 +134,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_independentPattern() {
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
@@ -147,6 +149,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safePattern() {
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
@@ -158,6 +161,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_afterPattern() {
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
@@ -170,6 +174,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_afterInsertDataPattern() {
 		a.begin(level);
 		a.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <picasso> a <Painter> }", NS).execute();
@@ -182,6 +187,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_changedPattern() {
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
@@ -193,6 +199,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -214,6 +221,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -233,6 +241,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeOptionalQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -257,6 +266,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeOptionalInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -276,6 +286,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeFilterQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -298,6 +309,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeFilterInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -318,6 +330,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeRangeQuery() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -346,6 +359,7 @@ public class LinearTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test_safeRangeInsert() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);

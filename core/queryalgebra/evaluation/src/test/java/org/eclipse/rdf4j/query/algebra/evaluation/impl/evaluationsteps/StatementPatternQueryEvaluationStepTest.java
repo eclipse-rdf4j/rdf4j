@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
@@ -63,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -86,6 +89,16 @@ class StatementPatternQueryEvaluationStepTest {
 	@ParameterizedTest
 	@EnumSource(ConstantProduction.class)
 	void constantBindIsCapturedOnceAcrossRepeatedLeftRows(ConstantProduction production) {
+		assertConstantBindCapture(production, true);
+	}
+
+	@ParameterizedTest
+	@EnumSource(ConstantProduction.class)
+	void automaticUnionHashKeepsCapturedIdentityWithoutPreparingUnboundProbe(ConstantProduction production) {
+		assertConstantBindCapture(production, false);
+	}
+
+	private void assertConstantBindCapture(ConstantProduction production, boolean correlatedProbe) {
 		CapturingTripleSource source = new CapturingTripleSource();
 		MapBindingSet first = new MapBindingSet();
 		first.addBinding("row", source.valueFactory.createIRI("urn:row:first"));
@@ -101,7 +114,12 @@ class StatementPatternQueryEvaluationStepTest {
 		Extension bind = new Extension(new SingletonSet(), new ExtensionElem(expression, "o"));
 		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", source.statement.getPredicate()),
 				Var.of("o"));
-		QueryRoot query = new QueryRoot(new LeftJoin(new Join(left, bind), new Union(pattern, pattern.clone())));
+		LeftJoin optional = new LeftJoin(new Join(left, bind), new Union(pattern, pattern.clone()));
+		if (correlatedProbe) {
+			// A real residual requires the incoming row and selects the correlated statement-probe path.
+			optional.setCondition(new Bound(Var.of("row")));
+		}
+		QueryRoot query = new QueryRoot(optional);
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
 		var step = strategy.precompile(query);
 		assertThat(source.literalPreparations).hasValue(0);
@@ -114,7 +132,10 @@ class StatementPatternQueryEvaluationStepTest {
 			}
 		}
 		assertThat(captured).hasSize(production.absent ? 2 : 4);
-		assertThat(source.literalPreparations).hasValue(1);
+		assertThat(source.literalPreparations).hasValue(correlatedProbe ? 1 : 0);
+		assertThat(optional.getAlgorithmName()).isEqualTo(correlatedProbe
+				? "LeftJoinIterator"
+				: "HashJoinIteration");
 		for (Value value : captured) {
 			assertThat(value).isSameAs(captured.getFirst());
 		}
@@ -859,13 +880,13 @@ class StatementPatternQueryEvaluationStepTest {
 		}
 
 		@Override
-		public org.eclipse.rdf4j.model.Literal getNow() {
+		public Literal getNow() {
 			return null;
 		}
 	}
 
 	private static final class InstrumentedBindingSet
-			extends org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet {
+			extends QueryBindingSet {
 
 		private boolean isEmptyInvoked = false;
 

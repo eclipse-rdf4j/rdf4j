@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -64,22 +65,29 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbMapGrowthReplayLifecycleTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
 	private static final IRI FIRST_SUBJECT = VF.createIRI("urn:lmdb:replay-lifecycle:first-subject");
+
 	private static final IRI SECOND_SUBJECT = VF.createIRI("urn:lmdb:replay-lifecycle:second-subject");
+
 	private static final IRI FIRST_PREDICATE = VF.createIRI("urn:lmdb:replay-lifecycle:first-predicate");
+
 	private static final IRI SECOND_PREDICATE = VF.createIRI("urn:lmdb:replay-lifecycle:second-predicate");
+
 	private static final IRI GROWTH_PREDICATE = VF.createIRI("urn:lmdb:replay-lifecycle:growth-predicate");
+
 	private static final long INITIAL_MAP_SIZE = 32L * 1024L * 1024L;
+
 	private static final double GROWTH_THRESHOLD = 0.10d;
+
 	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
+
 	private static final int PARALLEL_SORT_INPUT_ROWS = 10_000;
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
+	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
-	void unconsumedSnapshotResultsShareOneReplacementGeneration(boolean nativeEvaluation,
-			@TempDir Path dataDirectory) throws Exception {
-		LmdbStore store = newStore(dataDirectory, nativeEvaluation);
+	void unconsumedSnapshotResultsShareOneReplacementGeneration(@TempDir Path dataDirectory) throws Exception {
+		LmdbStore store = newStore(dataDirectory);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
@@ -89,14 +97,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 				seed.addStatement(SECOND_SUBJECT, SECOND_PREDICATE, VF.createLiteral("before-second"));
 				seed.commit();
 			}
-			if (nativeEvaluation) {
-				try (RepositoryConnection planner = repository.getConnection()) {
-					assertThat(planner.prepareTupleQuery(selectValues(FIRST_SUBJECT, FIRST_PREDICATE))
-							.explain(Explanation.Level.Optimized)
-							.toString()).contains("NativeRows");
-				}
-			}
-
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
 			String namespace = growthNamespace(initialMapSize);
@@ -108,7 +108,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 						.evaluate();
 				TupleQueryResult second = reader.prepareTupleQuery(selectValues(SECOND_SUBJECT, SECOND_PREDICATE))
 						.evaluate();
-				try (first; second) {
+				try (first;
+						second) {
 					try (SailConnection writer = store.getConnection()) {
 						writer.begin(IsolationLevels.SNAPSHOT);
 						addGrowthStatements(writer, initialMapSize);
@@ -122,7 +123,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 							"the writer must complete real TripleStore growth while both results remain unconsumed");
 					assertThat(readValues(first)).containsExactlyInAnyOrder("before-first", "after-growth-first");
 					long replacementMapSize = mapSize(tripleStore);
-
 					try (SailConnection laterWriter = store.getConnection()) {
 						laterWriter.begin(IsolationLevels.SNAPSHOT);
 						laterWriter.addStatement(SECOND_SUBJECT, SECOND_PREDICATE,
@@ -131,7 +131,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 					}
 					assertEquals(replacementMapSize, mapSize(tripleStore),
 							"the intervening publication must not start another map generation");
-
 					assertThat(readValues(second)).containsExactlyInAnyOrder("before-second", "after-growth-second");
 				}
 				reader.rollback();
@@ -155,7 +154,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 				seed.addStatement(observedSubject, FIRST_PREDICATE, VF.createLiteral("seed"));
 				seed.commit();
 			}
-
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
 			String namespace = growthNamespace(initialMapSize);
@@ -178,12 +176,10 @@ class LmdbMapGrowthReplayLifecycleTest {
 					}
 					assertTrue(mapSize(tripleStore) > initialMapSize,
 							"the unobserved SERIALIZABLE result must span actual TripleStore growth");
-
 					assertTrue(results.hasNext(), "the replayed statement pattern must find its seeded row");
 					assertEquals("seed", results.next().getObject().stringValue());
 					assertFalse(results.hasNext());
 				}
-
 				reader.addStatement(localWriteSubject, localWritePredicate, VF.createLiteral("reader-write"));
 				try (SailConnection conflictingWriter = store.getConnection()) {
 					conflictingWriter.begin(IsolationLevels.SNAPSHOT);
@@ -191,7 +187,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 							VF.createLiteral("concurrent-write"));
 					conflictingWriter.commit();
 				}
-
 				assertThrows(SailConflictException.class, () -> {
 					reader.prepare();
 					reader.commit();
@@ -212,13 +207,13 @@ class LmdbMapGrowthReplayLifecycleTest {
 		String functionIri = "urn:lmdb:replay-lifecycle:sort-barrier:" + UUID.randomUUID();
 		SortReplayBarrierFunction function = new SortReplayBarrierFunction(functionIri);
 		FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
-		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
-				.setForceSync(true)
-				.setTripleDBSize(INITIAL_MAP_SIZE)
-				.setValueDBSize(128L * 1024L * 1024L)
-				.setMapGrowthThreshold(GROWTH_THRESHOLD)
-				.setMapGrowthReadDrainTimeoutMillis(150)
-				.setAutoGrow(true));
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				new LmdbStoreConfig("spoc,posc").setForceSync(true)
+						.setTripleDBSize(INITIAL_MAP_SIZE)
+						.setValueDBSize(128L * 1024L * 1024L)
+						.setMapGrowthThreshold(GROWTH_THRESHOLD)
+						.setMapGrowthReadDrainTimeoutMillis(150)
+						.setAutoGrow(true));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
@@ -230,7 +225,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 				seed.addStatement(FIRST_SUBJECT, FIRST_PREDICATE, VF.createLiteral("b-before"));
 				seed.commit();
 			}
-
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
@@ -254,7 +248,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 					return values;
 				}
 			});
-
 			assertTrue(function.awaitFirstInvocation(), "ORDER BY must block while the result is still unobserved");
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
@@ -268,7 +261,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 			awaitStartedGrowthAdmissionClosure(backingStore, before, writer);
 			awaitReplayAccepted(backingStore, before, writer);
 			function.releaseFirstInvocation();
-
 			writer.get(20, TimeUnit.SECONDS);
 			List<String> values = query.get(20, TimeUnit.SECONDS);
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
@@ -300,8 +292,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 	@Test
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
-	void activePreResultParallelSortKeyPreparationStopsOldAttemptAndReplaysAfterGrowth(@TempDir Path dataDirectory)
-			throws Exception {
+	void activePreResultParallelSortStopsOldAttemptAndReplaysAfterGrowth(@TempDir Path dataDirectory) throws Exception {
 		assertParallelSortKeyPreparationStopsAfterGrowth(dataDirectory, false);
 	}
 
@@ -323,13 +314,13 @@ class LmdbMapGrowthReplayLifecycleTest {
 		CountDownLatch releaseWriter = new CountDownLatch(1);
 		SortReplayBarrierFunction function = new SortReplayBarrierFunction(functionIri, growthStarted);
 		FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
-		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
-				.setForceSync(true)
-				.setTripleDBSize(INITIAL_MAP_SIZE)
-				.setValueDBSize(128L * 1024L * 1024L)
-				.setMapGrowthThreshold(GROWTH_THRESHOLD)
-				.setMapGrowthReadDrainTimeoutMillis(5_000)
-				.setAutoGrow(true));
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				new LmdbStoreConfig("spoc,posc").setForceSync(true)
+						.setTripleDBSize(INITIAL_MAP_SIZE)
+						.setValueDBSize(128L * 1024L * 1024L)
+						.setMapGrowthThreshold(GROWTH_THRESHOLD)
+						.setMapGrowthReadDrainTimeoutMillis(5_000)
+						.setAutoGrow(true));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
@@ -343,7 +334,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 				}
 				seed.commit();
 			}
-
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
@@ -365,7 +355,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 					return values;
 				}
 			});
-
 			assertTrue(function.awaitFirstInvocation(), "the sort must block before its first result escapes");
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
@@ -387,7 +376,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 			awaitReplayAccepted(backingStore, before, writer);
 			growthStarted.set(true);
 			function.releaseFirstInvocation();
-
 			List<String> values;
 			if (delayWriterReturn) {
 				assertTrue(writerCommitted.await(20, TimeUnit.SECONDS), "the growth writer must commit");
@@ -456,13 +444,13 @@ class LmdbMapGrowthReplayLifecycleTest {
 		CountDownLatch releaseWriter = new CountDownLatch(1);
 		CooperativeFilterFunction function = new CooperativeFilterFunction(functionIri, growthStarted);
 		FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
-		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
-				.setForceSync(true)
-				.setTripleDBSize(INITIAL_MAP_SIZE)
-				.setValueDBSize(128L * 1024L * 1024L)
-				.setMapGrowthThreshold(GROWTH_THRESHOLD)
-				.setMapGrowthReadDrainTimeoutMillis(5_000)
-				.setAutoGrow(true));
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				new LmdbStoreConfig("spoc,posc").setForceSync(true)
+						.setTripleDBSize(INITIAL_MAP_SIZE)
+						.setValueDBSize(128L * 1024L * 1024L)
+						.setMapGrowthThreshold(GROWTH_THRESHOLD)
+						.setMapGrowthReadDrainTimeoutMillis(5_000)
+						.setAutoGrow(true));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
@@ -476,7 +464,6 @@ class LmdbMapGrowthReplayLifecycleTest {
 				}
 				seed.commit();
 			}
-
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
@@ -487,7 +474,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 					reader.begin(IsolationLevels.SNAPSHOT);
 					TupleQuery tupleQuery = reader.prepareTupleQuery(QueryLanguage.SPARQL,
 							"SELECT (COUNT(?value) AS ?count) WHERE { ?subject <" + FIRST_PREDICATE.stringValue()
-									+ "> ?value . FILTER(<" + functionIri + ">(?value)) }");
+									+ "> ?value . BIND(<" + functionIri
+									+ ">(?value) AS ?accepted) FILTER(?accepted) }");
 					String count;
 					try (TupleQueryResult results = tupleQuery.evaluate()) {
 						assertTrue(results.hasNext());
@@ -497,8 +485,10 @@ class LmdbMapGrowthReplayLifecycleTest {
 					return count;
 				}
 			});
-
 			assertTrue(function.awaitFirstInvocation(), "the aggregate must block before its first result escapes");
+			assertTrue(function.firstInvocationBelongsToRuntimeAggregate(),
+					() -> "the aggregate barrier must observe runtime aggregation; callback stack: "
+							+ function.firstInvocationStack());
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
 					growthWriter.begin(IsolationLevels.SNAPSHOT);
@@ -566,18 +556,13 @@ class LmdbMapGrowthReplayLifecycleTest {
 	}
 
 	private static LmdbStore newStore(Path dataDirectory) {
-		return newStore(dataDirectory, false);
-	}
-
-	private static LmdbStore newStore(Path dataDirectory, boolean nativeEvaluation) {
-		return new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
-				.setNativeEvaluationEnabled(nativeEvaluation)
-				.setForceSync(true)
-				.setTripleDBSize(INITIAL_MAP_SIZE)
-				.setValueDBSize(32L * 1024L * 1024L)
-				.setMapGrowthThreshold(GROWTH_THRESHOLD)
-				.setMapGrowthReadDrainTimeoutMillis(150)
-				.setAutoGrow(true));
+		return new LmdbStore(dataDirectory.toFile(),
+				new LmdbStoreConfig("spoc,posc").setForceSync(true)
+						.setTripleDBSize(INITIAL_MAP_SIZE)
+						.setValueDBSize(32L * 1024L * 1024L)
+						.setMapGrowthThreshold(GROWTH_THRESHOLD)
+						.setMapGrowthReadDrainTimeoutMillis(150)
+						.setAutoGrow(true));
 	}
 
 	private static String growthNamespace(long initialMapSize) {
@@ -609,8 +594,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 		}
 	}
 
-	private static void awaitTripleStoreGrowth(SailRepository repository, TripleStore tripleStore,
-			long initialMapSize, String namespace) throws Exception {
+	private static void awaitTripleStoreGrowth(SailRepository repository, TripleStore tripleStore, long initialMapSize,
+			String namespace) throws Exception {
 		try (RepositoryConnection barrier = repository.getConnection()) {
 			barrier.begin(IsolationLevels.SNAPSHOT);
 			assertEquals(namespace, barrier.getNamespace("growth-demand"),
@@ -631,8 +616,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 		}
 	}
 
-	private static void awaitStartedGrowthAdmissionClosure(LmdbSailStore backingStore,
-			MapGrowthMetrics.Snapshot before, Future<?> writer) throws Exception {
+	private static void awaitStartedGrowthAdmissionClosure(LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before,
+			Future<?> writer) throws Exception {
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		boolean writerCompleted = false;
 		while (true) {
@@ -645,9 +630,9 @@ class LmdbMapGrowthReplayLifecycleTest {
 				writerCompleted = true;
 			}
 			if (System.nanoTime() >= deadlineNanos) {
-				throw new AssertionError(writerCompleted
-						? "the completed writer did not start a growth episode with admission closed"
-						: "timed out waiting for a started growth episode with admission closed");
+				throw new AssertionError(
+						writerCompleted ? "the completed writer did not start a growth episode with admission closed"
+								: "timed out waiting for a started growth episode with admission closed");
 			}
 			Thread.yield();
 		}
@@ -714,11 +699,15 @@ class LmdbMapGrowthReplayLifecycleTest {
 	}
 
 	private static final class SortReplayBarrierFunction implements Function {
+
 		private final String functionIri;
+
 		private final AtomicBoolean growthStarted;
 		private final AtomicReference<TripleSource> originalSource = new AtomicReference<>();
 		private final CountDownLatch firstInvocation = new CountDownLatch(1);
+
 		private final CountDownLatch releaseFirstInvocation = new CountDownLatch(1);
+
 		private final AtomicInteger invocationCount = new AtomicInteger();
 		private final AtomicInteger originalCallbacksAfterGrowthStarted = new AtomicInteger();
 		private final AtomicInteger replacementCallbacks = new AtomicInteger();
@@ -792,18 +781,28 @@ class LmdbMapGrowthReplayLifecycleTest {
 	}
 
 	private static final class CooperativeFilterFunction implements Function {
+
 		private final String functionIri;
+
 		private final AtomicBoolean growthStarted;
 		private final AtomicReference<TripleSource> originalSource = new AtomicReference<>();
 		private final CountDownLatch firstInvocation = new CountDownLatch(1);
+
 		private final CountDownLatch releaseFirstInvocation = new CountDownLatch(1);
 		private final AtomicInteger originalCallbacksAfterGrowthStarted = new AtomicInteger();
 		private final AtomicInteger replacementCallbacks = new AtomicInteger();
 		private final AtomicBoolean nestedReadCompletedAfterGrowth = new AtomicBoolean();
 
+		private volatile List<StackTraceElement> firstInvocationStack = List.of();
+
 		private CooperativeFilterFunction(String functionIri, AtomicBoolean growthStarted) {
 			this.functionIri = functionIri;
 			this.growthStarted = growthStarted;
+		}
+
+		@Override
+		public boolean mustReturnDifferentResult() {
+			return true;
 		}
 
 		@Override
@@ -820,6 +819,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 		public Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException {
 			boolean releasedGrowthBarrier = false;
 			if (firstInvocation.getCount() > 0L) {
+				firstInvocationStack = List.of(Thread.currentThread().getStackTrace());
 				originalSource.set(tripleSource);
 				firstInvocation.countDown();
 				try {
@@ -863,6 +863,15 @@ class LmdbMapGrowthReplayLifecycleTest {
 			return replacementCallbacks.get();
 		}
 
+		private boolean firstInvocationBelongsToRuntimeAggregate() {
+			return firstInvocationStack.stream()
+					.anyMatch(frame -> frame.getClassName().equals(GroupIterator.class.getName()));
+		}
+
+		private List<StackTraceElement> firstInvocationStack() {
+			return firstInvocationStack;
+		}
+
 		private boolean nestedReadCompletedAfterGrowth() {
 			return nestedReadCompletedAfterGrowth.get();
 		}
@@ -870,5 +879,81 @@ class LmdbMapGrowthReplayLifecycleTest {
 		private void releaseFirstInvocation() {
 			releaseFirstInvocation.countDown();
 		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void unconsumedSnapshotResultsShareOneReplacementGeneration(boolean nativeEvaluation, @TempDir Path dataDirectory)
+			throws Exception {
+		LmdbStore store = newStore(dataDirectory, nativeEvaluation);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin(IsolationLevels.SNAPSHOT);
+				seed.addStatement(FIRST_SUBJECT, FIRST_PREDICATE, VF.createLiteral("before-first"));
+				seed.addStatement(SECOND_SUBJECT, SECOND_PREDICATE, VF.createLiteral("before-second"));
+				seed.commit();
+			}
+			if (nativeEvaluation) {
+				try (RepositoryConnection planner = repository.getConnection()) {
+					assertThat(planner.prepareTupleQuery(selectValues(FIRST_SUBJECT, FIRST_PREDICATE))
+							.explain(Explanation.Level.Optimized)
+							.toString()).contains("NativeRows");
+				}
+			}
+			TripleStore tripleStore = tripleStoreOf(store);
+			long initialMapSize = mapSize(tripleStore);
+			String namespace = growthNamespace(initialMapSize);
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
+			try (RepositoryConnection reader = repository.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				TupleQueryResult first = reader.prepareTupleQuery(selectValues(FIRST_SUBJECT, FIRST_PREDICATE))
+						.evaluate();
+				TupleQueryResult second = reader.prepareTupleQuery(selectValues(SECOND_SUBJECT, SECOND_PREDICATE))
+						.evaluate();
+				try (first;
+						second) {
+					try (SailConnection writer = store.getConnection()) {
+						writer.begin(IsolationLevels.SNAPSHOT);
+						addGrowthStatements(writer, initialMapSize);
+						writer.addStatement(FIRST_SUBJECT, FIRST_PREDICATE, VF.createLiteral("after-growth-first"));
+						writer.addStatement(SECOND_SUBJECT, SECOND_PREDICATE, VF.createLiteral("after-growth-second"));
+						writer.commit();
+					}
+					awaitGrowthEpisode(backingStore, before);
+					awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
+					assertTrue(mapSize(tripleStore) > initialMapSize,
+							"the writer must complete real TripleStore growth while both results remain unconsumed");
+					assertThat(readValues(first)).containsExactlyInAnyOrder("before-first", "after-growth-first");
+					long replacementMapSize = mapSize(tripleStore);
+					try (SailConnection laterWriter = store.getConnection()) {
+						laterWriter.begin(IsolationLevels.SNAPSHOT);
+						laterWriter.addStatement(SECOND_SUBJECT, SECOND_PREDICATE,
+								VF.createLiteral("after-replay-second"));
+						laterWriter.commit();
+					}
+					assertEquals(replacementMapSize, mapSize(tripleStore),
+							"the intervening publication must not start another map generation");
+					assertThat(readValues(second)).containsExactlyInAnyOrder("before-second", "after-growth-second");
+				}
+				reader.rollback();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static LmdbStore newStore(Path dataDirectory, boolean nativeEvaluation) {
+		return new LmdbStore(dataDirectory.toFile(),
+				new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(nativeEvaluation)
+						.setForceSync(true)
+						.setTripleDBSize(INITIAL_MAP_SIZE)
+						.setValueDBSize(32L * 1024L * 1024L)
+						.setMapGrowthThreshold(GROWTH_THRESHOLD)
+						.setMapGrowthReadDrainTimeoutMillis(150)
+						.setAutoGrow(true));
 	}
 }

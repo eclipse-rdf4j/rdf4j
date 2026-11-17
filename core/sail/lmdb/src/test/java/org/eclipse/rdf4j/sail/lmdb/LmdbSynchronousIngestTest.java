@@ -56,7 +56,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -67,7 +66,11 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadEvidence;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadProbe;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadValueHash;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -83,6 +86,16 @@ class LmdbSynchronousIngestTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI PREDICATE = VF.createIRI("urn:sync-ingest:predicate");
+
+	private static double predicateRows(SketchBasedJoinEstimator estimator, IRI predicate) {
+		return predicateEvidence(estimator, predicate).rows().estimate();
+	}
+
+	private static QuadEvidence predicateEvidence(SketchBasedJoinEstimator estimator, IRI predicate) {
+		QuadProbe probe = new QuadProbe(QuadProbe.PREDICATE, QuadProbe.OBJECT, 0L,
+				QuadValueHash.hash(predicate), 0L, 0L, estimator.quadSnapshotIdentity());
+		return estimator.synopsisService().probe(probe);
+	}
 
 	@Test
 	void singletonApprovalAvoidsBulkPreparation(@TempDir Path directory) throws Exception {
@@ -198,7 +211,7 @@ class LmdbSynchronousIngestTest {
 				sink.flush();
 			}
 			assertEquals(0d,
-					estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()));
+					predicateRows(estimator, predicate));
 			try (RepositoryConnection observer = fixture.repository.getConnection()) {
 				assertTrue(observer.hasStatement(statement, true));
 				assertFalse(observer.hasStatement(statement, false));
@@ -213,7 +226,7 @@ class LmdbSynchronousIngestTest {
 			assertTrue(fixture.events.alignedWrites.isEmpty());
 			assertEquals(5, fixture.events.scalarWrites.size());
 			assertEquals(1d,
-					estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()));
+					predicateRows(estimator, predicate));
 			try (RepositoryConnection observer = fixture.repository.getConnection()) {
 				assertVisible(observer, input);
 				assertEquals(3, observer.size());
@@ -572,9 +585,9 @@ class LmdbSynchronousIngestTest {
 				assertEquals(expectedScalarWriteCount(4, expectedBatchCounts, actualCount),
 						fixture.events.scalarWrites.size());
 				assertEquals((double) ((actualCount + 1) / 2),
-						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:0"));
+						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:0")));
 				assertEquals((double) (actualCount / 2),
-						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:1"));
+						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:1")));
 				try (SailSink duplicates = fixture.store.getBackingStore()
 						.getExplicitSailSource()
 						.sink(IsolationLevels.NONE)) {
@@ -582,9 +595,9 @@ class LmdbSynchronousIngestTest {
 					duplicates.flush();
 				}
 				assertEquals((double) ((actualCount + 1) / 2),
-						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:0"));
+						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:0")));
 				assertEquals((double) (actualCount / 2),
-						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:1"));
+						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:1")));
 				try (RepositoryConnection observer = fixture.repository.getConnection()) {
 					assertVisible(observer, expected);
 					assertEquals(actualCount + 1, observer.size());
@@ -648,11 +661,18 @@ class LmdbSynchronousIngestTest {
 					}
 					sink.flush();
 				}
-				double expected = remove ? 0D : (double) ((count + 1) / 2);
-				assertEquals(expected,
-						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:0"));
+				// The quad synopsis pins its rebuild snapshot before reading. A commit after that pin makes the
+				// rebuild stale: it may publish only the pinned rows and must not serve them as usable evidence.
 				releaseRefresh.countDown();
-				assertEquals(remove ? 1L : count + 1L, refresh.get(10, TimeUnit.SECONDS));
+				assertEquals(remove ? count + 1L : 1L, refresh.get(10, TimeUnit.SECONDS),
+						"the overtaken rebuild publishes the snapshot it pinned before the concurrent commit");
+				assertFalse(predicateEvidence(estimator, VF.createIRI("urn:sizing:predicate:0")).usable(),
+						"a rebuild overtaken by a commit must not serve its pinned counts");
+				assertTrue(estimator.hasPendingBackgroundRefresh(), "the overtaken rebuild must request a refresh");
+				assertEquals(remove ? 1L : count + 1L, estimator.rebuild(),
+						"the next rebuild counts the concurrent commit exactly once");
+				assertEquals(remove ? 0D : (double) ((count + 1) / 2),
+						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:0")));
 				try (SailSink sink = fixture.store.getBackingStore()
 						.getExplicitSailSource()
 						.sink(IsolationLevels.NONE)) {
@@ -660,9 +680,9 @@ class LmdbSynchronousIngestTest {
 					sink.flush();
 				}
 				assertEquals((double) ((count + 1) / 2),
-						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:0"));
+						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:0")));
 				assertEquals((double) (count / 2),
-						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:1"));
+						predicateRows(estimator, VF.createIRI("urn:sizing:predicate:1")));
 				try (RepositoryConnection observer = fixture.repository.getConnection()) {
 					assertVisible(observer, changed);
 					assertEquals(count + 1L, observer.size());

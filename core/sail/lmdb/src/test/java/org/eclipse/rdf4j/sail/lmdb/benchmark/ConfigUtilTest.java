@@ -40,6 +40,25 @@ class ConfigUtilTest {
 	}
 
 	@Test
+	void timingConfigurationsKeepTheShippedPlanCacheDefault() {
+		// JMH timings and hit rates must reflect the store default: cached plans keep no explanation diagnostics.
+		assertThat(ConfigUtil.createConfig().getRetainCachedPlanDiagnostics()).isFalse();
+		assertThat(ConfigUtil.createAllIndexesConfig().getRetainCachedPlanDiagnostics()).isFalse();
+		assertThat(ThemeQueryBenchmark.ConfigUtil.createConfig().getRetainCachedPlanDiagnostics()).isFalse();
+		assertThat(ThemeQueryBenchmarkDelta.ConfigUtil.createConfig().getRetainCachedPlanDiagnostics()).isFalse();
+	}
+
+	@Test
+	void planCapturingConfigurationsRetainTheDiagnosticsOfCachedPlans() {
+		// Plan captures and explain tools read warmed-up plans, which the store's plan cache replays.
+		assertThat(ConfigUtil.createPlanCaptureConfig().getRetainCachedPlanDiagnostics()).isTrue();
+		assertThat(ConfigUtil.forPlanCapture(ConfigUtil.createConfig(), true).getRetainCachedPlanDiagnostics())
+				.isTrue();
+		assertThat(ConfigUtil.forPlanCapture(ConfigUtil.createConfig(), false).getRetainCachedPlanDiagnostics())
+				.isFalse();
+	}
+
+	@Test
 	void benchmarkConfigurationsExplicitlyEnableAcceleratorsByDefault() {
 		LmdbStoreConfig config = ConfigUtil.createConfig();
 

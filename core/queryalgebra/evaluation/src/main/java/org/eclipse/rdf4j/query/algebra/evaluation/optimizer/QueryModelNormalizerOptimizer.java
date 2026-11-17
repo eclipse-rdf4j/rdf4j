@@ -13,16 +13,22 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
@@ -33,13 +39,16 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -56,15 +65,38 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		implements QueryOptimizer {
 
 	private static final ThreadLocal<QueryAlgebraBindingAnalysis> CURRENT_ANALYSIS = new ThreadLocal<>();
+	private static final ThreadLocal<Set<TupleExpr>> CURRENT_PURE_UNION_FRAGMENTS = new ThreadLocal<>();
+	private final boolean distributeJoinsOverUnions;
 
 	public QueryModelNormalizerOptimizer() {
+		this(true);
+	}
+
+	/**
+	 * Configures the early normalizer for pipelines that retain pure join/UNION alternatives for later costed search.
+	 * When eager distribution is disabled, supported pure fragments keep their shared inputs; other fragments retain
+	 * the existing proven distribution. Fragments below a FILTER retain eager normalization because later filter
+	 * placement can introduce branch-local dependencies that the pure costed rules do not handle. Other normalizations
+	 * remain enabled, and the default constructor preserves eager distribution for existing callers.
+	 *
+	 * @param distributeJoinsOverUnions whether to eagerly distribute eligible pure joins across UNION branches
+	 */
+	@InternalUseOnly
+	public QueryModelNormalizerOptimizer(boolean distributeJoinsOverUnions) {
 		super(false);
+		this.distributeJoinsOverUnions = distributeJoinsOverUnions;
 	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		QueryAlgebraBindingAnalysis previous = CURRENT_ANALYSIS.get();
+		Set<TupleExpr> previousPureFragments = CURRENT_PURE_UNION_FRAGMENTS.get();
 		CURRENT_ANALYSIS.set(QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings));
+		if (distributeJoinsOverUnions) {
+			CURRENT_PURE_UNION_FRAGMENTS.remove();
+		} else {
+			CURRENT_PURE_UNION_FRAGMENTS.set(Collections.newSetFromMap(new IdentityHashMap<>()));
+		}
 		try {
 			// Visit this instance so subclasses overriding the public visitor hooks remain in the dispatch path.
 			tupleExpr.visit(this);
@@ -74,7 +106,61 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			} else {
 				CURRENT_ANALYSIS.set(previous);
 			}
+			if (previousPureFragments == null) {
+				CURRENT_PURE_UNION_FRAGMENTS.remove();
+			} else {
+				CURRENT_PURE_UNION_FRAGMENTS.set(previousPureFragments);
+			}
 		}
+	}
+
+	@Override
+	protected void meetBinaryTupleOperator(BinaryTupleOperator node) {
+		super.meetBinaryTupleOperator(node);
+		Set<TupleExpr> fragments = CURRENT_PURE_UNION_FRAGMENTS.get();
+		if (fragments != null && (node.getClass() == Join.class || node.getClass() == Union.class)) {
+			// Children have already been normalized. Record only a shape-routing fact, with constant work per
+			// binary node; the packed rules retain authority for their complete graph, input and replay proofs.
+			if (!node.isIndependentInputScope() && isPureUnionFragment(node.getLeftArg(), fragments)
+					&& isPureUnionFragment(node.getRightArg(), fragments)) {
+				fragments.add(node);
+			} else {
+				fragments.remove(node);
+			}
+		}
+	}
+
+	private static boolean isPureUnionFragment(TupleExpr expression, Set<TupleExpr> fragments) {
+		if (expression.isIndependentInputScope()) {
+			return false;
+		}
+		Class<?> type = expression.getClass();
+		if (type == Join.class || type == Union.class) {
+			return fragments.contains(expression);
+		}
+		if (type == StatementPattern.class) {
+			StatementPattern pattern = (StatementPattern) expression;
+			// Leave named/mixed graph frames and input-only observations to the legacy proof. This policy must
+			// not suppress the existing choice when packed pure-fragment search cannot represent that movement.
+			if (pattern.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || pattern.getContextVar() != null
+					|| inputOnlyTerm(pattern.getSubjectVar()) || inputOnlyTerm(pattern.getPredicateVar())
+					|| inputOnlyTerm(pattern.getObjectVar())) {
+				return false;
+			}
+		} else if (type != BindingSetAssignment.class && type != SingletonSet.class && type != EmptySet.class) {
+			return false;
+		}
+		// This call inspects a leaf only; it reuses the existing exact-class and stable-VALUES contracts.
+		return AlgebraEvaluationSafety.isPureRelational(expression);
+	}
+
+	private static boolean inputOnlyTerm(Var term) {
+		return term != null && term.isConstant() && !term.hasValue();
+	}
+
+	private boolean shouldDistribute(Join join) {
+		Set<TupleExpr> fragments = CURRENT_PURE_UNION_FRAGMENTS.get();
+		return distributeJoinsOverUnions || fragments == null || !fragments.contains(join);
 	}
 
 	@Override
@@ -93,7 +179,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			replacePreservingScope(join, rightArg);
 		} else if (rightArg instanceof SingletonSet) {
 			replacePreservingScope(join, leftArg);
-		} else if (leftArg instanceof Union union && canDistribute(union, rightArg)) {
+		} else if (leftArg instanceof Union union && shouldDistribute(join) && canDistribute(union, rightArg)) {
 			// sort unions above joins
 			Join leftJoin = new Join(union.getLeftArg(), rightArg.clone());
 			Join rightJoin = new Join(union.getRightArg(), rightArg.clone());
@@ -102,7 +188,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			replacePreservingScope(join, newUnion);
 			invalidateAnalysis();
 			newUnion.visit(this);
-		} else if (rightArg instanceof Union union && canDistribute(union, leftArg)) {
+		} else if (rightArg instanceof Union union && shouldDistribute(join) && canDistribute(union, leftArg)) {
 			// sort unions above joins
 			Join leftJoin = new Join(leftArg.clone(), union.getLeftArg());
 			Join rightJoin = new Join(leftArg.clone(), union.getRightArg());
@@ -129,7 +215,74 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			leftJoin.setVariableScopeChange(scopeChange);
 			invalidateAnalysis();
 			leftJoin.visit(this);
+		} else if (rightArg instanceof Extension extension && leftArg instanceof BindingSetAssignment assignment
+				&& canPushAssignmentThroughScopedExtension(assignment, extension)) {
+			// A scope-changed Extension forces a hash join whose build side is evaluated fully
+			// unbound. A constant VALUES relation can be pushed inside the scope when the BIND
+			// expressions cannot observe its bindings, turning the unbound evaluation into bound
+			// probes.
+			join.replaceWith(extension);
+			join.setRightArg(extension.getArg());
+			extension.setArg(join);
+			extension.visit(this);
+		} else if (leftArg instanceof Extension extension && rightArg instanceof BindingSetAssignment assignment
+				&& canPushAssignmentThroughScopedExtension(assignment, extension)) {
+			join.replaceWith(extension);
+			join.setLeftArg(extension.getArg());
+			extension.setArg(join);
+			extension.visit(this);
 		}
+	}
+
+	/**
+	 * A constant VALUES relation may move through a variable-scope-changing Extension when (1) it needs no input
+	 * bindings, (2) its binding names are disjoint from the names the Extension assigns, (3) every BIND expression is
+	 * insulated from the pushed bindings, and (4) the Extension argument is plain join/pattern/filter algebra whose
+	 * bound-join evaluation is equivalent to unbound evaluation plus a join. For (4) every Filter inside the argument
+	 * that mentions a pushed name (including inside EXISTS bodies) must have that name <em>assured</em> by its own
+	 * argument: only then does the pushed binding equal the row's own value by join compatibility, so the filter cannot
+	 * observe that the name is pre-bound. A pushed name that is merely possible below such a filter (e.g. through a
+	 * {@code VALUES ... UNDEF} row) would flip {@code BOUND}/{@code NOT EXISTS} outcomes.
+	 */
+	private static boolean canPushAssignmentThroughScopedExtension(BindingSetAssignment assignment,
+			Extension extension) {
+		if (!extension.isVariableScopeChange() || assignment.isVariableScopeChange()) {
+			return false;
+		}
+		Set<String> assignmentNames = assignment.getBindingNames();
+		if (assignmentNames.isEmpty() || !extension.getArg().getBindingNames().containsAll(assignmentNames)) {
+			return false;
+		}
+		for (ExtensionElem element : extension.getElements()) {
+			if (assignmentNames.contains(element.getName())) {
+				return false;
+			}
+			Set<String> expressionNames = new HashSet<>(VarNameCollector.process(element.getExpr()));
+			expressionNames.retainAll(assignmentNames);
+			if (!expressionNames.isEmpty()) {
+				return false;
+			}
+		}
+		return isPlainJoinAlgebra(extension.getArg(), assignmentNames);
+	}
+
+	private static boolean isPlainJoinAlgebra(TupleExpr tupleExpr, Set<String> pushedNames) {
+		if (tupleExpr instanceof StatementPattern) {
+			return true;
+		}
+		if (tupleExpr instanceof BindingSetAssignment assignmentArg) {
+			return !assignmentArg.isVariableScopeChange();
+		}
+		if (tupleExpr instanceof Join joinArg && !joinArg.isVariableScopeChange()) {
+			return isPlainJoinAlgebra(joinArg.getLeftArg(), pushedNames)
+					&& isPlainJoinAlgebra(joinArg.getRightArg(), pushedNames);
+		}
+		if (tupleExpr instanceof Filter filterArg && !filterArg.isVariableScopeChange()) {
+			return !(filterArg.getCondition() instanceof org.eclipse.rdf4j.query.algebra.SubQueryValueOperator)
+					&& BindingScopeAnalysis.filterDependsOnlyOnAssured(filterArg, pushedNames)
+					&& isPlainJoinAlgebra(filterArg.getArg(), pushedNames);
+		}
+		return false;
 	}
 
 	@Override
@@ -189,9 +342,6 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			replacePreservingScope(difference, leftArg);
 		} else if (rightArg instanceof EmptySet) {
 			replacePreservingScope(difference, leftArg);
-		} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
-			// MINUS only removes rows that share a variable with a right row, so the empty solution survives.
-			replacePreservingScope(difference, leftArg);
 		}
 	}
 
@@ -224,7 +374,19 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 	@Override
 	public void meet(Filter node) {
-		super.meet(node);
+		Set<TupleExpr> pureFragments = CURRENT_PURE_UNION_FRAGMENTS.get();
+		if (pureFragments != null) {
+			// Later filter placement can turn a currently pure JOIN/UNION into an input-dependent fragment.
+			// Preserve the legacy branch-local form for those rewrites, while canDistribute still proves legality.
+			CURRENT_PURE_UNION_FRAGMENTS.remove();
+		}
+		try {
+			super.meet(node);
+		} finally {
+			if (pureFragments != null) {
+				CURRENT_PURE_UNION_FRAGMENTS.set(pureFragments);
+			}
+		}
 
 		TupleExpr arg = node.getArg();
 		ValueExpr condition = node.getCondition();
@@ -522,6 +684,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			boundary.setVariableScopeChange(sourceChangesScope);
 			replacement = boundary;
 		}
+		replacement.setIndependentInputScope(source.isIndependentInputScope() || replacement.isIndependentInputScope());
 		source.replaceWith(replacement);
 		invalidateAnalysis();
 	}

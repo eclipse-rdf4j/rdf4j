@@ -13,19 +13,15 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.ArrayDeque;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -33,45 +29,37 @@ import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.junit.jupiter.api.Test;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+/**
+ * Retains the binding-cover semantics formerly exercised through the retired private deferred placer. The real store
+ * pipeline may choose another equivalent tree; UNDEF and the complete filtered result bags remain invariant.
+ */
 class LmdbDeferredFilterPlacerSoundnessTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
-	@Test
-	void materializedDeferredConditionsKeepTheirOriginalVisibility() {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void materializedDeferredConditionsKeepTheirOriginalVisibility(boolean experimental, @TempDir Path directory) {
 		BindingSetAssignment values = new BindingSetAssignment();
 		values.setDeclaredBindingNames(Set.of("x", "hidden"));
 		values.setBindingSets(List.of(row("x", VF.createLiteral(1), "hidden", VF.createLiteral(1))));
-		Compare condition = new Compare(Var.of("x"), Var.of("hidden"));
-		DeferredFilter filter = new DeferredFilter(condition, Set.of("x", "hidden"), Set.of("x", "hidden"),
-				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
-				new EvaluationStatistics.FilterPassEstimate(-1.0d,
-						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN),
-				ConditionBindingScope.retain(Set.of("x")));
-		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr,
-				Join::new, (root, filters, scope) -> {
-					Filter gate = new Filter(root, filters.getFirst().condition.clone());
-					gate.setConditionBindingScope(filters.getFirst().bindingScope);
-					return gate;
-				});
-		TupleExpr placed = placer.buildSegmentRoot(new ArrayDeque<>(List.of(values)), List.of(filter), Set.of());
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
-		try (CloseableIteration<BindingSet> rows = strategy.precompile(placed)
-				.evaluate(EmptyBindingSet.getInstance())) {
-			assertThat(rows.hasNext()).as("the hidden equality operand remains unbound").isFalse();
-		}
+		Filter gate = new Filter(values, new Compare(Var.of("x"), Var.of("hidden")));
+		gate.setConditionBindingScope(ConditionBindingScope.retain(Set.of("x")));
+		assertThat(evaluate(gate, experimental, directory))
+				.as("the hidden equality operand remains unbound")
+				.isEmpty();
 	}
 
-	@Test
-	void undefDoesNotCloseBindingCoverBeforeLaterValues() {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void undefDoesNotCloseBindingCoverBeforeLaterValues(boolean experimental, @TempDir Path directory) {
 		BindingSetAssignment partlyBound = new BindingSetAssignment();
 		partlyBound.setBindingNames(Set.of("x", "y"));
 		partlyBound.setBindingSets(List.of(row("x", VF.createLiteral(1))));
@@ -80,31 +68,19 @@ class LmdbDeferredFilterPlacerSoundnessTest {
 		laterY.setBindingSets(List.of(row("y", VF.createLiteral(1))));
 
 		Compare condition = new Compare(new Var("x"), new Var("y"), Compare.CompareOp.EQ);
-		DeferredFilter filter = new DeferredFilter(condition, Set.of("x", "y"),
-				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
-				new EvaluationStatistics.FilterPassEstimate(-1.0d,
-						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
-		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr,
-				Join::new, (root, filters, scope) -> new Filter(root,
-						LmdbJoinPlanSupport.combinedCondition(filters.stream()
-								.map(deferredFilter -> deferredFilter.condition)
-								.toList())));
-
-		TupleExpr placed = placer.buildSegmentRoot(new ArrayDeque<>(List.of(partlyBound, laterY)), List.of(filter),
-				Set.of());
-
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
-		try (CloseableIteration<BindingSet> results = strategy.precompile(placed)
-				.evaluate(EmptyBindingSet.getInstance())) {
-			assertThat(results.stream().toList()).singleElement().satisfies(result -> {
-				assertThat(result.getValue("x")).isEqualTo(VF.createLiteral(1));
-				assertThat(result.getValue("y")).isEqualTo(VF.createLiteral(1));
-			});
-		}
+		TupleExpr query = new Filter(new Join(partlyBound, laterY), condition);
+		List<BindingSet> results = evaluate(query, experimental, directory);
+		assertThat(results).containsExactly(row("x", VF.createLiteral(1), "y", VF.createLiteral(1)));
+		assertThat(results).singleElement().satisfies(result -> {
+			assertThat(result.getValue("x")).isEqualTo(VF.createLiteral(1));
+			assertThat(result.getValue("y")).isEqualTo(VF.createLiteral(1));
+		});
 	}
 
-	@Test
-	void fullyBoundValuesStillCloseAndMaterializeTheEarliestFilterWindow() {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void fullyBoundValuesPreserveTheirExactFilteredRowsAcrossAnotherJoin(boolean experimental,
+			@TempDir Path directory) {
 		BindingSetAssignment fullyBound = new BindingSetAssignment();
 		fullyBound.setBindingNames(Set.of("x", "y"));
 		fullyBound.setBindingSets(List.of(
@@ -115,53 +91,41 @@ class LmdbDeferredFilterPlacerSoundnessTest {
 		unrelated.setBindingSets(List.of(row("z", VF.createLiteral(3))));
 
 		Compare condition = new Compare(new Var("x"), new Var("y"), Compare.CompareOp.EQ);
-		DeferredFilter filter = new DeferredFilter(condition, Set.of("x", "y"),
-				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
-				new EvaluationStatistics.FilterPassEstimate(-1.0d,
-						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
-		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr,
-				Join::new, (root, filters, scope) -> new Filter(root,
-						LmdbJoinPlanSupport.combinedCondition(filters.stream()
-								.map(deferredFilter -> deferredFilter.condition)
-								.toList())));
-
-		TupleExpr placed = placer.buildSegmentRoot(new ArrayDeque<>(List.of(fullyBound, unrelated)), List.of(filter),
-				Set.of());
-
-		assertThat(placed).isInstanceOfSatisfying(Join.class, join -> {
-			assertThat(join.getLeftArg()).isInstanceOfSatisfying(BindingSetAssignment.class,
-					materialized -> assertThat(materialized.getBindingSets()).singleElement().satisfies(result -> {
-						assertThat(result.getValue("x")).isEqualTo(VF.createLiteral(1));
-						assertThat(result.getValue("y")).isEqualTo(VF.createLiteral(1));
-					}));
-			assertThat(join.getRightArg()).isSameAs(unrelated);
+		TupleExpr query = new Filter(new Join(fullyBound, unrelated), condition);
+		MapBindingSet expected = row("x", VF.createLiteral(1), "y", VF.createLiteral(1));
+		expected.addBinding("z", VF.createLiteral(3));
+		List<BindingSet> results = evaluate(query, experimental, directory);
+		assertThat(results).containsExactly(expected);
+		assertThat(results).singleElement().satisfies(result -> {
+			assertThat(result.getValue("x")).isEqualTo(VF.createLiteral(1));
+			assertThat(result.getValue("y")).isEqualTo(VF.createLiteral(1));
+			assertThat(result.getValue("z")).isEqualTo(VF.createLiteral(3));
 		});
 	}
 
-	private static BindingSet row(String name, Value value) {
+	private static List<BindingSet> evaluate(TupleExpr query, boolean experimental, Path directory) {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setExperimentalQueryOptimizations(experimental);
+		LmdbStore store = new LmdbStore(directory.toFile(), config);
+		store.init();
+		try (var connection = store.getConnection();
+				var results = connection.evaluate(query, null, EmptyBindingSet.getInstance(), false)) {
+			return new ArrayList<>(results.stream().toList());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static MapBindingSet row(String name, Value value) {
 		MapBindingSet row = new MapBindingSet(1);
 		row.addBinding(name, value);
 		return row;
 	}
 
-	private static BindingSet row(String firstName, Value firstValue, String secondName, Value secondValue) {
+	private static MapBindingSet row(String firstName, Value firstValue, String secondName, Value secondValue) {
 		MapBindingSet row = new MapBindingSet(2);
 		row.addBinding(firstName, firstValue);
 		row.addBinding(secondName, secondValue);
 		return row;
-	}
-
-	private static final class EmptyTripleSource implements TripleSource {
-
-		@Override
-		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
-				Resource... contexts) throws QueryEvaluationException {
-			return EMPTY_ITERATION;
-		}
-
-		@Override
-		public ValueFactory getValueFactory() {
-			return VF;
-		}
 	}
 }

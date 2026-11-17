@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -75,6 +76,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -230,6 +232,44 @@ public class SPARQLParserTest {
 
 		assertTrue(leftArg.getObjectVar().equals(rightArg.getSubjectVar()));
 		assertEquals(leftArg.getObjectVar().getName(), rightArg.getSubjectVar().getName());
+	}
+
+	@Test
+	public void testRepeatedGraphScopesRetainExplicitGraphBoundaries() {
+		ParsedQuery query = parser.parseQuery("""
+				PREFIX ex: <urn:>
+				SELECT * WHERE {
+					GRAPH ex:g { ?s ex:p ?o }
+					GRAPH ex:g { ?s ex:q ?v }
+				}
+				""", null);
+
+		List<Graph> graphs = new ArrayList<>();
+		query.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Graph graph) {
+				graphs.add(graph);
+				super.meet(graph);
+			}
+		});
+		// The parser retains lexical GRAPH boundaries; fixed positive patterns are lowered by the later evaluator
+		// optimizer. Keep this phase independent of evaluation-module implementations and dependencies.
+		assertThat(graphs).hasSize(2);
+		assertThat(graphs.get(0)).isNotSameAs(graphs.get(1));
+		for (Graph graph : graphs) {
+			assertThat(graph.getGraphName().hasValue()).isTrue();
+			assertThat(graph.getGraphName().getValue()).isEqualTo(Values.iri("urn:g"));
+			StatementPattern pattern = assertInstanceOf(StatementPattern.class, graph.getArg());
+			assertThat(pattern.getParentNode()).isSameAs(graph);
+			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.DEFAULT_CONTEXTS);
+			assertThat(pattern.getContextVar()).isNull();
+			assertThat(pattern.getSubjectVar().getName()).isEqualTo("s");
+		}
+		assertThat(StatementPatternCollector.process(query.getTupleExpr()))
+				.extracting(pattern -> pattern.getPredicateVar().getValue())
+				.containsExactlyInAnyOrder(Values.iri("urn:p"), Values.iri("urn:q"));
+		assertThat(graphs).extracting(graph -> ((StatementPattern) graph.getArg()).getObjectVar().getName())
+				.containsExactlyInAnyOrder("o", "v");
 	}
 
 	@Test

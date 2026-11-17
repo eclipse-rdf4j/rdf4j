@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -26,7 +28,13 @@ import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Semantic native projection over an already-native BindingSet producer. */
@@ -37,9 +45,20 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 	private final String[] sourceNames;
 	private final String[] targetNames;
 	private final boolean includeAllParentBindings;
+	private final Set<String> parameterSources;
+	private final Projection projection;
+	private final QueryEvaluationContext context;
 
 	NativeBindingSetProjectionStep(QueryEvaluationStep arg, Projection projection) {
+		this(arg, projection, new QueryEvaluationContext.Minimal((org.eclipse.rdf4j.query.Dataset) null));
+	}
+
+	NativeBindingSetProjectionStep(QueryEvaluationStep arg, Projection projection, QueryEvaluationContext context) {
 		this.arg = arg;
+		this.projection = projection;
+		this.context = context;
+		this.parameterSources = ProjectionIterator.parameterSources(projection.getArg(),
+				List.of(projection.getProjectionElemList()));
 		var elements = projection.getProjectionElemList().getElements();
 		this.sourceNames = new String[elements.size()];
 		this.targetNames = new String[elements.size()];
@@ -48,7 +67,7 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 			sourceNames[i] = element.getName();
 			targetNames[i] = element.getProjectionAlias().orElse(element.getName());
 		}
-		this.includeAllParentBindings = !isOuterProjection(projection);
+		this.includeAllParentBindings = ProjectionIterator.hasEnclosingProjection(projection, context);
 	}
 
 	private NativeBindingSetProjectionStep(QueryEvaluationStep arg, NativeBindingSetProjectionStep original) {
@@ -56,6 +75,9 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 		this.sourceNames = original.sourceNames;
 		this.targetNames = original.targetNames;
 		this.includeAllParentBindings = original.includeAllParentBindings;
+		this.parameterSources = original.parameterSources;
+		this.projection = original.projection;
+		this.context = original.context;
 	}
 
 	@Override
@@ -79,7 +101,7 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 					evidence = null;
 					break;
 				}
-				mapped.put(targetNames[index], column);
+				mapped.put(targetNames[index], column.expressionValue());
 			}
 			if (evidence != null) {
 				evidence = evidence.withColumns(child.input(), mapped);
@@ -108,9 +130,9 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 		if (requiresPhysicalResults()) {
 			return NativeResultSteps.rdf(evaluateNative(bindings));
 		}
-		CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
-		return new ProjectionIteration(delegate, bindings, sourceNames, targetNames, includeAllParentBindings,
-				NativeExecutionContextCarrier.contextOf(delegate));
+		BindingSet input = ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, bindings, context);
+		return NativeResultSteps.mapBindings(arg.evaluate(input), source -> project(source, bindings, sourceNames,
+				targetNames, includeAllParentBindings, parameterSources));
 	}
 
 	@Override
@@ -120,7 +142,8 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 
 	@Override
 	public NativeResultCursor evaluateNative(BindingSet bindings) {
-		NativeResultCursor delegate = NativeResultSteps.open(arg, bindings);
+		BindingSet input = ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, bindings, context);
+		NativeResultCursor delegate = NativeResultSteps.open(arg, input);
 		Map<String, Integer> indices = new LinkedHashMap<>();
 		if (includeAllParentBindings) {
 			bindings.getBindingNames().forEach(name -> indices.put(name, indices.size()));
@@ -132,22 +155,51 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 		return NativeResultSteps.map(delegate, source -> {
 			NativeResultCell[] cells = new NativeResultCell[schema.size()];
 			for (int index = 0; index < cells.length; index++) {
-				Value value = includeAllParentBindings ? bindings.getValue(schema.name(index)) : null;
-				cells[index] = value == null ? NativeResultCell.unbound() : NativeResultCell.term(value);
+				cells[index] = includeAllParentBindings ? NativeResultCell.fromBinding(bindings, schema.name(index))
+						: NativeResultCell.unbound();
 			}
 			for (int index = 0; index < sourceNames.length; index++) {
 				NativeResultCell cell = source.cell(sourceNames[index]);
-				if (!includeAllParentBindings && cell.state() != NativeResultCell.State.BOUND) {
-					Value parent = bindings.getValue(sourceNames[index]);
-					if (parent != null) {
-						cell = NativeResultCell.term(parent);
+				if (cell.state() != NativeResultCell.State.BOUND
+						&& !source.provenance().origin.isLocal(sourceNames[index])) {
+					Value value = !includeAllParentBindings ? bindings.getValue(sourceNames[index]) : null;
+					if (value == null && parameterSources.contains(sourceNames[index])) {
+						value = source.provenance().origin.parameterValue(sourceNames[index]);
 					}
+					cell = value == null ? NativeResultCell.unbound() : NativeResultCell.term(value);
 				}
-				if (cell.state() == NativeResultCell.State.BOUND) {
-					cells[indices.get(targetNames[index])] = cell;
+				// Every occurrence writes or removes its target, including later missing duplicate aliases.
+				cells[indices.get(targetNames[index])] = cell.state() == NativeResultCell.State.BOUND
+						? cell
+						: NativeResultCell.unbound();
+			}
+			BindingSetOrigin origin = source.provenance().origin;
+			java.util.HashSet<String> fallback = new java.util.HashSet<>();
+			for (String name : sourceNames) {
+				if (source.cell(name).state() != NativeResultCell.State.BOUND && !origin.isLocal(name)
+						&& bindings.hasBinding(name)) {
+					fallback.add(name);
 				}
 			}
-			return new NativeResultRow(schema, cells);
+			if (!fallback.isEmpty()) {
+				origin = BindingSetOrigin.overlay(origin, BindingSetOrigin.of(bindings), fallback);
+			}
+			origin = BindingSetOrigin.projected(origin, sourceNames, targetNames,
+					BindingSetOrigin.of(includeAllParentBindings ? bindings
+							: org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance()));
+			java.util.HashSet<String> absent = new java.util.HashSet<>();
+			for (String target : targetNames) {
+				if (cells[indices.get(target)].state() != NativeResultCell.State.BOUND
+						&& origin.parameterValue(target) != null) {
+					absent.add(target);
+				}
+			}
+			GraphFrameBindings graphs = includeAllParentBindings ? GraphFrameBindings.from(bindings)
+					: GraphFrameBindings.EMPTY;
+			for (String target : targetNames) {
+				graphs = graphs.without(target);
+			}
+			return new NativeResultRow(schema, cells, new NativeRowProvenance(origin.producing(absent), graphs));
 		});
 	}
 
@@ -174,118 +226,33 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 		return "NativeProjection(arg=" + inner + ")";
 	}
 
-	private static final class ProjectionIteration
-			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
-
-		private final CloseableIteration<BindingSet> delegate;
-		private final BindingSet parentBindings;
-		private final String[] sourceNames;
-		private final String[] targetNames;
-		private final boolean includeAllParentBindings;
-		private final NativeExecutionContext executionContext;
-		private final NativeExecutionContext.Lease lease;
-		private boolean closed;
-
-		private ProjectionIteration(CloseableIteration<BindingSet> delegate, BindingSet parentBindings,
-				String[] sourceNames, String[] targetNames, boolean includeAllParentBindings,
-				NativeExecutionContext executionContext) {
-			this.delegate = delegate;
-			this.parentBindings = parentBindings;
-			this.sourceNames = sourceNames;
-			this.targetNames = targetNames;
-			this.includeAllParentBindings = includeAllParentBindings;
-			this.executionContext = executionContext;
-			this.lease = NativeExecutionContextCarrier.retain(delegate);
-		}
-
-		@Override
-		public boolean hasNext() {
-			if (closed) {
-				return false;
-			}
-			try {
-				boolean result = delegate.hasNext();
-				if (!result) {
-					close();
-				}
-				return result;
-			} catch (RuntimeException | Error e) {
-				try {
-					close();
-				} catch (RuntimeException | Error cleanup) {
-					if (cleanup != e) {
-						e.addSuppressed(cleanup);
-					}
-				}
-				throw e;
-			}
-		}
-
-		@Override
-		public BindingSet next() {
-			if (closed) {
-				throw new NoSuchElementException();
-			}
-			try {
-				return project(delegate.next(), parentBindings, sourceNames, targetNames, includeAllParentBindings);
-			} catch (RuntimeException | Error e) {
-				try {
-					close();
-				} catch (RuntimeException | Error cleanup) {
-					if (cleanup != e) {
-						e.addSuppressed(cleanup);
-					}
-				}
-				throw e;
-			}
-		}
-
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
-		public void close() {
-			if (!closed) {
-				closed = true;
-				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
-			}
-		}
-
-		@Override
-		public boolean requestCancellation() {
-			if (closed || !(delegate instanceof CooperativeCancellation cancellation)) {
-				return false;
-			}
-			return cancellation.requestCancellation();
-		}
-
-		@Override
-		public NativeExecutionContext executionContext() {
-			return executionContext;
-		}
-	}
-
 	static BindingSet project(BindingSet source, BindingSet parentBindings, String[] sourceNames, String[] targetNames,
 			boolean includeAllParentBindings) {
-		MapBindingSet result = new MapBindingSet(parentBindings.size() + targetNames.length);
-		if (includeAllParentBindings) {
-			for (Binding binding : parentBindings) {
-				result.setBinding(binding);
-			}
-		}
+		return project(source, parentBindings, sourceNames, targetNames, includeAllParentBindings, Set.of());
+	}
+
+	private static BindingSet project(BindingSet source, BindingSet parentBindings, String[] sourceNames,
+			String[] targetNames, boolean includeAllParentBindings, Set<String> parameterSources) {
+		QueryBindingSet result = includeAllParentBindings ? new QueryBindingSet(parentBindings) : new QueryBindingSet();
+		BindingSetOrigin origin = BindingSetOrigin.of(source);
 		for (int i = 0; i < sourceNames.length; i++) {
 			Value value = source.getValue(sourceNames[i]);
-			if (!includeAllParentBindings && value == null) {
-				value = parentBindings.getValue(sourceNames[i]);
+			if (value == null && !origin.isLocal(sourceNames[i])) {
+				if (!includeAllParentBindings) {
+					value = parentBindings.getValue(sourceNames[i]);
+				}
+				if (value == null && parameterSources.contains(sourceNames[i])) {
+					value = origin.parameterValue(sourceNames[i]);
+				}
 			}
 			if (value != null) {
-				// A later bound duplicate target replaces its value without changing insertion order. An unbound
-				// occurrence contributes nothing and therefore cannot erase the earlier value.
 				result.setBinding(targetNames[i], value);
+			} else {
+				result.removeBinding(targetNames[i]);
 			}
 		}
+		BindingSetOrigin.set(result, BindingSetOrigin.projected(source, sourceNames, targetNames, parentBindings,
+				includeAllParentBindings, result));
 		return result;
 	}
 }

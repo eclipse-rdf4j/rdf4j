@@ -12,12 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.Map;
 import java.util.NoSuchElementException;
 
-import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -28,13 +24,17 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+
 final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<BindingSet>
 		implements CooperativeCancellation {
 
 	static final int INITIAL_BATCH_SIZE = 128;
 	static final int DEFAULT_MAX_BATCH_SIZE = 4096;
 
-	private static final int INITIAL_COLLECTION_SIZE = 16;
+	private static final int INITIAL_COLLECTION_SIZE = 8;
+	private static final int SMALL_DEDUP_LIMIT = 16;
 	private static final int NO_INDEX = -1;
 
 	private final CloseableIteration<? extends BindingSet> source;
@@ -43,38 +43,57 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private final Object sourceLock = new Object();
 	private volatile boolean cancellationRequested;
 	private volatile boolean sourceClosing;
-	private final LongIntHashMap valueIndexesById = new LongIntHashMap(INITIAL_COLLECTION_SIZE);
-	private final IdentityHashMap<LmdbValue, Boolean> unknownValuesByIdentity = new IdentityHashMap<>();
-	private final IdentityHashMap<LmdbValue, Boolean> deferredValuesByIdentity = new IdentityHashMap<>();
 
 	private BindingSet[] buffer;
+
 	private LmdbValue[] values;
 	private long[] valueIds;
 	private ValueStoreRevision[] valueRevisions;
+	private ValueStoreRevision collectedValueRevision;
+	private boolean collectedMultipleValueRevisions;
+	private boolean collectedMultipleValueScopes;
+
 	private int[] valueOrder;
 	private int[] scratchValueOrder;
 	private long[] scratchValueIds;
+
+	private Long2IntOpenHashMap valueIndexesById;
+	private ValueStoreRevision valueIndexesRevision;
+	private boolean usingValueIndexesById;
+	private ValueStoreRevision[] scopedValueIndexRevisions;
+	private Long2IntOpenHashMap[] scopedValueIndexMaps;
+	private int scopedValueIndexCount;
+	private boolean usingScopedValueIndexes;
+	private ValueStoreRevision lastScopedValueIndexRevision;
+	private Long2IntOpenHashMap lastScopedValueIndexMap;
+
+	private LmdbValue[] unknownIdValues;
+	private ReferenceOpenHashSet<LmdbValue> identityValues;
+	private boolean usingIdentityValues;
+
+	private LmdbValue[] deferredValues;
+	private int[] deferredInitializedIndexes;
+	private ReferenceOpenHashSet<LmdbValue> deferredIdentityValues;
+	private boolean usingDeferredIdentityValues;
+
 	private int[] radixCounts;
 	private int[] radixOffsets;
-	private LmdbValue[] unknownValues;
-	private LmdbValue[] deferredValues;
-	private int[] deferredSourceIndexes;
-	private Map<ScopedId, Integer> scopedValueIndexes;
 
-	private ValueStoreRevision commonRevision;
-	private int commonCacheBank;
 	private int bufferIndex;
 	private int bufferSize;
 	private int nextBufferCapacity;
+
 	private int valueCount;
-	private int unknownValueCount;
+	private int unknownIdValueCount;
 	private int deferredValueCount;
+
 	private boolean firstReturned;
 
 	LmdbValueMaterializingIteration(CloseableIteration<? extends BindingSet> source, int maxBatchSize) {
 		if (maxBatchSize <= 0) {
 			throw new IllegalArgumentException("maxBatchSize must be positive");
 		}
+
 		this.source = source;
 		this.maxBatchSize = maxBatchSize;
 		nextBufferCapacity = Math.min(INITIAL_BATCH_SIZE, maxBatchSize);
@@ -235,8 +254,9 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			for (int i = 0; i < bufferSize; i++) {
 				addValues(buffer[i]);
 			}
-			initializeKnownValues();
-			initializeUnknownValues();
+
+			initKnownIdValues();
+			initUnknownIdValues();
 			copyDeferredValues();
 			for (int i = 0; i < bufferSize; i++) {
 				if (buffer[i] instanceof NativeProjectedBindingSet nativeRow) {
@@ -249,41 +269,50 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		}
 	}
 
-	private void initializeKnownValues() {
+	private void initKnownIdValues() {
 		if (valueCount == 0) {
 			return;
 		}
+
 		if (valueCount == 1) {
 			values[0].init();
 			return;
 		}
-		ensureSortCapacity(valueCount);
+
+		ensureValueOrderCapacity(valueCount);
+		ensureRadixSortScratchCapacity(valueCount);
+
 		for (int i = 0; i < valueCount; i++) {
 			valueOrder[i] = i;
 		}
+
 		LeadingFieldSorters.lsdRadixSort(valueOrder, valueIds, valueCount, scratchValueOrder, scratchValueIds,
 				radixCounts, radixOffsets);
-		if (commonRevision != null) {
-			commonRevision.resolveValues(values, valueOrder, valueCount);
+
+		if (!collectedMultipleValueRevisions && collectedValueRevision != null) {
+			collectedValueRevision.resolveValues(values, valueOrder, valueCount);
 			return;
 		}
+
 		for (int i = 0; i < valueCount; i++) {
 			values[valueOrder[i]].init();
 		}
 	}
 
-	private void initializeUnknownValues() {
-		for (int i = 0; i < unknownValueCount; i++) {
-			unknownValues[i].init();
+	private void initUnknownIdValues() {
+		for (int i = 0; i < unknownIdValueCount; i++) {
+			unknownIdValues[i].init();
 		}
 	}
 
 	private void copyDeferredValues() {
 		for (int i = 0; i < deferredValueCount; i++) {
 			LmdbValue value = deferredValues[i];
+			LmdbValue initializedValue = values[deferredInitializedIndexes[i]];
+
 			synchronized (value) {
 				if (!value.isInitialized()) {
-					value.setFromInitializedValue(values[deferredSourceIndexes[i]]);
+					value.setFromInitializedValue(initializedValue);
 				}
 			}
 		}
@@ -315,92 +344,249 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		}
 	}
 
-	private void addValue(Value value, MutableBindingSet mutable, String bindingName) {
+	private void addValue(Value value, MutableBindingSet mutableBindingSet, String bindingName) {
 		if (!(value instanceof LmdbValue lmdbValue) || lmdbValue.isInitialized()) {
 			return;
 		}
-		long id = lmdbValue.getInternalID();
-		if (id == LmdbValue.UNKNOWN_ID) {
-			if (unknownValuesByIdentity.put(lmdbValue, Boolean.TRUE) == null) {
-				addUnknownValue(lmdbValue);
-			}
+
+		long internalId = lmdbValue.getInternalID();
+		if (internalId == LmdbValue.UNKNOWN_ID) {
+			addIdentityValue(lmdbValue);
 			return;
 		}
+
 		ValueStoreRevision revision = lmdbValue.getValueStoreRevision();
-		int existingIndex = findOrAddKnownValue(lmdbValue, id, revision);
-		if (existingIndex == NO_INDEX || values[existingIndex] == lmdbValue) {
+		int cachedIndex = addKnownIdValue(lmdbValue, internalId, revision);
+		if (cachedIndex == NO_INDEX || values[cachedIndex] == lmdbValue) {
 			return;
 		}
-		if (mutable != null) {
-			mutable.setBinding(bindingName, values[existingIndex]);
-		} else if (deferredValuesByIdentity.put(lmdbValue, Boolean.TRUE) == null) {
-			addDeferredValue(lmdbValue, existingIndex);
+
+		if (mutableBindingSet != null) {
+			mutableBindingSet.setBinding(bindingName, values[cachedIndex]);
+		} else {
+			addDeferredValue(lmdbValue, cachedIndex);
 		}
 	}
 
-	private int findOrAddKnownValue(LmdbValue value, long id, ValueStoreRevision revision) {
-		if (scopedValueIndexes != null) {
-			return findOrAddScopedValue(value, id, revision);
+	private int addKnownIdValue(LmdbValue lmdbValue, long internalId, ValueStoreRevision revision) {
+		if (!canUseInternalId(revision)) {
+			addIdentityValue(lmdbValue);
+			return NO_INDEX;
 		}
-		if (valueCount == 0) {
-			commonRevision = revision;
-			commonCacheBank = cacheBank(revision);
-		} else if (!sameRevision(commonRevision, revision) || commonCacheBank != cacheBank(revision)) {
-			if (!sameRevision(commonRevision, revision)) {
-				commonRevision = null;
+
+		if (usingScopedValueIndexes) {
+			return addKnownIdValueScoped(lmdbValue, internalId, revision);
+		}
+
+		if (usingValueIndexesById) {
+			if (sameValueScope(valueIndexesRevision, revision)) {
+				int cachedIndex = valueIndexesById.get(internalId);
+				if (cachedIndex != NO_INDEX) {
+					return cachedIndex;
+				}
+
+				int newIndex = addMaterializationValue(lmdbValue, internalId, revision);
+				valueIndexesById.put(internalId, newIndex);
+				return NO_INDEX;
 			}
+
 			buildScopedValueIndexes();
-			return findOrAddScopedValue(value, id, revision);
+			return addKnownIdValueScoped(lmdbValue, internalId, revision);
 		}
-		int existing = valueIndexesById.getIfAbsent(id, NO_INDEX);
-		if (existing != NO_INDEX) {
-			return existing;
+
+		for (int i = 0; i < valueCount; i++) {
+			if (valueIds[i] == internalId && sameValueScope(valueRevisions[i], revision)) {
+				return i;
+			}
 		}
-		int index = addKnownValue(value, id, revision);
-		valueIndexesById.put(id, index);
+
+		addMaterializationValue(lmdbValue, internalId, revision);
+
+		if (valueCount > SMALL_DEDUP_LIMIT) {
+			if (!collectedMultipleValueScopes) {
+				buildValueIndexesById(collectedValueRevision);
+			} else {
+				buildScopedValueIndexes();
+			}
+		}
+
 		return NO_INDEX;
 	}
 
-	private int findOrAddScopedValue(LmdbValue value, long id, ValueStoreRevision revision) {
-		if (commonRevision != null && !sameRevision(commonRevision, revision)) {
-			commonRevision = null;
+	private int addKnownIdValueScoped(LmdbValue lmdbValue, long internalId, ValueStoreRevision revision) {
+		Long2IntOpenHashMap indexesById = scopedValueIndexMap(revision);
+		int cachedIndex = indexesById.get(internalId);
+		if (cachedIndex != NO_INDEX) {
+			return cachedIndex;
 		}
-		ScopedId key = new ScopedId(revision, id, cacheBank(revision));
-		Integer existing = scopedValueIndexes.get(key);
-		if (existing != null) {
-			return existing;
-		}
-		int index = addKnownValue(value, id, revision);
-		scopedValueIndexes.put(key, index);
+
+		int newIndex = addMaterializationValue(lmdbValue, internalId, revision);
+		indexesById.put(internalId, newIndex);
 		return NO_INDEX;
+	}
+
+	private void buildValueIndexesById(ValueStoreRevision revision) {
+		if (valueIndexesById == null) {
+			valueIndexesById = new Long2IntOpenHashMap(Math.max(INITIAL_COLLECTION_SIZE, valueCount));
+			valueIndexesById.defaultReturnValue(NO_INDEX);
+		} else {
+			valueIndexesById.clear();
+		}
+
+		for (int i = 0; i < valueCount; i++) {
+			valueIndexesById.put(valueIds[i], i);
+		}
+
+		valueIndexesRevision = revision;
+		usingValueIndexesById = true;
 	}
 
 	private void buildScopedValueIndexes() {
-		scopedValueIndexes = new HashMap<>(Math.max(INITIAL_COLLECTION_SIZE, valueCount * 2));
-		for (int i = 0; i < valueCount; i++) {
-			scopedValueIndexes.put(new ScopedId(valueRevisions[i], valueIds[i], cacheBank(valueRevisions[i])), i);
+		if (valueIndexesById != null) {
+			valueIndexesById.clear();
 		}
-		valueIndexesById.clear();
+		valueIndexesRevision = null;
+		usingValueIndexesById = false;
+		clearScopedValueIndexes();
+
+		for (int i = 0; i < valueCount; i++) {
+			scopedValueIndexMap(valueRevisions[i]).put(valueIds[i], i);
+		}
+
+		usingScopedValueIndexes = true;
 	}
 
-	private int addKnownValue(LmdbValue value, long id, ValueStoreRevision revision) {
+	private Long2IntOpenHashMap scopedValueIndexMap(ValueStoreRevision revision) {
+		if (lastScopedValueIndexMap != null && sameValueScope(lastScopedValueIndexRevision, revision)) {
+			return lastScopedValueIndexMap;
+		}
+		for (int i = 0; i < scopedValueIndexCount; i++) {
+			if (sameValueScope(scopedValueIndexRevisions[i], revision)) {
+				lastScopedValueIndexRevision = scopedValueIndexRevisions[i];
+				lastScopedValueIndexMap = scopedValueIndexMaps[i];
+				return lastScopedValueIndexMap;
+			}
+		}
+
+		ensureScopedValueIndexCapacity(scopedValueIndexCount + 1);
+		Long2IntOpenHashMap map = scopedValueIndexMaps[scopedValueIndexCount];
+		if (map == null) {
+			map = new Long2IntOpenHashMap(INITIAL_COLLECTION_SIZE);
+			map.defaultReturnValue(NO_INDEX);
+			scopedValueIndexMaps[scopedValueIndexCount] = map;
+		} else {
+			map.clear();
+		}
+
+		scopedValueIndexRevisions[scopedValueIndexCount] = revision;
+		scopedValueIndexCount++;
+		lastScopedValueIndexRevision = revision;
+		lastScopedValueIndexMap = map;
+		return map;
+	}
+
+	private void addIdentityValue(LmdbValue lmdbValue) {
+		if (usingIdentityValues) {
+			if (identityValues.add(lmdbValue)) {
+				addUnknownIdValue(lmdbValue);
+			}
+			return;
+		}
+
+		for (int i = 0; i < unknownIdValueCount; i++) {
+			if (unknownIdValues[i] == lmdbValue) {
+				return;
+			}
+		}
+
+		addUnknownIdValue(lmdbValue);
+
+		if (unknownIdValueCount > SMALL_DEDUP_LIMIT) {
+			buildIdentityValues();
+		}
+	}
+
+	private void buildIdentityValues() {
+		if (identityValues == null) {
+			identityValues = new ReferenceOpenHashSet<>(Math.max(INITIAL_COLLECTION_SIZE, unknownIdValueCount));
+		} else {
+			identityValues.clear();
+		}
+
+		for (int i = 0; i < unknownIdValueCount; i++) {
+			identityValues.add(unknownIdValues[i]);
+		}
+
+		usingIdentityValues = true;
+	}
+
+	private void addDeferredValue(LmdbValue lmdbValue, int initializedIndex) {
+		if (usingDeferredIdentityValues) {
+			if (deferredIdentityValues.add(lmdbValue)) {
+				addDeferredValueUnchecked(lmdbValue, initializedIndex);
+			}
+			return;
+		}
+
+		for (int i = 0; i < deferredValueCount; i++) {
+			if (deferredValues[i] == lmdbValue) {
+				return;
+			}
+		}
+
+		addDeferredValueUnchecked(lmdbValue, initializedIndex);
+
+		if (deferredValueCount > SMALL_DEDUP_LIMIT) {
+			buildDeferredIdentityValues();
+		}
+	}
+
+	private void buildDeferredIdentityValues() {
+		if (deferredIdentityValues == null) {
+			deferredIdentityValues = new ReferenceOpenHashSet<>(Math.max(INITIAL_COLLECTION_SIZE, deferredValueCount));
+		} else {
+			deferredIdentityValues.clear();
+		}
+
+		for (int i = 0; i < deferredValueCount; i++) {
+			deferredIdentityValues.add(deferredValues[i]);
+		}
+
+		usingDeferredIdentityValues = true;
+	}
+
+	private void addDeferredValueUnchecked(LmdbValue lmdbValue, int initializedIndex) {
+		ensureDeferredValueCapacity(deferredValueCount + 1);
+		deferredValues[deferredValueCount] = lmdbValue;
+		deferredInitializedIndexes[deferredValueCount] = initializedIndex;
+		deferredValueCount++;
+	}
+
+	private int addMaterializationValue(LmdbValue lmdbValue, long internalId, ValueStoreRevision revision) {
 		ensureValueCapacity(valueCount + 1);
-		int index = valueCount++;
-		values[index] = value;
-		valueIds[index] = id;
+
+		if (valueCount == 0) {
+			collectedValueRevision = revision;
+		} else if (!collectedMultipleValueRevisions && !sameRevision(collectedValueRevision, revision)) {
+			collectedMultipleValueRevisions = true;
+		}
+
+		if (!collectedMultipleValueScopes && !sameValueScope(collectedValueRevision, revision)) {
+			collectedMultipleValueScopes = true;
+		}
+
+		int index = valueCount;
+		values[index] = lmdbValue;
+		valueIds[index] = internalId;
 		valueRevisions[index] = revision;
+		valueCount++;
 		return index;
 	}
 
-	private void addUnknownValue(LmdbValue value) {
-		ensureUnknownCapacity(unknownValueCount + 1);
-		unknownValues[unknownValueCount++] = value;
-	}
-
-	private void addDeferredValue(LmdbValue value, int sourceIndex) {
-		ensureDeferredCapacity(deferredValueCount + 1);
-		deferredValues[deferredValueCount] = value;
-		deferredSourceIndexes[deferredValueCount++] = sourceIndex;
+	private void addUnknownIdValue(LmdbValue lmdbValue) {
+		ensureUnknownIdValueCapacity(unknownIdValueCount + 1);
+		unknownIdValues[unknownIdValueCount] = lmdbValue;
+		unknownIdValueCount++;
 	}
 
 	private void ensureBufferCapacity(int capacity) {
@@ -413,58 +599,94 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	private void ensureValueCapacity(int capacity) {
 		if (values == null) {
-			int initial = Math.max(INITIAL_COLLECTION_SIZE, capacity);
-			values = new LmdbValue[initial];
-			valueIds = new long[initial];
-			valueRevisions = new ValueStoreRevision[initial];
+			int initialCapacity = Math.max(INITIAL_COLLECTION_SIZE, capacity);
+			values = new LmdbValue[initialCapacity];
+			valueIds = new long[initialCapacity];
+			valueRevisions = new ValueStoreRevision[initialCapacity];
 		} else if (values.length < capacity) {
-			int expanded = expandedCapacity(values.length, capacity);
-			values = Arrays.copyOf(values, expanded);
-			valueIds = Arrays.copyOf(valueIds, expanded);
-			valueRevisions = Arrays.copyOf(valueRevisions, expanded);
+			int newCapacity = expandedCapacity(values.length, capacity);
+			values = Arrays.copyOf(values, newCapacity);
+			valueIds = Arrays.copyOf(valueIds, newCapacity);
+			valueRevisions = Arrays.copyOf(valueRevisions, newCapacity);
 		}
 	}
 
-	private void ensureSortCapacity(int capacity) {
-		if (valueOrder == null || valueOrder.length < capacity) {
-			int current = valueOrder == null ? 0 : valueOrder.length;
-			int expanded = expandedCapacity(current, capacity);
-			valueOrder = new int[expanded];
-			scratchValueOrder = new int[expanded];
-			scratchValueIds = new long[expanded];
+	private void ensureValueOrderCapacity(int capacity) {
+		if (valueOrder == null) {
+			valueOrder = new int[capacity];
+		} else if (valueOrder.length < capacity) {
+			valueOrder = Arrays.copyOf(valueOrder, expandedCapacity(valueOrder.length, capacity));
 		}
+	}
+
+	private void ensureScopedValueIndexCapacity(int capacity) {
+		if (scopedValueIndexRevisions == null) {
+			int initialCapacity = Math.max(2, capacity);
+			scopedValueIndexRevisions = new ValueStoreRevision[initialCapacity];
+			scopedValueIndexMaps = new Long2IntOpenHashMap[initialCapacity];
+		} else if (scopedValueIndexRevisions.length < capacity) {
+			int newCapacity = expandedCapacity(scopedValueIndexRevisions.length, capacity);
+			scopedValueIndexRevisions = Arrays.copyOf(scopedValueIndexRevisions, newCapacity);
+			scopedValueIndexMaps = Arrays.copyOf(scopedValueIndexMaps, newCapacity);
+		}
+	}
+
+	private void ensureRadixSortScratchCapacity(int capacity) {
+		if (scratchValueOrder == null) {
+			scratchValueOrder = new int[capacity];
+			scratchValueIds = new long[capacity];
+		} else if (scratchValueOrder.length < capacity) {
+			int newCapacity = expandedCapacity(scratchValueOrder.length, capacity);
+			scratchValueOrder = Arrays.copyOf(scratchValueOrder, newCapacity);
+			scratchValueIds = Arrays.copyOf(scratchValueIds, newCapacity);
+		}
+
 		if (radixCounts == null) {
 			radixCounts = new int[256];
 			radixOffsets = new int[256];
 		}
 	}
 
-	private void ensureUnknownCapacity(int capacity) {
-		if (unknownValues == null) {
-			unknownValues = new LmdbValue[Math.max(INITIAL_COLLECTION_SIZE, capacity)];
-		} else if (unknownValues.length < capacity) {
-			unknownValues = Arrays.copyOf(unknownValues, expandedCapacity(unknownValues.length, capacity));
+	private void ensureUnknownIdValueCapacity(int capacity) {
+		if (unknownIdValues == null) {
+			unknownIdValues = new LmdbValue[Math.max(INITIAL_COLLECTION_SIZE, capacity)];
+		} else if (unknownIdValues.length < capacity) {
+			unknownIdValues = Arrays.copyOf(unknownIdValues, expandedCapacity(unknownIdValues.length, capacity));
 		}
 	}
 
-	private void ensureDeferredCapacity(int capacity) {
+	private void ensureDeferredValueCapacity(int capacity) {
 		if (deferredValues == null) {
-			int initial = Math.max(INITIAL_COLLECTION_SIZE, capacity);
-			deferredValues = new LmdbValue[initial];
-			deferredSourceIndexes = new int[initial];
+			int initialCapacity = Math.max(INITIAL_COLLECTION_SIZE, capacity);
+			deferredValues = new LmdbValue[initialCapacity];
+			deferredInitializedIndexes = new int[initialCapacity];
 		} else if (deferredValues.length < capacity) {
-			int expanded = expandedCapacity(deferredValues.length, capacity);
-			deferredValues = Arrays.copyOf(deferredValues, expanded);
-			deferredSourceIndexes = Arrays.copyOf(deferredSourceIndexes, expanded);
+			int newCapacity = expandedCapacity(deferredValues.length, capacity);
+			deferredValues = Arrays.copyOf(deferredValues, newCapacity);
+			deferredInitializedIndexes = Arrays.copyOf(deferredInitializedIndexes, newCapacity);
 		}
+	}
+
+	private int expandedCapacity(int currentCapacity, int requiredCapacity) {
+		int newCapacity = currentCapacity <= 0 ? INITIAL_COLLECTION_SIZE : doubleCapacity(currentCapacity);
+		return Math.max(newCapacity, requiredCapacity);
+	}
+
+	private int doubleCapacity(int currentCapacity) {
+		if (currentCapacity > (Integer.MAX_VALUE >> 1)) {
+			return Integer.MAX_VALUE;
+		}
+		return currentCapacity << 1;
 	}
 
 	private void clearBuffer() {
-		if (buffer != null) {
+		if (buffer != null && bufferIndex < bufferSize) {
 			Arrays.fill(buffer, bufferIndex, bufferSize, null);
 		}
+
 		bufferIndex = 0;
 		bufferSize = 0;
+
 		clearCollectedValues();
 		clearDeduplicationState();
 	}
@@ -475,44 +697,65 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			Arrays.fill(valueRevisions, 0, valueCount, null);
 			valueCount = 0;
 		}
-		if (unknownValueCount > 0) {
-			Arrays.fill(unknownValues, 0, unknownValueCount, null);
-			unknownValueCount = 0;
+
+		if (unknownIdValueCount > 0) {
+			Arrays.fill(unknownIdValues, 0, unknownIdValueCount, null);
+			unknownIdValueCount = 0;
 		}
+
 		if (deferredValueCount > 0) {
 			Arrays.fill(deferredValues, 0, deferredValueCount, null);
 			deferredValueCount = 0;
 		}
-		commonRevision = null;
+
+		collectedValueRevision = null;
+		collectedMultipleValueRevisions = false;
+		collectedMultipleValueScopes = false;
 	}
 
 	private void clearDeduplicationState() {
-		valueIndexesById.clear();
-		unknownValuesByIdentity.clear();
-		deferredValuesByIdentity.clear();
-		if (scopedValueIndexes != null) {
-			scopedValueIndexes.clear();
-			scopedValueIndexes = null;
+		if (usingValueIndexesById) {
+			valueIndexesById.clear();
+			usingValueIndexesById = false;
+		}
+		valueIndexesRevision = null;
+		clearScopedValueIndexes();
+
+		if (usingIdentityValues) {
+			identityValues.clear();
+			usingIdentityValues = false;
+		}
+
+		if (usingDeferredIdentityValues) {
+			deferredIdentityValues.clear();
+			usingDeferredIdentityValues = false;
 		}
 	}
 
-	private static int expandedCapacity(int current, int required) {
-		int expanded = current <= 0 ? INITIAL_COLLECTION_SIZE : doubleCapacity(current);
-		return Math.max(expanded, required);
-	}
-
-	private static int doubleCapacity(int current) {
-		return current > (Integer.MAX_VALUE >> 1) ? Integer.MAX_VALUE : current << 1;
+	private void clearScopedValueIndexes() {
+		for (int i = 0; i < scopedValueIndexCount; i++) {
+			scopedValueIndexMaps[i].clear();
+			scopedValueIndexRevisions[i] = null;
+		}
+		scopedValueIndexCount = 0;
+		usingScopedValueIndexes = false;
+		lastScopedValueIndexRevision = null;
+		lastScopedValueIndexMap = null;
 	}
 
 	private static boolean sameRevision(ValueStoreRevision left, ValueStoreRevision right) {
 		return left == right || left != null && left.equals(right);
 	}
 
+	private static boolean sameValueScope(ValueStoreRevision left, ValueStoreRevision right) {
+		return sameRevision(left, right) && cacheBank(left) == cacheBank(right);
+	}
+
 	private static int cacheBank(ValueStoreRevision revision) {
 		return ValuePosition.cacheBank(revision == null ? ValuePosition.NONE : revision.getPositionMask());
 	}
 
-	private record ScopedId(ValueStoreRevision revision, long id, int cacheBank) {
+	private static boolean canUseInternalId(ValueStoreRevision revision) {
+		return revision != null && revision.getValueStore() != null;
 	}
 }

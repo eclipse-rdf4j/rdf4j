@@ -89,6 +89,8 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 				NativeResultRow row;
 				while ((row = rows.next()) != null) {
 					add(row);
+					// The source is still live here; retain a distinct actual producer before its EOF/close.
+					replay.retainProducerAuthority(rows);
 				}
 			}
 		}
@@ -168,8 +170,11 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 				return List.of();
 			}
 			NativeExecutionContext context = input.executionContext();
+			NativeExecutionContext enclosingOwner = owner.source instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext()
+					: null;
 			replay = new NativeResultReplay(row.schema(), context, owner.cancellation, ledger,
-					Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false)
+					Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), enclosingOwner)
 							.resolvingStoreTermsWith(owner.source);
 			int tick = 0;
 			do {

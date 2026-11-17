@@ -1772,7 +1772,7 @@ final class LmdbNativeParallelKernelAggregate {
 						}
 						if (hooks != null) {
 							try {
-								hooks.closeState();
+								hooks.closeFilters(kernel.filterInputExhausted());
 							} catch (RuntimeException | Error problem) {
 								closeFailure = addCloseFailure(closeFailure, problem);
 							}
@@ -1826,6 +1826,9 @@ final class LmdbNativeParallelKernelAggregate {
 				closeFailure = addCloseFailure(closeFailure, problem);
 			}
 			Throwable retainedFailure = addCloseFailure(primaryFailure, closeFailure);
+			if (closeFailure != null && workerRow.evaluationScope() != null) {
+				workerRow.evaluationScope().executionContext().filterFailure();
+			}
 			if (primaryFailure == null || retainedFailure != primaryFailure) {
 				publishWorkerFailure(failure, peerStop, retainedFailure);
 				rethrowCloseFailure(retainedFailure);
@@ -1833,7 +1836,8 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
-	private static Throwable addCloseFailure(Throwable failure, Throwable problem) {
+	/** Shared native control/cleanup retention; callers must preserve body versus cleanup provenance separately. */
+	static Throwable addCloseFailure(Throwable failure, Throwable problem) {
 		if (problem == null) {
 			return failure;
 		}
@@ -2181,7 +2185,8 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
-	private static boolean isWorkerControl(Throwable problem) {
+	/** Existing native terminal classification, shared without changing the authority of any control. */
+	static boolean isWorkerControl(Throwable problem) {
 		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
 		while (problem != null && visited.add(problem)) {
 			if (problem instanceof EncounterOrderFallback || problem instanceof KernelCancelledException

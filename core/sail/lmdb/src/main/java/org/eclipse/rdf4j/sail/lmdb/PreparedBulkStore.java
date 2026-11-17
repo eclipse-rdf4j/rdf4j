@@ -46,6 +46,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.Objects;
 import java.util.Set;
 import java.util.zip.CRC32;
 
@@ -59,9 +60,10 @@ import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * Bounded admission from exact native CLEAN authority, with a transaction-bound certificate for bulk publication. The
- * certificate is derived metadata: ordinary current-format stores can establish the same native authority without it.
- * Invalid or untrusted native authority leaves ordinary discovery and recovery in charge.
+ * Admission from exact native CLEAN authority after checking required startup maintenance, with a transaction-bound
+ * certificate for bulk publication. The certificate is derived metadata: ordinary current-format stores can establish
+ * the same native authority without it. Invalid authority or required native maintenance leaves ordinary startup in
+ * charge.
  */
 final class PreparedBulkStore {
 
@@ -82,20 +84,26 @@ final class PreparedBulkStore {
 			boolean hashCache, boolean pendingUnused, boolean pendingRetired) {
 	}
 
-	private record Captured(Snapshot snapshot, boolean tripleTransactionBound) {
+	private record Captured(Snapshot snapshot, boolean tripleTransactionBound, boolean pendingDomainMaintenance) {
+	}
+
+	/** Records only a reason to decline admission; it is never positive native authority. */
+	private static final class SealedProbe {
+		private boolean pendingDomainMaintenance;
 	}
 
 	private PreparedBulkStore() {
 	}
 
 	/** Rejects mixed or partially replaced native generations even when a startup certificate cannot be used. */
-	static void validateGenerationPair(MemoryStack stack, long valuesTransaction, long triplesTransaction)
+	static String validateGenerationPair(MemoryStack stack, long valuesTransaction, long triplesTransaction)
 			throws IOException {
 		byte[] values = readGeneration(stack, valuesTransaction, "gc_meta");
 		byte[] triples = readGeneration(stack, triplesTransaction, TripleStore.NAMESPACE_DATABASE_NAME);
 		if (!Arrays.equals(values, triples)) {
 			throw new IOException("LMDB environments belong to different bulk generations");
 		}
+		return values == null ? "" : HexFormat.of().formatHex(values);
 	}
 
 	/**
@@ -185,12 +193,26 @@ final class PreparedBulkStore {
 	}
 
 	static Snapshot read(Path directory, StoreProperties properties, LmdbStoreConfig config) {
-		Snapshot sealed = readSealed(directory, properties, config);
-		return sealed != null ? sealed : readCurrent(directory, properties, config);
+		properties.rdfTermDomainQualifiedAtOpen = false;
+		properties.rdfTermDomainWitnessAtOpen = null;
+		properties.rdfTermDomainDiscoveryPair = null;
+		SealedProbe probe = new SealedProbe();
+		Snapshot sealed = readSealed(directory, properties, config, probe);
+		if (sealed != null || probe.pendingDomainMaintenance) {
+			// Pending maintenance only declines the fast path. Ordinary discovery captures a fresh native pair,
+			// including when another writer changes it after this observation.
+			return sealed;
+		}
+		return readCurrent(directory, properties, config);
 	}
 
 	/** Publication callbacks must preserve this exact certificate; native-only trust cannot replace a changed seal. */
 	static Snapshot readSealed(Path directory, StoreProperties properties, LmdbStoreConfig config) {
+		return readSealed(directory, properties, config, null);
+	}
+
+	private static Snapshot readSealed(Path directory, StoreProperties properties, LmdbStoreConfig config,
+			SealedProbe probe) {
 		Path certificate = directory.resolve(FILE_NAME);
 		try {
 			if (!supportsPreparedFormat(properties)
@@ -227,8 +249,13 @@ final class PreparedBulkStore {
 			if (!compatible(expected, properties, config)) {
 				return null;
 			}
-			Snapshot actual = capture(directory, properties, config).snapshot;
-			if (!expected.equals(actual)) {
+			Captured captured = capture(directory, properties, config);
+			RdfTermDomainQualification.observe(properties, captured.snapshot);
+			if (probe != null) {
+				probe.pendingDomainMaintenance = captured.pendingDomainMaintenance;
+			}
+			Snapshot actual = captured.snapshot;
+			if (captured.pendingDomainMaintenance || !expected.equals(actual)) {
 				return null;
 			}
 			admit(properties, actual);
@@ -249,14 +276,18 @@ final class PreparedBulkStore {
 		}
 		try {
 			Captured captured = capture(directory, properties, config);
+			RdfTermDomainQualification.observe(properties, captured.snapshot);
 			Snapshot snapshot = captured.snapshot;
-			if ((!captured.tripleTransactionBound && !snapshot.values.generation.isEmpty())
+			if (captured.pendingDomainMaintenance
+					|| (!captured.tripleTransactionBound && !snapshot.values.generation.isEmpty())
 					|| !compatible(snapshot, properties, config)) {
 				return null;
 			}
 			admit(properties, snapshot);
 			return snapshot;
 		} catch (IOException | RuntimeException invalid) {
+			properties.rdfTermDomainQualifiedAtOpen = false;
+			properties.rdfTermDomainWitnessAtOpen = null;
 			return null;
 		}
 	}
@@ -269,6 +300,7 @@ final class PreparedBulkStore {
 	}
 
 	private static void admit(StoreProperties properties, Snapshot snapshot) {
+		RdfTermDomainQualification.observe(properties, snapshot);
 		properties.setNativeGenerationPresent(true);
 		properties.verifiedValueTransactionId = snapshot.values.transactionId;
 		properties.verifiedTripleTransactionId = snapshot.triples.transactionId;
@@ -337,12 +369,18 @@ final class PreparedBulkStore {
 		}
 	}
 
+	static Snapshot captureDomainQualification(Path directory, StoreProperties properties, LmdbStoreConfig config)
+			throws IOException {
+		return capture(directory, properties, config).snapshot;
+	}
+
 	private static Captured capture(Path directory, StoreProperties properties, LmdbStoreConfig config)
 			throws IOException {
-		if (!supportsPreparedFormat(properties)) {
+		StoreProperties persisted = persistedPreparedProperties(directory, properties);
+		if (!supportsPreparedFormat(persisted)) {
 			throw new IOException("Prepared LmdbStore generation requires a supported persisted modern format");
 		}
-		LmdbStoreFormat.resolve(directory.toFile(), properties, config);
+		LmdbStoreFormat.resolve(directory.toFile(), persisted, config);
 		long valuesEnv = 0L;
 		long triplesEnv = 0L;
 		long valuesTxn = 0L;
@@ -355,7 +393,7 @@ final class PreparedBulkStore {
 			valuesTxn = pointer.get(0);
 			E(mdb_txn_begin(triplesEnv, NULL, MDB_RDONLY, pointer));
 			triplesTxn = pointer.get(0);
-			validateGenerationPair(stack, valuesTxn, triplesTxn);
+			String identity = validateGenerationPair(stack, valuesTxn, triplesTxn);
 			long valueTransaction = mdb_txn_id(valuesTxn);
 			long tripleTransaction = mdb_txn_id(triplesTxn);
 			int metadata = open(stack, valuesTxn, "gc_meta");
@@ -364,14 +402,12 @@ final class PreparedBulkStore {
 					ValueStore.REFCOUNT_MARKER_BYTES)), valueTransaction)) {
 				throw new IOException("Current LMDB reference counts are not clean");
 			}
-			validateCleanProperties(stack, valuesTxn, properties);
+			validateCleanProperties(stack, valuesTxn, persisted);
 			byte[] binding = getOptional(stack, valuesTxn, metadata, CLEAN_TRIPLE_TRANSACTION_KEY, Long.BYTES);
 			if (binding != null && ByteBuffer.wrap(binding).getLong() != tripleTransaction) {
 				throw new IOException("Native triple transaction changed after clean ValueStore completion");
 			}
 			LegacyStoreDiscovery.validateCurrentMetadata(stack, valuesTxn, triplesTxn, properties);
-			byte[] generation = readGeneration(stack, valuesTxn, "gc_meta");
-			String identity = generation == null ? "" : HexFormat.of().formatHex(generation);
 			Environment values = environment(stack, valuesEnv, valueTransaction, identity);
 			Environment triples = environment(stack, triplesEnv, tripleTransaction, identity);
 			boolean pendingUnused = hasEntries(stack, valuesTxn, "unused_ids");
@@ -380,7 +416,18 @@ final class PreparedBulkStore {
 			// free_ids is a legitimate reusable pool and carries no outstanding reclamation obligation.
 			Snapshot snapshot = new Snapshot(values, triples, propertiesFingerprint(properties),
 					config.getMapGrowthThreshold(), config.getValueHashCacheEnabled(), pendingUnused, pendingRetired);
-			return new Captured(snapshot, binding != null);
+			// Use the same pinned triple transaction as CLEAN/catalog validation. This is metadata-only: the probe
+			// decodes degradation rows using the real rebuild traversal and never opens a writer or scans statements.
+			TripleStore.RdfTermDomainStartup domainStartup = TripleStore.rdfTermDomainStartup(properties,
+					config.getPredicateGuaranteeIndexEnabled(), config.getPredicateGuaranteeIndexAutoRebuild(),
+					LmdbStoreFormat.resolveDictionaryCapabilities(persisted, config).isLegacy(),
+					config.getPredicateGuaranteeExcludedPredicateSet(),
+					RdfTermDomainQualification.matches(properties, snapshot));
+			boolean pendingDomainMaintenance = domainStartup == TripleStore.RdfTermDomainStartup.REBUILD_ALL
+					|| domainStartup == TripleStore.RdfTermDomainStartup.REBUILD_MARKED
+							&& TripleStore.hasRdfTermDomainRebuilds(triplesTxn,
+									open(stack, triplesTxn, TripleStore.PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB));
+			return new Captured(snapshot, binding != null, pendingDomainMaintenance);
 		} finally {
 			if (triplesTxn != 0L) {
 				mdb_txn_abort(triplesTxn);
@@ -395,6 +442,46 @@ final class PreparedBulkStore {
 				mdb_env_close(valuesEnv);
 			}
 		}
+	}
+
+	/**
+	 * Reopens the exact owner sidecar and validates its immutable writer capabilities. Mutable index and RDF-domain
+	 * descriptors can legitimately be newer in the live owner while a prepared generation is being published.
+	 */
+	private static StoreProperties persistedPreparedProperties(Path directory, StoreProperties properties)
+			throws IOException {
+		Path expected = directory.toAbsolutePath().normalize().resolve(StoreProperties.FILE_NAME);
+		if (properties.propertiesFile == null
+				|| !properties.propertiesFile.toPath().toAbsolutePath().normalize().equals(expected)) {
+			throw new IOException("Prepared LmdbStore generation requires its owning properties sidecar");
+		}
+		StoreProperties persisted = new StoreProperties(directory.toFile());
+		try {
+			if (!persisted.load()) {
+				throw new IOException("Prepared LmdbStore generation properties sidecar is missing");
+			}
+		} catch (IllegalStateException unreadable) {
+			throw new IOException("Unable to reload prepared LmdbStore generation properties", unreadable);
+		}
+		if (!sameImmutableWriterCapabilities(properties, persisted)) {
+			throw new IOException(
+					"Prepared LmdbStore generation writer capabilities changed from their persisted values");
+		}
+		// The owner established this fact under its directory lock during native preflight. Reloading its sidecar must
+		// not erase that separate authority before the native transaction and generation checks below run.
+		persisted.setNativeGenerationPresent(properties.hasNativeGeneration());
+		return persisted;
+	}
+
+	private static boolean sameImmutableWriterCapabilities(StoreProperties left, StoreProperties right) {
+		for (String key : new String[] { StoreProperties.VERSION_KEY, StoreProperties.INLINE_LITERALS_KEY,
+				StoreProperties.NUMERIC_ID_ENCODING_KEY, StoreProperties.LITERAL_REFERENCE_ENCODING_KEY,
+				StoreProperties.CANONICAL_LANGUAGE_TAGS_KEY, StoreProperties.DATE_TIME_ID_ENCODING_KEY }) {
+			if (!Objects.equals(left.getRawProperty(key), right.getRawProperty(key))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static long openEnvironment(MemoryStack stack, Path directory) throws IOException {

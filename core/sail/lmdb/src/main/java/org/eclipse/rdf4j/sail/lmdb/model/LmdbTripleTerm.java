@@ -49,6 +49,8 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 	private IRI predicate;
 	private Value object;
 	private volatile boolean initialized = false;
+	/** Guarded by this value's monitor; a copied payload is not published until its resolver returns. */
+	private transient boolean resolutionInProgress;
 	private transient volatile boolean externallyOwned;
 
 	public LmdbTripleTerm(ValueStoreRevision revision, long internalID) {
@@ -194,12 +196,39 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					InternalIdentity resolving = identity;
-					boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
-					captureChildVersions();
-					initialized = resolved;
-					if (resolved) {
-						resolving.revision().valueInitialized(resolving.id(), this);
+					resolutionInProgress = true;
+					try {
+						InternalIdentity resolving = identity;
+						boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
+						captureChildVersions();
+						initialized = resolved;
+						if (resolved) {
+							resolving.revision().valueInitialized(resolving.id(), this);
+						}
+					} finally {
+						resolutionInProgress = false;
+					}
+				}
+			}
+		}
+	}
+
+	@Override
+	public void init(Resolver resolver) {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					resolutionInProgress = true;
+					try {
+						InternalIdentity resolving = identity;
+						boolean resolved = resolver.resolve(resolving.id(), this);
+						captureChildVersions();
+						initialized = resolved;
+						if (resolved) {
+							resolving.revision().valueInitialized(resolving.id(), this);
+						}
+					} finally {
+						resolutionInProgress = false;
 					}
 				}
 			}
@@ -219,6 +248,9 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 			this.predicate = lmdbTripleTerm.predicate;
 			this.object = lmdbTripleTerm.object;
 			captureChildVersions();
+			if (!resolutionInProgress) {
+				initialized = true;
+			}
 		} else {
 			throw new SailException("Trying to initialize LmdbTripleTerm from non-triple-term value");
 		}

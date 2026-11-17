@@ -24,6 +24,8 @@ import java.math.BigInteger;
 import java.util.LinkedHashMap;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.junit.jupiter.api.Test;
@@ -84,6 +86,82 @@ class LmdbNativeMarginalAggregateStateTest {
 		} finally {
 			context.close();
 		}
+	}
+
+	@Test
+	void scalarFloatingFoldRetainsTheExplicitEncounterSequenceThroughMaterialization() {
+		for (boolean distinct : new boolean[] { false, true }) {
+			assertFloatingFold(distinct, new long[] { 1L, 2L, 3L }, 1.0d);
+		}
+	}
+
+	@Test
+	void scalarFloatingDistinctKeepsFirstEncounterRatherThanHashIterationOrder() {
+		assertFloatingFold(false, new long[] { 1L, 1L, 2L, 2L, 3L, 3L }, 2.0d);
+		assertFloatingFold(true, new long[] { 1L, 1L, 2L, 2L, 3L, 3L }, 1.0d);
+	}
+
+	@Test
+	void deferredFloatingDistinctSignalsFallbackAtTheActualResultConsumer() {
+		NativeLmdbQuerySource source = floatingSource();
+		RowState row = row(source);
+		AggregateSpec[] specs = floatingSpecs(true);
+		AggContext context = new AggContext(source, true, true, true);
+		try {
+			AggState state = new AggState(specs, 4, context, AggregateDistinctChannels.allHash(specs));
+			for (long id : new long[] { 1L, 2L, 3L, 1L }) {
+				row.slots[0] = id;
+				state.add(row);
+			}
+			EncounterOrderFallback fallback = assertThrows(EncounterOrderFallback.class,
+					() -> materializeFloating(row, specs, state));
+			assertEquals(EncounterOrderFallback.Reason.FLOATING_SUM_OR_AVG, fallback.reason);
+		} finally {
+			context.close();
+		}
+	}
+
+	private static void assertFloatingFold(boolean distinct, long[] sequence, double expectedSum) {
+		NativeLmdbQuerySource source = floatingSource();
+		RowState row = row(source);
+		AggregateSpec[] specs = floatingSpecs(distinct);
+		AggContext context = new AggContext(source, true, false, false);
+		try {
+			AggState state = new AggState(specs, 4, context, AggregateDistinctChannels.allHash(specs));
+			for (long id : sequence) {
+				row.slots[0] = id;
+				state.add(row);
+			}
+			BindingSet result = materializeFloating(row, specs, state);
+			assertEquals(SimpleValueFactory.getInstance().createLiteral(expectedSum), result.getValue("sum"));
+			assertEquals(SimpleValueFactory.getInstance().createLiteral(1.0d / 3.0d), result.getValue("avg"));
+		} finally {
+			context.close();
+		}
+	}
+
+	private static BindingSet materializeFloating(RowState row, AggregateSpec[] specs, AggState state) {
+		try (NativeGroupIteration owner = new NativeGroupIteration(row.source, SingletonPlan.INSTANCE, row.layout,
+				new int[0], specs, true, row.base, null, null, false, null)) {
+			return owner.toBindingSet(null, state, true);
+		}
+	}
+
+	private static AggregateSpec[] floatingSpecs(boolean distinct) {
+		return new AggregateSpec[] { AggregateSpec.slot("sum", 0, distinct, AggKind.SUM),
+				AggregateSpec.slot("avg", 0, distinct, AggKind.AVG) };
+	}
+
+	/** Test-local dictionary codec only; these IDs never claim a physical source or probe capability. */
+	private static NativeLmdbQuerySource floatingSource() {
+		NativeLmdbQuerySource source = source();
+		when(source.lazyValue(1L, ValuePosition.NONE))
+				.thenReturn(SimpleValueFactory.getInstance().createLiteral(1.0e16d));
+		when(source.lazyValue(2L, ValuePosition.NONE))
+				.thenReturn(SimpleValueFactory.getInstance().createLiteral(-1.0e16d));
+		when(source.lazyValue(3L, ValuePosition.NONE))
+				.thenReturn(SimpleValueFactory.getInstance().createLiteral(1.0d));
+		return source;
 	}
 
 	private static NativeLmdbQuerySource source() {
