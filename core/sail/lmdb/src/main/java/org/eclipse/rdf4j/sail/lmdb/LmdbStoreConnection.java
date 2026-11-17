@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.RowPassThroughIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -262,14 +263,15 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (!extractor.hasValues()) {
 			return source;
 		}
-		RepositoryValueIteration<T> exposure;
+		RepositoryValueIteration<T> exposure = null;
 		try {
 			exposure = new RepositoryValueIteration<>(source, extractor,
 					(ValueStore) lmdbStore.getBackingStore().getValueFactory(), valueResolutionScope,
 					this::repositoryIterationClosed);
 			bindRepositorySource(source, exposure);
 		} catch (RuntimeException | Error failure) {
-			closeResources(failure, source::close);
+			// Once built, the exposure owns both the source and the result scope it opened.
+			closeResources(failure, exposure == null ? source::close : exposure::close);
 			throw failure;
 		}
 		synchronized (repositoryValueIterations) {
@@ -1185,6 +1187,21 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private void bindRepositorySource(CloseableIteration<?> source, RepositoryValueIteration<?> exposure) {
+		RepositoryValueExposureMetrics metrics = ((ValueStore) lmdbStore.getBackingStore().getValueFactory())
+				.repositoryValueExposureMetrics();
+		if (bindRegisteredSource(source, exposure)) {
+			metrics.incrementExposuresBound();
+		} else {
+			metrics.incrementExposuresOpaque();
+		}
+	}
+
+	/** Maximum number of {@code passThroughSource()} hops followed from an exposed source. */
+	static final int MAX_PASS_THROUGH_HOPS = 16;
+
+	private boolean bindRegisteredSource(CloseableIteration<?> source, RepositoryValueIteration<?> exposure) {
+		// Built outside readAttemptLock: passThroughSource() belongs to foreign iterations.
+		List<CloseableIteration<?>> candidates = passThroughCandidates(source);
 		synchronized (readAttemptLock) {
 			var registrations = rawValueRegistrations.iterator();
 			while (registrations.hasNext()) {
@@ -1193,14 +1210,40 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				ReplayableIteration<?> replayable = registration.replayable.get();
 				if (outward == null || replayable == null || replayable.isClosed()) {
 					registrations.remove();
-				} else if (outward == source) {
-					// Only this exact registered outward iterator can borrow this result's cold-value owner.
-					// Opaque wrappers and unrelated nested reads keep the conservative raw escape contract.
-					replayable.repositoryExposure = new WeakReference<>(exposure);
-					return;
+				}
+			}
+			// Only a registered outward iterator reachable through a strict pass-through chain can borrow the
+			// cold-value owner. Opaque wrappers and unrelated nested reads keep the conservative raw escape contract.
+			// The per-row skip still depends on exposure.isPullingSource().
+			for (CloseableIteration<?> candidate : candidates) {
+				for (RawValueRegistration registration : rawValueRegistrations) {
+					if (registration.outward.get() == candidate) {
+						ReplayableIteration<?> replayable = registration.replayable.get();
+						if (replayable != null) {
+							replayable.repositoryExposure = new WeakReference<>(exposure);
+							return true;
+						}
+					}
 				}
 			}
 		}
+		return false;
+	}
+
+	private static List<CloseableIteration<?>> passThroughCandidates(CloseableIteration<?> source) {
+		List<CloseableIteration<?>> candidates = new ArrayList<>();
+		Set<CloseableIteration<?>> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+		CloseableIteration<?> current = source;
+		int hops = 0;
+		while (current != null && seen.add(current)) {
+			candidates.add(current);
+			if (!(current instanceof RowPassThroughIteration passThrough) || hops == MAX_PASS_THROUGH_HOPS) {
+				break;
+			}
+			current = passThrough.passThroughSource();
+			hops++;
+		}
+		return candidates;
 	}
 
 	private record ValueTreeVisit(Value value, boolean complete) {
