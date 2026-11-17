@@ -186,6 +186,15 @@ for (const layout of ['records', 'table']) {
 				expect(after.position - before.position, `${key} from a focused link should move about one view`)
 					.toBeGreaterThan(oneView * 0.8);
 				expect(after.position - before.position).toBeLessThan(oneView * 1.2);
+				// The link's row is rendered away; the focus must stay with the rows so the next press pages on.
+				expect(await scrollport.evaluate(element => element.contains(document.activeElement)),
+					`${key} keeps the keyboard focus in the rows`).toBe(true);
+				await page.keyboard.press(key);
+				await settled(page);
+				const again = rowPosition(await renderedRows(scrollport));
+				expect(again.position - after.position, `${key} pressed again should move another view`)
+					.toBeGreaterThan(oneView * 0.8);
+				expect(again.position - after.position).toBeLessThan(oneView * 1.2);
 			}
 		});
 

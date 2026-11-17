@@ -4033,7 +4033,11 @@ namespace workbench {
             }
         }
 
-        function measureScrollCapacity(document: any, table: boolean): number {
+        /**
+         * The tallest box (a table when table is true) the browser can scroll through, measured with a hidden probe. A
+         * list of rows taller than this needs compressed coordinates (ResultScrollCoordinates).
+         */
+        export function measureScrollCapacity(document: any, table: boolean): number {
             if (!document.body) {
                 return Number.MAX_SAFE_INTEGER;
             }
@@ -7373,7 +7377,9 @@ namespace workbench {
                     if (range.bottomSpacer > 0) {
                         desired.push(this.getSpacer('bottom'));
                     }
+                    var focused = this.focusInRows(this.tableWrap);
                     this.reconcileTableRows(desired, range);
+                    this.keepFocusInRows(this.tableWrap, focused);
                     this.updateSpacerHeights(range);
                     var measured = false;
                     var renderedHeights: number[] = [];
@@ -7601,7 +7607,9 @@ namespace workbench {
                     if (range.bottomSpacer > 0) {
                         desired.push(this.getRecordSpacer('bottom'));
                     }
+                    var focused = this.focusInRows(this.records);
                     this.reconcileRecords(desired);
+                    this.keepFocusInRows(this.records, focused);
                     this.updateRecordSpacerHeights(start, end);
                     var heights: number[] = [];
                     rows.forEach((values, index) => {
@@ -8244,6 +8252,24 @@ namespace workbench {
                 var button = tag === 'BUTTON' || tag === 'SUMMARY'
                     || (typeof target.getAttribute === 'function' && target.getAttribute('role') === 'button');
                 return !(event.key === ' ' && button);
+            }
+
+            /** The element inside the rows' box (not the box itself) that has the keyboard focus, or null. */
+            private focusInRows(scrollport: any): any {
+                var active = this.document.activeElement;
+                return active && active !== scrollport && typeof scrollport.contains === 'function'
+                    && scrollport.contains(active) ? active : null;
+            }
+
+            /**
+             * A window rendered away from the row with the focus (a link reached with Tab, then PageDown) left the focus
+             * on the page body, where the scroll keys no longer reach the rows: the rows' box takes it instead, where it
+             * is, so the next key pages on.
+             */
+            private keepFocusInRows(scrollport: any, focused: any) {
+                if (focused && !scrollport.contains(focused) && typeof scrollport.focus === 'function') {
+                    scrollport.focus({ preventScroll: true });
+                }
             }
 
             private setSpacerHeight(row: any, height: number) {

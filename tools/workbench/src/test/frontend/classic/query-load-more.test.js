@@ -685,4 +685,22 @@ for (const layout of ['table', 'records']) {
         assert.equal(result.reads.length, reads, 'Space on a focused button presses the button instead of scrolling');
         result.renderer.dispose();
     });
+
+    // Paging renders the focused link's row away. The focus must not fall back to the page body, where the next
+    // PageDown no longer reaches the rows.
+    test(`${layout} the keyboard focus stays with compressed rows when paging renders its row away`, async () => {
+        const result = await compressedResult(layout);
+        result.scrollport.trigger('wheel', { deltaY: 30000, deltaMode: 0 });
+        await settle();
+        const row = result.scrollport.querySelector('[data-query-row-index], [data-query-record-index]');
+        const link = row.ownerDocument.createElement('a');
+        row.appendChild(link);
+        link.focus();
+        keyFrom(link, 'PageDown');
+        await settle();
+        const active = row.ownerDocument.activeElement;
+        assert.ok(active === result.scrollport || result.scrollport.contains(active),
+            `the focus left the rows for ${active && active.tagName}`);
+        result.renderer.dispose();
+    });
 }
