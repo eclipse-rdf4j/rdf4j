@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import java.io.IOException;
+import java.io.Writer;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.function.Function;
@@ -34,6 +35,15 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * Utility methods for N-Triples encoding/decoding.
  */
 public class NTriplesUtil {
+	// Reuse the hexadecimal suffixes instead of formatting each numeric escape.
+	private static final String[] CONTROL_CHARACTER_HEX = new String[0x20];
+
+	static {
+		for (int c = 0; c < CONTROL_CHARACTER_HEX.length; c++) {
+			CONTROL_CHARACTER_HEX[c] = toHexString(c, 4);
+		}
+	}
+
 	/*
 	 * The following correspond to the N-Triples grammar (https://www.w3.org/TR/n-triples/#n-triples-grammar).
 	 */
@@ -785,42 +795,72 @@ public class NTriplesUtil {
 	 */
 	public static void escapeString(String label, Appendable appendable, boolean escapeUnicode) throws IOException {
 		int labelLength = label.length();
+		int runStart = 0;
 
 		for (int i = 0; i < labelLength; i++) {
 			char c = label.charAt(i);
-			int cInt = c;
+			if (c >= 0x20 && c != '\\' && c != '"' && (!escapeUnicode || c != 0x7F && c < 0xFFFE)) {
+				continue;
+			}
 
-			if (c == '\\') {
-				appendable.append("\\\\");
-			} else if (c == '"') {
-				appendable.append("\\\"");
-			} else if (c == '\n') {
-				appendable.append("\\n");
-			} else if (c == '\r') {
-				appendable.append("\\r");
-			} else if (c == '\t') {
-				appendable.append("\\t");
-			} else if (c == '\b') {
-				appendable.append("\\b");
-			} else if (c == '\f') {
-				appendable.append("\\f");
-			} else if (cInt >= 0x0 && cInt <= 0x0007 || cInt >= 0xE && cInt <= 0x1F || cInt == 0xB || cInt == 0x7F
-					|| cInt >= 0xFFFE) {
-				if (escapeUnicode) {
-					appendable.append("\\u");
-					appendable.append(toHexString(cInt, 4));
-				} else {
-					appendable.append(c);
+			String escape;
+			switch (c) {
+			case '\\':
+				escape = "\\\\";
+				break;
+			case '"':
+				escape = "\\\"";
+				break;
+			case '\n':
+				escape = "\\n";
+				break;
+			case '\r':
+				escape = "\\r";
+				break;
+			case '\t':
+				escape = "\\t";
+				break;
+			case '\b':
+				escape = "\\b";
+				break;
+			case '\f':
+				escape = "\\f";
+				break;
+			default:
+				if (!escapeUnicode) {
+					continue;
 				}
-			} else if (cInt >= 0x10000 && cInt <= 0x10FFFF) {
-				if (escapeUnicode) {
-					appendable.append("\\U");
-					appendable.append(toHexString(cInt, 8));
-				} else {
-					appendable.append(c);
-				}
+				escape = null;
+			}
+
+			appendUnescaped(label, appendable, runStart, i);
+			if (escape != null) {
+				appendable.append(escape);
 			} else {
-				appendable.append(c);
+				appendable.append("\\u").append(numericEscape(c));
+			}
+			runStart = i + 1;
+		}
+		appendUnescaped(label, appendable, runStart, labelLength);
+	}
+
+	private static String numericEscape(char c) {
+		if (c < CONTROL_CHARACTER_HEX.length) {
+			return CONTROL_CHARACTER_HEX[c];
+		}
+		if (c == 0x7F) {
+			return "007F";
+		}
+		return c == 0xFFFE ? "FFFE" : "FFFF";
+	}
+
+	private static void appendUnescaped(String str, Appendable appendable, int start, int end) throws IOException {
+		if (start < end) {
+			if (appendable instanceof Writer) {
+				// Writer.append(CharSequence, int, int) creates a temporary subsequence.
+				((Writer) appendable).write(str, start, end - start);
+			} else {
+				appendable.append(str, start, end);
 			}
 		}
 	}
@@ -847,7 +887,7 @@ public class NTriplesUtil {
 		StringBuilder sb = new StringBuilder(sLength);
 
 		while (backSlashIdx != -1) {
-			sb.append(s.substring(startIdx, backSlashIdx));
+			sb.append(s, startIdx, backSlashIdx);
 
 			if (backSlashIdx + 1 >= sLength) {
 				throw new IllegalArgumentException("Unescaped backslash in: " + s);
@@ -884,17 +924,16 @@ public class NTriplesUtil {
 				if (backSlashIdx + 5 >= sLength) {
 					throw new IllegalArgumentException("Incomplete Unicode escape sequence in: " + s);
 				}
-				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);
-
 				try {
-					final int codePoint = Integer.parseInt(xx, 16);
+					final int codePoint = Integer.parseInt(s, backSlashIdx + 2, backSlashIdx + 6, 16);
 					if (codePoint >= 0xD800 && codePoint <= 0xDFFF) {
 						throw new IllegalArgumentException("Illegal Unicode escape sequence: " + s);
 					}
-					sb.append(Character.toChars(codePoint));
+					sb.appendCodePoint(codePoint);
 
 					startIdx = backSlashIdx + 6;
 				} catch (NumberFormatException e) {
+					String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);
 					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\u" + xx + "' in: " + s);
 				}
 			} else if (c == 'U') {
@@ -902,17 +941,16 @@ public class NTriplesUtil {
 				if (backSlashIdx + 9 >= sLength) {
 					throw new IllegalArgumentException("Incomplete Unicode escape sequence in: " + s);
 				}
-				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);
-
 				try {
-					final int codePoint = Integer.parseInt(xx, 16);
+					final int codePoint = Integer.parseInt(s, backSlashIdx + 2, backSlashIdx + 10, 16);
 					if (codePoint >= 0xD800 && codePoint <= 0xDFFF) {
 						throw new IllegalArgumentException("Illegal Unicode escape sequence: " + s);
 					}
-					sb.append(Character.toChars(codePoint));
+					sb.appendCodePoint(codePoint);
 
 					startIdx = backSlashIdx + 10;
 				} catch (NumberFormatException e) {
+					String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);
 					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\U" + xx + "' in: " + s);
 				}
 			} else {
@@ -922,7 +960,7 @@ public class NTriplesUtil {
 			backSlashIdx = s.indexOf('\\', startIdx);
 		}
 
-		sb.append(s.substring(startIdx));
+		sb.append(s, startIdx, sLength);
 
 		return sb.toString();
 	}

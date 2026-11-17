@@ -244,20 +244,25 @@ class FastNTriplesParserRegressionTest {
 	}
 
 	@Test
-	void acceptsRdf11ColonLabelsInEveryPositionAndDocumentScope() throws IOException {
-		// RDF 1.1 N-Triples PN_CHARS_U includes ':'. These explicit expectations do not depend on Rio's scanner.
+	void rejectsRdf12ColonLabelsInEveryPositionAndDocumentScope() {
+		// RDF 1.2 N-Triples and N-Quads exclude ':' from PN_CHARS_U and therefore from blank-node labels.
 		for (String label : List.of(":", ":a", "a:b", "a:", ":a.b:c:")) {
-			for (boolean block : List.of(false, true)) {
-				for (byte[] scope : new byte[][] { null, FastNTriplesParser.blankNodeScope(2) }) {
-					String expectedLabel = scope == null ? label : "f2/" + label;
-					Statement expected = VF.createStatement(VF.createBNode(expectedLabel), PREDICATE,
-							VF.createBNode(expectedLabel), VF.createBNode(expectedLabel));
-					assertEquals(List.of(expected), parse("_:" + label + " <urn:p> _:" + label + " _:" + label + ".\n",
-							RDFFormat.NQUADS, block, scope));
+			for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+				List<String> inputs = new ArrayList<>(List.of(
+						"_:" + label + " <urn:p> <urn:o> .\n",
+						"<urn:s> <urn:p> _:" + label + " .\n",
+						"<urn:s> <urn:p> <<( _:" + label + " <urn:p> <urn:o> )>> .\n",
+						"<urn:s> <urn:p> <<( <urn:s> <urn:p> _:" + label + " )>> .\n"));
+				if (RDFFormat.NQUADS.equals(format)) {
+					inputs.add("<urn:s> <urn:p> <urn:o> _:" + label + " .\n");
 				}
-				Statement expected = VF.createStatement(VF.createBNode(label), PREDICATE, VF.createBNode(label));
-				assertEquals(List.of(expected), parse("_:" + label + " <urn:p> _:" + label + ".\n",
-						RDFFormat.NTRIPLES, block, null));
+				for (String input : inputs) {
+					for (boolean block : List.of(false, true)) {
+						for (byte[] scope : new byte[][] { null, FastNTriplesParser.blankNodeScope(2) }) {
+							assertThrows(RDFParseException.class, () -> parse(input, format, block, scope), input);
+						}
+					}
+				}
 			}
 		}
 	}
@@ -339,22 +344,23 @@ class FastNTriplesParserRegressionTest {
 	}
 
 	@Test
-	void acceptsCompleteVersionDirectivesAndRejectsMalformedOnesLikeRio() throws IOException {
-		List<String> validDirectives = List.of("VERSION \"1.2\"", "VERSION '1.2'", " \tVERSION \"1.2\"",
-				"VERSION\t'x'");
-		List<String> malformedDirectives = List.of("VERSION garbage", "VERSION \"1.2", "VERSION '1.2\"",
-				"VERSION \"1.2\" extra", "VERSION \"1.2\" ");
+	void acceptsRdf12VersionDirectiveWhitespaceAndRejectsMalformedSyntax() throws IOException {
+		// The grammar requires STRING_LITERAL_QUOTE, with optional horizontal whitespace outside terminals.
+		List<String> validDirectives = List.of("VERSION \"1.2\"", " \tVERSION \"1.2\"", "VERSION\"1.2\"",
+				"VERSION  \"1.2\"", "VERSION \t\"1.2\"", "VERSION \"1.2\" \t", "VERSION \"1.2\"# comment",
+				"VERSION \"1.2\" \t# comment", "VERSION \"\\u0031.2\"");
+		List<String> malformedDirectives = List.of("VERSION garbage", "VERSION \"1.2", "VERSION '1.2'",
+				"VERSION '1.2\"", "VERSION \"1.2\" extra", "VERSION \"1.2\" .", "VERSION \"1.2\"@en",
+				"VERSION \"1.\\q\"", "VERSION \"\\uD800\"", "version \"1.2\"");
 		List<Statement> expected = List.of(VF.createStatement(SUBJECT, PREDICATE, VF.createIRI("urn:o")));
 		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
 			for (String directive : validDirectives) {
 				String input = directive + "\n" + STATEMENT;
-				assertEquals(expected, rio(input, format));
 				assertEquals(expected, parse(input, format, false, null));
 				assertEquals(expected, parse(input, format, true, null));
 			}
 			for (String directive : malformedDirectives) {
 				String input = directive + "\n" + STATEMENT;
-				assertThrows(RDFParseException.class, () -> rio(input, format), input);
 				assertThrows(RDFParseException.class, () -> parse(input, format, false, null), input);
 				assertThrows(RDFParseException.class, () -> parse(input, format, true, null), input);
 			}

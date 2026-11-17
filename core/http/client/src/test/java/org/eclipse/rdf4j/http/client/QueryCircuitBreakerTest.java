@@ -84,6 +84,15 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
+	void shouldDeriveDefaultFreeMemoryThresholdsWithJavaToolOptions() throws Exception {
+		Thresholds thresholds = readDefaultThresholdsFromFreshJvm("12801m",
+				"-Drdf4j.test.thresholdProbe.jvmOptions=true");
+
+		assertEquals(257, thresholds.warnFreeMb);
+		assertEquals(129, thresholds.highFreeMb);
+	}
+
+	@Test
 	void shouldThrottleExecutionContextCheckpointToEvery1024Calls() throws Exception {
 		PropertiesScope properties = new PropertiesScope().with(QueryCircuitBreaker.ENABLED_PROPERTY, "false");
 		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
@@ -754,14 +763,25 @@ class QueryCircuitBreakerTest {
 	}
 
 	private static Thresholds readDefaultThresholdsFromFreshJvm(String maxHeap) throws Exception {
+		return readDefaultThresholdsFromFreshJvm(maxHeap, "");
+	}
+
+	private static Thresholds readDefaultThresholdsFromFreshJvm(String maxHeap, String additionalJavaToolOptions)
+			throws Exception {
 		String classpath = System.getProperty("java.class.path");
 		String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		Process process = new ProcessBuilder(javaExecutable, "-Xmx" + maxHeap,
+		// JVM startup diagnostics belong on stderr, not in the probe's stdout protocol.
+		ProcessBuilder processBuilder = new ProcessBuilder(javaExecutable, "-Xmx" + maxHeap,
 				"-D" + QueryCircuitBreaker.WARN_FREE_MB_PROPERTY + "=",
 				"-D" + QueryCircuitBreaker.HIGH_FREE_MB_PROPERTY + "=",
 				"-cp", classpath, DefaultThresholdProbe.class.getName())
-						.redirectErrorStream(true)
-						.start();
+						.redirectError(ProcessBuilder.Redirect.INHERIT);
+		if (!additionalJavaToolOptions.isEmpty()) {
+			processBuilder.environment()
+					.merge("JAVA_TOOL_OPTIONS", additionalJavaToolOptions,
+							(existing, additional) -> existing + " " + additional);
+		}
+		Process process = processBuilder.start();
 		String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
 		int exitCode = process.waitFor();
 		assertEquals(0, exitCode, output);

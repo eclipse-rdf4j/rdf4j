@@ -2936,48 +2936,55 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	 * @return whether at least one generation was merged
 	 */
 	private boolean foldMergeableSuffix() {
-		Changeset[] chain = changes.toArray(new Changeset[0]);
-		int start = chain.length - 1;
-		while (start > 0 && canMergeInto(chain[start - 1], chain[start])) {
-			start--;
-		}
-		if (start >= chain.length - 1) {
+		if (changes.size() < 2) {
 			return false;
 		}
-		for (int i = chain.length - 1; i > start; i--) {
-			changes.removeLast();
+
+		// Find the same eligible suffix as reverse pairwise compaction, but keep its oldest model as
+		// the accumulator. Retired models cannot be disposed until the enclosing guards are released.
+		// Repeatedly copying a growing suffix into a new predecessor would retain quadratic payload.
+		List<Changeset> suffix = new ArrayList<>();
+		Iterator<Changeset> descending = changes.descendingIterator();
+		Changeset accumulator = descending.next();
+		suffix.add(accumulator);
+		while (descending.hasNext()) {
+			Changeset preceding = descending.next();
+			if (!canCompressInto(accumulator, preceding)) {
+				break;
+			}
+			suffix.add(preceding);
+			accumulator = preceding;
 		}
-		Changeset target = chain[start];
+		if (suffix.size() < 2) {
+			return false;
+		}
+		// An accumulator may also alias a non-adjacent generation. Detect that before any write,
+		// rather than discovering the alias after an earlier fold has already changed its contents.
+		for (Changeset other : changes) {
+			if (other != accumulator && accumulator.sharesModelWith(other)) {
+				return false;
+			}
+		}
 		boolean merged = false;
-		for (int i = start + 1; i < chain.length; i++) {
-			Changeset next = chain[i];
-			if (next.sharesModelWith(target)) {
-				restore(chain, i);
+		for (int index = suffix.size() - 2; index >= 0; index--) {
+			Changeset source = suffix.get(index);
+			if (!canCompressInto(source, accumulator)) {
 				return merged;
 			}
-			try {
-				prepare(next, target);
-				flush(next, target);
-			} catch (RuntimeException | Error failure) {
-				restore(chain, i);
-				throw failure;
-			}
-			StreamingWritePreflight.removed(next);
-			next.close();
+			prepare(source, accumulator);
+			flush(source, accumulator);
+			// Keep the source and untouched tail in order if preparation or application fails.
+			changes.remove(source);
+			StreamingWritePreflight.removed(source);
+			source.close();
 			merged = true;
 		}
 		return merged;
 	}
 
-	private static boolean canMergeInto(Changeset older, Changeset newer) {
-		return !newer.isFrozen() && !older.isFrozen() && !older.isRetained() && !newer.sharesModelWith(older);
-	}
-
-	/** Puts the not yet merged generations back in their original order. */
-	private void restore(Changeset[] chain, int from) {
-		for (int i = from; i < chain.length; i++) {
-			changes.addLast(chain[i]);
-		}
+	private static boolean canCompressInto(Changeset source, Changeset destination) {
+		return !source.isFrozen() && !destination.isFrozen() && !destination.isRetained()
+				&& !source.sharesModelWith(destination);
 	}
 
 	void autoFlush() throws SailException {

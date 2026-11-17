@@ -184,6 +184,11 @@ class LmdbNativeKernelSubplanScopeTest {
 		builder.environment().remove("JAVA_TOOL_OPTIONS");
 		builder.environment().remove("_JAVA_OPTIONS");
 		builder.environment().remove("JDK_JAVA_OPTIONS");
+		// Retain only CI diagnostics, not external heap/agent/admission overrides.
+		String ciDiagnostics = System.getenv("RDF4J_CI_JVM_DIAGNOSTIC_OPTIONS");
+		if (ciDiagnostics != null && !ciDiagnostics.isBlank()) {
+			builder.environment().put("JAVA_TOOL_OPTIONS", ciDiagnostics);
+		}
 
 		Process child = builder.start();
 		try {

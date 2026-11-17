@@ -37,15 +37,37 @@ class FastNTriplesParserTest {
 	}
 
 	@Test
-	void acceptsTheHighestUnicodeCodePoint() throws IOException {
-		FastNTriplesParser parser = new FastNTriplesParser(RDFFormat.NTRIPLES, () -> false);
+	void acceptsTheHighestUnicodeCodePointInALiteral() throws IOException {
+		byte[][] terms = parse("<urn:s> <urn:p> \"\\U0010FFFF\" .\n");
+		ValueFactory vf = SimpleValueFactory.getInstance();
 
-		long statements = parser.parse(
-				new ByteArrayInputStream("<http://example.org/\\U0010FFFF> <urn:p> <urn:o> .\n".getBytes(UTF_8)),
-				(subject, predicate, object, context) -> {
-				});
+		assertArrayEquals(CanonicalTermCodec.encode(vf.createLiteral(new String(Character.toChars(0x10FFFF)))),
+				terms[2]);
+	}
 
-		assertEquals(1L, statements);
+	@Test
+	void acceptsIriUnicodeBoundsInTheirPermittedComponents() throws IOException {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		byte[][] pathTerms = parse("<http://example.org/\\U000EFFFD> <urn:p> <urn:o> .\n");
+		assertArrayEquals(
+				CanonicalTermCodec.encode(vf.createIRI("http://example.org/" + new String(Character.toChars(0xEFFFD)))),
+				pathTerms[0]);
+
+		byte[][] queryTerms = parse("<http://example.org/?\\U0010FFFD> <urn:p> <urn:o> .\n");
+		assertArrayEquals(
+				CanonicalTermCodec
+						.encode(vf.createIRI("http://example.org/?" + new String(Character.toChars(0x10FFFD)))),
+				queryTerms[0]);
+	}
+
+	@Test
+	void rejectsTheHighestUnicodeCodePointInAnIri() {
+		// U+10FFFF is a Unicode scalar, but RFC 3987 excludes it from both ucschar and iprivate.
+		assertInvalid("<http://example.org/\\U0010FFFF> <urn:p> <urn:o> .\n");
+		assertInvalid("<http://example.org/?\\U0010FFFF> <urn:p> <urn:o> .\n");
+		String highestScalar = new String(Character.toChars(0x10FFFF));
+		assertInvalid("<http://example.org/" + highestScalar + "> <urn:p> <urn:o> .\n");
+		assertInvalid("<http://example.org/?" + highestScalar + "> <urn:p> <urn:o> .\n");
 	}
 
 	@Test

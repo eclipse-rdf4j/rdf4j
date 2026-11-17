@@ -15,6 +15,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 E2E_DIR="${ROOT_DIR}/e2e"
 DOCKER_DIR="${ROOT_DIR}/docker"
+source "${DOCKER_DIR}/ci-jvm-diagnostics.sh"
 SERVER_RUNTIME="${1:-${E2E_SERVER_RUNTIME:-spring-boot}}"
 SERVER_PID=""
 DOCKER_STARTED="false"
@@ -78,7 +79,7 @@ stop_docker_tomcat() {
   fi
 
   echo "Stopping Docker/Tomcat RDF4J stack"
-  (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose -f docker-compose.yml -f "${E2E_DIR}/docker-compose.e2e.yml" \
+  (cd "$DOCKER_DIR" && APP_SERVER=tomcat rdf4j_ci_docker_compose -f docker-compose.yml -f "${E2E_DIR}/docker-compose.e2e.yml" \
     down -v) || true
 }
 
@@ -147,11 +148,11 @@ ensure_runtime_running() {
 
   if [ "${DOCKER_STARTED}" = "true" ]; then
     local container_id
-    container_id="$(cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose ps -q rdf4j 2>/dev/null || true)"
+    container_id="$(cd "$DOCKER_DIR" && APP_SERVER=tomcat rdf4j_ci_docker_compose ps -q rdf4j 2>/dev/null || true)"
     if [ -n "$container_id" ] && [ "$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || echo false)" != "true" ]; then
       echo ""
       echo "Docker/Tomcat container exited before RDF4J became ready" >&2
-      (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose logs --tail=200 rdf4j) || true
+      (cd "$DOCKER_DIR" && APP_SERVER=tomcat rdf4j_ci_docker_compose logs --tail=200 rdf4j) || true
       return 1
     fi
   fi
@@ -192,7 +193,7 @@ start_docker_tomcat() {
   export RDF4J_OPTS="'-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=/rdf4j-server http://${RDF4J_E2E_HOST_FROM_SERVER}:' -D${ADD_URL_ALLOWED_ORIGINS_PROPERTY}=${ADD_URL_ALLOWED_ORIGINS}"
 
   echo "Starting Docker/Tomcat RDF4J container"
-  (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose -f docker-compose.yml -f "${E2E_DIR}/docker-compose.e2e.yml" \
+  (cd "$DOCKER_DIR" && APP_SERVER=tomcat rdf4j_ci_docker_compose -f docker-compose.yml -f "${E2E_DIR}/docker-compose.e2e.yml" \
     up --force-recreate -d)
   DOCKER_STARTED="true"
 }

@@ -494,6 +494,11 @@ class LmdbBulkLoadTest {
 		for (String injectedOptions : List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS")) {
 			builder.environment().remove(injectedOptions);
 		}
+		// Retain only CI diagnostics, not external heap/agent/admission overrides.
+		String ciDiagnostics = System.getenv("RDF4J_CI_JVM_DIAGNOSTIC_OPTIONS");
+		if (ciDiagnostics != null && !ciDiagnostics.isBlank()) {
+			builder.environment().put("JAVA_TOOL_OPTIONS", ciDiagnostics);
+		}
 		Process process = builder.start();
 		try (AutoCloseable processOwner = () -> reapStandalone(process)) {
 			try {
