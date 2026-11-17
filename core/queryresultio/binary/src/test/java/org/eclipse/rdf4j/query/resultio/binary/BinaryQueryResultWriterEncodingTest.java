@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,7 +23,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.CharacterCodingException;
+import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -99,6 +102,14 @@ class BinaryQueryResultWriterEncodingTest {
 		values.add(new StringCase("supplementary text beyond a buffer", "\ud83d\ude80".repeat(8193)));
 		values.add(new StringCase("surrogate pair across character boundary", "a".repeat(8191) + "\ud83d\ude80z"));
 		values.add(new StringCase("multibyte text across byte boundary", "a".repeat(8191) + "å中\ud83d\ude80z"));
+		for (int length : new int[] { 1365, 1366, 4095, 4096, 4097 }) {
+			values.add(new StringCase("trailing surrogate pair at character length " + length,
+					"a".repeat(length - 2) + "\ud83d\ude80"));
+		}
+		values.add(new StringCase("leading surrogate pair before a long ASCII suffix",
+				"\ud800\udc00" + "a".repeat(8193)));
+		values.add(new StringCase("interior surrogate pair between long ASCII runs",
+				"a".repeat(4095) + "\udbff\udfff\u0000" + "a".repeat(4097)));
 		return values.build();
 	}
 
@@ -111,7 +122,7 @@ class BinaryQueryResultWriterEncodingTest {
 
 			TupleQueryResultHandlerException failure = assertThrows(TupleQueryResultHandlerException.class,
 					() -> writer.handleSolution(row));
-			assertInstanceOf(CharacterCodingException.class, failure.getCause());
+			assertMalformedInput(failure.getCause());
 		}));
 	}
 
@@ -122,18 +133,32 @@ class BinaryQueryResultWriterEncodingTest {
 
 			TupleQueryResultHandlerException failure = assertThrows(TupleQueryResultHandlerException.class,
 					() -> writer.startQueryResult(List.of(test.value())));
-			assertInstanceOf(CharacterCodingException.class, failure.getCause());
+			assertMalformedInput(failure.getCause());
 		}));
 	}
 
 	static Stream<StringCase> malformedStrings() {
-		return Stream.of(
+		Stream<StringCase> shortAndLong = Stream.of(
 				new StringCase("lone high surrogate", "\ud800"),
 				new StringCase("lone low surrogate", "\udc00"),
 				new StringCase("high surrogate before ASCII", "\ud800x"),
 				new StringCase("two high surrogates", "\ud800\ud801"),
 				new StringCase("low surrogate after ASCII", "x\udc00"),
-				new StringCase("trailing high surrogate after a long prefix", "a".repeat(8193) + "\ud800"));
+				new StringCase("trailing high surrogate after a long prefix", "a".repeat(8193) + "\ud800"),
+				new StringCase("leading high surrogate before a long suffix", "\ud800" + "a".repeat(8193)),
+				new StringCase("leading low surrogate before a long suffix", "\udc00" + "a".repeat(8193)),
+				new StringCase("interior high surrogate before a BMP character",
+						"a".repeat(4095) + "\ud800中" + "a".repeat(4097)),
+				new StringCase("interior low surrogate", "a".repeat(4095) + "\udc00" + "a".repeat(4097)),
+				new StringCase("low surrogate after a valid pair",
+						"a".repeat(4095) + "\ud83d\ude80\udc00" + "a".repeat(4097)),
+				new StringCase("high surrogate before a valid pair",
+						"a".repeat(4095) + "\ud800\ud83d\ude80" + "a".repeat(4097)),
+				new StringCase("reversed surrogate pair", "a".repeat(4095) + "\udc00\ud800" + "a".repeat(4097)));
+		Stream<StringCase> boundaries = Arrays.stream(new int[] { 1365, 1366, 4096, 4097 })
+				.mapToObj(length -> new StringCase("trailing high surrogate at character length " + length,
+						"a".repeat(length - 1) + "\ud800"));
+		return Stream.concat(shortAndLong, boundaries);
 	}
 
 	@TestFactory
@@ -141,8 +166,10 @@ class BinaryQueryResultWriterEncodingTest {
 		return malformedStrings().map(test -> DynamicTest.dynamicTest(test.description(), () -> {
 			ByteArrayOutputStream output = new ByteArrayOutputStream();
 			BinaryQueryResultWriter writer = new BinaryQueryResultWriter(output);
-			assertThrows(CharacterCodingException.class,
-					() -> writer.error(QueryErrorType.QUERY_EVALUATION_ERROR, test.value()));
+			assertMalformedInput(assertThrows(CharacterCodingException.class,
+					() -> writer.error(QueryErrorType.QUERY_EVALUATION_ERROR, test.value())));
+			assertArrayEquals(new byte[] { 126, 2 }, output.toByteArray(),
+					"Malformed input must not emit a string length or partially encoded text");
 
 			// Isolate the next error record; reset does not change the writer's encoder state.
 			output.reset();
@@ -156,6 +183,11 @@ class BinaryQueryResultWriterEncodingTest {
 
 			assertArrayEquals(expected.toByteArray(), output.toByteArray());
 		}));
+	}
+
+	private static void assertMalformedInput(Throwable failure) {
+		MalformedInputException malformed = assertInstanceOf(MalformedInputException.class, failure);
+		assertEquals(1, malformed.getInputLength());
 	}
 
 	@Test
@@ -234,6 +266,133 @@ class BinaryQueryResultWriterEncodingTest {
 					assertArrayEquals(expected, actual);
 					assertRoundTrip(actual, preceding, first, second);
 				}));
+	}
+
+	@TestFactory
+	Stream<DynamicTest> encodesCompleteTypedRecordsAroundFourKiB() {
+		return Stream.of(CoreDatatype.XSD.STRING, CoreDatatype.XSD.NON_NEGATIVE_INTEGER)
+				.flatMap(datatype -> Arrays.stream(new int[] { 4095, 4096, 4097, 4099, 4100, 4101 })
+						.mapToObj(recordLength -> DynamicTest.dynamicTest(
+								datatype + " record length " + recordLength, () -> {
+									String precedingNamespace = "http://example.org/preceding/";
+									String localName = datatype.getIri().getLocalName();
+									// Literal marker, label length, QName marker, namespace ID, local-name length.
+									int overhead = 1 + 4 + 1 + 4 + 4
+											+ localName.getBytes(StandardCharsets.UTF_8).length;
+									int labelBytes = recordLength - overhead;
+									String[] patterns = { "a", "å", "中", "\ud83d\ude80" };
+									String[] labels = new String[patterns.length];
+									BindingSet[] rows = new BindingSet[patterns.length + 1];
+									rows[0] = new ListBindingSet(ONE_COLUMN,
+											VF.createIRI(precedingNamespace, "item"));
+									for (int i = 0; i < patterns.length; i++) {
+										int patternBytes = patterns[i].getBytes(StandardCharsets.UTF_8).length;
+										labels[i] = patterns[i].repeat(labelBytes / patternBytes)
+												+ "a".repeat(labelBytes % patternBytes);
+										rows[i + 1] = new ListBindingSet(ONE_COLUMN,
+												VF.createLiteral(labels[i], datatype));
+									}
+									byte[] expected = expectedStream(ONE_COLUMN, out -> {
+										writeNamespace(out, 0, precedingNamespace);
+										writeQName(out, 0, "item");
+										writeNamespace(out, 1, XSD_NAMESPACE);
+										for (String label : labels) {
+											writeTypedLiteral(out, label, 1, localName);
+										}
+									});
+									ByteArrayOutputStream output = new ByteArrayOutputStream();
+									BinaryQueryResultWriter writer = new BinaryQueryResultWriter(output);
+									writer.startQueryResult(ONE_COLUMN);
+									for (BindingSet row : rows) {
+										writer.handleSolution(row);
+									}
+
+									assertArrayEquals(Arrays.copyOf(expected, expected.length - 1),
+											output.toByteArray());
+									writer.endQueryResult();
+									assertArrayEquals(expected, output.toByteArray());
+									assertRoundTrip(output.toByteArray(), rows);
+								})));
+	}
+
+	@Test
+	void interleavesCoreAndLargeCustomDatatypeRecordsWithRepeatAndNullMarkers() throws Exception {
+		List<String> names = List.of("first", "custom", "last");
+		String customNamespace = "http://example.org/types/";
+		String customLocalName = "type-" + "中".repeat(1366);
+		IRI customDatatype = VF.createIRI(customNamespace, customLocalName);
+		BindingSet first = new ListBindingSet(names, VF.createLiteral("first"),
+				VF.createLiteral("custom", customDatatype), VF.createLiteral("17", CoreDatatype.XSD.INTEGER));
+		BindingSet second = new ListBindingSet(names, VF.createLiteral("second"),
+				VF.createLiteral("custom", customDatatype), VF.createLiteral("18", CoreDatatype.XSD.INTEGER));
+		BindingSet third = new ListBindingSet(names, VF.createLiteral("second"),
+				VF.createLiteral("changed", customDatatype), null);
+		byte[] actual = serialize(names, first, second, third);
+		byte[] expected = expectedStream(names, out -> {
+			writeNamespace(out, 0, XSD_NAMESPACE);
+			writeTypedLiteral(out, "first", 0, "string");
+			writeNamespace(out, 1, customNamespace);
+			writeTypedLiteral(out, "custom", 1, customLocalName);
+			writeTypedLiteral(out, "17", 0, "integer");
+			writeTypedLiteral(out, "second", 0, "string");
+			out.writeByte(1);
+			writeTypedLiteral(out, "18", 0, "integer");
+			out.writeByte(1);
+			writeTypedLiteral(out, "changed", 1, customLocalName);
+			out.writeByte(0);
+		});
+
+		assertArrayEquals(expected, actual);
+		assertRoundTrip(actual, first, second, third);
+	}
+
+	@Test
+	void preservesLabelWithAsciiDatatypeSuffixNearBufferBoundary() throws Exception {
+		assertCustomDatatypeRecord("a".repeat(105), "t".repeat(14));
+	}
+
+	@Test
+	void preservesLabelWithUnicodeDatatypeSuffixNearBufferBoundary() throws Exception {
+		assertCustomDatatypeRecord("a".repeat(100), "abcdef" + "中".repeat(6));
+	}
+
+	private static void assertCustomDatatypeRecord(String label, String localName) throws Exception {
+		String namespace = "http://example.org/types/";
+		BindingSet preceding = new ListBindingSet(ONE_COLUMN, VF.createIRI(namespace, "declared"));
+		BindingSet literal = new ListBindingSet(ONE_COLUMN,
+				VF.createLiteral(label, VF.createIRI(namespace, localName)));
+		BindingSet following = new ListBindingSet(ONE_COLUMN, VF.createLiteral("following"));
+		byte[] actual = serialize(ONE_COLUMN, preceding, literal, following);
+		byte[] expected = expectedStream(ONE_COLUMN, out -> {
+			writeNamespace(out, 0, namespace);
+			writeQName(out, 0, "declared");
+			writeTypedLiteral(out, label, 0, localName);
+			writeNamespace(out, 1, XSD_NAMESPACE);
+			writeTypedLiteral(out, "following", 1, "string");
+		});
+
+		assertArrayEquals(expected, actual);
+		assertRoundTrip(actual, preceding, literal, following);
+	}
+
+	@Test
+	void preservesLabelWithLanguageTagNearBufferBoundary() throws Exception {
+		String namespace = "http://example.org/preceding/";
+		String label = "a".repeat(120);
+		BindingSet preceding = new ListBindingSet(ONE_COLUMN, VF.createIRI(namespace, "declared"));
+		BindingSet literal = new ListBindingSet(ONE_COLUMN, VF.createLiteral(label, "en-US"));
+		BindingSet following = new ListBindingSet(ONE_COLUMN, VF.createLiteral("following"));
+		byte[] actual = serialize(ONE_COLUMN, preceding, literal, following);
+		byte[] expected = expectedStream(ONE_COLUMN, out -> {
+			writeNamespace(out, 0, namespace);
+			writeQName(out, 0, "declared");
+			writeLanguageLiteral(out, label, "en-US");
+			writeNamespace(out, 1, XSD_NAMESPACE);
+			writeTypedLiteral(out, "following", 1, "string");
+		});
+
+		assertArrayEquals(expected, actual);
+		assertRoundTrip(actual, preceding, literal, following);
 	}
 
 	private static Stream<CoreDatatype> typedCoreDatatypes() {
@@ -497,6 +656,82 @@ class BinaryQueryResultWriterEncodingTest {
 		assertEquals(127, output.toByteArray()[output.size() - 1]);
 	}
 
+	@TestFactory
+	Stream<DynamicTest> propagatesOutputFailuresFromTypedLiteralRecords() {
+		return Stream.of(
+				new StringCase("small ASCII", "a short label"),
+				new StringCase("small Unicode", "\u0000å中\ud83d\ude80"),
+				new StringCase("large ASCII", "a".repeat(8193)),
+				new StringCase("large Unicode", "å中\ud83d\ude80".repeat(4097)))
+				.map(test -> DynamicTest.dynamicTest(test.description(), () -> {
+					int payloadLength = test.value().getBytes(StandardCharsets.UTF_8).length;
+					// Fail within the marker, length, label, or datatype, regardless of write-call batching.
+					for (int acceptedBytes : new int[] { 0, 1, 4, 5, 5 + payloadLength / 2, 5 + payloadLength,
+							6 + payloadLength, 9 + payloadLength }) {
+						FailingOutput output = new FailingOutput();
+						BinaryQueryResultWriter writer = new BinaryQueryResultWriter(output);
+						writer.startQueryResult(ONE_COLUMN);
+						writer.handleSolution(new ListBindingSet(ONE_COLUMN, VF.createLiteral("warmup")));
+						output.failAfter(acceptedBytes);
+
+						TupleQueryResultHandlerException failure = assertThrows(
+								TupleQueryResultHandlerException.class,
+								() -> writer.handleSolution(
+										new ListBindingSet(ONE_COLUMN, VF.createLiteral(test.value()))));
+
+						assertSame(output.failure, failure.getCause(), "Bytes accepted: " + acceptedBytes);
+						assertFalse(output.closed);
+					}
+				}));
+	}
+
+	@Test
+	void propagatesOutputFailureFromALargeColumnName() {
+		FailingOutput output = new FailingOutput();
+		BinaryQueryResultWriter writer = new BinaryQueryResultWriter(output);
+		// Magic, version, column count, string length, then a prefix of the UTF-8 payload.
+		output.failAfter(4 + 4 + 4 + 4 + 4096);
+
+		TupleQueryResultHandlerException failure = assertThrows(TupleQueryResultHandlerException.class,
+				() -> writer.startQueryResult(List.of("a".repeat(4095) + "\ud83d\ude80")));
+
+		assertSame(output.failure, failure.getCause());
+		assertFalse(output.closed);
+	}
+
+	@Test
+	void propagatesOutputFailureFromALargeErrorMessage() {
+		FailingOutput output = new FailingOutput();
+		BinaryQueryResultWriter writer = new BinaryQueryResultWriter(output);
+		output.failAfter(1 + 1 + 4 + 4096);
+
+		IOException failure = assertThrows(IOException.class,
+				() -> writer.error(QueryErrorType.QUERY_EVALUATION_ERROR, "a".repeat(4095) + "\ud83d\ude80"));
+
+		assertSame(output.failure, failure);
+		assertFalse(output.closed);
+	}
+
+	@Test
+	void propagatesEndMarkerAndFlushFailuresWithoutClosingTheSuppliedStream() throws Exception {
+		for (boolean failOnFlush : new boolean[] { false, true }) {
+			FailingOutput output = new FailingOutput();
+			BinaryQueryResultWriter writer = new BinaryQueryResultWriter(output);
+			writer.startQueryResult(ONE_COLUMN);
+			writer.handleSolution(new ListBindingSet(ONE_COLUMN, VF.createLiteral("value")));
+			output.failOnFlush = failOnFlush;
+			if (!failOnFlush) {
+				output.failAfter(0);
+			}
+
+			TupleQueryResultHandlerException failure = assertThrows(TupleQueryResultHandlerException.class,
+					writer::endQueryResult);
+
+			assertSame(output.failure, failure.getCause());
+			assertFalse(output.closed);
+		}
+	}
+
 	private static byte[] serialize(List<String> names, BindingSet... rows) throws Exception {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 		BinaryQueryResultWriter writer = new BinaryQueryResultWriter(output);
@@ -579,5 +814,45 @@ class BinaryQueryResultWriterEncodingTest {
 	}
 
 	private record StringCase(String description, String value) {
+	}
+
+	private static class FailingOutput extends OutputStream {
+		private final IOException failure = new IOException("Injected output failure");
+		private int remaining = Integer.MAX_VALUE;
+		private boolean failOnFlush;
+		private boolean closed;
+
+		void failAfter(int acceptedBytes) {
+			remaining = acceptedBytes;
+		}
+
+		@Override
+		public void write(int value) throws IOException {
+			if (remaining == 0) {
+				throw failure;
+			}
+			remaining--;
+		}
+
+		@Override
+		public void write(byte[] bytes, int offset, int length) throws IOException {
+			if (length > remaining) {
+				remaining = 0;
+				throw failure;
+			}
+			remaining -= length;
+		}
+
+		@Override
+		public void flush() throws IOException {
+			if (failOnFlush) {
+				throw failure;
+			}
+		}
+
+		@Override
+		public void close() {
+			closed = true;
+		}
 	}
 }

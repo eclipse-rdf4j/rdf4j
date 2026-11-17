@@ -79,9 +79,8 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	 */
 	private final DataOutputStream out;
 
-	private final CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
-	// Bound retained scratch storage; oversized strings use the allocating strict-encoder fallback.
-	private final byte[] stringBuffer = new byte[Integer.BYTES + STRING_BUFFER_SIZE];
+	// Grow bounded scratch storage only when needed; large strings are encoded in chunks.
+	private byte[] stringBuffer = new byte[Integer.BYTES + 128];
 
 	/**
 	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using the
@@ -257,23 +256,39 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 			nsID = writeNamespace(namespace);
 		}
 
-		out.writeByte(QNAME_RECORD_MARKER);
-		out.writeInt(nsID.intValue());
-		writeString(uri.getLocalName());
+		writeNamedRecord(QNAME_RECORD_MARKER, nsID.intValue(), uri.getLocalName());
+	}
+
+	private void writeNamedRecord(int marker, int namespaceId, String text) throws IOException {
+		int end = encodeString(text, 5, stringBuffer.length);
+		if (end >= 0) {
+			stringBuffer[0] = (byte) marker;
+			putInt(stringBuffer, 1, namespaceId);
+			out.write(stringBuffer, 0, end);
+		} else {
+			out.writeByte(marker);
+			out.writeInt(namespaceId);
+			writeString(text);
+		}
 	}
 
 	private void writeBNode(BNode bnode) throws IOException {
-		out.writeByte(BNODE_RECORD_MARKER);
-		writeString(bnode.getID());
+		String id = bnode.getID();
+		int end = encodeString(id, 1, stringBuffer.length);
+		if (end >= 0) {
+			stringBuffer[0] = BNODE_RECORD_MARKER;
+			out.write(stringBuffer, 0, end);
+		} else {
+			out.writeByte(BNODE_RECORD_MARKER);
+			writeString(id);
+		}
 	}
 
 	private void writeLiteral(Literal literal) throws IOException {
 		String label = literal.getLabel();
 		CoreDatatype coreDatatype = literal.getCoreDatatype();
 		if (coreDatatype == CoreDatatype.RDF.LANGSTRING || coreDatatype == CoreDatatype.RDF.DIRLANGSTRING) {
-			out.writeByte(LANG_LITERAL_RECORD_MARKER);
-			writeString(label);
-			writeString(getLanguageTag(literal));
+			writeLanguageLiteral(label, getLanguageTag(literal));
 			return;
 		}
 		IRI datatype = literal.getDatatype();
@@ -291,20 +306,60 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 				putInt(record, 1, namespaceId);
 				datatypeRecords[datatypeIndex] = record;
 			}
-			out.writeByte(DATATYPE_LITERAL_RECORD_MARKER);
-			writeString(label);
-			out.write(record);
+			writeTypedLiteral(label, record);
 		} else {
 			Integer namespaceId = namespaceTable.get(datatype.getNamespace());
 			if (namespaceId == null) {
 				namespaceId = writeNamespace(datatype.getNamespace());
 			}
+			writeTypedLiteral(label, namespaceId, datatype.getLocalName());
+		}
+	}
+
+	private void writeTypedLiteral(String label, byte[] datatypeRecord) throws IOException {
+		int end = encodeString(label, 1, stringBuffer.length - datatypeRecord.length);
+		if (end >= 0) {
+			stringBuffer[0] = DATATYPE_LITERAL_RECORD_MARKER;
+			System.arraycopy(datatypeRecord, 0, stringBuffer, end, datatypeRecord.length);
+			out.write(stringBuffer, 0, end + datatypeRecord.length);
+		} else {
 			out.writeByte(DATATYPE_LITERAL_RECORD_MARKER);
 			writeString(label);
-			out.writeByte(QNAME_RECORD_MARKER);
-			out.writeInt(namespaceId);
-			writeString(datatype.getLocalName());
+			out.write(datatypeRecord);
 		}
+	}
+
+	private void writeTypedLiteral(String label, int namespaceId, String localName) throws IOException {
+		// Reserve at least the QName marker, namespace ID, and local-name length after the label.
+		int labelEnd = encodeString(label, 1, stringBuffer.length - 9);
+		if (labelEnd >= 0) {
+			int end = encodeString(localName, labelEnd + 5, stringBuffer.length);
+			if (end >= 0) {
+				stringBuffer[0] = DATATYPE_LITERAL_RECORD_MARKER;
+				stringBuffer[labelEnd] = QNAME_RECORD_MARKER;
+				putInt(stringBuffer, labelEnd + 1, namespaceId);
+				out.write(stringBuffer, 0, end);
+				return;
+			}
+		}
+		out.writeByte(DATATYPE_LITERAL_RECORD_MARKER);
+		writeString(label);
+		writeNamedRecord(QNAME_RECORD_MARKER, namespaceId, localName);
+	}
+
+	private void writeLanguageLiteral(String label, String language) throws IOException {
+		int labelEnd = encodeString(label, 1, stringBuffer.length - Integer.BYTES);
+		if (labelEnd >= 0) {
+			int end = encodeString(language, labelEnd, stringBuffer.length);
+			if (end >= 0) {
+				stringBuffer[0] = LANG_LITERAL_RECORD_MARKER;
+				out.write(stringBuffer, 0, end);
+				return;
+			}
+		}
+		out.writeByte(LANG_LITERAL_RECORD_MARKER);
+		writeString(label);
+		writeString(language);
 	}
 
 	private static int coreDatatypeIndex(CoreDatatype datatype) {
@@ -378,9 +433,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	}
 
 	private Integer writeNamespace(String namespace) throws IOException {
-		out.writeByte(NAMESPACE_RECORD_MARKER);
-		out.writeInt(nextNamespaceID);
-		writeString(namespace);
+		writeNamedRecord(NAMESPACE_RECORD_MARKER, nextNamespaceID, namespace);
 
 		Integer result = Integer.valueOf(nextNamespaceID);
 		namespaceTable.put(namespace, result);
@@ -390,60 +443,179 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		return result;
 	}
 
-	private void writeBufferedString(int length) throws IOException {
-		putInt(stringBuffer, 0, length);
-		out.write(stringBuffer, 0, length + 4);
+	private void writeString(String text) throws IOException {
+		int end = encodeString(text, 0, stringBuffer.length);
+		if (end >= 0) {
+			out.write(stringBuffer, 0, end);
+			return;
+		}
+		writeLargeString(text);
 	}
 
-	private void writeString(String s) throws IOException {
-		int length = s.length();
-		if (length <= stringBuffer.length - 4) {
-			int i = 0;
-			while (i < length) {
-				char c = s.charAt(i);
-				if (c > 0x7f) {
-					break;
-				}
-				stringBuffer[4 + i++] = (byte) c;
+	/**
+	 * Stages a length-prefixed UTF-8 string at offset and returns its exclusive end, or -1 if the bounded fast path
+	 * cannot fit it before limit. A failed capacity attempt may modify scratch bytes but emits no output.
+	 */
+	private int encodeString(String text, int offset, int limit) throws IOException {
+		int maximumBufferLength = Integer.BYTES + STRING_BUFFER_SIZE;
+		int capacity = limit - offset - Integer.BYTES;
+		int length = text.length();
+		if (length > capacity) {
+			int oldLength = stringBuffer.length;
+			if (length > capacity + maximumBufferLength - oldLength) {
+				return -1;
 			}
-			if (i == length) {
-				writeBufferedString(length);
-				return;
+			int newLength = Math.min(maximumBufferLength,
+					Math.max(oldLength * 2, oldLength + length - capacity));
+			stringBuffer = Arrays.copyOf(stringBuffer, newLength);
+			// Preserve the caller's trailing reservation when the backing array grows.
+			limit += newLength - oldLength;
+			capacity = limit - offset - Integer.BYTES;
+		}
+		int payload = offset + Integer.BYTES;
+		int i = 0;
+		while (i < length) {
+			char c = text.charAt(i);
+			if (c > 0x7f) {
+				break;
 			}
+			stringBuffer[payload + i++] = (byte) c;
+		}
+		if (i == length) {
+			putInt(stringBuffer, offset, length);
+			return payload + length;
 		}
 
-		if (length <= (stringBuffer.length - 4) / 3) {
-			int bytes = 4;
-			for (int i = 0; i < length; i++) {
-				char c = s.charAt(i);
-				if (c < 0x80) {
-					stringBuffer[bytes++] = (byte) c;
-				} else if (c < 0x800) {
-					stringBuffer[bytes++] = (byte) (0xc0 | c >> 6);
-					stringBuffer[bytes++] = (byte) (0x80 | c & 0x3f);
-				} else if (!Character.isSurrogate(c)) {
-					stringBuffer[bytes++] = (byte) (0xe0 | c >> 12);
-					stringBuffer[bytes++] = (byte) (0x80 | c >> 6 & 0x3f);
-					stringBuffer[bytes++] = (byte) (0x80 | c & 0x3f);
-				} else {
+		int remaining = length - i;
+		if (remaining > (capacity - i) / 3) {
+			int oldLength = stringBuffer.length;
+			if (remaining > (capacity - i + maximumBufferLength - oldLength) / 3) {
+				return -1;
+			}
+			// The preceding division bounds remaining before multiplying by three.
+			int newLength = Math.min(maximumBufferLength,
+					Math.max(oldLength * 2, oldLength + remaining * 3 - (capacity - i)));
+			// Copy earlier staged strings and the already-written ASCII prefix as well.
+			stringBuffer = Arrays.copyOf(stringBuffer, newLength);
+			limit += newLength - oldLength;
+			capacity = limit - offset - Integer.BYTES;
+		}
+		int bytes = payload + i;
+		for (; i < length; i++) {
+			char c = text.charAt(i);
+			if (c < 0x80) {
+				stringBuffer[bytes++] = (byte) c;
+			} else if (c < 0x800) {
+				stringBuffer[bytes++] = (byte) (0xc0 | c >> 6);
+				stringBuffer[bytes++] = (byte) (0x80 | c & 0x3f);
+			} else if (!Character.isSurrogate(c)) {
+				stringBuffer[bytes++] = (byte) (0xe0 | c >> 12);
+				stringBuffer[bytes++] = (byte) (0x80 | c >> 6 & 0x3f);
+				stringBuffer[bytes++] = (byte) (0x80 | c & 0x3f);
+			} else {
+				if (!Character.isHighSurrogate(c) || i + 1 == length
+						|| !Character.isLowSurrogate(text.charAt(i + 1))) {
+					throw new MalformedInputException(1);
+				}
+				int codePoint = Character.toCodePoint(c, text.charAt(++i));
+				stringBuffer[bytes++] = (byte) (0xf0 | codePoint >> 18);
+				stringBuffer[bytes++] = (byte) (0x80 | codePoint >> 12 & 0x3f);
+				stringBuffer[bytes++] = (byte) (0x80 | codePoint >> 6 & 0x3f);
+				stringBuffer[bytes++] = (byte) (0x80 | codePoint & 0x3f);
+			}
+		}
+		putInt(stringBuffer, offset, bytes - payload);
+		return bytes;
+	}
+
+	private void writeLargeString(String s) throws IOException {
+		int length = s.length();
+		if (length > Integer.MAX_VALUE / 3) {
+			// Preserve the published strict encoder's behavior for extreme-size inputs.
+			CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
+			ByteBuffer byteBuf = charsetEncoder.encode(CharBuffer.wrap(s));
+			out.writeInt(byteBuf.remaining());
+			out.write(byteBuf.array(), 0, byteBuf.remaining());
+			return;
+		}
+		int byteLength = utf8Length(s);
+		if (stringBuffer.length < Integer.BYTES + STRING_BUFFER_SIZE) {
+			// No staged record survives a large-string fallback; only the bounded chunk capacity is needed.
+			stringBuffer = new byte[Integer.BYTES + STRING_BUFFER_SIZE];
+		}
+		out.writeInt(byteLength);
+		int capacity = stringBuffer.length - Integer.BYTES;
+		if (byteLength == length) {
+			// Every non-ASCII code point adds bytes, so equality proves that every code unit is ASCII.
+			int offset = 0;
+			while (offset < length) {
+				int count = Math.min(capacity, length - offset);
+				for (int i = 0; i < count; i++) {
+					stringBuffer[i] = (byte) s.charAt(offset + i);
+				}
+				out.write(stringBuffer, 0, count);
+				offset += count;
+			}
+			return;
+		}
+		int i = 0;
+		while (i < length) {
+			int bytes = 0;
+			while (i < length && capacity - bytes >= 4) {
+				// Each iteration emits at most four bytes. A validated pair may consume one extra code unit
+				// across end, but cannot increase the number of iterations or exceed this byte budget.
+				int end = i + Math.min(length - i, (capacity - bytes) / 4);
+				for (; i < end; i++) {
+					char c = s.charAt(i);
+					if (c < 0x80) {
+						stringBuffer[bytes++] = (byte) c;
+					} else if (c < 0x800) {
+						stringBuffer[bytes++] = (byte) (0xc0 | c >> 6);
+						stringBuffer[bytes++] = (byte) (0x80 | c & 0x3f);
+					} else if (!Character.isSurrogate(c)) {
+						stringBuffer[bytes++] = (byte) (0xe0 | c >> 12);
+						stringBuffer[bytes++] = (byte) (0x80 | c >> 6 & 0x3f);
+						stringBuffer[bytes++] = (byte) (0x80 | c & 0x3f);
+					} else {
+						int codePoint = Character.toCodePoint(c, s.charAt(++i));
+						stringBuffer[bytes++] = (byte) (0xf0 | codePoint >> 18);
+						stringBuffer[bytes++] = (byte) (0x80 | codePoint >> 12 & 0x3f);
+						stringBuffer[bytes++] = (byte) (0x80 | codePoint >> 6 & 0x3f);
+						stringBuffer[bytes++] = (byte) (0x80 | codePoint & 0x3f);
+					}
+				}
+			}
+			out.write(stringBuffer, 0, bytes);
+		}
+	}
+
+	/**
+	 * Validate before any string framing is published. The caller bounds the input length to Integer.MAX_VALUE / 3, so
+	 * the UTF-8 byte count cannot overflow.
+	 */
+	private static int utf8Length(String s) throws MalformedInputException {
+		int length = s.length();
+		int bytes = length;
+		for (int i = 0; i < length; i++) {
+			char c = s.charAt(i);
+			if (c < 0x80) {
+				continue;
+			}
+			if (c < 0x800) {
+				bytes++;
+			} else {
+				if (Character.isSurrogate(c)) {
 					if (!Character.isHighSurrogate(c) || i + 1 == length
 							|| !Character.isLowSurrogate(s.charAt(i + 1))) {
 						throw new MalformedInputException(1);
 					}
-					int codePoint = Character.toCodePoint(c, s.charAt(++i));
-					stringBuffer[bytes++] = (byte) (0xf0 | codePoint >> 18);
-					stringBuffer[bytes++] = (byte) (0x80 | codePoint >> 12 & 0x3f);
-					stringBuffer[bytes++] = (byte) (0x80 | codePoint >> 6 & 0x3f);
-					stringBuffer[bytes++] = (byte) (0x80 | codePoint & 0x3f);
+					i++;
 				}
+				// A pair's two UTF-16 units were both included in the initial count.
+				bytes += 2;
 			}
-			writeBufferedString(bytes - 4);
-			return;
 		}
-		// Retain strict malformed-input handling for strings too large for the fixed scratch buffer.
-		ByteBuffer byteBuf = charsetEncoder.encode(CharBuffer.wrap(s));
-		out.writeInt(byteBuf.remaining());
-		out.write(byteBuf.array(), 0, byteBuf.remaining());
+		return bytes;
 	}
 
 	@Override
