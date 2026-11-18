@@ -12,32 +12,139 @@
 package org.eclipse.rdf4j.federated.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.FilterExpr;
 import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
+import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class QueryStringUtilTest {
+
+	@Test
+	void legacyBoundJoinKeepsItsIndexWhenOnlyCallerInputUsesThatName() {
+		var pattern = new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		var input = new QueryBindingSet();
+		input.addBinding("__index", Values.literal("caller"));
+		var query = QueryStringUtil.selectQueryStringBoundJoinVALUES(pattern, List.of(input), null,
+				new AtomicBoolean(), null);
+		assertThat(parse(query).getBindingNames()).contains("__index");
+
+		var remote = new QueryBindingSet();
+		remote.addBinding("__index", Values.literal("0"));
+		remote.addBinding("object", Values.literal("matched"));
+		try (var converted = new BoundJoinVALUESConversionIteration(
+				new CloseableIteratorIteration<>(List.<BindingSet>of(remote).iterator()), List.of(input))) {
+			assertThat(converted.next().getValue("__index")).isEqualTo(Values.literal("caller"));
+		}
+	}
+
+	@Test
+	void legacyBoundJoinRejectsAnIndexVariableAndPointsToMetadataApi() {
+		var pattern = new StatementPattern(Var.of("__index"), Var.of("predicate"), Var.of("object"));
+		assertThatThrownBy(() -> QueryStringUtil.selectQueryStringBoundJoinVALUES(pattern,
+				List.of(new QueryBindingSet()), null, new AtomicBoolean(), null))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("renderBoundJoinVALUES");
+	}
+
+	@Test
+	public void filterDependingOnRuntimeInputIsNotSentWithoutThatBinding() throws Exception {
+		StatementPattern statement = new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		FilterExpr filter = new FilterExpr(new Compare(Var.of("object"), new ValueConstant(Values.literal(5)),
+				Compare.CompareOp.GT), new HashSet<>(Set.of("object")));
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("object", Values.literal(10));
+		AtomicBoolean evaluated = new AtomicBoolean();
+
+		String query = QueryStringUtil.selectQueryString(statement, input, filter, evaluated, null);
+
+		assertThat(evaluated).isFalse();
+		assertThat(query).doesNotContain("FILTER");
+		parse(query);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nativeAndOrdinaryRenderingKeepRuntimeDependentGroupFiltersLocal(boolean nativeBindings) throws Exception {
+		ExclusiveStatement statement = selectedPhysicalAlias();
+		QueryInfo info = mock(QueryInfo.class, RETURNS_DEEP_STUBS);
+		ExclusiveGroup group = new ExclusiveGroup(List.of(statement), statement.getOwner(), info);
+		FilterExpr filter = new FilterExpr(new Compare(Var.of("object"), new ValueConstant(Values.literal(5)),
+				Compare.CompareOp.GT), new HashSet<>(Set.of("object")));
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("object", Values.literal(10));
+		AtomicBoolean evaluated = new AtomicBoolean();
+
+		String query = nativeBindings
+				? QueryStringUtil.selectQueryString(group, input, filter, evaluated, null, new QueryBindingSet())
+				: QueryStringUtil.selectQueryString(group, input, filter, evaluated, null);
+
+		assertThat(evaluated).isFalse();
+		assertThat(query).doesNotContain("?object");
+		parse(query);
+	}
+
+	@Test
+	void unrelatedRuntimeInputKeepsRemoteFilterPushdown() throws Exception {
+		StatementPattern statement = new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		FilterExpr filter = new FilterExpr(new Compare(Var.of("object"), new ValueConstant(Values.literal(5)),
+				Compare.CompareOp.GT), new HashSet<>(Set.of("object")));
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("entry", Values.literal(10));
+		AtomicBoolean evaluated = new AtomicBoolean();
+
+		String query = QueryStringUtil.selectQueryString(statement, input, filter, evaluated, null);
+
+		assertThat(evaluated).isTrue();
+		assertThat(query).contains("FILTER");
+		parse(query);
+	}
+
+	@Test
+	void capturedVariableValueNeedsRuntimeRestorationAfterRemoteRendering() throws Exception {
+		StatementPattern pattern = new StatementPattern(Var.of("subject"), Var.of("predicate"),
+				Var.of("object", Values.literal("captured")));
+		assertThat(pattern.getObjectVar().isConstant()).isFalse();
+
+		String query = QueryStringUtil.selectQueryString(pattern, new QueryBindingSet(), null,
+				new AtomicBoolean(), null);
+
+		assertThat(query).contains("captured");
+		assertThat(parse(query).getBindingNames()).containsExactlyInAnyOrder("subject", "predicate");
+	}
 
 	@Test
 	public void directedLanguageLiteralIncludesBaseDirection() {

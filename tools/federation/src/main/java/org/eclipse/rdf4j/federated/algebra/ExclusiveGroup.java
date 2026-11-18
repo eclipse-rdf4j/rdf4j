@@ -32,6 +32,10 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +48,7 @@ import org.slf4j.LoggerFactory;
  *
  */
 public class ExclusiveGroup extends AbstractQueryModelNode
-		implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr, ExecutionDatasetAware {
+		implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr, ExecutionDatasetAware, BindingAnalysisContract {
 	private static final long serialVersionUID = 9215353191021766797L;
 
 	private static final Logger log = LoggerFactory.getLogger(ExclusiveGroup.class);
@@ -100,6 +104,11 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		if (current == filterExpr) {
+			filterExpr = (FilterValueExpr) replacement;
+			replacement.setParentNode(this);
+			return;
+		}
 		int index = owned.indexOf(current);
 		if (index < 0) {
 			throw new IllegalArgumentException("Not a child: " + current);
@@ -139,8 +148,35 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 		}
 		clone.freeVars = new HashSet<>(freeVars);
 		clone.filterExpr = filterExpr == null ? null : (FilterValueExpr) filterExpr.clone();
+		if (clone.filterExpr != null) {
+			clone.filterExpr.setParentNode(clone);
+		}
 		clone.boundFilters = boundFilters == null ? null : new QueryBindingSet(boundFilters);
 		return clone;
+	}
+
+	@Override
+	public Class<? extends QueryModelNode> bindingContractClass() {
+		return ExclusiveGroup.class;
+	}
+
+	private OutputFacts matchedFacts(QueryAlgebraBindingAnalysis analysis, ReadOnlyContext input) {
+		return analysis.naryJoinFacts(this, owned, input, ignored -> true);
+	}
+
+	@Override
+	public OutputFacts bindingOutput(QueryAlgebraBindingAnalysis analysis, ReadOnlyContext input) {
+		return analysis.withRequiredBindings(matchedFacts(analysis, input), boundFilters, input);
+	}
+
+	@Override
+	public ReadOnlyContext bindingInput(QueryAlgebraBindingAnalysis analysis, QueryModelNode child,
+			ReadOnlyContext input) {
+		if (child == filterExpr) {
+			return analysis.withOutput(input, analysis.withRequiredBindings(matchedFacts(analysis, input), boundFilters,
+					input));
+		}
+		return input;
 	}
 
 	@Override
@@ -201,16 +237,18 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	@Override
 	public void addFilterExpr(FilterExpr expr) {
+		FilterExpr owned = expr.clone();
 
 		if (filterExpr == null) {
-			filterExpr = expr;
+			filterExpr = owned;
 		} else if (filterExpr instanceof ConjunctiveFilterExpr) {
-			((ConjunctiveFilterExpr) filterExpr).addExpression(expr);
+			((ConjunctiveFilterExpr) filterExpr).addExpression(owned);
 		} else if (filterExpr instanceof FilterExpr) {
-			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, expr);
+			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, owned);
 		} else {
 			throw new RuntimeException("Unexpected type: " + filterExpr.getClass().getCanonicalName());
 		}
+		filterExpr.setParentNode(this);
 
 	}
 

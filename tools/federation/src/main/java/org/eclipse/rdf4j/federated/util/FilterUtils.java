@@ -92,29 +92,17 @@ public class FilterUtils {
 	}
 
 	public static ValueExpr toFilter(FilterExpr filterExpr) throws FilterConversionException {
-		return filterExpr.getExpression();
+		return filterExpr.getExpression().clone();
 	}
 
 	public static ValueExpr toFilter(ConjunctiveFilterExpr filterExpr) throws FilterConversionException {
 		List<FilterExpr> expressions = filterExpr.getExpressions();
 
-		if (expressions.size() == 2) {
-			return new And(expressions.get(0).getExpression(), expressions.get(0).getExpression());
+		ValueExpr result = toFilter(expressions.getLast());
+		for (int index = expressions.size() - 2; index >= 0; index--) {
+			result = new And(toFilter(expressions.get(index)), result);
 		}
-
-		And and = new And();
-		and.setLeftArg(expressions.get(0).getExpression());
-		And tmp = and;
-		int idx;
-		for (idx = 1; idx < expressions.size() - 1; idx++) {
-			And _a = new And();
-			_a.setLeftArg(expressions.get(idx).getExpression());
-			tmp.setRightArg(_a);
-			tmp = _a;
-		}
-		tmp.setRightArg(expressions.get(idx).getExpression());
-
-		return and;
+		return result;
 	}
 
 	protected static void append(ValueExpr expr, StringBuilder sb) throws FilterConversionException {

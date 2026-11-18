@@ -23,6 +23,11 @@ import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 
 /**
  * A join group around a {@link TripleRefStatementPattern}: besides the {@link TripleRefStatementPattern} it contains
@@ -31,7 +36,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
  * {@link TripleRefJoinGroup} can be associated to multiple {@link StatementSource}s, where on each it gets executed in
  * a single expression.
  */
-public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTupleExpr, ExecutionDatasetAware {
+public class TripleRefJoinGroup extends AbstractQueryModelNode
+		implements FedXTupleExpr, ExecutionDatasetAware, BindingAnalysisContract {
 
 	private static final long serialVersionUID = 3505148693453950138L;
 
@@ -40,8 +46,6 @@ public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTu
 	private final List<StatementSource> statementSources;
 	private final QueryInfo queryInfo;
 
-	private Set<String> assuredBindingNames;
-	private List<String> freeVars;
 	private Dataset executionDataset;
 	private ResolvedGraphSelection graphSelection;
 
@@ -57,18 +61,35 @@ public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTu
 	}
 
 	@Override
+	public Class<? extends QueryModelNode> bindingContractClass() {
+		return TripleRefJoinGroup.class;
+	}
+
+	@Override
+	public OutputFacts bindingOutput(QueryAlgebraBindingAnalysis analysis, ReadOnlyContext input) {
+		List<TupleExpr> patterns = new ArrayList<>(stmts.size() + 1);
+		patterns.add(tripleRef);
+		patterns.addAll(stmts);
+		return analysis.naryJoinFacts(this, patterns, input, ignored -> true);
+	}
+
+	@Override
+	public ReadOnlyContext bindingInput(QueryAlgebraBindingAnalysis analysis, QueryModelNode child,
+			ReadOnlyContext input) {
+		return input;
+	}
+
+	@Override
 	public Set<String> getBindingNames() {
 		return getAssuredBindingNames();
 	}
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		if (assuredBindingNames == null) {
-			assuredBindingNames = new HashSet<>();
-			assuredBindingNames.addAll(tripleRef.getAssuredBindingNames());
-			stmts.forEach(st -> assuredBindingNames.addAll(st.getAssuredBindingNames()));
-		}
-		return assuredBindingNames;
+		// Nested statement or triple component rewrites do not notify this group.
+		Set<String> names = new HashSet<>(tripleRef.getAssuredBindingNames());
+		stmts.forEach(st -> names.addAll(st.getAssuredBindingNames()));
+		return names;
 	}
 
 	public List<StatementSource> getStatementSources() {
@@ -110,25 +131,19 @@ public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTu
 		} else if (!replaceNodeInList(stmts, current, replacement)) {
 			throw new IllegalArgumentException("Node is not a child node: " + current);
 		}
-		assuredBindingNames = null;
-		freeVars = null;
 	}
 
 	@Override
 	public List<String> getFreeVars() {
-		if (freeVars == null) {
-			Set<String> freeVarsSet = new HashSet<>();
-			freeVarsSet.addAll(tripleRef.getFreeVars());
-			for (var st : stmts) {
-				if (st instanceof VariableExpr e) {
-					freeVarsSet.addAll(e.getFreeVars());
-				} else {
-					freeVarsSet.addAll(QueryAlgebraUtil.getFreeVars(st));
-				}
+		Set<String> freeVarsSet = new HashSet<>(tripleRef.getFreeVars());
+		for (var st : stmts) {
+			if (st instanceof VariableExpr e) {
+				freeVarsSet.addAll(e.getFreeVars());
+			} else {
+				freeVarsSet.addAll(QueryAlgebraUtil.getFreeVars(st));
 			}
-			freeVars = new ArrayList<String>(freeVarsSet);
 		}
-		return freeVars;
+		return new ArrayList<>(freeVarsSet);
 	}
 
 	@Override
@@ -167,8 +182,6 @@ public class TripleRefJoinGroup extends AbstractQueryModelNode implements FedXTu
 			copy.setParentNode(clone);
 			clone.stmts.add(copy);
 		}
-		clone.assuredBindingNames = null;
-		clone.freeVars = null;
 		return clone;
 	}
 }

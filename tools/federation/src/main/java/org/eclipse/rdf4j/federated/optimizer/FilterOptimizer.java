@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.federated.algebra.FilterTuple;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -400,6 +401,9 @@ public class FilterOptimizer extends AbstractSimpleQueryModelVisitor<Optimizatio
 			if (isVarLeft && cmp.getRightArg() instanceof ValueConstant) {
 				String varName = ((Var) cmp.getLeftArg()).getName();
 				Value value = ((ValueConstant) cmp.getRightArg()).getValue();
+				if (!(value instanceof Resource)) {
+					return false;
+				}
 				filterTuple.addBoundFilter(varName, value);
 				return true;
 			}
@@ -407,6 +411,9 @@ public class FilterOptimizer extends AbstractSimpleQueryModelVisitor<Optimizatio
 			if (isVarRight && cmp.getLeftArg() instanceof ValueConstant) {
 				String varName = ((Var) cmp.getRightArg()).getName();
 				Value value = ((ValueConstant) cmp.getLeftArg()).getValue();
+				if (!(value instanceof Resource)) {
+					return false;
+				}
 				filterTuple.addBoundFilter(varName, value);
 				return true;
 			}

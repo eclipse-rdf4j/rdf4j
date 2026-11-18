@@ -54,7 +54,6 @@ public class FilteringInsertBindingsIteration implements CooperativeCancellation
 
 	@Override
 	public BindingSet next() throws QueryEvaluationException {
-		BindingSet res1;
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -64,16 +63,11 @@ public class FilteringInsertBindingsIteration implements CooperativeCancellation
 
 		if (result != null) {
 			nextElement = null;
-			res1 = result;
+			return result;
 		} else {
 			close();
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
-		BindingSet next = res1;
-		QueryBindingSet res = new QueryBindingSet(bindings.size() + next.size());
-		res.addAll(bindings);
-		res.addAll(next);
-		return res;
 	}
 
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
@@ -130,7 +124,9 @@ public class FilteringInsertBindingsIteration implements CooperativeCancellation
 					close();
 					throw e;
 				}
-				BindingSet candidate = result;
+				QueryBindingSet candidate = new QueryBindingSet(bindings.size() + result.size());
+				candidate.addAll(bindings);
+				candidate.addAll(result);
 
 				if (accept(candidate)) {
 					nextElement = candidate;

@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.federated.algebra.GraphSelectionAware;
 import org.eclipse.rdf4j.federated.algebra.QueryRef;
 import org.eclipse.rdf4j.federated.algebra.TripleRefJoinGroup;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
+import org.eclipse.rdf4j.federated.util.BoundFilterUtil;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -49,7 +50,8 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 final class NativeGraphQuery {
 
 	record Prepared(String queryString, BindingSet graphBindings, BindingSet resultBindings,
-			FilterValueExpr filter, boolean existenceCheck, Dataset dataset, Set<Value> selectedGraphIdentities) {
+			FilterValueExpr filter, boolean existenceCheck, Dataset dataset, Set<Value> selectedGraphIdentities,
+			boolean compatible, boolean validValuePositions, String rowIndexName) {
 	}
 
 	private NativeGraphQuery() {
@@ -107,28 +109,34 @@ final class NativeGraphQuery {
 	}
 
 	static Prepared select(TupleExpr expression, BindingSet bindings, Dataset dataset) {
+		var compatibleBindings = BoundFilterUtil.mergeValues(bindings, expression);
+		if (compatibleBindings.isEmpty()) {
+			return new Prepared("", EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance(), null, false, dataset,
+					Set.of(), false, false, null);
+		}
+		BindingSet selectedBindings = compatibleBindings.get();
+
 		FilterValueExpr filter = expression instanceof FilterTuple filtered ? filtered.getFilterExpr() : null;
 		QueryBindingSet graphBindings = new QueryBindingSet();
-		QueryBindingSet resultBindings = new QueryBindingSet(bindings);
-		if (expression instanceof FilterTuple filtered && filtered.getBoundFilters() != null) {
-			resultBindings.addAll(filtered.getBoundFilters());
-		}
+		QueryBindingSet resultBindings = new QueryBindingSet(selectedBindings);
 		AtomicBoolean evaluated = new AtomicBoolean();
 		String text;
 		boolean existenceCheck = false;
 		try {
 			if (expression instanceof ExclusiveGroup group) {
-				text = QueryStringUtil.selectQueryString(group, bindings, filter, evaluated, null, graphBindings);
+				text = QueryStringUtil.selectQueryString(group, selectedBindings, filter, evaluated, null,
+						graphBindings);
 			} else if (expression instanceof StatementPattern statement) {
-				text = QueryStringUtil.selectQueryString(statement, bindings, filter, evaluated, null,
+				text = QueryStringUtil.selectQueryString(statement, selectedBindings, filter, evaluated, null,
 						graphBindings);
 			} else if (expression instanceof ExclusiveTupleExprRenderer renderer) {
-				text = QueryStringUtil.selectQueryString(renderer, bindings, filter, evaluated, null, graphBindings);
+				text = QueryStringUtil.selectQueryString(renderer, selectedBindings, filter, evaluated, null,
+						graphBindings);
 			} else {
 				TripleRefJoinGroup group = (TripleRefJoinGroup) expression;
-				text = QueryStringUtil.selectQueryStringTripleRefJoinGroup(group, bindings,
-						null, graphBindings);
-				existenceCheck = group.getFreeVars().stream().allMatch(bindings::hasBinding);
+				var rendered = QueryStringUtil.renderTripleRefJoinGroup(group, selectedBindings, null, graphBindings);
+				text = rendered.queryString();
+				existenceCheck = rendered.bindingNames().isEmpty();
 				if (existenceCheck) {
 					text += " LIMIT 1";
 				}
@@ -138,9 +146,9 @@ final class NativeGraphQuery {
 			graphBindings.removeAll(List.copyOf(graphBindings.getBindingNames()));
 			existenceCheck = true;
 			if (expression instanceof StatementPattern statement) {
-				text = QueryStringUtil.selectQueryStringLimit1(statement, bindings, null, graphBindings);
+				text = QueryStringUtil.selectQueryStringLimit1(statement, selectedBindings, null, graphBindings);
 			} else if (expression instanceof ExclusiveTupleExpr exclusive) {
-				text = QueryStringUtil.selectQueryStringLimit1(exclusive, bindings, null, graphBindings);
+				text = QueryStringUtil.selectQueryStringLimit1(exclusive, selectedBindings, null, graphBindings);
 			} else {
 				throw new QueryEvaluationException("Cannot prepare selected graph expression "
 						+ expression.getClass().getName(), fullyBound);
@@ -150,26 +158,27 @@ final class NativeGraphQuery {
 			filter.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
 				public void meet(Var variable) {
-					if (!variable.hasValue() && bindings.hasBinding(variable.getName())) {
-						graphBindings.setBinding(variable.getName(), bindings.getValue(variable.getName()));
+					if (!variable.hasValue() && selectedBindings.hasBinding(variable.getName())) {
+						graphBindings.setBinding(variable.getName(), selectedBindings.getValue(variable.getName()));
 					}
 				}
 			});
 		}
 		return new Prepared(text, graphBindings, resultBindings, evaluated.get() ? null : filter, existenceCheck,
-				dataset, selectedGraphIdentities(expression));
+				dataset, selectedGraphIdentities(expression), true,
+				BoundFilterUtil.hasValidValuePositions(expression, selectedBindings), null);
 	}
 
 	static Prepared boundJoin(StatementPattern statement, List<BindingSet> bindings) {
 		QueryBindingSet graphBindings = new QueryBindingSet();
 		FilterValueExpr filter = statement instanceof FilterTuple filtered ? filtered.getFilterExpr() : null;
-		String text = QueryStringUtil.selectQueryStringBoundJoinVALUES(statement, bindings, filter,
+		var rendered = QueryStringUtil.renderBoundJoinVALUES(statement, bindings, filter,
 				new AtomicBoolean(), null,
 				graphBindings);
 		// Batched filters run after row-index conversion, where all original input bindings are available.
-		return new Prepared(text, graphBindings, EmptyBindingSet.getInstance(), null, false,
+		return new Prepared(rendered.queryString(), graphBindings, EmptyBindingSet.getInstance(), null, false,
 				statement instanceof QueryRef query ? query.getExecutionDataset() : null,
-				selectedGraphIdentities(statement));
+				selectedGraphIdentities(statement), true, true, rendered.rowIndexName());
 	}
 
 	/** Exact values already selected by GRAPH can be attributed to the member that evaluates their native binding. */
@@ -190,6 +199,11 @@ final class NativeGraphQuery {
 	static boolean requiresScalarBindings(StatementPattern statement, List<BindingSet> bindings) {
 		var variables = QueryAlgebraUtil.getFreeVars(statement);
 		for (BindingSet row : bindings) {
+			if (isRequired(statement, row) && !BoundFilterUtil.hasValidValuePositions(statement, row)) {
+				// A native identity boundary remains observable even for a row that cannot match. Do not let
+				// batched type pruning bypass validation of scoped terms or selected graph metadata.
+				return true;
+			}
 			for (Binding binding : row) {
 				if (RemoteGraphSnapshot.isScoped(binding.getValue())) {
 					return true;

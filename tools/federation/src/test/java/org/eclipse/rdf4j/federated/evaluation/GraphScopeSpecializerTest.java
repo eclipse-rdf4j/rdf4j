@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -46,11 +48,51 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.ActiveGraph;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class GraphScopeSpecializerTest {
+	@Test
+	void nativeBatchedQueryCarriesANonCollidingPrivateRowIndex() {
+		var values = SimpleValueFactory.getInstance();
+		var statement = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("__index"),
+				Var.of("predicate", values.createIRI("urn:p"), true, true), Var.of("object"),
+				Var.of("graph", values.createBNode("native"), true, true));
+		var input = new QueryBindingSet();
+		input.addBinding("__index", values.createIRI("urn:s"));
+		input.addBinding("__fedx_index_0", values.createLiteral("caller"));
+
+		var prepared = NativeGraphQuery.boundJoin(statement, List.of(input, input));
+		assertThat(prepared.rowIndexName()).isNotEqualTo("__index").isNotEqualTo("__fedx_index_0");
+		assertThat(prepared.graphBindings().getBindingNames()).doesNotContain(prepared.rowIndexName());
+		assertThatCode(() -> QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, prepared.queryString(), null))
+				.doesNotThrowAnyException();
+	}
+
+	@Test
+	void tripleRefNativeQueryDoesNotTreatAFreeGraphAsAnExistenceProbe() {
+		var values = SimpleValueFactory.getInstance();
+		var query = mock(QueryInfo.class, RETURNS_DEEP_STUBS);
+		var outer = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s", values.createIRI("urn:s")), Var.of("p", values.createIRI("urn:p")),
+				Var.of("privateTriple"), Var.of("graph"));
+		var triple = new TripleRef(Var.of("innerS", values.createIRI("urn:is")),
+				Var.of("innerP", values.createIRI("urn:ip")), Var.of("innerO", values.createLiteral("io")),
+				Var.of("privateTriple"));
+		var expression = new TripleRefStatementPattern(outer, triple, query);
+		var related = new StatementPattern(Var.of("s", values.createIRI("urn:s")),
+				Var.of("q", values.createIRI("urn:q")), Var.of("other", values.createLiteral("other")));
+		var group = new TripleRefJoinGroup(expression, List.of(related), List.of(), query);
+
+		var prepared = NativeGraphQuery.select(group, EmptyBindingSet.getInstance());
+		assertThat(prepared.queryString()).contains("?graph");
+		assertThat(prepared.existenceCheck()).isFalse();
+	}
+
 	@Test
 	void alreadyNamedPathDoesNotReceiveOuterGraphSelection() {
 		IRI nestedGraph = SimpleValueFactory.getInstance().createIRI("urn:namedPathGraph");
