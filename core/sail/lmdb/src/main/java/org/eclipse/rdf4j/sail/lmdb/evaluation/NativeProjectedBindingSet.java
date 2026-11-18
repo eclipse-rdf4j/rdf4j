@@ -313,8 +313,9 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	private Value findMaterializedDuplicate(int index) {
 		long id = ids[index];
+		int positionMask = positionMasks[index];
 		for (int i = 0; i < values.length; i++) {
-			if (i != index && ids[i] == id && positionMasks[i] == positionMasks[index] && values[i] != null) {
+			if (i != index && ids[i] == id && positionMasks[i] == positionMask && values[i] != null) {
 				return values[i];
 			}
 		}

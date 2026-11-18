@@ -6702,11 +6702,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				return entry.value;
 			}
 		}
-		CanonicalValueEntry canonical = canonicalValue(caches, idx, id);
-		if (canonical != null && canonical.id == id && canonical.isCurrent() && canonical.value.isInitialized()) {
+		LmdbValue canonical = canonicalValue(arrays, idx, id);
+		if (canonical != null && canonical.isInitialized()) {
 			// A ready parent can retain cold children and therefore have no completed-payload cache entry.
 			// Eager and lazy lookup still share its canonical shell in this exact dictionary cache epoch.
-			return canonical.value;
+			return canonical;
 		}
 		return null;
 	}
@@ -7026,9 +7026,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		ValueCacheEpoch caches = valueCaches;
 		int idx = valueCacheIndex(id, valueRevision.getPositionMask());
 		boolean currentEpoch = idx >= 0 && caches.revision == completedRevision(valueRevision);
-		CanonicalValueEntry previous = currentEpoch ? canonicalValue(caches, idx, id) : null;
-		if (previous != null && previous.id == id && previous.isCurrent()) {
-			return outwardLookup ? previous.value : finishLazyLookup(previous.value, valueRevision, exposure);
+		LmdbValue canonical = currentEpoch ? canonicalValue(caches.arrays, idx, id) : null;
+		if (canonical != null) {
+			return outwardLookup ? canonical : finishLazyLookup(canonical, valueRevision, exposure);
 		}
 		LmdbValue cached = cachedValue(id, valueRevision);
 		if (cached != null) {
@@ -7036,12 +7036,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			LmdbValue published = currentEpoch ? publishCanonicalValue(caches, idx, id, cached) : cached;
 			return outwardLookup ? published : finishLazyLookup(published, valueRevision, exposure);
 		}
-		return createLazyValue(id, valueRevision, outwardLookup, exposure, caches, currentEpoch, idx, previous);
+		return createLazyValue(id, valueRevision, outwardLookup, exposure, caches, currentEpoch, idx);
 	}
 
 	private LmdbValue createLazyValue(long id, ValueStoreRevision valueRevision, boolean outwardLookup,
-			ValueResolutionScope exposure, ValueCacheEpoch caches, boolean currentEpoch, int idx,
-			CanonicalValueEntry previous) throws IOException {
+			ValueResolutionScope exposure, ValueCacheEpoch caches, boolean currentEpoch, int idx) throws IOException {
 		valueRevision = scopedRevision(valueRevision, exposure);
 		int idType = ValueIds.getIdType(id);
 		LmdbValue value = switch (idType) {
@@ -7077,8 +7076,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return value;
 	}
 
-	private CanonicalValueEntry canonicalValue(ValueCacheEpoch caches, int idx, long id) {
-		ValueCacheArrays arrays = caches.arrays;
+	private LmdbValue canonicalValue(ValueCacheArrays arrays, int idx, long id) {
 		if (arrays == null) {
 			return null;
 		}
@@ -7086,7 +7084,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(arrays.canonical,
 					idx + way);
 			if (entry != null && entry.id == id && entry.isCurrent()) {
-				return entry;
+				return entry.value;
 			}
 		}
 		return null;
