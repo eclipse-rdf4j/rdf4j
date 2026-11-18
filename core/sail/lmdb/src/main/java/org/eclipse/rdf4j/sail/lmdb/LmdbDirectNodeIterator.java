@@ -13,6 +13,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * FULL-coverage bound-node/unbound-predicate enumeration over one plane (plan 27): a k-way merge of the base header's
@@ -52,7 +55,8 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 
 	private final long[] entry = new long[2];
 	private final long[] quad = new long[4];
-	private final LmdbAdjacencyRunCodec.RunCursor runCursor = new LmdbAdjacencyRunCodec.RunCursor();
+	private final LmdbAdjacencyRunCodec.RunCursor runCursor = new LmdbAdjacencyRunCodec.RunCursor(
+			this::pollCancellation);
 
 	private long baseIndex;
 	private long[] basePredicateChunk;
@@ -67,7 +71,10 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	private long[] contextChunk;
 	private long chunkStart;
 	private int chunkLength;
-	private boolean closed;
+	private int cancellationTick;
+	private volatile boolean closed;
+	private CursorCancellation cancellation;
+	private volatile boolean cancellationRequested;
 
 	/**
 	 * Retains one view lease for this iterator and releases it if construction fails. The caller has already proven
@@ -92,10 +99,17 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 
 	LmdbDirectNodeIterator(LmdbAdjacencyReadView view, int plane, long key, long boundContext, int direction,
 			long boundNeighbor, InconsistencyListener inconsistencyListener) {
+		this(view, plane, key, boundContext, direction, boundNeighbor, inconsistencyListener, null);
+	}
+
+	LmdbDirectNodeIterator(LmdbAdjacencyReadView view, int plane, long key, long boundContext, int direction,
+			long boundNeighbor, InconsistencyListener inconsistencyListener, CursorCancellation cancellation) {
+		this.cancellation = cancellation == null ? null : cancellation.forWorker();
 		this.boundNeighbor = boundNeighbor;
 		this.inconsistencyListener = inconsistencyListener;
 		view.retainLease();
 		try {
+			checkpointCancellation();
 			this.view = view;
 			LmdbAdjacencyPublishedState state = view.state();
 			this.base = state.base();
@@ -120,6 +134,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 			int count = overlays == null ? 0 : overlays.generationCount();
 			int applicable = 0;
 			for (int i = 0; i < count; i++) {
+				pollCancellation();
 				if (overlays.generation(i).revision() <= view.snapshotRevision()) {
 					applicable++;
 				}
@@ -129,6 +144,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 			this.generationEnds = new int[applicable];
 			int slot = 0;
 			for (int i = 0; i < count; i++) {
+				pollCancellation();
 				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
 				if (generation.revision() > view.snapshotRevision()) {
 					continue;
@@ -150,7 +166,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 				}
 			}
 		} catch (RuntimeException | Error e) {
-			view.releaseLease();
+			KernelRuntime.closeCursor(view::releaseLease, e);
 			throw e;
 		}
 	}
@@ -161,34 +177,80 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	}
 
 	@Override
+	public boolean requestCancellation() {
+		if (closed) {
+			return false;
+		}
+		cancellationRequested = true;
+		return true;
+	}
+
+	private void enterCancellation() {
+		if (cancellation != null) {
+			cancellation = cancellation.forWorker();
+		}
+		checkpointCancellation();
+	}
+
+	private void checkpointCancellation() {
+		if (cancellationRequested) {
+			NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
+		}
+		if (cancellation != null) {
+			cancellation.checkpoint();
+		}
+	}
+
+	private void pollCancellation() {
+		if (cancellation != null) {
+			cancellation.poll();
+		}
+		if ((++cancellationTick & 1023) == 0) {
+			checkpointCancellation();
+		}
+	}
+
+	@Override
 	public long[] next() {
-		while (true) {
-			while (advanceCandidate()) {
-				int at = chunkIndexOf(pos);
-				long neighbor = neighborChunk[at];
-				if (boundNeighbor != -1L && neighbor != boundNeighbor) {
-					pos = end;
-					break;
+		if (closed) {
+			return null;
+		}
+		try {
+			enterCancellation();
+			while (true) {
+				while (advanceCandidate()) {
+					int at = chunkIndexOf(pos);
+					pollCancellation();
+					long neighbor = neighborChunk[at];
+					if (boundNeighbor != -1L && neighbor != boundNeighbor) {
+						pos = end;
+						break;
+					}
+					long context = contextChunk[at];
+					pos++;
+					if (boundContext >= 0 && context != boundContext) {
+						continue;
+					}
+					if (direction == LmdbDirectAdjacencyIterator.BY_SUBJECT) {
+						quad[TripleIndex.SUBJ_IDX] = key;
+						quad[TripleIndex.OBJ_IDX] = neighbor;
+					} else {
+						quad[TripleIndex.SUBJ_IDX] = neighbor;
+						quad[TripleIndex.OBJ_IDX] = key;
+					}
+					quad[TripleIndex.PRED_IDX] = rawPredicate;
+					quad[TripleIndex.CONTEXT_IDX] = context;
+					checkpointCancellation();
+					return quad;
 				}
-				long context = contextChunk[at];
-				pos++;
-				if (boundContext >= 0 && context != boundContext) {
-					continue;
+				if (!advanceGroup()) {
+					checkpointCancellation();
+					return null;
 				}
-				if (direction == LmdbDirectAdjacencyIterator.BY_SUBJECT) {
-					quad[TripleIndex.SUBJ_IDX] = key;
-					quad[TripleIndex.OBJ_IDX] = neighbor;
-				} else {
-					quad[TripleIndex.SUBJ_IDX] = neighbor;
-					quad[TripleIndex.OBJ_IDX] = key;
-				}
-				quad[TripleIndex.PRED_IDX] = rawPredicate;
-				quad[TripleIndex.CONTEXT_IDX] = context;
-				return quad;
 			}
-			if (!advanceGroup()) {
-				return null;
-			}
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeCursor(this, failure);
+			throw failure;
 		}
 	}
 
@@ -247,6 +309,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 
 	private boolean advanceGroup(boolean metadataOnly) {
 		while (true) {
+			pollCancellation();
 			long basePredicate = baseIndex < baseGroupCount ? basePredicateAt(baseIndex) : -1;
 			long chosen = -1;
 			boolean any = false;
@@ -255,6 +318,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 				any = true;
 			}
 			for (int i = 0; i < generations.length; i++) {
+				pollCancellation();
 				if (generationPositions[i] < generationEnds[i]) {
 					long candidate = generations[i].rowPredicateAt(generationPositions[i]);
 					if (!any || Long.compareUnsigned(candidate, chosen) < 0) {
@@ -270,6 +334,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 			boolean tombstone = false;
 			boolean resolvedFromGeneration = false;
 			for (int i = generations.length - 1; i >= 0; i--) {
+				pollCancellation();
 				if (generationPositions[i] < generationEnds[i]
 						&& generations[i].rowPredicateAt(generationPositions[i]) == chosen) {
 					if (!resolvedFromGeneration) {
@@ -387,6 +452,19 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 			inconsistencyListener.onNodePredicateInconsistency(message);
 		}
 		return new LmdbNodePredicateInconsistencyException(message);
+	}
+
+	@Override
+	public boolean seekForward(long subj, long pred, long obj, long context) {
+		if (!closed) {
+			try {
+				enterCancellation();
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
+			}
+		}
+		return false;
 	}
 
 	@Override

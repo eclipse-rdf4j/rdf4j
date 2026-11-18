@@ -620,7 +620,7 @@ final class LmdbNativeKernelExecution {
 			final String pathTag = route;
 			final long observedRowsForVariants = observedRows;
 			NativeExecutionPhaseEvent.kernelInput(lowered.kernel, lowered.bindings, row.cancellation);
-			probe = row.source.newProbe();
+			probe = row.source.newProbe(row.cursorCancellation());
 			typeMatrices = LmdbNativeKernelBindings.requestTypeMatrices(lowered.bindings, probe, row);
 			if (typeMatrices == null) {
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, route, "type-matrix-view-unavailable");
@@ -1618,7 +1618,7 @@ final class LmdbNativeKernelExecution {
 			final boolean interpretedVariants = interpretedExecution;
 
 			NativeExecutionPhaseEvent.kernelInput(lowered.kernel, lowered.bindings, row.cancellation);
-			probe = row.source.newProbe();
+			probe = row.source.newProbe(row.cursorCancellation());
 			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
 					.requestVariablePredicateViews(lowered.bindings, probe);
 			if (variableViews == null) {

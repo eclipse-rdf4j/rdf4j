@@ -15,6 +15,7 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** Fixed-size, two-arm statement-access arbitration with adjacency as the structural preference. */
 final class LmdbStatementAccessArbiter {
@@ -282,7 +283,9 @@ final class LmdbStatementAccessArbiter {
 	}
 
 	private static final class MeasuredRecordIterator implements RecordIterator {
-		private RecordIterator delegate;
+		private volatile RecordIterator delegate;
+		private long delegateGeneration;
+		private final RecordCursorCancellation selection = new RecordCursorCancellation();
 		private RuntimeEvidence evidence;
 		private long regime;
 		private int variantKey;
@@ -306,7 +309,6 @@ final class LmdbStatementAccessArbiter {
 			if (this.delegate != null) {
 				throw new IllegalStateException("measurement iterator is still open");
 			}
-			this.delegate = delegate;
 			this.evidence = evidence;
 			this.regime = regime;
 			this.variantKey = variantKey;
@@ -316,6 +318,26 @@ final class LmdbStatementAccessArbiter {
 			this.exhausted = false;
 			this.observer = observer;
 			this.adjacency = adjacency;
+			this.delegateGeneration = delegate.cancellationGeneration();
+			this.delegate = delegate;
+			selection.open();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			return requestCancellation(selection.generation());
+		}
+
+		@Override
+		public long cancellationGeneration() {
+			return selection.generation();
+		}
+
+		@Override
+		public boolean requestCancellation(long generation) {
+			RecordIterator current = delegate;
+			long childSelection = delegateGeneration;
+			return selection.isActive(generation) && RecordIterator.forwardCancellation(current, childSelection);
 		}
 
 		@Override
@@ -332,6 +354,12 @@ final class LmdbStatementAccessArbiter {
 					rows++;
 				}
 				return row;
+			} catch (RuntimeException | Error failure) {
+				long failedAt = System.nanoTime();
+				activeNanos += failedAt - started;
+				started = failedAt;
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
 			} finally {
 				activeNanos += System.nanoTime() - started;
 			}
@@ -350,6 +378,12 @@ final class LmdbStatementAccessArbiter {
 					exhausted = true;
 				}
 				return filled;
+			} catch (RuntimeException | Error failure) {
+				long failedAt = System.nanoTime();
+				activeNanos += failedAt - started;
+				started = failedAt;
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
 			} finally {
 				activeNanos += System.nanoTime() - started;
 			}
@@ -362,7 +396,14 @@ final class LmdbStatementAccessArbiter {
 			}
 			long started = System.nanoTime();
 			try {
-				return delegate.seekForward(subj, pred, obj, context);
+				boolean positioned = delegate.seekForward(subj, pred, obj, context);
+				return positioned;
+			} catch (RuntimeException | Error failure) {
+				long failedAt = System.nanoTime();
+				activeNanos += failedAt - started;
+				started = failedAt;
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
 			} finally {
 				activeNanos += System.nanoTime() - started;
 			}
@@ -390,6 +431,7 @@ final class LmdbStatementAccessArbiter {
 
 		@Override
 		public void close() {
+			selection.close();
 			RecordIterator owned = delegate;
 			delegate = null;
 			if (owned == null) {

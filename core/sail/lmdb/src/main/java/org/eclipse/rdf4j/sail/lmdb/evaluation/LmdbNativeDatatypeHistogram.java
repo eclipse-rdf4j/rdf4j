@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -235,7 +236,8 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 		}
 		NativeStructuralCounts acquired = null;
 		try {
-			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			try (NativeLmdbQuerySource.NativeProbe probe = source
+					.newProbe(NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
 				NativeLmdbQuerySource.DatatypeSummary summary = probe.nodeDomainDatatypeSummary(false, uniform -> {
 					cancellation.check();
 					BULK_LITERAL_HEADER_BATCHES.incrementAndGet();
@@ -318,7 +320,8 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 				return null;
 			}
 			histogram = new NativeStructuralCounts(source, cancellation, 1, false);
-			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			try (NativeLmdbQuerySource.NativeProbe probe = source
+					.newProbe(NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
 				histogram.reserveWorkspace(64L + (long) predicates.length * Long.BYTES);
 				DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation, histogram);
 				LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch(histogram);
@@ -603,7 +606,8 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 		}
 		NativeStructuralCounts histogram = null;
 		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, subj, pred, obj,
-				LmdbNativeAggregateCompiler.UNKNOWN, true)) {
+				LmdbNativeAggregateCompiler.UNKNOWN, true, null,
+				NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
 			if (cursor == null) {
 				return null;
 			}
@@ -683,6 +687,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 			}
 			List<Future<NativeStructuralCounts>> futures = new ArrayList<>(workers);
 			NativeCancellationToken workerCancellation = new NativeCancellationToken(cancellation);
+			CursorCancellation cursorOwner = NativeLmdbQuerySource.captureCursorCancellation(workerCancellation);
 			NativeStructuralCounts[] locals = new NativeStructuralCounts[workers];
 			NativeStructuralCounts merged = null;
 			Throwable workerFailure = null;
@@ -708,6 +713,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 										phaseIdentity);
 								NativeExecutionPhaseEvent.Span expressions = NativeExecutionPhaseEvent.startDetached(
 										"expressions", phaseIdentity)) {
+							CursorCancellation cursorCancellation = cursorOwner.forWorker();
 							DatatypeResolver resolver = new DatatypeResolver(workerSource, null, workerCancellation,
 									local);
 							LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch(local);
@@ -716,7 +722,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 								workerCancellation.check();
 								long[] lo = range == 0 ? null : splits[range - 1];
 								long[] hi = range == splits.length ? null : splits[range];
-								collectRange(workerSource, resolver, literalHeaders, lo, hi, local);
+								collectRange(workerSource, resolver, literalHeaders, lo, hi, local, cursorCancellation);
 							}
 							literalHeaders.flush(resolver, local);
 							workerCancellation.check();
@@ -771,11 +777,12 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 	}
 
 	private void collectRange(NativeLmdbQuerySource workerSource, DatatypeResolver resolver,
-			LiteralHeaderBatch literalHeaders, long[] lo, long[] hi, NativeStructuralCounts histogram)
+			LiteralHeaderBatch literalHeaders, long[] lo, long[] hi, NativeStructuralCounts histogram,
+			CursorCancellation cursorCancellation)
 			throws IOException {
 		resolver.cancellation.check();
 		try (LmdbPrefixRunCursor cursor = workerSource.prefixRuns(plan, subj, pred, obj,
-				LmdbNativeAggregateCompiler.UNKNOWN, true)) {
+				LmdbNativeAggregateCompiler.UNKNOWN, true, null, cursorCancellation)) {
 			if (cursor == null) {
 				throw new QueryEvaluationException("parallel datatype histogram worker could not open its cursor");
 			}

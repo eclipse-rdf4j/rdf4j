@@ -1457,7 +1457,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		long context = prefixPattern.c.lookup(row.slots);
 		NativeLmdbQuerySource.AdjacencyAccessObserver observer = row.runtimePlan == null ? null
 				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(prefixPattern, row.layout));
-		LmdbPrefixRunCursor cursor = row.source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false, observer);
+		LmdbPrefixRunCursor cursor = row.source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false, observer,
+				row.cursorCancellation());
 		if (cursor == null) {
 			return null;
 		}

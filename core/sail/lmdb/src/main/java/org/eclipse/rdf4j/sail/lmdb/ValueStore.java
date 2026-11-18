@@ -148,6 +148,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
@@ -11551,14 +11552,24 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	RecordIterator getTripleTerms(ReadSnapshot snapshot, long subj, long pred, long obj,
-			Consumer<RecordIterator> onClose) throws IOException {
-		RecordIterator iterator = getTripleTerms(snapshot, subj, pred, obj);
+			Consumer<RecordIterator> onClose, CursorCancellation cancellation) throws IOException {
+		RecordIterator iterator = getTripleTerms(snapshot, subj, pred, obj, cancellation);
 		return onClose == null ? iterator : new RecordIterator() {
 			private boolean closed;
 
 			@Override
 			public long[] next() {
 				return iterator.next();
+			}
+
+			@Override
+			public int fill(long[] buffer, int maxRows) {
+				return iterator.fill(buffer, maxRows);
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				return iterator.requestCancellation();
 			}
 
 			@Override
@@ -11576,6 +11587,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	RecordIterator getTripleTerms(ReadSnapshot snapshot, long subj, long pred, long obj) throws IOException {
+		return getTripleTerms(snapshot, subj, pred, obj, null);
+	}
+
+	RecordIterator getTripleTerms(ReadSnapshot snapshot, long subj, long pred, long obj,
+			CursorCancellation cancellation) throws IOException {
 		if (snapshot.valueStore() != this) {
 			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
 		}
@@ -11583,7 +11599,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		TripleIndex index = TripleIndex.getBestIndex(termIndexesForTransaction(snapshot.txnRef().nativeTransactionId()),
 				subj, pred, obj, -1);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
-		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, snapshot.txnRef(), snapshot);
+		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, snapshot.txnRef(), null, false,
+				null,
+				snapshot, cancellation);
 	}
 
 	/** Records IDs that may be reclaimed after the supplied TripleStore reader watermark has passed. */

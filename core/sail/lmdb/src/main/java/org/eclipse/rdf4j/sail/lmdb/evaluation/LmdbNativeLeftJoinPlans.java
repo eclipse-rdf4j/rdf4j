@@ -723,7 +723,7 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 		}
 		if (patternRight != null) {
 			if (rightProbe == null) {
-				rightProbe = row.source.newProbe();
+				rightProbe = row.source.newProbe(row.cursorCancellation());
 			}
 			if (patternCursor == null) {
 				patternCursor = new PatternCursor();
@@ -746,7 +746,7 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 			// instead of re-running the traversal, exactly like the inner-join cursor (eligibility mirrors
 			// JoinCursor.openRight: only when the replay tier has not claimed the right side)
 			if (rightProbe == null) {
-				rightProbe = row.source.newProbe();
+				rightProbe = row.source.newProbe(row.cursorCancellation());
 			}
 			if (!pathMemoInitialized) {
 				pathMemo = replaySlots == null ? PathResultMemo.tryCreate((PathPlan) right, row) : null;

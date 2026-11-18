@@ -310,9 +310,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			boolean parallel = table != null;
 			if (table == null) {
 				table = new HashMap<>();
+				var scanCancellation = NativeLmdbQuerySource.captureCursorCancellation();
 				try (RecordIterator rows = source.lmdbStatements(StatementOrder.S, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN,
-						null);
-						NativeLmdbQuerySource.NativeProbe targetTypes = linkageMode() ? source.newProbe() : null) {
+						null, scanCancellation);
+						NativeLmdbQuerySource.NativeProbe targetTypes = linkageMode()
+								? source.newProbe(scanCancellation)
+								: null) {
 					coScan(rows, null, acceptedPredicates, targetTypes, table);
 				}
 			}
@@ -4379,23 +4382,27 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
 											.inherit(probeParent);
 									NativeCancellationToken.Scope cancellationScope = NativeCancellationToken
-											.inherit(queryCancellation);
-									NativeLmdbQuerySource.NativeProbe targetTypes = linkageMode()
-											? workerSource.newProbe()
-											: null) {
-								Integer range;
-								int pollTick = 0;
-								while (workerFailure.get() == null && (range = queue.poll()) != null) {
-									NativeCancellationToken.checkCurrent();
-									pollCancellation(++pollTick);
-									long[] lo = range == 0 ? null : splits[range - 1];
-									long[] hi = range == splits.length ? null : splits[range];
-									try (RecordIterator rows = workerSource.lmdbStatements(StatementOrder.S, UNKNOWN,
-											UNKNOWN, UNKNOWN, UNKNOWN, null)) {
-										if (lo != null && !rows.seekForward(lo[0], 0, 0, 0)) {
-											continue;
+											.inherit(queryCancellation)) {
+								var scanCancellation = NativeLmdbQuerySource
+										.captureCursorCancellation(queryCancellation);
+								try (NativeLmdbQuerySource.NativeProbe targetTypes = linkageMode()
+										? workerSource.newProbe(scanCancellation)
+										: null) {
+									Integer range;
+									int pollTick = 0;
+									while (workerFailure.get() == null && (range = queue.poll()) != null) {
+										NativeCancellationToken.checkCurrent();
+										pollCancellation(++pollTick);
+										long[] lo = range == 0 ? null : splits[range - 1];
+										long[] hi = range == splits.length ? null : splits[range];
+										try (RecordIterator rows = workerSource.lmdbStatements(StatementOrder.S,
+												UNKNOWN,
+												UNKNOWN, UNKNOWN, UNKNOWN, null, scanCancellation)) {
+											if (lo != null && !rows.seekForward(lo[0], 0, 0, 0)) {
+												continue;
+											}
+											coScan(rows, hi, acceptedPredicates, targetTypes, local, workerFailure);
 										}
-										coScan(rows, hi, acceptedPredicates, targetTypes, local, workerFailure);
 									}
 								}
 							} catch (IOException | RuntimeException | Error failure) {

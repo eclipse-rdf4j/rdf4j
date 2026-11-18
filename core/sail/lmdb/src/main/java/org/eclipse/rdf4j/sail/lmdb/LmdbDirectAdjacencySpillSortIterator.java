@@ -23,7 +23,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** Bounded primitive four-long external sort for adjacency orders that no retained traversal can stream directly. */
 final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
@@ -33,7 +37,7 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	private static final int INITIAL_ROWS = 1024;
 	private static final int MAX_MERGE_FAN_IN = 64;
 
-	private RecordIterator input;
+	private volatile RecordIterator input;
 	private final String indexName;
 	private final int[] sortComponents;
 	private final int maxRows;
@@ -46,13 +50,23 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	private int cursor;
 	private RunMerger merger;
 	private boolean prepared;
-	private boolean closed;
+	private int cancellationTick;
+	private volatile boolean closed;
+	private CursorCancellation cancellation;
+	private volatile boolean cancellationRequested;
 
 	LmdbDirectAdjacencySpillSortIterator(RecordIterator input, StatementOrder order) {
-		this(input, fieldSequence(order));
+		this(input, order, null);
 	}
 
-	LmdbDirectAdjacencySpillSortIterator(RecordIterator input, String fieldSequence) {
+	LmdbDirectAdjacencySpillSortIterator(RecordIterator input, StatementOrder order,
+			CursorCancellation cancellation) {
+		this(input, fieldSequence(order), cancellation);
+	}
+
+	LmdbDirectAdjacencySpillSortIterator(RecordIterator input, String fieldSequence,
+			CursorCancellation cancellation) {
+		this.cancellation = cancellation == null ? null : cancellation.forWorker();
 		this.input = input;
 		this.indexName = "direct-" + fieldSequence;
 		this.sortComponents = components(fieldSequence);
@@ -68,14 +82,27 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	}
 
 	@Override
+	public boolean requestCancellation() {
+		if (closed) {
+			return false;
+		}
+		cancellationRequested = true;
+		CooperativeCancellation.forward(input);
+		return true;
+	}
+
+	@Override
 	public long[] next() {
 		if (closed) {
 			return null;
 		}
 		try {
+			enterCancellation();
 			prepare();
+			checkpointCancellation();
 			if (merger != null) {
 				long[] row = merger.next();
+				checkpointCancellation();
 				if (row == null) {
 					close();
 					return null;
@@ -88,6 +115,7 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 				return null;
 			}
 			System.arraycopy(buffer, cursor++ * 4, output, 0, 4);
+			checkpointCancellation();
 			return output;
 		} catch (IOException failure) {
 			UncheckedIOException wrapped = new UncheckedIOException(failure);
@@ -107,15 +135,15 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 		int initialRows = Math.min(INITIAL_ROWS, maxRows);
 		reserveInitialPrimitiveMemory(Math.multiplyExact((long) initialRows, rowBytes()));
 		buffer = new long[Math.multiplyExact(initialRows, 4)];
-		try {
-			long[] row;
-			while ((row = input.next()) != null) {
-				append(row);
-			}
-		} finally {
-			input.close();
-			input = null;
+		long[] row;
+		while ((row = input.next()) != null) {
+			pollCancellation();
+			append(row);
 		}
+		RecordIterator exhausted = input;
+		input = null;
+		exhausted.close();
+		checkpointCancellation();
 		if (runs.isEmpty()) {
 			sortBuffer();
 			return;
@@ -154,16 +182,10 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	private void spillRun() throws IOException {
 		sortBuffer();
 		Path run = Files.createTempFile("rdf4j-lmdb-adjacency-sort-", ".bin");
-		boolean complete = false;
+		runs.add(run);
 		try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(run)))) {
 			writeRows(out, buffer, rows);
-			complete = true;
-		} finally {
-			if (!complete) {
-				Files.deleteIfExists(run);
-			}
 		}
-		runs.add(run);
 		rows = 0;
 		cursor = 0;
 	}
@@ -171,14 +193,24 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	private void compactRuns() throws IOException {
 		while (runs.size() > MAX_MERGE_FAN_IN) {
 			List<Path> compacted = new ArrayList<>((runs.size() + MAX_MERGE_FAN_IN - 1) / MAX_MERGE_FAN_IN);
-			for (int from = 0; from < runs.size(); from += MAX_MERGE_FAN_IN) {
-				int to = Math.min(runs.size(), from + MAX_MERGE_FAN_IN);
-				List<Path> group = List.copyOf(runs.subList(from, to));
-				if (group.size() == 1) {
-					compacted.add(group.getFirst());
-				} else {
-					compacted.add(mergeToRun(group));
+			try {
+				for (int from = 0; from < runs.size(); from += MAX_MERGE_FAN_IN) {
+					pollCancellation();
+					int to = Math.min(runs.size(), from + MAX_MERGE_FAN_IN);
+					List<Path> group = runs.subList(from, to);
+					if (group.size() == 1) {
+						compacted.add(group.getFirst());
+					} else {
+						compacted.add(mergeToRun(group));
+						for (Path source : group) {
+							Files.deleteIfExists(source);
+						}
+					}
 				}
+			} catch (IOException | RuntimeException | Error failure) {
+				// Make completed merge outputs visible to owner cleanup as well as their original inputs.
+				runs.addAll(compacted);
+				throw failure;
 			}
 			runs.clear();
 			runs.addAll(compacted);
@@ -186,35 +218,40 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	}
 
 	private Path mergeToRun(List<Path> inputs) throws IOException {
-		Path outputRun = Files.createTempFile("rdf4j-lmdb-adjacency-merge-", ".bin");
-		boolean complete = false;
 		long primitiveBytes = mergerPrimitiveBytes(inputs.size());
 		reserveAdditionalPrimitiveMemory(primitiveBytes);
-		try (RunMerger merged = new RunMerger(inputs, sortComponents);
-				DataOutputStream out = new DataOutputStream(
-						new BufferedOutputStream(Files.newOutputStream(outputRun)))) {
-			long[] row;
-			while ((row = merged.next()) != null) {
-				for (int component = 0; component < 4; component++) {
-					out.writeLong(row[component]);
+		Path outputRun = null;
+		try {
+			outputRun = Files.createTempFile("rdf4j-lmdb-adjacency-merge-", ".bin");
+			try (RunMerger merged = new RunMerger(inputs, sortComponents);
+					DataOutputStream out = new DataOutputStream(
+							new BufferedOutputStream(Files.newOutputStream(outputRun)))) {
+				long[] row;
+				while ((row = merged.next()) != null) {
+					pollCancellation();
+					for (int component = 0; component < 4; component++) {
+						out.writeLong(row[component]);
+					}
 				}
 			}
-			complete = true;
+			return outputRun;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (outputRun != null) {
+				// Leave deletion to the same failure-preserving cleanup as for completed runs.
+				runs.add(outputRun);
+			}
+			throw failure;
 		} finally {
 			primitiveReservation.release(primitiveBytes);
-			if (!complete) {
-				Files.deleteIfExists(outputRun);
-			}
 		}
-		for (Path inputRun : inputs) {
-			Files.deleteIfExists(inputRun);
-		}
-		return outputRun;
 	}
 
-	private static void writeRows(DataOutputStream out, long[] source, int rowCount) throws IOException {
-		for (int index = 0; index < rowCount * 4; index++) {
-			out.writeLong(source[index]);
+	private void writeRows(DataOutputStream out, long[] source, int rowCount) throws IOException {
+		for (int row = 0; row < rowCount; row++) {
+			pollCancellation();
+			for (int component = 0; component < 4; component++) {
+				out.writeLong(source[row * 4 + component]);
+			}
 		}
 	}
 
@@ -241,9 +278,11 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 
 	private void sortBuffer() {
 		for (int parent = rows / 2 - 1; parent >= 0; parent--) {
+			pollCancellation();
 			siftDownRows(parent, rows);
 		}
 		for (int end = rows - 1; end > 0; end--) {
+			pollCancellation();
 			swapRows(0, end);
 			siftDownRows(0, end);
 		}
@@ -335,6 +374,44 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 		}
 	}
 
+	private void enterCancellation() {
+		if (cancellation != null) {
+			cancellation = cancellation.forWorker();
+		}
+		checkpointCancellation();
+	}
+
+	private void checkpointCancellation() {
+		if (cancellationRequested) {
+			NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
+		}
+		if (cancellation != null) {
+			cancellation.checkpoint();
+		}
+	}
+
+	private void pollCancellation() {
+		if (cancellation != null) {
+			cancellation.poll();
+		}
+		if ((++cancellationTick & 1023) == 0) {
+			checkpointCancellation();
+		}
+	}
+
+	@Override
+	public boolean seekForward(long subj, long pred, long obj, long context) {
+		if (!closed) {
+			try {
+				enterCancellation();
+			} catch (RuntimeException | Error failure) {
+				closePreserving(failure);
+				throw failure;
+			}
+		}
+		return false;
+	}
+
 	@Override
 	public void close() {
 		Throwable failure = closeOwned(null);
@@ -347,7 +424,7 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	}
 
 	private void closePreserving(Throwable primary) {
-		closeOwned(primary);
+		KernelRuntime.rethrowCloseFailureIfNotPrimary(closeOwned(primary), primary);
 	}
 
 	private Throwable closeOwned(Throwable primary) {
@@ -356,14 +433,9 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 		}
 		closed = true;
 		Throwable failure = primary;
-		if (input != null) {
-			try {
-				input.close();
-			} catch (RuntimeException | Error closeFailure) {
-				failure = suppress(failure, closeFailure);
-			}
-			input = null;
-		}
+		RecordIterator owned = input;
+		input = null;
+		failure = KernelRuntime.closeResource(owned, failure);
 		if (merger != null) {
 			try {
 				merger.close();

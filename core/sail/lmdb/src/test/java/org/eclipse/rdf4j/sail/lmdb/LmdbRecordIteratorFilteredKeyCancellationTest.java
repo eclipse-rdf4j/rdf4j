@@ -22,9 +22,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,7 +87,7 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 	}
 
 	@Test
-	void retainedResetStartsANewCancellationPollBudget() throws Exception {
+	void retainedResetStartsANewCancellationSelection() throws Exception {
 		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			LmdbRecordIterator iterator = new LmdbRecordIterator(index, true, 1L, -1L, 1L, 1L, true, txn, null,
@@ -93,17 +95,16 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 			try {
 				assertThat(iterator.fill(new long[1_500 * 4], 1_500)).isEqualTo(1_500);
 				assertThat(iterator.getSourceRowsScannedActual()).isEqualTo(1_500);
+				long oldGeneration = iterator.cancellationGeneration();
 				iterator.close();
 				iterator.reset(index, true, 1L, -1L, 2L, -1L, true);
 				index.resetFilteredKeyVisits();
-				AtomicReference<Object> cancellationToken = new AtomicReference<>();
+				assertThat(iterator.requestCancellation(oldGeneration)).isFalse();
+				assertThat(iterator.requestCancellation()).isTrue();
+				Throwable failure = catchThrowable(iterator::next);
 
-				Throwable failure = catchThrowable(
-						() -> NativeCancellationTestAccess.withCancelledNativeToken(cancellationToken::set,
-								iterator::next));
-
-				assertAll("a retained iterator reset begins a fresh bounded polling interval",
-						() -> assertCancellationProvenance(failure, cancellationToken.get()),
+				assertAll("a retained iterator reset begins a fresh cancellable selection",
+						() -> assertThat(failure).isInstanceOf(QueryInterruptedException.class),
 						() -> assertThat(index.filteredKeyVisits())
 								.as("the already-cancelled token is checked before another key visit")
 								.isZero(),
@@ -122,10 +123,11 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 			throws Exception {
 		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			LmdbRecordIterator iterator = openMismatchIterator(txn);
-			try {
-				AtomicReference<Object> cancellationToken = new AtomicReference<>();
-				Throwable failure = invokeWithSignal(iterator, pullMode, deadlineSignal, cancellationToken);
+			AtomicReference<LmdbRecordIterator> opened = new AtomicReference<>();
+			AtomicReference<Object> cancellationToken = new AtomicReference<>();
+			Throwable failure = invokeWithSignal(txn, opened, pullMode, deadlineSignal, cancellationToken);
+			try (LmdbRecordIterator iterator = opened.get()) {
+				assertThat(iterator).as("the scan reached its owner-controlled open").isNotNull();
 				RuntimeException expected = deadlineSignal ? NativeCancellationTestAccess.probeDeadlineSignal()
 						: KernelQueryCancelledException.INSTANCE;
 				long scansAtFailure = iterator.getSourceRowsScannedActual();
@@ -159,18 +161,18 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 						() -> assertThat(freshReaderFailure).as("a fresh LMDB reader opens after signal cleanup")
 								.isNull(),
 						() -> assertThat(freshRows.get()).isEqualTo(PHYSICAL_ROWS));
-			} finally {
-				iterator.close();
 			}
 		}
 	}
 
-	private Throwable invokeWithSignal(LmdbRecordIterator iterator, PullMode pullMode, boolean deadlineSignal,
-			AtomicReference<Object> cancellationToken) {
+	private Throwable invokeWithSignal(Txn txn, AtomicReference<LmdbRecordIterator> opened, PullMode pullMode,
+			boolean deadlineSignal, AtomicReference<Object> cancellationToken) {
 		if (deadlineSignal) {
 			AtomicReference<Runnable> trip = new AtomicReference<>();
 			index.onFirstFilteredKey = () -> trip.get().run();
 			return catchThrowable(() -> NativeCancellationTestAccess.withTrippableProbeDeadline(trip::set, () -> {
+				LmdbRecordIterator iterator = openNativeMismatchIterator(txn);
+				opened.set(iterator);
 				pull(iterator, pullMode);
 				return null;
 			}));
@@ -184,6 +186,8 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		};
 		return catchThrowable(() -> NativeCancellationTestAccess.cancelAfter(firstFilteredKey, continueScan,
 				cancellationToken::set, () -> {
+					LmdbRecordIterator iterator = openNativeMismatchIterator(txn);
+					opened.set(iterator);
 					pull(iterator, pullMode);
 					return null;
 				}));
@@ -211,6 +215,11 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		// Each predicate has one object-1 key. The bound object-2 mismatch is beyond spoc's s-only range prefix, so
 		// skip-scan cannot leap across predicate groups and every physical key reaches the real matcher.
 		return new LmdbRecordIterator(index, true, 1L, -1L, 2L, -1L, true, txn);
+	}
+
+	private LmdbRecordIterator openNativeMismatchIterator(Txn txn) throws IOException {
+		return new LmdbRecordIterator(index, true, 1L, -1L, 2L, -1L, true, txn, null, false, null, null,
+				NativeLmdbQuerySource.captureCursorCancellation());
 	}
 
 	private int freshReaderRowCount() throws Exception {

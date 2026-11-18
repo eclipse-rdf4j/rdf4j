@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -120,7 +121,7 @@ class LmdbNativeCompatibilityRegressionTest {
 	}
 
 	private NativeLmdbQuerySource rawScanSource() throws Exception {
-		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		when(source.statements(any(StatementOrder.class), anyLong(), anyLong(), anyLong(), anyLong(), any()))
 				.thenAnswer(invocation -> new RecordIterator() {
 					final long[][] rows = { { 11, 7, 30, 4 }, { 11, 7, 10, 4 } };
@@ -178,7 +179,7 @@ class LmdbNativeCompatibilityRegressionTest {
 
 	@Test
 	void orderedDistinctPlanningRetainsTheSemanticRangeWhenTheIndexChanges() {
-		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		when(source.indexName(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn("posc");
 		when(source.indexName(any(StatementOrder.class), anyLong(), anyLong(), anyLong(), anyLong()))
 				.thenAnswer(invocation -> invocation.getArgument(0) == StatementOrder.S ? "spoc" : "posc");
