@@ -530,7 +530,7 @@ class QueryResponseHeartbeatHandlerTest {
 	private static void mockQueryResult(RepositoryResolver resolver, MockHttpServletRequest request,
 			TupleQueryResult result) throws Exception {
 		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		when(resolver.getRepository(request)).thenReturn(repository);
 		when(resolver.getRepositoryID(request)).thenReturn("repository");
