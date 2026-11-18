@@ -573,7 +573,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		for (int i = 0; i < noOfArguments; i++) {
 			Node argNode = node.jjtGetChild(i);
-			functionCall.addArg((ValueExpr) argNode.jjtAccept(this, null));
+			functionCall.addArg(castToValueExpr(argNode.jjtAccept(this, null)));
 		}
 
 		return functionCall;
@@ -756,7 +756,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			Extension extension = new Extension(group);
 			tupleExpr = extension;
 			for (int i = 0; i < havingNode.jjtGetNumChildren(); i++) {
-				ValueExpr expr = (ValueExpr) havingNode.jjtGetChild(i).jjtAccept(this, tupleExpr);
+				ValueExpr expr = castToValueExpr(havingNode.jjtGetChild(i).jjtAccept(this, tupleExpr));
 				AggregateCollector collector = new AggregateCollector();
 				// visit the condition itself, not just its children: the aggregate may BE the whole condition
 				expr.visit(collector);
@@ -1789,7 +1789,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public OrderElem visit(ASTOrderCondition node, Object data) throws VisitorException {
-		ValueExpr valueExpr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr valueExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new OrderElem(valueExpr, node.isAscending());
 	}
 
@@ -2458,7 +2458,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTConstraint node, Object data) throws VisitorException {
-		ValueExpr valueExpr = (ValueExpr) super.visit(node, null);
+		ValueExpr valueExpr = castToValueExpr(super.visit(node, null));
 		graphPattern.addConstraint(valueExpr);
 
 		return valueExpr;
@@ -2480,7 +2480,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Not visit(ASTNot node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) super.visit(node, null);
+		ValueExpr arg = castToValueExpr(super.visit(node, null));
 		return new Not(arg);
 	}
 
@@ -2766,7 +2766,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public IRIFunction visit(ASTIRIFunc node, Object data) throws VisitorException {
-		ValueExpr expr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr expr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		IRIFunction fn = new IRIFunction(expr);
 		fn.setBaseURI(node.getBaseURI());
 		return fn;
@@ -2774,7 +2774,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Lang visit(ASTLang node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new Lang(arg);
 	}
 
@@ -2806,14 +2806,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Datatype visit(ASTDatatype node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new Datatype(arg);
 	}
 
 	@Override
 	public Object visit(ASTLangMatches node, Object data) throws VisitorException {
-		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
-		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);
+		ValueExpr leftArg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr rightArg = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
 		return new LangMatches(leftArg, rightArg);
 	}
 
@@ -2931,25 +2931,25 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public IsURI visit(ASTIsIRI node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new IsURI(arg);
 	}
 
 	@Override
 	public IsBNode visit(ASTIsBlank node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new IsBNode(arg);
 	}
 
 	@Override
 	public IsLiteral visit(ASTIsLiteral node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new IsLiteral(arg);
 	}
 
 	@Override
 	public IsNumeric visit(ASTIsNumeric node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new IsNumeric(arg);
 	}
 
@@ -2959,7 +2959,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		BNodeGenerator generator = new BNodeGenerator();
 
 		if (node.jjtGetNumChildren() > 0) {
-			ValueExpr nodeIdExpr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+			ValueExpr nodeIdExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 			generator.setNodeIdExpr(nodeIdExpr);
 		}
 
@@ -2968,11 +2968,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTRegexExpression node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
-		ValueExpr pattern = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr pattern = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
 		ValueExpr flags = null;
 		if (node.jjtGetNumChildren() > 2) {
-			flags = (ValueExpr) node.jjtGetChild(2).jjtAccept(this, null);
+			flags = castToValueExpr(node.jjtGetChild(2).jjtAccept(this, null));
 		}
 		return new Regex(arg, pattern, flags);
 	}
@@ -3025,9 +3025,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			throw new VisitorException("IF construction missing required number of arguments");
 		}
 
-		ValueExpr condition = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
-		ValueExpr resultExpr = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);
-		ValueExpr alternative = (ValueExpr) node.jjtGetChild(2).jjtAccept(this, null);
+		ValueExpr condition = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr resultExpr = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
+		ValueExpr alternative = castToValueExpr(node.jjtGetChild(2).jjtAccept(this, null));
 
 		result = new If(condition, resultExpr, alternative);
 
@@ -3036,8 +3036,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public ValueExpr visit(ASTInfix node, Object data) throws VisitorException {
-		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, data);
-		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, leftArg);
+		ValueExpr leftArg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
+		ValueExpr rightArg = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, leftArg));
 
 		return rightArg;
 	}
@@ -3051,14 +3051,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (listItemCount == 0) {
 			result = new ValueConstant(BooleanLiteral.FALSE);
 		} else if (listItemCount == 1) {
-			ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+			ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 			result = new Compare(leftArg, arg, CompareOp.EQ);
 		} else {
 			ListMemberOperator listMemberOperator = new ListMemberOperator();
 			listMemberOperator.addArgument(leftArg);
 
 			for (int i = 0; i < listItemCount; i++) {
-				ValueExpr arg = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);
+				ValueExpr arg = castToValueExpr(node.jjtGetChild(i).jjtAccept(this, null));
 				listMemberOperator.addArgument(arg);
 			}
 			result = listMemberOperator;
@@ -3077,7 +3077,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (listItemCount == 0) {
 			result = new ValueConstant(BooleanLiteral.TRUE);
 		} else if (listItemCount == 1) {
-			ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+			ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 
 			result = new Compare(leftArg, arg, CompareOp.NE);
 		} else {
@@ -3086,12 +3086,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			And and = new And();
 			And currentAnd = and;
 			for (int i = 0; i < listItemCount - 1; i++) {
-				ValueExpr arg = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);
+				ValueExpr arg = castToValueExpr(node.jjtGetChild(i).jjtAccept(this, null));
 
 				currentAnd.setLeftArg(new Compare(copyWithSource(leftArg), arg, CompareOp.NE));
 
 				if (i == listItemCount - 2) { // second-to-last item
-					arg = (ValueExpr) node.jjtGetChild(i + 1).jjtAccept(this, null);
+					arg = castToValueExpr(node.jjtGetChild(i + 1).jjtAccept(this, null));
 					currentAnd.setRightArg(new Compare(copyWithSource(leftArg), arg, CompareOp.NE));
 				} else {
 					And newAnd = new And();
@@ -3294,7 +3294,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		GroupConcat gc = new GroupConcat(ve, node.isDistinct());
 
 		if (node.jjtGetNumChildren() > 1) {
-			ValueExpr separator = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, data);
+			ValueExpr separator = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, data));
 			gc.setSeparator(separator);
 		}
 
@@ -3548,7 +3548,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public IsTriple visit(ASTIsTriple node, Object data) throws VisitorException {
-		return new IsTriple((ValueExpr) node.childrenAccept(this, data));
+		return new IsTriple(castToValueExpr(node.childrenAccept(this, data)));
 	}
 
 	@Override

@@ -179,6 +179,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			EvaluationStatistics evaluationStatistics, boolean trackResultSize, boolean nativeEnabled) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
 				trackResultSize);
+		enableSailBindingPreparation();
 		NativeLmdbQuerySource extracted = extractNativeSource(tripleSource);
 		// legacy stores without canonical language tags can hold two ids for one RDF term, so every id-keyed
 		// native path could diverge from the generic engine there — decline them entirely

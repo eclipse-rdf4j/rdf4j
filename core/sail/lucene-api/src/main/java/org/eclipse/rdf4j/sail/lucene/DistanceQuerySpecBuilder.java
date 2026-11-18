@@ -77,15 +77,20 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 						}
 						filter = (Filter) rv[0];
 						dist = (ValueExpr) rv[1];
-					} else if (parent instanceof Compare) {
-						filter = (Filter) parent.getParentNode();
-						Compare compare = (Compare) parent;
+					} else if (parent instanceof Compare compare
+							&& compare.getParentNode() instanceof Filter containingFilter
+							&& containingFilter.getCondition() == compare) {
+						filter = containingFilter;
 						CompareOp op = compare.getOperator();
 						if (op == CompareOp.LT && compare.getLeftArg() == f) {
 							dist = compare.getRightArg();
 						} else if (op == CompareOp.GT && compare.getRightArg() == f) {
 							dist = compare.getLeftArg();
 						}
+					}
+
+					if (filter == null || dist == null) {
+						return;
 					}
 
 					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist, distanceVar, filter);
@@ -107,10 +112,11 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 
 			@Override
 			public void meet(StatementPattern sp) {
-				Value predicate = resolver.value(sp.getPredicateVar());
-				IRI propertyName = predicate instanceof IRI iri ? iri : null;
-				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
-						&& !sp.getObjectVar().hasValue()) {
+				// A local binding can select the field without making the statement pattern replaceable.
+				// Keep its predicate output and filter in ordinary evaluation.
+				if (sp.getPredicateVar().getValue() instanceof IRI propertyName
+						&& !sp.getSubjectVar().hasValue() && !sp.getObjectVar().hasValue()
+						&& index.isGeoField(SearchFields.getPropertyField(propertyName))) {
 					String objectVarName = sp.getObjectVar().getName();
 					DistanceQuerySpec spec = specs.remove(objectVarName);
 					if (spec != null && isChildOf(sp, spec.getFilter())) {
@@ -160,10 +166,12 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	private static boolean isChildOf(QueryModelNode child, QueryModelNode parent) {
-		if (child.getParentNode() == parent) {
-			return true;
+		for (QueryModelNode node = child.getParentNode(); node != null; node = node.getParentNode()) {
+			if (node == parent) {
+				return true;
+			}
 		}
-		return isChildOf(child.getParentNode(), parent);
+		return false;
 	}
 
 	private static Object[] getFilterAndDistance(QueryModelNode node, String compareArgVarName) {

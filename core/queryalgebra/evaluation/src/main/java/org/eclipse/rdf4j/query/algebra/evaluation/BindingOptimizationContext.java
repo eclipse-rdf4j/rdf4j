@@ -26,6 +26,7 @@ public record BindingOptimizationContext(Mode mode, BindingSet parameters, Bindi
 
 	public enum Mode {
 		RUNTIME,
+		SAIL_COMPATIBILITY,
 		EMPTY_INPUT
 	}
 
@@ -39,9 +40,12 @@ public record BindingOptimizationContext(Mode mode, BindingSet parameters, Bindi
 
 	public static BindingOptimizationContext resolve(TupleExpr expression, BindingSet input) {
 		QueryBindingPreparation preparation = PreparedQuery.find(expression, input);
-		return preparation == null ? runtime(input)
-				: new BindingOptimizationContext(Mode.EMPTY_INPUT, preparation.parameters(),
-						preparation.evaluationInput());
+		if (preparation == null) {
+			return runtime(input);
+		}
+		Mode mode = PreparedQuery.optimizationMode(preparation);
+		return new BindingOptimizationContext(mode, mode == Mode.SAIL_COMPATIBILITY ? input : preparation.parameters(),
+				preparation.evaluationInput());
 	}
 
 	/** Public optimizer entry points also work when invoked directly by a legacy strategy envelope. */

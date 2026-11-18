@@ -65,7 +65,13 @@ public final class PreparedQueryBindingPlan {
 	public enum Mode {
 		RUNTIME_INPUT,
 		QUERY_PARAMETERS,
+		SAIL_COMPATIBILITY,
 		EMPTY_INPUT
+	}
+
+	public enum Capture {
+		COMPLETE,
+		EXTENSION_OWNS_INPUT
 	}
 
 	/**
@@ -90,16 +96,18 @@ public final class PreparedQueryBindingPlan {
 	private final List<ProjectionRecovery> projectionRecoveries;
 	private final Map<Service, Map<String, Value>> serviceInputs;
 	private final List<ServiceBinding> historyInputs;
+	private final Capture capture;
 	private final AtomicBoolean applied = new AtomicBoolean();
 
 	private PreparedQueryBindingPlan(List<Replacement> replacements, List<ProjectionRecovery> projectionRecoveries,
-			Map<Service, Map<String, Value>> serviceInputs, List<ServiceBinding> historyInputs) {
+			Map<Service, Map<String, Value>> serviceInputs, List<ServiceBinding> historyInputs, Capture capture) {
 		this.replacements = List.copyOf(replacements);
 		this.projectionRecoveries = List.copyOf(projectionRecoveries);
 		Map<Service, Map<String, Value>> captured = new IdentityHashMap<>();
 		serviceInputs.forEach((service, values) -> captured.put(service, Map.copyOf(values)));
 		this.serviceInputs = Collections.unmodifiableMap(captured);
 		this.historyInputs = List.copyOf(historyInputs);
+		this.capture = capture;
 	}
 
 	public static PreparedQueryBindingPlan create(TupleExpr root, BindingSet inputs, Mode mode,
@@ -111,7 +119,7 @@ public final class PreparedQueryBindingPlan {
 			if (mode == Mode.EMPTY_INPUT) {
 				rejectAlreadyPreparedServices(root);
 			}
-			return new PreparedQueryBindingPlan(List.of(), List.of(), Map.of(), List.of());
+			return new PreparedQueryBindingPlan(List.of(), List.of(), Map.of(), List.of(), Capture.COMPLETE);
 		}
 		QueryAlgebraBindingAnalysis analysis = mode == Mode.RUNTIME_INPUT
 				? QueryAlgebraBindingAnalysis.withBindingValues(root, inputs)
@@ -120,7 +128,7 @@ public final class PreparedQueryBindingPlan {
 			if (mode == Mode.EMPTY_INPUT) {
 				rejectAlreadyPreparedServices(root);
 			}
-			return new PreparedQueryBindingPlan(List.of(), List.of(), Map.of(), List.of());
+			return new PreparedQueryBindingPlan(List.of(), List.of(), Map.of(), List.of(), Capture.COMPLETE);
 		}
 		Planner planner = new Planner(root, analysis, mode, validator);
 		analysis.visitScoped(root, analysis.rootContext(), planner::visit);
@@ -142,6 +150,10 @@ public final class PreparedQueryBindingPlan {
 
 	public List<ServiceBinding> historyInputs() {
 		return historyInputs;
+	}
+
+	public Capture capture() {
+		return capture;
 	}
 
 	/** Applies this fully validated plan once. The caller must not change the tree between planning and application. */
@@ -230,6 +242,9 @@ public final class PreparedQueryBindingPlan {
 		private final List<ServiceBinding> runtimeServiceInputs = new ArrayList<>();
 		private final boolean requireAssignment;
 		private final boolean logicalParameters;
+		private final boolean sailCompatibility;
+		private final boolean captureForEmptyRows;
+		private Capture capture = Capture.COMPLETE;
 		private final ServiceReadValidator validator;
 		private final List<ProjectionRecovery> projectionRecoveries = new ArrayList<>();
 
@@ -239,34 +254,38 @@ public final class PreparedQueryBindingPlan {
 			this.analysis = analysis;
 			this.requireAssignment = mode == Mode.EMPTY_INPUT;
 			this.logicalParameters = mode != Mode.RUNTIME_INPUT;
+			this.sailCompatibility = mode == Mode.SAIL_COMPATIBILITY;
+			this.captureForEmptyRows = requireAssignment || sailCompatibility;
 			this.validator = validator;
 		}
 
 		private boolean visit(QueryModelNode node, ReadOnlyContext context) {
 			if (node instanceof TupleExpr tuple) {
-				if (!analysis.hasKnownBindingContract(tuple) || !context.bindingDomainKnown()) {
-					if (requireAssignment) {
-						throw new UnsupportedPreparedBindings(
-								"Cannot preserve query bindings through unmodelled binding scope: "
-										+ node.getClass().getName(),
-								true);
+				boolean knownContract = analysis.hasKnownBindingContract(tuple);
+				if (!knownContract || !context.bindingDomainKnown()) {
+					unmodelledScope(node);
+					if (!sailCompatibility || !context.bindingDomainKnown()
+							|| !analysis.allowLegacyAssignmentScope(tuple)) {
+						return false;
 					}
-					return false;
 				}
-				if (tuple instanceof BindingAnalysisContract contract) {
+				if (knownContract && tuple instanceof BindingAnalysisContract contract) {
 					if (logicalParameters ? !contract.supportsPreparedBindings()
 							: !contract.supportsBindingSubstitution()) {
 						if (requireAssignment) {
 							throw new UnsupportedPreparedBindings("Runtime query bindings required by: "
 									+ node.getClass().getName());
 						}
-						return false;
+						capture = Capture.EXTENSION_OWNS_INPUT;
+						if (!sailCompatibility || !contract.supportsBindingSubstitution()) {
+							return false;
+						}
 					}
 					if (!contract.visitChildrenForBindingAssignment()) {
 						return false;
 					}
 				}
-				if (requireAssignment) {
+				if (captureForEmptyRows) {
 					if (tuple.getClass() == Service.class) {
 						Service service = (Service) tuple;
 						if (!service.getPreparedInputBindings().isEmpty()) {
@@ -299,13 +318,17 @@ public final class PreparedQueryBindingPlan {
 					}
 				}
 			}
+			if (captureForEmptyRows && node instanceof ValueExpr value && !analysis.hasKnownValueReadContract(value)) {
+				unmodelledScope(node);
+				return false;
+			}
 			if (!(node instanceof Var var)) {
 				return true;
 			}
-			if (requireAssignment && var.hasValue() && var.hasApiInputOrigin() && hasUntrackedServiceOrigin(var)) {
+			if (captureForEmptyRows && var.hasValue() && var.hasApiInputOrigin() && hasUntrackedServiceOrigin(var)) {
 				throw unsupportedBindings(var);
 			}
-			if (requireAssignment && var.hasValue() && var.hasApiInputOrigin() && withinSavedServiceBody(var)
+			if (captureForEmptyRows && var.hasValue() && var.hasApiInputOrigin() && withinSavedServiceBody(var)
 					&& !isRecordedServiceSource(var)) {
 				// Other optimizers can propagate the origin bit to a differently named variable. Its original
 				// parameters are already checked from the owning SERVICE history, not inferred from that name.
@@ -320,13 +343,13 @@ public final class PreparedQueryBindingPlan {
 					if (value == null || !context.externalGuaranteedNames().contains(var.getName())
 							|| !value.equals(context.fixedValues().get(var.getName()))
 							|| !value.equals(var.getValue())) {
-						if (requireAssignment) {
+						if (captureForEmptyRows) {
 							throw unsupportedBindings(var);
 						}
 						return true;
 					}
 					replacements.add(new Replacement(var, value, substitutedTerm(var)));
-					if (requireAssignment) {
+					if (captureForEmptyRows) {
 						captureServiceInput(var, value);
 					} else {
 						recordServiceBinding(var, value);
@@ -341,7 +364,7 @@ public final class PreparedQueryBindingPlan {
 			if (value != null && context.bindingDomainKnown() && context.guaranteedNames().contains(var.getName())
 					&& value.equals(context.fixedValues().get(var.getName()))) {
 				replacements.add(new Replacement(var, value, substitutedTerm(var)));
-				if (requireAssignment) {
+				if (captureForEmptyRows) {
 					captureServiceInput(var, value);
 				} else {
 					recordServiceBinding(var, value);
@@ -349,10 +372,22 @@ public final class PreparedQueryBindingPlan {
 				if (logicalParameters) {
 					captureProjectionInput(var, value);
 				}
-			} else if (requireAssignment && value != null) {
-				throw unsupportedBindings(var);
+			} else if (captureForEmptyRows && value != null) {
+				if (requireAssignment) {
+					throw unsupportedBindings(var);
+				}
+				capture = Capture.EXTENSION_OWNS_INPUT;
 			}
 			return true;
+		}
+
+		private void unmodelledScope(QueryModelNode node) {
+			if (requireAssignment) {
+				throw new UnsupportedPreparedBindings(
+						"Cannot preserve query bindings through unmodelled binding scope: " + node.getClass().getName(),
+						true);
+			}
+			capture = Capture.EXTENSION_OWNS_INPUT;
 		}
 
 		private boolean hasUntrackedServiceOrigin(Var variable) {
@@ -548,7 +583,7 @@ public final class PreparedQueryBindingPlan {
 				planProjectionRecoveries();
 			}
 			return new PreparedQueryBindingPlan(replacements, projectionRecoveries, serviceInputs,
-					runtimeServiceInputs);
+					runtimeServiceInputs, capture);
 		}
 	}
 

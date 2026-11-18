@@ -25,6 +25,9 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
@@ -47,6 +50,54 @@ class QuerySafetyAnalysisReuseTest {
 	private static final int FILTERS = 32;
 	private static final int RIGHT_PATTERNS = 48;
 	private static final String FUNCTION_URI = "urn:test:query-safety:counting-determinism";
+
+	@Test
+	void functionPinningPreservesSubclassAlgebraContracts() {
+		var function = new CountingDeterministicFunction();
+		var registry = FunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			FunctionCall call = new CustomFunctionCall();
+			var concat = new GroupConcat(Var.of("value"));
+			concat.setSeparator(call);
+			QueryEvaluationUtility.pinFunctions(concat);
+			assertThat(concat.getSeparator()).isSameAs(call);
+
+			FunctionCall standalone = new CustomFunctionCall();
+			assertThat(QueryEvaluationUtility.pinFunctions(standalone)).isSameAs(standalone);
+		} finally {
+			registry.remove(function);
+		}
+	}
+
+	private static final class CustomFunctionCall extends FunctionCall {
+		private CustomFunctionCall() {
+			super(FUNCTION_URI);
+		}
+	}
+
+	@Test
+	void functionPreparationVisitsTheExecutableGroupConcatSeparator() {
+		var factory = SimpleValueFactory.getInstance();
+		var aggregate = new GroupConcat(Var.of("value"));
+		aggregate.setSeparator(new FunctionCall(FUNCTION_URI));
+		var group = new Group(statementPattern("concat", factory));
+		group.addGroupElement(new GroupElem("result", aggregate));
+		var root = new QueryRoot(group);
+		var function = new CountingDeterministicFunction();
+		var registry = FunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			QueryEvaluationUtility.pinFunctions(root);
+		} finally {
+			registry.remove(function);
+		}
+
+		assertThat(QueryEvaluationUtility.resolveFunction((FunctionCall) aggregate.getSeparator())).contains(function);
+		assertThat(QueryEvaluationUtility.isRepeatable(root)).isTrue();
+		aggregate.getSeparator().replaceWith(new FunctionCall("urn:test:unregistered-separator"));
+		assertThat(QueryEvaluationUtility.isRepeatable(root)).isFalse();
+	}
 
 	@Test
 	void filterPlanningClassifiesAnUnchangedLargeJoinOperandOnce() {

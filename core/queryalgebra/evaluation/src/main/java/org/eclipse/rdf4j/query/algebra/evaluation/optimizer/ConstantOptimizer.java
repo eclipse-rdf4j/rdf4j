@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -55,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.slf4j.Logger;
@@ -72,6 +75,7 @@ public class ConstantOptimizer implements BindingContextAwareOptimizer {
 
 	private final EvaluationStrategy strategy;
 	private final BindingSet evaluationBindings;
+	private final boolean standardPipeline;
 
 	public ConstantOptimizer(EvaluationStrategy strategy) {
 		this(strategy, null);
@@ -82,8 +86,18 @@ public class ConstantOptimizer implements BindingContextAwareOptimizer {
 	 * null input preserves the direct optimizer contract, which uses the bindings passed to {@link #optimize}.
 	 */
 	public ConstantOptimizer(EvaluationStrategy strategy, BindingSet evaluationBindings) {
+		this(strategy, evaluationBindings, false);
+	}
+
+	private ConstantOptimizer(EvaluationStrategy strategy, BindingSet evaluationBindings, boolean standardPipeline) {
 		this.strategy = strategy;
 		this.evaluationBindings = evaluationBindings == null ? null : new QueryBindingSet(evaluationBindings);
+		this.standardPipeline = standardPipeline;
+	}
+
+	@InternalUseOnly
+	public static ConstantOptimizer forStandardPipeline(EvaluationStrategy strategy) {
+		return new ConstantOptimizer(strategy, null, true);
 	}
 
 	/**
@@ -94,6 +108,8 @@ public class ConstantOptimizer implements BindingContextAwareOptimizer {
 		BindingOptimizationContext context = BindingOptimizationContext.forOptimizer(tupleExpr, bindings);
 		if (context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT) {
 			optimizeWithInputs(tupleExpr, context.parameters(), context.evaluationInput(), false);
+		} else if (standardPipeline && context.mode() == BindingOptimizationContext.Mode.SAIL_COMPATIBILITY) {
+			optimizeWithInputs(tupleExpr, bindings, context.evaluationInput(), true);
 		} else {
 			optimizeWithInputs(tupleExpr, bindings, evaluationBindings == null ? bindings : evaluationBindings, true);
 		}
@@ -472,6 +488,12 @@ public class ConstantOptimizer implements BindingContextAwareOptimizer {
 			List<Var> variables = new ArrayList<>();
 			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
+				public void meet(GroupConcat concat) {
+					super.meet(concat);
+					TupleExprs.visitGroupConcatSeparator(concat, this);
+				}
+
+				@Override
 				public void meet(Var var) {
 					variables.add(var);
 				}
@@ -497,6 +519,12 @@ public class ConstantOptimizer implements BindingContextAwareOptimizer {
 
 		protected VarNameCollector() {
 			super(true);
+		}
+
+		@Override
+		public void meet(GroupConcat concat) {
+			super.meet(concat);
+			TupleExprs.visitGroupConcatSeparator(concat, this);
 		}
 
 		@Override

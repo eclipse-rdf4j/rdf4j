@@ -2022,6 +2022,37 @@ class PreparedQueryOptimizerBindingsTest {
 	}
 
 	@Test
+	void hiddenScalarReadRequiresRuntimeInputWithoutAnExplicitContract() {
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public QueryValueEvaluationStep precompile(ValueExpr expression, QueryEvaluationContext context) {
+				if (expression instanceof HiddenInputRead) {
+					return input -> input.getValue("x");
+				}
+				return super.precompile(expression, context);
+			}
+		};
+		strategy.setOptimizerPipeline(List::of);
+		var expression = new QueryRoot(new Extension(new SingletonSet(),
+				new ExtensionElem(Var.of("x"), "visible"), new ExtensionElem(new HiddenInputRead(), "result")));
+		BindingSet bindings = parameters();
+		assertThatThrownBy(() -> strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), bindings))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("HiddenInputRead");
+		var runtime = strategy.optimize(expression, new EvaluationStatistics(), bindings);
+		try (var result = strategy.precompile(runtime).evaluate(bindings)) {
+			assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("result"))
+					.containsExactly(bindings.getValue("x"));
+		}
+	}
+
+	private static final class HiddenInputRead extends ValueConstant {
+		private HiddenInputRead() {
+			super(SimpleValueFactory.getInstance().createLiteral("unused"));
+		}
+	}
+
+	@Test
 	void failedPreparationDoesNotPartiallyAssignParameters() {
 		Var reference = Var.of("x");
 		var expression = new QueryRoot(new Join(
@@ -2157,7 +2188,7 @@ class PreparedQueryOptimizerBindingsTest {
 	}
 
 	@Test
-	void standardStagesKeepTheirIdentityAndDistinguishParametersFromRuntimeInput() {
+	void standardLegacySelectorKeepsStageIdentityAndOnlyPassesParametersWhereUsed() {
 		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		var pipeline = new StandardQueryOptimizerPipeline(strategy, new EmptyTripleSource(),
 				new EvaluationStatistics());
@@ -2175,7 +2206,7 @@ class PreparedQueryOptimizerBindingsTest {
 				constantsSeen = true;
 				assertThat(input).as("stage=%s", optimizer.getClass()).isSameAs(parameters);
 			} else {
-				assertThat(input).as("stage=%s", optimizer.getClass()).isSameAs(parameters);
+				assertThat(input).as("stage=%s", optimizer.getClass()).isSameAs(EmptyBindingSet.getInstance());
 			}
 		}
 		assertThat(assignmentSeen).isTrue();

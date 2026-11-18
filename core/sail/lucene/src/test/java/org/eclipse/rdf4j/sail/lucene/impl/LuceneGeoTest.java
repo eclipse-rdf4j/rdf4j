@@ -14,24 +14,239 @@ package org.eclipse.rdf4j.sail.lucene.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
+import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
+import org.locationtech.spatial4j.shape.Point;
 
 public class LuceneGeoTest {
+	private static final String PREFIXES = """
+			PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+			PREFIX geof: <http://www.opengis.net/def/function/geosparql/>
+			PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/>
+			""";
+	private static final String DISTANCE = "geof:distance('POINT(0 0)'^^geo:wktLiteral, ?wkt, uom:metre) < 1000";
+	private static final String INTERSECTS = "geof:sfIntersects('POINT(0 0)'^^geo:wktLiteral, ?wkt)";
+	private static final IRI LOCATION = Values.iri("urn:location");
+	private static final IRI OTHER = Values.iri("urn:other");
+	private static final IRI NEAR = Values.iri("urn:near");
+
+	@TestFactory
+	Stream<DynamicTest> geometryPredicatesKeepVariableResults() {
+		BindingSet location = row(NEAR, LOCATION);
+		BindingSet other = row(NEAR, OTHER);
+		var cases = List.of(
+				new GeometryCase("BIND", "BIND(<urn:location> AS ?p) ?s ?p ?wkt FILTER(%s)", List.of(location)),
+				new GeometryCase("VALUES", "VALUES ?p { <urn:location> } ?s ?p ?wkt FILTER(%s)", List.of(location)),
+				new GeometryCase("duplicate VALUES",
+						"VALUES ?p { <urn:location> <urn:location> } ?s ?p ?wkt FILTER(%s)",
+						List.of(location, location)),
+				new GeometryCase("different VALUES", "VALUES ?p { <urn:location> <urn:other> } ?s ?p ?wkt FILTER(%s)",
+						List.of(location, other)),
+				new GeometryCase("unbound predicate", "?s ?p ?wkt FILTER(%s)", List.of(location, other)),
+				new GeometryCase("unmatched OPTIONAL",
+						"VALUES ?p { <urn:location> } OPTIONAL { VALUES ?s { <urn:missing> } ?s ?p ?wkt FILTER(%s) }",
+						List.of(row(null, LOCATION))));
+		return Stream.of(TupleFunctionEvaluationMode.values())
+				.flatMap(mode -> Stream.of(DISTANCE, INTERSECTS)
+						.flatMap(filter -> cases.stream()
+								.map(test -> dynamicTest(
+										mode + " " + test.name() + " " + filter,
+										() -> assertGeometryRows(mode, test.pattern().formatted(filter),
+												test.expected())))));
+	}
+
+	private static void assertGeometryRows(TupleFunctionEvaluationMode mode, String pattern,
+			List<BindingSet> expected) {
+		LuceneSail sail = new LuceneSail();
+		sail.setBaseSail(new MemoryStore());
+		sail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
+		sail.setParameter(LuceneSail.WKT_FIELDS, LOCATION.stringValue());
+		sail.setEvaluationMode(mode);
+		SailRepository repository = new SailRepository(sail);
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				var origin = Values.literal("POINT(0 0)", CoreDatatype.GEO.WKT_LITERAL);
+				connection.add(NEAR, LOCATION, origin);
+				connection.add(NEAR, OTHER, origin);
+				connection.add(Values.iri("urn:far"), LOCATION,
+						Values.literal("POINT(10 10)", CoreDatatype.GEO.WKT_LITERAL));
+
+				String query = PREFIXES + "SELECT ?s ?p WHERE { " + pattern + " } ORDER BY ?p";
+				try (var rows = connection.prepareTupleQuery(query).evaluate()) {
+					assertEquals(List.of("s", "p"), rows.getBindingNames());
+					assertEquals(expected, rows.stream().toList());
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private record GeometryCase(String name, String pattern, List<BindingSet> expected) {
+	}
+
+	private static MapBindingSet row(IRI subject, IRI predicate) {
+		MapBindingSet row = new MapBindingSet();
+		if (subject != null) {
+			row.addBinding("s", subject);
+		}
+		row.addBinding("p", predicate);
+		return row;
+	}
+
+	@Test
+	void directDistanceStillUsesTheIndex() throws Exception {
+		RecordingIndex index = new RecordingIndex();
+		Properties parameters = new Properties();
+		parameters.setProperty(LuceneSail.LUCENE_RAMDIR_KEY, "true");
+		parameters.setProperty(LuceneSail.WKT_FIELDS, LOCATION.stringValue());
+		index.initialize(parameters);
+		LuceneSail sail = new LuceneSail();
+		sail.setBaseSail(new MemoryStore());
+		sail.setLuceneIndex(index);
+		SailRepository repository = new SailRepository(sail);
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.add(NEAR, LOCATION, Values.literal("POINT(0 0)", CoreDatatype.GEO.WKT_LITERAL));
+				try (var rows = connection.prepareTupleQuery(
+						PREFIXES + "SELECT ?s WHERE { ?s <urn:location> ?wkt FILTER(" + DISTANCE + ") }")
+						.evaluate()) {
+					assertEquals(List.of(NEAR), rows.stream().map(row -> row.getValue("s")).toList());
+				}
+				assertEquals(1, index.distanceQueries);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static class RecordingIndex extends LuceneIndex {
+		private int distanceQueries;
+
+		@Override
+		protected Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point point, IRI units,
+				double distance, String distanceVar, Var contextVar) throws IOException {
+			distanceQueries++;
+			return super.geoQuery(geoProperty, point, units, distance, distanceVar, contextVar);
+		}
+	}
+
+	@Test
+	void tripleSourceReusesTheWorkingQueryTree() {
+		LuceneSail sail = new LuceneSail();
+		sail.setBaseSail(new MemoryStore());
+		sail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
+		sail.setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
+		SailRepository repository = new SailRepository(sail);
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.add(NEAR, LOCATION, Values.literal("POINT(0 0)", CoreDatatype.GEO.WKT_LITERAL));
+			}
+			var root = new CountingRoot(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+			try (var connection = sail.getConnection()) {
+				var rows = QueryResults.asList(connection.evaluate(root, null, EmptyBindingSet.getInstance(), true));
+				assertEquals(List.of(NEAR), rows.stream().map(row -> row.getValue("s")).toList());
+			}
+			assertEquals(1, root.copies.get());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static final class CountingRoot extends QueryRoot {
+		private final AtomicInteger copies = new AtomicInteger();
+
+		private CountingRoot(TupleExpr arg) {
+			super(arg);
+		}
+
+		@Override
+		public QueryRoot clone() {
+			copies.incrementAndGet();
+			return super.clone();
+		}
+	}
+
+	@Test
+	void tripleSourcePreservesInheritedStatementPatternBindings() {
+		LuceneSail sail = new LuceneSail();
+		sail.setBaseSail(new MemoryStore());
+		sail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
+		sail.setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
+		SailRepository repository = new SailRepository(sail);
+		try {
+			repository.init();
+			var origin = Values.literal("POINT(0 0)", CoreDatatype.GEO.WKT_LITERAL);
+			try (var connection = repository.getConnection()) {
+				connection.add(NEAR, LOCATION, origin);
+			}
+			var duplicates = new BindingSetAssignment();
+			duplicates.setBindingSets(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance()));
+			var pattern = new InheritedStatementPattern();
+			var root = new QueryRoot(new Join(duplicates, pattern));
+			try (var connection = sail.getConnection()) {
+				var bindings = new MapBindingSet();
+				bindings.addBinding("s", NEAR);
+				var expected = row(NEAR, LOCATION);
+				expected.addBinding("o", origin);
+				assertEquals(List.of(expected, expected),
+						QueryResults.asList(connection.evaluate(root, null, bindings, true)));
+
+				bindings.setBinding("s", Values.iri("urn:missing"));
+				assertEquals(List.of(), QueryResults.asList(connection.evaluate(root, null, bindings, true)));
+
+				bindings.clear();
+				bindings.addBinding("unused", NEAR);
+				assertEquals(List.of(expected, expected),
+						QueryResults.asList(connection.evaluate(root, null, bindings, true)));
+			}
+			assertFalse(pattern.getSubjectVar().hasValue());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static final class InheritedStatementPattern extends StatementPattern {
+		private InheritedStatementPattern() {
+			super(Var.of("s"), Var.of("p"), Var.of("o"));
+		}
+	}
+
 	@Test
 	public void projectedDistanceParametersSurviveSearchLoweringInEveryMode() {
 		for (var mode : TupleFunctionEvaluationMode.values()) {

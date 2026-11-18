@@ -24,8 +24,10 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryParseOptions;
@@ -37,22 +39,22 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.SourceProvenance.VariableRole;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBasicGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBound;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLabeledTripleTerm;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTProjectionElem;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTReifiedTriple;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelect;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleTerm;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTriplesSameSubjectPath;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTVar;
 import org.eclipse.rdf4j.query.parser.sparql.ast.Node;
@@ -70,6 +72,8 @@ final class PreparedServiceQuerySpecializer {
 			ASTQueryContainer syntax = SyntaxTreeBuilder.parseQuery(source, ranges);
 			Set<ASTSelect> wildcards = Collections.newSetFromMap(new IdentityHashMap<>());
 			collectWildcards(syntax, wildcards);
+			SourceProvenance provenance = new SourceProvenance(ranges);
+			provenance.recordTripleComponents(syntax);
 			BNodeReferenceProcessor.process(syntax, QueryParseOptions.DEFAULT);
 			DataBlockRestrictions.validate(syntax, false, false);
 			StringEscapesProcessor.process(syntax);
@@ -77,25 +81,29 @@ final class PreparedServiceQuerySpecializer {
 			PrefixDeclProcessor.process(syntax, Map.of());
 			WildcardProjectionProcessor.process(syntax);
 			BlankNodeVarProcessor.process(syntax);
-			SourceProvenance provenance = new SourceProvenance(ranges);
 			TupleExpr parsed = (TupleExpr) syntax.jjtAccept(new TupleExprBuilder(SimpleValueFactory.getInstance(),
 					provenance), null);
 			TupleExpr root = parsed instanceof QueryRoot ? parsed : new QueryRoot(parsed);
 			PreparedQueryBindingPlan plan = PreparedQueryBindingPlan.create(root, parameters,
-					PreparedQueryBindingPlan.Mode.EMPTY_INPUT,
-					(service, values) -> SPARQLQueries.getPreparedBindingReadNames(service.getAskQueryString(),
-							service.getBaseURI(), values));
+					PreparedQueryBindingPlan.Mode.EMPTY_INPUT, SPARQLQueries.preparedServiceReadValidator());
 			Map<SourceRange, String> edits = new LinkedHashMap<>();
 			Map<Node, Primitive> primitives = new IdentityHashMap<>();
+			Map<SourceRange, Value> tripleCaptures = new LinkedHashMap<>();
+			Set<ASTLabeledTripleTerm> scalarTriples = Collections.newSetFromMap(new IdentityHashMap<>());
+			Set<ASTLabeledTripleTerm> scalarBinds = Collections.newSetFromMap(new IdentityHashMap<>());
+			Set<ASTBind> relationalBinds = Collections.newSetFromMap(new IdentityHashMap<>());
+			Map<ASTBind, Map<SourceRange, Value>> incompatibleRelationalComponents = new IdentityHashMap<>();
+			Map<SourceRange, String> unusableServiceSelectors = new LinkedHashMap<>();
 			List<Restore> restores = new ArrayList<>();
 			for (PreparedQueryBindingPlan.Replacement replacement : plan.replacements()) {
 				Var variable = replacement.variable();
 				Node occurrence = provenance.origin(variable);
-				if (!(occurrence instanceof ASTVar)) {
+				if (!(occurrence instanceof ASTVar lexicalVariable)) {
 					throw unsupported("a captured read has no lexical source");
 				}
 				Node parent = occurrence.jjtGetParent();
-				if (parent instanceof ASTBound) {
+				VariableRole role = provenance.role(lexicalVariable);
+				if (role == VariableRole.BOUND) {
 					put(edits, provenance.range(parent), "(true)");
 					continue;
 				}
@@ -124,16 +132,72 @@ final class PreparedServiceQuerySpecializer {
 						put(edits, range, source.substring(range.start(), range.end()));
 						continue;
 					}
-					if (!validPosition(variable, replacement.value())) {
+					if (!validPosition(variable, role, replacement.value())) {
 						primitive.empty = true;
+						continue;
 					}
-				} else if (isServiceSelector(occurrence) && !(replacement.value() instanceof IRI)) {
-					throw unsupported("a captured SERVICE selector is not an IRI");
+				} else if (role == VariableRole.SERVICE_SELECTOR && !(replacement.value() instanceof IRI)) {
+					String selector = "?" + lexicalVariable.getName();
+					SourceRange service = provenance.range(parent);
+					// The evaluator only tests the selector's RDF kind. A bound non-IRI keeps an unvisited
+					// branch lazy and raises the usual endpoint error when a non-silent branch executes.
+					String sourceReplacement = ((ASTServiceGraphPattern) parent).isSilent()
+							? "{}"
+							: "{ BIND(false AS " + selector + ") " + source.substring(service.start(), service.end())
+									+ " }";
+					unusableServiceSelectors.put(service, sourceReplacement);
+					continue;
 				}
-				String value = term(replacement.value());
-				put(edits, provenance.range(occurrence), primitiveSyntax != null || isTermSlot(occurrence)
-						? value
-						: "(" + value + ")");
+				Value value = replacement.value();
+				SourceRange range = provenance.range(occurrence);
+				if (parent instanceof ASTLabeledTripleTerm triple) {
+					boolean relational = variable.getParentNode() instanceof TripleRef;
+					if (relational && triple.jjtGetParent() instanceof ASTBind bind
+							&& !validPosition(variable, role, value)) {
+						Map<SourceRange, Value> components = incompatibleRelationalComponents.computeIfAbsent(bind,
+								ignored -> new LinkedHashMap<>());
+						Value previous = components.putIfAbsent(range, value);
+						if (previous != null && !previous.equals(value)) {
+							throw unsupported("derived source occurrences disagree");
+						}
+						continue;
+					}
+					Value previous = tripleCaptures.putIfAbsent(range, value);
+					if (previous != null && !previous.equals(value)) {
+						throw unsupported("derived source occurrences disagree");
+					}
+					if (requiresScalarTriple(role, value)) {
+						if (relational) {
+							throw unsupported(
+									"a captured relational triple component cannot be written in its term position");
+						}
+						for (Node node = triple; node instanceof ASTLabeledTripleTerm ancestor; node = node
+								.jjtGetParent()) {
+							scalarTriples.add(ancestor);
+						}
+					}
+					if (triple.jjtGetParent() instanceof ASTBind bind) {
+						if (variable.getParentNode() instanceof ValueExprTripleRef) {
+							scalarBinds.add(triple);
+						} else if (relational) {
+							relationalBinds.add(bind);
+						}
+					}
+				} else {
+					put(edits, range, primitiveSyntax != null || role != VariableRole.EXPRESSION
+							? term(value)
+							: "(" + expression(value) + ")");
+				}
+			}
+			materializeScalarTriples(source, provenance, tripleCaptures, scalarTriples, edits);
+			for (ASTLabeledTripleTerm triple : scalarBinds) {
+				if (!scalarTriples.contains(triple)) {
+					// The parser can turn a direct BIND of a triple into a graph lookup after its variables
+					// are replaced with constants. Keep the original scalar constructor at the same read site.
+					SourceRange range = provenance.range(triple);
+					put(edits, new SourceRange(range.start(), range.start()), "COALESCE(");
+					put(edits, new SourceRange(range.end(), range.end()), ")");
+				}
 			}
 			for (PreparedQueryBindingPlan.ProjectionRecovery recovery : plan.projectionRecoveries()) {
 				Node occurrence = provenance.origin(recovery.owner());
@@ -157,7 +221,7 @@ final class PreparedServiceQuerySpecializer {
 							}
 						}
 						projection.append(found == null ? "?" + variable.getName()
-								: "(" + term(found.value()) + " AS ?" + found.name() + ")").append(' ');
+								: "(" + expression(found.value()) + " AS ?" + found.name() + ")").append(' ');
 					}
 					put(edits, provenance.range(select), projection.toString());
 				} else {
@@ -166,7 +230,7 @@ final class PreparedServiceQuerySpecializer {
 						if (!element.hasAlias() && element.jjtGetChild(0) instanceof ASTVar variable
 								&& variable.getName().equals(recovery.name())) {
 							put(edits, provenance.range(element),
-									"(" + term(recovery.value()) + " AS ?" + recovery.name() + ")");
+									"(" + expression(recovery.value()) + " AS ?" + recovery.name() + ")");
 							found = true;
 						}
 					}
@@ -178,20 +242,21 @@ final class PreparedServiceQuerySpecializer {
 			// This private captured parse is read-only from here onwards and is never exposed or cached.
 			// Internal overwrite admission is static. Actual caller rows retain ordinary join compatibility.
 			plan.apply();
-			List<SourceRange> emptyOperands = primitives.values()
+			List<SourceRange> eliminated = new ArrayList<>(unusableServiceSelectors.keySet());
+			primitives.values()
 					.stream()
 					.filter(operand -> operand.empty)
 					.map(operand -> operand.range)
-					.toList();
+					.forEach(eliminated::add);
 			List<Restore> admitted = restores.stream()
-					.filter(restore -> emptyOperands.stream()
+					.filter(restore -> eliminated.stream()
 							.noneMatch(empty -> contains(empty, restore.primitive())))
 					.toList();
 			validateRestorations(root, admitted);
 			Map<Node, Primitive> operands = new IdentityHashMap<>();
 			for (var entry : primitives.entrySet()) {
 				Primitive primitive = entry.getValue();
-				if (emptyOperands.stream()
+				if (eliminated.stream()
 						.anyMatch(empty -> !empty.equals(primitive.range)
 								&& contains(empty, primitive.range))) {
 					continue;
@@ -220,6 +285,17 @@ final class PreparedServiceQuerySpecializer {
 				operand.outputs.values().forEach(value -> head.append(term(value)).append(' '));
 				head.append(") } ");
 				put(edits, new SourceRange(operand.range.start(), operand.range.start()), head.toString());
+			}
+			relationalBinds.removeAll(incompatibleRelationalComponents.keySet());
+			preserveRelationalBinds(syntax, parameters, provenance, relationalBinds, eliminated, edits);
+			deferIncompatibleRelationalComponents(syntax, parameters, provenance, incompatibleRelationalComponents,
+					eliminated, edits);
+			for (var selector : unusableServiceSelectors.entrySet()) {
+				SourceRange discarded = selector.getKey();
+				if (eliminated.stream().noneMatch(outer -> !outer.equals(discarded) && contains(outer, discarded))) {
+					edits.entrySet().removeIf(edit -> contains(discarded, edit.getKey()));
+					put(edits, discarded, selector.getValue());
+				}
 			}
 			List<Map.Entry<SourceRange, String>> ordered = new ArrayList<>(edits.entrySet());
 			ordered.sort(Comparator.<Map.Entry<SourceRange, String>>comparingInt(edit -> edit.getKey().start())
@@ -267,7 +343,7 @@ final class PreparedServiceQuerySpecializer {
 	}
 
 	private static Node bindingOperand(Node primitive) {
-		if (primitive instanceof ASTTriplesSameSubjectPath) {
+		if (primitive instanceof ASTTriplesSameSubjectPath || primitive instanceof ASTBind) {
 			for (Node parent = primitive.jjtGetParent(); parent != null; parent = parent.jjtGetParent()) {
 				if (parent instanceof ASTBasicGraphPattern) {
 					// A blank-node label belongs to this whole lexical BGP, even across several triple subjects.
@@ -278,29 +354,132 @@ final class PreparedServiceQuerySpecializer {
 		return primitive;
 	}
 
-	private static boolean isServiceSelector(Node occurrence) {
-		return occurrence.jjtGetParent() instanceof ASTServiceGraphPattern service
-				&& service.jjtGetChild(0) == occurrence;
+	private static boolean requiresScalarTriple(VariableRole role, Value value) {
+		return switch (role) {
+		case TRIPLE_SUBJECT -> !(value instanceof IRI || value instanceof BNode);
+		case TRIPLE_PREDICATE -> !(value instanceof IRI);
+		case TRIPLE_OBJECT -> requiresTripleFunction(value);
+		default -> throw new IllegalArgumentException("Not a triple component: " + role);
+		};
 	}
 
-	private static boolean isTermSlot(Node occurrence) {
-		if (isServiceSelector(occurrence)) {
-			return true;
+	private static void preserveRelationalBinds(ASTQueryContainer syntax, BindingSet parameters,
+			SourceProvenance provenance, Set<ASTBind> relationalBinds, List<SourceRange> eliminated,
+			Map<SourceRange, String> edits) {
+		if (relationalBinds.isEmpty()) {
+			return;
 		}
-		for (Node parent = occurrence.jjtGetParent(); parent != null; parent = parent.jjtGetParent()) {
-			if (parent instanceof ASTTripleTerm || parent instanceof ASTReifiedTriple) {
-				return true;
-			}
-			if (parent instanceof ASTBind || parent instanceof ASTConstraint || parent instanceof ASTProjectionElem
-					|| parent instanceof ASTServiceGraphPattern) {
-				// A SERVICE body keeps the grammar roles of its own expressions and declarations.
-				return false;
+		Set<String> occupied = SPARQLQueries.lexicalBindingNames(syntax);
+		occupied.addAll(parameters.getBindingNames());
+		List<String> variables = new ArrayList<>(4);
+		for (int suffix = 0; variables.size() < 4; suffix++) {
+			String name = "_rdf4j_triple_" + suffix;
+			if (occupied.add(name)) {
+				variables.add("?" + name);
 			}
 		}
-		return false;
+		for (ASTBind bind : relationalBinds.stream()
+				.sorted(Comparator.comparingInt(node -> provenance.range(node).start()))
+				.toList()) {
+			if (eliminated.stream().anyMatch(outer -> contains(outer, provenance.range(bind)))) {
+				continue;
+			}
+			// Substitution can turn a shorthand graph lookup into a scalar constructor when every remaining
+			// component is supplied by preceding statements. Check that the constructed term is present through
+			// a lookup with no preceding statement patterns. Keep the enclosing basic graph pattern intact.
+			String result = "?" + ((ASTVar) bind.jjtGetChild(1)).getName();
+			String subject = variables.get(0);
+			String predicate = variables.get(1);
+			String object = variables.get(2);
+			String triple = variables.get(3);
+			String guard = " FILTER(BOUND(" + result + ") && EXISTS { BIND(SUBJECT(" + result + ") AS "
+					+ subject + ") BIND(PREDICATE(" + result + ") AS " + predicate + ") BIND(OBJECT(" + result
+					+ ") AS " + object + ") BIND(<<(" + subject + " " + predicate + " " + object + ")>> AS "
+					+ triple + ") }) ";
+			// A nested EXISTS opens its own blank-node scope. Add it after the lexical BGP's last blank label.
+			int offset = provenance.range(bindingOperand(bind)).end();
+			edits.merge(new SourceRange(offset, offset), guard, String::concat);
+		}
 	}
 
-	private static boolean validPosition(Var variable, Value value) {
+	private static void deferIncompatibleRelationalComponents(ASTQueryContainer syntax, BindingSet parameters,
+			SourceProvenance provenance, Map<ASTBind, Map<SourceRange, Value>> binds, List<SourceRange> eliminated,
+			Map<SourceRange, String> edits) {
+		if (binds.isEmpty()) {
+			return;
+		}
+		Set<String> occupied = SPARQLQueries.lexicalBindingNames(syntax);
+		occupied.addAll(parameters.getBindingNames());
+		int suffix = 0;
+		for (ASTBind bind : binds.keySet()
+				.stream()
+				.sorted(Comparator.comparingInt(node -> provenance.range(node).start()))
+				.toList()) {
+			SourceRange range = provenance.range(bind);
+			if (eliminated.stream().anyMatch(outer -> contains(outer, range))) {
+				continue;
+			}
+			StringBuilder assignments = new StringBuilder();
+			for (var component : binds.get(bind).entrySet()) {
+				String name;
+				do {
+					name = "_rdf4j_triple_component_" + suffix++;
+				} while (!occupied.add(name));
+				String variable = "?" + name;
+				// The relational evaluator owns type checking. Supply the value through a local assignment
+				// so the lookup receives it only if this graph pattern is evaluated.
+				assignments.append(" BIND(")
+						.append(expression(component.getValue()))
+						.append(" AS ")
+						.append(variable)
+						.append(") ");
+				put(edits, component.getKey(), variable);
+			}
+			edits.merge(new SourceRange(range.start(), range.start()), assignments.toString(), String::concat);
+		}
+	}
+
+	private static void materializeScalarTriples(String source, SourceProvenance provenance,
+			Map<SourceRange, Value> captures, Set<ASTLabeledTripleTerm> scalarTriples, Map<SourceRange, String> edits) {
+		for (ASTLabeledTripleTerm triple : scalarTriples) {
+			SourceRange range = provenance.range(triple);
+			List<SourceRange> components = provenance.components(triple);
+			put(edits, new SourceRange(range.start(), components.getFirst().start()), "TRIPLE(");
+			for (int index = 0; index < components.size(); index++) {
+				SourceRange component = components.get(index);
+				Value value = captures.remove(component);
+				if (value != null) {
+					put(edits, component, expression(value));
+				} else {
+					String original = source.substring(component.start(), component.end());
+					if (index == 1 && original.equalsIgnoreCase("a")) {
+						put(edits, component, term(RDF.TYPE));
+					} else if (original.startsWith("_:")) {
+						// A blank-node label is a term here. Keep that lexical occurrence in a scalar constructor.
+						String predicate = term(RDF.TYPE);
+						put(edits, component, "SUBJECT(<<(" + original + " " + predicate + " " + predicate + ")>>)");
+					}
+				}
+				int next = index + 1;
+				put(edits, new SourceRange(component.end(), next < components.size() ? components.get(next).start()
+						: range.end()), next < components.size() ? ", " : ")");
+			}
+		}
+		captures.forEach((range, value) -> put(edits, range, term(value)));
+	}
+
+	private static boolean validPosition(Var variable, VariableRole role, Value value) {
+		switch (role) {
+		case TRIPLE_SUBJECT:
+			return value instanceof Resource;
+		case TRIPLE_PREDICATE:
+			return value instanceof IRI;
+		case REIFIER:
+		case GRAPH_SELECTOR:
+			return value instanceof IRI || value instanceof BNode;
+		default:
+			break;
+		}
 		QueryModelNode parent = variable.getParentNode();
 		if (parent instanceof StatementPattern statement) {
 			// Literal path endpoints are legal syntax, and generated positive-length child statements do not
@@ -350,6 +529,20 @@ final class PreparedServiceQuerySpecializer {
 		StringBuilder result = new StringBuilder();
 		SPARQLQueries.appendBindingValue(value, result);
 		return result.toString();
+	}
+
+	private static boolean requiresTripleFunction(Value value) {
+		return value instanceof TripleTerm triple
+				&& (triple.getSubject() instanceof TripleTerm || requiresTripleFunction(triple.getObject()));
+	}
+
+	private static String expression(Value value) {
+		if (requiresTripleFunction(value)) {
+			TripleTerm triple = (TripleTerm) value;
+			return "TRIPLE(" + expression(triple.getSubject()) + ", " + term(triple.getPredicate()) + ", "
+					+ expression(triple.getObject()) + ")";
+		}
+		return term(value);
 	}
 
 	private static QueryEvaluationException unsupported(String reason) {

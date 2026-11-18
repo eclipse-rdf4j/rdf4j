@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.AnnotationTripleRef;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -99,6 +100,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.ReifiedTripleRef;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -150,10 +152,12 @@ public final class QueryAlgebraBindingAnalysis {
 			"BoundStatementPatternJoinIteration",
 			"BoundStatementPatternGuardJoinIteration",
 			"BoundStatementPatternLeftJoinIteration");
-	private static final Set<Class<?>> STANDARD_TUPLE_TYPES = Set.of(ArbitraryLengthPath.class,
+	private static final Set<Class<?>> STANDARD_TUPLE_TYPES = Set.of(AnnotationTripleRef.class,
+			ArbitraryLengthPath.class,
 			BindingSetAssignment.class, DescribeOperator.class, Difference.class, Distinct.class, EmptySet.class,
 			Extension.class, Filter.class, Graph.class, Group.class, Intersection.class, Join.class, Lateral.class,
 			LeftJoin.class, MultiProjection.class, Order.class, Projection.class, QueryRoot.class, Reduced.class,
+			ReifiedTripleRef.class,
 			Service.class, SingletonSet.class, Slice.class, StatementPattern.class, TripleRef.class,
 			TupleFunctionCall.class, Union.class, Window.class, ZeroLengthPath.class);
 
@@ -175,6 +179,7 @@ public final class QueryAlgebraBindingAnalysis {
 	private final ReadOnlyContext rootContext;
 	private final boolean rootInputOriginsKnown;
 	private final boolean bindingAssignment;
+	private Set<TupleExpr> legacyAssignmentScopes;
 	private final Map<QueryModelNode, ReadOnlyContext> contextCache = new IdentityHashMap<>();
 	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
@@ -605,12 +610,25 @@ public final class QueryAlgebraBindingAnalysis {
 			// evaluates their children, so they do not introduce binding reads or reachable runtime scopes.
 			return;
 		}
+		if (node instanceof ReifiedTripleRef reference && STANDARD_TUPLE_TYPES.contains(node.getClass())) {
+			// The parser's separate rdf:reifies statement owns the reifier read.
+			for (Var variable : tripleLookupVariables(reference)) {
+				if (variable != null) {
+					visitScoped(variable, childInput(reference, variable, input), visitor);
+				}
+			}
+			return;
+		}
 		node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode child) {
 				visitScoped(child, childInput(node, child, input), visitor);
 			}
 		});
+		if (node instanceof GroupConcat concat && concat.getSeparator() != null) {
+			ValueExpr separator = concat.getSeparator();
+			visitScoped(separator, childInput(node, separator, input), visitor);
+		}
 		if (node instanceof Projection projection && projection.getProjectionContext() != null) {
 			visitScoped(projection.getProjectionContext(), childInput(node, projection.getProjectionContext(), input),
 					visitor);
@@ -924,14 +942,13 @@ public final class QueryAlgebraBindingAnalysis {
 				return overridden;
 			}
 		}
-		if (parent instanceof TupleExpr tuple) {
-			if (tuple instanceof BindingAnalysisContract contract
-					&& contract.bindingContractClass() == tuple.getClass()) {
-				return contract.bindingInput(this, child, input);
-			}
-			if (!STANDARD_TUPLE_TYPES.contains(tuple.getClass())) {
-				return unknownChildInput(parent, input);
-			}
+		if (parent instanceof BindingAnalysisContract contract
+				&& contract.bindingContractClass() == parent.getClass()) {
+			return contract.bindingInput(this, child, input);
+		}
+		if (parent instanceof TupleExpr tuple && !STANDARD_TUPLE_TYPES.contains(tuple.getClass())
+				&& (legacyAssignmentScopes == null || !legacyAssignmentScopes.contains(tuple))) {
+			return unknownChildInput(parent, input);
 		}
 		return standardChildInput(parent, child, input);
 	}
@@ -1386,6 +1403,39 @@ public final class QueryAlgebraBindingAnalysis {
 		return STANDARD_TUPLE_TYPES.contains(expression.getClass())
 				|| expression instanceof BindingAnalysisContract contract
 						&& contract.bindingContractClass() == expression.getClass();
+	}
+
+	/**
+	 * The legacy assigner descended through typed visitor methods, including inherited dispatch. This proves only which
+	 * input edges the legacy assigner visited. It does not make the extension's output or hidden reads known.
+	 */
+	boolean allowLegacyAssignmentScope(TupleExpr expression) {
+		if (legacyAssignmentScopes == null) {
+			legacyAssignmentScopes = Collections.newSetFromMap(new IdentityHashMap<>());
+		}
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node == expression) {
+					legacyAssignmentScopes.add(expression);
+				}
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) {
+				// The extension owns its scope.
+			}
+		});
+		return legacyAssignmentScopes.contains(expression);
+	}
+
+	static boolean hasKnownValueReadContract(ValueExpr expression) {
+		return INPUT_READ_VALUE_TYPES.contains(expression.getClass()) || expression.getClass() == BNodeGenerator.class
+				|| expression.getClass() == AggregateFunctionCall.class
+				|| expression.getClass() == WindowFunctionCall.class
+				|| expression instanceof BindingAnalysisContract contract
+						&& contract.bindingContractClass() == expression.getClass()
+						&& contract.supportsPreparedBindings();
 	}
 
 	public OutputFacts unknownFacts(ReadOnlyContext input) {
@@ -1980,8 +2030,9 @@ public final class QueryAlgebraBindingAnalysis {
 			return OutputFacts.known(possible, guaranteed, fixed, kindsFromValues(fixed), input, true);
 		}
 		if (expression instanceof TripleRef tripleRef) {
-			Set<String> names = variableNames(tripleRef.getVarList());
-			Map<String, Value> fixed = fixedFromVars(tripleRef.getVarList(), input);
+			Var[] vars = tripleLookupVariables(tripleRef);
+			Set<String> names = variableNames(vars);
+			Map<String, Value> fixed = fixedFromVars(input, vars);
 			return OutputFacts.known(names, names, fixed, kindsFromValues(fixed), input, true);
 		}
 		if (expression instanceof BindingSetAssignment assignment) {
@@ -2549,6 +2600,11 @@ public final class QueryAlgebraBindingAnalysis {
 			conditional.addAll(projected.conditionalInputNames);
 		}
 		return result.withOverwrittenInputs(overwritten).withConditionalInputs(conditional);
+	}
+
+	private static Var[] tripleLookupVariables(TripleRef tripleRef) {
+		return new Var[] { tripleRef.getSubjectVar(), tripleRef.getPredicateVar(), tripleRef.getObjectVar(),
+				tripleRef.getExprVar() };
 	}
 
 	private Map<String, Value> fixedFromVars(Iterable<Var> vars, ReadOnlyContext input) {

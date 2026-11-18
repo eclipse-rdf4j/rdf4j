@@ -21,12 +21,15 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,6 +50,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -72,7 +76,12 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
+import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
@@ -82,6 +91,268 @@ import org.mockito.ArgumentMatchers;
 
 class ServicePreparedQueryBindingTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void preparedTripleTermComponentsKeepTheirBindingsThroughTheRealProvider() throws Exception {
+		var a = VF.createIRI("urn:a");
+		var b = VF.createIRI("urn:b");
+		var predicate = VF.createIRI("urn:term-predicate");
+		var first = VF.createIRI("urn:first");
+		var second = VF.createIRI("urn:second");
+		var expectedFirst = VF.createTripleTerm(a, predicate, first);
+		var expectedSecond = VF.createTripleTerm(b, predicate, second);
+		String pattern = "?s <urn:term-predicate> ?o BIND(<<(?s <urn:term-predicate> ?o)>> AS ?t)";
+		try (Harness harness = new Harness(false)) {
+			try (var connection = harness.data.getConnection()) {
+				connection.add(a, predicate, first);
+				connection.add(b, predicate, second);
+			}
+			assertTripleTerms(harness, pattern, Map.of(), expectedFirst, expectedSecond);
+			assertTripleTerms(harness, pattern, Map.of("s", a), expectedFirst);
+			assertTripleTerms(harness, pattern, Map.of("s", VF.createIRI("urn:absent")));
+			assertTripleTerms(harness, pattern, Map.of("o", second), expectedSecond);
+			assertTripleTerms(harness, pattern, Map.of("s", b, "o", second), expectedSecond);
+			assertTripleTerms(harness, pattern.replace("?s", "<urn:a>"), Map.of(), expectedFirst);
+			assertTripleTerms(harness, "?s <urn:term-predicate> ?o BIND(TRIPLE(?s, <urn:term-predicate>, ?o) AS ?t)",
+					Map.of("s", a), expectedFirst);
+		}
+	}
+
+	@Test
+	void invalidAndNestedScalarTripleTermsMatchLocallyEvaluatedBindings() throws Exception {
+		var p = VF.createIRI("urn:p");
+		var o = VF.createIRI("urn:object");
+		var inner = VF.createTripleTerm(VF.createIRI("urn:inner"), p, o);
+		String source = "SELECT ?term ?fallback ?lazy WHERE {"
+				+ " BIND(COALESCE(<<(?subject a <<(<urn:inner> ?predicate ?object)>>)>>) AS ?term)"
+				+ " BIND(COALESCE(?term, <urn:fallback>) AS ?fallback)"
+				+ " BIND(IF(false, <<(?subject ?predicate ?object)>>, <urn:safe>) AS ?lazy) }";
+		try (Harness harness = new Harness(false)) {
+			for (Value subject : List.of(VF.createIRI("urn:subject"), VF.createLiteral("invalid"), inner)) {
+				for (Value predicate : List.of(p, VF.createLiteral("invalid"))) {
+					harness.assertMatches(source, Map.of("subject", subject, "predicate", predicate, "object", o));
+				}
+			}
+		}
+	}
+
+	@Test
+	void preparedRelationalBindKeepsTheOriginalTripleLookup() throws Exception {
+		var a = VF.createIRI("urn:a");
+		var b = VF.createIRI("urn:b");
+		var link = VF.createIRI("urn:link");
+		var pred = VF.createIRI("urn:pred");
+		var o = VF.createIRI("urn:object");
+		var stored = VF.createTripleTerm(a, pred, o);
+		String pattern = "?s <urn:link> ?o BIND(<<(?s ?predicate ?o)>> AS ?t)";
+		try (Harness harness = new Harness(false)) {
+			try (var connection = harness.data.getConnection()) {
+				connection.add(a, link, o);
+				connection.add(b, link, o);
+				connection.add(a, VF.createIRI("urn:annotation"), stored);
+				var shared = VF.createBNode("shared-bind");
+				var unpaired = VF.createBNode("unpaired-bind");
+				connection.add(shared, VF.createIRI("urn:bind-left"), a);
+				connection.add(shared, VF.createIRI("urn:bind-right"), o);
+				connection.add(unpaired, VF.createIRI("urn:bind-left"), a);
+			}
+			var parameters = Map.<String, Value>of("predicate", pred);
+			assertThat(Harness.evaluate(harness.data, "SELECT ?o ?t WHERE {" + pattern + "}", parameters))
+					.extracting(row -> row.getValue("t"))
+					.containsExactly(stored);
+			assertTripleTerms(harness, pattern, parameters, stored);
+			assertTripleTerms(harness, "BIND(<<(<urn:a> ?predicate <urn:object>)>> AS ?t) ?x <urn:link> ?o",
+					Map.of("predicate", pred, "x", a), stored);
+			assertTripleTerms(harness, "_:shared <urn:bind-left> ?s "
+					+ "BIND(<<(?s ?predicate <urn:object>)>> AS ?t) _:shared <urn:bind-right> ?o", parameters, stored);
+		}
+	}
+
+	@Test
+	void incompatibleRelationalTripleComponentsFailOnlyWhenTheLookupRuns() throws Exception {
+		try (Harness harness = new Harness(false)) {
+			String select = "SELECT ?keep ?subject ?predicate ?t WHERE { %s }";
+			String expression = "BIND(IF(%s, EXISTS { %s }, true) AS ?keep)";
+			var row = new MapBindingSet();
+			row.addBinding("keep", VF.createLiteral(true));
+			for (var badRole : List.of("subject", "predicate")) {
+				String lookup = "BIND(<<( " + (badRole.equals("subject") ? "?subject <urn:p>" : "<urn:s> ?predicate")
+						+ " <urn:o> )>> AS ?t)";
+				Map<String, Value> parameters = Map.of(badRole, VF.createLiteral("invalid"));
+				String skipped = select.formatted(expression.formatted("false", lookup));
+				assertThat(Harness.evaluate(harness.data, skipped, parameters)).containsExactly(row);
+				int before = harness.requests.size();
+				assertThat(harness.service(skipped, parameters)).containsExactly(row);
+				assertThat(harness.requests).hasSize(before + 1);
+
+				String reached = select.formatted(expression.formatted("true", lookup));
+				assertThatThrownBy(() -> Harness.evaluate(harness.data, reached, parameters))
+						.isInstanceOf(ClassCastException.class);
+				before = harness.requests.size();
+				assertThatThrownBy(() -> harness.service(reached, parameters)).isInstanceOf(RuntimeException.class);
+				assertThat(harness.requests).hasSize(before + 1);
+
+				before = harness.requests.size();
+				String silent = select.formatted("VALUES ?keep { true true } SERVICE SILENT <urn:endpoint> { "
+						+ lookup + " }");
+				assertThat(Harness.evaluate(harness.sender, silent, parameters)).containsExactly(row, row);
+				assertThat(harness.requests).hasSize(before + 2);
+			}
+		}
+	}
+
+	@Test
+	void invalidNestedServiceSelectorPreservesSilentCallerRows() throws Exception {
+		try (Harness harness = new Harness(false)) {
+			harness.data.setFederatedServiceResolver(selector -> {
+				throw new AssertionError("An invalid endpoint must never reach the resolver");
+			});
+			String local = "SELECT ?keep WHERE { VALUES ?keep {1 1} "
+					+ "SERVICE SILENT ?target {?s <urn:p> ?o} }";
+			Map<String, Value> parameters = Map.of("target", VF.createLiteral("invalid endpoint"));
+			harness.assertMatches(local, parameters);
+			assertThat(harness.requests).singleElement()
+					.satisfies(request -> new SPARQLParser().parseQuery(request, null));
+			assertThatThrownBy(() -> harness.service(local.replace("SERVICE SILENT", "SERVICE"), parameters))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("SERVICE endpoint must be an IRI bound at evaluation time");
+		}
+	}
+
+	@Test
+	void invalidNestedServiceSelectorFailsOnlyWhenEvaluated() throws Exception {
+		String pattern = "BIND(IF(%s, EXISTS { SERVICE %s?target { ?s <urn:p> ?o } }, true) AS ?keep)";
+		Map<String, Value> parameters = Map.of("target", VF.createLiteral("invalid endpoint"));
+		try (Harness harness = new Harness(false)) {
+			harness.data.setFederatedServiceResolver(selector -> {
+				throw new AssertionError("An invalid endpoint must never reach the resolver");
+			});
+			String select = "SELECT ?keep ?target ?s WHERE { %s }";
+			var keep = new MapBindingSet();
+			keep.addBinding("keep", VF.createLiteral(true));
+			for (var expression : List.of(pattern.formatted("false", ""), pattern.formatted("true", "SILENT "))) {
+				String query = select.formatted(expression);
+				assertThat(Harness.evaluate(harness.data, query, parameters)).containsExactly(keep);
+				assertThat(harness.service(query, parameters)).containsExactly(keep);
+			}
+			String reached = select.formatted(pattern.formatted("true", ""));
+			assertThatThrownBy(() -> Harness.evaluate(harness.data, reached, parameters))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("SERVICE endpoint must be an IRI bound at evaluation time");
+			assertThatThrownBy(() -> harness.service(reached, parameters))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("SERVICE endpoint must be an IRI bound at evaluation time");
+		}
+	}
+
+	@Test
+	void clonedServiceExpressionsKeepAggregateSeparatorSource() throws Exception {
+		try (Harness harness = new Harness(false)) {
+			String query = "SELECT ?category WHERE {VALUES ?category { <urn:observed> } "
+					+ "FILTER(EXISTS { SELECT (GROUP_CONCAT(?o; SEPARATOR=STR(?sep)) AS ?nested) "
+					+ "WHERE { VALUES ?o { 'a' 'b' } } } NOT IN (false, false))}";
+			harness.assertMatches(query, Map.of("sep", VF.createLiteral("|")));
+		}
+	}
+
+	private static void assertTripleTerms(Harness harness, String pattern, Map<String, Value> parameters,
+			Value... terms) {
+		int before = harness.requests.size();
+		var rows = Harness.evaluate(harness.sender, "SELECT ?o ?t WHERE { SERVICE <urn:endpoint> { " + pattern + " } }",
+				parameters);
+		assertThat(rows).extracting(row -> row.getValue("t")).containsExactlyInAnyOrder(terms);
+		assertThat(rows).allSatisfy(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("o", "t"));
+		assertThat(harness.requests.subList(before, harness.requests.size())).singleElement()
+				.satisfies(request -> new SPARQLParser().parseQuery(request, null));
+	}
+
+	@Test
+	void optimizerParsesEachSavedNestedBodyOnce() {
+		String body = "?s <urn:p> ?o";
+		for (int depth = 4; depth > 0; depth--) {
+			body = "SERVICE <urn:endpoint-" + depth + "> { " + body + " }";
+		}
+		var expression = new SPARQLParser().parseQuery("ASK { " + body + " }", null).getTupleExpr();
+		List<String> savedRequests = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				savedRequests.add(service.getAskQueryString());
+				super.meet(service);
+			}
+		});
+		assertThat(savedRequests).hasSize(4);
+		var bindings = new MapBindingSet();
+		bindings.addBinding("s", VF.createIRI("urn:a"));
+		try (var parser = mockStatic(SyntaxTreeBuilder.class, CALLS_REAL_METHODS)) {
+			new BindingAssignerOptimizer().optimizeForPreparedQuery(expression, bindings);
+			for (String source : savedRequests) {
+				parser.verify(() -> SyntaxTreeBuilder.parseQuery(source));
+			}
+		}
+	}
+
+	@Test
+	void nestedAskDoesNotReuseAPreviousEvaluationOrChangeRequestCount() throws Exception {
+		try (Harness harness = new Harness(false); var connection = harness.sender.getConnection()) {
+			harness.data.setFederatedServiceResolver(endpoint -> harness.endpoint);
+			for (int depth = 1; depth <= 4; depth++) {
+				String body = "?s <urn:p> ?o";
+				for (int index = 1; index <= depth; index++) {
+					body = "SERVICE <urn:endpoint-" + index + "> {" + body + "}";
+				}
+				var query = connection.prepareBooleanQuery("ASK {" + body + "}");
+				assertAskRequests(harness, query, true, depth);
+				query.setBinding("s", VF.createIRI("urn:a"));
+				assertAskRequests(harness, query, true, depth);
+				query.setBinding("s", VF.createIRI("urn:absent"));
+				assertAskRequests(harness, query, false, depth);
+				query.setBinding("s", VF.createIRI("urn:a"));
+				assertAskRequests(harness, query, true, depth);
+				query.clearBindings();
+				assertAskRequests(harness, query, true, depth);
+			}
+		}
+	}
+
+	private static void assertAskRequests(Harness harness, BooleanQuery query, boolean result, int expectedRequests) {
+		int before = harness.requests.size();
+		assertThat(query.evaluate()).isEqualTo(result);
+		assertThat(harness.requests.size() - before).isEqualTo(expectedRequests);
+	}
+
+	@Test
+	void savedReadFactsAreScopedToTextBaseAndParameterValues() {
+		Service first = preparedService("?x <urn:p> ?o", Map.of());
+		first.setExpressionString("?x <p> ?o");
+		first.setBaseURI("http://example.org/one/");
+		Service second = first.clone();
+		second.setBaseURI("http://example.org/two/");
+		String source = first.getAskQueryString();
+		assertThat(second.getAskQueryString()).isEqualTo(source);
+		var parameters = new MapBindingSet();
+		parameters.addBinding("x", VF.createIRI("urn:a"));
+		var validator = SPARQLQueries.preparedServiceReadValidator();
+		try (var parser = mockStatic(SyntaxTreeBuilder.class, CALLS_REAL_METHODS)) {
+			assertThat(validator.possibleReads(first, parameters)).containsExactly("x");
+			assertThat(validator.possibleReads(first.clone(), parameters)).containsExactly("x");
+			parser.verify(() -> SyntaxTreeBuilder.parseQuery(source));
+
+			assertThat(validator.possibleReads(second, parameters)).containsExactly("x");
+			parameters.setBinding("x", VF.createIRI("urn:b"));
+			assertThat(validator.possibleReads(first, parameters)).containsExactly("x");
+			parameters.setBinding("x", VF.createIRI("urn:a"));
+			assertThat(validator.possibleReads(first, parameters)).containsExactly("x");
+			parser.verify(() -> SyntaxTreeBuilder.parseQuery(source), times(3));
+
+			assertThat(SPARQLQueries.preparedServiceReadValidator().possibleReads(first, parameters))
+					.containsExactly("x");
+			parser.verify(() -> SyntaxTreeBuilder.parseQuery(source), times(4));
+
+			first.setExpressionString("BIND(<urn:shadow> AS ?x) ?x <p> ?o");
+			assertThat(validator.possibleReads(first, parameters)).isEmpty();
+		}
+	}
 
 	@Test
 	void scopedValuesAndAssignmentsMatchTheIndependentSourceThroughBothAdapters() throws Exception {
@@ -1434,7 +1705,26 @@ class ServicePreparedQueryBindingTest {
 				endpoint = spy(new RepositoryFederatedService(remote));
 			} else {
 				remote = null;
-				endpoint = spy(new RepositoryFederatedService(data, false));
+				RepositoryWrapper recordingData = new RepositoryWrapper(data) {
+					@Override
+					public RepositoryConnection getConnection() {
+						return new RepositoryConnectionWrapper(this, super.getConnection()) {
+							@Override
+							public BooleanQuery prepareBooleanQuery(QueryLanguage language, String query,
+									String baseURI) {
+								requests.add(query);
+								return super.prepareBooleanQuery(language, query, baseURI);
+							}
+
+							@Override
+							public TupleQuery prepareTupleQuery(QueryLanguage language, String query, String baseURI) {
+								requests.add(query);
+								return super.prepareTupleQuery(language, query, baseURI);
+							}
+						};
+					}
+				};
+				endpoint = spy(new RepositoryFederatedService(recordingData, false));
 			}
 			endpoint.setBlankNodeReferencesSupported(true);
 			endpoint.setCanonicalBNodeIDsSupported(true);

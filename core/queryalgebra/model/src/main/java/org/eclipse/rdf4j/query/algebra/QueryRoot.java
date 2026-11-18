@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryBindingPreparation;
  * @author Arjohn Kampman
  */
 public class QueryRoot extends UnaryTupleOperator {
+	private static final long serialVersionUID = 963535243052715957L;
+
 	private transient QueryBindingPreparation bindingPreparation;
 
 	/** Invocation metadata is not part of the algebra's equality or exported binding domain. */

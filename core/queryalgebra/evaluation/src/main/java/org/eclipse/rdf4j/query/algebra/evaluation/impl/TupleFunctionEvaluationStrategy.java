@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
@@ -46,6 +47,16 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	}
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
+
+	/** Allocates the core tuple-function evaluator for a Sail wrapper with a preparation-aware pipeline. */
+	@InternalUseOnly
+	public static TupleFunctionEvaluationStrategy createForSail(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFunctionRegistry) {
+		var strategy = new TupleFunctionEvaluationStrategy(tripleSource, dataset, serviceResolver,
+				tupleFunctionRegistry);
+		strategy.enableSailBindingPreparation();
+		return strategy;
+	}
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver) {

@@ -42,6 +42,19 @@ public interface QueryOptimizerPipeline {
 		return initialBindings;
 	}
 
+	/** A core pipeline may select inputs by invocation mode while preserving the virtual legacy selector by default. */
+	@InternalUseOnly
+	default BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings,
+			BindingOptimizationContext.Mode mode) {
+		return getOptimizerInputBindings(optimizer, initialBindings);
+	}
+
+	/** True when the installed stages preserve logical parameters captured before the pipeline runs. */
+	@InternalUseOnly
+	default boolean preservesPreparedBindings() {
+		return false;
+	}
+
 	/**
 	 * Structural lowerings run before empty-input parameter capture. They receive no parameter values and must preserve
 	 * parameter-sensitive scope, reads, errors and result multiplicity. Ordinary runtime optimization does not run

@@ -104,8 +104,7 @@ final class NativeAggregateDemandAnalysis {
 			return false;
 		}
 		if (original instanceof GroupConcat concat && target instanceof GroupConcat copiedConcat) {
-			// GroupConcat's model equality and normal child visitor omit its separator. It remains part of the
-			// aggregate definition, including any nested semantic structure, before a clone can inherit demand.
+			// The ordinary child visitor omits the separator. Copy the demand of any nested definitions explicitly.
 			ValueExpr separator = concat.getSeparator();
 			ValueExpr copiedSeparator = copiedConcat.getSeparator();
 			if (!Objects.equals(separator, copiedSeparator)

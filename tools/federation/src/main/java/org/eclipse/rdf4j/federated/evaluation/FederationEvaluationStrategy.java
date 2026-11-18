@@ -149,6 +149,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.ActiveGraph;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
@@ -157,12 +158,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQ
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.Capture;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -406,6 +409,12 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		this.cache = federationContext.getSourceSelectionCache();
 	}
 
+	static FederationEvaluationStrategy forRepository(FederationContext context) {
+		var strategy = new FederationEvaluationStrategy(context);
+		strategy.enableSailBindingPreparation();
+		return strategy;
+	}
+
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
 			BindingSet bindings) {
@@ -437,16 +446,6 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private TupleExpr optimizeFederation(TupleExpr expr, EvaluationStatistics evaluationStatistics,
 			BindingOptimizationContext context) {
-		boolean preparedMode = context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT;
-		BindingSet bindings = context.evaluationInput();
-		BindingSet parameters = context.parameters();
-		if (preparedMode) {
-			QueryBindingSet logical = new QueryBindingSet(
-					parameters == null ? EmptyBindingSet.getInstance() : parameters);
-			logical.removeAll(FedXRepositoryConnection.FEDX_BINDINGS);
-			parameters = logical;
-		}
-
 		if (!(evaluationStatistics instanceof FederationEvaluationStatistics)) {
 			throw new FedXRuntimeException(
 					"Expected FederationEvaluationStatistics, was " + evaluationStatistics.getClass());
@@ -472,9 +471,22 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		Dataset queryDataset = FedXUtil.toRdfDataset(queryInfo.getDataset());
 		QueryEvaluationUtility.pinFunctions(query);
-		if (preparedMode) {
+		BindingSet repositoryParameters = stats.getQueryParameters();
+		boolean explicitPreparation = context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT;
+		boolean preparedMode = explicitPreparation || repositoryParameters != null && ownsSailBindingPreparation()
+				&& captureRepositoryParameters(query, stats, repositoryParameters);
+		BindingSet bindings = preparedMode ? EmptyBindingSet.getInstance() : context.evaluationInput();
+		BindingSet parameters = context.parameters();
+		if (explicitPreparation) {
+			QueryBindingSet logical = new QueryBindingSet(
+					parameters == null ? EmptyBindingSet.getInstance() : parameters);
+			logical.removeAll(FedXRepositoryConnection.FEDX_BINDINGS);
+			parameters = logical;
 			BindingOptimizationContext.forOptimizer(query, parameters);
-		} else {
+		} else if (repositoryParameters != null) {
+			parameters = repositoryParameters;
+		}
+		if (!preparedMode) {
 			QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(query, root -> {
 				StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimize(root, queryDataset, bindings);
 				return root;
@@ -501,13 +513,15 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		});
 
 		// if the federation has a single member only, evaluate the entire query there
-		boolean mayDelegate = preparedMode || bindings == EmptyBindingSet.getInstance();
+		// A repository invocation can send its initial parameters to the member's query API. An arbitrary
+		// runtime solution mapping can have different scope and must stay in the federation evaluator.
+		boolean mayDelegate = preparedMode || repositoryParameters != null || bindings == EmptyBindingSet.getInstance();
 		Boolean serializableBindings = null;
 		if (mayDelegate && members.size() == 1 && queryInfo.getQuery() != null && propagateServices(info.getServices())
 				&& queryInfo.getQueryType() != QueryType.UPDATE && !hasBlankNodeBindings(parameters)) {
 			serializableBindings = canSerializeSingleSourceBindings(queryInfo.getQuery(), parameters);
 			if (serializableBindings) {
-				return new SingleSourceQuery(expr, members.get(0), queryInfo, preparedMode ? parameters : null);
+				return new SingleSourceQuery(query, members.get(0), queryInfo, preparedMode ? parameters : null);
 			}
 		}
 
@@ -642,6 +656,22 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 
 		return query;
+	}
+
+	private static boolean captureRepositoryParameters(TupleExpr query, FederationEvaluationStatistics stats,
+			BindingSet parameters) {
+		if (GraphFrameBindings.from(parameters) != GraphFrameBindings.EMPTY) {
+			return false;
+		}
+		return QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(query, root -> {
+			var plan = BindingAssignerOptimizer.planForSail(root, parameters);
+			if (plan.capture() != Capture.COMPLETE) {
+				return false;
+			}
+			plan.apply();
+			stats.markParametersCaptured();
+			return true;
+		});
 	}
 
 	private boolean canSerializeSingleSourceBindings(String query, BindingSet bindings) {

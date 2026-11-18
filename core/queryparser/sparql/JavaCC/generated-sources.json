@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "grammar_sha256": "361ac3dbb46333461154b5beb631b250be17f14c3463947ae84b7bb1c8bd3f86",
+  "grammar_sha256": "d59acd4aac2a2497e9770580073f5db0eeed06af651e98919891ba6de5697e61",
   "generator_outputs": [
     "ASTAbs.java",
     "ASTAdd.java",

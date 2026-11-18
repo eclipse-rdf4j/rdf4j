@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QueryModelPreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
@@ -56,6 +57,14 @@ final class PreparedValuesSnapshot {
 
 	static QueryModelPreparation newPreparation() {
 		return new InheritedGraphContextLowering(new CaptureSession());
+	}
+
+	private abstract static class PreparationVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			super.meetNode(node);
+			TupleExprs.visitGroupConcatSeparator(node, this);
+		}
 	}
 
 	/** Composes graph-scope lowering with VALUES capture before safety analysis or variable layouts. */
@@ -80,7 +89,7 @@ final class PreparedValuesSnapshot {
 			if (lowered.contains(prepared)) {
 				return prepared;
 			}
-			prepared.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			prepared.visit(new PreparationVisitor() {
 				@Override
 				public void meet(BindingSetAssignment assignment) {
 					names.addAll(assignment.getBindingNames());
@@ -121,7 +130,7 @@ final class PreparedValuesSnapshot {
 					super.meet(projection);
 				}
 			});
-			prepared.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			prepared.visit(new PreparationVisitor() {
 				@Override
 				public void meet(Join join) {
 					lowerFrom(join.getRightArg(), join.getLeftArg());
@@ -167,7 +176,7 @@ final class PreparedValuesSnapshot {
 				return known;
 			}
 			List<Projection> found = new ArrayList<>();
-			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			expression.visit(new PreparationVisitor() {
 				@Override
 				public void meet(Projection projection) {
 					if (projection.isSubquery()) {
@@ -202,7 +211,7 @@ final class PreparedValuesSnapshot {
 			String target = parameter;
 			int callerDepth = projection.getProjectionContext().getGraphContextDepth();
 			int[] changed = { 0 };
-			projection.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			projection.getArg().visit(new PreparationVisitor() {
 				private int nestedSelects;
 
 				@Override
@@ -311,7 +320,7 @@ final class PreparedValuesSnapshot {
 			if (known != null) {
 				return known;
 			}
-			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			expression.visit(new PreparationVisitor() {
 				@Override
 				protected void meetNode(QueryModelNode node) {
 					if (!preparedNodes.containsKey(node)) {

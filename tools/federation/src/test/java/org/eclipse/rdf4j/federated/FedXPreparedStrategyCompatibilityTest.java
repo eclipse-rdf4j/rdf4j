@@ -14,12 +14,16 @@ package org.eclipse.rdf4j.federated;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
+import org.eclipse.rdf4j.federated.repository.FedXRepositoryConnection;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -28,16 +32,100 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 
 class FedXPreparedStrategyCompatibilityTest {
+	@Test
+	void rawFederationSailAcceptsAnInheritedPatternWithBindings() {
+		SailRepository member = new SailRepository(new MemoryStore());
+		member.init();
+		FedXRepository federation = FedXFactory.newFederation()
+				.withMembers(List.of(EndpointFactory.loadEndpoint("member", member)))
+				.create();
+		try {
+			federation.init();
+			try (var connection = member.getConnection()) {
+				connection.add(FOAF.PERSON, RDF.TYPE, OWL.CLASS);
+			}
+			try (var connection = federation.getSail().getConnection()) {
+				var pattern = new StatementPattern(Var.of("s"), Var.of("p", RDF.TYPE), Var.of("o")) {
+				};
+				var bindings = new MapBindingSet();
+				bindings.addBinding("s", FOAF.PERSON);
+				try (var rows = connection.evaluate(new QueryRoot(pattern), null, bindings, true)) {
+					assertThat(rows.next().getValue("o")).isEqualTo(OWL.CLASS);
+					assertThat(rows.hasNext()).isFalse();
+				}
+				bindings.setBinding("s", OWL.CLASS);
+				try (var rows = connection.evaluate(new QueryRoot(pattern.clone()), null, bindings, true)) {
+					assertThat(rows.hasNext()).isFalse();
+				}
+			}
+		} finally {
+			federation.shutDown();
+			member.shutDown();
+		}
+	}
+
+	@Test
+	void customStrategyCanConsumeRepositoryInputInItsReturnedPlan() {
+		SailRepository member = new SailRepository(new MemoryStore());
+		AtomicReference<Set<String>> optimizerNames = new AtomicReference<>();
+		AtomicReference<Set<String>> executionNames = new AtomicReference<>();
+		member.init();
+		FedXRepository federation = FedXFactory.newFederation()
+				.withMembers(List.of(EndpointFactory.loadEndpoint("member", member)))
+				.withFederationEvaluationStrategyFactory(new FederationEvaluationStrategyFactory() {
+					@Override
+					public FederationEvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+							EvaluationStatistics statistics) {
+						return new FederationEvaluationStrategy(getFederationContext()) {
+							@Override
+							public TupleExpr optimize(TupleExpr expression, EvaluationStatistics estimates,
+									BindingSet bindings) {
+								optimizerNames.set(Set.copyOf(bindings.getBindingNames()));
+								return new Extension(new SingletonSet(), new ExtensionElem(Var.of("input"), "result"));
+							}
+
+							@Override
+							public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings) {
+								executionNames.compareAndSet(null, Set.copyOf(bindings.getBindingNames()));
+								return super.evaluate(expr, bindings);
+							}
+						};
+					}
+				})
+				.create();
+		try {
+			federation.init();
+			try (RepositoryConnection connection = federation.getConnection()) {
+				var query = connection.prepareTupleQuery("SELECT ?result WHERE {}");
+				query.setBinding("input", FOAF.PERSON);
+				assertThat(QueryResults.asList(query.evaluate())).extracting(row -> row.getValue("result"))
+						.containsExactly(FOAF.PERSON);
+				assertThat(optimizerNames.get()).contains("input", FedXRepositoryConnection.BINDING_ORIGINAL_QUERY);
+				assertThat(executionNames.get()).containsExactly("input");
+			}
+		} finally {
+			federation.shutDown();
+			member.shutDown();
+		}
+	}
+
 	@Test
 	void afterSuperOptimizerAcceptsRootlessSingleSourceClone() {
 		SailRepository member = new SailRepository(new MemoryStore());

@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -125,6 +126,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
@@ -354,6 +360,12 @@ public class QueryEvaluationUtility {
 		List<Projection> projections = new ArrayList<>();
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
+			public void meet(GroupConcat concat) {
+				super.meet(concat);
+				TupleExprs.visitGroupConcatSeparator(concat, this);
+			}
+
+			@Override
 			public void meet(Projection projection) {
 				if (projection.isSubquery()) {
 					projections.add(projection);
@@ -401,7 +413,7 @@ public class QueryEvaluationUtility {
 		FunctionRegistry registry = FunctionRegistry.getInstance();
 		synchronized (registry) {
 			FunctionPinningVisitor visitor = new FunctionPinningVisitor(registry);
-			if (node instanceof FunctionCall && !(node instanceof PinnedFunctionCall)) {
+			if (node.getClass() == FunctionCall.class) {
 				Function function = registry.get(((FunctionCall) node).getURI()).orElse(null);
 				if (function == null || !isRepeatable(function)) {
 					node.visit(visitor);
@@ -651,6 +663,7 @@ public class QueryEvaluationUtility {
 					path.push(node);
 					try {
 						super.meetNode(node);
+						TupleExprs.visitGroupConcatSeparator(node, this);
 					} finally {
 						path.pop();
 					}
@@ -817,7 +830,7 @@ public class QueryEvaluationUtility {
 
 		private static List<QueryModelNode> childrenOf(QueryModelNode node) {
 			List<QueryModelNode> children = new ArrayList<>();
-			node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+			var collector = new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
 				protected void meetNode(QueryModelNode child) {
 					children.add(child);
@@ -827,7 +840,9 @@ public class QueryEvaluationUtility {
 				public void meetOther(QueryModelNode child) {
 					children.add(child);
 				}
-			});
+			};
+			node.visitChildren(collector);
+			TupleExprs.visitGroupConcatSeparator(node, collector);
 			return children;
 		}
 
@@ -1374,8 +1389,14 @@ public class QueryEvaluationUtility {
 		}
 
 		@Override
+		public void meet(GroupConcat concat) {
+			super.meet(concat);
+			TupleExprs.visitGroupConcatSeparator(concat, this);
+		}
+
+		@Override
 		public void meet(FunctionCall node) {
-			if (node instanceof PinnedFunctionCall || node.getParentNode() == null) {
+			if (node.getClass() != FunctionCall.class || node.getParentNode() == null) {
 				super.meet(node);
 				return;
 			}
@@ -1390,7 +1411,7 @@ public class QueryEvaluationUtility {
 		}
 	}
 
-	private static final class PinnedFunctionCall extends FunctionCall {
+	private static final class PinnedFunctionCall extends FunctionCall implements BindingAnalysisContract.Standard {
 
 		private transient volatile Function function;
 		private final Class<?> functionClass;
@@ -1400,6 +1421,26 @@ public class QueryEvaluationUtility {
 			this.function = function;
 			this.functionClass = function.getClass();
 			setVariableScopeChange(source.isVariableScopeChange());
+		}
+
+		@Override
+		public Class<? extends QueryModelNode> bindingContractClass() {
+			return PinnedFunctionCall.class;
+		}
+
+		@Override
+		public OutputFacts bindingOutput(QueryAlgebraBindingAnalysis analysis, ReadOnlyContext input) {
+			return analysis.unknownFacts(input);
+		}
+
+		@Override
+		public boolean supportsBindingSubstitution() {
+			return true;
+		}
+
+		@Override
+		public boolean supportsPreparedBindings() {
+			return true;
 		}
 
 		private static List<ValueExpr> cloneArguments(FunctionCall source) {

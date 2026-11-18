@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /** Compilation-only physical exposure of proven positive GRAPH bodies to all existing native specialists. */
 final class NativeGraphFusion {
@@ -64,6 +65,12 @@ final class NativeGraphFusion {
 				@Override
 				public void meet(Service service) {
 					// The endpoint owns its dataset and compilation.
+				}
+
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					super.meetNode(node);
+					TupleExprs.visitGroupConcatSeparator(node, this);
 				}
 
 				@Override
@@ -121,18 +128,26 @@ final class NativeGraphFusion {
 
 	private static List<QueryModelNode> children(QueryModelNode node) {
 		List<QueryModelNode> children = new ArrayList<>();
-		node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+		var collector = new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode child) {
 				children.add(child);
 			}
-		});
+		};
+		node.visitChildren(collector);
+		TupleExprs.visitGroupConcatSeparator(node, collector);
 		return children;
 	}
 
 	private static boolean containsFusibleGraph(TupleExpr expression, Dataset dataset) {
 		boolean[] found = { false };
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				super.meetNode(node);
+				TupleExprs.visitGroupConcatSeparator(node, this);
+			}
+
 			@Override
 			public void meet(Service service) {
 			}

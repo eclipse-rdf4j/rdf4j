@@ -26,10 +26,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.Capture;
 import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.UnsupportedPreparedBindings;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryBindingPreparation;
 import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
@@ -39,15 +41,65 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 @InternalUseOnly
 public final class PreparedQuery implements QueryBindingPreparation {
 	private final BindingSet parameters;
+	private final boolean sailInvocation;
 	private final Set<QueryRoot> roots = Collections.newSetFromMap(new IdentityHashMap<>());
 	private volatile boolean active = true;
 	private boolean captured;
+	private Capture sailCapture;
 
-	private PreparedQuery(BindingSet parameters) {
-		if (parameters != null && GraphFrameBindings.from(parameters) != GraphFrameBindings.EMPTY) {
+	private PreparedQuery(BindingSet parameters, boolean sailInvocation) {
+		this.sailInvocation = sailInvocation;
+		if (!sailInvocation && parameters != null && GraphFrameBindings.from(parameters) != GraphFrameBindings.EMPTY) {
 			throw new QueryEvaluationException("Cannot capture private graph-frame binding metadata");
 		}
-		this.parameters = parameters == null ? EmptyBindingSet.getInstance() : BindingSetSnapshots.copyOf(parameters);
+		this.parameters = sailInvocation ? parameters
+				: parameters == null ? EmptyBindingSet.getInstance() : BindingSetSnapshots.copyOf(parameters);
+	}
+
+	/** The Sail owns this writable tree and invokes the existing virtual optimizer with its logical bindings. */
+	public static TupleExpr optimizeSail(EvaluationStrategy strategy, QueryRoot root, EvaluationStatistics statistics,
+			BindingSet parameters) {
+		PreparedQuery invocation = new PreparedQuery(parameters, true);
+		try {
+			invocation.associate(root);
+			TupleExpr optimized = strategy.optimize(root, statistics, parameters);
+			invocation.associate(optimized);
+			return optimized;
+		} finally {
+			invocation.close();
+		}
+	}
+
+	/** Capture at a core strategy's registered preparation boundary, before any ordinary optimizer stage. */
+	static void prepareSail(TupleExpr expression, Dataset dataset,
+			Iterable<QueryOptimizerPipeline.PreparationStep> steps) {
+		if (!(find(expression, null) instanceof PreparedQuery invocation) || !invocation.sailInvocation) {
+			return;
+		}
+		if (invocation.sailCapture != null
+				|| GraphFrameBindings.from(invocation.parameters) != GraphFrameBindings.EMPTY) {
+			return;
+		}
+		for (var step : steps) {
+			QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(expression, prepared -> {
+				step.lower(prepared, dataset);
+				return prepared;
+			});
+		}
+		invocation.sailCapture = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(expression, prepared -> {
+			QueryEvaluationUtility.pinFunctions(prepared);
+			return new BindingAssignerOptimizer().optimizeForSail(prepared, invocation.parameters);
+		});
+	}
+
+	public static boolean hasSailBindingPlan(TupleExpr expression) {
+		return find(expression, null) instanceof PreparedQuery invocation && invocation.sailCapture != null;
+	}
+
+	public static BindingOptimizationContext.Mode optimizationMode(QueryBindingPreparation preparation) {
+		return preparation instanceof PreparedQuery invocation && invocation.sailInvocation
+				&& invocation.sailCapture != Capture.COMPLETE ? BindingOptimizationContext.Mode.SAIL_COMPATIBILITY
+						: BindingOptimizationContext.Mode.EMPTY_INPUT;
 	}
 
 	public static TupleExpr optimize(EvaluationStrategy strategy, TupleExpr expression, EvaluationStatistics statistics,
@@ -63,7 +115,7 @@ public final class PreparedQuery implements QueryBindingPreparation {
 	private static TupleExpr optimizePrepared(EvaluationStrategy strategy, TupleExpr expression,
 			EvaluationStatistics statistics, BindingSet parameters, Dataset dataset,
 			Iterable<QueryOptimizerPipeline.PreparationStep> steps) {
-		PreparedQuery invocation = new PreparedQuery(parameters);
+		PreparedQuery invocation = new PreparedQuery(parameters, false);
 		QueryRoot root = expression instanceof QueryRoot queryRoot ? queryRoot : new QueryRoot(expression);
 		try {
 			invocation.associate(root);
@@ -99,14 +151,18 @@ public final class PreparedQuery implements QueryBindingPreparation {
 			}
 			return optimized;
 		} finally {
-			invocation.active = false;
-			for (QueryRoot associated : invocation.roots) {
-				if (associated.getBindingPreparation() == invocation) {
-					associated.setBindingPreparation(null);
-				}
-			}
-			invocation.roots.clear();
+			invocation.close();
 		}
+	}
+
+	private void close() {
+		active = false;
+		for (QueryRoot associated : roots) {
+			if (associated.getBindingPreparation() == this) {
+				associated.setBindingPreparation(null);
+			}
+		}
+		roots.clear();
 	}
 
 	@Override
@@ -127,6 +183,9 @@ public final class PreparedQuery implements QueryBindingPreparation {
 	@Override
 	public void prepare(TupleExpr expression) {
 		QueryRoot owner = associate(expression);
+		if (sailInvocation) {
+			return;
+		}
 		if (owner == null && !captured) {
 			throw new QueryEvaluationException("Prepared query capture requires its owning query root");
 		}
@@ -182,7 +241,9 @@ public final class PreparedQuery implements QueryBindingPreparation {
 	/** Retain an invocation through a legacy selector without changing the selector's visible values. */
 	public static BindingSet optimizerInput(TupleExpr expression, BindingSet selected) {
 		QueryBindingPreparation context = find(expression, selected);
-		return context instanceof PreparedQuery invocation ? new Inputs(selected, invocation) : selected;
+		return context instanceof PreparedQuery invocation && !invocation.sailInvocation
+				? new Inputs(selected, invocation)
+				: selected;
 	}
 
 	private static final class Inputs extends AbstractBindingSet {

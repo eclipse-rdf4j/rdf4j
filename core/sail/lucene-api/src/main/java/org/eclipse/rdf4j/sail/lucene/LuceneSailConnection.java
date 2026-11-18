@@ -35,10 +35,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedQuery;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.QueryContextIteration;
@@ -420,23 +422,18 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 	private CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
-		// Don't modify the original tuple expression
-		tupleExpr = tupleExpr.clone();
-
-		if (!(tupleExpr instanceof QueryRoot)) {
-			// Add a dummy root node to the tuple expressions to allow the
-			// optimizers to modify the actual root node
-			tupleExpr = new QueryRoot(tupleExpr);
-		}
+		// Own the working tree and keep a root through which the interpreters can replace its top-level operator.
+		TupleExpr copy = tupleExpr.clone();
+		QueryRoot root = copy instanceof QueryRoot queryRoot ? queryRoot : new QueryRoot(copy);
 
 		// Search lowering may consume API reads under projections. Specialize only proven logical reads,
 		// retaining their provenance and projected values; final empty-input capture still belongs to the evaluator.
-		new BindingAssignerOptimizer().optimizeQueryParameters(tupleExpr, bindings);
+		new BindingAssignerOptimizer().optimizeQueryParameters(root, bindings);
 
 		List<SearchQueryEvaluator> queries = new ArrayList<>();
 
 		for (SearchQueryInterpreter interpreter : sail.getSearchQueryInterpreters()) {
-			interpreter.process(tupleExpr, bindings, queries);
+			interpreter.process(root, bindings, queries);
 		}
 
 		// constant optimizer - evaluate lucene queries
@@ -447,32 +444,41 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
 			ValueFactory vf = sail.getValueFactory();
 			SailTripleSource tripleSource = new SailTripleSource(this, includeInferred, vf);
-			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
+			var strategy = TupleFunctionEvaluationStrategy.createForSail(
 					tripleSource, dataset, sail.getFederatedServiceResolver(),
 					sail.getTupleFunctionRegistry());
 
-			// Preserve the established optimizer order, while giving every stage the real empty execution input.
 			var statistics = new TupleFunctionEvaluationStatistics();
-			strategy.setOptimizerPipeline(() -> List.of(
-					StandardQueryOptimizerPipeline.BINDING_ASSIGNER,
-					StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
-					new ConstantOptimizer(strategy), new CompareOptimizer(),
-					new ConjunctiveConstraintSplitterOptimizer(),
-					new DisjunctiveConstraintOptimizer(), new SameTermFilterOptimizer(),
-					new UnionScopeChangeOptimizer(),
-					new QueryModelNormalizerOptimizer(), new QueryJoinOptimizer(statistics, tripleSource),
-					new IterativeEvaluationOptimizer(), new FilterOptimizer(), new OrderLimitOptimizer()));
-			tupleExpr = strategy.optimizeForEmptyInput(tupleExpr, statistics, bindings);
+			strategy.setOptimizerPipeline(new QueryOptimizerPipeline() {
+				@Override
+				public Iterable<QueryOptimizer> getOptimizers() {
+					return List.of(
+							StandardQueryOptimizerPipeline.BINDING_ASSIGNER,
+							StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
+							new ConstantOptimizer(strategy), new CompareOptimizer(),
+							new ConjunctiveConstraintSplitterOptimizer(),
+							new DisjunctiveConstraintOptimizer(), new SameTermFilterOptimizer(),
+							new UnionScopeChangeOptimizer(),
+							new QueryModelNormalizerOptimizer(), new QueryJoinOptimizer(statistics, tripleSource),
+							new IterativeEvaluationOptimizer(), new FilterOptimizer(), new OrderLimitOptimizer());
+				}
 
-			logger.trace("Optimized query model:\n{}", tupleExpr);
+				@Override
+				public boolean preservesPreparedBindings() {
+					return true;
+				}
+			});
+			TupleExpr optimized = PreparedQuery.optimizeSail(strategy, root, statistics, bindings);
+
+			logger.trace("Optimized query model:\n{}", optimized);
 
 			try {
-				return strategy.precompile(tupleExpr).evaluate(EmptyBindingSet.getInstance());
+				return strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance());
 			} catch (QueryEvaluationException e) {
 				throw new SailException(e);
 			}
 		} else {
-			return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
+			return super.evaluate(root, dataset, bindings, includeInferred);
 		}
 	}
 

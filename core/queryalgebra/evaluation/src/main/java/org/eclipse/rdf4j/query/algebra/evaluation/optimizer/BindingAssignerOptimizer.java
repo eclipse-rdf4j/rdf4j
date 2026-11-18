@@ -18,7 +18,9 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedQuery;
 import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.Capture;
 import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.Mode;
 import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.UnsupportedPreparedBindings;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
@@ -28,9 +30,28 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr expression, Dataset dataset, BindingSet bindings) {
 		BindingOptimizationContext context = BindingOptimizationContext.forOptimizer(expression, bindings);
-		if (context.mode() != BindingOptimizationContext.Mode.EMPTY_INPUT) {
+		if (context.mode() == BindingOptimizationContext.Mode.SAIL_COMPATIBILITY) {
+			if (bindings != null && !bindings.isEmpty() && !PreparedQuery.hasSailBindingPlan(expression)) {
+				optimizeForSail(expression, bindings);
+			}
+		} else if (context.mode() == BindingOptimizationContext.Mode.RUNTIME) {
 			plan(expression, context.evaluationInput(), Mode.RUNTIME_INPUT).apply();
 		}
+	}
+
+	/** Captures proven Sail reads and leaves opaque operators to their existing optimizer and evaluator. */
+	@InternalUseOnly
+	public Capture optimizeForSail(TupleExpr expression, BindingSet parameters) {
+		PreparedQueryBindingPlan plan = planForSail(expression, parameters);
+		plan.apply();
+		return plan.capture();
+	}
+
+	/** Discovers captures and any legacy scope before a Sail or federation commits to either execution contract. */
+	@InternalUseOnly
+	public static PreparedQueryBindingPlan planForSail(TupleExpr expression, BindingSet parameters) {
+		return plan(expression, parameters,
+				parameters == null || parameters.isEmpty() ? Mode.EMPTY_INPUT : Mode.SAIL_COMPATIBILITY);
 	}
 
 	/**
@@ -60,8 +81,6 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 	}
 
 	private static PreparedQueryBindingPlan plan(TupleExpr expression, BindingSet inputs, Mode mode) {
-		return PreparedQueryBindingPlan.create(expression, inputs, mode,
-				(service, parameters) -> SPARQLQueries.getPreparedBindingReadNames(service.getAskQueryString(),
-						service.getBaseURI(), parameters));
+		return PreparedQueryBindingPlan.create(expression, inputs, mode, SPARQLQueries.preparedServiceReadValidator());
 	}
 }

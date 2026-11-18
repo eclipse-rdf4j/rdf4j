@@ -182,12 +182,14 @@ final class NativeValuePositionAnalysis {
 
 	private static List<QueryModelNode> children(QueryModelNode node) {
 		List<QueryModelNode> children = new ArrayList<>();
-		node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+		var collector = new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode child) {
 				children.add(child);
 			}
-		});
+		};
+		node.visitChildren(collector);
+		TupleExprs.visitGroupConcatSeparator(node, collector);
 		return children;
 	}
 
@@ -256,6 +258,7 @@ final class NativeValuePositionAnalysis {
 		protected void meetNode(QueryModelNode node) {
 			scopes.put(node, scope);
 			super.meetNode(node);
+			TupleExprs.visitGroupConcatSeparator(node, this);
 		}
 
 		@Override

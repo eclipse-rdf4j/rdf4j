@@ -51,6 +51,14 @@ public class SyntaxTreeBuilder
 		}
 	}
 
+	private void sourceComponent(Node node, Token first) {
+		if (sourceRanges != null) {
+			Token last = getToken(0);
+			sourceRanges.put(node, new SourceRange(rawOffset(first.beginLine, first.beginColumn),
+					rawOffset(last.endLine, last.endColumn) + 1));
+		}
+	}
+
 	private boolean allowStableIndexKeyword;
 	private String rawSource;
 	private int[] rawLineStarts;
@@ -4952,9 +4960,12 @@ public class SyntaxTreeBuilder
 		ASTLabeledTripleTerm jjtn000 = new ASTLabeledTripleTerm(JJTLABELEDTRIPLETERM);
 		boolean jjtc000 = true;
 		jjtree.openNodeScope(jjtn000);
+		Token first;
 		try {
+			sourceStart(jjtn000);
 			jj_consume_token(TRIPLE_OPEN);
 			jj_consume_token(LPAREN);
+			first = sourceRanges == null ? null : getToken(1);
 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
 			case BNODE_REF: {
 				BNodeRef();
@@ -4980,7 +4991,11 @@ public class SyntaxTreeBuilder
 				jj_consume_token(-1);
 				throw new ParseException();
 			}
+			sourceComponent(jjtree.peekNode(), first);
+			first = sourceRanges == null ? null : getToken(1);
 			Verb();
+			sourceComponent(jjtree.peekNode(), first);
+			first = sourceRanges == null ? null : getToken(1);
 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
 			case BNODE_REF: {
 				BNodeRef();
@@ -5034,8 +5049,12 @@ public class SyntaxTreeBuilder
 				jj_consume_token(-1);
 				throw new ParseException();
 			}
+			sourceComponent(jjtree.peekNode(), first);
 			jj_consume_token(RPAREN);
 			jj_consume_token(TRIPLE_CLOSE);
+			jjtree.closeNodeScope(jjtn000, true);
+			jjtc000 = false;
+			sourceEnd(jjtn000);
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
 				jjtree.clearNodeScope(jjtn000);
@@ -8487,27 +8506,38 @@ public class SyntaxTreeBuilder
 		boolean jjtc000 = true;
 		jjtree.openNodeScope(jjtn000);
 		try {
+			sourceStart(jjtn000);
 			jj_consume_token(BIND);
 			jj_consume_token(LPAREN);
 			Expression();
 			jj_consume_token(AS);
 			Var();
 			jj_consume_token(RPAREN);
-		} catch (Throwable jjte000) {
-			jjtree.clearNodeScope(jjtn000);
+			jjtree.closeNodeScope(jjtn000, true);
 			jjtc000 = false;
+			sourceEnd(jjtn000);
+		} catch (Throwable jjte000) {
+			if (jjtc000) {
+				jjtree.clearNodeScope(jjtn000);
+				jjtc000 = false;
+			} else {
+				jjtree.popNode();
+			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					throw (RuntimeException) jjte000;
+					if (true)
+						throw (RuntimeException) jjte000;
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					throw (ParseException) jjte000;
+					if (true)
+						throw (ParseException) jjte000;
 				}
 			}
 			{
-				throw (Error) jjte000;
+				if (true)
+					throw (Error) jjte000;
 			}
 		} finally {
 			if (jjtc000) {

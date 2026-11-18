@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -62,6 +63,29 @@ class QueryAlgebraBindingAnalysisCacheTest {
 	}
 
 	@Test
+	void ordinaryGroupConcatVisitorVisitsOnlyTheOperand() {
+		var concat = new GroupConcat(Var.of("row"));
+		concat.setSeparator(new Str(Var.of("separator")));
+		List<String> visited = new ArrayList<>();
+		concat.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				visited.add(var.getName());
+			}
+		});
+
+		assertThat(visited).containsExactly("row");
+	}
+
+	@Test
+	void variableDiscoveryIncludesGroupConcatSeparator() {
+		var concat = new GroupConcat(Var.of("row"));
+		concat.setSeparator(new Str(Var.of("separator")));
+
+		assertThat(VarNameCollector.process(concat)).containsExactly("row", "separator");
+	}
+
+	@Test
 	void scopedTraversalVisitsAggregateOwnersWithoutExecutingPlaceholders() {
 		var concat = new GroupConcat(Var.of("row"));
 		concat.setSeparator(Var.of("input"));
@@ -78,6 +102,7 @@ class QueryAlgebraBindingAnalysisCacheTest {
 		});
 
 		assertThat(visited).contains(placeholder, concat, concat.getArg(), concat.getSeparator());
+		assertThat(visited.stream().filter(node -> node == concat.getSeparator()).count()).isEqualTo(1);
 		assertThat(visited.stream().anyMatch(node -> node == placeholder.getExpr())).isFalse();
 		assertThat(visited.stream().anyMatch(node -> node == ((GroupConcat) placeholder.getExpr()).getSeparator()))
 				.isFalse();

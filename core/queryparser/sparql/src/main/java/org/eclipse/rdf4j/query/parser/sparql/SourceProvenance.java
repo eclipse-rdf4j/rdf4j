@@ -21,12 +21,22 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAnnotationSuffix;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBound;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLabeledTripleTerm;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTReifiedTriple;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleTerm;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTVar;
 import org.eclipse.rdf4j.query.parser.sparql.ast.Node;
 import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder.SourceRange;
 
 /** Invocation-local syntax provenance; ordinary parser invocations do not allocate this sidecar. */
 final class SourceProvenance {
 	private final Map<QueryModelNode, Node> origins = new IdentityHashMap<>();
+	private final Map<ASTLabeledTripleTerm, List<SourceRange>> tripleComponents = new IdentityHashMap<>();
 	private final Map<Node, SourceRange> ranges;
 
 	SourceProvenance(Map<Node, SourceRange> ranges) {
@@ -39,6 +49,59 @@ final class SourceProvenance {
 
 	Node origin(QueryModelNode algebra) {
 		return origins.get(algebra);
+	}
+
+	enum VariableRole {
+		BOUND,
+		EXPRESSION,
+		GRAPH_SELECTOR,
+		SERVICE_SELECTOR,
+		TRIPLE_SUBJECT,
+		TRIPLE_PREDICATE,
+		TRIPLE_OBJECT,
+		REIFIER
+	}
+
+	VariableRole role(ASTVar variable) {
+		Node parent = variable.jjtGetParent();
+		if (parent instanceof ASTBound) {
+			return VariableRole.BOUND;
+		}
+		if (parent instanceof ASTAnnotationSuffix annotation && annotation.getReifier() == variable) {
+			return VariableRole.REIFIER;
+		}
+		if (parent instanceof ASTLabeledTripleTerm || parent instanceof ASTTripleTerm
+				|| parent instanceof ASTReifiedTriple) {
+			if (parent.jjtGetChild(0) == variable) {
+				return VariableRole.TRIPLE_SUBJECT;
+			}
+			if (parent.jjtGetChild(1) == variable) {
+				return VariableRole.TRIPLE_PREDICATE;
+			}
+			return parent.jjtGetChild(2) == variable ? VariableRole.TRIPLE_OBJECT : VariableRole.REIFIER;
+		}
+		if (parent instanceof ASTGraphGraphPattern && parent.jjtGetChild(0) == variable) {
+			return VariableRole.GRAPH_SELECTOR;
+		}
+		if (parent instanceof ASTServiceGraphPattern && parent.jjtGetChild(0) == variable) {
+			return VariableRole.SERVICE_SELECTOR;
+		}
+		return VariableRole.EXPRESSION;
+	}
+
+	/** Preserve component ranges before prefix and blank-node resolution can replace their syntax nodes. */
+	void recordTripleComponents(Node syntax) {
+		if (syntax instanceof ASTLabeledTripleTerm triple) {
+			tripleComponents.put(triple, List.of(range(triple.getSubj()), range(triple.getPred()),
+					range(triple.getObj())));
+		}
+		for (int index = 0; index < syntax.jjtGetNumChildren(); index++) {
+			recordTripleComponents(syntax.jjtGetChild(index));
+		}
+	}
+
+	List<SourceRange> components(ASTLabeledTripleTerm triple) {
+		return tripleComponents.get(triple);
 	}
 
 	TupleExpr relationOwner(QueryModelNode occurrence, Node syntax) {
@@ -84,12 +147,14 @@ final class SourceProvenance {
 
 	private static List<QueryModelNode> children(QueryModelNode parent) {
 		List<QueryModelNode> children = new ArrayList<>();
-		parent.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+		var collector = new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode child) {
 				children.add(child);
 			}
-		});
+		};
+		parent.visitChildren(collector);
+		TupleExprs.visitGroupConcatSeparator(parent, collector);
 		return children;
 	}
 

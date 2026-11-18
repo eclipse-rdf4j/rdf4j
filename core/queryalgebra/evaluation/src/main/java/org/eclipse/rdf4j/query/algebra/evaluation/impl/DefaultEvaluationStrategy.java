@@ -35,6 +35,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -251,7 +252,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	// track the exeution time of each node in the plan
 	private boolean trackTime;
 
+	private final QueryOptimizerPipeline standardPipeline;
 	private QueryOptimizerPipeline pipeline;
+	private boolean sailBindingPreparationEnabled;
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 	private final EvaluationStatistics evaluationStatistics;
@@ -417,8 +420,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
-		this.pipeline = new StandardQueryOptimizerPipeline(this,
-				tripleSource, this.evaluationStatistics);
+		this.standardPipeline = new StandardQueryOptimizerPipeline(this, tripleSource, this.evaluationStatistics);
+		this.pipeline = standardPipeline;
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
 		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
@@ -445,6 +448,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.pipeline = pipeline;
 	}
 
+	/** Registers the core evaluator allocated by a strategy factory, including its compilation contract. */
+	protected final void enableSailBindingPreparation() {
+		this.sailBindingPreparationEnabled = true;
+	}
+
+	@InternalUseOnly
+	public final boolean ownsSailBindingPreparation() {
+		return sailBindingPreparationEnabled && (pipeline == standardPipeline || pipeline.preservesPreparedBindings());
+	}
+
 	/** Structural lowerers registered for the explicit empty-input preparation boundary. */
 	protected final Iterable<QueryOptimizerPipeline.PreparationStep> getBindingPreparationSteps() {
 		return pipeline.getPreparationSteps();
@@ -462,8 +475,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
-		return optimizeWithBindingContext(expr, evaluationStatistics,
-				BindingOptimizationContext.resolve(expr, bindings));
+		BindingOptimizationContext context = BindingOptimizationContext.resolve(expr, bindings);
+		if (context.mode() == BindingOptimizationContext.Mode.SAIL_COMPATIBILITY && ownsSailBindingPreparation()) {
+			return withPreparedTupleExpr(expr, prepared -> {
+				PreparedQuery.prepareSail(prepared, dataset, pipeline.getPreparationSteps());
+				return optimizeWithBindingContext(prepared, evaluationStatistics,
+						BindingOptimizationContext.resolve(prepared, bindings));
+			});
+		}
+		return optimizeWithBindingContext(expr, evaluationStatistics, context);
 	}
 
 	@Override
@@ -524,7 +544,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, optimizerRoot -> {
 					BindingSet legacy = PreparedQuery.optimizerInput(optimizerRoot, parameters);
-					BindingSet selected = pipeline.getOptimizerInputBindings(optimizer, legacy);
+					BindingSet selected = pipeline == standardPipeline
+							&& context.mode() != BindingOptimizationContext.Mode.SAIL_COMPATIBILITY ? legacy
+									: pipeline.getOptimizerInputBindings(optimizer, legacy, context.mode());
 					optimizer.optimize(optimizerRoot, dataset, PreparedQuery.optimizerInput(optimizerRoot, selected));
 					return optimizerRoot;
 				});

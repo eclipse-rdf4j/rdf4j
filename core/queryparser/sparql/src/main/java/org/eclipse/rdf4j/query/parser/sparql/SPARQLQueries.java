@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan.ServiceReadValidator;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -157,18 +159,70 @@ public class SPARQLQueries {
 	 */
 	@InternalUseOnly
 	public static Set<String> getPreparedBindingReadNames(String source, String baseURI, BindingSet parameters) {
-		if (parameters.isEmpty()) {
-			return Set.of();
+		return new PreparedServiceReadValidator().readNames(source, baseURI, parameters);
+	}
+
+	/** Creates an isolated saved-text validator for one preparation of a query or request. */
+	@InternalUseOnly
+	public static ServiceReadValidator preparedServiceReadValidator() {
+		return new PreparedServiceReadValidator();
+	}
+
+	private static final class PreparedServiceReadValidator implements ServiceReadValidator {
+		private Map<SavedReadContext, Set<String>> validated;
+
+		@Override
+		public Set<String> possibleReads(Service service, BindingSet parameters) {
+			return parameters.isEmpty() ? Set.of()
+					: readNames(service.getAskQueryString(), service.getBaseURI(), parameters);
 		}
-		TupleExpr parsed = new SPARQLParser().parseQuery(source, baseURI).getTupleExpr();
-		PreparedQueryBindingPlan plan = PreparedQueryBindingPlan.create(parsed, parameters,
-				PreparedQueryBindingPlan.Mode.EMPTY_INPUT,
-				(service, values) -> getPreparedBindingReadNames(service.getAskQueryString(), service.getBaseURI(),
-						values));
-		Set<String> names = new LinkedHashSet<>();
-		plan.replacements().forEach(replacement -> names.add(replacement.variable().getName()));
-		plan.serviceInputs().values().forEach(inputs -> names.addAll(inputs.keySet()));
-		return Set.copyOf(names);
+
+		private Set<String> readNames(String source, String baseURI, BindingSet parameters) {
+			if (parameters.isEmpty()) {
+				return Set.of();
+			}
+			Map<String, Object> values = new HashMap<>();
+			for (var binding : parameters) {
+				Value value = binding.getValue();
+				values.put(binding.getName(), value instanceof BNode || value instanceof TripleTerm
+						? new IdentityValue(value)
+						: value);
+			}
+			// The saved text contains the actual prefix declarations, including updates made after parsing.
+			SavedReadContext context = new SavedReadContext(source, baseURI, Map.copyOf(values));
+			if (validated == null) {
+				validated = new HashMap<>();
+			}
+			Set<String> reads = validated.get(context);
+			if (reads != null) {
+				return reads;
+			}
+			TupleExpr parsed = new SPARQLParser().parseQuery(source, baseURI).getTupleExpr();
+			PreparedQueryBindingPlan plan = PreparedQueryBindingPlan.create(parsed, parameters,
+					PreparedQueryBindingPlan.Mode.EMPTY_INPUT, this);
+			Set<String> names = new LinkedHashSet<>();
+			plan.replacements().forEach(replacement -> names.add(replacement.variable().getName()));
+			plan.serviceInputs().values().forEach(inputs -> names.addAll(inputs.keySet()));
+			reads = Set.copyOf(names);
+			validated.put(context, reads);
+			return reads;
+		}
+	}
+
+	private record SavedReadContext(String source, String baseURI, Map<String, Object> values) {
+	}
+
+	/** Preserve identity for blank nodes, including those inside an input triple term. */
+	private record IdentityValue(Value value) {
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof IdentityValue identity && value == identity.value;
+		}
+
+		@Override
+		public int hashCode() {
+			return System.identityHashCode(value);
+		}
 	}
 
 	/** An invocation-owned executable request and identity seeds, never additional result bindings. */

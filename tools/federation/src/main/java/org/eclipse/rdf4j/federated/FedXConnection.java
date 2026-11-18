@@ -133,15 +133,18 @@ public class FedXConnection extends AbstractSailConnection {
 			log.debug("Optimization start (Query: " + queryInfo.getQueryID() + ")");
 			start = System.currentTimeMillis();
 		}
+		BindingSet executionInput;
 		try {
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
-			FederationEvaluationStatistics stats = new FederationEvaluationStatistics(queryInfo, dataset);
 			QueryBindingSet logical = new QueryBindingSet(bindings);
 			logical.removeAll(FedXRepositoryConnection.FEDX_BINDINGS);
 			BindingSet parameters = logical.isEmpty() && GraphFrameBindings.from(logical) == GraphFrameBindings.EMPTY
 					? EmptyBindingSet.getInstance()
 					: logical;
-			query = strategy.optimizeForEmptyInput(query, stats, parameters);
+			FederationEvaluationStatistics stats = new FederationEvaluationStatistics(queryInfo, dataset, parameters);
+			// Custom optimizers receive the original metadata and may leave reads for evaluate().
+			query = strategy.optimize(query, stats, bindings);
+			executionInput = stats.getExecutionInput();
 		} catch (Exception e) {
 			log.warn(
 					"Exception occured during optimization (Query: " + queryInfo.getQueryID() + "): " + e.getMessage());
@@ -167,7 +170,7 @@ public class FedXConnection extends AbstractSailConnection {
 		try {
 			CloseableIteration<? extends BindingSet> res = null;
 			try {
-				res = strategy.evaluate(query, EmptyBindingSet.getInstance());
+				res = strategy.evaluate(query, executionInput);
 
 				// mark the query as PassedThrough, such that outer result handlers are aware of this
 				// Note: for SingleSourceQuery (i.e. where we use pass through) res is explicitly

@@ -62,6 +62,14 @@ public class SyntaxTreeBuilder {
         }
     }
 
+    private void sourceComponent(Node node, Token first) {
+        if (sourceRanges != null) {
+            Token last = getToken(0);
+            sourceRanges.put(node, new SourceRange(rawOffset(first.beginLine, first.beginColumn),
+                rawOffset(last.endLine, last.endColumn) + 1));
+        }
+    }
+
 	private boolean allowStableIndexKeyword;
     private String rawSource;
     private int[] rawLineStarts;
@@ -1321,15 +1329,25 @@ void TripleTerm() :
 }
 
 void LabeledTripleTerm() :
-{}
+{ Token first; }
 {
+    { sourceStart(jjtThis); }
+    (
     <TRIPLE_OPEN>
         <LPAREN>
+            { first = sourceRanges == null ? null : getToken(1); }
             (BNodeRef() | IRIref() | LabeledBlankNode() | Var())
+            { sourceComponent(jjtree.peekNode(), first); }
+            { first = sourceRanges == null ? null : getToken(1); }
             Verb()
+            { sourceComponent(jjtree.peekNode(), first); }
+            { first = sourceRanges == null ? null : getToken(1); }
             (BNodeRef() | IRIref() | LabeledBlankNode() | LabeledTripleTerm() | NumericLiteral() | RDFLiteral() |BooleanLiteral() | Var())
+            { sourceComponent(jjtree.peekNode(), first); }
         <RPAREN>
     <TRIPLE_CLOSE>
+    )
+    { sourceEnd(jjtThis); }
 }
 
 void ConstTripleTerm() :
@@ -1934,7 +1952,9 @@ void STRUUID() :
 void Bind() :
 {}
 {
-	<BIND> <LPAREN> Expression() <AS> Var() <RPAREN>
+    { sourceStart(jjtThis); }
+    ( <BIND> <LPAREN> Expression() <AS> Var() <RPAREN> )
+    { sourceEnd(jjtThis); }
 }
 
 void RegexExpression() :

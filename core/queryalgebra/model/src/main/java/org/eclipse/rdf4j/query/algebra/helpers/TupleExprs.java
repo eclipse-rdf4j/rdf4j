@@ -29,12 +29,14 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
@@ -106,6 +108,12 @@ public class TupleExprs {
 		boolean[] observes = { false };
 		subtree.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
 			@Override
+			public void meet(GroupConcat concat) {
+				super.meet(concat);
+				visitGroupConcatSeparator(concat, this);
+			}
+
+			@Override
 			public void meet(Projection projection) {
 				if (observes[0]) {
 					return;
@@ -123,6 +131,15 @@ public class TupleExprs {
 			}
 		});
 		return observes[0];
+	}
+
+	/** Visits the separator expression omitted by the ordinary GROUP_CONCAT child traversal. */
+	@InternalUseOnly
+	public static <X extends Exception> void visitGroupConcatSeparator(QueryModelNode node,
+			QueryModelVisitor<X> visitor) throws X {
+		if (node instanceof GroupConcat concat && concat.getSeparator() != null) {
+			concat.getSeparator().visit(visitor);
+		}
 	}
 
 	/**

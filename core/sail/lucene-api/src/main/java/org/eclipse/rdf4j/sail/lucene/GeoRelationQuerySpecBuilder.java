@@ -93,10 +93,10 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 			@Override
 			public void meet(StatementPattern sp) {
-				Value predicate = resolver.value(sp.getPredicateVar());
-				IRI propertyName = predicate instanceof IRI iri ? iri : null;
-				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
-						&& !sp.getObjectVar().hasValue()) {
+				// A locally resolved predicate does not prove that the index can replace this pattern and relation.
+				if (sp.getPredicateVar().getValue() instanceof IRI propertyName
+						&& !sp.getSubjectVar().hasValue() && !sp.getObjectVar().hasValue()
+						&& index.isGeoField(SearchFields.getPropertyField(propertyName))) {
 					String objectVarName = sp.getObjectVar().getName();
 					GeoRelationQuerySpec spec = specs.remove(objectVarName);
 					if (spec != null && isChildOf(sp, spec.getFilter())) {
@@ -109,10 +109,12 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	private static boolean isChildOf(QueryModelNode child, QueryModelNode parent) {
-		if (child.getParentNode() == parent) {
-			return true;
+		for (QueryModelNode node = child.getParentNode(); node != null; node = node.getParentNode()) {
+			if (node == parent) {
+				return true;
+			}
 		}
-		return isChildOf(child.getParentNode(), parent);
+		return false;
 	}
 
 	private static Filter getFilter(QueryModelNode node, String varName) {

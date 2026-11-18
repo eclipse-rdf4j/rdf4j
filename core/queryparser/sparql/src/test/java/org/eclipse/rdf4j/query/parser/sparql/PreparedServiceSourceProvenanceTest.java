@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBasicGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.Node;
@@ -34,6 +35,55 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder.SourceRange;
 import org.junit.jupiter.api.Test;
 
 class PreparedServiceSourceProvenanceTest {
+	@Test
+	void scalarAndRelationalTripleTermComponentsUseTermSyntax() {
+		var vf = SimpleValueFactory.getInstance();
+		var subject = vf.createIRI("urn:subject");
+		var predicate = vf.createIRI("urn:predicate");
+		String source = "ASK { ?s <urn:p> <<(?subject ?predicate ?object)>> "
+				+ "BIND(COALESCE(<<(?subject ?predicate <<(<urn:inner> <urn:p> ?object)>>)>>) AS ?term) "
+				+ "FILTER(BOUND(?subject) && sameTerm(?s, ?expression)) }";
+		var parameters = new MapBindingSet();
+		parameters.addBinding("subject", subject);
+		parameters.addBinding("predicate", predicate);
+		parameters.addBinding("object", vf.createIRI("urn:object"));
+		parameters.addBinding("expression", vf.createIRI("urn:expression"));
+
+		var result = PreparedServiceQuerySpecializer.specialize(source, null, parameters);
+		assertThat(result.source()).contains(
+				"<<(<urn:subject> <urn:predicate> <<(<urn:inner> <urn:p> <urn:object>)>>)>>",
+				"(true) && sameTerm(?s, (<urn:expression>))");
+		assertThat(result.capturedNames()).containsExactlyInAnyOrder("subject", "predicate", "object", "expression");
+		new SPARQLParser().parseQuery(result.source(), null);
+	}
+
+	@Test
+	void restrictedTripleComponentsRetainLazyScalarEvaluation() {
+		var vf = SimpleValueFactory.getInstance();
+		String source = "ASK { BIND(COALESCE(<<(?subject a <<(<urn:inner> ?predicate ?object)>>)>>, "
+				+ "<urn:fallback>) AS ?term) }";
+		var parameters = new MapBindingSet();
+		parameters.addBinding("subject", vf.createLiteral("invalid subject"));
+		parameters.addBinding("predicate", vf.createLiteral("invalid predicate"));
+		parameters.addBinding("object", vf.createIRI("urn:object"));
+
+		var result = PreparedServiceQuerySpecializer.specialize(source, null, parameters);
+		assertThat(result.source()).contains("COALESCE(TRIPLE(\"invalid subject\"",
+				"TRIPLE(<urn:inner>, \"invalid predicate\"",
+				"<urn:object>)), <urn:fallback>");
+		assertThat(result.capturedNames()).containsExactlyInAnyOrder("subject", "predicate", "object");
+		new SPARQLParser().parseQuery(result.source(), null);
+	}
+
+	@Test
+	void tripleTermsRemainScalarInFilterAndNegationOperands() {
+		var parser = new SPARQLParser();
+		for (String condition : List.of("<<( ?subject <urn:p> 'object' )>>",
+				"!<<( ?subject <urn:p> 'object' )>>")) {
+			parser.parseQuery("ASK { FILTER(" + condition + ") }", null);
+		}
+	}
+
 	@Test
 	void basicGraphPatternRangesUseExactLexicalOwnersAcrossLineEndings() throws Exception {
 		for (String newline : List.of("\n", "\r", "\r\n")) {
