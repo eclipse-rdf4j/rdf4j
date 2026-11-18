@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.workbench.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -23,6 +24,7 @@ import java.io.File;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -42,6 +44,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -49,6 +52,23 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 class QueryStorageTest {
+
+	private final List<SailRepository> ownedRepositories = new ArrayList<>();
+
+	private SailRepository memoryRepository() {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		ownedRepositories.add(repository);
+		return repository;
+	}
+
+	@AfterEach
+	void closeOwnedRepositories() {
+		assertAll(ownedRepositories.stream().map(repository -> () -> {
+			if (repository.isInitialized()) {
+				repository.shutDown();
+			}
+		}));
+	}
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -203,7 +223,7 @@ class QueryStorageTest {
 
 	@Test
 	void saveReadUpdateDeleteAndListQueries() throws Exception {
-		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		SailRepository storageRepository = memoryRepository();
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
 		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -248,7 +268,7 @@ class QueryStorageTest {
 
 	@Test
 	void aSignedInUserKeepsTheQueriesSavedUnderTheirPlainUserNameByEarlierVersions() throws Exception {
-		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		SailRepository storageRepository = memoryRepository();
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
 		try {
@@ -291,7 +311,7 @@ class QueryStorageTest {
 
 	@Test
 	void savingUnderTheNameOfAQuerySavedByAnEarlierVersionFindsThatQuery() throws Exception {
-		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		SailRepository storageRepository = memoryRepository();
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
 		try {
@@ -324,7 +344,7 @@ class QueryStorageTest {
 
 	@Test
 	void canReadTreatsCraftedUserNameAsData() throws Exception {
-		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		SailRepository storageRepository = memoryRepository();
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
 		try {
@@ -350,7 +370,7 @@ class QueryStorageTest {
 
 	@Test
 	void storesAndMatchesSparqlSyntaxAsBoundValues() throws Exception {
-		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		SailRepository storageRepository = memoryRepository();
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
 		String repositoryReference = "urn:test:repository> } UNION { ?s ?p ?o";
@@ -386,7 +406,7 @@ class QueryStorageTest {
 
 	@Test
 	void saveQueryRejectsIllegalInputs() throws Exception {
-		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		SailRepository storageRepository = memoryRepository();
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
 
@@ -408,7 +428,7 @@ class QueryStorageTest {
 
 	@Test
 	void checkAccessAndShutdownHandleFailures() throws Exception {
-		SailRepository accessibleRepository = new SailRepository(new MemoryStore());
+		SailRepository accessibleRepository = memoryRepository();
 		accessibleRepository.init();
 		QueryStorage storage = new QueryStorage(accessibleRepository);
 		Repository failingRepository = mock(Repository.class);
@@ -463,7 +483,7 @@ class QueryStorageTest {
 
 	@Test
 	void saveQueryAcceptsRemainingSupportedRowCountsAndTracksShutdownState() throws Exception {
-		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		SailRepository storageRepository = memoryRepository();
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
 

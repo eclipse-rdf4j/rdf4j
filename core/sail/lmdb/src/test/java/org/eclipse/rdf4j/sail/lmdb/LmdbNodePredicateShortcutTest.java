@@ -94,12 +94,7 @@ class LmdbNodePredicateShortcutTest {
 		} else {
 			System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, previousServingProperty);
 		}
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
-		}
+		LmdbTestUtil.cleanup(null, store, tripleStore);
 	}
 
 	private long count(long subject, long object, long context) throws IOException {

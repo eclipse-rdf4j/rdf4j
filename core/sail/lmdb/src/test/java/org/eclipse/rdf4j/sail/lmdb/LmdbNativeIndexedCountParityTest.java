@@ -95,13 +95,15 @@ class LmdbNativeIndexedCountParityTest {
 	}
 
 	@AfterAll
-	void shutdown() {
+	void shutdown() throws Exception {
+		List<AutoCloseable> cleanup = new ArrayList<>();
 		for (Backend backend : backends.values()) {
-			backend.repository.shutDown();
+			cleanup.add(backend.repository::shutDown);
 		}
 		if (reference != null) {
-			reference.repository.shutDown();
+			cleanup.add(reference.repository::shutDown);
 		}
+		LmdbTestUtil.cleanup(null, cleanup.toArray(AutoCloseable[]::new));
 	}
 
 	Stream<Arguments> queries() {
@@ -389,24 +391,31 @@ class LmdbNativeIndexedCountParityTest {
 				.setDirectAdjacencyMode(adjacency ? DirectAdjacencyMode.PREFER : DirectAdjacencyMode.DISABLED)
 				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL));
 		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try (var connection = repository.getConnection()) {
-			connection.add(explicit);
-		}
-		try (InferencerConnection connection = (InferencerConnection) store.getConnection()) {
-			connection.begin();
-			for (var statement : inferred) {
-				connection.addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-						statement.getContext());
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.add(explicit);
 			}
-			connection.commit();
+			try (InferencerConnection connection = (InferencerConnection) store.getConnection()) {
+				connection.begin();
+				for (var statement : inferred) {
+					connection.addInferredStatement(statement.getSubject(), statement.getPredicate(),
+							statement.getObject(),
+							statement.getContext());
+				}
+				connection.commit();
+			}
+			if (adjacency) {
+				assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
+						.as(store.getDirectAdjacencyReadinessDescription())
+						.isTrue();
+			}
+			return new Backend(store, repository);
+		} catch (Exception | Error failure) {
+			try (var cleanup = LmdbTestUtil.onClose(repository::shutDown)) {
+				throw failure;
+			}
 		}
-		if (adjacency) {
-			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
-					.as(store.getDirectAdjacencyReadinessDescription())
-					.isTrue();
-		}
-		return new Backend(store, repository);
 	}
 
 	private static String count(String pattern, String argument) {

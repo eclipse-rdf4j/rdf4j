@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.junit.jupiter.api.Test;
 
-class SketchBasedJoinEstimatorFiniteRelationTest {
+class SketchBasedJoinEstimatorFiniteRelationTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -47,7 +47,7 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 				calls.incrementAndGet();
 				return List.<BindingSet>of(row("a", "urn:one", "b", "urn:two")).iterator();
 			});
-			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+			SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(),
 					SketchBasedJoinEstimator.Config.defaults());
 			if (operation.equals("describe")) {
 				SketchJoinOrderPlanner.describeTupleExpr(assignment);
@@ -63,7 +63,7 @@ class SketchBasedJoinEstimatorFiniteRelationTest {
 
 	@Test
 	void finiteBindingSetInequalityFilterUsesExactTupleRows() {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+		SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(),
 				SketchBasedJoinEstimator.Config.defaults());
 		BindingSetAssignment assignment = finiteDomainRows(
 				row("a", "urn:user:1", "b", "urn:user:1"),

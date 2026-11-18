@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.Mockito.mock;
 
 import java.io.ByteArrayOutputStream;
@@ -101,10 +102,27 @@ class ExploreSparqlProxyTest {
 
 	@AfterEach
 	void tearDown() {
-		servlet.destroy();
-		proxy.shutDown();
-		endpoint.stop(0);
-		store.shutDown();
+		assertAll(
+				() -> {
+					if (servlet != null) {
+						servlet.destroy();
+					}
+				},
+				() -> {
+					if (proxy != null) {
+						proxy.shutDown();
+					}
+				},
+				() -> {
+					if (endpoint != null) {
+						endpoint.stop(0);
+					}
+				},
+				() -> {
+					if (store != null) {
+						store.shutDown();
+					}
+				});
 	}
 
 	@Test

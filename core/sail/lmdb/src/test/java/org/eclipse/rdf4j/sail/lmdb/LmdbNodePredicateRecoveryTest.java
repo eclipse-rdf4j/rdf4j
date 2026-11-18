@@ -78,12 +78,7 @@ class LmdbNodePredicateRecoveryTest {
 	void tearDown() throws Exception {
 		LmdbNodePredicateIndex.clearCorruptionForTest();
 		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
-		}
+		LmdbTestUtil.cleanup(null, store, tripleStore);
 	}
 
 	private List<long[]> enumerate(long subject) throws IOException {
