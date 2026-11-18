@@ -13,8 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
-import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -54,9 +54,18 @@ import org.junit.jupiter.api.Test;
  * under a millisecond. Every query with a FILTER pays this on each prepare, and the equivalence differential fuzzers,
  * which precompile hundreds of small trees per judged pair, slowed down an order of magnitude in CI.
  * <p>
- * Both tests measure the best of several runs after warm-up, so they are insensitive to machine speed: the first
+ * Both tests compare two measurements taken in the same JVM, so they are insensitive to machine speed: the first
  * compares planning against the plain precompile of the identical filter-free tree, the second compares two sizes of
- * the same shape to pin the growth rate.
+ * the same shape to pin the growth rate. A single precompile of the plain tree takes a fraction of a millisecond, which
+ * one GC pause, JIT compilation or descheduling on a shared CI runner can multiply, and the two trees reach JIT steady
+ * state at different speeds. So each tree is warmed up until its code has settled, every sample times a batch of
+ * back-to-back precompiles that lasts several milliseconds, the two trees' batches are interleaved so a noisy stretch
+ * slows both alike, and the median batch is compared.
+ * <p>
+ * Measured that way on a 2026 laptop, the n=16 filter stack precompiles in about 1.7 ms against 0.055 ms for the plain
+ * tree (roughly 30x), and growing n from 4 to 16 multiplies its time by 11 to 16. A planner that re-clones and
+ * re-analyses the tree for every candidate cut measured about 70 ms (over 1000x) and grew 127x. Each budget is at least
+ * twice today's figure and several times below the re-analysing planner's.
  */
 class AdaptiveFilterPlanningCostTest {
 
@@ -75,48 +84,67 @@ class AdaptiveFilterPlanningCostTest {
 		}
 	};
 
-	/** Plain precompile of a 16-pattern BGP is the yardstick; planning its 16 filters must stay in the same league. */
-	private static final int MAX_PLANNING_OVERHEAD_FACTOR = 50;
+	/**
+	 * Planning the 16 filters of a 16-pattern BGP may cost at most this many plain precompiles of the same BGP: about
+	 * 30 today, over 1000 for a planner that re-analyses the tree per candidate.
+	 */
+	private static final int MAX_PLANNING_OVERHEAD_FACTOR = 200;
 
-	/** Growing the query 4x must not grow planning time more than quadratically (16x) plus slack. */
-	private static final int MAX_GROWTH_FOR_4X_QUERY = 24;
+	/** Below this the filter stack always passes, however fast the plain precompile is. */
+	private static final long PLANNING_BUDGET_FLOOR_NANOS = TimeUnit.MILLISECONDS.toNanos(5);
+
+	/**
+	 * Growing the query 4x may grow planning time at most quadratically (16x) with 2x slack; a cubic planner grows it
+	 * 64x.
+	 */
+	private static final int MAX_GROWTH_FOR_4X_QUERY = 32;
+
+	/** Each tree is precompiled back to back for at least this long and {@link #WARM_UP_RUNS} times before sampling. */
+	private static final long WARM_UP_NANOS = TimeUnit.SECONDS.toNanos(1);
+
+	private static final int WARM_UP_RUNS = 500;
+
+	/** Warm-up stops here regardless, so a pathologically slow planner fails in seconds rather than minutes. */
+	private static final long MAX_WARM_UP_NANOS = TimeUnit.SECONDS.toNanos(5);
+
+	/** Each sample times enough back-to-back precompiles to last at least this long. */
+	private static final long MIN_SAMPLE_NANOS = TimeUnit.MILLISECONDS.toNanos(10);
+
+	/** Samples per tree; the median is compared. */
+	private static final int SAMPLES = 11;
 
 	@Test
 	void filterStackPrecompileStaysWithinPlainPrecompileBudget() {
 		int n = 16;
-		warmUp(AdaptiveFilterPlanningCostTest::filterStackOverJoinChain, n);
-		warmUp(AdaptiveFilterPlanningCostTest::joinChain, n);
+		Measurement[] measured = typicalPrecompileNanos(filterStackOverJoinChain(n), joinChain(n));
+		double filtered = measured[0].median();
+		double plain = measured[1].median();
+		double budget = Math.max(MAX_PLANNING_OVERHEAD_FACTOR * plain, PLANNING_BUDGET_FLOOR_NANOS);
 
-		long filtered = bestPrecompileNanos(filterStackOverJoinChain(n));
-		long plain = bestPrecompileNanos(joinChain(n));
-		long budget = Math.max(MAX_PLANNING_OVERHEAD_FACTOR * plain, TimeUnit.MILLISECONDS.toNanos(5));
-
-		System.out.printf("[filter-planning] n=%d withFilters=%.3f ms plain=%.3f ms ratio=%.1f%n", n,
-				filtered / 1e6, plain / 1e6, (double) filtered / Math.max(plain, 1));
+		System.out.printf("[filter-planning] n=%d withFilters=%s plain=%s ratio=%.1f%n", n, measured[0], measured[1],
+				filtered / plain);
 		assertTrue(filtered <= budget, () -> String.format(
 				"precompiling a %d-pattern BGP with %d FILTERs took %.3f ms, but the same tree without filters took "
 						+ "%.3f ms; adaptive filter placement planning must stay within %dx of the plain precompile "
-						+ "(or 5 ms)",
-				n, n, filtered / 1e6, plain / 1e6, MAX_PLANNING_OVERHEAD_FACTOR));
+						+ "(or %.0f ms)",
+				n, n, filtered / 1e6, plain / 1e6, MAX_PLANNING_OVERHEAD_FACTOR, PLANNING_BUDGET_FLOOR_NANOS / 1e6));
 	}
 
 	@Test
 	void filterStackPrecompileGrowsAtMostQuadratically() {
 		int small = 4;
 		int large = 16;
-		warmUp(AdaptiveFilterPlanningCostTest::filterStackOverJoinChain, large);
-		warmUp(AdaptiveFilterPlanningCostTest::filterStackOverJoinChain, small);
+		Measurement[] measured = typicalPrecompileNanos(filterStackOverJoinChain(small),
+				filterStackOverJoinChain(large));
+		double smallNanos = measured[0].median();
+		double largeNanos = measured[1].median();
 
-		long smallNanos = bestPrecompileNanos(filterStackOverJoinChain(small));
-		long largeNanos = bestPrecompileNanos(filterStackOverJoinChain(large));
-
-		System.out.printf("[filter-planning] n=%d %.3f ms, n=%d %.3f ms, growth=%.1fx%n", small, smallNanos / 1e6,
-				large, largeNanos / 1e6, (double) largeNanos / Math.max(smallNanos, 1));
+		System.out.printf("[filter-planning] n=%d %s, n=%d %s, growth=%.1fx%n", small, measured[0], large, measured[1],
+				largeNanos / smallNanos);
 		assertTrue(largeNanos <= MAX_GROWTH_FOR_4X_QUERY * smallNanos, () -> String.format(
 				"precompile went from %.3f ms at n=%d to %.3f ms at n=%d (%.1fx for a 4x larger query); adaptive "
 						+ "filter placement planning must grow at most quadratically (%dx allowed)",
-				smallNanos / 1e6, small, largeNanos / 1e6, large, (double) largeNanos / Math.max(smallNanos, 1),
-				MAX_GROWTH_FOR_4X_QUERY));
+				smallNanos / 1e6, small, largeNanos / 1e6, large, largeNanos / smallNanos, MAX_GROWTH_FOR_4X_QUERY));
 	}
 
 	/** {@code ?s :p0 ?o0 . ... ?s :p(n-1) ?o(n-1)} joined left-deep, as the SPARQL parser builds a BGP. */
@@ -143,26 +171,67 @@ class AdaptiveFilterPlanningCostTest {
 				new Var("o" + i));
 	}
 
-	private static void warmUp(IntFunction<TupleExpr> shape, int n) {
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-		for (int i = 0; i < 10 && System.nanoTime() < deadline; i++) {
-			precompileNanos(shape.apply(n));
+	/**
+	 * Steady-state precompile time per tree. Each tree is warmed up, then its batch size is doubled until a batch lasts
+	 * {@link #MIN_SAMPLE_NANOS}; the trees' batches are then taken in turn, so a noisy stretch on the machine slows
+	 * every tree alike rather than just the one being measured at the time.
+	 */
+	private static Measurement[] typicalPrecompileNanos(TupleExpr... trees) {
+		int[] batch = new int[trees.length];
+		for (int t = 0; t < trees.length; t++) {
+			long start = System.nanoTime();
+			int runs = 0;
+			long elapsed;
+			do {
+				precompileNanos(trees[t], 1);
+				runs++;
+				elapsed = System.nanoTime() - start;
+			} while ((elapsed < WARM_UP_NANOS || runs < WARM_UP_RUNS) && elapsed < MAX_WARM_UP_NANOS);
+			batch[t] = 1;
+			while (precompileNanos(trees[t], batch[t]) < MIN_SAMPLE_NANOS) {
+				batch[t] *= 2;
+			}
 		}
+		double[][] samples = new double[trees.length][SAMPLES];
+		for (int s = 0; s < SAMPLES; s++) {
+			for (int t = 0; t < trees.length; t++) {
+				samples[t][s] = (double) precompileNanos(trees[t], batch[t]) / batch[t];
+			}
+		}
+		Measurement[] measured = new Measurement[trees.length];
+		for (int t = 0; t < trees.length; t++) {
+			Arrays.sort(samples[t]);
+			measured[t] = new Measurement(samples[t], batch[t]);
+		}
+		return measured;
 	}
 
-	private static long bestPrecompileNanos(TupleExpr tree) {
-		long best = Long.MAX_VALUE;
-		for (int i = 0; i < 5; i++) {
-			best = Math.min(best, precompileNanos(tree));
+	/** Nanoseconds spent precompiling {@code count} fresh clones of the tree back to back. */
+	private static long precompileNanos(TupleExpr tree, int count) {
+		QueryRoot[] roots = new QueryRoot[count];
+		DefaultEvaluationStrategy[] strategies = new DefaultEvaluationStrategy[count];
+		for (int i = 0; i < count; i++) {
+			roots[i] = new QueryRoot(tree.clone());
+			strategies[i] = new DefaultEvaluationStrategy(EMPTY_SOURCE, null);
 		}
-		return best;
-	}
-
-	private static long precompileNanos(TupleExpr tree) {
-		QueryRoot root = new QueryRoot(tree.clone());
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(EMPTY_SOURCE, null);
 		long start = System.nanoTime();
-		strategy.precompile(root);
+		for (int i = 0; i < count; i++) {
+			strategies[i].precompile(roots[i]);
+		}
 		return System.nanoTime() - start;
+	}
+
+	/** Sorted per-precompile nanoseconds of each sample, and the number of precompiles each sample timed. */
+	private record Measurement(double[] sorted, int batch) {
+
+		double median() {
+			return sorted[sorted.length / 2];
+		}
+
+		@Override
+		public String toString() {
+			return String.format("%.3f ms (min %.3f, max %.3f, batch %d)", median() / 1e6, sorted[0] / 1e6,
+					sorted[sorted.length - 1] / 1e6, batch);
+		}
 	}
 }
