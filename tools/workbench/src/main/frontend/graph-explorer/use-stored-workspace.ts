@@ -26,8 +26,10 @@ export const AUTOSAVE_MS = 800;
 const MAX_AUTOSAVE_MS = 15_000;
 
 type Options = {
-  /** One stored graph per Workbench and repository. */
+  /** One stored graph per Workbench, server, user and repository. */
   scope: string;
+  /** Where this browser session kept its graph before graphs were kept per user: brought along when `scope` is empty. */
+  legacyScope?: string;
   /** The graph as it is now; called when it is saved. */
   snapshot: () => WorkspacePayload;
   /** Values whose change means the graph changed. */
@@ -60,7 +62,7 @@ export type UnreadableWorkspace = "recoverable" | "unrecoverable" | null;
  * the stored graph has been read, so the page does not show its empty state before it knows, and whether a stored
  * graph could not be opened, with the means to recover or discard it.
  */
-export function useStoredWorkspace({ scope, snapshot, changes, busy, restore, replace, notify }: Options) {
+export function useStoredWorkspace({ scope, legacyScope, snapshot, changes, busy, restore, replace, notify }: Options) {
   const [restored, setRestored] = useState(false);
   const [unreadable, setUnreadable] = useState<UnreadableWorkspace>(null);
   const latest = useRef({ snapshot, restore, replace, notify });
@@ -84,7 +86,7 @@ export function useStoredWorkspace({ scope, snapshot, changes, busy, restore, re
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { saved, unreadable } = await openStoredWorkspace(scope);
+      const { saved, unreadable } = await openStoredWorkspace(scope, legacyScope);
       if (cancelled) return;
       knownSavedAt.current = saved?.savedAt ?? null;
       if (saved) adopting.current = latest.current.restore(saved);
