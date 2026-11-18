@@ -716,10 +716,28 @@ body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_buttons > * {
 
 body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_sharePopup {
 	box-sizing: border-box;
-	left: auto !important;
-	right: 0;
 	width: 400px;
 	max-width: 100%;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_sharePopup:not([popover]) {
+	left: auto !important;
+	right: 0;
+}
+
+/* The Query page's Share popup opens in the top layer (a manual popover) at fixed coordinates beside its button
+ * (querySharing.ts), over the query: the editor's clipping cannot cut it off, and it stays inside the window. */
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_buttons div.yasqe_sharePopup[popover] {
+	position: fixed;
+	inset: auto;
+	margin: 0;
+	max-width: calc(100vw - 16px);
+	max-height: calc(100vh - 16px);
+	overflow: auto;
+	z-index: 1000;
+	/* As before it was a popover: the browser's popover text colour would replace the inherited one. */
+	color: inherit;
+	text-align: left;
 }
 
 body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_sharePopup textarea {
