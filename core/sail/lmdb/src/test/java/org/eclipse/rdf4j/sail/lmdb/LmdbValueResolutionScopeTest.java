@@ -15,10 +15,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 
 import java.io.File;
 import java.io.IOException;
@@ -58,6 +62,9 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
@@ -66,6 +73,170 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbValueResolutionScopeTest {
+
+	private static final String PROJECTED_QUERY = "SELECT ?s ?value WHERE { ?s <urn:projected:predicate> ?value }";
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void projectedRowsUseTheirOwnersValueScope(boolean explicit, @TempDir File dataDir) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		var predicate = vf.createIRI("urn:projected:predicate");
+		var sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true));
+		sail.init();
+		try {
+			try (SailConnection writer = sail.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				for (int i = 0; i < 2; i++) {
+					writer.addStatement(vf.createIRI("urn:projected:subject:" + i), predicate,
+							vf.createLiteral("Projected dictionary literal " + i));
+				}
+				writer.commit();
+			}
+			sail.shutDown();
+			sail.init();
+			var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PROJECTED_QUERY, null);
+			ValueStore store = sail.getBackingStore().valueStore();
+			try (SailConnection reader = sail.getConnection()) {
+				if (explicit) {
+					reader.begin(IsolationLevels.SNAPSHOT);
+				}
+				try (var rows = reader.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
+					ValueResolutionScope owner = null;
+					for (int i = 0; i < 2; i++) {
+						assertTrue(rows.hasNext());
+						BindingSet row;
+						try (var lookups = mockStatic(ValueResolutionScope.class, CALLS_REAL_METHODS)) {
+							row = assertInstanceOf(NativeProjectedBindingSet.class, rows.next());
+							lookups.verify(() -> ValueResolutionScope.activeExposure(store), never());
+						}
+						LmdbValue value = assertInstanceOf(LmdbValue.class, row.getValue("value"));
+						assertFalse(value.isInitialized());
+						ValueStoreRevision.Lazy revision = assertInstanceOf(ValueStoreRevision.Lazy.class,
+								value.getValueStoreRevision());
+						if (owner == null) {
+							owner = revision.resolutionScope();
+							assertNotNull(owner);
+							assertTrue(owner.isOpen());
+						}
+						assertSame(owner, revision.resolutionScope());
+						assertTrue(row.getValue("s").stringValue().startsWith("urn:projected:subject:"));
+						assertTrue(value.stringValue().startsWith("Projected dictionary literal "));
+					}
+					assertFalse(rows.hasNext());
+				}
+				if (explicit) {
+					reader.rollback();
+				}
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void repositoryProjectsExplicitAndInferredRowsWithoutAmbientValueLookup(@TempDir File dataDir) {
+		var vf = SimpleValueFactory.getInstance();
+		var predicate = vf.createIRI("urn:projected:predicate");
+		var explicit = vf.createIRI("urn:projected:explicit");
+		var inferred = vf.createIRI("urn:projected:inferred");
+		var expected = vf.createLiteral("Projected dictionary literal");
+		var sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true));
+		var repository = new SailRepository(sail);
+		repository.init();
+		try {
+			try (var writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				writer.addStatement(explicit, predicate, expected);
+				writer.addInferredStatement(inferred, predicate, expected);
+				writer.commit();
+			}
+			try (var reader = repository.getConnection()) {
+				var query = reader.prepareTupleQuery(PROJECTED_QUERY);
+				query.setIncludeInferred(true);
+				try (var rows = query.evaluate()) {
+					StackWalker stack = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
+					AtomicInteger ambientLookups = new AtomicInteger();
+					Set<Value> subjects = new HashSet<>();
+					long lazyLookups = LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get();
+					try (var lookups = mockStatic(ValueResolutionScope.class, invocation -> {
+						// Repository lexical decoding still uses its own ambient scope.
+						if (invocation.getMethod().getName().equals("activeExposure")
+								&& stack.walk(frames -> frames
+										.anyMatch(frame -> frame.getDeclaringClass() == NativeProjectedBindingSet.class
+												&& frame.getMethodName().equals("collectMaterializationValues")))) {
+							ambientLookups.incrementAndGet();
+						}
+						return invocation.callRealMethod();
+					})) {
+						while (rows.hasNext()) {
+							BindingSet row = rows.next();
+							assertEquals(expected, row.getValue("value"));
+							subjects.add(row.getValue("s"));
+						}
+					}
+					assertEquals(Set.of(explicit, inferred), subjects);
+					assertEquals(4, LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get() - lazyLookups);
+					assertEquals(0, ambientLookups.get());
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void snapshotLazyProjectionValidatesExplicitExposureBeforeRetaining(@TempDir File dataDir,
+			@TempDir File foreignDir) throws IOException {
+		var vf = SimpleValueFactory.getInstance();
+		var expected = vf.createIRI("urn:projected:subject");
+		var sail = new LmdbStore(dataDir);
+		sail.init();
+		try {
+			try (SailConnection writer = sail.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				writer.addStatement(expected, vf.createIRI("urn:projected:predicate"), vf.createLiteral("object"));
+				writer.commit();
+			}
+			ValueStore store = sail.getBackingStore().valueStore();
+			try (var dataset = sail.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+					var foreignStore = new HookValueStore(foreignDir);
+					ValueResolutionScope foreign = foreignStore.openValueResolutionScope();
+					ValueResolutionScope open = store.openValueResolutionScope();
+					ValueResolutionScope closed = store.openValueResolutionScope()) {
+				NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+				long id = source.idOf(expected);
+				LmdbValue retained = (LmdbValue) source.lazyValue(id, ValuePosition.SUBJECT, open);
+				assertFalse(retained.isExternallyOwned());
+				var revision = assertInstanceOf(ValueStoreRevision.Lazy.class, retained.getValueStoreRevision());
+				assertSame(open, revision.resolutionScope());
+				assertEquals(ValuePosition.SUBJECT, revision.getPositionMask());
+
+				LmdbValue unscoped = (LmdbValue) source.lazyValue(id, ValuePosition.SUBJECT, null);
+				assertSame(retained, unscoped);
+				assertTrue(unscoped.isExternallyOwned());
+				LmdbValue fromForeign = (LmdbValue) source.lazyValue(id, ValuePosition.PREDICATE, foreign);
+				assertTrue(fromForeign.isExternallyOwned());
+				assertEquals(ValuePosition.PREDICATE, fromForeign.getValueStoreRevision().getPositionMask());
+
+				closed.close();
+				try (SailClosable activation = closed.activateForeground()) {
+					LmdbValue delimited = (LmdbValue) source.lazyValue(id, ValuePosition.OBJECT, closed);
+					assertFalse(delimited.isExternallyOwned());
+					assertNull(assertInstanceOf(ValueStoreRevision.Lazy.class, delimited.getValueStoreRevision())
+							.resolutionScope());
+				}
+				LmdbValue fromClosed = (LmdbValue) source.lazyValue(id, ValuePosition.OBJECT, closed);
+				assertTrue(fromClosed.isExternallyOwned());
+				assertEquals(expected, fromClosed);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })

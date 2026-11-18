@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
+import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
@@ -172,6 +173,12 @@ public interface NativeLmdbQuerySource {
 	/** Materializes a value using the complete static position mask of its lexical binding. */
 	default Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 		return lazyValue(id);
+	}
+
+	/** Materializes a projected id with its read owner's value scope, which may be absent. */
+	default Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope)
+			throws QueryEvaluationException {
+		return lazyValue(id, positionMask);
 	}
 
 	/**

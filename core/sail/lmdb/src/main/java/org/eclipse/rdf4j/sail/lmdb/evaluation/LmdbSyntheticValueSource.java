@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
 
 /**
  * Query source over a compiled plan's synthetic id spaces. Two lifetimes share this class:
@@ -416,6 +417,15 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
+		return lazyValue(id, positionMask, null, false);
+	}
+
+	@Override
+	public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope) throws QueryEvaluationException {
+		return lazyValue(id, positionMask, valueScope, true);
+	}
+
+	private Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope, boolean explicitScope) {
 		if (context != null) {
 			Value interned = context.valueOf(id);
 			if (interned != null) {
@@ -428,7 +438,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
 			return planConstant;
 		}
-		return delegate.lazyValue(id, positionMask);
+		return explicitScope ? delegate.lazyValue(id, positionMask, valueScope) : delegate.lazyValue(id, positionMask);
 	}
 
 	@Override

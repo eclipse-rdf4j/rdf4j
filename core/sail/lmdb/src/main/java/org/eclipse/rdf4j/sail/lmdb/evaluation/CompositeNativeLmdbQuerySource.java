@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -91,6 +92,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 		return sources.get(0).lazyValue(id, positionMask);
+	}
+
+	@Override
+	public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope) throws QueryEvaluationException {
+		return sources.get(0).lazyValue(id, positionMask, valueScope);
 	}
 
 	@Override
@@ -1338,6 +1344,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 			return delegate.lazyValue(id, positionMask);
+		}
+
+		@Override
+		public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope)
+				throws QueryEvaluationException {
+			return delegate.lazyValue(id, positionMask, valueScope);
 		}
 
 		@Override

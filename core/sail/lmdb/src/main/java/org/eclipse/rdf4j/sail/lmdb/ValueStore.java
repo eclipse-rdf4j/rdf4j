@@ -11442,6 +11442,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask) throws IOException {
+		return getLazyValue(snapshot, id, positionMask, null, true);
+	}
+
+	LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask, ValueResolutionScope scope)
+			throws IOException {
+		return getLazyValue(snapshot, id, positionMask, scope, false);
+	}
+
+	private LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask, ValueResolutionScope scope,
+			boolean useAmbientExposure) throws IOException {
 		ValuePosition.validateMask(positionMask);
 		if (snapshot.valueStore() != this) {
 			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
@@ -11449,7 +11459,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		synchronized (snapshot.txnRef()) {
 			snapshot.ensureValid();
 			if (snapshot.hasStableIds()) {
-				return getLazyValue(id, positionedRevision(snapshot.revision(), positionMask));
+				ValueResolutionScope exposure = scope;
+				if (useAmbientExposure) {
+					exposure = ValueResolutionScope.activeExposure(this);
+				} else if (scope != null && (!scope.belongsTo(this)
+						|| !scope.isOpen() && ValueResolutionScope.activeExposure(this) != scope)) {
+					// Only a still-installed closed scope delimits internal access, and it cannot retain an epoch.
+					exposure = null;
+				}
+				return getLazyValue(id, positionedRevision(snapshot.revision(), positionMask), false, exposure);
 			}
 			ValueStoreRevision valueRevision = positionMask == ValuePosition.NONE ? snapshot.revision()
 					: new ValueStoreRevision.Position(snapshot.revision(), positionMask);

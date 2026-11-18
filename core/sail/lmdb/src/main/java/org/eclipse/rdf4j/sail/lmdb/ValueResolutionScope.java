@@ -16,13 +16,15 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** A logical transaction's identifier retention, with independently owned native dictionary readers. */
-final class ValueResolutionScope implements SailClosable {
+@InternalUseOnly
+public final class ValueResolutionScope implements SailClosable {
 
 	/** Restored with set(null), not remove(), so a transaction does not allocate a new thread-local entry. */
 	private static final ThreadLocal<ValueResolutionScope> ACTIVE = new ThreadLocal<>();
@@ -58,7 +60,11 @@ final class ValueResolutionScope implements SailClosable {
 	/** Includes a closed, still-installed exposure, which continues to delimit internal value access. */
 	static ValueResolutionScope activeExposure(ValueStore store) {
 		ValueResolutionScope current = ACTIVE.get();
-		return current != null && current.store == store ? current : null;
+		return current != null && current.belongsTo(store) ? current : null;
+	}
+
+	boolean belongsTo(ValueStore store) {
+		return this.store == store;
 	}
 
 	boolean isOpen() {

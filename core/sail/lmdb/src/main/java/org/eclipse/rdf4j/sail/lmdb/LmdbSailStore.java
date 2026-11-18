@@ -13858,6 +13858,21 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private Value lookupNativeLazyValue(ReadView readView, long id, int positionMask, ValueResolutionScope valueScope,
+			boolean explicitScope) {
+		if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
+			return null;
+		}
+		try {
+			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
+			ValueStore.ReadSnapshot snapshot = readView.valueSnapshot();
+			return explicitScope ? valueStore.getLazyValue(snapshot, id, positionMask, valueScope)
+					: valueStore.getLazyValue(snapshot, id, positionMask);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
 	private final class ParallelSnapshotSource implements NativeLmdbQuerySource.ParallelSource {
 
 		private final Txn txn;
@@ -14076,16 +14091,13 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
-			try {
-				// Lazy values retain the admitted dictionary ownership through exposure.
-				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
-					return null;
-				}
-				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
-				return valueStore.getLazyValue(lease.readView.valueSnapshot(), id, positionMask);
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
+			return lookupNativeLazyValue(lease.readView, id, positionMask, null, false);
+		}
+
+		@Override
+		public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope)
+				throws QueryEvaluationException {
+			return lookupNativeLazyValue(lease.readView, id, positionMask, valueScope, true);
 		}
 
 		@Override
@@ -15659,16 +15671,14 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
-			try {
-				// no dataset-open assertion — see idOf
-				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
-					return null;
-				}
-				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
-				return valueStore.getLazyValue(readView.valueSnapshot(), id, positionMask);
-			} catch (IOException e) {
-				throw new QueryEvaluationException(e);
-			}
+			// No dataset-open assertion. The snapshot controls whether its dictionary remains readable.
+			return lookupNativeLazyValue(readView, id, positionMask, null, false);
+		}
+
+		@Override
+		public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope)
+				throws QueryEvaluationException {
+			return lookupNativeLazyValue(readView, id, positionMask, valueScope, true);
 		}
 
 		@Override

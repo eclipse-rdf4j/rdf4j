@@ -871,17 +871,13 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
-		ReplayFactory<Resource> factory = this::openContextIDs;
+		ReplayFactory<Resource> factory = ignored -> super.getContextIDsInternal();
 		return withRawValues(openReplayPlan(factory), SailResultValueExtractor.RESOURCES);
-	}
-
-	private CloseableIteration<? extends Resource> openContextIDs() throws SailException {
-		return super.getContextIDsInternal();
 	}
 
 	@Override
 	protected CloseableIteration<? extends Namespace> getNamespacesInternal() throws SailException {
-		ReplayFactory<Namespace> factory = this::openNamespaces;
+		ReplayFactory<Namespace> factory = ignored -> openNamespaces();
 		return openReplayPlan(factory);
 	}
 
@@ -1016,7 +1012,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		boolean queryIncludeInferred = includeInferred;
 		boolean repeatable = hasRepeatableQueryInputs(expression);
 		AtomicBoolean inputsConsumed = new AtomicBoolean();
-		ReplayFactory<BindingSet> factory = () -> {
+		ReplayFactory<BindingSet> factory = valueScope -> {
 			if (!repeatable) {
 				// Every reopen path, including a generation change before registration, must not re-read the input.
 				if (inputsConsumed.getAndSet(true)) {
@@ -1027,7 +1023,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 			TupleExpr attemptExpression = explanationCapture == null ? expression : (TupleExpr) expression.clone();
 			CloseableIteration<? extends BindingSet> evaluation = openEvaluation(attemptExpression, queryDataset,
-					queryBindings, queryIncludeInferred);
+					queryBindings, queryIncludeInferred, valueScope);
 			if (explanationCapture != null) {
 				// The optimized model itself escapes through Explanation after its iteration is closed.
 				// Complete its values while this read attempt still owns its epoch and native capabilities.
@@ -1060,7 +1056,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private CloseableIteration<? extends BindingSet> openEvaluation(TupleExpr expression, Dataset dataset,
-			BindingSet bindings, boolean includeInferred) throws SailException {
+			BindingSet bindings, boolean includeInferred, ValueResolutionScope valueScope) throws SailException {
 		Dataset datasetCopy = copyDataset(dataset);
 		BindingSet bindingsCopy = copyBindings(bindings);
 		return new IterationWrapper<BindingSet>(
@@ -1072,7 +1068,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					// Capture this row while its native source is live. Sail callbacks still receive lazy values;
 					// the repository exposure scope initializes them without speculatively requesting later rows.
 					nativeRow.collectMaterializationValues(ignored -> {
-					});
+					}, valueScope);
 					nativeRow.detachAfterMaterialization();
 				}
 				return row;
@@ -1088,7 +1084,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		IRI statementPredicate = (IRI) detachValue(pred);
 		Value statementObject = detachValue(obj);
 		Resource[] statementContexts = detachContexts(contexts);
-		ReplayFactory<Statement> factory = () -> openStatements(null, statementSubject, statementPredicate,
+		ReplayFactory<Statement> factory = ignored -> openStatements(null, statementSubject, statementPredicate,
 				statementObject, includeInferred, statementContexts);
 		return withRawValues(openReplayPlan(factory), SailResultValueExtractor.STATEMENTS);
 	}
@@ -1100,7 +1096,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		IRI statementPredicate = (IRI) detachValue(pred);
 		Value statementObject = detachValue(obj);
 		Resource[] statementContexts = detachContexts(contexts);
-		ReplayFactory<Statement> factory = () -> openStatements(order, statementSubject, statementPredicate,
+		ReplayFactory<Statement> factory = ignored -> openStatements(order, statementSubject, statementPredicate,
 				statementObject, includeInferred, statementContexts);
 		return withRawValues(openReplayPlan(factory), SailResultValueExtractor.STATEMENTS);
 	}
@@ -1395,7 +1391,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				CloseableIteration<? extends T> delegate = null;
 				Throwable failure = null;
 				try {
-					delegate = factory.open();
+					delegate = factory.open(exposure.valueScope);
 				} catch (RuntimeException | Error openFailure) {
 					failure = openFailure;
 				}
@@ -3573,7 +3569,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@FunctionalInterface
 	private interface ReplayFactory<T> {
-		CloseableIteration<? extends T> open() throws SailException;
+		CloseableIteration<? extends T> open(ValueResolutionScope valueScope) throws SailException;
 	}
 
 	private static final class ExplainTupleExprCapture {

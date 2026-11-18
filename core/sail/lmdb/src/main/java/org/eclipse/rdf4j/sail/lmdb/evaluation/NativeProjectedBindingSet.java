@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
+import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Immutable projected native ids that materialize RDF values only when a caller reads a binding. */
@@ -228,6 +229,16 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	/** Makes every projected value available to the Sail boundary without resolving its lexical form. */
 	public void collectMaterializationValues(Consumer<? super Value> consumer) {
+		collectMaterializationValues(consumer, null, false);
+	}
+
+	/** Captures lazy values under the supplied read owner before the native source is detached. */
+	public void collectMaterializationValues(Consumer<? super Value> consumer, ValueResolutionScope valueScope) {
+		collectMaterializationValues(consumer, valueScope, true);
+	}
+
+	private void collectMaterializationValues(Consumer<? super Value> consumer, ValueResolutionScope valueScope,
+			boolean explicitScope) {
 		NativeLmdbQuerySource currentSource = source;
 		if (currentSource == null) {
 			return;
@@ -242,7 +253,9 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 				if (value == null) {
 					value = findMaterializedDuplicate(i);
 					if (value == null) {
-						value = currentSource.lazyValue(ids[i], positionMasks[i]);
+						value = explicitScope
+								? currentSource.lazyValue(ids[i], positionMasks[i], valueScope)
+								: currentSource.lazyValue(ids[i], positionMasks[i]);
 						materializedValues++;
 					}
 					values[i] = value;
