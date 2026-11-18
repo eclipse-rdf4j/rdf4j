@@ -314,8 +314,8 @@ namespace workbench {
         // The modern Graphviz module and svg-pan-zoom are loaded by query.ts when a DOT explanation is
         // shown (M11.1).
         register(staticRoute('query', ['queryStream.js', 'vendor/codemirror-5.65.21/codemirror.js', 'yasqe.min.js',
-            'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js', 'paging.js',
-            'queryTabs.js', 'query.js'], routeMount(mountQuery), true));
+            'yasqeHelper.js', 'querySharing.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js',
+            'paging.js', 'queryTabs.js', 'query.js'], routeMount(mountQuery), true));
         const createRoute: RouteDefinition = {
             viewId: 'create',
             routerReady: true,

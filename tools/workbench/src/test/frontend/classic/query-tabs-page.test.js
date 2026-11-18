@@ -50,6 +50,15 @@ function selectedTitle(harness) {
     return selected[0].querySelector('.query-tabs__title').textContent;
 }
 
+function sharedFragment(text) {
+    return '#' + new URLSearchParams({ query: text }).toString();
+}
+
+function openSharedQuery(harness, text) {
+    harness.document.location.href = HREF + sharedFragment(text);
+    harness.window.dispatchEvent({ type: 'hashchange' });
+}
+
 test('mounting without stored tabs opens one tab holding the restored query and renders the row', () => {
     const { harness, query, localStorage } = mount({ harness: { query: 'SELECT * WHERE { ?s ?p ?o }' } });
     const state = query.getQueryTabsState();
@@ -202,6 +211,27 @@ test('a page that opens with its own query (Edit on Saved queries) gets a tab fo
     assert.equal(again.query.getQueryValue(), 'SELECT 1 {}');
 });
 
+test('a shared link opens its exact text beside a stored draft and reuses an exact match', () => {
+    const draft = 'SELECT 1 {}';
+    const shared = '\n  SELECT 1 {}\n';
+    const { localStorage } = mount({ harness: { query: draft } });
+    const { harness, query } = mount({ localStorage, harness: {
+        href: HREF + sharedFragment(shared),
+        query: 'ASK { ?pageModel ?p ?o }',
+        globals: { URLSearchParams }
+    } });
+    const state = query.getQueryTabsState();
+    assert.deepEqual(Array.from(state.tabs, (tab) => tab.query), [draft, shared]);
+    assert.equal(state.activeId, state.tabs[1].id);
+    assert.equal(harness.yasqeState.instances.query.getValue(), shared);
+
+    query.selectQueryTab(state.tabs[0].id);
+    openSharedQuery(harness, draft);
+    openSharedQuery(harness, shared);
+    assert.equal(query.getQueryTabsState().tabs.length, 2);
+    assert.equal(query.getQueryTabsState().activeId, state.tabs[1].id);
+});
+
 test('a query opened by saved name (query=<name>&ref=id) becomes a saved tab titled with that name', () => {
     const { harness, query } = mount({ harness: {
         href: HREF + '?query=Types%20by%20count&ref=id',
@@ -326,6 +356,30 @@ function statusOf(tabButton) {
     const badge = tabButton.querySelector('.query-tabs__badge');
     return badge ? 'badge:' + badge.textContent : 'none';
 }
+
+test('navigating to an empty shared query keeps the original tab and its running result', () => {
+    const page = fakeResultPage();
+    const draft = 'SELECT 1 {}';
+    const { harness, query } = mount({ harness: {
+        query: draft, globals: { URLSearchParams }, workbench: { queryPage: page }
+    } });
+    harness.document.getElementById('action').value = 'exec';
+    query.doSubmit();
+    const running = page.mounted;
+    openSharedQuery(harness, '');
+
+    const state = query.getQueryTabsState();
+    assert.deepEqual(Array.from(state.tabs, (tab) => tab.query), [draft, '']);
+    assert.equal(state.activeId, state.tabs[1].id);
+    assert.notEqual(page.mounted, running);
+    assert.equal(running.active, true);
+    assert.equal(running.disposed, false);
+    assert.equal(query.getQueryValue(), '');
+
+    query.selectQueryTab(state.tabs[0].id);
+    assert.equal(page.mounted, running);
+    assert.equal(query.getQueryValue(), draft);
+});
 
 test('a finished result is kept with its tab, shown again when the tab is, and badged from what the tab remembers', () => {
     const page = fakeResultPage();

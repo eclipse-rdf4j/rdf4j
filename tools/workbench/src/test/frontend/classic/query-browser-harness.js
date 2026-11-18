@@ -587,6 +587,7 @@ function createQueryBrowserHarness(options = {}) {
         context.workbench.queryPage = injectedQueryPage;
     }
     harness.runScript('scripts/queryCancelPolicy.js');
+    harness.runScript('scripts/querySharing.js');
     harness.runScript('scripts/queryExplanationHighlighter.js');
     harness.runScript('scripts/workbenchWorkspace.js');
     harness.runScript('scripts/queryTabs.js');

@@ -16,6 +16,7 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.eclipse.rdf4j.model.util.Statements.statement;
 import static org.eclipse.rdf4j.model.util.Values.getValueFactory;
 import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockserver.model.HttpRequest.request;
@@ -32,7 +33,9 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -53,12 +56,14 @@ import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.junit.jupiter.MockServerExtension;
+import org.mockserver.model.HttpRequest;
 import org.mockserver.model.MediaType;
 
 import com.github.luben.zstd.ZstdOutputStream;
@@ -334,6 +339,95 @@ public class RDFLoaderTest {
 		} finally {
 			restoreSocketFactory(toRestoreSocketFactory);
 		}
+	}
+
+	@Test
+	public void testExplicitFormatUsesSingleAcceptHeader(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/explicit-format")
+		)
+				.respond(
+						response()
+								.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
+								.withBody("<urn:s> <urn:p> <urn:o> .")
+				);
+
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		URL url = new URL("http://localhost:" + client.getPort() + "/explicit-format");
+
+		rdfLoader.load(url, null, RDFFormat.TURTLE, rdfHandler);
+
+		verify(rdfHandler).startRDF();
+		verify(rdfHandler).handleStatement(
+				statement(iri("urn:s"), iri("urn:p"), iri("urn:o"), null)
+		);
+		verify(rdfHandler).endRDF();
+
+		HttpRequest[] recordedRequests = client.retrieveRecordedRequests(
+				request()
+						.withMethod("GET")
+						.withPath("/explicit-format")
+		);
+
+		assertEquals(1, recordedRequests.length);
+
+		List<String> acceptHeaders = recordedRequests[0].getHeader("Accept");
+
+		assertEquals(1, acceptHeaders.size());
+		assertEquals(
+				String.join(", ", RDFFormat.TURTLE.getMIMETypes()),
+				acceptHeaders.get(0)
+		);
+	}
+
+	@Test
+	public void testAutomaticFormatDetectionUsesSingleAcceptHeader(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("GET")
+						.withPath("/automatic-format")
+		)
+				.respond(
+						response()
+								.withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
+								.withBody("<urn:s> <urn:p> <urn:o> .")
+				);
+
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		URL url = new URL("http://localhost:" + client.getPort() + "/automatic-format");
+
+		rdfLoader.load(url, null, null, rdfHandler);
+
+		verify(rdfHandler).startRDF();
+		verify(rdfHandler).handleStatement(
+				statement(iri("urn:s"), iri("urn:p"), iri("urn:o"), null)
+		);
+		verify(rdfHandler).endRDF();
+
+		Set<RDFFormat> rdfFormats = RDFParserRegistry.getInstance().getKeys();
+		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, true, null);
+
+		HttpRequest[] recordedRequests = client.retrieveRecordedRequests(
+				request()
+						.withMethod("GET")
+						.withPath("/automatic-format")
+		);
+
+		assertEquals(1, recordedRequests.length);
+
+		List<String> acceptHeaders = recordedRequests[0].getHeader("Accept");
+
+		assertEquals(1, acceptHeaders.size());
+		assertEquals(
+				String.join(", ", acceptParams),
+				acceptHeaders.get(0)
+		);
 	}
 
 	private static byte[] gzip(byte[] bytes) throws Exception {

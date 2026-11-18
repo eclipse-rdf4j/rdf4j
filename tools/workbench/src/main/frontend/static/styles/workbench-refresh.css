@@ -728,6 +728,22 @@ body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_sharePopup te
 	max-width: 100%;
 }
 
+/* The query Share field occupies its own row; its two copy actions also fit in a narrow compare editor. */
+body.workbench-body .query-page .yasqe .yasqe_buttons div.yasqe_sharePopup {
+	flex-wrap: wrap;
+	gap: var(--workbench-space-related);
+}
+
+body.workbench-body .query-page .yasqe .yasqe_sharePopup .inputWrapper,
+body.workbench-body .query-page .yasqe .yasqe_sharePopup [role="status"] {
+	flex-basis: 100%;
+	min-width: 0;
+}
+
+body.workbench-body .query-page .yasqe .yasqe_buttons div.yasqe_sharePopup button {
+	margin: 0;
+}
+
 body.workbench-body .saved-query-row .yasqe .CodeMirror-scroll {
 	min-height: 0;
 }
