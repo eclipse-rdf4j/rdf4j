@@ -271,6 +271,7 @@ test('a saved result that is gone, or open in another window, says so instead of
     await new Promise((resolve) => setTimeout(resolve, 1000));
     await settle();
     assert.equal(other.lastSummary().error, true);
+    assert.equal(other.lastSummary().errorCode, 'saved-result-busy');
     assert.match(other.target.textContent, /open in another window/);
     holder.controller.dispose();
     other.controller.dispose();
@@ -281,8 +282,42 @@ test('a saved result that is gone, or open in another window, says so instead of
     after.controller.restore(saved);
     await settle();
     assert.match(after.target.textContent, /no longer stored in this browser/);
+    assert.equal(after.lastSummary().errorCode, 'saved-result-gone');
     assert.equal(entryOf(shared.localStorage, saved.storeId), null);
     after.controller.dispose();
+});
+
+test('a saved result whose rows fail to open lets its store go for another page', async () => {
+    const shared = browser();
+    const first = shared.page([batch([0, 1], 0, false)]);
+    first.controller.submit();
+    await settle();
+    const saved = await first.controller.saveResult(KEPT_FOR);
+    first.controller.dispose();
+    await settle();
+
+    const base = realWorkerFactory(shared.storage).factory;
+    const failingTruncate = () => {
+        const handle = base();
+        const post = handle.postMessage;
+        handle.postMessage = (message) => post(message && message.op === 'truncate'
+            ? Object.assign({}, message, { op: 'no-such-operation' }) : message);
+        return handle;
+    };
+    // Fewer rows saved than stored: the restore cuts the store back, and that fails.
+    const failed = shared.page([], { workerFactory: failingTruncate });
+    failed.controller.restore(Object.assign({}, saved, { rows: 1 }));
+    await settle();
+    assert.equal(failed.lastSummary().error, true);
+
+    const other = shared.page();
+    other.controller.restore(saved);
+    await settle();
+    assert.equal(other.lastSummary().error, false, 'not held by the page whose restore failed');
+    assert.equal(other.lastSummary().rowCount, 2);
+    failed.controller.dispose();
+    other.controller.dispose();
+    await settle();
 });
 
 test('an answer and an empty result are saved without a row store', async () => {

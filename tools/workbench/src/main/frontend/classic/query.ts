@@ -1354,7 +1354,8 @@ namespace workbench {
         function persistPrimaryQueryText(queryValue: string): void {
             if (queryTabStore && !queryTabsSyncSuspended) {
                 var state = queryTabStore.get();
-                queryTabStore.set(workbench.queryTabs.setQuery(state, state.activeId, queryValue));
+                // Typed text reaches browser storage a moment later, not on every keystroke (flushed when left).
+                queryTabStore.set(workbench.queryTabs.setQuery(state, state.activeId, queryValue), true);
             }
             setPrimaryQueryDraftSessionValue(queryValue);
         }
@@ -4589,9 +4590,23 @@ namespace workbench {
 
         export function applyLoadedPrimaryQuery(queryString: string): void {
             var normalizedQuery = $.trim(queryString || '');
+            var nextTabId = '';
             if (queryTabStore) {
-                queryTabStore.set(withOpenQueryTab(queryTabStore.get(), normalizedQuery, pendingSavedQueryName));
+                var state = queryTabStore.get();
+                var edited = workbench.queryTabs.setQuery(state, state.activeId, getPaneRawQueryValue('primary'));
+                var next = withOpenQueryTab(edited, normalizedQuery, pendingSavedQueryName);
                 pendingSavedQueryName = '';
+                if (!showsQueryTabText(next, normalizedQuery, false)) {
+                    // No tab could be opened for it: the shown tab keeps its query.
+                    queryTabStore.set(edited);
+                    announceQueryTabLimit(next);
+                    return;
+                }
+                queryTabStore.set(next);
+                if (state.activeId !== next.activeId) {
+                    keepQueryTabResult(state.activeId);
+                    nextTabId = next.activeId;
+                }
             }
             var previousPrimaryQuery = getPaneRawQueryValue('primary');
             if (activeComparePendingRequests > 0) {
@@ -4609,6 +4624,9 @@ namespace workbench {
             }
             persistPrimaryQueryValue();
             syncStateAfterAsyncPrimaryQueryLoad();
+            if (nextTabId) {
+                showQueryTabResult(nextTabId);
+            }
         }
 
         export function getQueryValue(): string {
@@ -5212,16 +5230,28 @@ namespace workbench {
             if (!queryTabStore || !detail) {
                 return;
             }
+            var tabs = workbench.queryTabs;
+            var state = queryTabStore.get();
+            var tabId = shownResultTabId(state);
+            var previous = tabs.findTab(state, tabId);
+            if (detail.error && typeof detail.errorCode === 'string' && detail.errorCode.indexOf('saved-result') === 0) {
+                // The saved result could not be opened: nothing ran. One no longer stored is forgotten; one open in
+                // another window stays, to be shown here once that window lets it go.
+                if (detail.errorCode === 'saved-result-gone' && tabs.savedResult(previous)) {
+                    queryTabStore.set(tabs.saveRun(state, tabId, null));
+                } else {
+                    renderQueryTabRow();
+                }
+                return;
+            }
             // A failed request reports an error without completing; both end the run.
             if (!detail.complete && !detail.error) {
                 renderQueryTabRow();
                 return;
             }
-            var state = queryTabStore.get();
             var rows = !!detail.rows;
-            var previous = workbench.queryTabs.activeTab(state);
             var ran = previous && previous.lastRun && previous.lastRun.status !== 'error' ? previous.lastRun.at : 0;
-            queryTabStore.set(workbench.queryTabs.recordRun(state, state.activeId, {
+            queryTabStore.set(tabs.recordRun(state, tabId, {
                 status: detail.error ? 'error' : 'done',
                 rowCount: rows && typeof detail.rowCount === 'number' ? detail.rowCount : null,
                 total: rows && typeof detail.total === 'number' ? detail.total : null,
@@ -5229,6 +5259,14 @@ namespace workbench {
                 // When the query ran: a result shown again (a later page, Load more) keeps that time.
                 at: !detail.error && ran ? ran : Date.now()
             }));
+        }
+
+        /** The tab the shown result belongs to (its tag), else the tab shown. */
+        function shownResultTabId(state: workbench.queryTabs.QueryTabsState): string {
+            var page = queryTabResultPage();
+            var mounted = page && typeof page.mountedResult === 'function' ? page.mountedResult() : null;
+            var tag = mounted && mounted.tag;
+            return tag && workbench.queryTabs.findTab(state, tag) ? tag : state.activeId;
         }
 
         /** A request started or ended somewhere: background tabs whose query ended are marked ready. */
@@ -5286,6 +5324,7 @@ namespace workbench {
             workbench.queryTabs.renderTabRow(queryTabsContainer, queryTabStore.get(), {
                 onSelect: selectQueryTab,
                 onClose: closeQueryTab,
+                onCloseMany: closeQueryTabs,
                 onNew: newQueryTab,
                 isRunning: isQueryTabRunning,
                 onRename: renameQueryTab
@@ -5319,6 +5358,21 @@ namespace workbench {
                 return naming ? tabs.update(state, active.id, naming) : state;
             }
             return tabs.open(state, tabs.newTab(wanted, { title: savedName || null, saved: !!savedName }, state.tabs));
+        }
+
+        /** Whether the state's shown tab holds the text: false when no tab could be opened for it (the tab limit). */
+        function showsQueryTabText(state: workbench.queryTabs.QueryTabsState, text: string, exactText: boolean): boolean {
+            var active = workbench.queryTabs.activeTab(state);
+            return !!active && (exactText ? active.query === text : $.trim(active.query) === $.trim(text || ''));
+        }
+
+        /** A query could not get a tab of its own: say so when the tab limit is why. */
+        function announceQueryTabLimit(state: workbench.queryTabs.QueryTabsState): void {
+            var toast: any = (<any>workbench).toast;
+            if (state.tabs.length >= workbench.queryTabs.MAX_TABS && toast && typeof toast.show === 'function') {
+                toast.show({ message: 'Close a query tab to open this query: ' + workbench.queryTabs.MAX_TABS
+                    + ' tabs are open, the most there can be.' });
+            }
         }
 
         /**
@@ -5386,8 +5440,16 @@ namespace workbench {
                 queryTabsUnsubscribe();
                 queryTabsUnsubscribe = null;
             }
+            flushQueryTabs();
             queryTabStore = null;
             queryTabsContainer = null;
+        }
+
+        /** Write the typed text that waits to be written (Store.set's deferPersist): the page is left. */
+        function flushQueryTabs(): void {
+            if (queryTabStore && typeof queryTabStore.flush === 'function') {
+                queryTabStore.flush();
+            }
         }
 
         function markActiveQueryTabSaved(name: string): void {
@@ -5419,25 +5481,40 @@ namespace workbench {
 
         /** Close an open query; closing the shown one shows its neighbour, closing the last one leaves an empty tab. */
         export function closeQueryTab(id: string): void {
-            if (!queryTabStore) {
+            closeQueryTabs([id]);
+        }
+
+        /**
+         * Close open queries (Close others, Close all) at once: the tab shown after them is shown once, at the end, so
+         * no closing tab's result is opened on the way.
+         */
+        export function closeQueryTabs(ids: string[]): void {
+            if (!queryTabStore || !ids) {
                 return;
             }
             var tabs = workbench.queryTabs;
             var state = queryTabStore.get();
-            if (!tabs.findTab(state, id)) {
+            var closing = state.tabs.filter(function(tab) { return ids.indexOf(tab.id) >= 0; });
+            if (!closing.length) {
                 return;
             }
-            var wasActive = state.activeId === id;
-            var closing = tabs.findTab(state, id);
-            // Kept for Cmd+Z / Ctrl+Z, without its result, which goes now.
-            closedQueryTabs.push({ tab: closing, index: state.tabs.indexOf(closing) });
-            if (closedQueryTabs.length > tabs.MAX_TABS) {
+            var wasActive = closing.some(function(tab) { return tab.id === state.activeId; });
+            var next = state;
+            closing.forEach(function(tab) {
+                // Kept for Cmd+Z / Ctrl+Z, where it stood once those before it closed, without its result.
+                closedQueryTabs.push({ tab: tab, index: next.tabs.indexOf(tab) });
+                var saved = tabs.savedResult(tab);
+                if (saved && saved.storeId) {
+                    // A result this page saved goes with its tab; one another page saved may still be shown there.
+                    savedResultStores().discardRowStore(saved.storeId, savedResultStores().rowStoreDocumentOwner);
+                }
+                if (tab.id !== state.activeId) {
+                    dropQueryTabResult(tab.id);
+                }
+                next = tabs.close(next, tab.id);
+            });
+            while (closedQueryTabs.length > tabs.MAX_TABS) {
                 closedQueryTabs.shift();
-            }
-            var saved = tabs.savedResult(closing);
-            if (saved && saved.storeId) {
-                // A result this page saved goes with its tab; one another page saved may still be shown there.
-                savedResultStores().discardRowStore(saved.storeId, savedResultStores().rowStoreDocumentOwner);
             }
             if (wasActive) {
                 // The shown result (and its running query, cancelled by the dispose) goes with its tab.
@@ -5446,10 +5523,8 @@ namespace workbench {
                 if (shown) {
                     shown.dispose();
                 }
-            } else {
-                dropQueryTabResult(id);
             }
-            queryTabStore.set(tabs.close(state, id));
+            queryTabStore.set(next);
             if (wasActive) {
                 applyActiveQueryTabText();
                 showQueryTabResult(queryTabStore.get().activeId);
@@ -5538,6 +5613,16 @@ namespace workbench {
             queryTabStore.set(workbench.queryTabs.rename(queryTabStore.get(), id, name));
         }
 
+        /**
+         * Let go of the results kept for tabs that are not shown (a running query is cancelled) and of the tabs closed
+         * here: the repository's tabs were replaced (Undo of a restore), so none of them is open any more.
+         */
+        export function forgetQueryTabResults(): void {
+            disposeQueryTabResults();
+            queryTabControllersKey = '';
+            closedQueryTabs = [];
+        }
+
         /** The open queries of this page, for tests and other scripts; null while tabs are off. */
         export function getQueryTabsState(): workbench.queryTabs.QueryTabsState {
             return queryTabStore ? queryTabStore.get() : null;
@@ -5570,6 +5655,12 @@ namespace workbench {
                     var state = queryTabStore.get();
                     var edited = workbench.queryTabs.setQuery(state, state.activeId, getPaneRawQueryValue('primary'));
                     var next = withOpenQueryTab(edited, query, undefined, true);
+                    if (!showsQueryTabText(next, query, true)) {
+                        // No tab could be opened for it: the shown tab keeps its query.
+                        queryTabStore.set(edited);
+                        announceQueryTabLimit(next);
+                        return;
+                    }
                     queryTabStore.set(next);
                     if (state.activeId !== next.activeId) {
                         keepQueryTabResult(state.activeId);
@@ -5698,6 +5789,7 @@ namespace workbench {
             /** The page's window and document listeners, dropped while the page is kept alive (M11.3). */
             function listen() {
                 window.addEventListener('pagehide', resetResultArea, false);
+                window.addEventListener('pagehide', flushQueryTabs, false);
                 window.addEventListener('pageshow', resetResultArea, false);
                 window.addEventListener('hashchange', consumeSharedQuery, false);
                 $(document).on('click.wbQuery', onDocumentClick);
@@ -5707,6 +5799,7 @@ namespace workbench {
             }
             function unlisten() {
                 window.removeEventListener('pagehide', resetResultArea, false);
+                window.removeEventListener('pagehide', flushQueryTabs, false);
                 window.removeEventListener('pageshow', resetResultArea, false);
                 window.removeEventListener('hashchange', consumeSharedQuery, false);
                 $(document).off('.wbQuery');

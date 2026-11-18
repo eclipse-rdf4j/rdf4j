@@ -136,7 +136,7 @@ test('closing a background tab keeps the active one; activate ignores unknown id
     assert.equal(tabs.activate(state, active.id), state);
 });
 
-test('setQuery marks the tab dirty, recordRun clears it, update patches fields and findByQuery ignores whitespace', () => {
+test('setQuery marks the tab dirty, recordRun keeps the mark, update patches fields and findByQuery ignores whitespace', () => {
     const tabs = loadQueryTabs();
     let state = tabs.emptyState();
     const id = state.activeId;
@@ -144,8 +144,9 @@ test('setQuery marks the tab dirty, recordRun clears it, update patches fields a
     state = tabs.setQuery(state, id, 'SELECT * WHERE { ?s ?p ?o }');
     assert.equal(tabs.activeTab(state).dirty, true);
     state = tabs.recordRun(state, id, { status: 'done', rowCount: 17, total: 17, elapsedMs: 109, at: 1 });
-    assert.equal(tabs.activeTab(state).dirty, false);
+    assert.equal(tabs.activeTab(state).dirty, true, 'an edit made while the query ran is still an edit');
     assert.equal(tabs.activeTab(state).lastRun.total, 17);
+    state = tabs.update(state, id, { dirty: false });
     state = tabs.update(state, id, { title: 'Types', saved: true });
     assert.equal(tabs.titleOf(tabs.activeTab(state)), 'Types');
     assert.equal(tabs.activeTab(state).saved, true);
@@ -311,4 +312,45 @@ test('the tab menu says how long ago a query ran once it is more than 15 minutes
     assert.equal(tabs.runText(tab, false, now), '17 rows · ran 2 h ago');
     assert.equal(tabs.runText(tab, false, tab.lastRun.at + 1000), '17 rows');
     assert.equal(tabs.runText(tab, true, now), 'Running');
+});
+
+test('a deferred change is kept and heard at once, and written to storage a moment later or when flushed', () => {
+    const tasks = new Map();
+    let nextTask = 1;
+    const context = vm.createContext({ workbench: {}, console, Intl, Date, Math, JSON,
+        setTimeout: (callback) => { tasks.set(nextTask, callback); return nextTask++; },
+        clearTimeout: (task) => { tasks.delete(task); } });
+    vm.runInContext(fs.readFileSync(workbenchScriptPath('queryTabs.js'), 'utf8'), context, { filename: 'queryTabs.js' });
+    const tabs = context.workbench.queryTabs;
+    const local = mapStorage();
+    const session = mapStorage();
+    const store = tabs.createStore(local, session, 'k');
+    const id = store.get().activeId;
+    const written = local.getItem('k');
+    const heard = [];
+    store.subscribe((state) => heard.push(state));
+
+    const typed = tabs.setQuery(store.get(), id, 'SELECT 1 {}');
+    store.set(typed, true);
+    assert.equal(store.get(), typed);
+    assert.equal(heard.length, 1, 'the row hears of it at once');
+    assert.equal(local.getItem('k'), written, 'not written on every keystroke');
+    assert.equal(session.getItem('k'), written);
+    assert.equal(tasks.size, 1);
+    tasks.forEach((callback) => callback());
+    tasks.clear();
+    assert.equal(tabs.parseState(local.getItem('k')).tabs[0].query, 'SELECT 1 {}');
+    assert.equal(tabs.parseState(session.getItem('k')).tabs[0].query, 'SELECT 1 {}');
+
+    store.set(tabs.setQuery(store.get(), id, 'SELECT 2 {}'), true);
+    store.flush();
+    assert.equal(tasks.size, 0, 'a flush writes now and cancels the write that waited');
+    assert.equal(tabs.parseState(session.getItem('k')).tabs[0].query, 'SELECT 2 {}');
+
+    store.set(tabs.setQuery(store.get(), id, 'SELECT 3 {}'), true);
+    store.set(tabs.rename(store.get(), id, 'Named'));
+    assert.equal(tasks.size, 0, 'any other change is written at once, with the text typed before it');
+    const stored = tabs.parseState(local.getItem('k')).tabs[0];
+    assert.equal(stored.query, 'SELECT 3 {}');
+    assert.equal(stored.title, 'Named');
 });

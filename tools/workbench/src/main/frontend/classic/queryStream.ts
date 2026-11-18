@@ -2305,12 +2305,6 @@ namespace workbench {
                 (held || []).forEach(function(name) { heldNames[name] = true; });
                 var now = environment.now();
                 var registry = readRowStoreRegistry(storage);
-                var referenced: { [id: string]: boolean } = null;
-                try {
-                    referenced = environment.referenced();
-                } catch (error) {
-                    // Unknown: every kept store counts as referred to.
-                }
                 var excluded: { [id: string]: boolean } = {};
                 (options.exclude || []).forEach(function(id) { excluded[id] = true; });
                 var candidates: TrimCandidate[] = [];
@@ -2332,8 +2326,10 @@ namespace workbench {
                         rows: rows,
                         bytes: Math.max(0, Number(entry.bytes) || 0),
                         recency: Math.max(used || 0, kept && isFinite(entry.retained.shownAt) ? entry.retained.shownAt : 0),
-                        // Not kept for a tab (a page that is gone left it), flagged, or no tab refers to it any more.
-                        orphan: !kept || !!referenced && referenced[id] !== true
+                        // Not kept for a tab (a page that is gone left it), or given up (flagged). A kept store no tab
+                        // in this window's storage names is not one: another window's own copy of its tabs, which this
+                        // page cannot read, may name it, so it is trimmed in its turn like any other.
+                        orphan: !kept
                     });
                 });
                 var plan = planTrim(candidates, need, options.floor, options.whole);
@@ -6654,7 +6650,8 @@ namespace workbench {
                 var error = this.state.error;
                 var message = this.errorMessageForDisplay();
                 var classified = this.appendFailure || !error
-                    || ['timeout', 'cancelled', 'circuit-breaker', 'incomplete', 'empty-query', 'saved-result'].indexOf(error.code) >= 0
+                    || ['timeout', 'cancelled', 'circuit-breaker', 'incomplete', 'empty-query', 'saved-result-busy',
+                        'saved-result-gone'].indexOf(error.code) >= 0
                     || message !== error.message;
                 var location = classified ? null : errorLocation(message);
                 this.errorResult.textContent = '';
@@ -7171,16 +7168,22 @@ namespace workbench {
                 return this.rowStorePromise.then(store => store.count().then(count =>
                     count > snapshot.rows ? store.truncate(snapshot.rows) : count
                 )).then((count: number) => this.disposed ? count : shown(count), (error: any) => {
+                    var opened = this.rowStore;
                     this.rowStore = null;
                     this.rowStorePromise = null;
                     this.ownsRowStore = false;
                     this.restoring = false;
+                    if (opened) {
+                        // Opened, then failed (counted or cut back): let it go, and its lock, keeping its rows.
+                        opened.dispose().then(null, () => {});
+                    }
                     if (!this.disposed) {
                         this.batchContexts = [];
-                        this.fail(error && error.code === 'busy'
+                        var busy = error && error.code === 'busy';
+                        this.fail(busy
                             ? 'This saved result is open in another window. Close it there, or execute the query again.'
                             : 'The saved result is no longer stored in this browser. Execute the query again to see it.',
-                            'saved-result');
+                            busy ? 'saved-result-busy' : 'saved-result-gone');
                     }
                     return 0;
                 });
@@ -7297,7 +7300,9 @@ namespace workbench {
                     rowCount: state.rowCount,
                     total: state.complete && Number.isSafeInteger(total) ? total : null,
                     complete: !!state.complete,
-                    error: !!state.error
+                    error: !!state.error,
+                    // Why it failed, when it says (saved-result-busy, saved-result-gone: a saved result did not open).
+                    errorCode: state.error && state.error.code || null
                 };
                 var key = JSON.stringify(detail);
                 if (key === this.publishedSummary || this.detached) {

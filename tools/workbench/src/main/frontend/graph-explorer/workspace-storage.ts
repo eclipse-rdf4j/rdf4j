@@ -140,6 +140,15 @@ function scopeParts(scope: string): { version: 2 | 3; place: string; identity: s
  */
 export function removeEarlierScopes(scope: string): Promise<void> {
   const own = scopeParts(scope);
+  if (own && own.version === 3) {
+    // The session-scoped graph moves to the user's scope when the page opens; until that is stored (a write that
+    // failed), the session-scoped one is the only stored copy and stays.
+    return loadWorkspaceText(scope).then((stored) => (stored ? removeScopes(own) : undefined), () => undefined);
+  }
+  return removeScopes(own);
+}
+
+function removeScopes(own: { version: 2 | 3; place: string; identity: string } | null): Promise<void> {
   const earlier = (other: string) => {
     const parts = scopeParts(other);
     if (!own || !parts || parts.place !== own.place || parts.version !== 2) return false;

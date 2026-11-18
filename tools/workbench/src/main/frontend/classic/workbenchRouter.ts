@@ -431,16 +431,21 @@ namespace workbench {
                 const target = views().repositorySwitchTarget(session.basePath, restore.from.viewId,
                     restore.to.repositoryId);
                 navigate(target, { history: 'replace', prepare: () => {
+                    if (kept && kept.route.repositoryId === restore.to.repositoryId) {
+                        // A kept-alive Query page of the repository holds the tabs replaced: it goes before they are.
+                        disposeKept('navigate');
+                    }
+                    // The Query page lets go of the results kept for the tabs replaced, and of the tabs closed there.
+                    const query: any = (workbench as any).query;
+                    if (query && typeof query.forgetQueryTabResults === 'function') {
+                        query.forgetQueryTabResults();
+                    }
                     shared.replaceQueryTabs(restore.to.scope, choice === 'copy' ? fromTabs : null);
                     shared.forgetWorkspace(restore.to.scope);
                     const page: any = (workbench as any).queryPage;
                     if (page && typeof page.forgetShelved === 'function') {
                         const context = currentRoute && currentRoute.context || {};
                         page.forgetShelved(restore.to.repositoryId, context.serverIdentity, context.basePath);
-                    }
-                    if (kept && kept.route.repositoryId === restore.to.repositoryId) {
-                        // A kept-alive Query page of the repository holds the tabs replaced.
-                        disposeKept('navigate');
                     }
                 } });
             });
@@ -458,7 +463,9 @@ namespace workbench {
             try {
                 shared.deletionDone(viewId || 'repositories', !!model.error);
                 if (context && context.missingRepositoryId && context.serverIdentity) {
-                    shared.forgetRepository(shared.serverDigest(context.serverIdentity), context.missingRepositoryId);
+                    // For the user the server told so: another user of this browser may still see the repository.
+                    shared.forgetRepository(shared.serverDigest(context.serverIdentity), context.missingRepositoryId,
+                        String(context.serverUser || ''));
                 }
             } catch (error) {
                 // What the browser keeps for it stays.

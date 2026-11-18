@@ -80,6 +80,8 @@ test('the tabs and the active one survive a reload through localStorage', () => 
     editor.triggerChange();
     assert.equal(first.query.getQueryTabsState().tabs.length, 2);
     assert.equal(titles(first.harness)[1], 'ASK { ?s ?p ?o }');
+    // A reload leaves the page: what was typed is written to storage then.
+    first.harness.window.dispatchEvent({ type: 'pagehide', persisted: false });
 
     const second = mount({ localStorage: first.localStorage });
     const state = second.query.getQueryTabsState();
@@ -99,6 +101,9 @@ test('two browser pages on one repository keep their own tabs across a refresh (
     pageA.harness.yasqeState.instances.query.triggerChange();
     pageB.harness.yasqeState.instances.query.setValue('ASK { ?s ?p ?o }');
     pageB.harness.yasqeState.instances.query.triggerChange();
+    // Typed text reaches storage a moment later.
+    pageA.harness.advanceTimers(1000);
+    pageB.harness.advanceTimers(1000);
 
     const refreshedA = mount({ localStorage, window: { sessionStorage: sessionA } });
     assert.equal(refreshedA.query.getQueryValue(), 'SELECT * WHERE { ?s ?p ?o } LIMIT 1');
@@ -812,4 +817,167 @@ test('a Query page that reuses another repository\'s textarea opens with its own
     const state = harness.context.workbench.query.getQueryTabsState();
     assert.deepEqual(Array.from(state.tabs, (tab) => tab.query), ['SELECT ?mine {}']);
     assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT ?mine {}');
+});
+
+// ---------------------------------------------------------------- review fixes (code review of the query tabs branch)
+
+test('a saved query whose text arrives after the page opened shows its own result, not the shown tab\'s', async () => {
+    const first = mountSaving();
+    const firstId = first.query.getQueryTabsState().activeId;
+    first.query.doSubmit();
+    await first.page.end(first.page.mounted);
+
+    const later = mountSaving({ localStorage: first.localStorage, harness: {
+        query: '', href: HREF + '?query=Named&ref=id', deferGetJSON: true
+    } });
+    assert.deepEqual(later.page.calls, ['restore rows-c1-1']);
+    const restored = later.page.mounted;
+    later.harness.resolveNextGetJSON({ queryText: 'SELECT ?named {}' });
+    const state = later.query.getQueryTabsState();
+    assert.equal(state.tabs.length, 2);
+    assert.notEqual(state.activeId, firstId);
+    assert.equal(restored.disposed, true, 'the first tab\'s saved result is let go, to open again with its tab');
+    assert.notEqual(later.page.mounted.tag, firstId, 'the saved query\'s tab does not show the first tab\'s rows');
+
+    later.query.selectQueryTab(firstId);
+    assert.equal(later.page.calls[later.page.calls.length - 1], 'restore rows-c1-1');
+});
+
+test('at the tab limit a shared or saved-query link leaves the shown tab\'s query alone and says why', () => {
+    const { harness, query } = mount({ harness: { query: 'SELECT 0 {}', globals: { URLSearchParams } } });
+    const editor = harness.yasqeState.instances.query;
+    for (let i = 1; i < 20; i++) {
+        query.newQueryTab();
+        editor.setValue('SELECT ' + i + ' {}');
+        editor.triggerChange();
+    }
+    const notices = [];
+    harness.context.workbench.toast = { show(options) { notices.push(options.message); return () => {}; } };
+
+    openSharedQuery(harness, 'ASK { ?shared ?p ?o }');
+    let state = query.getQueryTabsState();
+    assert.equal(state.tabs.length, 20);
+    assert.equal(state.tabs[19].query, 'SELECT 19 {}', 'the shown tab keeps its query');
+    assert.equal(query.getQueryValue(), 'SELECT 19 {}');
+    assert.equal(notices.length, 1);
+    assert.match(notices[0], /20/);
+
+    query.applyLoadedPrimaryQuery('SELECT ?saved {}');
+    state = query.getQueryTabsState();
+    assert.equal(state.tabs[19].query, 'SELECT 19 {}');
+    assert.equal(query.getQueryValue(), 'SELECT 19 {}');
+    assert.equal(notices.length, 2);
+});
+
+test('a tab edited while its query runs keeps its edited mark when the run ends', () => {
+    const page = fakeResultPage();
+    const { harness, query } = mount({ harness: { query: 'SELECT 1 {}', workbench: { queryPage: page } } });
+    harness.document.getElementById('action').value = 'exec';
+    query.doSubmit();
+    const editor = harness.yasqeState.instances.query;
+    editor.setValue('SELECT 2 {}');
+    editor.triggerChange();
+    assert.equal(query.getQueryTabsState().tabs[0].dirty, true);
+
+    page.mounted.active = false;
+    summary(harness, { rows: true, rowCount: 1, total: 1, complete: true, error: false });
+    const [tab] = query.getQueryTabsState().tabs;
+    assert.equal(tab.lastRun.status, 'done');
+    assert.equal(tab.dirty, true, 'the text in the tab is not the query that ran');
+});
+
+test('a saved result that is open elsewhere or gone is not recorded as a failed run', async () => {
+    const { harness, query, page } = mountSaving();
+    const firstId = query.getQueryTabsState().activeId;
+    query.doSubmit();
+    summary(harness, { rows: true, rowCount: 3, total: 3, complete: true, error: false });
+    await page.end(page.mounted);
+
+    query.newQueryTab();
+    query.selectQueryTab(firstId);
+    summary(harness, { rows: false, rowCount: 0, total: null, complete: false, error: true,
+        errorCode: 'saved-result-busy' });
+    let [tab] = query.getQueryTabsState().tabs;
+    assert.equal(tab.lastRun.status, 'done');
+    assert.equal(tab.lastRun.saved.storeId, 'rows-c1-1', 'open in another window: it may open here later');
+    assert.notEqual(statusOf(tabButtons(harness)[0]), 'error');
+
+    query.newQueryTab();
+    query.selectQueryTab(firstId);
+    summary(harness, { rows: false, rowCount: 0, total: null, complete: false, error: true,
+        errorCode: 'saved-result-gone' });
+    [tab] = query.getQueryTabsState().tabs;
+    assert.equal(tab.lastRun.status, 'done');
+    assert.equal(tab.lastRun.saved, null, 'a result no longer stored is forgotten');
+    assert.notEqual(statusOf(tabButtons(harness)[0]), 'error');
+});
+
+test('a result summary is recorded on the tab the shown result belongs to', () => {
+    const { harness, query, page } = mountSaving();
+    const firstId = query.getQueryTabsState().activeId;
+    query.newQueryTab();
+    page.mounted.tag = firstId;
+    summary(harness, { rows: true, rowCount: 5, total: 5, complete: true, error: false });
+    const [first, second] = query.getQueryTabsState().tabs;
+    assert.equal(first.lastRun && first.lastRun.total, 5, 'the first tab\'s result reported');
+    assert.equal(second.lastRun, null, 'the tab that happens to be active is left alone');
+});
+
+test('Close all does not open the saved results of the tabs it closes', async () => {
+    const { harness, query, page, localStorage } = mountSaving();
+    const editor = harness.yasqeState.instances.query;
+    for (let i = 0; i < 3; i++) {
+        if (i) {
+            query.newQueryTab();
+            editor.setValue('SELECT ' + (i + 1) + ' {}');
+            editor.triggerChange();
+        }
+        query.doSubmit();
+        await page.end(page.mounted);
+    }
+    const stores = Array.from(query.getQueryTabsState().tabs, (tab) => tab.lastRun.saved.storeId);
+    query.selectQueryTab(query.getQueryTabsState().tabs[0].id);
+    const before = page.calls.length;
+
+    const [, closeAll] = harness.document.querySelectorAll('#query-tabs .query-tabs__menu-action');
+    closeAll.click();
+    assert.deepEqual(page.calls.slice(before).filter((call) => call.startsWith('restore')), [],
+        'no tab that is closing is shown on the way');
+    const state = query.getQueryTabsState();
+    assert.equal(state.tabs.length, 1);
+    assert.equal(state.tabs[0].query, '');
+    stores.forEach((id) => assert.equal(registryEntry(localStorage, id).dispose, true, id + ' is given up'));
+    assert.equal(query.reopenClosedQueryTab(), true, 'the closed tabs can still be reopened');
+});
+
+test('the ⋯ menu stays open while the row is redrawn', () => {
+    const { harness, query } = mount({ harness: { query: 'SELECT 1 {}' } });
+    harness.document.querySelector('#query-tabs .query-tabs__menu-button').click();
+    assert.equal(harness.document.querySelector('#query-tabs .query-tabs__menu-panel').hidden, false);
+
+    harness.document.dispatchEvent({ type: 'workbench:query-activity' });
+    query.newQueryTab();
+    const panels = harness.document.querySelectorAll('#query-tabs .query-tabs__menu-panel');
+    assert.equal(panels.length, 1);
+    assert.equal(panels[0].hidden, false, 'the open menu stays open');
+    assert.equal(harness.document.querySelector('#query-tabs .query-tabs__menu-button').getAttribute('aria-expanded'),
+        'true');
+    assert.equal(harness.document.querySelectorAll('#query-tabs .query-tabs__menu-row').length, 2,
+        'and lists the tab just opened');
+});
+
+test('forgetting the query tabs\' results drops the kept results and the closed tabs of the page', () => {
+    const page = fakeResultPage();
+    const { harness, query } = mount({ harness: { query: 'SELECT 1 {}', workbench: { queryPage: page } } });
+    harness.document.getElementById('action').value = 'exec';
+    query.doSubmit();
+    const running = page.mounted;
+    query.newQueryTab();
+    query.newQueryTab();
+    query.closeQueryTab(query.getQueryTabsState().activeId);
+    assert.equal(running.disposed, false);
+
+    query.forgetQueryTabResults();
+    assert.equal(running.disposed, true, 'a query kept running for a replaced tab is cancelled');
+    assert.equal(query.reopenClosedQueryTab(), false, 'a replaced tab is not reopened');
 });

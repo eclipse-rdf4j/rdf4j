@@ -2479,6 +2479,8 @@ test('switching to a repository opens the page it was left on, says so, and offe
     assert.equal(harness.toasts[0].actionLabel, 'Undo');
     assert.ok(harness.window.scrolledTo.includes(420), 'scrolled back to where it was left');
 
+    let forgotten = 0;
+    harness.workbench.query = { forgetQueryTabResults() { forgotten++; } };
     harness.choose('empty');
     harness.toasts[0].onAction();
     await settle();
@@ -2493,6 +2495,7 @@ test('switching to a repository opens the page it was left on, says so, and offe
         + JSON.stringify(['sha256:abc', '', 'repo-1'])));
     assert.equal(tabs.tabs.length, 1);
     assert.equal(tabs.tabs[0].query, '');
+    assert.equal(forgotten, 1, 'the Query page lets go of the results and closed tabs of the tabs replaced');
     assert.equal(harness.toasts.length, 1, 'the page Undo opens is not announced as restored');
 });
 
@@ -2527,4 +2530,30 @@ test('Undo can copy the queries of the repository the switch came from, without 
     assert.equal(copied.activeId, 'b');
     assert.equal(JSON.parse(harness.localStorage.getItem(tabsKey('repo-1'))).tabs.length, 3,
         'the queries stay in repo-1 too');
+});
+
+test('a repository the server does not find is forgotten for the user told so, not for other users', async () => {
+    const harness = loadRouterWithWorkspaces();
+    const values = new Map();
+    const localStorage = {
+        get length() { return values.size; },
+        key(index) { return [...values.keys()][index] || null; },
+        getItem(key) { return values.has(key) ? values.get(key) : null; },
+        setItem(key, value) { values.set(key, String(value)); },
+        removeItem(key) { values.delete(key); }
+    };
+    harness.window.localStorage = localStorage;
+    const tabsKey = (user) => 'rdf4j.workbench.query.tabs.v2:' + JSON.stringify(['sha256:abc', user, 'repo-3']);
+    const state = JSON.stringify({ version: 1, activeId: 'a', tabs: [{ id: 'a', title: null, saved: false,
+        query: 'SELECT 1 {}', queryLn: 'SPARQL', dirty: false, lastRun: null }] });
+    localStorage.setItem(tabsKey('ada'), state);
+    localStorage.setItem(tabsKey('bob'), state);
+    const viewContext = harness.workbench.app.viewContext;
+    harness.workbench.app.viewContext = (...args) => Object.assign(viewContext(...args),
+        { serverUser: 'ada', repositoryId: '', missingRepositoryId: 'repo-3' });
+    harness.start();
+    harness.router.navigate(repo('repo-3', 'summary'), { history: 'push' });
+    await harness.answerUrl(repo('repo-3', 'summary'), harness.model('summary'));
+    assert.equal(localStorage.getItem(tabsKey('ada')), null, 'the user told so forgets it');
+    assert.equal(localStorage.getItem(tabsKey('bob')), state, 'another user of this browser keeps theirs');
 });

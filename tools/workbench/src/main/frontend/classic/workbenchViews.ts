@@ -5165,6 +5165,11 @@ namespace workbench {
             if (status && !panel.__rdf4jRepositories) { status.textContent = 'Loading repositories…'; }
             const url = new URL(panel.getAttribute('data-workbench-repositories-url'), window.location.href).toString();
             const loading = app.loadModel(window.fetch.bind(window), url).then((model: any) => {
+                if (model.error) {
+                    // An error page (the server unreachable, say) is not an empty list: nothing is forgotten for it.
+                    model.rowStore.dispose();
+                    throw model.error;
+                }
                 return model.rowStore.read(0, model.rowCount).then((rows: any[][]) => {
                     model.rowStore.dispose();
                     return recordsFromRows(model, rows).map((record: any) => ({

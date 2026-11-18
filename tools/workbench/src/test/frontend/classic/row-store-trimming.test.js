@@ -134,6 +134,10 @@ test('making room trims the stores no page has open, deletes orphans, and leaves
     const open = await page.api.openRowStore(await savedStore(page, 6, 't-open', 1), page.options);
     const perRow = old.bytes / 6;
     const referenced = () => ({ [old.id]: true, [recent.id]: true, [open.id]: true });
+    // Its tab closed: the store was given up (discardRowStore flags it).
+    const given = entryOf(localStorage, orphan.id);
+    given.dispose = true;
+    localStorage.setItem(REGISTRY + orphan.id, JSON.stringify(given));
 
     const freed = await page.api.makeRoom(Math.round(orphan.bytes + 5 * perRow), {
         indexedDB: storage.indexedDB, locks: undefined, storage: localStorage, referenced, floor: 2,
@@ -154,6 +158,26 @@ test('making room trims the stores no page has open, deletes orphans, and leaves
     await reopened.release();
     await open.release();
 });
+
+test('a saved result no tab here refers to is trimmed in its turn, not deleted first: another window may show it',
+    async () => {
+        const storage = fakeIndexedDB();
+        const localStorage = mapStorage();
+        const page = loadApi({ localStorage });
+        page.options = { workerFactory: realWorkerFactory(storage).factory, storageTimeout: 2000 };
+        page.api.setRowStoreBudget(1e12);
+        const old = await savedStore(page, 6, 't-old', 10);
+        const elsewhere = await savedStore(page, 6, 't-elsewhere', 50);
+        const perRow = old.bytes / 6;
+
+        await page.api.makeRoom(Math.floor(2 * perRow), {
+            indexedDB: storage.indexedDB, locks: undefined, storage: localStorage, referenced: () => ({ [old.id]: true }),
+            floor: 2, rowStoreOptions: page.options, document: { visibilityState: 'visible' }
+        });
+        assert.ok(entryOf(localStorage, elsewhere.id), 'the result only another window\'s tabs name is kept');
+        assert.equal(entryOf(localStorage, elsewhere.id).retained.rows, 6, 'whole');
+        assert.equal(entryOf(localStorage, old.id).retained.rows, 4, 'the least recently shown one is trimmed instead');
+    });
 
 test('a growing result over the budget makes room by trimming the others', async () => {
     const storage = fakeIndexedDB();

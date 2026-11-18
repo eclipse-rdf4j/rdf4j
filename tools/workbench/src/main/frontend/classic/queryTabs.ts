@@ -78,7 +78,13 @@ namespace workbench {
 
         export interface Store {
             get(): QueryTabsState;
-            set(next: QueryTabsState): void;
+            /**
+             * Make `next` the state. With `deferPersist` (typing), it is written to browser storage a moment later
+             * (PERSIST_DELAY_MS) rather than on every keystroke; any other change writes it, and what waited, at once.
+             */
+            set(next: QueryTabsState, deferPersist?: boolean): void;
+            /** Write a state that waits to be written now (the page is left). */
+            flush(): void;
             subscribe(listener: (state: QueryTabsState) => void): () => void;
         }
 
@@ -88,6 +94,8 @@ namespace workbench {
         export const UNTITLED = 'Untitled query';
         const TITLE_LENGTH = 40;
         export const STORAGE_PREFIX = 'rdf4j.workbench.query.tabs.v2:';
+        /** How long typed text waits before the tabs are written to browser storage (Store.set's deferPersist). */
+        export const PERSIST_DELAY_MS = 400;
 
         /**
          * The tabs of a repository on a server for a user (workbench.workspace scopes: the server's digest, the user,
@@ -380,12 +388,15 @@ namespace workbench {
             return title === tab.title ? state : update(state, id, { title: title });
         }
 
-        /** Records how a tab's run went; the result it saved stays unless the run says otherwise. */
+        /**
+         * Records how a tab's run went; the result it saved stays unless the run says otherwise. The edited mark stays:
+         * a run that starts clears it, so an edit made while the query ran is still one.
+         */
         export function recordRun(state: QueryTabsState, id: string, run: QueryTabRun): QueryTabsState {
             const tab = findTab(state, id);
             const kept = tab && tab.lastRun && tab.lastRun.saved;
             const next = typeof run.saved === 'undefined' && kept ? Object.assign({}, run, { saved: kept }) : run;
-            return update(state, id, { lastRun: next, dirty: false });
+            return update(state, id, { lastRun: next });
         }
 
         function indexOf(state: QueryTabsState, id: string): number {
@@ -436,6 +447,17 @@ namespace workbench {
                 write(session, text);
                 write(local, text);
             }
+            /** The write typing put off (deferPersist), or null. */
+            let pendingPersist: any = null;
+            function persistNow(): void {
+                if (pendingPersist !== null) {
+                    if (typeof clearTimeout === 'function') {
+                        clearTimeout(pendingPersist);
+                    }
+                    pendingPersist = null;
+                }
+                persist();
+            }
             // The page's working copy exists from the start, so a refresh shows this page's tabs, not the latest
             // tabs another page wrote.
             if (seeded || !read(session)) {
@@ -445,13 +467,27 @@ namespace workbench {
                 get: function() {
                     return state;
                 },
-                set: function(next: QueryTabsState) {
+                set: function(next: QueryTabsState, deferPersist?: boolean) {
                     if (!next || next === state) {
                         return;
                     }
                     state = next;
-                    persist();
+                    if (deferPersist && typeof setTimeout === 'function') {
+                        if (pendingPersist === null) {
+                            pendingPersist = setTimeout(function() {
+                                pendingPersist = null;
+                                persist();
+                            }, PERSIST_DELAY_MS);
+                        }
+                    } else {
+                        persistNow();
+                    }
                     listeners.slice().forEach(listener => listener(state));
+                },
+                flush: function() {
+                    if (pendingPersist !== null) {
+                        persistNow();
+                    }
                 },
                 subscribe: function(listener: (state: QueryTabsState) => void) {
                     listeners.push(listener);
@@ -470,6 +506,8 @@ namespace workbench {
         export interface TabRowCallbacks {
             onSelect(id: string): void;
             onClose(id: string): void;
+            /** Close several tabs at once (Close others, Close all); without it each is closed in turn. */
+            onCloseMany?(ids: string[]): void;
             onNew(): void;
             /** Whether that tab's query has a request out right now (the page knows; the state does not). */
             isRunning(id: string): boolean;
@@ -896,6 +934,56 @@ namespace workbench {
             return rows + (age ? ' · ' + age : '') + (tab.dirty ? ' · edited since' : '');
         }
 
+        /** The ⋯ menu of a row: drawn once and kept across redraws, so its popover stays bound and open. */
+        interface TabMenu {
+            menu: HTMLElement;
+            list: HTMLElement;
+            actions: HTMLElement;
+            /** The callbacks of the latest redraw. */
+            callbacks: TabRowCallbacks;
+        }
+
+        function tabMenu(container: HTMLElement, doc: Document): TabMenu {
+            const known: TabMenu = (<any>container).queryTabsMenu || null;
+            if (known && known.menu.parentNode === container) {
+                return known;
+            }
+            const menu = element(doc, 'div', 'query-tabs__menu');
+            const menuButton = element(doc, 'button', 'query-tabs__menu-button');
+            menuButton.setAttribute('type', 'button');
+            menuButton.setAttribute('aria-label', 'All open queries');
+            menuButton.setAttribute('aria-haspopup', 'true');
+            menuButton.setAttribute('aria-expanded', 'false');
+            menuButton.title = 'All open queries';
+            menuButton.appendChild(icon(doc, 'more', 'query-tabs__menu-icon'));
+            const panel = element(doc, 'div', 'query-tabs__menu-panel workbench-popover');
+            panel.hidden = true;
+            panel.appendChild(element(doc, 'div', 'query-tabs__menu-heading', 'Open queries'));
+            const list = element(doc, 'ul', 'query-tabs__menu-list');
+            list.setAttribute('role', 'menu');
+            panel.appendChild(list);
+            const actions = element(doc, 'div', 'query-tabs__menu-actions');
+            panel.appendChild(actions);
+            menu.appendChild(menuButton);
+            menu.appendChild(panel);
+            const parts: TabMenu = { menu: menu, list: list, actions: actions, callbacks: null };
+            menuButton.addEventListener('click', function() {
+                const metas: any = panel.querySelectorAll ? panel.querySelectorAll('.query-tabs__menu-meta') : [];
+                for (let index = 0; index < metas.length; index++) {
+                    const meta: any = metas[index];
+                    if (meta.queryTab && parts.callbacks) {
+                        meta.textContent = runText(meta.queryTab, parts.callbacks.isRunning(meta.queryTab.id), Date.now());
+                    }
+                }
+            });
+            const popover: any = (<any>workbench).popover;
+            if (popover && typeof popover.bind === 'function') {
+                popover.bind(menuButton, panel);
+            }
+            (<any>container).queryTabsMenu = parts;
+            return parts;
+        }
+
         /**
          * Rebuild the tab row inside `container`: the scrolling strip of tabs and the "+" button, then the "⋯"
          * button whose popover lists every open query. Called on every state change; the DOM is small.
@@ -906,7 +994,13 @@ namespace workbench {
             }
             const doc = container.ownerDocument;
             const draft = pendingRename(container, state, callbacks);
-            clearChildren(container);
+            // The row's strip is drawn again; the ⋯ menu stays, so an open menu stays open (tabMenu).
+            const kept = (<any>container).queryTabsMenu ? (<any>container).queryTabsMenu.menu : null;
+            for (let index = container.children.length - 1; index >= 0; index--) {
+                if (container.children[index] !== kept) {
+                    container.removeChild(container.children[index]);
+                }
+            }
             const startRename = callbacks.onRename ? function(id: string) {
                 beginRename(container, state, callbacks, id);
             } : null;
@@ -934,64 +1028,41 @@ namespace workbench {
             strip.addEventListener('keydown', function(event: KeyboardEvent) {
                 onStripKeydown(event, state, callbacks, startRename);
             });
-            container.appendChild(strip);
 
-            const menu = element(doc, 'div', 'query-tabs__menu');
-            const menuButton = element(doc, 'button', 'query-tabs__menu-button');
-            menuButton.setAttribute('type', 'button');
-            menuButton.setAttribute('aria-label', 'All open queries');
-            menuButton.setAttribute('aria-haspopup', 'true');
-            menuButton.setAttribute('aria-expanded', 'false');
-            menuButton.title = 'All open queries';
-            menuButton.appendChild(icon(doc, 'more', 'query-tabs__menu-icon'));
-            const panel = element(doc, 'div', 'query-tabs__menu-panel workbench-popover');
-            panel.hidden = true;
-            const heading = element(doc, 'div', 'query-tabs__menu-heading', 'Open queries');
-            panel.appendChild(heading);
-            const list = element(doc, 'ul', 'query-tabs__menu-list');
-            list.setAttribute('role', 'menu');
+            const menu = tabMenu(container, doc);
+            if (menu.menu.parentNode === container) {
+                container.insertBefore(strip, menu.menu);
+            } else {
+                container.appendChild(strip);
+                container.appendChild(menu.menu);
+            }
+            menu.callbacks = callbacks;
+            clearChildren(menu.list);
             state.tabs.forEach(function(tab) {
-                list.appendChild(menuRow(doc, tab, tab.id === state.activeId, callbacks.isRunning(tab.id), callbacks));
+                menu.list.appendChild(menuRow(doc, tab, tab.id === state.activeId, callbacks.isRunning(tab.id), callbacks));
             });
-            panel.appendChild(list);
-            const actions = element(doc, 'div', 'query-tabs__menu-actions');
+            clearChildren(menu.actions);
+            const closeMany = function(ids: string[]) {
+                if (callbacks.onCloseMany) {
+                    callbacks.onCloseMany(ids);
+                } else {
+                    ids.forEach(id => callbacks.onClose(id));
+                }
+            };
             const closeOthers = element(doc, 'button', 'query-tabs__menu-action', 'Close others');
             closeOthers.setAttribute('type', 'button');
             (<HTMLButtonElement>closeOthers).disabled = state.tabs.length < 2;
             closeOthers.addEventListener('click', function() {
-                state.tabs.forEach(function(tab) {
-                    if (tab.id !== state.activeId) {
-                        callbacks.onClose(tab.id);
-                    }
-                });
+                closeMany(state.tabs.filter(tab => tab.id !== state.activeId).map(tab => tab.id));
             });
             const closeAll = element(doc, 'button', 'query-tabs__menu-action', 'Close all');
             closeAll.setAttribute('type', 'button');
             closeAll.addEventListener('click', function() {
-                state.tabs.forEach(function(tab) {
-                    callbacks.onClose(tab.id);
-                });
+                closeMany(state.tabs.map(tab => tab.id));
             });
-            actions.appendChild(closeOthers);
-            actions.appendChild(closeAll);
-            actions.appendChild(element(doc, 'span', 'query-tabs__menu-hint', 'Open queries are kept for your next visit'));
-            panel.appendChild(actions);
-            menu.appendChild(menuButton);
-            menu.appendChild(panel);
-            container.appendChild(menu);
-            menuButton.addEventListener('click', function() {
-                const metas: any = panel.querySelectorAll ? panel.querySelectorAll('.query-tabs__menu-meta') : [];
-                for (let index = 0; index < metas.length; index++) {
-                    const meta: any = metas[index];
-                    if (meta.queryTab) {
-                        meta.textContent = runText(meta.queryTab, callbacks.isRunning(meta.queryTab.id), Date.now());
-                    }
-                }
-            });
-            const popover: any = (<any>workbench).popover;
-            if (popover && typeof popover.bind === 'function') {
-                popover.bind(menuButton, panel);
-            }
+            menu.actions.appendChild(closeOthers);
+            menu.actions.appendChild(closeAll);
+            menu.actions.appendChild(element(doc, 'span', 'query-tabs__menu-hint', 'Open queries are kept for your next visit'));
             if (draft && draft.input && draft.focus) {
                 draft.focus = false;
                 draft.input.focus();

@@ -308,3 +308,23 @@ test("the graph this browser session kept before graphs were kept per user opens
     delete globalThis.localStorage;
   }
 });
+
+test("the session-scoped graph stays while the user's scope holds none (the move to it failed)", async () => {
+  globalThis.localStorage = memoryStorage();
+  try {
+    const server = `sha256:${"a".repeat(64)}`;
+    const legacy = JSON.stringify(["repository-v2", "/rdf4j-workbench", `${server}:session`, "repo"]);
+    const scope = JSON.stringify(["repository-v3", "/rdf4j-workbench", server, "", "repo"]);
+    const raw = prepareWorkspaceSave(workspace([friends[0]])).raw;
+    await saveWorkspaceText(raw, legacy);
+
+    await removeEarlierScopes(scope);
+    assert.equal(await loadWorkspaceText(legacy), raw, "the only stored copy of the graph is kept");
+
+    await saveWorkspaceText(raw, scope);
+    await removeEarlierScopes(scope);
+    assert.equal(await loadWorkspaceText(legacy), null, "once the user's scope holds a graph, it goes");
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
