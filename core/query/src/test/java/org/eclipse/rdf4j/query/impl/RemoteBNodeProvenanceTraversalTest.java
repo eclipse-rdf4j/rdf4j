@@ -130,6 +130,101 @@ class RemoteBNodeProvenanceTraversalTest {
 		assertThat(RemoteBNode.containsRemoteIdentity(withRemoteIdentity)).isTrue();
 	}
 
+	@Test
+	void preparedRecoveryPreservesDeepCallerTermsAndSharedAliases() {
+		int depth = 50_000;
+		Object identityScope = new Object();
+		BNode parameter = (BNode) responseScope(identityScope).map(VF.createBNode("canonical"));
+		BNode caller = (BNode) responseScope(identityScope).map(VF.createBNode("canonical"));
+		var recovery = responseScope(identityScope);
+		MapBindingSet seeds = new MapBindingSet();
+		seeds.addBinding("parameter", parameter);
+		recovery.seedOriginalBindings(seeds);
+
+		AtomicInteger reads = new AtomicInteger();
+		Value original = chain(depth - 1, new CountingTriple(caller, PREDICATE, caller, reads), reads);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("caller", original);
+		var marked = recovery.markCallerAliases(input);
+		TripleTerm markedLeaf = innermost(marked.getValue("caller"), depth);
+		assertSame(markedLeaf.getSubject(), markedLeaf.getObject());
+		assertSame(original, recovery.recoverOriginalBindings(marked).getValue("caller"));
+		assertThat(reads.get()).isLessThanOrEqualTo(6 * depth);
+
+		MapBindingSet result = new MapBindingSet();
+		result.addBinding("remote", original);
+		TripleTerm remoteLeaf = innermost(recovery.recoverOriginalBindings(result).getValue("remote"), depth);
+		assertSame(parameter, remoteLeaf.getSubject());
+		assertSame(parameter, remoteLeaf.getObject());
+	}
+
+	@Test
+	void preparedRecoveryLeavesDeepCallerTermsWithoutMatchingAliasesUntouched() {
+		int depth = 50_000;
+		Object identityScope = new Object();
+		var recovery = responseScope(identityScope);
+		MapBindingSet seeds = new MapBindingSet();
+		seeds.addBinding("parameter", responseScope(identityScope).map(VF.createBNode("canonical")));
+		recovery.seedOriginalBindings(seeds);
+		AtomicInteger reads = new AtomicInteger();
+		ColdLeaf coldLeaf = new ColdLeaf();
+		Value original = chain(depth, coldLeaf, reads);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("first", original);
+		input.addBinding("second", original);
+
+		assertSame(input, recovery.markCallerAliases(input));
+		assertSame(input, recovery.recoverOriginalBindings(input));
+		assertThat(reads.get()).isLessThanOrEqualTo(12 * depth);
+		assertThat(coldLeaf.accessCount).hasValue(0);
+	}
+
+	@Test
+	void preparedRecoveryRebuildsSharedTripleTermSubjectsOnce() {
+		int depth = 24;
+		Object identityScope = new Object();
+		BNode parameter = (BNode) responseScope(identityScope).map(VF.createBNode("canonical"));
+		BNode caller = (BNode) responseScope(identityScope).map(VF.createBNode("canonical"));
+		var recovery = responseScope(identityScope);
+		MapBindingSet seeds = new MapBindingSet();
+		seeds.addBinding("parameter", parameter);
+		recovery.seedOriginalBindings(seeds);
+
+		AtomicInteger reads = new AtomicInteger();
+		CountingResourceTriple original = new CountingResourceTriple(caller, PREDICATE, caller, reads);
+		for (int level = 1; level < depth; level++) {
+			original = new CountingResourceTriple(original, PREDICATE, original, reads);
+		}
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("caller", original);
+		var marked = recovery.markCallerAliases(input);
+		assertSharedSubjects(marked.getValue("caller"), depth);
+		assertSame(original, recovery.recoverOriginalBindings(marked).getValue("caller"));
+		assertThat(reads.get()).isLessThanOrEqualTo(6 * depth);
+
+		MapBindingSet result = new MapBindingSet();
+		result.addBinding("remote", original);
+		TripleTerm leaf = assertSharedSubjects(recovery.recoverOriginalBindings(result).getValue("remote"), depth);
+		assertSame(parameter, leaf.getSubject());
+	}
+
+	private static TripleTerm assertSharedSubjects(Value value, int depth) {
+		TripleTerm triple = (TripleTerm) value;
+		for (int level = 1; level < depth; level++) {
+			assertSame(triple.getSubject(), triple.getObject());
+			triple = (TripleTerm) triple.getObject();
+		}
+		assertSame(triple.getSubject(), triple.getObject());
+		return triple;
+	}
+
+	private static TripleTerm innermost(Value value, int depth) {
+		for (int level = 1; level < depth; level++) {
+			value = ((TripleTerm) value).getObject();
+		}
+		return (TripleTerm) value;
+	}
+
 	private static RemoteBNode.ResponseScope responseScope(Object identityScope) {
 		return RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, identityScope, true);
 	}
@@ -142,7 +237,7 @@ class RemoteBNodeProvenanceTraversalTest {
 		return value;
 	}
 
-	private static final class CountingTriple extends AbstractTripleTerm {
+	private static class CountingTriple extends AbstractTripleTerm {
 		private static final long serialVersionUID = 1L;
 		private final Resource subject;
 		private final IRI predicate;
@@ -172,6 +267,14 @@ class RemoteBNodeProvenanceTraversalTest {
 		public Value getObject() {
 			reads.incrementAndGet();
 			return object;
+		}
+	}
+
+	private static final class CountingResourceTriple extends CountingTriple implements Resource {
+		private static final long serialVersionUID = 1L;
+
+		private CountingResourceTriple(Resource subject, IRI predicate, Value object, AtomicInteger reads) {
+			super(subject, predicate, object, reads);
 		}
 	}
 

@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -48,6 +49,8 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PreparedServiceStreamingTest {
 	@Test
@@ -129,12 +132,17 @@ class PreparedServiceStreamingTest {
 		}
 	}
 
-	@Test
-	void preparedBlankNodeRecoveryPreservesCallerObjectsAndEndpointProvenance() {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void preparedBlankNodeRecoveryPreservesCallerObjectsAndEndpointProvenance(boolean hasTranslatedCallerAlias) {
 		var vf = SimpleValueFactory.getInstance();
 		Object endpointScope = new Object();
 		Object foreignScope = new Object();
 		var parameter = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				endpointScope, true).map(vf.createBNode("same-label"));
+		var firstCallerAlias = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				endpointScope, true).map(vf.createBNode("same-label"));
+		var secondCallerAlias = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
 				endpointScope, true).map(vf.createBNode("same-label"));
 		var response = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, endpointScope, true);
 		var returnedParameter = response.map(vf.createBNode("same-label"));
@@ -143,15 +151,19 @@ class PreparedServiceStreamingTest {
 		var localRemoteLabel = vf.createBNode("same-label");
 		var foreign = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
 				foreignScope, true).map(vf.createBNode("same-label"));
-		var callerTerm = vf.createTripleTerm(localAlias, vf.createIRI("urn:nested"), foreign);
+		var predicate = vf.createIRI("urn:nested");
 		var endpointTerm = vf.createTripleTerm((Resource) returnedParameter,
-				vf.createIRI("urn:nested"), endpointOnly);
+				predicate, endpointOnly);
 		List<BindingSet> originals = new ArrayList<>();
-		for (var keep : List.of(localAlias, localRemoteLabel, foreign)) {
+		for (var keep : List.of(firstCallerAlias, secondCallerAlias, localAlias, localRemoteLabel, foreign)) {
 			MapBindingSet row = new MapBindingSet();
 			row.addBinding("s", vf.createIRI("urn:a"));
 			row.addBinding("keep", keep);
-			row.addBinding("callerTerm", callerTerm);
+			row.addBinding("callerTerm", vf.createTripleTerm(keep, predicate,
+					vf.createTripleTerm(localAlias, predicate, keep)));
+			if (hasTranslatedCallerAlias && keep == firstCallerAlias) {
+				row.addBinding("maybe", keep);
+			}
 			originals.add(row);
 		}
 		FederatedService provider = mock(FederatedService.class);
@@ -165,7 +177,20 @@ class PreparedServiceStreamingTest {
 				@Override
 				protected BindingSet convert(BindingSet input) {
 					MapBindingSet row = new MapBindingSet();
-					input.forEach(row::addBinding);
+					BindingSet bindings = hasTranslatedCallerAlias ? RemoteBNode.originalBindings(input) : input;
+					bindings.forEach(row::addBinding);
+					if (row.hasBinding("maybe")) {
+						assertThat(input.getValue("maybe")).isNotInstanceOf(RemoteBNode.class);
+						assertThat(input.getValue("maybe")).isEqualTo(vf.createBNode("same-label"));
+						Value alias = row.getValue("maybe");
+						Value copied = RemoteBNode.preserveProvenance(alias, vf.createBNode(alias.stringValue()));
+						try (var spill = new RemoteBNode.SpillScope()) {
+							row.setBinding("maybe", (Value) spill.resolve(spill.replace(copied)));
+						}
+					} else {
+						// The endpoint returns the same alias object in a column owned by the first input only.
+						row.addBinding("maybe", firstCallerAlias);
+					}
 					row.addBinding("copy", returnedParameter);
 					row.addBinding("remote", endpointOnly);
 					row.addBinding("endpointTerm", endpointTerm);
@@ -175,11 +200,15 @@ class PreparedServiceStreamingTest {
 		});
 		MapBindingSet parameters = new MapBindingSet();
 		parameters.addBinding("x", parameter);
-		try (var result = join(provider, new CloseableIteratorIteration<>(originals.iterator()), parameters)) {
+		String body = "?s <urn:p> ?o FILTER(BOUND(?x)) OPTIONAL { ?s <urn:maybe> ?maybe }";
+		try (var result = join(provider, new CloseableIteratorIteration<>(originals.iterator()), parameters, false,
+				body)) {
 			for (BindingSet original : originals) {
 				BindingSet row = result.next();
 				assertThat(row.getValue("keep")).isSameAs(original.getValue("keep"));
-				assertThat(row.getValue("callerTerm")).isSameAs(callerTerm);
+				assertThat(row.getValue("callerTerm")).isSameAs(original.getValue("callerTerm"));
+				assertThat(row.getValue("maybe"))
+						.isSameAs(original.hasBinding("maybe") ? original.getValue("maybe") : parameter);
 				assertThat(row.getValue("copy")).isSameAs(parameter);
 				assertThat(row.getValue("remote")).isSameAs(endpointOnly);
 				var nested = (TripleTerm) row.getValue("endpointTerm");
@@ -189,6 +218,10 @@ class PreparedServiceStreamingTest {
 			}
 			assertThat(result.hasNext()).isFalse();
 		}
+		assertThat(firstCallerAlias.getID()).isNotEqualTo(parameter.getID());
+		assertThat(secondCallerAlias.getID()).isNotEqualTo(firstCallerAlias.getID());
+		assertThat(RemoteBNode.sameTrustedIdentity(firstCallerAlias, parameter)).isTrue();
+		assertThat(RemoteBNode.sameTrustedIdentity(secondCallerAlias, parameter)).isTrue();
 		assertThat(localAlias.getID()).isEqualTo(parameter.getID());
 		assertThat(localRemoteLabel.getID()).isEqualTo(parameter.getProvenance().remoteID());
 		assertThat(foreign.getProvenance().remoteID()).isEqualTo(parameter.getProvenance().remoteID());
@@ -224,12 +257,16 @@ class PreparedServiceStreamingTest {
 
 	private static ServiceJoinIterator join(FederatedService provider, CloseableIteration<BindingSet> input,
 			BindingSet parameters, boolean silent) {
+		return join(provider, input, parameters, silent, "?s <urn:p> ?o FILTER(BOUND(?x))");
+	}
+
+	private static ServiceJoinIterator join(FederatedService provider, CloseableIteration<BindingSet> input,
+			BindingSet parameters, boolean silent, String body) {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null,
 				ignored -> provider);
 		strategy.setOptimizerPipeline(List::of);
 		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
-				"SELECT ?s ?o WHERE { SERVICE " + (silent ? "SILENT " : "")
-						+ "<urn:endpoint> { ?s <urn:p> ?o FILTER(BOUND(?x)) } }",
+				"SELECT ?s ?o WHERE { SERVICE " + (silent ? "SILENT " : "") + "<urn:endpoint> { " + body + " } }",
 				null)
 				.getTupleExpr();
 		expression = strategy.optimizeForEmptyInput(expression, new EvaluationStatistics(), parameters);

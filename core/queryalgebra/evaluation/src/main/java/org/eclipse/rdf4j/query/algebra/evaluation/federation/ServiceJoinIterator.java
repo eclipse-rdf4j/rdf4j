@@ -143,10 +143,17 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 			try {
 				CloseableIteration<BindingSet> result;
 				ExternalValuePreparation.initializeQueryModel(requestService);
+				RemoteBNode.ResponseScope response = request.parameterIdentities().isEmpty() ? null
+						: RemoteBNode.newResponseScope(allocation, SimpleValueFactory.getInstance(), receivingScope,
+								canonicalIDs);
+				if (response != null) {
+					response.seedOriginalBindings(request.parameterIdentities());
+				}
 				CloseableIteration<BindingSet> checkedInputs = new ConvertingIteration<>(leftIter) {
 					@Override
 					protected BindingSet convert(BindingSet input) {
-						return request.prepareRuntimeInput(input);
+						return request
+								.prepareRuntimeInput(response == null ? input : response.markCallerAliases(input));
 					}
 				};
 				CloseableIteration<BindingSet> externalBindings = ExternalValuePreparation
@@ -155,10 +162,7 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
 					result = fs.evaluate(requestService, externalBindings, requestService.getBaseURI());
 				}
-				if (!request.parameterIdentities().isEmpty()) {
-					RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
-							SimpleValueFactory.getInstance(), receivingScope, canonicalIDs);
-					response.seedOriginalBindings(request.parameterIdentities());
+				if (response != null) {
 					result = new ConvertingIteration<BindingSet, BindingSet>(result) {
 						@Override
 						protected BindingSet convert(BindingSet row) {

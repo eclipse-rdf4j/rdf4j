@@ -383,6 +383,23 @@ public class SPARQLQueries {
 		}
 	}
 
+	/**
+	 * Inserts a SERVICE input relation whose values are supplied by native query bindings. The relation joins the outer
+	 * graph pattern, with ordinary SPARQL evaluation determining how it participates in nested operators.
+	 */
+	@InternalUseOnly
+	public static String withServiceBindingRelation(String query, String relation) {
+		try {
+			ASTWhereClause where = SyntaxTreeBuilder.parseQuery(query).getQuery().getWhereClause();
+			if (where == null || where.getGroupStartOffset() < 0) {
+				throw unsupportedBindings("query without an outer WHERE group");
+			}
+			return new StringBuilder(query).insert(where.getGroupStartOffset() + 1, relation).toString();
+		} catch (ParseException | TokenMgrError failure) {
+			throw new MalformedQueryException(failure.getMessage(), failure);
+		}
+	}
+
 	private record SourceEdit(int start, int end, String text) {
 	}
 
@@ -454,11 +471,50 @@ public class SPARQLQueries {
 		Objects.requireNonNull(candidateNames);
 		try {
 			Set<String> names = new LinkedHashSet<>();
-			collectPossibleBindingReads(SyntaxTreeBuilder.parseQuery(query), candidateNames, names);
+			collectPossibleBindingReads(SyntaxTreeBuilder.parseQuery(query), candidateNames, names, null);
 			return Collections.unmodifiableSet(names);
 		} catch (ParseException | TokenMgrError failure) {
 			throw new MalformedQueryException(failure.getMessage(), failure);
 		}
+	}
+
+	@InternalUseOnly
+	public record ServiceBindingScopes(Set<String> outerReads, Set<String> independentNames) {
+		public ServiceBindingScopes {
+			outerReads = Set.copyOf(outerReads);
+			independentNames = Set.copyOf(independentNames);
+		}
+	}
+
+	/** Classifies caller names used by a saved SERVICE body and names owned by its independent scopes. */
+	@InternalUseOnly
+	public static ServiceBindingScopes serviceBindingScopes(String query, Set<String> candidateNames) {
+		try {
+			Set<String> outerReads = new LinkedHashSet<>();
+			Set<String> independentNames = new LinkedHashSet<>();
+			collectPossibleBindingReads(SyntaxTreeBuilder.parseQuery(query).getQuery().getWhereClause(),
+					candidateNames, outerReads, independentNames);
+			return new ServiceBindingScopes(outerReads, independentNames);
+		} catch (ParseException | TokenMgrError failure) {
+			throw new MalformedQueryException(failure.getMessage(), failure);
+		}
+	}
+
+	private static boolean isIndependentServiceBindingScope(Node node) {
+		if (node instanceof ASTQuery) {
+			return true;
+		}
+		if (!(node instanceof ASTUnionGraphPattern || node instanceof ASTGraphGraphPattern
+				|| node instanceof ASTGraphPatternGroup group && group.isScopeChange())) {
+			return false;
+		}
+		for (Node parent = node.jjtGetParent(); parent != null; parent = parent.jjtGetParent()) {
+			if (parent instanceof ASTExistsFunc || parent instanceof ASTNotExistsFunc
+					|| parent instanceof ASTLateralGraphPattern) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	static Set<String> lexicalBindingNames(Node syntax) {
@@ -469,11 +525,16 @@ public class SPARQLQueries {
 
 	static Set<String> possibleBindingReadNames(Node syntax) {
 		Set<String> names = new LinkedHashSet<>();
-		collectPossibleBindingReads(syntax, null, names);
+		collectPossibleBindingReads(syntax, null, names, null);
 		return names;
 	}
 
-	private static void collectPossibleBindingReads(Node node, Set<String> candidates, Set<String> names) {
+	private static void collectPossibleBindingReads(Node node, Set<String> candidates, Set<String> names,
+			Set<String> independentNames) {
+		if (independentNames != null && isIndependentServiceBindingScope(node)) {
+			collectBoundNames(node, candidates, independentNames);
+			return;
+		}
 		if (node instanceof ASTInlineData || node instanceof ASTBindingsClause) {
 			return;
 		}
@@ -492,7 +553,7 @@ public class SPARQLQueries {
 					|| node instanceof ASTProjectionElem projection && projection.hasAlias() && i == 1) {
 				continue;
 			}
-			collectPossibleBindingReads(node.jjtGetChild(i), candidates, names);
+			collectPossibleBindingReads(node.jjtGetChild(i), candidates, names, independentNames);
 		}
 	}
 
