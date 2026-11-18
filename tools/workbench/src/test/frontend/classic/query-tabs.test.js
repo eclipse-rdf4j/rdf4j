@@ -173,6 +173,45 @@ test('rename names a tab, trims the name and gives an empty name the derived tit
     assert.equal(tabs.findTab(long, id).title.length, tabs.MAX_TITLE_LENGTH, 'a name is cut to the longest kept');
 });
 
+test('reopen puts a closed tab back where it stood, shown and without its result; a lone untouched tab gives way', () => {
+    const tabs = loadQueryTabs();
+    let state = tabs.emptyState();
+    const first = state.tabs[0];
+    state = tabs.update(state, first.id, { query: 'SELECT 1 {}' });
+    const second = tabs.newTab('SELECT 2 {}', { title: 'Two', saved: true }, state.tabs);
+    state = tabs.open(state, second);
+    const third = tabs.newTab('SELECT 3 {}', {}, state.tabs);
+    state = tabs.open(state, third);
+    state = tabs.recordRun(state, second.id, { status: 'done', rowCount: 3, total: 3, elapsedMs: null, at: 1 });
+    const closed = { tab: tabs.findTab(state, second.id), index: 1 };
+    state = tabs.activate(tabs.close(state, second.id), first.id);
+
+    const reopened = tabs.reopen(state, closed);
+    assert.deepEqual(Array.from(reopened.tabs, tab => tab.id), [first.id, second.id, third.id], 'where it stood');
+    assert.equal(reopened.activeId, second.id, 'and shown');
+    const back = tabs.findTab(reopened, second.id);
+    assert.equal(back.title, 'Two');
+    assert.equal(back.saved, true);
+    assert.equal(back.query, 'SELECT 2 {}');
+    assert.equal(back.lastRun, null, 'its result went when it closed');
+
+    const pastTheEnd = tabs.reopen(tabs.close(state, third.id), { tab: closed.tab, index: 5 });
+    assert.deepEqual(Array.from(pastTheEnd.tabs, tab => tab.id), [first.id, second.id], 'at the end when fewer stand');
+
+    const lone = tabs.reopen(tabs.emptyState(), closed);
+    assert.deepEqual(Array.from(lone.tabs, tab => tab.id), [second.id], 'the empty tab closing the last one left goes');
+    const edited = tabs.update(tabs.emptyState(), tabs.emptyState().activeId, {});
+    const typed = tabs.setQuery(edited, edited.activeId, 'ASK {}');
+    assert.equal(tabs.reopen(typed, closed).tabs.length, 2, 'a tab with text stays');
+
+    let full = tabs.update(tabs.emptyState(), tabs.emptyState().activeId, {});
+    full = tabs.setQuery(full, full.activeId, 'q');
+    while (full.tabs.length < tabs.MAX_TABS) {
+        full = tabs.open(full, tabs.newTab('q', {}, full.tabs));
+    }
+    assert.equal(tabs.reopen(full, closed), full, 'not past the limit');
+});
+
 test('the store reads, persists and notifies; a throwing storage keeps the state in memory', () => {
     const tabs = loadQueryTabs();
     const key = tabs.storageKey({ digest: 'sha256:abc', user: '', repositoryId: 'lmdb' });

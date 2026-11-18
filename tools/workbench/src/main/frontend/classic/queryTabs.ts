@@ -294,6 +294,41 @@ namespace workbench {
             return { version: 1, activeId: activeId, tabs: tabs };
         }
 
+        /** A closed tab and the place it stood in the row, so it can be reopened. */
+        export interface ClosedTab {
+            tab: QueryTab;
+            index: number;
+        }
+
+        /** What closing the last tab leaves: one empty tab nobody has touched. */
+        function isUntouched(tab: QueryTab): boolean {
+            return !tab.query && !tab.title && !tab.saved && !tab.dirty && !tab.lastRun;
+        }
+
+        /**
+         * Put a closed tab back where it stood (at the end when fewer tabs stand now) and show it. Its result went
+         * when it closed, so it comes back without one. A lone untouched empty tab gives way to it; at the limit the
+         * state is returned unchanged.
+         */
+        export function reopen(state: QueryTabsState, closed: ClosedTab): QueryTabsState {
+            if (!closed || !closed.tab) {
+                return state;
+            }
+            const tab: QueryTab = Object.assign({}, closed.tab, { lastRun: null });
+            if (findTab(state, tab.id)) {
+                tab.id = nextId(state.tabs);
+            }
+            if (state.tabs.length === 1 && isUntouched(state.tabs[0])) {
+                return { version: 1, activeId: tab.id, tabs: [tab] };
+            }
+            if (state.tabs.length >= MAX_TABS) {
+                return state;
+            }
+            const tabs = state.tabs.slice();
+            tabs.splice(Math.max(0, Math.min(closed.index, tabs.length)), 0, tab);
+            return { version: 1, activeId: tab.id, tabs: tabs };
+        }
+
         export function activate(state: QueryTabsState, id: string): QueryTabsState {
             if (state.activeId === id || indexOf(state, id) < 0) {
                 return state;

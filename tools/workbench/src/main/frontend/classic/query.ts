@@ -97,6 +97,8 @@ namespace workbench {
         var MAX_BACKGROUND_TAB_RESULTS = 6;
         /** The JSON scope (server digest, user, repository) the page's saved results are kept for. */
         var queryTabsScope = '';
+        /** Tabs closed on this page, the last closed last, for Cmd+Z / Ctrl+Z to reopen (reopenClosedQueryTab). */
+        var closedQueryTabs: workbench.queryTabs.ClosedTab[] = [];
 
         type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
         type ExplainFormat = 'text' | 'dot' | 'json';
@@ -5341,6 +5343,8 @@ namespace workbench {
             if (queryTabControllersKey !== key) {
                 disposeQueryTabResults();
                 queryTabControllersKey = key;
+                // Another repository's closed tabs do not reopen here.
+                closedQueryTabs = [];
             }
             queryTabsScope = JSON.stringify([scope.digest, scope.user, scope.repositoryId]);
             queryTabStore = tabs.createStore(queryTabsStorage('localStorage'), queryTabsStorage('sessionStorage'), key, seed);
@@ -5424,7 +5428,13 @@ namespace workbench {
                 return;
             }
             var wasActive = state.activeId === id;
-            var saved = tabs.savedResult(tabs.findTab(state, id));
+            var closing = tabs.findTab(state, id);
+            // Kept for Cmd+Z / Ctrl+Z, without its result, which goes now.
+            closedQueryTabs.push({ tab: closing, index: state.tabs.indexOf(closing) });
+            if (closedQueryTabs.length > tabs.MAX_TABS) {
+                closedQueryTabs.shift();
+            }
+            var saved = tabs.savedResult(closing);
             if (saved && saved.storeId) {
                 // A result this page saved goes with its tab; one another page saved may still be shown there.
                 savedResultStores().discardRowStore(saved.storeId, savedResultStores().rowStoreDocumentOwner);
@@ -5467,6 +5477,57 @@ namespace workbench {
             if (yasqe) {
                 yasqe.focus();
             }
+        }
+
+        /**
+         * Reopen the tab closed last (Cmd+Z / Ctrl+Z outside a text field) where it stood, and show it: its text,
+         * name and saved mark, without the result that went when it closed. Focus goes to its tab, so another
+         * Cmd+Z reopens the tab closed before it rather than undoing typing. False when there is none to reopen, or
+         * no room for it.
+         */
+        export function reopenClosedQueryTab(): boolean {
+            if (!queryTabStore || !closedQueryTabs.length) {
+                return false;
+            }
+            var tabs = workbench.queryTabs;
+            var state = queryTabStore.get();
+            var leaving = state.activeId;
+            var edited = tabs.setQuery(state, leaving, getPaneRawQueryValue('primary'));
+            var next = tabs.reopen(edited, closedQueryTabs[closedQueryTabs.length - 1]);
+            if (next === edited) {
+                return false;
+            }
+            closedQueryTabs.pop();
+            queryTabStore.set(edited);
+            keepQueryTabResult(leaving);
+            queryTabStore.set(next);
+            applyActiveQueryTabText();
+            showQueryTabResult(next.activeId);
+            afterQueryTabSwitch();
+            var shown: any = queryTabsContainer ? queryTabsContainer.querySelectorAll('[role="tab"]') : [];
+            for (var index = 0; index < shown.length; index++) {
+                if (shown[index].getAttribute('data-tab-id') === next.activeId) {
+                    (<HTMLElement>shown[index]).focus();
+                }
+            }
+            return true;
+        }
+
+        /**
+         * Cmd+Z or Ctrl+Z (Shift adds redo) where it does not undo typing: outside text fields, the editors and
+         * dialogs.
+         */
+        function isReopenClosedTabKey(event: any): boolean {
+            var prevented = typeof event.isDefaultPrevented === 'function' ? event.isDefaultPrevented()
+                : !!event.defaultPrevented;
+            var key = String(event.key || '').toLowerCase();
+            if (prevented || event.altKey || event.shiftKey || !(event.metaKey || event.ctrlKey)
+                    || !(key === 'z' || !/^[a-z]$/.test(key) && event.code === 'KeyZ')) {
+                return false;
+            }
+            var target = event.target;
+            return !(target && typeof target.closest === 'function' && target.closest(
+                'input, textarea, select, [contenteditable=""], [contenteditable="true"], .CodeMirror, dialog, [role="dialog"]'));
         }
 
         /** Name an open query's tab; an empty name names it after its query again. */
@@ -5605,6 +5666,10 @@ namespace workbench {
                 }
             };
             var onDocumentKeydown = function(event: any) {
+                if (isReopenClosedTabKey(event) && reopenClosedQueryTab()) {
+                    event.preventDefault();
+                    return;
+                }
                 if ($('#query-diff-modal').hasClass('query-diff-modal--open') && event.key === 'Tab') {
                     handleDiffModalTab(event);
                     return;

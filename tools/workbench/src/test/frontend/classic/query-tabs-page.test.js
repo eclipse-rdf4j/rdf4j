@@ -395,6 +395,61 @@ test('a rename survives the row being redrawn, blur keeps the typed name, and F2
     assert.equal(renameInput(harness), null);
 });
 
+test('Cmd+Z or Ctrl+Z outside a text field reopens the last closed tab where it stood; in a text field it is undo', () => {
+    const { harness, query } = mount({ harness: { query: 'SELECT 1 {}' } });
+    const editor = harness.yasqeState.instances.query;
+    query.newQueryTab();
+    editor.setValue('SELECT 2 {}');
+    editor.triggerChange();
+    query.newQueryTab();
+    editor.setValue('SELECT 3 {}');
+    editor.triggerChange();
+    const [, second, third] = query.getQueryTabsState().tabs;
+    query.renameQueryTab(second.id, 'Second');
+    query.closeQueryTab(second.id);
+    query.closeQueryTab(third.id);
+    assert.deepEqual(titles(harness), ['SELECT 1 {}']);
+    const undo = (target, keys) => harness.document.trigger('keydown', Object.assign({
+        key: 'z', target, defaultPrevented: false,
+        preventDefault() {
+            this.defaultPrevented = true;
+        }
+    }, keys));
+
+    let event = undo(harness.document.getElementById('query'), { metaKey: true });
+    assert.equal(event.defaultPrevented, false, 'in the editor, Cmd+Z undoes typing');
+    event = undo(harness.document.body, { metaKey: true, shiftKey: true });
+    assert.equal(event.defaultPrevented, false, 'Cmd+Shift+Z is redo, not reopen');
+    assert.equal(query.getQueryTabsState().tabs.length, 1);
+
+    event = undo(harness.document.body, { metaKey: true });
+    assert.equal(event.defaultPrevented, true);
+    assert.deepEqual(titles(harness), ['SELECT 1 {}', 'SELECT 3 {}'], 'the last closed tab comes back where it stood');
+    assert.equal(selectedTitle(harness), 'SELECT 3 {}', 'and is shown');
+    assert.equal(query.getQueryValue(), 'SELECT 3 {}', 'with its query in the editor');
+    assert.equal(harness.document.activeElement, tabButtons(harness)[1],
+        'focus is on it, so the next Cmd+Z reopens another tab rather than undoing typing');
+
+    undo(harness.document.activeElement, { key: 'Z', ctrlKey: true });
+    assert.deepEqual(titles(harness), ['SELECT 1 {}', 'Second', 'SELECT 3 {}'], 'Ctrl+Z too, one tab at a time');
+    assert.equal(selectedTitle(harness), 'Second');
+    const reopened = query.getQueryTabsState().tabs[1];
+    assert.equal(reopened.title, 'Second', 'with its name');
+    assert.equal(reopened.query, 'SELECT 2 {}');
+
+    event = undo(harness.document.body, { metaKey: true });
+    assert.equal(event.defaultPrevented, false, 'with nothing left to reopen, the key is left alone');
+    assert.equal(query.getQueryTabsState().tabs.length, 3);
+
+    // Closing every tab leaves one empty tab; reopening replaces it.
+    query.closeQueryTab(query.getQueryTabsState().tabs[0].id);
+    query.closeQueryTab(query.getQueryTabsState().tabs[0].id);
+    query.closeQueryTab(query.getQueryTabsState().tabs[0].id);
+    assert.deepEqual(titles(harness), ['Untitled query']);
+    undo(harness.document.body, { ctrlKey: true });
+    assert.deepEqual(titles(harness), ['SELECT 3 {}']);
+});
+
 test('without the tab row the page keeps its single-query behaviour', () => {
     const { harness, query } = mount({ harness: { tabs: false, query: 'SELECT 1 {}' } });
     assert.equal(query.getQueryTabsState(), null);

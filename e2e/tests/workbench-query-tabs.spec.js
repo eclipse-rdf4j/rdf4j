@@ -295,6 +295,35 @@ test.describe('Query tabs', () => {
         expect(await page.evaluate(() => document.querySelector('#query-page .CodeMirror').CodeMirror.getValue())).toBe('');
     });
 
+    test('Cmd+Z or Ctrl+Z reopens a closed tab where it stood; in the editor it undoes typing', async ({ page }) => {
+        await setEditorText(page, 'SELECT ?s WHERE { ?s ?p ?o }');
+        await page.click('#query-tabs .query-tabs__new');
+        await setEditorText(page, 'ASK { ?s ?p ?o }');
+        await page.click('#query-tabs .query-tabs__new');
+        await setEditorText(page, 'SELECT ?o WHERE { ?s ?p ?o }');
+        await expect(tabs(page)).toHaveCount(3);
+
+        await tabs(page).nth(1).hover();
+        await tabs(page).nth(1).locator('.query-tabs__close').click();
+        await expect(tabs(page)).toHaveCount(2);
+
+        // In the editor, the key undoes typing there.
+        await page.locator('#query-page .CodeMirror').click();
+        await page.keyboard.type(' # typed');
+        await page.keyboard.press('ControlOrMeta+z');
+        await expect(tabs(page)).toHaveCount(2);
+
+        // Elsewhere, it reopens the closed tab where it stood, with its query, and shows it.
+        await page.locator('#query-page h1, .workbench-page-header h1').first().click();
+        await page.keyboard.press('ControlOrMeta+z');
+        await expect(tabs(page)).toHaveCount(3);
+        await expect(tabs(page).nth(1).locator('.query-tabs__title')).toHaveText('ASK { ?s ?p ?o }');
+        await expect(selectedTab(page).locator('.query-tabs__title')).toHaveText('ASK { ?s ?p ?o }');
+        expect(await page.evaluate(() => document.querySelector('#query-page .CodeMirror').CodeMirror.getValue()))
+            .toBe('ASK { ?s ?p ?o }');
+        await expect(selectedTab(page)).toBeFocused();
+    });
+
     test('double-clicking a tab renames it; the name is kept across a reload and an empty name derives it again',
         async ({ page }) => {
             await setEditorText(page, 'SELECT ?s WHERE { ?s ?p ?o }');
