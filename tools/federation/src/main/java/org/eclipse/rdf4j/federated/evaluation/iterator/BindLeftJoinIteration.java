@@ -49,6 +49,10 @@ public class BindLeftJoinIteration extends LookAheadIteration<BindingSet> {
 	protected IntHashSet seenBindingIndexes = new IntHashSet();
 	protected final ListIterator<BindingSet> bindingsIterator;
 
+	/**
+	 * @deprecated Use {@link #BindLeftJoinIteration(CloseableIteration, List, Predicate)}.
+	 */
+	@Deprecated(since = "6.2.0")
 	public BindLeftJoinIteration(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
 		this(iter, bindings, row -> true);

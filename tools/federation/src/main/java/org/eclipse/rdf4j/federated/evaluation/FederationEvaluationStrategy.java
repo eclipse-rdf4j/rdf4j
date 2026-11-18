@@ -1724,8 +1724,10 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	 * @param bindings
 	 * @return the result iteration
 	 * @throws QueryEvaluationException
-	 * @see {@link BindLeftJoinIteration}
+	 * @see BindLeftJoinIteration
+	 * @deprecated Use {@link #evaluateLeftBoundJoinStatementPattern(StatementTupleExpr, List, Predicate)}.
 	 */
+	@Deprecated(since = "6.2.0")
 	public CloseableIteration<BindingSet> evaluateLeftBoundJoinStatementPattern(
 			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException {
 		return evaluateLeftBoundJoinStatementPattern(stmt, bindings, null);

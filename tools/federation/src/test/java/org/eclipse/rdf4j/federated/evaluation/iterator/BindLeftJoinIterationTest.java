@@ -58,7 +58,7 @@ class BindLeftJoinIterationTest {
 	void cancellationStopsBeforeReadingCandidates() {
 		@SuppressWarnings("unchecked")
 		CloseableIteration<BindingSet> input = mock(CloseableIteration.class);
-		try (var results = new BindLeftJoinIteration(input, List.of())) {
+		try (var results = new BindLeftJoinIteration(input, List.of(), row -> true)) {
 			assertTrue(results.requestCancellation());
 			assertThrows(QueryInterruptedException.class, results::hasNext);
 			verifyNoInteractions(input);

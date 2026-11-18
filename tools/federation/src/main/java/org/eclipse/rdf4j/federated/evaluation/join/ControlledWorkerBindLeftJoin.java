@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Bind join implementation for left joins (i.e., OPTIOAL clauses)
@@ -32,8 +33,13 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 
-	private final Predicate<BindingSet> condition;
+	private final @Nullable Predicate<BindingSet> condition;
 
+	/**
+	 * @deprecated Use
+	 *             {@link #ControlledWorkerBindLeftJoin(ControlledWorkerScheduler, FederationEvaluationStrategy, CloseableIteration, TupleExpr, BindingSet, QueryInfo, Predicate)}.
+	 */
+	@Deprecated(since = "6.2.0")
 	public ControlledWorkerBindLeftJoin(ControlledWorkerScheduler<BindingSet> scheduler,
 			FederationEvaluationStrategy strategy, CloseableIteration<BindingSet> leftIter, TupleExpr rightArg,
 			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
@@ -66,8 +72,13 @@ public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 	static protected class LeftBoundJoinTaskCreator implements TaskCreator {
 		protected final FederationEvaluationStrategy _strategy;
 		protected final StatementTupleExpr _expr;
-		private final Predicate<BindingSet> condition;
+		private final @Nullable Predicate<BindingSet> condition;
 
+		/**
+		 * @deprecated Use
+		 *             {@link #LeftBoundJoinTaskCreator(FederationEvaluationStrategy, StatementTupleExpr, Predicate)}.
+		 */
+		@Deprecated(since = "6.2.0")
 		public LeftBoundJoinTaskCreator(
 				FederationEvaluationStrategy strategy, StatementTupleExpr expr) {
 			this(strategy, expr, null);

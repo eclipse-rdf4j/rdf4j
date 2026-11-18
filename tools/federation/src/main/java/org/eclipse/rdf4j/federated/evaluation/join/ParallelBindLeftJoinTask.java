@@ -19,12 +19,13 @@ import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link ParallelTaskBase} for executing bind left joins.
  *
  * @author Andreas Schwarte
- * @see FederationEvaluationStrategy#evaluateLeftBoundJoinStatementPattern(StatementTupleExpr, List)
+ * @see FederationEvaluationStrategy#evaluateLeftBoundJoinStatementPattern(StatementTupleExpr, List, Predicate)
  */
 public class ParallelBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
@@ -32,8 +33,13 @@ public class ParallelBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final StatementTupleExpr rightArg;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
-	private final Predicate<BindingSet> condition;
+	private final @Nullable Predicate<BindingSet> condition;
 
+	/**
+	 * @deprecated Use
+	 *             {@link #ParallelBindLeftJoinTask(ParallelExecutor, FederationEvaluationStrategy, StatementTupleExpr, List, Predicate)}.
+	 */
+	@Deprecated(since = "6.2.0")
 	public ParallelBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
 			StatementTupleExpr expr, List<BindingSet> bindings) {
 		this(joinControl, strategy, expr, bindings, null);
