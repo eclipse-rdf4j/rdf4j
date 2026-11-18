@@ -201,18 +201,25 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	private void checkDatatypeVersion() {
 		if (initialized) {
-			ChildVersion captured = datatypeVersion;
-			if (captured != null && !captured.isCurrent()) {
-				payloadChanged();
-				datatypeVersion = ChildVersion.capture(datatype);
-				coreDatatype = null;
-			}
+			checkDatatypeVersion(datatypeVersion);
 		}
+	}
+
+	private ChildVersion checkDatatypeVersion(ChildVersion captured) {
+		if (captured != null && captured != ChildVersion.IMMUTABLE && !captured.isCurrent()) {
+			payloadChanged();
+			captured = ChildVersion.capture(datatype);
+			datatypeVersion = captured;
+			coreDatatype = null;
+		}
+		return captured;
 	}
 
 	@Override
 	public long getSemanticVersion() {
-		checkDatatypeVersion();
+		if (initialized && checkDatatypeVersion(datatypeVersion) != null) {
+			return semanticVersion;
+		}
 		return stableDatatype() ? semanticVersion : UNKNOWN_ID;
 	}
 
