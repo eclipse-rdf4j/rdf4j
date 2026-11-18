@@ -5333,6 +5333,11 @@ namespace workbench {
         var queryResultRendererSequence = 0;
         /** A query that answers within this many milliseconds never shows its Cancel buttons. */
         var CANCEL_DELAY_MS = 1200;
+        /**
+         * Query tabs: how long a tab switch keeps the result that was shown on screen while the next tab's result is
+         * drawn. A result drawn in time replaces it in one step; a slower one shows its loading screen after this.
+         */
+        var SWITCH_HOLD_MS = 300;
         /** Detailed placeholder rows shown while a result waits for its first rows. */
         var SKELETON_ROWS = 6;
 
@@ -5834,6 +5839,10 @@ namespace workbench {
             private started = false;
             /** Layouts started and not finished yet (their rows are drawn asynchronously). */
             private rendersInFlight = 0;
+            /** A saved result whose row store is still opening (restore): it is loading, not empty. */
+            private restoring = false;
+            /** Who waits for this result to show what it has (whenShown). */
+            private shownListeners: (() => void)[] = [];
             /** Shows Cancel once the request has run for CANCEL_DELAY_MS. */
             private cancelRevealTimer: any = null;
             private reportedErrorLocation = '';
@@ -7116,7 +7125,8 @@ namespace workbench {
                 state.terminalMetadata = Object.assign({}, snapshot.terminalMetadata || {});
                 state.progress = {};
                 state.error = null;
-                state.complete = true;
+                // Complete once its rows are counted (shown): until then it is loading, not an empty result.
+                state.complete = false;
                 state.rowCount = 0;
                 this.committedMetadata = state.terminalMetadata;
                 this.committedComplete = true;
@@ -7128,6 +7138,8 @@ namespace workbench {
                     }
                 });
                 var shown = (count: number) => {
+                    this.restoring = false;
+                    state.complete = true;
                     state.rowCount = count;
                     this.batchContexts = contexts.filter(context => context.start < count || count === 0 && !context.end)
                         .map(context => Object.assign({}, context, { end: Math.min(context.end, count) }));
@@ -7146,6 +7158,7 @@ namespace workbench {
                     return shown(0);
                 }
                 this.ownsRowStore = true;
+                this.restoring = true;
                 this.status.textContent = 'Opening the saved result…';
                 this.rowStorePromise = opening.then(store => {
                     if (this.disposed) {
@@ -7161,6 +7174,7 @@ namespace workbench {
                     this.rowStore = null;
                     this.rowStorePromise = null;
                     this.ownsRowStore = false;
+                    this.restoring = false;
                     if (!this.disposed) {
                         this.batchContexts = [];
                         this.fail(error && error.code === 'busy'
@@ -7198,6 +7212,7 @@ namespace workbench {
                         : this.ensureRowStore().then(store => store.dispose());
                     disposal.then(function() {}, function() {});
                 }
+                this.notifyShown();
             }
 
             /** The query the result came from, when the Graph page can be fed with it. */
@@ -7628,7 +7643,9 @@ namespace workbench {
                 }
                 var elapsed = state.terminalMetadata ? state.terminalMetadata['query-elapsed-ms'] : undefined;
                 var completion = typeof elapsed === 'number' ? ' · complete in ' + formatCount(elapsed) + ' ms' : ' · complete';
-                if (state.error) {
+                if (this.restoring) {
+                    this.status.textContent = 'Opening the saved result…';
+                } else if (state.error) {
                     this.status.textContent = this.errorStatusText();
                 } else if (state.complete && isRows && typeof elapsed === 'number') {
                     this.status.textContent = rowsText(Number.isSafeInteger(total) ? total : state.rowCount) + completion;
@@ -7662,6 +7679,7 @@ namespace workbench {
                 var settled = () => {
                     this.rendersInFlight--;
                     this.settleHeight();
+                    this.notifyShown();
                 };
                 return rendered.then(settled, (error: any) => {
                     settled();
@@ -7695,8 +7713,37 @@ namespace workbench {
                 }
             }
 
+            /**
+             * Resolves once this result shows what it has (rows, an answer, an empty result or an error, not the
+             * loading screen) and the layouts started before have finished: a query tab shows it then, not half drawn.
+             * A disposed result resolves at once.
+             */
+            whenShown(): Promise<void> {
+                if (this.disposed || this.isShown()) {
+                    return Promise.resolve();
+                }
+                return new Promise<void>(resolve => this.shownListeners.push(resolve));
+            }
+
+            private isShown(): boolean {
+                return this.rendersInFlight === 0 && !this.renderFramePending && !this.renderDeferred && !this.suspended
+                    && !this.awaitingFirstResult();
+            }
+
+            private notifyShown(): void {
+                if (!this.shownListeners.length || !this.disposed && !this.isShown()) {
+                    return;
+                }
+                var listeners = this.shownListeners;
+                this.shownListeners = [];
+                listeners.forEach(listener => listener());
+            }
+
             /** Nothing to show yet: the first request has not brought a row, an answer, an error or its end. */
             private awaitingFirstResult(): boolean {
+                if (this.restoring) {
+                    return true;
+                }
                 var state = this.state;
                 return (this.busy || !this.started) && this.batchStart === 0 && state.rowCount === 0 && !state.error
                     && !state.complete && !(state.view === 'boolean' && typeof state.booleanValue === 'boolean');
@@ -9710,6 +9757,8 @@ namespace workbench {
             restore?(saved: SavedResultSnapshot): void;
             /** The result shown is the one saved in this browser (saveResult, restore): a later page opens it again. */
             isSaved?(): boolean;
+            /** Query tabs: resolves once the result shows what it has, not its loading screen (renderer whenShown). */
+            whenShown?(): Promise<void>;
         }
 
         function formControls(form: any): any[] {
@@ -10378,7 +10427,8 @@ namespace workbench {
                     ? document : null));
                 batchSize = Number.isSafeInteger(saved.batchSize) && saved.batchSize > 0 ? saved.batchSize : 1000000;
                 knownTotal = Number.isSafeInteger(saved.knownTotal) ? saved.knownTotal : null;
-                renderer = createRenderer(0);
+                // Shown in place of another tab's result: the area keeps that height until this one is drawn.
+                renderer = createRenderer(resultAreaHeight(target));
                 target.hidden = false;
                 showResultTab(target);
                 // Shown as the page left it: nothing scrolls into view.
@@ -10445,7 +10495,8 @@ namespace workbench {
                 },
                 hasActiveRequest: () => !!activeId,
                 saveResult: saveResult,
-                restore: restore
+                restore: restore,
+                whenShown: () => renderer && !disposed ? renderer.whenShown() : Promise.resolve()
             };
             return controller;
         }
@@ -10577,6 +10628,153 @@ namespace workbench {
             var mountedController: BoundExecutionController = null;
             var mountedSubmitHandler: (event: any) => void = null;
             var mountedDispose: (reason?: string) => void = null;
+            var mountedSwitchHoldMs = SWITCH_HOLD_MS;
+
+            /**
+             * Query tabs: what the results area showed when its tab was left, kept on screen as an inert copy until
+             * the next tab's result is drawn (waitingFor), for at most mountedSwitchHoldMs. The next result is laid
+             * out unseen under it meanwhile (query.css, data-query-switching).
+             */
+            interface SwitchCurtain {
+                element: any;
+                target: any;
+                view: any;
+                timer: any;
+                waitingFor: BoundExecutionController;
+            }
+            var switchCurtain: SwitchCurtain = null;
+
+            /** The window whose timers hold a switch; null where there are none (nothing is held then). */
+            function switchTimers(target: any): any {
+                var view = target.ownerDocument && target.ownerDocument.defaultView
+                    || (typeof window !== 'undefined' ? window : null);
+                return view && typeof view.setTimeout === 'function' && typeof view.clearTimeout === 'function'
+                    ? view : null;
+            }
+
+            /** The result the area shows: its renderer's root, not a curtain. */
+            function shownResultRoot(target: any): any {
+                var children = target.children || [];
+                for (var index = 0; index < children.length; index++) {
+                    var child = children[index];
+                    if (child.classList && child.classList.contains('query-result-layout')
+                            && !child.classList.contains('query-result-curtain')) {
+                        return child;
+                    }
+                }
+                return null;
+            }
+
+            /**
+             * A copy of the shown result that looks the same and does nothing: no ids, names or label references
+             * (the page and the result keep theirs), the same selections and scroll positions.
+             */
+            function inertCopy(root: any): any {
+                var copy = root.cloneNode(true);
+                var originals = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*')));
+                var copies = [copy].concat(Array.prototype.slice.call(copy.querySelectorAll('*')));
+                copies.forEach(function(node: any, index: number) {
+                    ['id', 'name', 'for', 'aria-labelledby', 'aria-describedby', 'aria-controls']
+                        .forEach(function(name) {
+                            node.removeAttribute(name);
+                        });
+                    var original = originals[index];
+                    if (original && (node.tagName === 'SELECT' || node.tagName === 'INPUT')) {
+                        node.value = original.value;
+                        node.checked = original.checked;
+                    }
+                });
+                copy.classList.add('query-result-curtain');
+                copy.setAttribute('aria-hidden', 'true');
+                copy.setAttribute('inert', '');
+                return { copy: copy, originals: originals, copies: copies };
+            }
+
+            /**
+             * Keep what the area shows on screen while the next tab's result is drawn (detachController): an inert
+             * copy over the area, which keeps its height meanwhile.
+             */
+            function raiseSwitchCurtain(): void {
+                var target = mountedTarget;
+                var height = target ? resultAreaHeight(target) : 0;
+                if (switchCurtain || height <= 0) {
+                    return;
+                }
+                var view = switchTimers(target);
+                var root = shownResultRoot(target);
+                if (!view || !root || typeof root.cloneNode !== 'function') {
+                    return;
+                }
+                var made = inertCopy(root);
+                if (target.style) {
+                    holdResultArea(target, height, 'switch');
+                }
+                target.insertBefore(made.copy, root);
+                target.setAttribute('data-query-switching', 'true');
+                made.originals.forEach(function(original: any, index: number) {
+                    var node = made.copies[index];
+                    if (original.scrollLeft) {
+                        node.scrollLeft = original.scrollLeft;
+                    }
+                    if (original.scrollTop) {
+                        node.scrollTop = original.scrollTop;
+                    }
+                });
+                var curtain: SwitchCurtain = { element: made.copy, target: target, view: view, timer: null,
+                    waitingFor: null };
+                curtain.timer = view.setTimeout(function() {
+                    curtain.timer = null;
+                    if (switchCurtain !== curtain) {
+                        return;
+                    }
+                    lowerSwitchCurtain();
+                    if (!curtain.waitingFor) {
+                        // Nothing came to replace it: the area empties, as when nothing was kept.
+                        target.hidden = true;
+                    }
+                }, mountedSwitchHoldMs);
+                switchCurtain = curtain;
+            }
+
+            function lowerSwitchCurtain(): void {
+                var curtain = switchCurtain;
+                if (!curtain) {
+                    return;
+                }
+                switchCurtain = null;
+                if (curtain.timer !== null) {
+                    curtain.view.clearTimeout(curtain.timer);
+                }
+                if (curtain.element.parentNode) {
+                    curtain.element.parentNode.removeChild(curtain.element);
+                }
+                curtain.target.removeAttribute('data-query-switching');
+                // The next result holds the area itself while it waits (a restored one), so this lets go only of
+                // the switch's own hold.
+                if (curtain.target.style) {
+                    releaseResultArea(curtain.target, 'switch');
+                }
+            }
+
+            /** The next tab's result is in the area: show it once it is drawn, or when the hold time ends. */
+            function liftWhenShown(controller: BoundExecutionController): void {
+                var curtain = switchCurtain;
+                if (!curtain) {
+                    return;
+                }
+                curtain.waitingFor = controller;
+                var lift = function() {
+                    if (switchCurtain === curtain && curtain.waitingFor === controller) {
+                        lowerSwitchCurtain();
+                    }
+                };
+                var shown = typeof controller.whenShown === 'function' ? controller.whenShown() : null;
+                if (shown && typeof shown.then === 'function') {
+                    shown.then(lift, lift);
+                } else {
+                    lift();
+                }
+            }
 
             /**
              * Results waiting for the next Query page of their repository (M13.4), the one left longest ago first;
@@ -10754,6 +10952,8 @@ namespace workbench {
 
                 mountedForm = form;
                 mountedTarget = target;
+                var holdMs = shellContext ? shellContext.resultSwitchHoldMs : undefined;
+                mountedSwitchHoldMs = Number.isSafeInteger(holdMs) && holdMs >= 0 ? holdMs : SWITCH_HOLD_MS;
                 var repositoryId = shellContext && shellContext.repositoryId || '';
                 var scope = repositoryScope(repositoryId, shellContext && shellContext.serverIdentity,
                     shellContext && shellContext.basePath);
@@ -10815,6 +11015,7 @@ namespace workbench {
                 }
                 // Leaving for another page in the tab ('navigate') keeps a result for this repository (M13.4).
                 mountedDispose = (reason?: string) => {
+                    lowerSwitchCurtain();
                     form.removeEventListener('submit', mountedSubmitHandler, false);
                     if (typeof window !== 'undefined' && window.removeEventListener) {
                         window.removeEventListener('pagehide', onPageHide, false);
@@ -10842,17 +11043,19 @@ namespace workbench {
             /**
              * Query tabs (.agent/execplan-query-tabs-g2.md): take the shown result out of the page, alive with its
              * request, and leave the page with a fresh empty controller, so another tab's result can be shown.
-             * Null when no Query page is mounted.
+             * What the area showed stays on screen until that result is drawn, for at most the switch hold time;
+             * with nothing attached by then, the area empties. Null when no Query page is mounted.
              */
             export function detachController(): BoundExecutionController {
                 if (!mountedForm || !mountedController || !mountedBind) {
                     return null;
                 }
                 var leaving = mountedController;
+                raiseSwitchCurtain();
                 if (typeof leaving.shelve === 'function') {
                     leaving.shelve();
                 }
-                if (mountedTarget) {
+                if (mountedTarget && !switchCurtain) {
                     mountedTarget.hidden = true;
                 }
                 mountedController = mountedBind();
@@ -10879,10 +11082,13 @@ namespace workbench {
                     controller.adopt(mountedForm, mountedTarget);
                     mountedController = controller;
                     seen(mountedScope, controller);
+                    liftWhenShown(controller);
                 } else {
                     if (controller) {
                         controller.dispose();
                     }
+                    // Nothing to wait for: the area empties at once.
+                    lowerSwitchCurtain();
                     if (mountedTarget) {
                         mountedTarget.hidden = true;
                     }
@@ -10908,6 +11114,7 @@ namespace workbench {
                 mountedController = controller;
                 controller.restore(saved);
                 seen(mountedScope, controller);
+                liftWhenShown(controller);
                 activityChanged();
                 return true;
             }

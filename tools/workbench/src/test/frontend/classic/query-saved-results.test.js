@@ -46,8 +46,8 @@ function browser() {
     return {
         storage,
         localStorage,
-        page(responses = []) {
-            const loaded = loadApi({ localStorage });
+        page(responses = [], options = {}) {
+            const loaded = loadApi(Object.assign({ localStorage }, options.window || {}));
             const { api, document } = loaded;
             const form = document.createElement('form');
             form.setAttribute('action', '/repositories/owned/query');
@@ -69,7 +69,8 @@ function browser() {
             const pending = [...responses];
             const controller = api.bindMainQueryForm(form, target, {
                 maxDomRows: 8,
-                rowStoreOptions: { workerFactory: realWorkerFactory(storage).factory, storageTimeout: 2000 },
+                rowStoreOptions: { workerFactory: options.workerFactory || realWorkerFactory(storage).factory,
+                    storageTimeout: 2000 },
                 onBatchEnd: (which) => ended.push(which),
                 async fetcher(url, init) {
                     requests.push({ url, init });
@@ -81,6 +82,26 @@ function browser() {
                 respond: (records) => pending.push(records) });
         }
     };
+}
+
+/** Workers whose messages wait while `paused`: a saved result whose rows open late. */
+function pausableWorkers(storage) {
+    const base = realWorkerFactory(storage).factory;
+    const held = [];
+    const workers = {
+        paused: false,
+        factory() {
+            const handle = base();
+            const post = handle.postMessage;
+            handle.postMessage = (message) => workers.paused ? held.push(() => post(message)) : post(message);
+            return handle;
+        },
+        release() {
+            workers.paused = false;
+            held.splice(0).forEach(send => send());
+        }
+    };
+    return workers;
 }
 
 function entryOf(localStorage, id) {
@@ -140,6 +161,53 @@ test('a complete result is saved for its tab and shown by a later page without a
         assert.equal(entryOf(shared.localStorage, saved.storeId).retained.owner, later.api.rowStoreDocumentOwner);
         later.controller.dispose();
     });
+
+test('a saved result shows the loading screen, not "No results", while its rows open', async (t) => {
+    const shared = browser();
+    const first = shared.page([batch([0, 1], 0, true, { 'total-result-count': 4 })]);
+    first.controller.submit();
+    await settle();
+    const saved = await first.controller.saveResult(KEPT_FOR);
+    assert.ok(saved && saved.storeId, 'the result is saved with its rows');
+    first.controller.dispose();
+    await settle();
+
+    const workers = pausableWorkers(shared.storage);
+    const layouts = [];
+    const later = shared.page([], { workerFactory: workers.factory, window: {
+        ResizeObserver: class {
+            constructor(callback) { layouts.push(callback); }
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        }
+    } });
+    workers.paused = true;
+    // A failed check must not leave the page's rows held open (the test would never end).
+    t.after(() => {
+        workers.release();
+        later.controller.dispose();
+    });
+    later.controller.restore(JSON.parse(JSON.stringify(saved)));
+    // The results area is laid out at its width (its ResizeObserver fires) while the saved rows are still opening.
+    later.target.querySelector('.query-result-layout').clientWidth = 800;
+    layouts.forEach(callback => callback([]));
+    await settle();
+    const empty = later.target.querySelector('.query-result-empty');
+    const skeleton = later.target.querySelector('.query-result-skeleton');
+    assert.equal(empty.hidden, true, 'a result whose rows are still opening does not say "No results"');
+    assert.equal(skeleton.hidden, false, 'it shows the loading screen');
+    assert.match(later.target.querySelector('.query-result-status').textContent, /Opening the saved result/);
+    assert.equal(later.summaries.some(summary => summary.complete && summary.rowCount === 0), false,
+        'and reports no empty result for its tab');
+
+    workers.release();
+    await settle();
+    assert.equal(later.lastSummary().complete, true);
+    assert.equal(later.lastSummary().rowCount, 2, 'its rows show once they are open');
+    assert.equal(empty.hidden, true);
+    assert.equal(skeleton.hidden, true);
+});
 
 test('a trimmed saved result shows the rows it kept and continues after them; a longer one is cut back', async () => {
     const shared = browser();

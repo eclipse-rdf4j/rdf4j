@@ -110,6 +110,28 @@
     display: none !important;
 }
 
+/* Query tabs: a tab switch keeps the result that was shown on screen, as an inert copy over the area, while the next
+ * tab's result is laid out unseen underneath, for at most 300 ms (queryStream.ts, raiseSwitchCurtain). The copy
+ * takes the area's padding, so it sits exactly where the result was. */
+.query-results[data-query-switching] {
+    position: relative;
+}
+
+.query-results[data-query-switching] > .query-result-layout:not(.query-result-curtain) {
+    visibility: hidden;
+}
+
+.query-results > .query-result-curtain {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    max-width: none;
+    padding: inherit;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+}
+
 .query-results__status {
     margin: 0.5rem 0;
 }

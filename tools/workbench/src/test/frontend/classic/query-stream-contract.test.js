@@ -1557,3 +1557,133 @@ test('a result detached for another query tab keeps its rows and request and sho
     assert.equal(worker.rows.length, 0, 'disposing the kept result releases its rows');
     dispose();
 });
+
+// Query tabs: switching tabs keeps the shown result on screen while the next one is drawn, for at most the hold time.
+test('switching query tabs keeps the shown result on screen until the next one is drawn, at most for the hold time',
+    async () => {
+        const queryStream = loadQueryStreamApi();
+        const workbench = queryStream.__testWorkbench;
+        const window = queryStream.__testWindow;
+        window.addEventListener = () => {};
+        window.removeEventListener = () => {};
+        window.setTimeout = setTimeout;
+        window.clearTimeout = clearTimeout;
+        const records = [
+            { type: 'head', version: 1 },
+            { type: 'view', id: 'tuple' },
+            { type: 'vars', values: ['item'] },
+            { type: 'rows', values: [[{ kind: 'literal', value: 'tab row' }]] },
+            { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 1,
+                'result-has-more': false, 'result-next-offset': 1 } }
+        ].map(record => JSON.stringify(record) + '\n').join('');
+        window.fetch = async () => {
+            const bytes = new TextEncoder().encode(records);
+            let delivered = false;
+            return { body: { getReader: () => ({
+                read: async () => delivered ? { done: true } : (delivered = true, { done: false, value: bytes }),
+                cancel: async () => {}
+            }) } };
+        };
+        const worker = new InMemoryWorker();
+        const document = new FakeDocument();
+        const form = document.createElement('form');
+        form.setAttribute('id', 'query-form');
+        form.setAttribute('action', 'query');
+        const query = document.createElement('textarea');
+        query.name = 'query';
+        query.value = 'SELECT ?item WHERE { VALUES ?item { "tab row" } }';
+        form.appendChild(query);
+        const action = document.createElement('input');
+        action.name = 'action';
+        action.type = 'hidden';
+        action.value = 'exec';
+        form.appendChild(action);
+        const target = document.createElement('section');
+        target.setAttribute('id', 'query-results');
+        // The results area is on the page and has a height (the fake lays nothing out).
+        target.getBoundingClientRect = () => ({ top: 0, left: 0, right: 800, bottom: 240, width: 800, height: 240 });
+        document.body.appendChild(form);
+        document.body.appendChild(target);
+        const hold = 40;
+        const dispose = workbench.queryPage.renderInto(document.body, {}, {
+            executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId: 'repo-tabs',
+            resultSwitchHoldMs: hold,
+            rowStoreOptions: { spillRowLimit: 0, workerFactory: () => worker }
+        });
+        const settle = async (condition) => {
+            for (let attempt = 0; attempt < 30 && !condition(); attempt += 1) {
+                await new Promise(resolve => setImmediate(resolve));
+            }
+        };
+        const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        const curtains = () => target.querySelectorAll('.query-result-curtain');
+        const results = () => target.querySelectorAll('.query-result-layout')
+            .filter(layout => !layout.classList.contains('query-result-curtain'));
+
+        workbench.queryPage.submitExecution();
+        await settle(() => /1 row · complete/.test(target.textContent));
+
+        // Leaving the tab: what it showed stays on screen, as an inert copy, until the next tab's result is drawn.
+        const kept = workbench.queryPage.detachController();
+        assert.equal(curtains().length, 1, 'the result that was shown stays on screen');
+        const curtain = curtains()[0];
+        assert.equal(curtain.getAttribute('aria-hidden'), 'true');
+        assert.notEqual(curtain.getAttribute('inert'), undefined, 'and cannot be used');
+        assert.equal(curtain.getAttribute('id'), undefined, 'its copy takes no ids from the page');
+        assert.equal(curtain.querySelectorAll('[id]').length, 0);
+        assert.match(curtain.textContent, /1 row · complete/);
+        assert.equal(results().length, 0, 'the result itself has left the area');
+        assert.equal(target.hidden, false, 'the area does not go empty in between');
+
+        // A tab without a result: nothing to wait for, the area empties at once.
+        workbench.queryPage.attachController(null);
+        assert.equal(curtains().length, 0);
+        assert.equal(target.hidden, true);
+        workbench.queryPage.attachController(kept);
+        await settle(() => /1 row · complete/.test(target.textContent));
+        assert.equal(target.hidden, false);
+
+        // A tab with a kept result: the old view goes once that result is drawn.
+        workbench.queryPage.detachController();
+        workbench.queryPage.attachController(kept);
+        assert.equal(curtains().length, 1, 'the old view stays until the next result is drawn');
+        await settle(() => curtains().length === 0);
+        assert.equal(curtains().length, 0, 'and goes once it is');
+        assert.equal(results().length, 1);
+        assert.match(results()[0].textContent, /1 row · complete/);
+
+        // A result saved in the browser (an answer): the same.
+        workbench.queryPage.detachController();
+        assert.equal(workbench.queryPage.restoreResult({
+            storeId: null, rows: 0, view: 'boolean', vars: [], namespaces: [], links: [], metadata: {},
+            terminalMetadata: {}, booleanValue: true, batchContexts: [], request: 'query=ASK%20%7B%7D', url: 'query',
+            batchSize: 1000, knownTotal: null, savedAt: Date.now()
+        }, 'tab-2'), true);
+        assert.equal(curtains().length, 1, 'the old view stays while the saved result opens');
+        await settle(() => curtains().length === 0);
+        assert.equal(curtains().length, 0);
+        assert.match(results()[0].textContent, /Answer/);
+
+        // A result that is not drawn within the hold time: the old view goes then, and the result shows as it is.
+        workbench.queryPage.detachController().dispose();
+        const neverDrawn = kept.whenShown;
+        kept.whenShown = () => new Promise(() => {});
+        workbench.queryPage.attachController(kept);
+        await pause(hold / 4);
+        assert.equal(curtains().length, 1, 'the old view waits for the result');
+        await pause(hold * 2);
+        assert.equal(curtains().length, 0, 'but no longer than the hold time');
+        assert.equal(results().length, 1);
+        assert.equal(target.hidden, false);
+        kept.whenShown = neverDrawn;
+
+        // Leaving with nothing shown next: the area empties after the hold time.
+        workbench.queryPage.detachController();
+        assert.equal(curtains().length, 1);
+        await pause(hold * 2);
+        assert.equal(curtains().length, 0);
+        assert.equal(target.hidden, true);
+
+        kept.dispose();
+        dispose();
+    });

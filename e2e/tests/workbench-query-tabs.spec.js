@@ -138,6 +138,68 @@ test.describe('Query tabs', () => {
         await expect(tabs(page).nth(1).locator('.query-tabs__badge')).toHaveText('3');
     });
 
+    test('switching tabs goes from one result to the next without a blank area or "No results" in between',
+        async ({ page }) => {
+            await runAndWaitForBadge(page, 'PREFIX ex: <http://example.org/>\nSELECT ?t WHERE { ?t a ex:Thing }');
+            await page.click('#query-tabs .query-tabs__new');
+            await runAndWaitForBadge(page,
+                'PREFIX ex: <http://example.org/>\nSELECT ?label WHERE { ?s ex:label ?label }');
+            await expect(page.locator('#query-results')).toContainText('3 rows');
+
+            // Every state the results area goes through, on each change and each frame.
+            await page.evaluate(() => {
+                const area = document.getElementById('query-results');
+                const states = [];
+                // @ts-ignore the recording is read back below
+                window.__switchStates = states;
+                const visible = (element) => !!element && element.getClientRects().length > 0
+                    && getComputedStyle(element).visibility !== 'hidden';
+                const record = () => {
+                    const result = Array.from(area.children).find((child) => child.classList.contains('query-result-layout')
+                        && !child.classList.contains('query-result-curtain'));
+                    states.push({
+                        hidden: area.hidden || area.getClientRects().length === 0,
+                        curtain: !!area.querySelector(':scope > .query-result-curtain'),
+                        result: visible(result),
+                        empty: Array.from(area.querySelectorAll('.query-result-empty')).some(visible),
+                        text: visible(result) ? (result.querySelector('.query-result-status') || {}).textContent || ''
+                            : ''
+                    });
+                };
+                new MutationObserver(record).observe(area,
+                    { subtree: true, childList: true, attributes: true, characterData: true });
+                const frame = () => {
+                    record();
+                    requestAnimationFrame(frame);
+                };
+                frame();
+            });
+            const statesSince = async (from) => page.evaluate((start) => {
+                // @ts-ignore set above
+                return window.__switchStates.slice(start);
+            }, from);
+            const count = async () => page.evaluate(() => {
+                // @ts-ignore set above
+                return window.__switchStates.length;
+            });
+
+            for (const [index, rows] of [[0, '2 rows'], [1, '3 rows'], [0, '2 rows']]) {
+                const from = await count();
+                await tabs(page).nth(index).click();
+                await expect(page.locator('#query-results > .query-result-layout:not(.query-result-curtain)'))
+                    .toContainText(rows);
+                await expect(page.locator('#query-results > .query-result-curtain')).toHaveCount(0);
+                const states = await statesSince(from);
+                expect(states.length).toBeGreaterThan(0);
+                expect(states.filter((state) => state.hidden), 'the area never goes away').toEqual([]);
+                expect(states.filter((state) => state.empty), '"No results" never shows').toEqual([]);
+                expect(states.filter((state) => !state.curtain && !state.result),
+                    'the old result or the new one is always on screen').toEqual([]);
+                expect(states.filter((state) => !state.curtain && /Opening the saved result/.test(state.text)),
+                    'a result opened in time shows no loading screen').toEqual([]);
+            }
+        });
+
     test('a reload shows the saved result again without asking the server', async ({ page }) => {
         await runAndWaitForBadge(page, 'PREFIX ex: <http://example.org/>\nSELECT ?t WHERE { ?t a ex:Thing }');
         await expect.poll(() => page.evaluate(() => {
