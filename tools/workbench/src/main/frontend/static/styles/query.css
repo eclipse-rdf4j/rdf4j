@@ -1752,6 +1752,32 @@ body.workbench-body .workbench-page-surface .query-tabs__tab:focus-visible {
     font-size: 12px;
 }
 
+/* A tab being renamed (double-click or F2): a name field in the tab's place, under the selected tab's rule. */
+body.workbench-body .workbench-page-surface .query-tabs__tab--renaming {
+    border-bottom-color: var(--workbench-teal);
+    color: var(--workbench-ink);
+    cursor: default;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__rename {
+    box-sizing: border-box;
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 28px;
+    margin: 0 0 0 -7px;
+    padding: 0 6px;
+    border: 1px solid var(--workbench-rule);
+    border-radius: var(--workbench-control-radius);
+    background: var(--workbench-surface);
+    color: var(--workbench-ink);
+    font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__rename:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 0;
+}
+
 .query-tabs__saved {
     display: inline-flex;
     flex: none;

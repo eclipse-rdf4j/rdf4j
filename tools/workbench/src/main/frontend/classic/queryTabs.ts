@@ -83,6 +83,8 @@ namespace workbench {
         }
 
         export const MAX_TABS = 20;
+        /** The longest name a tab keeps (a rename); the row cuts what it cannot show with an ellipsis. */
+        export const MAX_TITLE_LENGTH = 80;
         export const UNTITLED = 'Untitled query';
         const TITLE_LENGTH = 40;
         export const STORAGE_PREFIX = 'rdf4j.workbench.query.tabs.v2:';
@@ -329,6 +331,20 @@ namespace workbench {
             return update(state, id, { query: text, dirty: true });
         }
 
+        /**
+         * Name a tab: whitespace collapsed and trimmed, cut to MAX_TITLE_LENGTH characters. An empty name drops the
+         * name, so the tab shows the title derived from its query again. The query and its edited mark stay as they are.
+         */
+        export function rename(state: QueryTabsState, id: string, name: string): QueryTabsState {
+            const tab = findTab(state, id);
+            if (!tab) {
+                return state;
+            }
+            const cleaned = String(name || '').replace(/\s+/g, ' ').trim().substring(0, MAX_TITLE_LENGTH).trim();
+            const title = cleaned || null;
+            return title === tab.title ? state : update(state, id, { title: title });
+        }
+
         /** Records how a tab's run went; the result it saved stays unless the run says otherwise. */
         export function recordRun(state: QueryTabsState, id: string, run: QueryTabRun): QueryTabsState {
             const tab = findTab(state, id);
@@ -422,6 +438,36 @@ namespace workbench {
             onNew(): void;
             /** Whether that tab's query has a request out right now (the page knows; the state does not). */
             isRunning(id: string): boolean;
+            /**
+             * Name a tab (double-click or F2 on it); an empty name gives it back the title derived from its query.
+             * Without it the tabs cannot be renamed.
+             */
+            onRename?(id: string, name: string): void;
+        }
+
+        /**
+         * A rename in progress. It is kept on the row's container, so a redraw of the row while the name is typed (a
+         * query that ends in another tab, say) draws the field again with what was typed.
+         */
+        interface RenameDraft {
+            id: string;
+            /** The tab's name when the rename began ('' without one): confirming it unchanged leaves the tab as it was. */
+            original: string;
+            value: string;
+            selectionStart: number;
+            selectionEnd: number;
+            /** Focus the field once it is drawn: a rename that just began, or a redraw of the focused field. */
+            focus: boolean;
+            /** The field on the page; null while the row is redrawn, so the blur of the field it drops is ignored. */
+            input: HTMLInputElement | null;
+        }
+
+        function renameDraftOf(container: HTMLElement): RenameDraft | null {
+            return (<any>container).queryTabsRename || null;
+        }
+
+        function setRenameDraft(container: HTMLElement, draft: RenameDraft | null): void {
+            (<any>container).queryTabsRename = draft;
         }
 
         /** The same strokes as the page's action icons (workbenchViews.ts actionIconPath), 24x24 stroke paths. */
@@ -510,7 +556,7 @@ namespace workbench {
         }
 
         function tabButton(doc: Document, tab: QueryTab, active: boolean, running: boolean,
-                           callbacks: TabRowCallbacks): HTMLElement {
+                           callbacks: TabRowCallbacks, startRename: ((id: string) => void) | null): HTMLElement {
             const title = titleOf(tab);
             const button = element(doc, 'button', 'query-tabs__tab' + (tab.dirty ? ' is-dirty' : ''));
             button.setAttribute('type', 'button');
@@ -518,7 +564,8 @@ namespace workbench {
             button.setAttribute('data-tab-id', tab.id);
             button.setAttribute('aria-selected', active ? 'true' : 'false');
             button.tabIndex = active ? 0 : -1;
-            button.title = title + (tab.saved ? ' · saved query' : '') + (tab.dirty ? ' · edited since the last run' : '');
+            button.title = title + (tab.saved ? ' · saved query' : '') + (tab.dirty ? ' · edited since the last run' : '')
+                + (startRename ? ' · double-click to rename' : '');
             if (tab.saved) {
                 const mark = element(doc, 'span', 'query-tabs__saved');
                 mark.appendChild(icon(doc, 'saved', 'query-tabs__saved-icon'));
@@ -552,7 +599,143 @@ namespace workbench {
                     callbacks.onClose(tab.id);
                 }
             });
+            if (startRename) {
+                button.addEventListener('dblclick', function(event: MouseEvent) {
+                    const target = <HTMLElement>event.target;
+                    if (target && target.closest && target.closest('.query-tabs__close')) {
+                        return;
+                    }
+                    stop(event);
+                    startRename(tab.id);
+                });
+            }
             return button;
+        }
+
+        /**
+         * The tab being renamed: a name field in the tab's place. Enter keeps the name, Escape keeps the old one, and
+         * leaving the field keeps what it holds. Not a role="tab": a tab's content is presentational, which would hide
+         * the field from assistive technology, and keys typed into it then stay out of the row's tab keys.
+         */
+        function renameField(doc: Document, tab: QueryTab, draft: RenameDraft,
+                             finish: (input: HTMLInputElement, keep: boolean, focusTab: boolean) => void): HTMLElement {
+            const wrapper = element(doc, 'div', 'query-tabs__tab query-tabs__tab--renaming');
+            wrapper.setAttribute('data-tab-id', tab.id);
+            if (tab.saved) {
+                const mark = element(doc, 'span', 'query-tabs__saved');
+                mark.appendChild(icon(doc, 'saved', 'query-tabs__saved-icon'));
+                wrapper.appendChild(mark);
+            }
+            const input = <HTMLInputElement>element(doc, 'input', 'query-tabs__rename');
+            input.setAttribute('type', 'text');
+            input.setAttribute('aria-label', 'Name of this query tab');
+            input.setAttribute('maxlength', String(MAX_TITLE_LENGTH));
+            input.setAttribute('spellcheck', 'false');
+            input.setAttribute('autocomplete', 'off');
+            input.title = 'Enter renames, Escape cancels; an empty name names the tab after its query';
+            // What the tab is called without a name: a tab without one starts empty, rather than with a cut title.
+            input.setAttribute('placeholder', deriveTitle(tab.query));
+            input.value = draft.value;
+            fitRenameField(input);
+            input.addEventListener('input', function() {
+                draft.value = input.value;
+                fitRenameField(input);
+            });
+            input.addEventListener('keydown', function(event: KeyboardEvent) {
+                if ((event.key === 'Enter' || event.key === 'Escape') && !event.isComposing) {
+                    stop(event);
+                    finish(input, event.key === 'Enter', true);
+                }
+            });
+            input.addEventListener('blur', function() {
+                finish(input, true, false);
+            });
+            wrapper.appendChild(input);
+            draft.input = input;
+            return wrapper;
+        }
+
+        /** Size the name field to its text or placeholder, up to what the stylesheet lets a tab be. */
+        function fitRenameField(input: HTMLInputElement): void {
+            const shown = Math.max(String(input.value || '').length, String(input.getAttribute('placeholder') || '').length);
+            input.size = Math.max(12, Math.min(MAX_TITLE_LENGTH, shown + 2));
+        }
+
+        /** The rename this redraw keeps: what its field holds now, and whether the new field takes the focus. */
+        function pendingRename(container: HTMLElement, state: QueryTabsState,
+                               callbacks: TabRowCallbacks): RenameDraft | null {
+            const draft = renameDraftOf(container);
+            if (!draft) {
+                return null;
+            }
+            if (!callbacks.onRename || !findTab(state, draft.id)) {
+                // The tab closed while it was renamed.
+                setRenameDraft(container, null);
+                return null;
+            }
+            const input = draft.input;
+            if (input) {
+                draft.value = input.value;
+                if (typeof input.selectionStart === 'number' && typeof input.selectionEnd === 'number') {
+                    draft.selectionStart = input.selectionStart;
+                    draft.selectionEnd = input.selectionEnd;
+                }
+                draft.focus = draft.focus || container.ownerDocument.activeElement === input;
+                draft.input = null;
+            }
+            return draft;
+        }
+
+        /** Rename a tab in its place: renaming shows the tab, and the field starts with its name selected. */
+        function beginRename(container: HTMLElement, state: QueryTabsState, callbacks: TabRowCallbacks,
+                             id: string): void {
+            const tab = findTab(state, id);
+            if (!tab || !callbacks.onRename) {
+                return;
+            }
+            const name = tab.title || '';
+            setRenameDraft(container, {
+                id: id,
+                original: name,
+                value: name,
+                selectionStart: 0,
+                selectionEnd: name.length,
+                focus: true,
+                input: null
+            });
+            callbacks.onSelect(id);
+            const draft = renameDraftOf(container);
+            if (draft && draft.id === id && !draft.input) {
+                // The tab was shown already, so nothing redrew the row.
+                renderTabRow(container, state, callbacks);
+            }
+        }
+
+        function finishRename(container: HTMLElement, state: QueryTabsState, callbacks: TabRowCallbacks,
+                              input: HTMLInputElement, keep: boolean, focusTab: boolean): void {
+            const draft = renameDraftOf(container);
+            if (!draft || draft.input !== input) {
+                // Finished already, or the field of a rename the row redrew.
+                return;
+            }
+            setRenameDraft(container, null);
+            draft.input = null;
+            const name = String(input.value || '').replace(/\s+/g, ' ').trim();
+            if (keep && name !== draft.original && callbacks.onRename) {
+                callbacks.onRename(draft.id, name);
+            }
+            if (container.contains(input)) {
+                // The name did not change, so nothing redrew the row: draw the tab again.
+                renderTabRow(container, state, callbacks);
+            }
+            if (focusTab) {
+                const tabs = container.querySelectorAll('[role="tab"]');
+                for (let index = 0; index < tabs.length; index++) {
+                    if (tabs[index].getAttribute('data-tab-id') === draft.id) {
+                        (<HTMLElement>tabs[index]).focus();
+                    }
+                }
+            }
         }
 
         /** Swallow a click or key so the tab under the control is not selected as well (DOM fakes may lack both). */
@@ -570,8 +753,9 @@ namespace workbench {
             return tab ? tab.getAttribute('data-tab-id') || '' : '';
         }
 
-        /** Arrow keys move between tabs and select; Delete or Backspace closes the focused tab. */
-        function onStripKeydown(event: KeyboardEvent, state: QueryTabsState, callbacks: TabRowCallbacks): void {
+        /** Arrow keys move between tabs and select; Delete or Backspace closes the focused tab; F2 renames it. */
+        function onStripKeydown(event: KeyboardEvent, state: QueryTabsState, callbacks: TabRowCallbacks,
+                                startRename: ((id: string) => void) | null): void {
             const id = tabIdOf(event.target);
             if (!id) {
                 return;
@@ -597,6 +781,10 @@ namespace workbench {
             } else if (event.key === 'Delete' || event.key === 'Backspace') {
                 stop(event);
                 callbacks.onClose(id);
+                return;
+            } else if (event.key === 'F2' && startRename) {
+                stop(event);
+                startRename(id);
                 return;
             }
             if (next >= 0) {
@@ -682,12 +870,20 @@ namespace workbench {
                 return;
             }
             const doc = container.ownerDocument;
+            const draft = pendingRename(container, state, callbacks);
             clearChildren(container);
+            const startRename = callbacks.onRename ? function(id: string) {
+                beginRename(container, state, callbacks, id);
+            } : null;
+            const finish = function(input: HTMLInputElement, keep: boolean, focusTab: boolean) {
+                finishRename(container, state, callbacks, input, keep, focusTab);
+            };
             const strip = element(doc, 'div', 'query-tabs__strip');
             strip.setAttribute('role', 'tablist');
             strip.setAttribute('aria-label', 'Open queries');
             state.tabs.forEach(function(tab) {
-                strip.appendChild(tabButton(doc, tab, tab.id === state.activeId, callbacks.isRunning(tab.id), callbacks));
+                strip.appendChild(draft && draft.id === tab.id ? renameField(doc, tab, draft, finish)
+                    : tabButton(doc, tab, tab.id === state.activeId, callbacks.isRunning(tab.id), callbacks, startRename));
             });
             const add = element(doc, 'button', 'query-tabs__new');
             add.setAttribute('type', 'button');
@@ -701,7 +897,7 @@ namespace workbench {
             });
             strip.appendChild(add);
             strip.addEventListener('keydown', function(event: KeyboardEvent) {
-                onStripKeydown(event, state, callbacks);
+                onStripKeydown(event, state, callbacks, startRename);
             });
             container.appendChild(strip);
 
@@ -760,6 +956,13 @@ namespace workbench {
             const popover: any = (<any>workbench).popover;
             if (popover && typeof popover.bind === 'function') {
                 popover.bind(menuButton, panel);
+            }
+            if (draft && draft.input && draft.focus) {
+                draft.focus = false;
+                draft.input.focus();
+                if (typeof draft.input.setSelectionRange === 'function') {
+                    draft.input.setSelectionRange(draft.selectionStart, draft.selectionEnd);
+                }
             }
         }
     }

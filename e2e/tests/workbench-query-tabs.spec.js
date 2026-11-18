@@ -232,4 +232,51 @@ test.describe('Query tabs', () => {
         await expect(selectedTab(page).locator('.query-tabs__title')).toHaveText('Untitled query');
         expect(await page.evaluate(() => document.querySelector('#query-page .CodeMirror').CodeMirror.getValue())).toBe('');
     });
+
+    test('double-clicking a tab renames it; the name is kept across a reload and an empty name derives it again',
+        async ({ page }) => {
+            await setEditorText(page, 'SELECT ?s WHERE { ?s ?p ?o }');
+            await page.click('#query-tabs .query-tabs__new');
+            await setEditorText(page, 'ASK { ?s ?p ?o }');
+            await expect(tabs(page)).toHaveCount(2);
+
+            // The tab that is not shown: double-clicking shows it and turns it into a name field.
+            await tabs(page).first().locator('.query-tabs__title').dblclick();
+            const field = page.locator('#query-tabs .query-tabs__rename');
+            await expect(field).toBeFocused();
+            await expect(field).toHaveValue('');
+            await expect(field).toHaveAttribute('placeholder', 'SELECT ?s WHERE { ?s ?p ?o }');
+            await page.keyboard.type('All subjects');
+            // Keys typed into the name edit it; they neither switch nor close tabs.
+            await page.keyboard.press('ArrowLeft');
+            await page.keyboard.press('Backspace');
+            await expect(field).toHaveValue('All subjecs');
+            await page.keyboard.press('Enter');
+            await expect(field).toHaveCount(0);
+            await expect(tabs(page)).toHaveCount(2);
+            await expect(selectedTab(page).locator('.query-tabs__title')).toHaveText('All subjecs');
+            await expect(selectedTab(page)).toBeFocused();
+            expect(await page.evaluate(() => document.querySelector('#query-page .CodeMirror').CodeMirror.getValue()))
+                .toBe('SELECT ?s WHERE { ?s ?p ?o }');
+
+            // Escape keeps the old name; leaving the field keeps the new one.
+            await selectedTab(page).dblclick();
+            await page.keyboard.type('Ignored');
+            await page.keyboard.press('Escape');
+            await expect(selectedTab(page).locator('.query-tabs__title')).toHaveText('All subjecs');
+            await selectedTab(page).press('F2');
+            await expect(field).toHaveValue('All subjecs');
+            await page.keyboard.type('All subjects');
+            await page.locator('#query-page .CodeMirror').click();
+            await expect(field).toHaveCount(0);
+            await expect(selectedTab(page).locator('.query-tabs__title')).toHaveText('All subjects');
+
+            await page.reload();
+            await expect(tabs(page).first().locator('.query-tabs__title')).toHaveText('All subjects');
+
+            await tabs(page).first().dblclick();
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Enter');
+            await expect(tabs(page).first().locator('.query-tabs__title')).toHaveText('SELECT ?s WHERE { ?s ?p ?o }');
+        });
 });

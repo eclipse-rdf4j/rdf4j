@@ -285,6 +285,116 @@ test('the row supports arrow keys and Delete, and the ⋯ menu lists every open 
     assert.equal(query.getQueryValue(), 'SELECT 1 {}');
 });
 
+function renameInput(harness) {
+    return harness.document.querySelector('#query-tabs .query-tabs__rename');
+}
+
+function typeName(input, text) {
+    input.value = text;
+    input.dispatchEvent({ type: 'input' });
+}
+
+function pressInName(input, key) {
+    input.dispatchEvent({ type: 'keydown', key, bubbles: true, preventDefault() {}, stopPropagation() {} });
+}
+
+function storedTitles(localStorage) {
+    return JSON.parse(localStorage.values.get(STORAGE_KEY)).tabs.map(tab => tab.title);
+}
+
+test('double-clicking a tab renames it: Enter keeps the name, Escape cancels, an empty name derives it again', () => {
+    const { harness, query, localStorage } = mount({ harness: { query: 'SELECT 1 {}' } });
+    query.newQueryTab();
+    harness.yasqeState.instances.query.setValue('SELECT 2 {}');
+    harness.yasqeState.instances.query.triggerChange();
+    const [first, second] = query.getQueryTabsState().tabs;
+
+    tabButtons(harness)[0].dispatchEvent({ type: 'dblclick', bubbles: true });
+    assert.equal(query.getQueryTabsState().activeId, first.id, 'the double-clicked tab is shown');
+    let input = renameInput(harness);
+    assert.ok(input, 'the tab turns into a name field');
+    assert.equal(input.value, '', 'a tab without a name starts with an empty field');
+    assert.equal(input.getAttribute('placeholder'), 'SELECT 1 {}', 'which shows the title it keeps without a name');
+    assert.equal(harness.document.activeElement, input, 'the name field takes focus');
+    assert.equal(harness.document.querySelectorAll('#query-tabs .query-tabs__tab').length, 2,
+        'the tab stays in the row while it is renamed');
+    assert.equal(input.closest('.query-tabs__tab').getAttribute('data-tab-id'), first.id);
+
+    // Keys typed into the name edit it; they do not move between or close tabs.
+    pressInName(input, 'Backspace');
+    pressInName(input, 'ArrowRight');
+    assert.equal(query.getQueryTabsState().tabs.length, 2);
+    assert.equal(query.getQueryTabsState().activeId, first.id);
+
+    typeName(input, '  Counting  ');
+    pressInName(input, 'Enter');
+    assert.equal(renameInput(harness), null, 'Enter ends the rename');
+    assert.equal(query.getQueryTabsState().tabs[0].title, 'Counting');
+    assert.equal(query.getQueryTabsState().tabs[0].query, 'SELECT 1 {}', 'the query text is untouched');
+    assert.equal(query.getQueryTabsState().tabs[0].dirty, false, 'a rename is not an edit of the query');
+    assert.deepEqual(titles(harness), ['Counting', 'SELECT 2 {}']);
+    const named = tabButtons(harness)[0];
+    assert.equal(named.querySelector('.query-tabs__title').classList.contains('query-tabs__title--derived'), false);
+    assert.equal(harness.document.activeElement, named, 'focus goes back to the renamed tab');
+    assert.deepEqual(storedTitles(localStorage), ['Counting', null], 'the name is kept for the next visit');
+
+    tabButtons(harness)[0].dispatchEvent({ type: 'dblclick', bubbles: true });
+    input = renameInput(harness);
+    assert.equal(input.value, 'Counting', 'a named tab starts with its name');
+    assert.equal(input.getAttribute('placeholder'), 'SELECT 1 {}');
+    typeName(input, 'Something else');
+    pressInName(input, 'Escape');
+    assert.equal(renameInput(harness), null, 'Escape ends the rename');
+    assert.deepEqual(titles(harness), ['Counting', 'SELECT 2 {}'], 'Escape keeps the old name');
+
+    tabButtons(harness)[0].dispatchEvent({ type: 'dblclick', bubbles: true });
+    typeName(renameInput(harness), '   ');
+    pressInName(renameInput(harness), 'Enter');
+    assert.equal(query.getQueryTabsState().tabs[0].title, null, 'an empty name gives the tab its derived title back');
+    assert.deepEqual(titles(harness), ['SELECT 1 {}', 'SELECT 2 {}']);
+    assert.ok(tabButtons(harness)[0].querySelector('.query-tabs__title').classList.contains('query-tabs__title--derived'));
+
+    tabButtons(harness)[1].dispatchEvent({ type: 'dblclick', bubbles: true });
+    pressInName(renameInput(harness), 'Enter');
+    assert.equal(query.getQueryTabsState().tabs[1].title, null,
+        'confirming the derived title unchanged keeps it derived, so it still follows the query');
+    assert.equal(query.getQueryTabsState().activeId, second.id);
+
+    const reloaded = mount({ localStorage });
+    assert.deepEqual(storedTitles(localStorage), [null, null]);
+    assert.equal(reloaded.query.getQueryTabsState().tabs.length, 2);
+});
+
+test('a rename survives the row being redrawn, blur keeps the typed name, and F2 renames the focused tab', () => {
+    const { harness, query, localStorage } = mount({ harness: { query: 'SELECT 1 {}' } });
+    tabButtons(harness)[0].dispatchEvent({ type: 'dblclick', bubbles: true });
+    typeName(renameInput(harness), 'Draft name');
+    // Something else redraws the row (a background query ended) while the name is typed.
+    harness.document.dispatchEvent({ type: 'workbench:query-activity' });
+    const input = renameInput(harness);
+    assert.ok(input, 'the name field is still there after the redraw');
+    assert.equal(input.value, 'Draft name', 'with what was typed so far');
+    assert.equal(harness.document.activeElement, input, 'and still has focus');
+
+    input.dispatchEvent({ type: 'blur' });
+    assert.equal(renameInput(harness), null);
+    assert.equal(query.getQueryTabsState().tabs[0].title, 'Draft name', 'leaving the field keeps the name');
+    assert.deepEqual(titles(harness), ['Draft name']);
+
+    const strip = harness.document.querySelector('#query-tabs .query-tabs__strip');
+    strip.dispatchEvent({ type: 'keydown', key: 'F2', target: tabButtons(harness)[0], preventDefault() {} });
+    assert.equal(renameInput(harness).value, 'Draft name', 'F2 renames the focused tab');
+    typeName(renameInput(harness), 'Final name');
+    pressInName(renameInput(harness), 'Enter');
+    assert.deepEqual(storedTitles(localStorage), ['Final name']);
+
+    // Double-clicking the close control closes; it does not rename.
+    query.newQueryTab();
+    const close = tabButtons(harness)[1].querySelector('.query-tabs__close');
+    close.dispatchEvent({ type: 'dblclick', bubbles: true });
+    assert.equal(renameInput(harness), null);
+});
+
 test('without the tab row the page keeps its single-query behaviour', () => {
     const { harness, query } = mount({ harness: { tabs: false, query: 'SELECT 1 {}' } });
     assert.equal(query.getQueryTabsState(), null);

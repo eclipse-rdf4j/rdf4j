@@ -155,6 +155,24 @@ test('setQuery marks the tab dirty, recordRun clears it, update patches fields a
     assert.equal(tabs.update(state, 'nope', { title: 'x' }), state);
 });
 
+test('rename names a tab, trims the name and gives an empty name the derived title back', () => {
+    const tabs = loadQueryTabs();
+    let state = tabs.emptyState();
+    state = tabs.update(state, state.activeId, { query: 'SELECT 1 {}' });
+    const id = state.activeId;
+    const named = tabs.rename(state, id, '  Counting\n things  ');
+    assert.equal(tabs.findTab(named, id).title, 'Counting things', 'whitespace is collapsed and trimmed');
+    assert.equal(tabs.findTab(named, id).query, 'SELECT 1 {}');
+    assert.equal(tabs.findTab(named, id).dirty, false, 'a rename is not an edit of the query');
+    assert.equal(tabs.rename(named, id, 'Counting things'), named, 'the same name changes nothing');
+    assert.equal(tabs.rename(named, 'missing', 'x'), named, 'an unknown tab changes nothing');
+    const cleared = tabs.rename(named, id, '   ');
+    assert.equal(tabs.findTab(cleared, id).title, null);
+    assert.equal(tabs.titleOf(tabs.findTab(cleared, id)), 'SELECT 1 {}');
+    const long = tabs.rename(state, id, 'x'.repeat(tabs.MAX_TITLE_LENGTH + 20));
+    assert.equal(tabs.findTab(long, id).title.length, tabs.MAX_TITLE_LENGTH, 'a name is cut to the longest kept');
+});
+
 test('the store reads, persists and notifies; a throwing storage keeps the state in memory', () => {
     const tabs = loadQueryTabs();
     const key = tabs.storageKey({ digest: 'sha256:abc', user: '', repositoryId: 'lmdb' });
