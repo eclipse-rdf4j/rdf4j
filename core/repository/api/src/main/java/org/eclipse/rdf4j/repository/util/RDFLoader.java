@@ -130,15 +130,11 @@ public class RDFLoader {
 
 			// Set appropriate Accept headers
 			if (dataFormat != null) {
-				for (String mimeType : dataFormat.getMIMETypes()) {
-					con.addRequestProperty("Accept", mimeType);
-				}
+				con.setRequestProperty("Accept", String.join(", ", dataFormat.getMIMETypes()));
 			} else {
 				Set<RDFFormat> rdfFormats = RDFParserRegistry.getInstance().getKeys();
 				List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, true, null);
-				for (String acceptParam : acceptParams) {
-					con.addRequestProperty("Accept", acceptParam);
-				}
+				con.setRequestProperty("Accept", String.join(", ", acceptParams));
 			}
 
 			/* Nullable */

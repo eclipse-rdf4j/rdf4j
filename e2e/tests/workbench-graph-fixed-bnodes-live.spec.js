@@ -228,7 +228,7 @@ async function setGraphScope(page, scope) {
 async function findStoredAlice(page, traffic) {
 	const find = page.getByRole('combobox', { name: 'Find a node, or search the repository' });
 	await find.fill(alice.reference);
-	const search = page.getByRole('option', { name: /Search the repository for/ });
+	const search = page.getByRole('button', { name: 'Load this resource', exact: true });
 	await expect(search).toBeVisible();
 	await search.click();
 	const graph = page.locator('.graph-explorer');

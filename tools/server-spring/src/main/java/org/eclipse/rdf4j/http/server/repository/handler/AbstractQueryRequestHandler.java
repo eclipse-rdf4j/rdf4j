@@ -227,7 +227,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			}
 
 			PreparedResponse preparedResponse = null;
-			if (!headersOnly && explainLevel.isEmpty()) {
+			if (!headersOnly && explainLevel.isEmpty() && useResponseHeartbeat(request, query, view)) {
 				CancellableOperationCoordinator.Handle registeredHandle = queryHandle;
 				preparedResponse = prepareResponse(request, response, registry, registeredHandle);
 				responseHeartbeat = preparedResponse.heartbeat;
@@ -595,6 +595,25 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			throws ClientHTTPException;
 
 	abstract protected View getViewFor(Query query);
+
+	/**
+	 * Whether to start a response heartbeat for this request. A heartbeat writes keep-alive whitespace while the query
+	 * waits for its first result, which commits the response: an error status or headers can no longer be sent after
+	 * that.
+	 * <p>
+	 * By default a heartbeat is used only when the view declares that it consumes one, see
+	 * {@link QueryResultView#supportsResponseHeartbeat()}. Subclasses can turn it off per request, for example when the
+	 * response must stay uncommitted until evaluation has produced its first result.
+	 * </p>
+	 *
+	 * @param request the query request
+	 * @param query   the prepared query
+	 * @param view    the view that will render the result
+	 * @return {@code true} to start a heartbeat for this request
+	 */
+	protected boolean useResponseHeartbeat(HttpServletRequest request, Query query, View view) {
+		return view instanceof QueryResultView queryResultView && queryResultView.supportsResponseHeartbeat();
+	}
 
 	abstract protected FileFormatServiceRegistry<? extends FileFormat, ?> getResultWriterFor(Query query);
 
