@@ -667,6 +667,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		graphPattern = new GraphPattern(parentGP);
 		if (useGraphAlgebra && node.getSelect().isSubSelect()) {
 			graphPattern.enterSubquery();
+		} else if (!useGraphAlgebra && node.getSelect().isSubSelect()) {
+			isolateLegacyInheritedGraph(node);
 		}
 		try {
 			node.getWhereClause().jjtAccept(this, null);
@@ -741,6 +743,34 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 			finishLateralAssignmentChecks(assignmentChecksState);
 		}
+	}
+
+	private void isolateLegacyInheritedGraph(ASTSelectQuery query) {
+		Var context = graphPattern.getContextVar();
+		if (context == null || context.hasValue()) {
+			return;
+		}
+		String name = context.getName();
+		// Wildcards have already been expanded. A projected selector still joins the graph name (sq02),
+		// but an unprojected variable belongs only to this SELECT, not to its inherited graph (sq03).
+		for (ASTProjectionElem element : query.getSelect().getProjectionElemList()) {
+			String exported = element.getAlias();
+			if (exported == null && element.jjtGetChild(0) instanceof ASTVar variable) {
+				exported = variable.getName();
+			}
+			if (name.equals(exported)) {
+				return;
+			}
+		}
+		// Keep the public variable untouched, including SERVICE source text and explicit query bindings.
+		// Only the physical graph input receives a private slot, forwarded by the SELECT evaluation step.
+		Var privateContext;
+		do {
+			privateContext = createAnonVar();
+		} while (!occupiedVarNames.add(privateContext.getName()));
+		graphPattern.enterSubquery();
+		privateContext.setGraphContextDepth(graphPattern.getContextVar().getGraphContextDepth());
+		graphPattern.setContextVar(privateContext);
 	}
 
 	private TupleExpr processHavingClause(ASTHavingClause havingNode, TupleExpr tupleExpr, Group group)
@@ -1028,7 +1058,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			// set context var at the level of the projection. This allows us
 			// to distinguish named graphs selected in the
 			// outer query from named graphs selected as part of the sub-select.
-			Var callerContext = useGraphAlgebra ? graphPattern.getProjectionContext() : graphPattern.getContextVar();
+			Var callerContext = graphPattern.getProjectionContext();
+			if (!useGraphAlgebra && callerContext != null) {
+				((Projection) result).setInheritedGraphParameter(graphPattern.getContextVar().getName());
+			} else if (!useGraphAlgebra) {
+				callerContext = graphPattern.getContextVar();
+			}
 			((Projection) result).setProjectionContext(callerContext == null ? null : callerContext.clone());
 		}
 

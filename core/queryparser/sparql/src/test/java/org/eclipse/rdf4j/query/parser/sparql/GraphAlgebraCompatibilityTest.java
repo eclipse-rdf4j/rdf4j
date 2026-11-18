@@ -176,21 +176,54 @@ class GraphAlgebraCompatibilityTest {
 	}
 
 	@Test
-	void legacySubqueriesKeepLegacyContextMetadata() {
+	void legacySubqueriesCarryTheirInheritedGraphInAPrivateParameter() {
 		var query = new SPARQLParser().parseQuery(
 				"SELECT * WHERE { GRAPH ?g { SELECT ?s WHERE { ?s <urn:p> ?o } } }", null, LEGACY);
 
 		assertThat(nodes(query.getTupleExpr(), Graph.class)).isEmpty();
 		assertThat(nodes(query.getTupleExpr(), StatementPattern.class)).singleElement().satisfies(pattern -> {
-			assertThat(pattern.getContextVar().getName()).isEqualTo("g");
-			assertThat(pattern.getContextVar().getGraphContextDepth()).isZero();
+			assertThat(pattern.getContextVar().getName()).isNotEqualTo("g");
+			assertThat(pattern.getContextVar().getGraphContextDepth()).isEqualTo(1);
 		});
 		assertThat(nodes(query.getTupleExpr(), Projection.class)).filteredOn(Projection::isSubquery)
 				.singleElement()
 				.satisfies(projection -> {
 					assertThat(projection.getProjectionContext().getName()).isEqualTo("g");
 					assertThat(projection.getProjectionContext().getGraphContextDepth()).isZero();
+					assertThat(projection.getInheritedGraphParameter()).isEqualTo(
+							nodes(projection, StatementPattern.class).getFirst().getContextVar().getName());
 				});
+	}
+
+	@Test
+	void legacySubquerySeparatesUnprojectedLocalGraphVariable() {
+		var query = new SPARQLParser().parseQuery(
+				"SELECT ?s WHERE { GRAPH ?g { SELECT ?s WHERE { ?s <urn:p> ?g } } }", null, LEGACY);
+
+		assertThat(nodes(query.getTupleExpr(), Graph.class)).isEmpty();
+		assertThat(nodes(query.getTupleExpr(), StatementPattern.class)).singleElement().satisfies(pattern -> {
+			assertThat(pattern.getContextVar().getName()).isNotEqualTo("g");
+			assertThat(pattern.getObjectVar().getName()).isEqualTo("g");
+		});
+		assertThat(nodes(query.getTupleExpr(), Projection.class)).filteredOn(Projection::isSubquery)
+				.singleElement()
+				.satisfies(projection -> {
+					assertThat(projection.getBindingNames()).containsExactly("s");
+					assertThat(projection.getProjectionContext().getName()).isEqualTo("g");
+				});
+	}
+
+	@Test
+	void legacySubqueryKeepsServiceVariablesConsistentWithRemoteText() {
+		var query = new SPARQLParser().parseQuery(
+				"SELECT ?s WHERE { GRAPH ?g { SELECT ?s WHERE { ?s <urn:p> ?g "
+						+ "SERVICE <urn:service> { ?g <urn:q> ?o } } } }",
+				null, LEGACY);
+		assertThat(nodes(query.getTupleExpr(), Service.class)).singleElement().satisfies(service -> {
+			assertThat(service.getServiceExpressionString()).contains("?g");
+			assertThat(nodes(service.getArg(), StatementPattern.class)).singleElement()
+					.satisfies(pattern -> assertThat(pattern.getSubjectVar().getName()).isEqualTo("g"));
+		});
 	}
 
 	@Test
