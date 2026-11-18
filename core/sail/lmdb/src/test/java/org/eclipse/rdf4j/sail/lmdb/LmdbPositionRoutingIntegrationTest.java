@@ -121,10 +121,22 @@ class LmdbPositionRoutingIntegrationTest {
 							valueConfig) {
 						@Override
 						LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int mask) throws IOException {
+							recordMask(id, mask);
+							return super.getLazyValue(snapshot, id, mask);
+						}
+
+						@Override
+						LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int mask,
+								ValueResolutionScope valueScope)
+								throws IOException {
+							recordMask(id, mask);
+							return super.getLazyValue(snapshot, id, mask, valueScope);
+						}
+
+						private void recordMask(long id, int mask) {
 							if (id == observedId) {
 								masks.add(mask);
 							}
-							return super.getLazyValue(snapshot, id, mask);
 						}
 					}, TripleStore::new);
 		}

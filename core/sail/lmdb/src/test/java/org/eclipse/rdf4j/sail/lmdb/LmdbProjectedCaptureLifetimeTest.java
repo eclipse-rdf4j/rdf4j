@@ -199,7 +199,8 @@ class LmdbProjectedCaptureLifetimeTest {
 		}
 
 		@Override
-		LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask) throws IOException {
+		LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask, ValueResolutionScope valueScope)
+				throws IOException {
 			if (armed && captures.incrementAndGet() == 1) {
 				capturedSnapshot = snapshot;
 				captureEntered.countDown();
@@ -212,7 +213,7 @@ class LmdbProjectedCaptureLifetimeTest {
 					throw new IOException(interrupted);
 				}
 			}
-			return super.getLazyValue(snapshot, id, positionMask);
+			return super.getLazyValue(snapshot, id, positionMask, valueScope);
 		}
 	}
 }
