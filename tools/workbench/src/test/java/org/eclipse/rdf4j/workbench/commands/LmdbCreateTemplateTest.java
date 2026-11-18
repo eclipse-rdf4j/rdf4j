@@ -68,6 +68,8 @@ class LmdbCreateTemplateTest {
 
 	@Test
 	void workbenchOffersEveryLmdbSailCombination() throws IOException {
+		assertThat(CreateServlet.getCreateTemplates()).extracting(CreateTemplateConfig::getType)
+				.startsWith(LMDB_TEMPLATES.toArray(String[]::new));
 		assertThat(CreateServlet.getCreateTemplates())
 				.filteredOn(template -> template.getType().startsWith("lmdb"))
 				.extracting(CreateTemplateConfig::getType)

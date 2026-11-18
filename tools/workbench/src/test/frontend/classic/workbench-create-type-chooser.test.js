@@ -74,9 +74,10 @@ const lmdbTemplates = [
 ];
 
 const templates = [
+    ...lmdbTemplates,
     ['memory', 'Memory Store'], ['memory-rdfs', 'Memory Store + RDFS'], ['native-shacl', 'Native Store + SHACL'],
     ['remote', 'Remote RDF Store'], ['sparql', 'SPARQL endpoint proxy'], ['federate', 'Federation'],
-    ...lmdbTemplates, ['acme-graph', 'Acme Graph Store']
+    ['acme-graph', 'Acme Graph Store']
 ];
 
 function chooser() {
@@ -94,10 +95,10 @@ test('the repository types are grouped by store in the server\'s order', () => {
     const groups = Array.from(form.matchAll(/<optgroup label="?([^">]+?)"?>([\s\S]*?)<\/optgroup>/g))
         .map(group => [group[1], Array.from(group[2].matchAll(/<option value="?([\w-]+)"?/g)).map(option => option[1])]);
     assert.deepEqual(groups, [
+        ['LMDB', lmdbTemplates.map(([type]) => type)],
         ['Memory', ['memory', 'memory-rdfs']],
         ['Native', ['native-shacl']],
         ['Remote and federation', ['remote', 'sparql', 'federate']],
-        ['LMDB', lmdbTemplates.map(([type]) => type)],
         ['Other', ['acme-graph']]
     ]);
 });
@@ -107,7 +108,7 @@ test('a line under the type chooser says what the chosen type is', () => {
     assert.match(form, /<select id="type" name="type" aria-describedby="type-description"/);
     const description = /<p id="type-description" class="workbench-field__help"[^>]*>([^<]*)<\/p>/.exec(form);
     assert.ok(description, 'the description is a help line under the chooser');
-    assert.equal(description[1], 'Keeps all data in memory and can save it to disk.');
+    assert.equal(description[1], 'Stores the data on disk in LMDB, a memory-mapped database, for large data.');
     const change = /<select id="type"[^>]*@change=handler-(\d+)/.exec(form);
     assert.ok(change, 'choosing a type updates the line');
     const line = { textContent: '', hidden: false };
