@@ -477,6 +477,186 @@ namespace workbench {
                 cancel.focus();
             });
         }
+
+        export interface Choice {
+            value: string;
+            label: string;
+            /** What choosing it does, under its label. */
+            detail?: string;
+        }
+
+        /**
+         * A modal choice between a few answers, each a button with its label and what it does, then Cancel. Resolves
+         * the value chosen, or null for Cancel and Escape. Closing it returns focus to the control that opened it.
+         */
+        export function choose(options: { title: string; body: any; choices: Choice[] }): Promise<string> {
+            var doc = document;
+            var returnFocusTo = opener(doc);
+            var id = 'workbench-confirm-' + (++counter);
+            var dialog = <any>doc.createElement('dialog');
+            dialog.className = 'workbench-dialog workbench-dialog--choice';
+            dialog.setAttribute('aria-labelledby', id + '-title');
+            dialog.setAttribute('aria-describedby', id + '-body');
+            var title = doc.createElement('h2');
+            title.id = id + '-title';
+            title.className = 'workbench-dialog__title';
+            title.textContent = options.title;
+            var body = doc.createElement('div');
+            body.id = id + '-body';
+            body.className = 'workbench-dialog__body';
+            dialog.appendChild(title);
+            dialog.appendChild(body);
+            renderBody(body, options.body);
+            var list = doc.createElement('div');
+            list.className = 'workbench-dialog__choices';
+            dialog.appendChild(list);
+            var actions = doc.createElement('div');
+            actions.className = 'workbench-dialog__actions';
+            var cancel = button(doc, 'workbench-action workbench-action--secondary', 'Cancel');
+            actions.appendChild(cancel);
+            dialog.appendChild(actions);
+            return new Promise<string>(function(resolve) {
+                var chosen: string = null;
+                var first: HTMLButtonElement = null;
+                (options.choices || []).forEach(function(choice) {
+                    var option = button(doc, 'workbench-dialog__choice', '');
+                    option.setAttribute('data-choice', choice.value);
+                    var label = doc.createElement('span');
+                    label.className = 'workbench-dialog__choice-label';
+                    label.textContent = choice.label;
+                    option.appendChild(label);
+                    if (choice.detail) {
+                        var detail = doc.createElement('span');
+                        detail.className = 'workbench-dialog__choice-detail';
+                        detail.textContent = choice.detail;
+                        option.appendChild(detail);
+                    }
+                    option.addEventListener('click', function() {
+                        chosen = choice.value;
+                        dialog.close();
+                    });
+                    list.appendChild(option);
+                    first = first || option;
+                });
+                cancel.addEventListener('click', function() {
+                    dialog.close();
+                });
+                dialog.addEventListener('close', function() {
+                    if (dialog.parentNode) {
+                        dialog.parentNode.removeChild(dialog);
+                    }
+                    restoreFocus(returnFocusTo);
+                    resolve(chosen);
+                });
+                doc.body.appendChild(dialog);
+                dialog.showModal();
+                (first || cancel).focus();
+            });
+        }
+    }
+
+    /**
+     * A short notice at the bottom of the page that something happened, with an optional action (Undo): one at a
+     * time, announced politely, gone after a while unless the pointer or focus is on it, or when Close is pressed.
+     */
+    export namespace toast {
+        export interface ToastOptions {
+            message: string;
+            actionLabel?: string;
+            onAction?: () => void;
+            /** Milliseconds before it goes (default 10 s); 0 keeps it until it is closed. */
+            timeout?: number;
+        }
+
+        var dismissShown: () => void = null;
+
+        /** Shows the notice, replacing one shown before; returns what closes it. */
+        export function show(options: ToastOptions): () => void {
+            var doc = document;
+            if (dismissShown) {
+                dismissShown();
+            }
+            var region = doc.getElementById('workbench-toast-region');
+            if (!region) {
+                region = doc.createElement('div');
+                region.id = 'workbench-toast-region';
+                region.className = 'workbench-toast-region';
+                region.setAttribute('role', 'status');
+                region.setAttribute('aria-live', 'polite');
+                doc.body.appendChild(region);
+            }
+            var element = doc.createElement('div');
+            element.className = 'workbench-toast';
+            var text = doc.createElement('p');
+            text.className = 'workbench-toast__message';
+            text.textContent = options.message;
+            element.appendChild(text);
+            var timer: any = null;
+            var hovered = false;
+            var focused = false;
+            var closed = false;
+            var close = function() {
+                if (closed) {
+                    return;
+                }
+                closed = true;
+                if (timer !== null) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                if (element.parentNode) {
+                    element.parentNode.removeChild(element);
+                }
+                if (dismissShown === close) {
+                    dismissShown = null;
+                }
+            };
+            var wait = typeof options.timeout === 'number' ? options.timeout : 10000;
+            var schedule = function() {
+                if (timer !== null) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                if (wait > 0 && !hovered && !focused && !closed) {
+                    timer = setTimeout(close, wait);
+                }
+            };
+            if (options.actionLabel && options.onAction) {
+                var action = button(doc, 'workbench-toast__action', options.actionLabel);
+                action.addEventListener('click', function() {
+                    close();
+                    options.onAction();
+                });
+                element.appendChild(action);
+            }
+            var dismiss = button(doc, 'workbench-toast__close', '');
+            dismiss.setAttribute('aria-label', 'Close');
+            dismiss.title = 'Close';
+            dismiss.textContent = '\u00d7';
+            dismiss.addEventListener('click', close);
+            element.appendChild(dismiss);
+            element.addEventListener('mouseenter', function() { hovered = true; schedule(); });
+            element.addEventListener('mouseleave', function() { hovered = false; schedule(); });
+            element.addEventListener('focusin', function() { focused = true; schedule(); });
+            element.addEventListener('focusout', function() { focused = false; schedule(); });
+            element.addEventListener('keydown', function(event: KeyboardEvent) {
+                if (event.key === 'Escape') {
+                    close();
+                }
+            });
+            region.appendChild(element);
+            dismissShown = close;
+            schedule();
+            return close;
+        }
+
+        function button(doc: Document, className: string, label: string): HTMLButtonElement {
+            var element = <HTMLButtonElement>doc.createElement('button');
+            element.type = 'button';
+            element.className = className;
+            element.textContent = label;
+            return element;
+        }
     }
 
     /**
