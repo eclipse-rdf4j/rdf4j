@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.within;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -32,6 +34,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -618,6 +621,119 @@ class LmdbDirectAdjacencyQueryTest {
 
 		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void failingSelectionObserverReleasesDirectCursor(boolean directOnlyOrder) throws Exception {
+		openPreferStore();
+		long viewsBefore = direct.snapshotMetrics().activeViews;
+		try (CloseableDataset dataset = dataset()) {
+			assertFailingDirectSelection(dataset.source, directOnlyOrder);
+		}
+		assertThat(direct.snapshotMetrics().activeViews).as("the failed cursor must release its adjacency lease")
+				.isEqualTo(viewsBefore);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void failingSelectionObserverReleasesParallelDirectCursor(boolean directOnlyOrder) throws Exception {
+		openPreferStore();
+		long viewsBefore = direct.snapshotMetrics().activeViews;
+		try (CloseableDataset dataset = dataset();
+				NativeLmdbQuerySource.ParallelSource source = dataset.source.openParallelSources(1)[0]) {
+			assertFailingDirectSelection(source, directOnlyOrder);
+		}
+		assertThat(direct.snapshotMetrics().activeViews)
+				.as("the failed parallel cursor must release its adjacency lease")
+				.isEqualTo(viewsBefore);
+	}
+
+	private static void assertFailingDirectSelection(NativeLmdbQuerySource source, boolean directOnlyOrder) {
+		var failure = new IllegalStateException("selection observation failed");
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = (adjacency, reason, order, s, p, o, c) -> {
+			if (adjacency && reason.startsWith("SELECTED_ADJACENCY")) {
+				throw failure;
+			}
+		};
+		assertThatThrownBy(() -> {
+			try (RecordIterator records = directOnlyOrder
+					? source.statements(StatementOrder.O, -1, -1, -1, -1, observer)
+					: source.statements(-1, -1, -1, -1, observer)) {
+				// Close an unexpected success before reporting it.
+			}
+		}).isSameAs(failure);
+	}
+
+	@Test
+	void failingSelectionObserverReleasesLmdbSourceStamp() throws Exception {
+		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		String classpath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
+		Path output = dataDir.toPath().resolve("lmdb-selection-failure.log");
+		Process probe = new ProcessBuilder(java, "-ea", "-cp", classpath, LmdbSelectionFailureProbe.class.getName(),
+				new File(dataDir, "store").getAbsolutePath())
+						.redirectErrorStream(true)
+						.redirectOutput(output.toFile())
+						.start();
+		try {
+			assertThat(probe.waitFor(45, TimeUnit.SECONDS)).as("selection-failure subprocess terminated").isTrue();
+			assertThat(probe.exitValue()).as(Files.readString(output)).isZero();
+		} finally {
+			if (probe.isAlive()) {
+				probe.destroyForcibly();
+				probe.waitFor(5, TimeUnit.SECONDS);
+			}
+		}
+	}
+
+	/** Losing the read stamp leaves dataset close parked forever, so exercise the real native path in a child. */
+	public static final class LmdbSelectionFailureProbe {
+		public static void main(String[] arguments) {
+			try {
+				LmdbDirectAdjacencyQueryTest fixture = new LmdbDirectAdjacencyQueryTest();
+				fixture.dataDir = new File(arguments[0]);
+				fixture.captureSystemProperties();
+				fixture.openPreferStore("spoc,posc,cspo");
+				try (RepositoryConnection connection = fixture.repo.getConnection()) {
+					connection.begin();
+					for (int index = 0; index < 512; index++) {
+						connection.add(S1, P1, O1, F.createIRI("urn:selection-failure:graph:" + index));
+					}
+					connection.commit();
+				}
+				LmdbTestUtil.awaitPostReadyInitialization(fixture.sail, 20, TimeUnit.SECONDS);
+				fixture.awaitDirectAdjacencyReady();
+				fixture.assertLmdbSelectionFailureCloses();
+				fixture.tearDown();
+				System.exit(0);
+			} catch (Throwable failure) {
+				failure.printStackTrace(System.err);
+				System.exit(1);
+			}
+		}
+	}
+
+	private void assertLmdbSelectionFailureCloses() throws Exception {
+		var failure = new IllegalStateException("native selection observation failed");
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = (adjacency, reason, order, s, p, o, c) -> {
+			if (reason.startsWith("SELECTED_")) {
+				assertThat(adjacency).as("the native context index wins this ordered scan").isFalse();
+				throw failure;
+			}
+		};
+		CloseableDataset dataset = dataset();
+		assertThatThrownBy(() -> {
+			try (RecordIterator records = dataset.source.statements(StatementOrder.C, -1, -1, -1, -1, observer)) {
+				// Close an unexpected success before reporting it.
+			}
+		}).isSameAs(failure);
+		FutureTask<Void> close = new FutureTask<>(dataset::close, null);
+		Thread.ofPlatform().daemon().start(close);
+		try {
+			close.get(5, TimeUnit.SECONDS);
+		} catch (TimeoutException e) {
+			throw new AssertionError("dataset close could not acquire the native source write stamp", e);
+		}
 	}
 
 	@Test

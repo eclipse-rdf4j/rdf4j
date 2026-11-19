@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -107,6 +109,37 @@ class LateralQueryEvaluationStepTest {
 				.asString()
 				.startsWith("-lateral-hidden-")
 				.endsWith("-lateral");
+	}
+
+	@Test
+	void closesLeftWhenBindingSpecificRightPreparationFails() {
+		Projection hidingProjection = new Projection(statementUsing("lateral"),
+				new ProjectionElemList(new ProjectionElem("visible")));
+		Lateral lateral = new Lateral(new SingletonSet(), new Join(hidingProjection, new SingletonSet()),
+				Set.of("lateral"));
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationContext context = mock(QueryEvaluationContext.class);
+		QueryEvaluationException failure = new QueryEvaluationException("Could not prepare the bound right side");
+		QueryEvaluationException closeFailure = new QueryEvaluationException("Could not close the left cursor");
+		AtomicInteger leftCloses = new AtomicInteger();
+		QueryEvaluationStep left = bindings -> new CloseableIteratorIteration<BindingSet>(
+				List.of(bindings).iterator()) {
+			@Override
+			protected void handleClose() {
+				leftCloses.incrementAndGet();
+				throw closeFailure;
+			}
+		};
+		QueryEvaluationStep emptyRight = bindings -> QueryEvaluationStep.EMPTY_ITERATION;
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class)))
+				.thenReturn(left, emptyRight)
+				.thenThrow(failure);
+
+		QueryEvaluationStep step = LateralQueryEvaluationStep.supply(strategy, lateral, context);
+		assertThatThrownBy(() -> step.evaluate(EmptyBindingSet.getInstance()))
+				.isSameAs(failure)
+				.satisfies(thrown -> assertThat(thrown.getSuppressed()).containsExactly(closeFailure));
+		assertThat(leftCloses).hasValue(1);
 	}
 
 	@Test

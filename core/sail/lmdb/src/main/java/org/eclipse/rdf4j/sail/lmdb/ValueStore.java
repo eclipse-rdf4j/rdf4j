@@ -7030,9 +7030,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			ValueResolutionScope exposure)
 			throws IOException {
 		PendingValueAssociation pending = pendingValueAssociation;
-		if (isWriteTransactionOwner() && pending != null
+		if (pending != null
 				&& valueRevision instanceof ValueStoreRevision.Lazy lazy && lazy.association() == pending.pending
-				&& !isWriterAssigned(id)) {
+				&& isWriteTransactionOwner() && !isWriterAssigned(id)) {
 			// Existing children keep a committed capability; newer children retain the pending parent's epoch.
 			valueCaches.predecessorDependent = true;
 			valueRevision = pending.predecessor;
