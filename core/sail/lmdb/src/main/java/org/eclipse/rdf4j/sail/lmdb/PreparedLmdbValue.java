@@ -276,7 +276,9 @@ final class PreparedLmdbValue {
 			if (language.isPresent()) {
 				return factory.createLiteral(literal.getLabel(), language.get(), literal.getBaseDirection());
 			}
-			return factory.createLiteral(literal.getLabel(), (IRI) ownChild(literal.getDatatype(), owner));
+			IRI datatype = literal.getDatatype();
+			return factory.createLiteral(literal.getLabel(),
+					ValueStore.isCanonicalCoreDatatype(datatype) ? datatype : (IRI) ownChild(datatype, owner));
 		}
 		TripleTerm triple = (TripleTerm) value;
 		return factory.createTripleTerm((Resource) ownChild(triple.getSubject(), owner),

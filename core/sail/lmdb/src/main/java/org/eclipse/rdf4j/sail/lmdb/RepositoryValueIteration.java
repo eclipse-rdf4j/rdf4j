@@ -37,6 +37,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Repository-only, demand-driven materialization retaining ID capabilities through complete value waves. */
@@ -164,10 +166,6 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 				: projected.capturedRootsRequiringPreparation(RepositoryValueIteration::isPrepared);
 		// Rows whose values are already resolved need neither owner scopes nor dictionary waves.
 		if (roots != null) {
-			Map<Value, Boolean> capturedOwners = new IdentityHashMap<>();
-			for (Value root : roots) {
-				captureReadyOwners(root, capturedOwners);
-			}
 			resolveWaves(roots);
 		}
 		checkActive();
@@ -285,86 +283,106 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		return !(value instanceof Literal literal) || isPrepared(literal.getDatatype());
 	}
 
-	private void captureReadyOwners(Value root, Map<Value, Boolean> captured) {
-		ArrayDeque<Value> pending = new ArrayDeque<>();
-		pending.add(root);
-		while (!pending.isEmpty()) {
-			Value next = pending.removeLast();
-			if (captured.put(next, Boolean.TRUE) != null) {
-				continue;
+	private void resolveWaves(List<Value> roots) {
+		IdentityHashMap<Value, Boolean> visited = new IdentityHashMap<>();
+		ArrayDeque<Value> descendants = new ArrayDeque<>();
+		Consumer<Value> descend = child -> {
+			if (child != null) {
+				descendants.addLast(child);
 			}
-			if (next instanceof LmdbValue value) {
-				ValueStore owner = value.getInternalIdentity().revision().getValueStore();
-				if (owner != null && value.getValueStoreRevision() instanceof ValueStoreRevision.Lazy) {
-					scopeFor(owner);
-				}
-				if (!value.isInitialized()) {
-					continue;
+		};
+		List<LmdbValue> wave = new ArrayList<>();
+		while (!roots.isEmpty()) {
+			// Reserve every visible foreign epoch before decoding. Visit the loaded graph depth first so an
+			// application getter on a later root cannot release an earlier root's foreign epoch before admission.
+			for (Value root : roots) {
+				for (Value value = root; value != null; value = descendants.pollLast()) {
+					LmdbValue lmdb = value instanceof LmdbValue nativeValue ? nativeValue : null;
+					boolean cold = lmdb != null && !lmdb.isInitialized();
+					boolean expand = !cold && mayHaveValueChildren(value);
+					if ((cold || expand) && visited.put(value, Boolean.TRUE) != null) {
+						continue;
+					}
+					if (lmdb != null) {
+						reserveForeignOwner(lmdb.getValueStoreRevision());
+					}
+					if (cold) {
+						wave.add(lmdb);
+					} else if (expand) {
+						visitChildren(value, descend);
+					}
 				}
 			}
-			visitChildren(next, child -> {
-				if (child != null) {
-					pending.add(child);
-				}
-			});
+			if (wave.isEmpty()) {
+				return;
+			}
+			List<Value> next = new ArrayList<>();
+			decodeWave(wave, next);
+			wave.clear();
+			roots = next;
 		}
 	}
 
-	private void resolveWaves(List<Value> roots) {
-		Map<Value, Boolean> visited = new IdentityHashMap<>();
-		List<Value> wave = roots;
-		while (!wave.isEmpty()) {
-			List<Value> next = new ArrayList<>();
-			for (int start = 0; start < wave.size(); start += WAVE_VALUES) {
-				Map<ValueStoreRevision, List<PendingValue>> groups = new LinkedHashMap<>();
-				for (int index = start; index < Math.min(wave.size(), start + WAVE_VALUES); index++) {
-					Value value = wave.get(index);
-					if (visited.put(value, Boolean.TRUE) != null) {
-						continue;
-					}
-					if (value instanceof LmdbValue lmdb && !lmdb.isInitialized()) {
-						LmdbValue.InternalIdentity identity = lmdb.getInternalIdentity();
-						groups.computeIfAbsent(identity.revision(), ignored -> new ArrayList<>())
-								.add(new PendingValue(lmdb, identity));
-					} else {
-						appendChildren(value, next);
-					}
+	private void reserveForeignOwner(ValueStoreRevision revision) {
+		if (revision instanceof ValueStoreRevision.Lazy) {
+			ValueStore owner = revision.getValueStore();
+			if (owner != null && owner != store) {
+				scopeFor(owner);
+			}
+		}
+	}
+
+	private void decodeWave(List<LmdbValue> wave, List<Value> next) {
+		Consumer<Value> enqueue = child -> {
+			if (child != null) {
+				next.add(child);
+			}
+		};
+		for (int start = 0; start < wave.size(); start += WAVE_VALUES) {
+			Map<ValueStoreRevision, List<PendingValue>> groups = new LinkedHashMap<>();
+			int end = Math.min(wave.size(), start + WAVE_VALUES);
+			for (int index = start; index < end; index++) {
+				LmdbValue value = wave.get(index);
+				LmdbValue.InternalIdentity identity = value.getInternalIdentity();
+				groups.computeIfAbsent(identity.revision(), ignored -> new ArrayList<>())
+						.add(new PendingValue(value, identity));
+			}
+			for (var group : groups.entrySet()) {
+				List<PendingValue> values = group.getValue();
+				values.sort(ID_ORDER);
+				ValueStore owner = group.getKey().getValueStore();
+				ValueResolutionScope scope = owner == store && transactionScope != null && transactionScope.isOpen()
+						&& (!(group.getKey() instanceof ValueStoreRevision.Lazy lazy)
+								|| transactionScope.protects(lazy))
+										? transactionScope
+										: scopes.get(owner);
+				if (owner != null && scope == null) {
+					scope = scopeFor(owner);
 				}
-				for (var group : groups.entrySet()) {
-					List<PendingValue> values = group.getValue();
-					values.sort(ID_ORDER);
-					ValueStore owner = group.getKey().getValueStore();
-					ValueResolutionScope scope = owner == store && transactionScope != null && transactionScope.isOpen()
-							&& (!(group.getKey() instanceof ValueStoreRevision.Lazy lazy)
-									|| transactionScope.protects(lazy))
-											? transactionScope
-											: scopes.get(owner);
-					if (owner != null && scope == null) {
-						scope = scopeFor(owner);
-					}
-					try (SailClosable activation = scope == null ? null : scope.activateForeground()) {
-						for (PendingValue pending : values) {
-							LmdbValue value = pending.value;
-							checkActive();
-							value.init();
-							if (!value.isInitialized()) {
-								throw new SailException("A repository result value could not be resolved");
-							}
-							appendChildren(value, next);
+				try (SailClosable activation = scope == null ? null : scope.activateForeground()) {
+					for (PendingValue pending : values) {
+						LmdbValue value = pending.value;
+						checkActive();
+						value.init();
+						if (!value.isInitialized()) {
+							throw new SailException("A repository result value could not be resolved");
+						}
+						if (mayHaveValueChildren(value)) {
+							visitChildren(value, enqueue);
 						}
 					}
 				}
 			}
-			wave = next;
 		}
 	}
 
-	private void appendChildren(Value value, List<Value> next) {
-		visitChildren(value, child -> {
-			if (child != null) {
-				next.add(child);
-			}
-		});
+	private static boolean mayHaveValueChildren(Value value) {
+		if (value instanceof Literal || value instanceof TripleTerm) {
+			return true;
+		}
+		// Unknown native implementations and subclasses can supply children through their visit hook.
+		return value instanceof LmdbValue && !(value instanceof PreparedLmdbValue.Prepared)
+				&& value.getClass() != LmdbIRI.class && value.getClass() != LmdbBNode.class;
 	}
 
 	private static void visitChildren(Value value, Consumer<Value> visitor) {
