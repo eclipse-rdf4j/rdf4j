@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -43,6 +46,10 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 @InternalUseOnly
 public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
+	/** Serial form of detached Sail results before the addition of compact snapshot metadata. */
+	@Serial
+	private static final long serialVersionUID = -7813114252830058655L;
+
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.nativeLazyResults.enabled";
 	static final AtomicLong CREATED = new AtomicLong();
 	static final AtomicLong MATERIALIZED_VALUES = new AtomicLong();
@@ -56,11 +63,12 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	final String[] names;
 	final long[] ids;
 	private final Value[] values;
-	private final ProjectionLayout layout;
+	private final int[] positionMasks;
+	private transient MapBindingSet.CompactLayout snapshotLayout;
 	final int size;
 	Set<String> bindingNames;
-	private boolean fullyCaptured;
-	private int[] captureIndex;
+	private transient boolean fullyCaptured;
+	private transient int[] captureIndex;
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, String[] names, int[] sourceSlots, long[] row) {
 		this(source, ProjectionLayout.create(names, sourceSlots), row);
@@ -68,8 +76,9 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, ProjectionLayout layout, long[] row) {
 		this.source = source;
-		this.layout = layout;
 		this.names = layout.names;
+		this.positionMasks = layout.positionMasks;
+		this.snapshotLayout = layout.snapshotLayout;
 		this.ids = new long[layout.names.length];
 		layout.copyIds(row, ids);
 		this.values = new Value[this.ids.length];
@@ -231,8 +240,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	/** Returns an independent mutable snapshot when every projected handle was captured before detachment. */
 	public MapBindingSet snapshotIfFullyCaptured() {
-		return source == null && fullyCaptured && captureIndex == null ? layout.snapshotLayout.snapshot(values, size)
-				: null;
+		return source == null && fullyCaptured && captureIndex == null ? snapshotLayout.snapshot(values, size) : null;
 	}
 
 	/** Returns the ordered roots for preparation, or null when every captured value is already prepared. */
@@ -343,7 +351,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 					value = materializedDuplicate(i, entries, bucket);
 					if (value == null) {
 						long id = ids[i];
-						int mask = layout.positionMasks[i];
+						int mask = positionMasks[i];
 						if (reusePrevious) {
 							value = state.reuse(i, id, mask);
 						}
@@ -366,7 +374,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 				fullyCaptured = complete;
 			}
 			if (complete && snapshot != null) {
-				state.publish(currentSource, snapshot, valueScope, ids, layout.positionMasks);
+				state.publish(currentSource, snapshot, valueScope, ids, positionMasks);
 				keepPrevious = true;
 			}
 		} finally {
@@ -528,7 +536,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			if (currentSource == null) {
 				throw new IllegalStateException("detached native result has an unresolved value");
 			}
-			value = currentSource.lazyValue(id, layout.positionMasks[index]);
+			value = currentSource.lazyValue(id, positionMasks[index]);
 			assignValue(index, value, entries, bucket);
 			MATERIALIZED_VALUES.incrementAndGet();
 		}
@@ -541,13 +549,13 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	private int findOrReserveCaptureBucket(int index, int[] entries) {
 		long id = ids[index];
-		int positionMask = layout.positionMasks[index];
+		int positionMask = positionMasks[index];
 		int capacity = captureCapacity();
 		long hash = (id ^ ((long) positionMask << Integer.SIZE)) * 0x9E3779B97F4A7C15L;
 		int bucket = (int) (hash >>> (Long.SIZE - Integer.numberOfTrailingZeros(capacity)));
 		while (entries[bucket] != 0) {
 			int candidate = Math.abs(entries[bucket]) - 1;
-			if (ids[candidate] == id && layout.positionMasks[candidate] == positionMask) {
+			if (ids[candidate] == id && positionMasks[candidate] == positionMask) {
 				return bucket;
 			}
 			bucket = (bucket + 1) & (capacity - 1);
@@ -584,9 +592,9 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			return -1;
 		}
 		long id = ids[index];
-		int positionMask = layout.positionMasks[index];
+		int positionMask = positionMasks[index];
 		for (int i = 0; i < values.length; i++) {
-			if (i != index && ids[i] == id && layout.positionMasks[i] == positionMask && values[i] != null) {
+			if (i != index && ids[i] == id && positionMasks[i] == positionMask && values[i] != null) {
 				return i;
 			}
 		}
@@ -595,5 +603,19 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	static boolean isBound(long id) {
 		return id != UNKNOWN && id != NULL_CONTEXT_ID;
+	}
+
+	@Serial
+	private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
+		input.defaultReadObject();
+		snapshotLayout = new MapBindingSet.CompactLayout(names);
+		if (source == null) {
+			for (int i = 0; i < ids.length; i++) {
+				if (isBound(ids[i]) && values[i] == null) {
+					return;
+				}
+			}
+			fullyCaptured = true;
+		}
 	}
 }

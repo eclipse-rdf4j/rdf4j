@@ -252,6 +252,34 @@ public class LmdbNativeLazyProjectedResultTest {
 	}
 
 	@Test
+	public void detachedSailProjectionRoundTripsThroughJavaSerialization() throws Exception {
+		var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?value ?unbound ?s WHERE { ?s <" + EX + "value> ?value }", null);
+		BindingSet row;
+		try (var connection = repository.getSail().getConnection();
+				var rows = connection.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
+			row = rows.next();
+			assertThat(row).isInstanceOf(NativeProjectedBindingSet.class);
+			assertThat(((NativeProjectedBindingSet) row).source).isNull();
+		}
+
+		var bytes = new ByteArrayOutputStream();
+		try (var output = new ObjectOutputStream(bytes)) {
+			output.writeObject(row);
+		}
+		repository.shutDown();
+
+		try (var input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			NativeProjectedBindingSet restored = (NativeProjectedBindingSet) input.readObject();
+			assertThat(restored).isEqualTo(row);
+			assertThat(restored.getBindingNames()).containsExactly("value", "s");
+			assertThat(restored.getValue("value").stringValue()).startsWith("stored literal payload ");
+			assertThat(restored.getValue("unbound")).isNull();
+			assertThat(restored.snapshotIfFullyCaptured()).isEqualTo(restored);
+		}
+	}
+
+	@Test
 	public void projectedRowRetainsPrimitiveIdBeforeBoundaryDetach() {
 		Value expected = repository.getValueFactory().createLiteral("lazy value");
 		NativeLmdbQuerySource source = new StubSource(expected);
