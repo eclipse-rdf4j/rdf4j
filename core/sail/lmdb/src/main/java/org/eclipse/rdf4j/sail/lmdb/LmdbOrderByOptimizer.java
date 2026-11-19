@@ -76,6 +76,14 @@ class LmdbOrderByOptimizer implements QueryOptimizer {
 				continue;
 			}
 
+			if (stableOrderPlanner.isBlockedByPushedFilter(order.getArg(), requestedVar.getName())) {
+				// The index order is only reachable by moving a pattern ahead of the bindings a pushed-down filter,
+				// BIND or OPTIONAL condition
+				// needs, which would silently drop rows. Degrade to a value sort, as for pending changes above.
+				order.getElements().get(0).setExpr(requestedVar.clone());
+				continue;
+			}
+
 			stableOrderPlanner.plan(order.getArg(), requestedVar.getName())
 					.ifPresent(resolution -> {
 						resolution.apply();
