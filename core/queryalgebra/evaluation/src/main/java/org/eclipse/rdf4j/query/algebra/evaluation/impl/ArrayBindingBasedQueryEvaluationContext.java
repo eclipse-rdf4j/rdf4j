@@ -135,6 +135,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return context.getExecutionIdentity();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return context.getBlankNodeAllocationScope();
 	}

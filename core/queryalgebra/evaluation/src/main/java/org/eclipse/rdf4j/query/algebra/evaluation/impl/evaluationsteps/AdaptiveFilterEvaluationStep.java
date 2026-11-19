@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
@@ -62,6 +63,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterCondition;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer;
@@ -80,7 +84,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  * Prepared site bundles for drainable ordinary join regions. The algebra and prepared conditions are immutable during
  * evaluation; controller, counters and the current input cohort belong to each independently opened iteration.
  */
-public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
+public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, RestrictionPlanProvider {
 
 	// A scope is installed only around a query's synchronous evaluate/pull/close calls, never while its consumer is
 	// idle. This gives nested regions one learning budget without putting mutable state in a shared prepared plan.
@@ -107,6 +111,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 
 	public static boolean isPlanningContext(QueryEvaluationContext context) {
 		return context instanceof PlanningContext;
+	}
+
+	/** The existing preparation walk also knows whether this execution contains a logical GRAPH. */
+	public static boolean includesGraphRestrictionRegion(QueryEvaluationContext context) {
+		return !(context instanceof PlanningContext planning) || planning.includesGraph;
 	}
 
 	/** Keeps allocation and query values while giving a detached algebra its own identity-indexed planning state. */
@@ -154,10 +163,12 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 	public static QueryEvaluationStep decorate(QueryEvaluationStep step,
 			Function<QueryEvaluationStep, QueryEvaluationStep> decorator) {
 		if (step instanceof PhysicalOperator physical) {
-			return new PhysicalOperator(physical.kind, decorator.apply(physical.step), physical.rebind == null ? null
-					: (left, right) -> decorator.apply(physical.rebind.apply(left, right)), physical.untrackedRebind);
+			return new PhysicalOperator(physical.kind, RestrictionCompiler.decorate(physical.step, decorator),
+					physical.rebind == null ? null
+							: (left, right) -> decorator.apply(physical.rebind.apply(left, right)),
+					physical.untrackedRebind);
 		}
-		return decorator.apply(step);
+		return RestrictionCompiler.decorate(step, decorator);
 	}
 
 	/** Exposes only our marker's actual delegate to existing raw-step guard selection. Custom wrappers stay opaque. */
@@ -171,7 +182,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		FILTER
 	}
 
-	private static final class PhysicalOperator implements QueryEvaluationStep {
+	private static final class PhysicalOperator implements QueryEvaluationStep, RestrictionPlanProvider {
 		private final Kind kind;
 		private final QueryEvaluationStep step;
 		private final BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> rebind;
@@ -195,6 +206,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			return step.evaluate(bindings);
 		}
+
+		@Override
+		public PreparedRestrictionPlan restrictionPlan() {
+			return RestrictionPlanProvider.find(step);
+		}
 	}
 
 	/** Adds an execution scope only if an adaptive region was actually compiled. */
@@ -202,10 +218,15 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		if (!(context instanceof PlanningContext planning) || !planning.compiledRegion) {
 			return step;
 		}
-		return bindings -> {
+		return RestrictionCompiler.decorate(step, scoped -> bindings -> {
 			Execution execution = new Execution();
-			return execution.call(() -> new ScopedIteration(step.evaluate(bindings), execution));
-		};
+			return execution.call(() -> new ScopedIteration(scoped.evaluate(bindings), execution));
+		});
+	}
+
+	@Override
+	public PreparedRestrictionPlan restrictionPlan() {
+		return RestrictionPlanProvider.find(fallback);
 	}
 
 	/** Null means that standard physical preparation must retain ownership of this operator. */
@@ -1237,17 +1258,25 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		private final Map<TupleExpr, QueryEvaluationStep> physicalSteps = new IdentityHashMap<>();
 		private final Map<Filter, TupleExpr> islandRoots;
 		private final QueryAlgebraBindingAnalysis analysis;
+		private boolean includesGraph;
 		private boolean compiledRegion;
 		private boolean physicalReady;
 		private final Set<TupleExpr> preparingStandard = Collections.newSetFromMap(new IdentityHashMap<>());
 
 		PlanningContext(TupleExpr root, QueryEvaluationContext delegate) {
 			this.delegate = delegate;
+			includesGraph = delegate.getActiveGraph() != null;
 			root.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 				@Override
 				public void meet(Filter filter) {
 					filters.add(filter);
 					super.meet(filter);
+				}
+
+				@Override
+				public void meet(Graph graph) {
+					includesGraph = true;
+					super.meet(graph);
 				}
 			});
 			islandRoots = filters.isEmpty() ? Map.of() : new IdentityHashMap<>();
@@ -1370,6 +1399,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		@Override
 		public Comparator<Value> getComparator() {
 			return delegate.getComparator();
+		}
+
+		@Override
+		public Object getExecutionIdentity() {
+			return delegate.getExecutionIdentity();
 		}
 
 		@Override

@@ -17,6 +17,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -96,7 +97,9 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public Iterable<QueryOptimizer> getOptimizers() {
 		List<QueryOptimizer> optimizers = List.of(
 				BINDING_ASSIGNER,
-				GRAPH_SCOPE_OPTIMIZER,
+				strategy.getQueryExecutionPolicy().graphRestrictionMode() == GraphRestrictionMode.OFF
+						? GRAPH_SCOPE_OPTIMIZER
+						: new GraphScopeOptimizer(strategy.getQueryExecutionPolicy()),
 				TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
 				BINDING_SET_ASSIGNMENT_INLINER,
 				new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()),

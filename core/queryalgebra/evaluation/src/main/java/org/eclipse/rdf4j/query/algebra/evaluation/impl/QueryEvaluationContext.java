@@ -228,6 +228,11 @@ public interface QueryEvaluationContext {
 	 */
 	Dataset getDataset();
 
+	/** Identity of the prepared execution, shared by its explicit context decorators. */
+	default Object getExecutionIdentity() {
+		return this;
+	}
+
 	default BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return BlankNodeAllocationScope.forOwner(this);
 	}

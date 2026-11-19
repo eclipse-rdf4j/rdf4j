@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -30,6 +32,8 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -39,10 +43,22 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.ActiveGraph;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.InvocationOwner;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictedInvocation;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionBlueprint;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionLayout;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /** Selects an active graph without introducing its name into the body's solution domain. */
-public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
+public final class GraphQueryEvaluationStep implements QueryEvaluationStep, RestrictionPlanProvider {
+
+	private static final int PREPARED_BODY_CACHE_SIZE = 32;
 
 	private final Graph graph;
 	private final BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer;
@@ -50,19 +66,35 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationContext context;
 	private final Set<Resource> namedGraphs;
 	private final Function<Value, Value> capturer;
+	private final EvaluationStrategy strategy;
+	private final BodyRestrictionSpecializer specializer;
+	private final PreparedRestrictionPlan restrictionPlan;
+
+	@FunctionalInterface
+	public interface BodyRestrictionSpecializer {
+		PreparedRestrictionPlan specialize(TupleExpr body, QueryEvaluationContext context,
+				PreparedRestrictionPlan plan);
+	}
 
 	public static QueryEvaluationStep supply(Graph graph, EvaluationStrategy strategy, TripleSource source,
 			QueryEvaluationContext context) {
-		return supply(graph, source, context, strategy::precompile);
+		return supply(graph, strategy, source, context, (body, selected, generic) -> generic);
 	}
 
 	public static QueryEvaluationStep supply(Graph graph, TripleSource source, QueryEvaluationContext context,
 			BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer) {
-		return new GraphQueryEvaluationStep(graph, source, context, childPreparer);
+		return new GraphQueryEvaluationStep(graph, source, context, childPreparer, null, null);
+	}
+
+	public static QueryEvaluationStep supply(Graph graph, EvaluationStrategy strategy, TripleSource source,
+			QueryEvaluationContext context, BodyRestrictionSpecializer specializer) {
+		return new GraphQueryEvaluationStep(graph, source, context, strategy::precompile, strategy, specializer);
 	}
 
 	private GraphQueryEvaluationStep(Graph graph, TripleSource source, QueryEvaluationContext context,
-			BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer) {
+			BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer,
+			EvaluationStrategy strategy,
+			BodyRestrictionSpecializer specializer) {
 		this.graph = graph;
 		this.childPreparer = childPreparer;
 		this.source = source;
@@ -80,6 +112,9 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 			this.namedGraphs = Set.copyOf(names);
 		}
 		this.capturer = source.getValueCapturer();
+		this.strategy = strategy;
+		this.specializer = specializer;
+		this.restrictionPlan = prepareRestrictionPlan();
 	}
 
 	private Resource capture(Resource resource) {
@@ -87,7 +122,7 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 				: (Resource) RemoteBNode.preserveProvenance(resource, capturer.apply(resource));
 	}
 
-	private QueryEvaluationStep prepare(Resource name, boolean fixedSelection) {
+	private ActiveGraph selection(Resource name, boolean fixedSelection) {
 		// With no dataset, variable selection enumerates physical contexts, while fixed aliases extend the default
 		// graph.
 		// An explicit named-graph dataset reverses that only for fixed selections: enumerated aliases extend default.
@@ -95,8 +130,7 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 				? !fixedSelection
 				: fixedSelection && namedGraphs.contains(name);
 		Resource physical = isDefaultAlias(name) && !aliasUsesPhysicalContext ? null : name;
-		return childPreparer.apply(graph.getArg(),
-				new ActiveGraphQueryEvaluationContext(context, new ActiveGraph(name, physical)));
+		return new ActiveGraph(name, physical);
 	}
 
 	private static boolean isDefaultAlias(Value value) {
@@ -129,7 +163,227 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	@Override
+	public PreparedRestrictionPlan restrictionPlan() {
+		return restrictionPlan;
+	}
+
+	private PreparedRestrictionPlan prepareRestrictionPlan() {
+		if (strategy == null || !RestrictionCompiler.enabled(strategy, context)) {
+			return null;
+		}
+		if (!QueryEvaluationUtility.canDiscardWithoutEvaluation(graph.getArg())) {
+			graph.setStringMetricPlanned("graphRestrictionRefusal", "demand-barrier");
+			return null;
+		}
+		if (!(source instanceof StatementRestrictionSourceProvider provider)) {
+			graph.setStringMetricPlanned("graphRestrictionRefusal", "source-capability-missing");
+			return null;
+		}
+		RestrictionLayout layout = new RestrictionLayout(graph.getBindingNames(), context);
+		var sourcePlan = provider.prepareGraphRestriction(graph, context, layout);
+		if (sourcePlan == null) {
+			graph.setStringMetricPlanned("graphRestrictionRefusal", "source-capability-missing");
+			return null;
+		}
+		Set<String> seekNames = RestrictionCompiler.potentialGraphSeeks(graph);
+		if (seekNames.isEmpty()) {
+			graph.setStringMetricPlanned("graphRestrictionRefusal", "no-useful-seek");
+			return null;
+		}
+		return new PreparedRestrictionPlan(
+				new RestrictionBlueprint("graph/original-selector", RestrictionBlueprint.Realization.REPLAY),
+				layout, context, seekNames, (input, owner) -> {
+					var view = sourcePlan.open(owner);
+					if (view != null && view.source() == source) {
+						return new SelectedBodies(input, owner, layout, seekNames);
+					}
+					graph.setStringMetricActual("graphRestrictionRefusal", "source-capability-missing");
+					if (requiresRestriction()) {
+						throw new QueryEvaluationException("Required GRAPH source view could not be certified");
+					}
+					return RestrictionCompiler.replayInvocation(this, input, strategy.getCollectionFactory(), capturer,
+							graph);
+				});
+	}
+
+	private boolean requiresRestriction() {
+		return strategy.getQueryExecutionPolicy().graphRestrictionMode() == GraphRestrictionMode.REQUIRE_RESTRICTED;
+	}
+
+	private enum SelectorOrigin {
+		CONSTANT,
+		PREPARED,
+		SEMANTIC_INPUT,
+		ENUMERATED
+	}
+
+	/** The same public alias can resolve to two physical contexts through different original selectors. */
+	private record GraphSelection(SelectorOrigin origin, ActiveGraph graph) {
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof GraphSelection selection && origin == selection.origin
+					&& sameGraphIdentity(graph.logicalGraph(), selection.graph.logicalGraph())
+					&& sameGraphIdentity(graph.physicalGraph(), selection.graph.physicalGraph());
+		}
+
+		@Override
+		public int hashCode() {
+			Value logical = graph.logicalGraph();
+			return 31 * origin.hashCode() + (logical instanceof RemoteBNode ? 0 : logical.hashCode());
+		}
+	}
+
+	private record PreparedBody(PreparedRestrictionPlan plan, RestrictedInvocation invocation, int[] slotTransfer) {
+	}
+
+	private final class SelectedBodies implements RestrictedInvocation {
+		private final BindingSet input;
+		private final InvocationOwner owner;
+		private final RestrictionLayout layout;
+		private final int graphSlot;
+		private final int[] candidateSlots;
+		private final LinkedHashMap<GraphSelection, PreparedBody> reusable = new LinkedHashMap<>(16, 0.75f, true);
+		private final Map<GraphSelection, PreparedBody> barriers = new LinkedHashMap<>();
+		private Boolean fixedMember;
+
+		private SelectedBodies(BindingSet input, InvocationOwner owner, RestrictionLayout layout,
+				Set<String> seekNames) {
+			this.input = input;
+			this.owner = owner;
+			this.layout = layout;
+			this.graphSlot = graph.getGraphName().isConstant() ? -1 : layout.slot(graph.getGraphName().getName());
+			this.candidateSlots = seekNames.stream().mapToInt(layout::slot).filter(slot -> slot >= 0).toArray();
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> probe(RestrictionFrame frame) {
+			if (graphSlot >= 0 && (frame.unboundOnly(graphSlot)
+					|| frame.value(graphSlot) != null && !(frame.value(graphSlot) instanceof Resource))) {
+				return QueryEvaluationStep.EMPTY_ITERATION;
+			}
+			return RestrictionCompiler.residual(evaluate(input, this, frame), frame);
+		}
+
+		private boolean selects(Resource name, RestrictionFrame frame) {
+			if (graphSlot < 0) {
+				return true;
+			}
+			Value required = frame.value(graphSlot);
+			return !frame.unboundOnly(graphSlot) && (required == null || RestrictionFrame.sameTerm(name, required));
+		}
+
+		private boolean fixedMember(Resource name) {
+			if (fixedMember == null) {
+				fixedMember = isMember(name);
+			}
+			return fixedMember;
+		}
+
+		private CloseableIteration<BindingSet> openBody(GraphSelection selection, RestrictionFrame frame) {
+			PreparedBody body = reusable.get(selection);
+			if (body == null) {
+				body = barriers.get(selection);
+			}
+			if (body == null) {
+				QueryEvaluationContext selectedContext = new ActiveGraphQueryEvaluationContext(context,
+						selection.graph());
+				QueryEvaluationStep child = childPreparer.apply(graph.getArg(), selectedContext);
+				PreparedRestrictionPlan plan = RestrictionPlanProvider.find(child);
+				if (plan == null) {
+					plan = RestrictionCompiler.replay("graph/body-output", graph.getArg(), selectedContext,
+							child, strategy.getCollectionFactory(), capturer);
+				} else {
+					plan = specializer.specialize(graph.getArg(), selectedContext, plan);
+				}
+				int[] transfer = RestrictionCompiler.transfer(layout, plan.layout(),
+						name -> graphSlot >= 0 && name.equals(layout.name(graphSlot)) ? null : name);
+				body = new PreparedBody(plan, plan.open(input, owner.child()), transfer);
+				graph.setStringMetricActual("graphRestrictionBodyCertificate", plan.blueprint().certificate());
+				if (body.invocation().requiresReplay()) {
+					barriers.put(selection, body);
+				} else {
+					reusable.put(selection, body);
+					if (reusable.size() > PREPARED_BODY_CACHE_SIZE) {
+						PreparedBody evicted = reusable.pollFirstEntry().getValue();
+						evicted.invocation().close();
+					}
+				}
+			} else {
+				graph.incrementLongMetricActual("graphRestrictionBodyCacheHits");
+			}
+			if (!body.invocation().hasSeekCapability() && requiresBodySeek(selection, frame)) {
+				graph.setStringMetricActual("graphRestrictionRefusal", "body-capability-missing");
+				if (requiresRestriction()) {
+					throw new QueryEvaluationException("Required GRAPH body restriction could not be certified");
+				}
+			}
+			RestrictionFrame bodyFrame = frame.transfer(body.plan().layout(), body.slotTransfer());
+			// This is a prefilter for the final GRAPH gate. Remote graph identities retain that gate's provenance
+			// comparison, which is stronger than ordinary RDF4J mapping equality.
+			Resource name = selection.graph().logicalGraph();
+			if (graphSlot >= 0 && !(name instanceof RemoteBNode)) {
+				int bodySlot = bodyFrame.layout().slot(layout.name(graphSlot));
+				if (bodySlot >= 0) {
+					bodyFrame = bodyFrame.restrict(bodySlot, name);
+				}
+			}
+			return body.invocation().probe(bodyFrame);
+		}
+
+		private boolean requiresBodySeek(GraphSelection selection, RestrictionFrame frame) {
+			if (graphSlot >= 0 && frame.value(graphSlot) != null && selection.origin() == SelectorOrigin.ENUMERATED) {
+				return false;
+			}
+			for (int slot : candidateSlots) {
+				if (frame.value(slot) != null || frame.unboundOnly(slot)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public void completeNormally() {
+			reusable.values().forEach(body -> body.invocation().completeNormally());
+			barriers.values().forEach(body -> body.invocation().completeNormally());
+		}
+
+		@Override
+		public void close() {
+			Throwable failure = closeBodies(reusable, null);
+			failure = closeBodies(barriers, failure);
+			if (failure instanceof RuntimeException exception) {
+				throw exception;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+		}
+
+		private Throwable closeBodies(Map<GraphSelection, PreparedBody> bodies, Throwable failure) {
+			for (PreparedBody body : bodies.values()) {
+				try {
+					body.invocation().close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (failure == null) {
+						failure = closeFailure;
+					} else if (failure != closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+			}
+			bodies.clear();
+			return failure;
+		}
+	}
+
+	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return evaluate(bindings, null, null);
+	}
+
+	private CloseableIteration<BindingSet> evaluate(BindingSet bindings, SelectedBodies restricted,
+			RestrictionFrame frame) {
 		return new LookAheadIteration<>() {
 			private CloseableIteration<? extends Resource> candidates;
 			private CloseableIteration<BindingSet> child;
@@ -149,6 +403,9 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 			@Override
 			protected BindingSet getNextElement() {
 				try {
+					if (isCancellationRequested()) {
+						return null;
+					}
 					if (!initialized) {
 						initialized = true;
 						if (graphName.hasValue() && !graphName.isConstant()
@@ -162,11 +419,15 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 						Value fixed = supplied != null && !graphName.isConstant() ? supplied
 								: graphName.hasValue() ? graphName.getValue() : supplied;
 						if (fixed != null) {
-							if (!(fixed instanceof Resource resource) || !isMember(resource)) {
+							if (!(fixed instanceof Resource resource)
+									|| restricted != null && !restricted.selects(resource, frame)
+									|| !(restricted == null ? isMember(resource) : restricted.fixedMember(resource))) {
 								return null;
 							}
 							selected = capture(resource);
-							openChild(true);
+							SelectorOrigin origin = graphName.isConstant() ? SelectorOrigin.CONSTANT
+									: supplied != null ? SelectorOrigin.SEMANTIC_INPUT : SelectorOrigin.PREPARED;
+							openChild(origin);
 						} else if (bindings.hasBinding(graphName.getName())) {
 							return null;
 						} else {
@@ -174,8 +435,11 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 									: new CloseableIteratorIteration<>(namedGraphs.iterator());
 						}
 					}
-					while (true) {
-						while (child != null && child.hasNext()) {
+					while (!isCancellationRequested()) {
+						while (!isCancellationRequested() && child != null && child.hasNext()) {
+							if (isCancellationRequested()) {
+								return null;
+							}
 							BindingSet row = child.next();
 							if (graphName.isConstant()) {
 								return row;
@@ -196,15 +460,16 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 							return result;
 						}
 						closeChild();
-						if (candidates == null || !candidates.hasNext()) {
+						if (isCancellationRequested() || candidates == null || !candidates.hasNext()) {
 							return null;
 						}
 						Resource candidate = candidates.next();
-						if (candidate != null) {
+						if (candidate != null && (restricted == null || restricted.selects(candidate, frame))) {
 							selected = capture(candidate);
-							openChild(false);
+							openChild(SelectorOrigin.ENUMERATED);
 						}
 					}
+					return null;
 				} catch (RuntimeException | Error failure) {
 					try {
 						close();
@@ -217,8 +482,19 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 				}
 			}
 
-			private void openChild(boolean fixedSelection) {
-				child = prepare(selected, fixedSelection).evaluate(bindings);
+			private void openChild(SelectorOrigin origin) {
+				if (isCancellationRequested()) {
+					return;
+				}
+				ActiveGraph active = selection(selected, origin != SelectorOrigin.ENUMERATED);
+				if (restricted != null) {
+					graph.setStringMetricActual("graphRestrictionSelectorOrigin", origin.name());
+					graph.incrementLongMetricActual("graphRestrictionSelections");
+				}
+				child = restricted == null
+						? childPreparer.apply(graph.getArg(), new ActiveGraphQueryEvaluationContext(context, active))
+								.evaluate(bindings)
+						: restricted.openBody(new GraphSelection(origin, active), frame);
 				childOwnsBindings = StatementPatternQueryEvaluationStep.ownsBindingSets(child);
 			}
 

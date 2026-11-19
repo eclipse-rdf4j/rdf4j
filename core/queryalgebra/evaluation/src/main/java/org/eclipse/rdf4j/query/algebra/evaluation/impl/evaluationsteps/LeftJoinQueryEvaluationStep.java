@@ -15,9 +15,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -29,6 +31,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ScopedQueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionBindJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
@@ -52,14 +57,66 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
-		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
-		QueryEvaluationStep left = JoinMetricsTracking
-				.wrapLeftInput(strategy.precompile(leftJoin.getLeftArg(), context), leftJoin, leftJoin.getLeftArg(),
-						runtimeTelemetryTrackingActive);
+		return supply(strategy, leftJoin, context, null);
+	}
+
+	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
+			QueryEvaluationContext context, Function<Value, Value> capturer) {
+		boolean tracking = strategy.isTrackResultSize() || strategy.isTrackTime();
+		QueryEvaluationStep leftRaw = strategy.precompile(leftJoin.getLeftArg(), context);
 		QueryEvaluationStep rightRaw = strategy.precompile(leftJoin.getRightArg(), context);
-		QueryEvaluationStep right = JoinMetricsTracking
-				.wrapRightInput(rightRaw, leftJoin, leftJoin.getRightArg(),
-						runtimeTelemetryTrackingActive);
+		QueryEvaluationStep left = JoinMetricsTracking.wrapLeftInput(leftRaw, leftJoin, leftJoin.getLeftArg(),
+				tracking);
+		QueryEvaluationStep right = JoinMetricsTracking.wrapRightInput(rightRaw, leftJoin, leftJoin.getRightArg(),
+				tracking);
+		QueryEvaluationStep standard = supplyStandard(strategy, leftJoin, context, left, right, rightRaw);
+		if (!RestrictionCompiler.enabled(strategy, context)
+				|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin)
+				|| leftJoin.hasCondition() && !RestrictionCompiler.movable(leftJoin.getCondition())
+				|| GraphFrameMapping.forSubqueries(leftJoin.getRightArg(), leftJoin.getLeftArg()).length > 0) {
+			return standard;
+		}
+		TupleExpr rightArg = leftJoin.getRightArg();
+		Set<String> leftNames = leftJoin.getLeftArg().getBindingNames();
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
+				EmptyBindingSet.getInstance());
+		boolean originallyIndependent = TupleExprs.requiresIndependentEvaluation(rightArg)
+				|| TupleExprs.containsResultSetModifier(rightArg, analysis)
+				|| JoinQueryEvaluationStep.subqueryObservesInjectedBindings(rightArg, leftNames)
+				|| !QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
+						&& (!QueryEvaluationUtility.isRepeatable(rightArg)
+								|| minusObservesInjectedBindings(rightArg, leftNames));
+		if (!originallyIndependent && !QueryEvaluationUtility.permitsBindingInjection(rightArg, leftNames)) {
+			return standard;
+		}
+		QueryValueEvaluationStep condition = leftJoin.hasCondition()
+				? precompileScopedCondition(strategy, leftJoin, context)
+				: null;
+		PreparedRestrictionPlan plan = RestrictionCompiler.join(leftJoin, context, leftRaw, rightRaw,
+				strategy.getCollectionFactory(), capturer, RestrictionBindJoinIteration.Mode.OPTIONAL, condition,
+				leftJoin.getLeftArg(), rightArg);
+		if (plan != null && !originallyIndependent) {
+			VarNameCollector optionalVars = new VarNameCollector();
+			rightArg.visit(optionalVars);
+			if (leftJoin.hasCondition()) {
+				leftJoin.getCondition().visit(optionalVars);
+			}
+			Set<String> problemNames = new HashSet<>(optionalVars.getVarNames());
+			problemNames.removeAll(leftNames);
+			if (!problemNames.isEmpty()) {
+				PreparedRestrictionPlan independentPlan = plan;
+				plan = plan.withOpener((input, owner) -> problemNames.stream().anyMatch(input::hasBinding)
+						? RestrictionCompiler.replayInvocation(standard, input, strategy.getCollectionFactory(),
+								capturer, leftJoin)
+						: independentPlan.open(input, owner));
+			}
+		}
+		return RestrictionCompiler.attach(standard, plan);
+	}
+
+	private static QueryEvaluationStep supplyStandard(EvaluationStrategy strategy, LeftJoin leftJoin,
+			QueryEvaluationContext context, QueryEvaluationStep left, QueryEvaluationStep right,
+			QueryEvaluationStep rightRaw) {
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
 				EmptyBindingSet.getInstance());
 		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())

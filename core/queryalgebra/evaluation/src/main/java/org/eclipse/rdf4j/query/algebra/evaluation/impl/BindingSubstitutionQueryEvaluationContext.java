@@ -75,6 +75,11 @@ final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluation
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return delegate.getBlankNodeAllocationScope();
 	}

@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -94,9 +95,17 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
 				: retainBindings(bindingScope.bindingNames(), context);
 
+		QueryEvaluationStep standard = bs -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain,
+				evaluationStatistics, context.getBlankNodeAllocationScope());
+		var restriction = RestrictionCompiler.enabled(strategy, context)
+				&& RestrictionCompiler.movable(filter.getCondition())
+						? RestrictionCompiler.unary("filter/original-condition-input", filter, context, arg,
+								Function.identity(),
+								(input, cursor) -> new FilterIterator(filter, cursor, ves, strategy, retain,
+										evaluationStatistics, context.getBlankNodeAllocationScope()))
+						: null;
 		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context,
-				(bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
-						context.getBlankNodeAllocationScope()));
+				RestrictionCompiler.attach(standard, restriction));
 		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic, bindingScope);
 		return batched != null ? batched : generic;
 	}

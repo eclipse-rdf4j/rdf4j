@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
@@ -254,7 +255,7 @@ class NativeValuePositionAnalysisTest {
 		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0,
 				new EvaluationStatistics(), false);
 		NativeGraphFusion.Prepared physical = strategy.withValuePositions(analysis,
-				() -> NativeGraphFusion.prepare(graph, null, strategy));
+				() -> NativeGraphFusion.prepare(graph, new QueryEvaluationContext.Minimal(null), strategy));
 		assertThat(physical.expression()).isInstanceOf(StatementPattern.class);
 		assertThat(physical.positions().masksFor(physical.expression()).get("g")).isEqualTo(12);
 		assertThat(physical.positions().masksFor(physical.expression()).get("x")).isEqualTo(5);

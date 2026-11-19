@@ -103,6 +103,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return delegate.getBlankNodeAllocationScope();
 	}

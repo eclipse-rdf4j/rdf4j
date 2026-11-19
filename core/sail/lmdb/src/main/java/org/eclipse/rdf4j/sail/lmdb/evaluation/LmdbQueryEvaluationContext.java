@@ -85,6 +85,11 @@ final class LmdbQueryEvaluationContext implements QueryEvaluationContext {
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
+	}
+
+	@Override
 	public Set<String> getSubstitutionBindingNames() {
 		return delegate.getSubstitutionBindingNames();
 	}

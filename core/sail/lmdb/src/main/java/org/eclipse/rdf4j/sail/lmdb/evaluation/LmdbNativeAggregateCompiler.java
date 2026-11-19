@@ -26,12 +26,16 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
@@ -145,6 +149,41 @@ final class LmdbNativeAggregateCompiler {
 			}
 		}
 		return result.step;
+	}
+
+	static PreparedRestrictionPlan specializeGraphRestriction(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PreparedRestrictionPlan generic) {
+		Runnable validator = source.stableGraphRestrictionValidator();
+		if (validator == null) {
+			LmdbNativeExplain.setRuntimeMetric(expr, "graphRestrictionNativeRefusal", "SOURCE_CAPABILITY_MISSING");
+			return generic;
+		}
+		var planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		if (!storesOriginalOutputCells(expr)
+				|| !(planner.compileBareRoot(expr) instanceof NativeBareRowsStep nativeBody)) {
+			LmdbNativeExplain.setRuntimeMetric(expr, "graphRestrictionNativeRefusal",
+					"NATIVE_REPRESENTATION_UNSUPPORTED");
+			return generic;
+		}
+		return NativeGraphRestrictionBody.specialize(nativeBody, context, generic, validator);
+	}
+
+	/**
+	 * The native scalar output lane carries source cells and the original entry mapping. The generic statement
+	 * converter additionally restores prevalued variables, even anonymous ones, with their original value authority.
+	 * Keep those converted outputs with its certified generic adapter.
+	 */
+	private static boolean storesOriginalOutputCells(TupleExpr expression) {
+		if (expression.getClass() == StatementPattern.class) {
+			for (Var variable : ((StatementPattern) expression).getVarList()) {
+				if (variable.hasValue() && !variable.isConstant()) {
+					return false;
+				}
+			}
+			return true;
+		}
+		return expression.getClass() == Join.class && storesOriginalOutputCells(((Join) expression).getLeftArg())
+				&& storesOriginalOutputCells(((Join) expression).getRightArg());
 	}
 
 	static boolean tryAnnotateForExplain(TupleExpr expr, QueryEvaluationContext context,
@@ -292,7 +331,7 @@ final class LmdbNativeAggregateCompiler {
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
-		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context.getDataset(), strategy);
+		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context, strategy);
 		CompileResult result = strategy.withValuePositions(physical.positions(),
 				() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,
 						inheritedFrameInputNames, inheritedLateralFrameInputNames));

@@ -73,8 +73,7 @@ final class NativeUniformValuesJoin {
 			return null;
 		}
 
-		NativeGraphFusion.Prepared prepared = NativeGraphFusion.prepare(join.getLeftArg(), context.getDataset(),
-				strategy);
+		NativeGraphFusion.Prepared prepared = NativeGraphFusion.prepare(join.getLeftArg(), context, strategy);
 		TupleExpr physical = prepared.expression();
 		NativeValuePositionAnalysis positions = prepared.positions();
 		if (physical == join.getLeftArg()) {

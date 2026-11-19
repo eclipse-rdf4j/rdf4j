@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -77,6 +78,17 @@ class GraphScopeOptimizerTest {
 			assertThat(statement.getSubjectVar().getName()).isEqualTo("s");
 			assertThat(statement.isVariableScopeChange()).isTrue();
 		});
+	}
+
+	@Test
+	void autoRetainsTheExistingLoweringWhenNoValuesRowCanSupplyAKey() {
+		GraphScopeOptimizer optimizer = new GraphScopeOptimizer(QueryExecutionPolicy.EXPERIMENTAL);
+		TupleExpr unbound = parse("SELECT * { VALUES ?s { UNDEF UNDEF } GRAPH <urn:g> { ?s <urn:p> ?o } }");
+		optimizer.optimize(unbound, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(unbound)).isEmpty();
+		TupleExpr mixed = parse("SELECT * { VALUES ?s { UNDEF <urn:s> } GRAPH <urn:g> { ?s <urn:p> ?o } }");
+		optimizer.optimize(mixed, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(mixed)).hasSize(1);
 	}
 
 	@Test

@@ -24,12 +24,17 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
@@ -45,8 +50,13 @@ final class NativeGraphFusion {
 	record Prepared(TupleExpr expression, NativeValuePositionAnalysis positions, Set<String> guardedSelectors) {
 	}
 
-	static Prepared prepare(TupleExpr expression, Dataset dataset, LmdbNativeEvaluationStrategy strategy) {
-		if (SEMANTIC_BOUNDARIES.get() != null || !containsFusibleGraph(expression, dataset)) {
+	static Prepared prepare(TupleExpr expression, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy) {
+		Dataset dataset = context.getDataset();
+		GraphRestrictionMode mode = strategy.getQueryExecutionPolicy().graphRestrictionMode();
+		if (!AdaptiveFilterEvaluationStep.includesGraphRestrictionRegion(context)
+				|| SEMANTIC_BOUNDARIES.get() != null || mode == GraphRestrictionMode.FORCE_INDEPENDENT
+				|| !containsFusibleGraph(expression, dataset)) {
 			return new Prepared(expression, null, Set.of());
 		}
 		TupleExpr physical = expression.clone();
@@ -81,6 +91,16 @@ final class NativeGraphFusion {
 		}
 		return new Prepared(physical, positions == null ? null : positions.withGraphReplacements(replacements),
 				Set.copyOf(guarded));
+	}
+
+	static boolean requiresSemanticRestrictionJoin(TupleExpr expression, Dataset dataset, GraphRestrictionMode mode,
+			EvaluationStatistics statistics) {
+		return switch (mode) {
+		case OFF -> false;
+		case AUTO -> GraphScopeOptimizer.hasRestrictionJoin(expression, graph -> !canFuse(graph, dataset),
+				(operand, driver) -> RestrictionCompiler.hasPotentialProfitableSeekFrom(operand, driver, statistics));
+		case FORCE_INDEPENDENT, REQUIRE_RESTRICTED -> GraphScopeOptimizer.hasRestrictionJoin(expression);
+		};
 	}
 
 	private static void linkGraphReplacement(Graph graph, TupleExpr lowered) {

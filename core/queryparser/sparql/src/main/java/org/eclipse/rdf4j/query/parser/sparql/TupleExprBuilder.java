@@ -125,12 +125,14 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.WindowElem;
 import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor;
+import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor.Operator;
+import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor.Syntax;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
@@ -686,7 +688,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			final ASTBindingsClause bindingsClause = node.getBindingsClause();
 			if (bindingsClause != null) {
 				// values clause should be treated as scoped to the where clause
-				((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
+				OriginalPathDescriptor.setParsedGroupScope(tupleExpr, false);
 				tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
 			}
 
@@ -1812,7 +1814,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		TupleExpr te = graphPattern.buildTupleExpr();
 		if (node.isScopeChange()) {
-			((VariableScopeChange) te).setVariableScopeChange(true);
+			OriginalPathDescriptor.setParsedGroupScope(te, true);
 		}
 		parentGP.addRequiredTE(te);
 
@@ -2009,7 +2011,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			parentEndVar = pathSequenceContext.endVar;
 		} else {
 			pathSequenceContext = new PathSequenceContext();
-			subjVar = mapValueExprToVar(data);
+			subjVar = data instanceof PathOccurrence occurrence ? occurrence.subject : mapValueExprToVar(data);
 		}
 
 		List<ASTPathElt> pathElements = pathSeqNode.getPathElements();
@@ -2038,8 +2040,17 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 					for (ValueExpr objectItem : objectList) {
 						Var objectVar = mapValueExprToVar(objectItem);
-						pathSequencePattern.addRequiredTE(
-								replacePathEndpoint(elementExpresion, pathSequenceContext.endVar, objectVar));
+						TupleExpr replaced = replacePathEndpoint(elementExpresion, pathSequenceContext.endVar,
+								objectVar);
+						if (data instanceof PathOccurrence occurrence) {
+							occurrence.record(objectVar, objectList.size());
+							// A top-level single-element sequence expanded over an object list still has
+							// one distinct complete algebra occurrence per object.
+							if (objectList.size() > 1 && pathLength == 1) {
+								OriginalPathDescriptor.attach(replaced, pathSyntax(pathElement), subjVar, objectVar);
+							}
+						}
+						pathSequencePattern.addRequiredTE(replaced);
 					}
 				} else {
 					// nested sequence, replace endVar with parent endVar
@@ -2339,6 +2350,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				graphPattern.addRequiredSP(subject.clone(), predicate.clone(), value);
 				applyAnnotationSuffixes(suffixes, subject, predicate, value);
 			});
+		} else if (simplePredicate == null && verbNode instanceof ASTPathAlternative) {
+			PathOccurrence occurrence = new PathOccurrence(mapValueExprToVar(data));
+			TupleExpr path = (TupleExpr) verbNode.jjtAccept(this, occurrence);
+			if (!occurrence.multipleEnds && occurrence.end != null) {
+				OriginalPathDescriptor.attach(path, pathSyntax(verbNode), occurrence.subject, occurrence.end);
+			}
+			graphPattern.addRequiredTE(path);
 		} else {
 			graphPattern.addRequiredTE((TupleExpr) verbNode.jjtAccept(this, data));
 		}
@@ -2347,6 +2365,64 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			next.jjtAccept(this, data);
 		}
 		return null;
+	}
+
+	private static final class PathOccurrence {
+		final Var subject;
+		Var end;
+		boolean multipleEnds;
+
+		PathOccurrence(Var subject) {
+			this.subject = subject;
+		}
+
+		void record(Var object, int objectCount) {
+			multipleEnds |= objectCount != 1 || end != null && !end.equals(object);
+			end = object;
+		}
+	}
+
+	private static Syntax pathSyntax(Node node) {
+		if (node instanceof ASTPathAlternative || node instanceof ASTPathSequence) {
+			if (node.jjtGetNumChildren() == 1) {
+				return pathSyntax(node.jjtGetChild(0));
+			}
+			List<Syntax> children = new ArrayList<>(node.jjtGetNumChildren());
+			for (int i = 0; i < node.jjtGetNumChildren(); i++) {
+				children.add(pathSyntax(node.jjtGetChild(i)));
+			}
+			return new Syntax(node instanceof ASTPathAlternative ? Operator.ALTERNATIVE : Operator.SEQUENCE,
+					children, List.of());
+		}
+		ASTPathElt element = (ASTPathElt) node;
+		Syntax result;
+		if (element.isNestedPath()) {
+			result = pathSyntax(element.jjtGetChild(0));
+		} else if (element.isNegatedPropertySet()) {
+			List<String> predicates = new ArrayList<>();
+			for (Node child : element.jjtGetChildren()) {
+				if (child instanceof ASTPathOneInPropertySet predicate) {
+					predicates.add((predicate.isInverse() ? "^" : "") + pathPredicate(predicate.jjtGetChild(0)));
+				}
+			}
+			result = new Syntax(Operator.NEGATED_SET, List.of(), predicates);
+		} else {
+			result = new Syntax(Operator.LINK, List.of(), List.of(pathPredicate(element.jjtGetChild(0))));
+		}
+		if (element.isInverse()) {
+			result = new Syntax(Operator.INVERSE, List.of(result), List.of());
+		}
+		ASTPathMod mod = element.getPathMod();
+		if (mod != null) {
+			Operator operator = mod.getUpperBound() == 1 ? Operator.OPTIONAL
+					: mod.getLowerBound() == 0 ? Operator.STAR : Operator.PLUS;
+			result = new Syntax(operator, List.of(result), List.of());
+		}
+		return result;
+	}
+
+	private static String pathPredicate(Node node) {
+		return node instanceof ASTIRI iri ? iri.getValue() : ((ASTQName) node).getValue();
 	}
 
 	private Node simplePredicate(Node verb) {

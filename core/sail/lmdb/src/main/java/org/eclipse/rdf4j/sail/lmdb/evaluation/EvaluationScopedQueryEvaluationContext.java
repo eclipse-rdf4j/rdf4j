@@ -143,6 +143,11 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return queryScope;
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return queryScope.values.getBlankNodeAllocationScope();
 	}

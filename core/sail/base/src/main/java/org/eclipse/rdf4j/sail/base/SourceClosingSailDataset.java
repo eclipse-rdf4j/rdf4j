@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.Value;
 /**
  * Transfers ownership of an acquired source to its dataset, releasing the dataset before the source.
  */
-final class SourceClosingSailDataset extends DelegatingSailDataset {
+final class SourceClosingSailDataset extends StatementPreservingSailDataset {
 
 	private final SailDataset dataset;
 	private final SailSource source;
