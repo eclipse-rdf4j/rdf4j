@@ -45,6 +45,11 @@ final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluation
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return substitutionBindingNames;
+	}
+
+	@Override
 	public ActiveGraph getActiveGraph() {
 		return delegate.getActiveGraph();
 	}

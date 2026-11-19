@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -122,7 +123,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private static QueryEvaluationStep supplyBatchExistsFilter(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context, QueryEvaluationStep arg, QueryEvaluationStep generic,
 			ConditionBindingScope bindingScope) {
-		if (filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
+		if (OrderedEvaluation.isRequired(filter)
+				|| filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
 				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
 			return null;
 		}

@@ -51,6 +51,11 @@ public final class ActiveGraphQueryEvaluationContext implements QueryEvaluationC
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return delegate.getCorrelatedPathBindingNames();
+	}
+
+	@Override
 	public boolean hasEnclosingProjection() {
 		return delegate.hasEnclosingProjection();
 	}

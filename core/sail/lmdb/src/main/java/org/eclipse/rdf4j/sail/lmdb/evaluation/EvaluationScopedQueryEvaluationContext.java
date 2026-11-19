@@ -163,6 +163,11 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return structural.getCorrelatedPathBindingNames();
+	}
+
+	@Override
 	public boolean hasEnclosingProjection() {
 		return structural.hasEnclosingProjection();
 	}

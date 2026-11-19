@@ -89,6 +89,48 @@ class GraphRestrictionRepositoryTest {
 		assertRestrictedPathResult(":a :p :b", "VALUES ?o { :z :z } GRAPH :g { :z (:p*/:q*)? ?o }", "z", "z");
 	}
 
+	@Test
+	void existsPathRequiresMembershipForCorrelatedVariableEndpoints() {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		try (var connection = repository.getConnection()) {
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { VALUES ?s { :z } ?s (:p?)+ ?o }",
+					false);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { VALUES ?s { :z } ?o (^:p?)+ ?s }",
+					false);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { ?s (:p?)+ ?o . VALUES ?s { :z } }",
+					false);
+			assertCorrelatedPath(connection,
+					"VALUES ?o { :z } FILTER EXISTS { { SELECT ?s { VALUES ?s { :z } } } ?s (:p?)+ ?o }", false);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { VALUES ?s { :z } ?s (:p?)* ?o }",
+					false);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { ?o (:p?)+ ?o }", false);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { ?o ^(:p?)+ ?o }", false);
+			assertCorrelatedPath(connection, "VALUES (?s ?o) { (:z :z) } FILTER EXISTS { ?s (:p?)+ ?o }", false);
+			assertCorrelatedPath(connection, "VALUES (?s ?o) { (:z :z) } FILTER EXISTS { ?o (^:p?)+ ?s }", false);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER NOT EXISTS { VALUES ?s { :z } ?s (:p?)+ ?o }",
+					true);
+			assertCorrelatedPath(connection,
+					"VALUES ?o { :z } FILTER EXISTS { FILTER EXISTS { VALUES ?s { :z } ?s (:p?)+ ?o } }", false);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { :z (:p?)+ ?o }", true);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { ?o (^:p?)+ :z }", true);
+
+			connection.prepareUpdate("PREFIX : <urn:gbj:> INSERT DATA { :a :q :z }").execute();
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { VALUES ?s { :z } ?s (:p?)+ ?o }",
+					true);
+			assertCorrelatedPath(connection, "VALUES ?o { :z } FILTER EXISTS { VALUES ?s { :z } ?o (^:p?)+ ?s }",
+					true);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void assertCorrelatedPath(RepositoryConnection connection, String pattern, boolean match) {
+		var query = connection.prepareTupleQuery("PREFIX : <urn:gbj:> SELECT ?o WHERE { " + pattern + " }");
+		IRI z = connection.getValueFactory().createIRI(NAMESPACE, "z");
+		List<BindingSet> expected = match ? List.of(new ListBindingSet(List.of("o"), z)) : List.of();
+		assertThat(QueryResults.asList(query.evaluate())).as(pattern).containsExactlyElementsOf(expected);
+	}
+
 	private static void assertRestrictedPathResult(String triples, String pattern, String... expectedObjects) {
 		SailRepository repository = new SailRepository(new MemoryStore());
 		try (var connection = repository.getConnection()) {

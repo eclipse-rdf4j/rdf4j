@@ -25,6 +25,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -60,10 +61,16 @@ public interface QueryEvaluationContext {
 	}
 
 	/**
-	 * Variables substituted by the current EXISTS invocation. The immutable domain is captured at invocation entry;
-	 * bindings subsequently produced inside the body are ordinary variables rather than substituted query terms.
+	 * Variables eligible for term semantics during path evaluation. Includes certified physical path parameters and the
+	 * captures supported by legacy EXISTS evaluation.
 	 */
 	default Set<String> getSubstitutionBindingNames() {
+		return Set.of();
+	}
+
+	/** Binding names captured at the current EXISTS invocation, separate from certified path term parameters. */
+	@InternalUseOnly
+	default Set<String> getCorrelatedPathBindingNames() {
 		return Set.of();
 	}
 

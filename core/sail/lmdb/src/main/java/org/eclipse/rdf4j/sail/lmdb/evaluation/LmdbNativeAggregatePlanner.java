@@ -86,6 +86,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluation
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.TupleFunctionGroupQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -1895,6 +1896,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive) {
+		if (OrderedEvaluation.isRequired(expr)) {
+			return null;
+		}
 		Set<String> demotedVisible = demotedIslands.get(expr);
 		if (demotedVisible != null) {
 			// M-A4 wide-query demotion: this subtree's internal-only variables must not claim slots

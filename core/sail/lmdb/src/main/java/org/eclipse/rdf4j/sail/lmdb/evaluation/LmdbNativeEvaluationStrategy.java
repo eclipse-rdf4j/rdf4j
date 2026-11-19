@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -468,6 +469,13 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {
 		if (nativeEnabled && nativeSource != null) {
 			if (keepsGraphRestrictionBoundary(expr, context)) {
+				if (canCompileSelectedPath(expr, context) && nativeSource.hasStatementsInSource()) {
+					QueryEvaluationStep path = LmdbNativeAggregateCompiler.tryCompileSelectedGraphPath(expr, context,
+							this, nativeSource);
+					if (path != null) {
+						return path;
+					}
+				}
 				return super.precompileTupleExpr(expr, context);
 			}
 			if (expr instanceof QueryRoot) {
@@ -482,6 +490,17 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			}
 		}
 		return super.precompileTupleExpr(expr, context);
+	}
+
+	private static boolean canCompileSelectedPath(TupleExpr expression, QueryEvaluationContext context) {
+		var graph = context.getActiveGraph();
+		// LMDB's standard path step provides no restriction adapter. A native path can replace that producer
+		// after GRAPH selects its active graph. The enclosing restriction still evaluates it with its original
+		// input and checks endpoint constraints against its output.
+		return expression.getClass() == ArbitraryLengthPath.class && graph != null
+				&& context.getCorrelatedPathBindingNames().isEmpty()
+				&& !RemoteBNode.containsRemoteIdentity(graph.physicalGraph())
+				&& !TupleExprs.containsGraphBoundary(expression);
 	}
 
 	private boolean keepsGraphRestrictionBoundary(TupleExpr expr, QueryEvaluationContext context) {

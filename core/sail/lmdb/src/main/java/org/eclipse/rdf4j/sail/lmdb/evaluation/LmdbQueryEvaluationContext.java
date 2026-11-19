@@ -95,6 +95,11 @@ final class LmdbQueryEvaluationContext implements QueryEvaluationContext {
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return delegate.getCorrelatedPathBindingNames();
+	}
+
+	@Override
 	public boolean hasEnclosingProjection() {
 		return delegate.hasEnclosingProjection();
 	}

@@ -155,6 +155,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return context.getCorrelatedPathBindingNames();
+	}
+
+	@Override
 	public boolean hasEnclosingProjection() {
 		return context.hasEnclosingProjection();
 	}

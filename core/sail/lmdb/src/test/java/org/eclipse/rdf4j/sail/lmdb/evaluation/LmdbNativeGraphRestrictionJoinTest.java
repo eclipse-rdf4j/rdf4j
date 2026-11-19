@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
@@ -45,12 +46,89 @@ import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junitpioneer.jupiter.SetSystemProperty;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeGraphRestrictionJoinTest {
 
 	@TempDir
 	File directory;
+
+	@Test
+	void distinctAcrossGraphValuesJoinDeduplicatesAllPartitions() {
+		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true));
+		store.setExperimentalQueryOptimizations(true);
+		SailRepository repository = new SailRepository(store);
+		try (var connection = repository.getConnection()) {
+			var vf = connection.getValueFactory();
+			var a = vf.createIRI("urn:a");
+			var g = vf.createIRI("urn:g");
+			var p = vf.createIRI("urn:p");
+			var x = vf.createIRI("urn:x");
+			var z = vf.createIRI("urn:z");
+			connection.begin();
+			connection.add(a, p, z);
+			connection.add(x, p, z);
+			connection.add(a, p, z, g);
+			connection.add(x, p, z, g);
+			connection.add(a, p, x, g);
+			connection.add(x, p, x, g);
+			connection.commit();
+
+			var query = connection.prepareTupleQuery("""
+					PREFIX : <urn:>
+					SELECT DISTINCT ?s ?o ?a ?k WHERE {
+					  GRAPH ?k { ?s :p ?o VALUES ?v { :a :a } }
+					  ?a :p ?o
+					}
+					""");
+			assertThat(rows(query))
+					.extracting(row -> row.getValue("s"), row -> row.getValue("o"),
+							row -> row.getValue("a"), row -> row.getValue("k"))
+					.containsExactlyInAnyOrder(tuple(a, z, a, g), tuple(a, z, x, g), tuple(x, z, a, g),
+							tuple(x, z, x, g),
+							tuple(a, x, a, g), tuple(a, x, x, g), tuple(x, x, a, g), tuple(x, x, x, g));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@SetSystemProperty(key = LmdbNativeAccumulateJoin.ENABLED_PROPERTY, value = "true")
+	void stableOrderSurvivesNullableSharedBindings() {
+		SailRepository repository = repository(QueryExecutionPolicy.EXPERIMENTAL, true);
+		try (var connection = repository.getConnection()) {
+			var vf = connection.getValueFactory();
+			var p = vf.createIRI("urn:p");
+			var lookup = vf.createIRI("urn:lookup");
+			var end = vf.createIRI("urn:end");
+			var present = vf.createIRI("urn:present");
+			var tag = vf.createIRI("urn:tag");
+			connection.add(vf.createIRI("urn:a"), p, tag);
+			connection.add(vf.createIRI("urn:b"), p, tag);
+			connection.add(vf.createIRI("urn:c"), p, tag);
+			var driver = rows(connection.prepareTupleQuery("""
+					SELECT ?s WHERE { ?s <urn:p> <urn:tag> } ORDER BY STABLE_INDEX(?s)
+					"""));
+			assertThat(driver).hasSize(3);
+			connection.add((Resource) driver.get(0).getValue("s"), lookup, present);
+			connection.add((Resource) driver.get(2).getValue("s"), lookup, present);
+			connection.add(present, end, tag);
+
+			var query = connection.prepareTupleQuery("""
+					SELECT ?s WHERE {
+					  ?s <urn:p> <urn:tag>
+					  OPTIONAL { ?s <urn:lookup> ?key }
+					  FILTER EXISTS { ?key <urn:end> <urn:tag> }
+					}
+					ORDER BY STABLE_INDEX(?s)
+					""");
+			assertThat(rows(query)).containsExactlyElementsOf(driver);
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })

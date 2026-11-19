@@ -186,7 +186,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// post-filter scope and error-to-false semantics. Entry bindings that pre-bind a variable the left
 		// operand does not produce (right-side or condition variables) keep the default step — the batch merge
 		// join-checks only the declared shared variables.
-		if (strategy instanceof BatchCorrelatedJoinProvider.Host host) {
+		if (!OrderedEvaluation.isRequired(leftJoin) && strategy instanceof BatchCorrelatedJoinProvider.Host host) {
 			BatchCorrelatedJoinProvider provider = host.batchCorrelatedJoinProvider();
 			if (provider != null) {
 				Set<String> leftNames = leftJoin.getLeftArg().getBindingNames();

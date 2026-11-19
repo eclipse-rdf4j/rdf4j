@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
@@ -136,7 +137,25 @@ final class LmdbNativeAggregateCompiler {
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		return recordCompiledFragment(expr, compile(expr, context, strategy, source, false));
+	}
+
+	static QueryEvaluationStep tryCompileSelectedGraphPath(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		CompileResult result = compile(expr, context, strategy, source, false);
+		SlotPlan plan = switch (result.step) {
+		case NativeRowsStep rows -> rows.arg;
+		case NativeBareRowsStep bare -> bare.arg;
+		case null, default -> null;
+		};
+		// The general path publishes just its logical endpoints. The simple path's native layout can also
+		// expose a syntactic constant, which would change a GRAPH body's mapping domain.
+		return plan instanceof GeneralPathPlan path && path.usesOnlyStatementEdges()
+				? recordCompiledFragment(expr, result)
+				: null;
+	}
+
+	private static QueryEvaluationStep recordCompiledFragment(TupleExpr expr, CompileResult result) {
 		if (result.step != null) {
 			LmdbNativeStrategyPreview.inspect(result.step);
 			if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
@@ -246,6 +265,9 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static QueryValueEvaluationStep tryCompileExists(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		if (OrderedEvaluation.isRequired(expr)) {
+			return null;
+		}
 		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
 		QueryEvaluationStep rows = planner.compileBareExists(expr);
 		if (!(rows instanceof NativeBareRowsStep)) {
@@ -331,6 +353,9 @@ final class LmdbNativeAggregateCompiler {
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		if (OrderedEvaluation.isRequired(expr)) {
+			return new CompileResult(null, null, false, false);
+		}
 		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context, strategy);
 		CompileResult result = strategy.withValuePositions(physical.positions(),
 				() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,

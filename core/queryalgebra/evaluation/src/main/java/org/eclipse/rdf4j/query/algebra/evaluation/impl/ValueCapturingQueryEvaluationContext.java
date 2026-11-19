@@ -93,6 +93,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return delegate.getCorrelatedPathBindingNames();
+	}
+
+	@Override
 	public boolean hasEnclosingProjection() {
 		return delegate.hasEnclosingProjection();
 	}

@@ -446,7 +446,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		} else if (currentLength == 0L) {
 			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar.clone(), endVar.clone(),
 					contextVar != null ? contextVar.clone() : null);
-			currentIter = evaluatePath(zlp);
+			currentIter = evaluateZeroLength(zlp);
 			currentLength++;
 		} else if (currentLength == 1) {
 			TupleExpr pathExprClone = pathExpression.clone();
@@ -517,23 +517,64 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		return variablePrefix + atLength;
 	}
 
-	private CloseableIteration<BindingSet> evaluateFirstStep(TupleExpr expression) {
-		if (context != null && startVarFixed && endVarFixed && !startVar.isConstant()) {
+	private CloseableIteration<BindingSet> evaluateZeroLength(ZeroLengthPath expression) {
+		if (context != null && startVarFixed && endVarFixed && !startVar.isConstant() && !endVar.isConstant()
+				&& !startVar.isAnonymous() && !endVar.isAnonymous()) {
 			Set<String> substitutions = context.getSubstitutionBindingNames();
-			if (!substitutions.contains(startVar.getName())
-					&& (endVar.isConstant() || substitutions.contains(endVar.getName()))
+			if (substitutions.contains(startVar.getName()) != substitutions.contains(endVar.getName())) {
+				// A named endpoint bound inside the pattern still needs to be a node of the active graph.
+				QueryEvaluationContext zeroStep = withEndpointTerms(context, substitutions,
+						withoutCorrelatedEndpoints(substitutions));
+				return evaluatePath(expression, bindings, zeroStep);
+			}
+		}
+		return evaluatePath(expression);
+	}
+
+	private CloseableIteration<BindingSet> evaluateFirstStep(TupleExpr expression) {
+		if (context != null && startVarFixed && endVarFixed) {
+			Set<String> substitutions = context.getSubstitutionBindingNames();
+			// With two fixed endpoints the free frontier comes from the rewrite. Only lexical constants and
+			// certified parameters can provide its term anchor.
+			Set<String> terms = withoutCorrelatedEndpoints(substitutions);
+			QueryEvaluationContext firstStep = withEndpointTerms(context, substitutions, terms);
+			if (!startVar.isConstant() && !terms.contains(startVar.getName())
+					&& (endVar.isConstant() || terms.contains(endVar.getName()))
 					&& getVarValue(startVar, true, bindings).equals(getVarValue(endVar, true, bindings))) {
 				// When the concrete endpoints coincide, a closed walk from a term has the same existence in either
 				// direction. Replacing the terminal term with the frontier must preserve that term as the start
 				// of the first step: a nullable edge may reach it even when it is absent from nodes(G).
-				Set<String> anchored = new HashSet<>(substitutions);
+				Set<String> anchored = new HashSet<>(terms);
 				anchored.add(startVar.getName());
-				QueryEvaluationContext firstStep = new BindingSetQueryEvaluationContext(context, anchored,
-						context.hasEnclosingProjection());
-				return strategy.precompile(expression, firstStep).evaluate(bindings);
+				firstStep = withEndpointTerms(firstStep, terms, anchored);
 			}
+			return evaluatePath(expression, bindings, firstStep);
 		}
 		return evaluatePath(expression);
+	}
+
+	private Set<String> withoutCorrelatedEndpoints(Set<String> substitutions) {
+		Set<String> correlations = context.getCorrelatedPathBindingNames();
+		String start = startVar.getName();
+		String end = endVar.getName();
+		if (!correlations.contains(start) && !correlations.contains(end)) {
+			return substitutions;
+		}
+		Set<String> retained = new HashSet<>(substitutions);
+		if (correlations.contains(start)) {
+			retained.remove(start);
+		}
+		if (correlations.contains(end)) {
+			retained.remove(end);
+		}
+		return retained;
+	}
+
+	private static QueryEvaluationContext withEndpointTerms(QueryEvaluationContext base, Set<String> substitutions,
+			Set<String> terms) {
+		return terms == substitutions ? base
+				: new BindingSetQueryEvaluationContext(base, terms,
+						base.hasEnclosingProjection());
 	}
 
 	private CloseableIteration<BindingSet> evaluatePath(TupleExpr expression) {
@@ -541,8 +582,13 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	private CloseableIteration<BindingSet> evaluatePath(TupleExpr expression, BindingSet stepBindings) {
-		return context == null ? strategy.evaluate(expression, stepBindings)
-				: strategy.precompile(expression, context).evaluate(stepBindings);
+		return evaluatePath(expression, stepBindings, context);
+	}
+
+	private CloseableIteration<BindingSet> evaluatePath(TupleExpr expression, BindingSet stepBindings,
+			QueryEvaluationContext stepContext) {
+		return stepContext == null ? strategy.evaluate(expression, stepBindings)
+				: strategy.precompile(expression, stepContext).evaluate(stepBindings);
 	}
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {

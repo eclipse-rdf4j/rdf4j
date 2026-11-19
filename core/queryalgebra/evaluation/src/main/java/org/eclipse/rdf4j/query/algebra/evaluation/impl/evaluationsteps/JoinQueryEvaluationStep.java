@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -359,7 +360,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 	private static Function<BindingSet, CloseableIteration<BindingSet>> tryBatchCorrelatedJoin(
 			EvaluationStrategy strategy, Join join, QueryEvaluationStep leftPrepared, QueryEvaluationStep rightPrepared,
 			QueryEvaluationStep rightRaw) {
-		if (QueryEvaluationUtility.usesMappingParameterizedEvaluation(join.getRightArg())
+		if (OrderedEvaluation.isRequired(join)
+				|| QueryEvaluationUtility.usesMappingParameterizedEvaluation(join.getRightArg())
 				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
 			return null;
 		}
@@ -520,12 +522,28 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 				|| containsDifferenceInCurrentScope(expr);
 	}
 
+	/** Whether standard preparation can keep an ordered left driver once merge-join selection is cleared. */
+	@InternalUseOnly
+	public static boolean supportsOrderedLeft(TupleExpr left, TupleExpr right) {
+		if (right instanceof Service || TupleExprs.containsGraphBoundary(left)
+				|| GraphFrameMapping.forSubqueries(right, left).length != 0
+				|| GraphFrameMapping.forSubqueries(left, right).length != 0) {
+			return false;
+		}
+		var input = QueryAlgebraBindingAnalysis.withBindingValues(right, EmptyBindingSet.getInstance());
+		return !isOutOfScopeForLeftArgBindings(right, input)
+				&& !subqueryObservesInjectedBindings(right, left.getBindingNames());
+	}
+
 	/**
 	 * Returns a physical boundary reason, or {@code null} when the ordinary nested-loop adapter preserves this join's
 	 * selected algorithm. Guard paths remain available through the standard preparation when adaptation is declined.
 	 */
 	static String adaptiveBoundaryReason(Join join, QueryEvaluationContext context,
 			QueryAlgebraBindingAnalysis analysis) {
+		if (OrderedEvaluation.isRequired(join)) {
+			return "ordered left driver";
+		}
 		if (GraphFrameMapping.forSubqueries(join.getRightArg(), join.getLeftArg()).length > 0
 				|| GraphFrameMapping.forSubqueries(join.getLeftArg(), join.getRightArg()).length > 0) {
 			return "inherited GRAPH frame";
