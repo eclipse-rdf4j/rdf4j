@@ -72,6 +72,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	private final StatementPattern statementPattern;
 	private final StatementPattern statementPatternForMetrics;
+	private final boolean trackIndexName;
 	private final TripleSource tripleSource;
 	private final boolean emptyGraph;
 	private final Function<Value, Resource[]> contextSup;
@@ -100,8 +101,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	// With the aim of making the evaluate method as cheap as possible.
 	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
 			TripleSource tripleSource) {
+		this(statementPattern, context, tripleSource, false);
+	}
+
+	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
+			TripleSource tripleSource, boolean trackIndexName) {
 		super();
 		this.statementPatternForMetrics = statementPattern;
+		this.trackIndexName = trackIndexName;
 		this.order = statementPattern.getStatementOrder();
 		this.context = context;
 		this.tripleSource = tripleSource;
@@ -470,11 +477,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			}
 
-			if (iteration instanceof IndexReportingIterator) {
-				String indexName = ((IndexReportingIterator) iteration).getIndexName();
-				statementPattern.setIndexName(indexName);
-				statementPatternForMetrics.setIndexName(indexName);
-			}
+			recordIndexName(iteration);
 
 			if (iteration instanceof EmptyIteration) {
 				putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.statements(List.of()));
@@ -739,11 +742,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(subject, predicate, object,
 				contexts);
 		try {
-			if (iteration instanceof IndexReportingIterator) {
-				String indexName = ((IndexReportingIterator) iteration).getIndexName();
-				statementPattern.setIndexName(indexName);
-				statementPatternForMetrics.setIndexName(indexName);
-			}
+			recordIndexName(iteration);
 			return handleFilter(contexts, subject, predicate, object, iteration);
 		} catch (Throwable failure) {
 			ExternalValuePreparation.closeWithSuppressed(iteration, failure);
@@ -782,11 +781,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			} else {
 				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			}
-			if (iteration instanceof IndexReportingIterator) {
-				String indexName = ((IndexReportingIterator) iteration).getIndexName();
-				statementPattern.setIndexName(indexName);
-				statementPatternForMetrics.setIndexName(indexName);
-			}
+			recordIndexName(iteration);
 
 			if (iteration instanceof EmptyIteration) {
 				return null;
@@ -1025,6 +1020,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			contexts[i++] = context;
 		}
 		return contexts;
+	}
+
+	private void recordIndexName(CloseableIteration<? extends Statement> iteration) {
+		if (trackIndexName && iteration instanceof IndexReportingIterator reporter) {
+			statementPatternForMetrics.setIndexName(reporter.getIndexName());
+		}
 	}
 
 	private void incrementIndexLookupCount() {

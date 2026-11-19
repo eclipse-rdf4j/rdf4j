@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -210,14 +211,17 @@ public class LmdbNestedOptionalDistinctBenchmark {
 	@Benchmark
 	public long nestedOptionalDistinct() {
 		long rows = 0;
-		try (RepositoryConnection connection = repository.getConnection();
-				TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
-			if (result.getBindingNames().size() != PROJECTION_WIDTH) {
-				throw new IllegalStateException("Unexpected projection: " + result.getBindingNames());
-			}
-			while (result.hasNext()) {
-				result.next();
-				rows++;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(QUERY);
+			tupleQuery.setMaxExecutionTime(120);
+			try (TupleQueryResult result = tupleQuery.evaluate()) {
+				if (result.getBindingNames().size() != PROJECTION_WIDTH) {
+					throw new IllegalStateException("Unexpected projection: " + result.getBindingNames());
+				}
+				while (result.hasNext()) {
+					result.next();
+					rows++;
+				}
 			}
 		}
 		if (rows != expectedRows) {
