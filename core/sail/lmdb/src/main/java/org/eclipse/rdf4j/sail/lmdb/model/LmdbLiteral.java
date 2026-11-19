@@ -25,6 +25,7 @@ import java.util.function.Function;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
@@ -184,8 +185,13 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public void setInternalID(long internalID, ValueStoreRevision revision) {
+		setInternalIdentity(new InternalIdentity(internalID, revision));
+	}
+
+	@Override
+	public void setInternalIdentity(InternalIdentity identity) {
 		datatypeVersion = ChildVersion.capture(datatype);
-		identity = new InternalIdentity(internalID, revision);
+		this.identity = identity;
 	}
 
 	@Override
@@ -231,6 +237,16 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		SimpleValueFactory factory = SimpleValueFactory.getInstance();
 		return language != null ? factory.createLiteral(label, language, baseDirection)
 				: factory.createLiteral(label, (IRI) childCopier.apply(datatype));
+	}
+
+	@InternalUseOnly
+	public record InitializedPayload(String label, String language, BaseDirection baseDirection, IRI datatype) {
+	}
+
+	/** Copies the loaded fields without calling payload getters or resolving a deferred datatype. */
+	@InternalUseOnly
+	public InitializedPayload copyInitializedPayload() {
+		return initialized ? new InitializedPayload(label, language, baseDirection, datatype) : null;
 	}
 
 	private void payloadChanged() {
