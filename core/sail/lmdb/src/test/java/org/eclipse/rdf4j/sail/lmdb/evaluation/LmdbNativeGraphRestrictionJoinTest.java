@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -41,12 +42,101 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeGraphRestrictionJoinTest {
 
 	@TempDir
 	File directory;
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void graphWithAuthoredValuesFusesWithoutOuterDriver(boolean experimental) {
+		SailRepository repository = repository(QueryExecutionPolicy.of(experimental), true);
+		try (var connection = repository.getConnection()) {
+			var vf = connection.getValueFactory();
+			var g1 = vf.createIRI("urn:g1");
+			var g2 = vf.createIRI("urn:g2");
+			var s1 = vf.createIRI("urn:s1");
+			var s2 = vf.createIRI("urn:s2");
+			var p = vf.createIRI("urn:p");
+			var o = vf.createIRI("urn:o");
+			var label = vf.createLiteral("label");
+			connection.add(s1, p, o, g1);
+			connection.add(s2, p, o, g2);
+			connection.add(s1, p, o);
+			var query = connection.prepareTupleQuery("""
+					SELECT ?g ?s ?o ?label {
+					  GRAPH ?g {
+					    VALUES (?s ?label) { (<urn:s1> "label") (<urn:s1> "label") (<urn:s2> UNDEF) }
+					    ?s <urn:p> ?o
+					  }
+					}
+					""");
+			assertThat(rows(query))
+					.extracting(row -> row.getValue("g"), row -> row.getValue("s"), row -> row.getValue("o"),
+							row -> row.getValue("label"))
+					.containsExactlyInAnyOrder(tuple(g1, s1, o, label), tuple(g1, s1, o, label),
+							tuple(g2, s2, o, null));
+			GenericPlanNode plan = query.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			assertThat(plan.getStringMetricPlanned("nativePhysicalPlan"))
+					.contains("Values(rows=", "c=?g#")
+					.doesNotContain("NativeGraph(");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = GraphRestrictionMode.class, names = { "AUTO", "REQUIRE_RESTRICTED" })
+	void authoredValuesInGraphKeepAnAdmittedSemanticProbe(GraphRestrictionMode mode) {
+		SailRepository repository = repository(mode, true);
+		try (var connection = repository.getConnection()) {
+			var vf = connection.getValueFactory();
+			var p = vf.createIRI("urn:p");
+			connection.begin();
+			for (int graphIndex = 0; graphIndex < 3; graphIndex++) {
+				var graph = vf.createIRI("urn:g" + graphIndex);
+				for (int subjectIndex = 0; subjectIndex < 2_048; subjectIndex++) {
+					connection.add(vf.createIRI("urn:s" + subjectIndex), p, graph, graph);
+				}
+			}
+			connection.commit();
+			var query = connection.prepareTupleQuery("""
+					SELECT ?s ?g ?o {
+					  VALUES ?s { <urn:s3> <urn:s3> <urn:s91> }
+					  GRAPH ?g { VALUES ?s { <urn:s3> <urn:s91> } ?s <urn:p> ?o }
+					}
+					""");
+			var s3 = vf.createIRI("urn:s3");
+			var s91 = vf.createIRI("urn:s91");
+			var g0 = vf.createIRI("urn:g0");
+			var g1 = vf.createIRI("urn:g1");
+			var g2 = vf.createIRI("urn:g2");
+			assertThat(rows(query)).extracting(row -> row.getValue("s"), row -> row.getValue("g"),
+					row -> row.getValue("o"))
+					.containsExactlyInAnyOrder(tuple(s3, g0, g0), tuple(s3, g0, g0), tuple(s91, g0, g0),
+							tuple(s3, g1, g1), tuple(s3, g1, g1), tuple(s91, g1, g1),
+							tuple(s3, g2, g2), tuple(s3, g2, g2), tuple(s91, g2, g2));
+			GenericPlanNode plan = query.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			assertThat(plan.getPlans()).anySatisfy(join -> {
+				assertThat(join.getStringMetricPlanned("graphRestrictionCertificate"))
+						.isEqualTo("graph/original-selector");
+				assertThat(join.getLongMetricActual("graphRestrictionCacheHits")).isNull();
+				assertThat(join.getPlans()).anySatisfy(graph -> {
+					assertThat(graph.getStringMetricActual("graphRestrictionBodyCertificate"))
+							.isEqualTo("join/compatible-merge");
+					assertThat(graph.getLongMetricActual("graphRestrictionBodyCacheHits")).isEqualTo(6L);
+				});
+			});
+			assertThat(actualMetric(plan, NativeGraphRestrictionBody.SOURCE_OPENS)).isNull();
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@Test
 	void graphJoinReadsMatchingQuadsThroughNativeRestrictions() {
@@ -385,10 +475,14 @@ class LmdbNativeGraphRestrictionJoinTest {
 	}
 
 	private SailRepository repository(GraphRestrictionMode mode, boolean nativeEnabled) {
+		return repository(QueryExecutionPolicy.EXPERIMENTAL.withGraphRestrictionMode(mode), nativeEnabled);
+	}
+
+	private SailRepository repository(QueryExecutionPolicy policy, boolean nativeEnabled) {
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(nativeEnabled)
 				.setSketchEstimatorEnabled(false));
-		store.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL.withGraphRestrictionMode(mode));
+		store.setQueryExecutionPolicy(policy);
 		return new SailRepository(store);
 	}
 

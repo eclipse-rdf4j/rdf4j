@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -78,6 +79,65 @@ class GraphScopeOptimizerTest {
 			assertThat(statement.getSubjectVar().getName()).isEqualTo("s");
 			assertThat(statement.isVariableScopeChange()).isTrue();
 		});
+	}
+
+	@Test
+	void genericOptimizerLeavesAuthoredValuesInsideConstantGraph() {
+		TupleExpr plan = parse("SELECT * { GRAPH <urn:g> { VALUES ?s { <urn:s> } ?s <urn:p> ?o } }");
+		new GraphScopeOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+			assertThat(GraphScopeOptimizer.canLowerPositiveBasicGraphPattern(graph)).isFalse();
+			assertThat(GraphScopeOptimizer.canLowerPositiveGraphPattern(graph)).isTrue();
+		});
+	}
+
+	@Test
+	void physicalLoweringRequiresAMandatoryStatement() {
+		for (String body : List.of("VALUES ?s { <urn:s> } VALUES ?o { <urn:o> }",
+				"VALUES ?s { <urn:s> } OPTIONAL { ?s <urn:p> ?o }")) {
+			TupleExpr plan = parse("SELECT * { GRAPH ?g { " + body + " } }");
+			assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+				assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graph)).as(body).isNull();
+			});
+		}
+	}
+
+	@Test
+	void physicalLoweringRejectsValuesThatDeclareOrBindTheGraphSelector() {
+		TupleExpr plan = parse("SELECT * { GRAPH ?g { VALUES ?g { UNDEF } ?s <urn:p> ?o } }");
+		assertThat(graphs(plan)).singleElement()
+				.satisfies(graph -> assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graph)).isNull());
+
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("s"));
+		values.setBindingSets(List.of(bindings("g", TARGET_GRAPH)));
+		assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graphWithValues(values))).isNull();
+	}
+
+	@Test
+	void physicalLoweringUsesCurrentValuesDespiteCachedNames() {
+		MapBindingSet row = bindings("s", TARGET_GRAPH);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("s"));
+		values.setBindingSets(List.of(row));
+		assertThat(values.getPossibleBindingNames()).containsExactly("s");
+		row.addBinding("g", OTHER_GRAPH);
+		assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graphWithValues(values))).isNull();
+	}
+
+	@Test
+	void physicalLoweringDoesNotReadAnUnprovedValuesSource() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("s"));
+		values.setBindingSets(() -> {
+			throw new AssertionError("Physical admission must leave an unproved source unopened");
+		});
+		assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graphWithValues(values))).isNull();
+	}
+
+	private static Graph graphWithValues(BindingSetAssignment values) {
+		return new Graph(Var.of("g"),
+				new Join(values, new StatementPattern(Var.of("s"), Var.of("p", P, true, true), Var.of("o"))));
 	}
 
 	@Test

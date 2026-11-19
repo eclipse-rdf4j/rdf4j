@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -168,6 +169,26 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 	}
 
 	private static boolean isPositiveBasicGraphPattern(TupleExpr expression, Var graphName) {
+		return isPositiveGraphPattern(expression, graphName, false);
+	}
+
+	private static boolean isSelectorFreeValues(BindingSetAssignment values, String selector) {
+		if (!values.hasRepeatableBindingSets() || values.getDeclaredBindingNames().contains(selector)) {
+			return false;
+		}
+		// Caller-owned rows can change after the assignment has cached its possible binding names.
+		for (BindingSet row : values.getBindingSets()) {
+			if (row.hasBinding(selector)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isPositiveGraphPattern(TupleExpr expression, Var graphName, boolean allowValues) {
+		if (allowValues && expression.getClass() == BindingSetAssignment.class) {
+			return isSelectorFreeValues((BindingSetAssignment) expression, graphName.getName());
+		}
 		// Statement subclasses may carry backend annotations that an ordinary statement cannot reproduce.
 		if (expression.getClass() == StatementPattern.class) {
 			StatementPattern statement = (StatementPattern) expression;
@@ -187,13 +208,18 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 			return true;
 		}
 		return expression.getClass() == Join.class
-				&& isPositiveBasicGraphPattern(((Join) expression).getLeftArg(), graphName)
-				&& isPositiveBasicGraphPattern(((Join) expression).getRightArg(), graphName);
+				&& isPositiveGraphPattern(((Join) expression).getLeftArg(), graphName, allowValues)
+				&& isPositiveGraphPattern(((Join) expression).getRightArg(), graphName, allowValues);
+	}
+
+	private static boolean containsStatementPattern(TupleExpr expression) {
+		return expression instanceof StatementPattern || expression instanceof Join join
+				&& (containsStatementPattern(join.getLeftArg()) || containsStatementPattern(join.getRightArg()));
 	}
 
 	/**
-	 * Tests the structural proof without cloning or changing the supplied graph. Backend admission and rewriting must
-	 * use the same proof; graph membership and invocation compatibility remain the caller's responsibility.
+	 * Tests the structural proof for a pure basic graph pattern without cloning or changing the supplied graph. Graph
+	 * membership and invocation compatibility remain the caller's responsibility.
 	 */
 	public static boolean canLowerPositiveBasicGraphPattern(Graph graph) {
 		return isPositiveBasicGraphPattern(graph.getArg(), graph.getGraphName());
@@ -210,6 +236,25 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 				: null;
 	}
 
+	/**
+	 * Tests the physical lowering proof for a positive graph body that may also contain selector-free VALUES. A
+	 * mandatory statement must remain to witness graph membership. Use this proof after logical routing decisions.
+	 */
+	public static boolean canLowerPositiveGraphPattern(Graph graph) {
+		return isPositiveGraphPattern(graph.getArg(), graph.getGraphName(), true)
+				&& containsStatementPattern(graph.getArg());
+	}
+
+	/**
+	 * Builds a detached physical named-context join, retaining any proved VALUES leaves. The backend must separately
+	 * preserve graph membership, invocation compatibility and default-alias selection.
+	 */
+	public static TupleExpr lowerPositiveGraphPattern(Graph graph) {
+		return canLowerPositiveGraphPattern(graph)
+				? lowerBasicGraphPattern(graph.getArg().clone(), graph.getGraphName())
+				: null;
+	}
+
 	private static TupleExpr lowerBasicGraphPattern(TupleExpr expression, Var graphName) {
 		if (expression instanceof StatementPattern statement) {
 			StatementPattern lowered = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
@@ -221,6 +266,9 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 				lowered.setOrder(statement.getOrder());
 			}
 			return lowered;
+		}
+		if (expression instanceof BindingSetAssignment) {
+			return expression;
 		}
 		Join join = (Join) expression;
 		join.setLeftArg(lowerBasicGraphPattern(join.getLeftArg(), graphName));

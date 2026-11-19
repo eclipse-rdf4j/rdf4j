@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -50,8 +51,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class NativeValuePositionAnalysisTest {
 
@@ -234,9 +238,16 @@ class NativeValuePositionAnalysisTest {
 		assertThat(analysis.copySubtree(island, clone).masksFor(clone).get("x")).isEqualTo(5);
 	}
 
-	@Test
-	void physicalGraphLoweringRetainsRolesOutsideADetachedCompileRoot() {
-		Graph graph = new Graph(new Var("g"), new StatementPattern(new Var("s"), new Var("p"), new Var("x")));
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void physicalGraphLoweringRetainsRolesOutsideADetachedCompileRoot(boolean includeValues) {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("x"));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("x"));
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
+		values.setBindingSets(List.of(row));
+		Graph graph = new Graph(new Var("g"), includeValues ? new Join(values, pattern) : pattern);
 		TupleExpr wholeQuery = new Join(graph,
 				new StatementPattern(new Var("x"), new Var("p2"), new Var("g")));
 		NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(wholeQuery);
@@ -256,9 +267,15 @@ class NativeValuePositionAnalysisTest {
 				new EvaluationStatistics(), false);
 		NativeGraphFusion.Prepared physical = strategy.withValuePositions(analysis,
 				() -> NativeGraphFusion.prepare(graph, new QueryEvaluationContext.Minimal(null), strategy));
-		assertThat(physical.expression()).isInstanceOf(StatementPattern.class);
+		assertThat(physical.expression()).isInstanceOf(includeValues ? Join.class : StatementPattern.class);
+		assertThat(physical.guardedSelectors()).containsExactly("g");
 		assertThat(physical.positions().masksFor(physical.expression()).get("g")).isEqualTo(12);
 		assertThat(physical.positions().masksFor(physical.expression()).get("x")).isEqualTo(5);
+		if (includeValues) {
+			TupleExpr physicalValues = ((Join) physical.expression()).getLeftArg();
+			assertThat(physicalValues).isInstanceOf(BindingSetAssignment.class).isNotSameAs(values);
+			assertThat(physical.positions().masksFor(physicalValues).get("x")).isEqualTo(5);
+		}
 	}
 
 	@Test

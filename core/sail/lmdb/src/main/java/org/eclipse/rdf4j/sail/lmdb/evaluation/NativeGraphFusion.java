@@ -64,11 +64,13 @@ final class NativeGraphFusion {
 		NativeValuePositionAnalysis positions = strategy.copyValuePositions(expression, physical);
 		Map<Graph, TupleExpr> replacements = new IdentityHashMap<>();
 		Set<String> guarded = new LinkedHashSet<>();
-		if (physical instanceof Graph graph && canFuse(graph, dataset)) {
-			rememberGuard(graph, dataset, guarded);
-			physical = GraphScopeOptimizer.lowerPositiveBasicGraphPattern(graph);
-			linkGraphReplacement(graph, physical);
-			replacements.put(graph, physical);
+		Graph rootGraph = physical instanceof Graph graph ? graph : null;
+		TupleExpr loweredRoot = rootGraph == null ? null : lowerIfSafe(rootGraph, dataset);
+		if (loweredRoot != null) {
+			rememberGuard(rootGraph, dataset, guarded);
+			physical = loweredRoot;
+			linkGraphReplacement(rootGraph, physical);
+			replacements.put(rootGraph, physical);
 		} else {
 			physical.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
@@ -79,9 +81,9 @@ final class NativeGraphFusion {
 				@Override
 				public void meet(Graph graph) {
 					super.meet(graph);
-					if (canFuse(graph, dataset)) {
+					TupleExpr lowered = lowerIfSafe(graph, dataset);
+					if (lowered != null) {
 						rememberGuard(graph, dataset, guarded);
-						TupleExpr lowered = GraphScopeOptimizer.lowerPositiveBasicGraphPattern(graph);
 						linkGraphReplacement(graph, lowered);
 						replacements.put(graph, lowered);
 						graph.replaceWith(lowered);
@@ -97,7 +99,10 @@ final class NativeGraphFusion {
 			EvaluationStatistics statistics) {
 		return switch (mode) {
 		case OFF -> false;
-		case AUTO -> GraphScopeOptimizer.hasRestrictionJoin(expression, graph -> !canFuse(graph, dataset),
+		// Keep the existing preference for semantic probes when a graph body contains VALUES.
+		case AUTO -> GraphScopeOptimizer.hasRestrictionJoin(expression,
+				graph -> !hasSafeSelectorAndDataset(graph, dataset)
+						|| !GraphScopeOptimizer.canLowerPositiveBasicGraphPattern(graph),
 				(operand, driver) -> RestrictionCompiler.hasPotentialProfitableSeekFrom(operand, driver, statistics));
 		case FORCE_INDEPENDENT, REQUIRE_RESTRICTED -> GraphScopeOptimizer.hasRestrictionJoin(expression);
 		};
@@ -170,11 +175,18 @@ final class NativeGraphFusion {
 	}
 
 	private static boolean canFuse(Graph graph, Dataset dataset) {
+		return hasSafeSelectorAndDataset(graph, dataset) && GraphScopeOptimizer.canLowerPositiveGraphPattern(graph);
+	}
+
+	private static TupleExpr lowerIfSafe(Graph graph, Dataset dataset) {
+		return hasSafeSelectorAndDataset(graph, dataset) ? GraphScopeOptimizer.lowerPositiveGraphPattern(graph) : null;
+	}
+
+	private static boolean hasSafeSelectorAndDataset(Graph graph, Dataset dataset) {
 		Value selector = graph.getGraphName().getValue();
 		return (selector == null || selector instanceof Resource && !isDefaultAlias(selector))
 				&& (dataset == null
-						|| dataset.getNamedGraphResources().stream().noneMatch(NativeGraphFusion::isDefaultAlias))
-				&& GraphScopeOptimizer.canLowerPositiveBasicGraphPattern(graph);
+						|| dataset.getNamedGraphResources().stream().noneMatch(NativeGraphFusion::isDefaultAlias));
 	}
 
 	private static void rememberGuard(Graph graph, Dataset dataset, Set<String> guarded) {
