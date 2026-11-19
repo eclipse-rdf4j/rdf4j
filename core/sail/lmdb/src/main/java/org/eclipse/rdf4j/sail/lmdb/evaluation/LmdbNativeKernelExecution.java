@@ -443,6 +443,14 @@ final class LmdbNativeKernelExecution {
 		return null;
 	}
 
+	/** The retained input column proof is available only on the exact bound cursor that supplied it. */
+	static int openedDistinctPartitionSlot(RowCursor cursor) {
+		if (cursor instanceof FusedRuntimeRowCursor fused) {
+			return openedDistinctPartitionSlot(fused.delegate);
+		}
+		return cursor instanceof KernelRowCursor kernel ? kernel.distinctPartitionSlot() : -1;
+	}
+
 	/**
 	 * Worker-kernel factory for the parallel rungs. Arbitrated proposals pin their serving tier: a compiled proposal
 	 * must decline while its worker variant is pending, leaving the independently priced interpreted-parallel proposal
@@ -2261,6 +2269,32 @@ final class LmdbNativeKernelExecution {
 			this.fillRows = fillRows;
 			this.buffer = initialBuffer == null ? new long[Math.max(columnSlots.length, 1) * fillRows] : initialBuffer;
 			this.bufferRows = initialRows;
+		}
+
+		private int distinctPartitionSlot() {
+			if (!(kernel instanceof LmdbNativeKernelInterpreter interpreter)) {
+				return -1;
+			}
+			int output = interpreter.contiguousDistinctOutput();
+			if (output < 0 || output >= columnSlots.length) {
+				return -1;
+			}
+			int slot = columnSlots[output];
+			if (slot < 0 || slot >= Long.SIZE || (row.boundMask() & (1L << slot)) != 0L) {
+				return -1;
+			}
+			for (int i = 0; i < columnSlots.length; i++) {
+				if (i != output && columnSlots[i] == slot) {
+					return -1;
+				}
+			}
+			// The root comes from a store adjacency. The synthetic facade may also hold other ids, but those
+			// can contribute only to the residual tuple. Distinct physical roots must be distinct RDF terms.
+			NativeLmdbQuerySource backing = row.source;
+			while (backing instanceof SyntheticValueSource synthetic) {
+				backing = synthetic.delegate;
+			}
+			return backing.hasCanonicalIds() ? slot : -1;
 		}
 
 		@Override

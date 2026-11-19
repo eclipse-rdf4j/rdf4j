@@ -26,7 +26,6 @@ class LmdbNativeTupleMetricsTest {
 		PrimitiveTupleTable.PROBES.set(0L);
 		PrimitiveTupleTable.INSERTIONS.set(0L);
 		NativeDistinctTracker.PRIMITIVE_ROWS.set(0L);
-		NativeDistinctTracker.OBJECT_ROWS.set(0L);
 	}
 
 	@Test
@@ -50,6 +49,5 @@ class LmdbNativeTupleMetricsTest {
 		assertThat(tracker.add(new long[] { 10L, 20L })).isFalse();
 
 		assertThat(NativeDistinctTracker.PRIMITIVE_ROWS.get()).isZero();
-		assertThat(NativeDistinctTracker.OBJECT_ROWS.get()).isZero();
 	}
 }

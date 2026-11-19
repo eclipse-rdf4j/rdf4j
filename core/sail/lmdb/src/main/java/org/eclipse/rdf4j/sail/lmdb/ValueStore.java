@@ -11123,6 +11123,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private volatile LmdbSailStore.MapResizeKind retiredKind;
 		private volatile Txn stableTripleTxn;
 		private volatile ValueStoreRevision.Lazy stableRevision;
+		// Accessed under the snapshot's Txn monitor. Each wrapper retains only the captured epoch.
+		private ValueStoreRevision[] stablePositionedRevisions;
 		private volatile boolean dictionaryDetached;
 		private volatile boolean termSnapshotUsed;
 		private volatile LmdbSailStore.MapGrowthToken dictionaryGrowthToken;
@@ -11302,6 +11304,23 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return stable == null ? revision : stable;
 		}
 
+		private ValueStoreRevision stablePositionedRevision(int positionMask) {
+			assert Thread.holdsLock(txn);
+			ValueStoreRevision.Lazy stable = stableRevision;
+			if (stable.getPositionMask() == positionMask) {
+				return stable;
+			}
+			if (stablePositionedRevisions == null) {
+				stablePositionedRevisions = new ValueStoreRevision[ValuePosition.ALL + 1];
+			}
+			ValueStoreRevision positioned = stablePositionedRevisions[positionMask];
+			if (positioned == null) {
+				positioned = new ValueStoreRevision.Lazy(stable, positionMask);
+				stablePositionedRevisions[positionMask] = positioned;
+			}
+			return positioned;
+		}
+
 		ValueStoreRevision completedRevision() {
 			return ValueStore.completedRevision(revision());
 		}
@@ -11418,6 +11437,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								revision.release(this);
 							} finally {
 								stableRevision = null;
+								stablePositionedRevisions = null;
 								readSnapshots.remove(this);
 								if (epochReservation != null) {
 									epochReservation.close();
@@ -11465,7 +11485,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					// Only a still-installed closed scope delimits internal access, and it cannot retain an epoch.
 					exposure = null;
 				}
-				return getLazyValue(id, positionedRevision(snapshot.revision(), positionMask), false, exposure);
+				return getLazyValue(id, snapshot.stablePositionedRevision(positionMask), false, exposure);
 			}
 			ValueStoreRevision valueRevision = positionMask == ValuePosition.NONE ? snapshot.revision()
 					: new ValueStoreRevision.Position(snapshot.revision(), positionMask);

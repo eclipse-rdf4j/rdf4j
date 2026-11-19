@@ -32,9 +32,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Repository-only, demand-driven materialization retaining ID capabilities through complete value waves. */
@@ -142,20 +144,20 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			close();
 			return false;
 		}
-		T nextRow = extractor.snapshot(sourceNext());
+		T sourceRow = sourceNext();
+		NativeProjectedBindingSet projected = extractor == SailResultValueExtractor.BINDING_SETS
+				&& sourceRow instanceof NativeProjectedBindingSet nativeRow ? nativeRow : null;
+		MapBindingSet snapshot = projected == null ? null : projected.snapshotIfFullyCaptured();
+		// Identity with the default binding-set extractor guarantees T accepts a BindingSet.
+		@SuppressWarnings("unchecked")
+		T nextRow = snapshot == null ? extractor.snapshot(sourceRow) : (T) snapshot;
 		if (closed.get()) {
 			return false;
 		}
-		List<Value> roots = new ArrayList<>();
-		boolean[] prepared = { true };
-		extractor.extract(nextRow, root -> {
-			if (root != null) {
-				roots.add(root);
-				prepared[0] &= isPrepared(root);
-			}
-		});
+		List<Value> roots = snapshot == null ? rootsRequiringPreparation(nextRow)
+				: projected.capturedRootsRequiringPreparation(RepositoryValueIteration::isPrepared);
 		// Rows whose values are already resolved need neither owner scopes nor dictionary waves.
-		if (!prepared[0]) {
+		if (roots != null) {
 			Map<Value, Boolean> capturedOwners = new IdentityHashMap<>();
 			for (Value root : roots) {
 				captureReadyOwners(root, capturedOwners);
@@ -166,6 +168,18 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		row = nextRow;
 		rowReady = true;
 		return true;
+	}
+
+	private List<Value> rootsRequiringPreparation(T nextRow) {
+		List<Value> roots = new ArrayList<>();
+		boolean[] prepared = { true };
+		extractor.extract(nextRow, root -> {
+			if (root != null) {
+				roots.add(root);
+				prepared[0] &= isPrepared(root);
+			}
+		});
+		return prepared[0] ? null : roots;
 	}
 
 	/** A repository pull already owns cold values until its complete current-row wave finishes. */
