@@ -35,14 +35,65 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** The live connection wrapper owns source handles through capture, even when its public result is closed. */
 @Timeout(30)
 class LmdbProjectedCaptureLifetimeTest {
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void consecutiveRowsAvoidSharedLookupForUnchangedProjectedLeaf(boolean includeInferred, @TempDir Path directory) {
+		var config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true);
+		var store = new ObservedStore(directory.toFile(), config);
+		var repository = new SailRepository(store);
+		var vf = SimpleValueFactory.getInstance();
+		var predicate = vf.createIRI("urn:capture:p");
+		var repeated = vf.createIRI("urn:capture:shared");
+		try {
+			try (var writer = repository.getConnection()) {
+				for (int i = 0; i < 3; i++) {
+					writer.add(vf.createIRI("urn:capture:s:" + i), predicate, repeated);
+				}
+			}
+			var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT ?s ?value WHERE { ?s <urn:capture:p> ?value }", null);
+			try (var connection = store.getConnection();
+					var rows = connection.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(),
+							includeInferred)) {
+				store.values.armed = true;
+				var first = assertInstanceOf(NativeProjectedBindingSet.class, rows.next());
+				var second = assertInstanceOf(NativeProjectedBindingSet.class, rows.next());
+				assertEquals(repeated, first.getValue("value"));
+				assertEquals(repeated, second.getValue("value"));
+				assertEquals(3, store.values.captures.get(), "two subjects and one shared leaf require lookup");
+
+				var secondValue = assertInstanceOf(LmdbIRI.class, second.getValue("value"));
+				secondValue.stringValue();
+				var originalIdentity = secondValue.getInternalIdentity();
+				secondValue.setFromInitializedValue(new LmdbIRI(secondValue.getValueStoreRevision(),
+						"urn:capture:changed"));
+				secondValue.setInternalID(originalIdentity.id(), originalIdentity.revision());
+				var third = assertInstanceOf(NativeProjectedBindingSet.class, rows.next());
+				assertEquals(repeated, third.getValue("value"));
+				assertEquals(5, store.values.captures.get(), "a mutated leaf must use the shared lookup again");
+				assertFalse(rows.hasNext());
+				assertEquals(3, List.of(first.getValue("s"), second.getValue("s"), third.getValue("s"))
+						.stream()
+						.distinct()
+						.count());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@Test
 	void resultCloseDefersNativeSourceRetirementUntilCurrentRowCaptureCompletes(@TempDir Path directory)
@@ -113,6 +164,7 @@ class LmdbProjectedCaptureLifetimeTest {
 					"SELECT ?s ?value WHERE { ?s <urn:capture:p> ?value }", null);
 			try (var rows = connection.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
 				recordPhase(directory, started, phases, "query opened; arming row capture");
+				store.values.pauseFirstCapture = true;
 				store.values.armed = true;
 				var reading = workers.submit(rows::next);
 				try {
@@ -192,6 +244,7 @@ class LmdbProjectedCaptureLifetimeTest {
 		private final AtomicInteger captures = new AtomicInteger();
 		private volatile ReadSnapshot capturedSnapshot;
 		private volatile boolean armed;
+		private volatile boolean pauseFirstCapture;
 
 		private CapturingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config)
 				throws IOException {
@@ -201,7 +254,7 @@ class LmdbProjectedCaptureLifetimeTest {
 		@Override
 		LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask, ValueResolutionScope valueScope)
 				throws IOException {
-			if (armed && captures.incrementAndGet() == 1) {
+			if (armed && captures.incrementAndGet() == 1 && pauseFirstCapture) {
 				capturedSnapshot = snapshot;
 				captureEntered.countDown();
 				try {

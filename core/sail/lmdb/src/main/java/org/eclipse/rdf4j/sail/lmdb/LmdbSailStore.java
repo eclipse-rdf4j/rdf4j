@@ -13873,6 +13873,19 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private Value reuseNativeProjectedValue(ReadView readView, Object snapshot, long id, int positionMask,
+			ValueResolutionScope valueScope, Value supplied, long semanticVersion) {
+		ValueStore.ReadSnapshot current = readView.valueSnapshot();
+		if (snapshot != current) {
+			return null;
+		}
+		try {
+			return valueStore.reuseProjectedLazyValue(current, id, positionMask, valueScope, supplied, semanticVersion);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
 	private final class ParallelSnapshotSource implements NativeLmdbQuerySource.ParallelSource {
 
 		private final Txn txn;
@@ -14098,6 +14111,18 @@ class LmdbSailStore implements SailStore {
 		public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope)
 				throws QueryEvaluationException {
 			return lookupNativeLazyValue(lease.readView, id, positionMask, valueScope, true);
+		}
+
+		@Override
+		public Object projectedValueSnapshot() {
+			return lease.readView.valueSnapshot();
+		}
+
+		@Override
+		public Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
+				Value supplied, long semanticVersion) {
+			return reuseNativeProjectedValue(lease.readView, snapshot, id, positionMask, valueScope, supplied,
+					semanticVersion);
 		}
 
 		@Override
@@ -15679,6 +15704,18 @@ class LmdbSailStore implements SailStore {
 		public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope)
 				throws QueryEvaluationException {
 			return lookupNativeLazyValue(readView, id, positionMask, valueScope, true);
+		}
+
+		@Override
+		public Object projectedValueSnapshot() {
+			return readView.valueSnapshot();
+		}
+
+		@Override
+		public Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
+				Value supplied, long semanticVersion) {
+			return reuseNativeProjectedValue(readView, snapshot, id, positionMask, valueScope, supplied,
+					semanticVersion);
 		}
 
 		@Override

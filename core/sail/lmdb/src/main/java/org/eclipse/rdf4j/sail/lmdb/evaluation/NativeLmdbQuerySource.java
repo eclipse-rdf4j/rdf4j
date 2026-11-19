@@ -181,6 +181,17 @@ public interface NativeLmdbQuerySource {
 		return lazyValue(id, positionMask);
 	}
 
+	/** Exact backing snapshot for projected handle reuse, or {@code null} if this source cannot certify one. */
+	default Object projectedValueSnapshot() {
+		return null;
+	}
+
+	/** Revalidates a previous handle for this snapshot and read owner, or returns {@code null} to request lookup. */
+	default Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
+			Value supplied, long semanticVersion) {
+		return null;
+	}
+
 	/**
 	 * Whether {@link #tripleTerms(long, long, long)} is available on this source — the compile-time admission gate for
 	 * the native SPARQL 1.2 TripleRef scan.

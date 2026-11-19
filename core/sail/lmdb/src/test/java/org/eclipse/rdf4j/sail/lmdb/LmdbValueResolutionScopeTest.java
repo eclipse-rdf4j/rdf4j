@@ -214,6 +214,18 @@ class LmdbValueResolutionScopeTest {
 				var revision = assertInstanceOf(ValueStoreRevision.Lazy.class, retained.getValueStoreRevision());
 				assertSame(open, revision.resolutionScope());
 				assertEquals(ValuePosition.SUBJECT, revision.getPositionMask());
+				Object projectionSnapshot = source.projectedValueSnapshot();
+				long capturedVersion = retained.getSemanticVersion();
+				assertNotNull(projectionSnapshot);
+				assertSame(retained, source.reuseProjectedValue(projectionSnapshot, id, ValuePosition.SUBJECT,
+						open, retained, capturedVersion));
+				assertNull(
+						source.reuseProjectedValue(projectionSnapshot, id, ValuePosition.SUBJECT | ValuePosition.OBJECT,
+								open, retained, capturedVersion));
+				assertNull(source.reuseProjectedValue(new Object(), id, ValuePosition.SUBJECT,
+						open, retained, capturedVersion));
+				assertNull(source.reuseProjectedValue(projectionSnapshot, id, ValuePosition.SUBJECT,
+						foreign, retained, capturedVersion));
 
 				LmdbValue unscoped = (LmdbValue) source.lazyValue(id, ValuePosition.SUBJECT, null);
 				assertSame(retained, unscoped);
@@ -224,6 +236,8 @@ class LmdbValueResolutionScopeTest {
 
 				closed.close();
 				try (SailClosable activation = closed.activateForeground()) {
+					assertNull(source.reuseProjectedValue(projectionSnapshot, id, ValuePosition.SUBJECT,
+							closed, retained, capturedVersion));
 					LmdbValue delimited = (LmdbValue) source.lazyValue(id, ValuePosition.OBJECT, closed);
 					assertFalse(delimited.isExternallyOwned());
 					assertNull(assertInstanceOf(ValueStoreRevision.Lazy.class, delimited.getValueStoreRevision())

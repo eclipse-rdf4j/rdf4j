@@ -100,6 +100,18 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public Object projectedValueSnapshot() {
+		return sources.get(0).projectedValueSnapshot();
+	}
+
+	@Override
+	public Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
+			Value supplied, long semanticVersion) {
+		// The same immutable first-source choice owns ordinary lazy lookup and its snapshot validation.
+		return sources.get(0).reuseProjectedValue(snapshot, id, positionMask, valueScope, supplied, semanticVersion);
+	}
+
+	@Override
 	public boolean supportsTripleTermScan() {
 		return tripleTermSource != null;
 	}
