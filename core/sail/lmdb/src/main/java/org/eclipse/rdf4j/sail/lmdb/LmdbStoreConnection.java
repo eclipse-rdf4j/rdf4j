@@ -1061,15 +1061,15 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		BindingSet bindingsCopy = copyBindings(bindings);
 		return new IterationWrapper<BindingSet>(
 				super.evaluateInternal(expression, datasetCopy, bindingsCopy, includeInferred)) {
+			private final NativeProjectedBindingSet.CaptureScratch captureScratch = new NativeProjectedBindingSet.CaptureScratch();
+
 			@Override
 			public BindingSet next() {
 				BindingSet row = super.next();
 				if (row instanceof NativeProjectedBindingSet nativeRow) {
 					// Capture this row while its native source is live. Sail callbacks still receive lazy values;
 					// the repository exposure scope initializes them without speculatively requesting later rows.
-					nativeRow.collectMaterializationValues(ignored -> {
-					}, valueScope);
-					nativeRow.detachAfterMaterialization();
+					nativeRow.captureAndDetach(valueScope, captureScratch);
 				}
 				return row;
 			}

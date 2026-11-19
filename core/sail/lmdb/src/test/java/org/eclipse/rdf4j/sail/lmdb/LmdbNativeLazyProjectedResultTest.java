@@ -12,14 +12,26 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongFunction;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
@@ -30,12 +42,15 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -43,6 +58,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Native row projection captures lazy handles at Sail and initializes values at the repository boundary. */
 public class LmdbNativeLazyProjectedResultTest {
@@ -105,6 +122,103 @@ public class LmdbNativeLazyProjectedResultTest {
 		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(128);
 		assertThat(first.getValue("value")).isSameAs(first.getValue("value"));
 		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(128);
+	}
+
+	@Test
+	public void repositoryProjectedSnapshotsRetainMapBehaviorAfterShutdown() throws Exception {
+		MapBindingSet first;
+		MapBindingSet second;
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult rows = connection.prepareTupleQuery(
+						"SELECT ?value ?s WHERE { ?s <" + EX + "value> ?value }").evaluate()) {
+			first = (MapBindingSet) rows.next();
+			assertThat(rows.hasNext()).isTrue();
+			second = (MapBindingSet) rows.next();
+		}
+		assertThat(NativeProjectedBindingSet.CREATED.get()).isEqualTo(2);
+		repository.shutDown();
+
+		Value firstSubject = first.getValue("s");
+		Value firstValue = first.getValue("value");
+		assertThat(firstValue.stringValue()).startsWith("stored literal payload ");
+		assertThat(firstSubject).isNotEqualTo(second.getValue("s"));
+		assertThat(first.getValue("unbound")).isNull();
+		assertThat(first.getBinding("value").getValue()).isSameAs(firstValue);
+		assertThat(first).isExactlyInstanceOf(MapBindingSet.class);
+		try (var bytes = new ByteArrayOutputStream()) {
+			try (var output = new ObjectOutputStream(bytes)) {
+				output.writeObject(first);
+			}
+			try (var input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+				MapBindingSet deserialized = (MapBindingSet) input.readObject();
+				assertThat(deserialized).isEqualTo(first);
+				assertThat(deserialized.getBindingNames()).containsExactly("value", "s");
+				deserialized.getBindingNames().remove("s");
+				assertThat(first.hasBinding("s")).isTrue();
+			}
+		}
+
+		Set<String> names = first.getBindingNames();
+		assertThat(names).containsExactly("value", "s");
+		var bindings = first.iterator();
+		assertThat(bindings.next()).isSameAs(first.getBinding("value"));
+		// Replacing a binding does not invalidate an iterator or change the insertion order.
+		first.setBinding("s", firstValue);
+		assertThat(bindings.next().getValue()).isSameAs(firstValue);
+		bindings.remove();
+		assertThat(names).containsExactly("value");
+
+		var keyIterator = names.iterator();
+		assertThat(keyIterator.next()).isEqualTo("value");
+		keyIterator.remove();
+		assertThat(first.isEmpty()).isTrue();
+		first.setBinding("s", firstSubject);
+		var invalidated = names.iterator();
+		first.setBinding("new", firstValue);
+		assertThatThrownBy(invalidated::next).isInstanceOf(ConcurrentModificationException.class);
+		assertThat(names).containsExactly("s", "new");
+		assertThat(names.remove("new")).isTrue();
+		first.clear();
+		assertThat(names).isEmpty();
+		assertThat(second.getBindingNames()).containsExactly("value", "s");
+	}
+
+	@Test
+	public void repositoryProjectedSnapshotsSupportConcurrentReaders() throws Exception {
+		List<MapBindingSet> retained = new ArrayList<>();
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult rows = connection.prepareTupleQuery(
+						"SELECT ?value ?s WHERE { ?s <" + EX + "value> ?value }").evaluate()) {
+			while (rows.hasNext()) {
+				retained.add((MapBindingSet) rows.next());
+			}
+		}
+		assertThat(retained).hasSize(64);
+		assertThat(NativeProjectedBindingSet.CREATED.get()).isEqualTo(64);
+		repository.shutDown();
+
+		CyclicBarrier startRow = new CyclicBarrier(2);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var pointReads = executor.submit(() -> {
+				for (MapBindingSet row : retained) {
+					startRow.await(10, TimeUnit.SECONDS);
+					assertThat(row.size()).isEqualTo(2);
+					assertThat(row.hasBinding("value")).isTrue();
+					assertThat(row.getValue("value")).isSameAs(row.getBinding("value").getValue());
+				}
+				return null;
+			});
+			var viewReads = executor.submit(() -> {
+				for (MapBindingSet row : retained) {
+					startRow.await(10, TimeUnit.SECONDS);
+					assertThat(row.getBindingNames()).containsExactly("value", "s");
+					assertThat(row.iterator().next()).isSameAs(row.getBinding("value"));
+				}
+				return null;
+			});
+			pointReads.get(20, TimeUnit.SECONDS);
+			viewReads.get(20, TimeUnit.SECONDS);
+		}
 	}
 
 	@Test
@@ -203,6 +317,205 @@ public class LmdbNativeLazyProjectedResultTest {
 		assertThat(source.lazyValueCalls).as("a pre-read duplicate ID must not be resolved again").isEqualTo(1);
 	}
 
+	@Test
+	public void wideCapturePreservesPrefilledReferencesAndCallbackLookups() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Value earlier = vf.createLiteral("earlier handle");
+		Value later = vf.createLiteral("later handle");
+		Value otherMask = vf.createLiteral("different mask");
+		Value callback = vf.createLiteral("callback handle");
+		int width = 72;
+		String[] names = new String[width];
+		int[] slots = new int[width];
+		int[] masks = new int[width];
+		long[] ids = new long[width];
+		for (int i = 0; i < width; i++) {
+			names[i] = "v" + i;
+			slots[i] = i;
+			masks[i] = ValuePosition.OBJECT;
+			ids[i] = ValueIds.createId(ValueIds.T_LITERAL, 100L + i);
+		}
+		long aliasId = ValueIds.createId(ValueIds.T_LITERAL, 42L);
+		ids[1] = ids[33] = ids[65] = ids[69] = ids[71] = aliasId;
+		masks[69] |= ValuePosition.CONTEXT;
+		long callbackId = ValueIds.createId(ValueIds.T_INTEGER, 43L);
+		ids[4] = ids[70] = callbackId;
+		ids[2] = NativeLmdbQuerySource.UNKNOWN_ID;
+		ids[66] = 0L;
+		var projected = new AtomicReference<NativeProjectedBindingSet>();
+		var aliasLookups = new AtomicInteger();
+		var callbackLookups = new AtomicInteger();
+		StubSource source = new StubSource(id -> {
+			if (id == aliasId) {
+				return switch (aliasLookups.incrementAndGet()) {
+				case 1 -> {
+					assertThat(projected.get().getValue("v33")).isSameAs(earlier);
+					yield later;
+				}
+				case 2 -> earlier;
+				case 3 -> otherMask;
+				default -> throw new AssertionError("Redundant alias lookup");
+				};
+			}
+			if (id == callbackId) {
+				callbackLookups.incrementAndGet();
+				return callback;
+			}
+			return vf.createLiteral(id);
+		});
+		var row = new NativeProjectedBindingSet(source,
+				NativeProjectedBindingSet.ProjectionLayout.create(names, slots, masks), ids);
+		projected.set(row);
+		assertThat(row.getValue("v71")).isSameAs(later);
+		List<Value> captured = new ArrayList<>();
+		row.collectMaterializationValues(value -> {
+			if (captured.isEmpty()) {
+				assertThat(row.getValue("v70")).isSameAs(callback);
+			}
+			captured.add(value);
+		});
+		row.detachAfterMaterialization();
+		assertThat(captured).hasSize(width - 2).doesNotContainNull();
+		assertThat(captured.get(1)).isSameAs(earlier);
+		assertThat(row.getValue("v1")).isSameAs(earlier);
+		assertThat(row.getValue("v33")).isSameAs(earlier);
+		assertThat(row.getValue("v65")).isSameAs(earlier);
+		assertThat(row.getValue("v69")).isSameAs(otherMask);
+		assertThat(row.getValue("v71")).isSameAs(later);
+		assertThat(row.getValue("v4")).isSameAs(callback);
+		assertThat(row.getValue("v2")).isNull();
+		assertThat(row.getValue("v66")).isNull();
+		assertThat(row.snapshotIfFullyCaptured().getValue("v71")).isSameAs(later);
+		assertThat(aliasLookups.get()).isEqualTo(3);
+		assertThat(callbackLookups.get()).isEqualTo(1);
+	}
+
+	@Test
+	public void captureRetriesAfterNestedCaptureAndLookupFailure() {
+		Value outerValue = SimpleValueFactory.getInstance().createLiteral("outer");
+		Value innerValue = SimpleValueFactory.getInstance().createLiteral("inner");
+		Value last = SimpleValueFactory.getInstance().createLiteral("last");
+		var failure = new IllegalStateException("lookup interrupted the capture");
+		var nestedCalls = new AtomicInteger();
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		var innerSource = new StubSource(innerValue);
+		var inner = new NativeProjectedBindingSet(innerSource, new String[] { "a", "b" }, new int[] { 0, 1 },
+				new long[] { 42L, 42L });
+		var outerSource = new StubSource(id -> {
+			if (id == 42L) {
+				inner.captureAndDetach(null, scratch);
+				return outerValue;
+			}
+			if (nestedCalls.incrementAndGet() == 1) {
+				throw failure;
+			}
+			return last;
+		});
+		var outer = new NativeProjectedBindingSet(outerSource, new String[] { "a", "b", "c" }, new int[] { 0, 1, 2 },
+				new long[] { 42L, 55L, 42L });
+		assertThatThrownBy(() -> outer.captureAndDetach(null, scratch)).isSameAs(failure);
+		assertThat(outer.source).isSameAs(outerSource);
+		outer.captureAndDetach(null, scratch);
+		assertThat(outer.source).isNull();
+		assertThat(outer.snapshotIfFullyCaptured()).containsExactly(new SimpleBinding("a", outerValue),
+				new SimpleBinding("b", last), new SimpleBinding("c", outerValue));
+		assertThat(inner.getValue("a")).isSameAs(innerValue);
+		assertThat(inner.getValue("b")).isSameAs(innerValue);
+		assertThat(innerSource.lazyValueCalls).isEqualTo(1);
+		assertThat(outerSource.lazyValueCalls).isEqualTo(3);
+	}
+
+	@Test
+	public void capturesSharingScratchCanOverlapWithoutSharingValues() throws Exception {
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		var barrier = new CyclicBarrier(2);
+		Value firstValue = SimpleValueFactory.getInstance().createLiteral("first source", "en");
+		Value secondValue = SimpleValueFactory.getInstance().createLiteral("second source", "en");
+		String[] names = { "first", "alias" };
+		int[] slots = { 0, 1 };
+		long[] ids = { 42L, 42L };
+		var first = new NativeProjectedBindingSet(new StubSource(id -> awaitCapture(barrier, firstValue)), names, slots,
+				ids);
+		var second = new NativeProjectedBindingSet(new StubSource(id -> awaitCapture(barrier, secondValue)), names,
+				slots, ids);
+		try (var tasks = Executors.newVirtualThreadPerTaskExecutor()) {
+			var firstCapture = tasks.submit(() -> first.captureAndDetach(null, scratch));
+			var secondCapture = tasks.submit(() -> second.captureAndDetach(null, scratch));
+			firstCapture.get(10, TimeUnit.SECONDS);
+			secondCapture.get(10, TimeUnit.SECONDS);
+		}
+		assertThat(first.source).isNull();
+		assertThat(second.source).isNull();
+		assertThat(first.getValue("first")).isSameAs(firstValue);
+		assertThat(first.getValue("alias")).isSameAs(firstValue);
+		assertThat(second.getValue("first")).isSameAs(secondValue);
+		assertThat(second.getValue("alias")).isSameAs(secondValue);
+		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(2L);
+	}
+
+	private static Value awaitCapture(CyclicBarrier barrier, Value result) {
+		try {
+			barrier.await(10, TimeUnit.SECONDS);
+		} catch (Exception failure) {
+			throw new AssertionError("Captures did not reach their resolvers concurrently", failure);
+		}
+		return result;
+	}
+
+	@Test
+	public void nullLookupAfterReentryKeepsTheOtherMaterializedAliases() {
+		Value handle = SimpleValueFactory.getInstance().createLiteral("from the nested capture");
+		var projected = new AtomicReference<NativeProjectedBindingSet>();
+		var calls = new AtomicInteger();
+		var source = new StubSource(id -> {
+			if (calls.incrementAndGet() == 1) {
+				assertThat(projected.get().getValue("first")).isSameAs(handle);
+				assertThat(projected.get().getValue("last")).isSameAs(handle);
+				return null;
+			}
+			return handle;
+		});
+		var row = new NativeProjectedBindingSet(source, new String[] { "first", "middle", "last" },
+				new int[] { 0, 1, 2 }, new long[] { 42L, 42L, 42L });
+		projected.set(row);
+		List<Value> captured = new ArrayList<>();
+		row.collectMaterializationValues(captured::add);
+		assertThat(captured).containsExactly(null, handle, handle);
+		row.collectMaterializationValues(value -> assertThat(value).isSameAs(handle));
+		row.detachAfterMaterialization();
+		assertThat(row.snapshotIfFullyCaptured().getValue("first")).isSameAs(handle);
+		assertThat(calls.get()).isEqualTo(2);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nestedDetachCannotPublishValuesStillBeingCaptured(boolean includeAlias) {
+		Value inner = SimpleValueFactory.getInstance().createLiteral("inner");
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		var projected = new AtomicReference<NativeProjectedBindingSet>();
+		var calls = new AtomicInteger();
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		var source = new StubSource(id -> {
+			if (calls.incrementAndGet() == 1) {
+				projected.get().captureAndDetach(null, scratch);
+				assertThat(projected.get().snapshotIfFullyCaptured()).isNull();
+				return outer;
+			}
+			return inner;
+		});
+		var row = includeAlias
+				? new NativeProjectedBindingSet(source, new String[] { "first", "alias" }, new int[] { 0, 1 },
+						new long[] { 42L, 42L })
+				: new NativeProjectedBindingSet(source, new String[] { "first" }, new int[] { 0 }, new long[] { 42L });
+		projected.set(row);
+		row.captureAndDetach(null, scratch);
+		assertThat(row.snapshotIfFullyCaptured().getValue("first")).isSameAs(outer);
+		if (includeAlias) {
+			assertThat(row.snapshotIfFullyCaptured().getValue("alias")).isSameAs(inner);
+		}
+		assertThat(calls.get()).isEqualTo(2);
+	}
+
 	private static void assertDuplicateProjectionResolvesOnce(long id) {
 		Value expected = SimpleValueFactory.getInstance().createLiteral("duplicate");
 		StubSource source = new StubSource(Map.of(id, expected));
@@ -251,7 +564,7 @@ public class LmdbNativeLazyProjectedResultTest {
 	}
 
 	private static final class StubSource implements NativeLmdbQuerySource {
-		private final Map<Long, Value> values;
+		private final LongFunction<Value> resolver;
 		private int lazyValueCalls;
 
 		private StubSource(Value value) {
@@ -259,7 +572,11 @@ public class LmdbNativeLazyProjectedResultTest {
 		}
 
 		private StubSource(Map<Long, Value> values) {
-			this.values = values;
+			this(values::get);
+		}
+
+		private StubSource(LongFunction<Value> resolver) {
+			this.resolver = resolver;
 		}
 
 		@Override
@@ -270,7 +587,7 @@ public class LmdbNativeLazyProjectedResultTest {
 		@Override
 		public Value lazyValue(long id) {
 			lazyValueCalls++;
-			return values.get(id);
+			return resolver.apply(id);
 		}
 
 		@Override
