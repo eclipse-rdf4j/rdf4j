@@ -18,11 +18,10 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 
 /**
  * Iteration which combines compatible materialized input bindings with each result obtained from the inner iteration.
@@ -67,14 +66,7 @@ public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet> 
 				if (!QueryResults.bindingSetsCompatible(next, currentInputBinding)) {
 					continue;
 				}
-				SPARQLQueryBindingSet res = new SPARQLQueryBindingSet(next.size() + currentInputBinding.size());
-				res.addAll(next);
-				for (Binding binding : currentInputBinding) {
-					if (binding.getValue() != null && !res.hasBinding(binding.getName())) {
-						res.addBinding(binding);
-					}
-				}
-				return res;
+				return BindingSetSnapshots.mergeWithPrecedence(next, currentInputBinding);
 			}
 			currentInputBinding = null;
 		}
