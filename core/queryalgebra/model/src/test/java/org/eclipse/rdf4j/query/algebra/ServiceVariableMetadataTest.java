@@ -15,13 +15,40 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
 class ServiceVariableMetadataTest {
+
+	@Test
+	void keepsProjectionMarkerInSavedServiceSource() throws Exception {
+		Service service = service(pattern("subject"));
+		String body = "BIND(\"%PROJECTION_VARS%\" AS ?subject)";
+		service.setExpressionString(body);
+		String select = service.getSelectQueryString(Set.of("subject"));
+		assertTrue(select.contains(body));
+		assertTrue(service.getSelectQueryString(Set.of()).contains(body));
+
+		var bytes = new ByteArrayOutputStream();
+		try (var out = new ObjectOutputStream(bytes)) {
+			out.writeObject(service);
+		}
+		try (var in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			assertEquals(select, ((Service) in.readObject()).getSelectQueryString(Set.of("subject")));
+		}
+
+		String subselect = "SELECT ?subject WHERE { " + body + " }";
+		service.setExpressionString(subselect);
+		assertEquals(subselect, service.getSelectQueryString(Set.of("subject")));
+	}
 
 	@Test
 	void filterCanBeSplicedBeforeItsArgumentIsAttached() {
