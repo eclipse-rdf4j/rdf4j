@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceCheck
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 @Experimental
@@ -141,16 +142,12 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 		@Override
 		public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-			/*
-			 * QueryJoinOptimizer treats finite binding assignments as physical anchors. Its nested join tree does not
-			 * expose that outer binding context to this fallback visitor, so reordering a descendant join would be able
-			 * to move a broad pattern ahead of the assignment. Preserve the standard planner's finite-anchor order; the
-			 * fallback is needed for the no-assignment path where LMDB access-prefix information is otherwise
-			 * unavailable.
-			 */
+			// Keep QueryJoinOptimizer's finite-assignment anchor ordering.
 			if (containsFiniteBindingAssignment(tupleExpr)) {
 				return;
 			}
+			QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr,
+					bindings);
 			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 				@Override
 				public void meet(Join join) {
@@ -161,15 +158,18 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 					if (reorderablePrefixLength < 2) {
 						return;
 					}
-					List<TupleExpr> reorderedPrefix = reorderPrefix(joinArgs.subList(0, reorderablePrefixLength));
+					Set<String> inputBindings = bindingAnalysis.contextAt(join).guaranteedNames();
+					List<TupleExpr> reorderedPrefix = reorderPrefix(joinArgs.subList(0, reorderablePrefixLength),
+							inputBindings);
 					if (reorderedPrefix.equals(joinArgs.subList(0, reorderablePrefixLength))) {
 						return;
 					}
 					List<TupleExpr> reorderedArgs = new ArrayList<>(joinArgs.size());
 					reorderedArgs.addAll(reorderedPrefix);
 					reorderedArgs.addAll(joinArgs.subList(reorderablePrefixLength, joinArgs.size()));
-					refreshStandardCostEstimates(reorderedPrefix, joinArgs);
+					refreshStandardCostEstimates(reorderedPrefix, joinArgs, inputBindings);
 					join.replaceWith(buildJoin(reorderedArgs));
+					bindingAnalysis.invalidate();
 				}
 			});
 		}
@@ -202,10 +202,10 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			return length;
 		}
 
-		private List<TupleExpr> reorderPrefix(List<TupleExpr> prefix) {
+		private List<TupleExpr> reorderPrefix(List<TupleExpr> prefix, Set<String> inputBindings) {
 			List<TupleExpr> remaining = new ArrayList<>(prefix);
 			List<TupleExpr> reordered = new ArrayList<>(prefix.size());
-			Set<String> boundVars = new HashSet<>();
+			Set<String> boundVars = new HashSet<>(inputBindings);
 			while (!remaining.isEmpty()) {
 				TupleExpr selected = remaining.getFirst();
 				for (int i = 1; i < remaining.size(); i++) {
@@ -216,7 +216,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 				}
 				remaining.remove(selected);
 				reordered.add(selected);
-				boundVars.addAll(selected.getBindingNames());
+				addPatternBindings((StatementPattern) selected, boundVars);
 			}
 			return reordered;
 		}
@@ -226,16 +226,17 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 		 * afterwards must refresh the annotations for the new binding sequence; otherwise the native planner receives
 		 * the right order with the wrong per-step costs and can choose a more expensive physical pipeline.
 		 */
-		private void refreshStandardCostEstimates(List<TupleExpr> orderedPrefix, List<TupleExpr> allJoinArgs) {
+		private void refreshStandardCostEstimates(List<TupleExpr> orderedPrefix, List<TupleExpr> allJoinArgs,
+				Set<String> inputBindings) {
 			Map<String, Integer> variableFrequencies = variableFrequencies(allJoinArgs);
-			Set<String> boundVars = new HashSet<>();
+			Set<String> boundVars = new HashSet<>(inputBindings);
 			double currentHighestCost = 1.0d;
 			for (TupleExpr tupleExpr : orderedPrefix) {
 				StatementPattern pattern = (StatementPattern) tupleExpr;
 				double cost = standardCost(pattern, boundVars, variableFrequencies, currentHighestCost);
 				pattern.setCostEstimate(cost);
 				currentHighestCost = Math.max(currentHighestCost, cost);
-				boundVars.addAll(pattern.getBindingNames());
+				addPatternBindings(pattern, boundVars);
 			}
 		}
 
@@ -316,11 +317,19 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 		private boolean usesBoundVar(StatementPattern pattern, Set<String> boundVars) {
 			for (Var var : pattern.getVarList()) {
-				if (var != null && !var.hasValue() && var.getName() != null && boundVars.contains(var.getName())) {
+				if (var != null && !var.isConstant() && boundVars.contains(var.getName())) {
 					return true;
 				}
 			}
 			return false;
+		}
+
+		private void addPatternBindings(StatementPattern pattern, Set<String> boundVars) {
+			for (Var var : pattern.getVarList()) {
+				if (var != null && !var.isConstant() && var.getName() != null) {
+					boundVars.add(var.getName());
+				}
+			}
 		}
 
 		private int accessPrefixLength(StatementPattern pattern, Set<String> boundVars) {

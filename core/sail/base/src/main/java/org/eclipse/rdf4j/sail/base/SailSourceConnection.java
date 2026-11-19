@@ -311,9 +311,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
+			boolean preview = QueryExplanationContext.isPreview();
+			strategy.setTrackStatementIndexNames(!preview && (executionSummaryEnabled || slowQueryLoggingEnabled));
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
-			iteration = QueryExplanationContext.isPreview() ? new EmptyIteration<>()
-					: qes.evaluate(EmptyBindingSet.getInstance());
+			iteration = preview ? new EmptyIteration<>() : qes.evaluate(EmptyBindingSet.getInstance());
 			iteration = interlock(iteration, rdfDataset);
 			rdfDataset = null; // The iteration now owns the dataset, including any acquired source.
 			if (slowQueryLogInfo != null) {
