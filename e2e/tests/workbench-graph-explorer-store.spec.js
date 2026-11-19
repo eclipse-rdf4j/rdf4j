@@ -73,7 +73,8 @@ function storedGraph(page) {
             resolve('');
             return;
         }
-        const scope = JSON.stringify(['repository-v2', basePath.replace(/\/+$/, ''), serverIdentity, repositoryId]);
+        const scope = JSON.stringify(['repository-v3', basePath.replace(/\/+$/, ''),
+            serverIdentity.split(':').slice(0, 2).join(':'), app.getAttribute('data-workbench-server-user') || '', repositoryId]);
         const key = `workspace:${scope}`;
         const request = indexedDB.open('graph-field-workspaces');
         request.onupgradeneeded = () => {
