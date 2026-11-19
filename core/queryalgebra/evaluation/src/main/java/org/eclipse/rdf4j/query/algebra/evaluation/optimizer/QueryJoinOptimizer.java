@@ -222,6 +222,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private QueryAlgebraBindingAnalysis bindingAnalysis;
 		private QueryAlgebraBindingAnalysis.ReadOnlyContext currentContext;
 		private Set<StatementPattern> filterDiscountedPatterns;
+		private List<TupleExpr> pendingValuesConsumers;
 		private QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot;
 		private final Map<TupleExpr, Set<String>> externalServiceVariableCache = new IdentityHashMap<>();
 
@@ -1064,26 +1065,40 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.POSITIVE_INFINITY;
 				boolean bestCandidateConnected = false;
+				boolean startingRun = ret.isEmpty();
+				boolean anyConnected = !startingRun && anyConnectedByRealBinding(prefixBindingNames, tupleExprs);
 				for (TupleExpr cand : tupleExprs) {
-					boolean connectedToPrefix = connectedByRealBinding(prefixBindingNames, cand);
-					if (!connectedToPrefix && !statementPatternWithMinimumOneConstant(cand)) {
+					boolean connectedToPrefix = connectedOrOutputsNothing(prefixBindingNames, cand);
+					if (startingRun) {
+						if (!connectedToPrefix && !statementPatternWithMinimumOneConstant(cand)) {
+							continue;
+						}
+					} else if (anyConnected && !connectedToPrefix) {
+						// A plan is connected unless that is impossible: never cross-join while a connected
+						// candidate remains.
 						continue;
 					}
 
 					double candidateCost = Double.POSITIVE_INFINITY;
 					boolean candidateConnected = connectedToPrefix;
-					for (TupleExpr prev : ret) {
-						boolean eligibleForCartesianFallback = statementPatternWithMinimumOneConstant(prev);
-						boolean connectedCandidate = connectedByRealBinding(prev, cand);
-						if (!eligibleForCartesianFallback && !connectedCandidate && !connectedToPrefix) {
-							continue;
+					if (connectedToPrefix) {
+						for (TupleExpr prev : ret) {
+							candidateCost = Math.min(candidateCost, normalizeCost(getCard.apply(prev, cand)));
 						}
-						candidateCost = Math.min(candidateCost, normalizeCost(getCard.apply(prev, cand)));
-						candidateConnected |= connectedCandidate || connectedToPrefix;
-					}
-
-					if (Double.isInfinite(candidateCost) && connectedToPrefix) {
-						candidateCost = normalizeCost(statistics.getCardinality(cand) * filterCostMultiplier(cand));
+						if (Double.isInfinite(candidateCost)) {
+							candidateCost = normalizeCost(
+									statistics.getCardinality(cand) * filterCostMultiplier(cand));
+						}
+					} else if (!startingRun) {
+						// Nothing left is connected to the prefix, so a cross product is unavoidable here. The cheapest
+						// candidate starts the next group of connected arguments.
+						for (TupleExpr prev : ret) {
+							candidateCost = Math.min(candidateCost, normalizeCost(getCard.apply(prev, cand)));
+						}
+						if (Double.isInfinite(candidateCost)) {
+							candidateCost = normalizeCost(
+									statistics.getCardinality(cand) * filterCostMultiplier(cand));
+						}
 					}
 
 					if (bestCandidate == null || isBetterCandidate(candidateCost, candidateConnected, bestCost,
@@ -1248,9 +1263,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			double bestCost = Double.POSITIVE_INFINITY;
 			boolean bestConnected = false;
 			try {
+				boolean anyConnected = anyConnectedByRealBinding(prefixBindingNames, tupleExprs);
 				for (TupleExpr tupleExpr : tupleExprs) {
-					boolean connected = connectedByRealBinding(prefixBindingNames, tupleExpr);
-					if (!connected && !statementPatternWithMinimumOneConstant(tupleExpr)) {
+					boolean connected = connectedOrOutputsNothing(prefixBindingNames, tupleExpr);
+					if (anyConnected ? !connected : !statementPatternWithMinimumOneConstant(tupleExpr)) {
 						continue;
 					}
 					double cost = normalizeCost(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
@@ -1709,6 +1725,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (readyExpressions.isEmpty()) {
 				readyExpressions = expressions;
 			}
+			readyExpressions = connectedCandidatesOrAll(readyExpressions);
 
 			for (TupleExpr tupleExpr : readyExpressions) {
 				// Calculate a score for this tuple expression
@@ -1731,7 +1748,100 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			assert result != null;
 			result.setCostEstimate(lowestCost);
 
+			if (result instanceof BindingSetAssignment && !isConnectedForOrdering(result)) {
+				pendingValuesConsumers = consumersOf(result, connectedOnly(expressions));
+			}
+
 			return result;
+		}
+
+		/**
+		 * Join plans are connected unless that is impossible: when at least one candidate is connected, only connected
+		 * candidates may be chosen. If none is connected, every candidate is returned and the cheapest one starts the
+		 * next group of connected arguments.
+		 * <p>
+		 * Two refinements keep this from producing worse plans. An argument that outputs no variables (a ground
+		 * statement pattern, a filter over an empty VALUES) yields at most one row, so it is never a cross product and
+		 * counts as connected. A VALUES block that is not yet connected is a candidate only when some connected
+		 * candidate uses one of its variables; the next pick must then be one of those consumers, so the VALUES block
+		 * binds its variables right before the lookup that needs them.
+		 */
+		private List<TupleExpr> connectedCandidatesOrAll(List<TupleExpr> candidates) {
+			List<TupleExpr> forced = pendingValuesConsumers;
+			if (forced != null) {
+				List<TupleExpr> remainingConsumers = new ArrayList<>();
+				for (TupleExpr consumer : forced) {
+					for (TupleExpr candidate : candidates) {
+						if (candidate == consumer) {
+							remainingConsumers.add(consumer);
+						}
+					}
+				}
+				if (!remainingConsumers.isEmpty()) {
+					pendingValuesConsumers = null;
+					return remainingConsumers;
+				}
+			}
+
+			boolean anyVariableConnected = false;
+			for (TupleExpr candidate : candidates) {
+				if (isConnectedToBoundVars(candidate)) {
+					anyVariableConnected = true;
+					break;
+				}
+			}
+			if (!anyVariableConnected) {
+				// Nothing is connected to what is already bound, so the cheapest candidate starts the next group.
+				return candidates;
+			}
+			List<TupleExpr> connected = connectedOnly(candidates);
+
+			List<TupleExpr> result = null;
+			for (TupleExpr candidate : candidates) {
+				if (candidate instanceof BindingSetAssignment && !connected.contains(candidate)
+						&& hasConnectedConsumer(candidate, connected)) {
+					if (result == null) {
+						result = new ArrayList<>(connected);
+					}
+					result.add(candidate);
+				}
+			}
+			return result == null ? connected : result;
+		}
+
+		private List<TupleExpr> connectedOnly(List<TupleExpr> candidates) {
+			List<TupleExpr> connected = new ArrayList<>();
+			for (TupleExpr candidate : candidates) {
+				if (isConnectedForOrdering(candidate)) {
+					connected.add(candidate);
+				}
+			}
+			return connected;
+		}
+
+		private boolean isConnectedForOrdering(TupleExpr candidate) {
+			return isConnectedToBoundVars(candidate) || getBindingInfo(candidate).mayOutput.isEmpty();
+		}
+
+		private boolean hasConnectedConsumer(TupleExpr values, List<TupleExpr> connected) {
+			return !consumersOf(values, connected).isEmpty();
+		}
+
+		private List<TupleExpr> consumersOf(TupleExpr values, List<TupleExpr> connected) {
+			Set<String> valueNames = getBindingInfo(values).mayOutput;
+			List<TupleExpr> consumers = new ArrayList<>();
+			for (TupleExpr candidate : connected) {
+				if (candidate == values) {
+					continue;
+				}
+				for (String name : getBindingInfo(candidate).mayOutput) {
+					if (valueNames.contains(name)) {
+						consumers.add(candidate);
+						break;
+					}
+				}
+			}
+			return consumers;
 		}
 
 		private boolean usesExistingBinding(TupleExpr tupleExpr, List<Var> vars) {
@@ -2427,6 +2537,22 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 			}
+		}
+
+		/**
+		 * An argument that outputs no variables yields at most one row, so joining it is never a cross product.
+		 */
+		private boolean connectedOrOutputsNothing(Set<String> bindingNames, TupleExpr candidate) {
+			return getBindingInfo(candidate).mayOutput.isEmpty() || connectedByRealBinding(bindingNames, candidate);
+		}
+
+		private boolean anyConnectedByRealBinding(Set<String> bindingNames, List<TupleExpr> candidates) {
+			for (TupleExpr candidate : candidates) {
+				if (connectedByRealBinding(bindingNames, candidate)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private boolean connectedByRealBinding(TupleExpr first, TupleExpr second) {
