@@ -32,6 +32,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
@@ -780,7 +781,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (!trackTime && !trackResultSize) {
 				return ret;
 			}
-			return AdaptiveFilterEvaluationStep.decorate(ret, prepared -> {
+			UnaryOperator<QueryEvaluationStep> instrumentation = prepared -> {
 				QueryEvaluationStep tracked = prepared;
 				if (trackTime) {
 					tracked = trackTime(expr, tracked);
@@ -789,7 +790,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					tracked = trackResultSize(expr, tracked);
 				}
 				return tracked;
-			});
+			};
+			if (ret instanceof GraphQueryEvaluationStep graphStep) {
+				// Stays recognisable as a graph step so that a bind join can still use correlated evaluation.
+				return graphStep.decorated(instrumentation);
+			}
+			return AdaptiveFilterEvaluationStep.decorate(ret, instrumentation);
 		}
 		throw new IllegalArgumentException("prepared step must not be null");
 	}
