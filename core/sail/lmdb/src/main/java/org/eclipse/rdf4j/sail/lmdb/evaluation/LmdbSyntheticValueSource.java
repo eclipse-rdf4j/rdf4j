@@ -425,6 +425,21 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		return lazyValue(id, positionMask, valueScope, true);
 	}
 
+	@Override
+	public Object projectedValueSnapshot() {
+		return delegate.projectedValueSnapshot();
+	}
+
+	@Override
+	public Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
+			Value supplied, long semanticVersion) {
+		// Runtime and query-scoped representatives can shadow the backing dictionary, as can plan constants.
+		if ((context != null && (context.isClosed() || context.contains(id))) || catalog.contains(id)) {
+			return null;
+		}
+		return delegate.reuseProjectedValue(snapshot, id, positionMask, valueScope, supplied, semanticVersion);
+	}
+
 	private Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope, boolean explicitScope) {
 		if (context != null) {
 			Value interned = context.valueOf(id);

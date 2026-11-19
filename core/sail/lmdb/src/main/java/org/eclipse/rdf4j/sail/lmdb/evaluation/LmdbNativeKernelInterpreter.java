@@ -906,7 +906,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	record PullRestoreSite(Node node, boolean scheduled, int[] restoredColumns, List<List<PullRestoreSite>> children,
-			boolean restoresAfterOpen) {
+			boolean restoresAfterOpen, long restoreApplications) {
 	}
 
 	List<PullRestoreSite> pullRestoreSites() {
@@ -933,6 +933,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private static final class VerifiedPullRestore extends PullRestore {
 		private final PullRestore delegate;
 		private final Node node;
+		private long applications;
 
 		private VerifiedPullRestore(PullRestore restore, Node node) {
 			super(restore.count);
@@ -942,6 +943,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		@Override
 		void restore(long[] saved, long[] row) {
+			applications++;
 			delegate.restore(saved, row);
 			verify(node, saved, row);
 		}
@@ -1058,6 +1060,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		/** Null restores the entire row using the original bulk copy directly. */
 		PullRestore restore;
 		boolean active;
+		/** After yielding a row, the stage can prove that another advance has no work or results. */
+		boolean exhausted;
 
 		PullStage(Node node, PullReset reset) {
 			this(node, false, List.of(), reset);
@@ -1111,6 +1115,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		final void open() {
 			System.arraycopy(v, 0, saved, 0, v.length);
 			active = true; // publish ownership before activation, so failures are swept as well
+			exhausted = false;
 			reset();
 		}
 
@@ -1269,7 +1274,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				PullRestore descriptor = stage.restore == null ? PullRestore.wholeRow(kernel.columnCount)
 						: stage.restore;
 				sites.add(new PullRestoreSite(stage.node, stage.scheduled, descriptor.columns(), children,
-						stage.restoresAfterOpen));
+						stage.restoresAfterOpen,
+						descriptor instanceof VerifiedPullRestore verified ? verified.applications : -1));
 			}
 			return List.copyOf(sites);
 		}
@@ -1295,7 +1301,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				PullStage stage = stages[depth];
 				boolean hasRow;
 				if (stage.active) {
-					hasRow = stage.next();
+					hasRow = !stage.exhausted && stage.next();
 				} else {
 					stage.open();
 					if (stage.restoresAfterOpen) {
@@ -1316,12 +1322,24 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return false;
 		}
 
+		boolean exhaustedAfterOutput() {
+			for (PullStage stage : stages) {
+				if (!stage.exhausted) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		void checkElidedRestore(PullStage stage) {
 			// The production pipeline does not inspect registers after a preserving reset.
 		}
 
 		@Override
 		public void close() {
+			if (done) {
+				return;
+			}
 			done = true;
 			Throwable failure = null;
 			for (int i = stages.length - 1; i >= 0; i--) {
@@ -1730,6 +1748,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						v[probe.valueCol] = (probe.ctxActive() ? view.neighborInContextSpan(handle, at)
 								: view.neighborAt(handle, at));
+						exhausted = position == end;
 						return true;
 					}
 					return false;
@@ -1741,12 +1760,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			boundCursors.add(cursor);
 			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				long position, end;
-				boolean nullSent;
 
 				@Override
 				void reset() {
 					position = 0;
-					nullSent = false;
 					long key = read(probe.key);
 					end = key == -1L ? 0 : cursor.bind(key);
 				}
@@ -1755,11 +1772,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				boolean advance() {
 					if (position < end) {
 						v[probe.valueCol] = cursor.neighborAt(position++);
+						exhausted = position == end;
 						return true;
 					}
-					if (end <= 0 && !nullSent) {
-						nullSent = true;
+					if (end <= 0) {
 						v[probe.valueCol] = -1L;
+						exhausted = true;
 						return true;
 					}
 					return false;
@@ -1779,10 +1797,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 				@Override
 				boolean advance() {
-					if (position >= context.keyDomainLengths[domain.domain])
+					int length = context.keyDomainLengths[domain.domain];
+					if (position >= length)
 						return false;
 					v[domain.col] = context.keyDomains[domain.domain][context.keyDomainOffsets[domain.domain]
 							+ position++];
+					exhausted = position == length;
 					if (site >= 0)
 						sipDriven[site]++;
 					return true;
@@ -1822,6 +1842,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						v[probe.valueCol] = (probe.ctxActive() ? cursor.neighborInContextSpan(at)
 								: cursor.neighborAt(at));
+						exhausted = position == end;
 						return true;
 					}
 					return false;
@@ -1982,11 +2003,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			PullPipeline arm = pullPipeline(left.arm);
 			int[] resetColumns = left.resetColumns();
 			return new PullStage(node, List.of(arm), PullReset.PRESERVES_ROW, resetColumns) {
-				boolean matched, nullSent;
+				boolean matched;
 
 				@Override
 				void reset() {
-					matched = nullSent = false;
+					matched = false;
 					arm.reset();
 				}
 
@@ -1994,11 +2015,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				boolean advance() {
 					if (arm.next()) {
 						matched = true;
+						// Leave the arm suspended until normal backtracking or close. An exhausted arm has
+						// no remaining advances, but its active frames still own their saved registers.
+						exhausted = arm.exhaustedAfterOutput();
 						return true;
 					}
-					arm.close();
-					if (!matched && !nullSent) {
-						nullSent = true;
+					if (!matched) {
+						exhausted = true;
 						System.arraycopy(saved, 0, v, 0, v.length);
 						for (int col : resetColumns)
 							v[col] = -1L;
@@ -2147,18 +2170,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				|| node instanceof FilterEntryCompatible || node instanceof Exists || node instanceof HashBuild) {
 			Op scalar = buildNode(node, () -> true, false);
 			return new PullStage(node, PullReset.PRESERVES_ROW) {
-				boolean done;
-
-				@Override
-				void reset() {
-					done = false;
-				}
-
 				@Override
 				boolean advance() {
-					if (done)
-						return false;
-					done = true;
+					exhausted = true;
 					return scalar.run();
 				}
 			};
@@ -2254,6 +2268,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 				poll();
 				remaining--;
+				exhausted = remaining == 0L;
 				return true;
 			}
 		};

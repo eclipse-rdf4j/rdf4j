@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
+import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Immutable projected native ids that materialize RDF values only when a caller reads a binding. */
@@ -284,6 +285,9 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	/** Captures the row under its live read owner and then drops the source. */
 	public void captureAndDetach(ValueResolutionScope valueScope, CaptureScratch scratch) {
+		if (source == null && scratch != null) {
+			scratch.discardPrevious();
+		}
 		collectMaterializationValues(IGNORE_VALUE, valueScope, true, scratch);
 		detachAfterMaterialization();
 	}
@@ -296,18 +300,25 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		}
 		int[] entries = captureIndex;
 		boolean outermost = entries == null;
-		if (outermost) {
-			if (size > 1 && size <= MAX_INDEXED_BINDINGS) {
-				int capacity = captureCapacity();
-				entries = scratch == null ? new int[capacity] : scratch.acquire(capacity);
-			} else {
-				entries = CAPTURING_WITHOUT_INDEX;
-			}
-			captureIndex = entries;
-		}
+		CaptureState state = outermost && scratch != null ? scratch.acquire() : null;
 		int materializedValues = 0;
 		boolean complete = true;
+		boolean keepPrevious = false;
 		try {
+			if (outermost) {
+				if (size > 1 && size <= MAX_INDEXED_BINDINGS) {
+					int capacity = captureCapacity();
+					entries = state == null ? new int[capacity] : state.index(capacity);
+				} else {
+					entries = CAPTURING_WITHOUT_INDEX;
+				}
+				captureIndex = entries;
+			}
+			Object snapshot = state == null || size == 0 ? null : currentSource.projectedValueSnapshot();
+			boolean reusePrevious = snapshot != null && state.matches(currentSource, snapshot, valueScope);
+			if (snapshot != null) {
+				state.ensureCandidateCapacity(ids.length);
+			}
 			if (outermost && entries != CAPTURING_WITHOUT_INDEX) {
 				for (int i = 0; i < values.length; i++) {
 					if (values[i] != null) {
@@ -320,19 +331,33 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			}
 			for (int i = 0; i < ids.length; i++) {
 				if (!isBound(ids[i])) {
+					if (snapshot != null) {
+						state.candidates[i] = null;
+					}
 					continue;
 				}
 				Value value = values[i];
+				boolean resolvedHere = false;
 				if (value == null) {
 					int bucket = entries == CAPTURING_WITHOUT_INDEX ? -1 : findOrReserveCaptureBucket(i, entries);
 					value = materializedDuplicate(i, entries, bucket);
 					if (value == null) {
-						value = explicitScope
-								? currentSource.lazyValue(ids[i], layout.positionMasks[i], valueScope)
-								: currentSource.lazyValue(ids[i], layout.positionMasks[i]);
-						materializedValues++;
+						long id = ids[i];
+						int mask = layout.positionMasks[i];
+						if (reusePrevious) {
+							value = state.reuse(i, id, mask);
+						}
+						if (value == null) {
+							value = explicitScope ? currentSource.lazyValue(id, mask, valueScope)
+									: currentSource.lazyValue(id, mask);
+							materializedValues++;
+						}
+						resolvedHere = true;
 					}
 					assignValue(i, value, entries, bucket);
+				}
+				if (snapshot != null) {
+					state.recordCandidate(i, resolvedHere ? value : null);
 				}
 				complete &= value != null;
 				consumer.accept(value);
@@ -340,11 +365,18 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			if (outermost) {
 				fullyCaptured = complete;
 			}
+			if (complete && snapshot != null) {
+				state.publish(currentSource, snapshot, valueScope, ids, layout.positionMasks);
+				keepPrevious = true;
+			}
 		} finally {
 			if (outermost) {
 				captureIndex = null;
-				if (scratch != null && entries != CAPTURING_WITHOUT_INDEX) {
-					scratch.release(entries);
+				if (state != null) {
+					if (!keepPrevious) {
+						state.discardPrevious();
+					}
+					scratch.release(state);
 				}
 			}
 			if (materializedValues > 0) {
@@ -353,26 +385,107 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		}
 	}
 
-	/** Reusable primitive storage owned by one evaluating iteration. A lease is exclusive to one row. */
+	/** Bounded scratch owned by one read attempt. Reentrant or overlapping capture gets independent storage. */
 	public static final class CaptureScratch {
-		private final AtomicReference<int[]> available = new AtomicReference<>();
+		private static final CaptureState CLOSED = new CaptureState();
+		private final AtomicReference<CaptureState> available = new AtomicReference<>(new CaptureState());
 
-		private int[] acquire(int capacity) {
-			int[] entries = available.getAndSet(null);
-			if (entries == null || entries.length < capacity) {
-				return new int[capacity];
+		private CaptureState acquire() {
+			CaptureState state = available.get();
+			return state != null && state != CLOSED && available.compareAndSet(state, null) ? state : null;
+		}
+
+		private void release(CaptureState state) {
+			available.compareAndSet(null, state);
+		}
+
+		/** Drops candidates when the iteration emits a row through another result path. */
+		public void discardPrevious() {
+			CaptureState state = acquire();
+			if (state != null) {
+				state.discardPrevious();
+				release(state);
 			}
-			Arrays.fill(entries, 0, capacity, 0);
+		}
+
+		/** Drops retained candidates and prevents an in-flight capture from publishing them after close. */
+		public void close() {
+			available.set(CLOSED);
+		}
+	}
+
+	private static final class CaptureState {
+		private int[] entries = CAPTURING_WITHOUT_INDEX;
+		private NativeLmdbQuerySource source;
+		private Object snapshot;
+		private ValueResolutionScope valueScope;
+		private long[] previousIds;
+		private int[] previousMasks;
+		private LmdbValue[] candidates;
+		private long[] versions;
+
+		int[] index(int capacity) {
+			if (entries.length < capacity) {
+				entries = new int[capacity];
+			} else {
+				Arrays.fill(entries, 0, capacity, 0);
+			}
 			return entries;
 		}
 
-		private void release(int[] entries) {
-			int[] spare = available.get();
-			while (spare == null || spare.length < entries.length) {
-				if (available.compareAndSet(spare, entries)) {
-					return;
-				}
-				spare = available.get();
+		boolean matches(NativeLmdbQuerySource source, Object snapshot, ValueResolutionScope valueScope) {
+			return this.source == source && this.snapshot == snapshot && this.valueScope == valueScope;
+		}
+
+		void ensureCandidateCapacity(int width) {
+			if (candidates == null) {
+				candidates = new LmdbValue[width];
+				versions = new long[width];
+			} else if (candidates.length < width) {
+				candidates = Arrays.copyOf(candidates, width);
+				versions = Arrays.copyOf(versions, width);
+			}
+		}
+
+		Value reuse(int index, long id, int mask) {
+			if (index >= previousIds.length || previousIds[index] != id || previousMasks[index] != mask) {
+				return null;
+			}
+			LmdbValue candidate = candidates[index];
+			return candidate == null ? null
+					: source.reuseProjectedValue(snapshot, id, mask, valueScope, candidate, versions[index]);
+		}
+
+		void recordCandidate(int index, Value value) {
+			if (ValueStore.canReuseNativeLeaf(value)) {
+				LmdbValue candidate = (LmdbValue) value;
+				candidates[index] = candidate;
+				versions[index] = candidate.getSemanticVersion();
+			} else {
+				candidates[index] = null;
+			}
+		}
+
+		void publish(NativeLmdbQuerySource source, Object snapshot, ValueResolutionScope valueScope,
+				long[] ids, int[] masks) {
+			if (previousIds != null && previousIds.length > ids.length) {
+				Arrays.fill(candidates, ids.length, previousIds.length, null);
+			}
+			this.source = source;
+			this.snapshot = snapshot;
+			this.valueScope = valueScope;
+			previousIds = ids;
+			previousMasks = masks;
+		}
+
+		void discardPrevious() {
+			source = null;
+			snapshot = null;
+			valueScope = null;
+			previousIds = null;
+			previousMasks = null;
+			if (candidates != null) {
+				Arrays.fill(candidates, null);
 			}
 		}
 	}

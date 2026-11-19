@@ -43,13 +43,14 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 final class RepositoryValueIteration<T> implements CloseableIteration<T>, CooperativeCancellation {
 
 	private static final int WAVE_VALUES = 1024;
-	private static final ThreadLocal<RepositoryValueIteration<?>> SOURCE_PULL = new ThreadLocal<>();
+	private static final ThreadLocal<SourcePull> SOURCE_PULL = new ThreadLocal<>();
 
 	private record PendingValue(LmdbValue value, LmdbValue.InternalIdentity identity) {
 	}
 
 	private static final Comparator<PendingValue> ID_ORDER = Comparator.comparingLong(value -> value.identity.id());
 	private final CloseableIteration<? extends T> source;
+	private final SourcePull sourcePull = new SourcePull(this);
 	private final SailResultValueExtractor<T> extractor;
 	private final Consumer<RepositoryValueIteration<?>> onClose;
 	private final ValueStore store;
@@ -134,17 +135,22 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			close();
 			return false;
 		}
-		// Iterator availability may run user callbacks or block. Never request a later row before this one escapes.
-		boolean available = sourceHasNext();
-		if (closed.get()) {
-			return false;
+		// Availability can invoke user code. Share an observed read only across the two pulls for this row.
+		boolean available;
+		T sourceRow;
+		try (SourcePull pull = beginSourcePull()) {
+			available = source.hasNext();
+			pull.availabilityClaimed = true;
+			if (closed.get()) {
+				return false;
+			}
+			sourceRow = available ? source.next() : null;
 		}
 		if (!available) {
 			sourceEnded = true;
 			close();
 			return false;
 		}
-		T sourceRow = sourceNext();
 		NativeProjectedBindingSet projected = extractor == SailResultValueExtractor.BINDING_SETS
 				&& sourceRow instanceof NativeProjectedBindingSet nativeRow ? nativeRow : null;
 		MapBindingSet snapshot = projected == null ? null : projected.snapshotIfFullyCaptured();
@@ -184,34 +190,79 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 
 	/** A repository pull already owns cold values until its complete current-row wave finishes. */
 	boolean isPullingSource() {
-		return !closed.get() && SOURCE_PULL.get() == this;
+		SourcePull pull = SOURCE_PULL.get();
+		return !closed.get() && pull != null && pull.exposure == this;
 	}
 
-	private boolean sourceHasNext() {
-		RepositoryValueIteration<?> previous = SOURCE_PULL.get();
-		SOURCE_PULL.set(this);
-		try {
-			return source.hasNext();
-		} finally {
-			restoreSourcePull(previous);
+	void bindObservedSource(CloseableIteration<?> replayable) {
+		if (extractor == SailResultValueExtractor.BINDING_SETS) {
+			sourcePull.observedSource = replayable;
 		}
 	}
 
-	private T sourceNext() {
-		RepositoryValueIteration<?> previous = SOURCE_PULL.get();
-		SOURCE_PULL.set(this);
-		try {
-			return source.next();
-		} finally {
-			restoreSourcePull(previous);
-		}
+	static SourcePull currentSourcePull(CloseableIteration<?> replayable) {
+		SourcePull pull = SOURCE_PULL.get();
+		return pull != null && pull.observedSource == replayable && !pull.exposure.closed.get() ? pull : null;
 	}
 
-	private static void restoreSourcePull(RepositoryValueIteration<?> previous) {
-		if (previous == null) {
-			SOURCE_PULL.remove();
-		} else {
-			SOURCE_PULL.set(previous);
+	private SourcePull beginSourcePull() {
+		// Reentrant callbacks get their own marker and cannot borrow the outer pull's read operation.
+		SourcePull pull = sourcePull.inUse ? new SourcePull(this) : sourcePull;
+		pull.previous = SOURCE_PULL.get();
+		pull.inUse = true;
+		SOURCE_PULL.set(pull);
+		return pull;
+	}
+
+	static final class SourcePull implements SailClosable {
+		private final RepositoryValueIteration<?> exposure;
+		private CloseableIteration<?> observedSource;
+		private SourcePull previous;
+		private boolean inUse;
+		private boolean availabilityClaimed;
+		private LmdbStoreConnection.ObservedRead observedRead;
+
+		private SourcePull(RepositoryValueIteration<?> exposure) {
+			this.exposure = exposure;
+		}
+
+		SourcePull claimAvailability() {
+			if (availabilityClaimed) {
+				return null;
+			}
+			availabilityClaimed = true;
+			return this;
+		}
+
+		void retain(LmdbStoreConnection.ObservedRead read) {
+			assert observedRead == null;
+			observedRead = read;
+		}
+
+		LmdbStoreConnection.ObservedRead takeRead() {
+			LmdbStoreConnection.ObservedRead read = observedRead;
+			observedRead = null;
+			return read;
+		}
+
+		@Override
+		public void close() {
+			if (previous == null) {
+				SOURCE_PULL.remove();
+			} else {
+				SOURCE_PULL.set(previous);
+			}
+			previous = null;
+			LmdbStoreConnection.ObservedRead read = takeRead();
+			try {
+				if (read != null) {
+					// The next pull was skipped or rejected by the outward wrapper before it reached the source.
+					read.close();
+				}
+			} finally {
+				availabilityClaimed = false;
+				inUse = false;
+			}
 		}
 	}
 

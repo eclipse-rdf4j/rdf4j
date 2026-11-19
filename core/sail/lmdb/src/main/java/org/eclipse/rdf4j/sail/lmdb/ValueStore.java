@@ -6981,24 +6981,33 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * models can retain independent child capabilities, and prepared models retain their original decode capability;
 	 * both must use the authoritative canonical lookup, which refreshes obsolete nested capabilities.
 	 */
-	static boolean canReuseNativeLeaf(Value value) {
+	@InternalUseOnly
+	public static boolean canReuseNativeLeaf(Value value) {
 		return value instanceof LmdbIRI || value instanceof LmdbBNode;
 	}
 
 	/** Called under a validated paired snapshot; supplied terms remain subject to native identity and export checks. */
 	LmdbValue getLazyValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure, Value supplied,
 			long semanticVersion) throws IOException {
+		LmdbValue reused = reuseLazyValue(id, revision, exposure, supplied, semanticVersion, false);
+		return reused != null ? reused : getLazyValue(id, revision, false, exposure);
+	}
+
+	private LmdbValue reuseLazyValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure,
+			Value supplied, long semanticVersion, boolean requireCapturedPosition) {
 		if (canReuseNativeLeaf(supplied) && supplied instanceof LmdbValue value
 				&& semanticVersion != LmdbValue.UNKNOWN_ID
 				&& semanticVersion == value.getSemanticVersion()) {
 			LmdbValue.InternalIdentity identity = value.getInternalIdentity();
 			ValueStoreRevision owner = identity.revision();
 			if (identity.id() == id && completedRevision(owner).equals(completedRevision(revision))
+					&& (!requireCapturedPosition || owner instanceof ValueStoreRevision.Default
+							|| owner.getPositionMask() == revision.getPositionMask())
 					&& reusableAssociation(owner)) {
 				return finishLazyLookup(value, revision, exposure);
 			}
 		}
-		return getLazyValue(id, revision, false, exposure);
+		return null;
 	}
 
 	private boolean reusableAssociation(ValueStoreRevision revision) {
@@ -11466,6 +11475,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask, ValueResolutionScope scope)
 			throws IOException {
 		return getLazyValue(snapshot, id, positionMask, scope, false);
+	}
+
+	LmdbValue reuseProjectedLazyValue(ReadSnapshot snapshot, long id, int positionMask, ValueResolutionScope scope,
+			Value supplied, long semanticVersion) throws IOException {
+		ValuePosition.validateMask(positionMask);
+		if (snapshot.valueStore() != this) {
+			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+		}
+		synchronized (snapshot.txnRef()) {
+			snapshot.ensureValid();
+			if (!snapshot.hasStableIds() || scope != null && (!scope.belongsTo(this) || !scope.isOpen())) {
+				return null;
+			}
+			return reuseLazyValue(id, snapshot.stablePositionedRevision(positionMask), scope, supplied,
+					semanticVersion, true);
+		}
 	}
 
 	private LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask, ValueResolutionScope scope,

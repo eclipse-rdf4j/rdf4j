@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -27,12 +29,44 @@ import java.util.concurrent.TimeoutException;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class ValueStoreDetachedSnapshotReadTest {
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void projectedLeafReuseValidatesThePairedSnapshotAcrossDictionaryGrowth(@TempDir Path dataDir) throws Exception {
+		var config = new LmdbStoreConfig("spoc,posc").setValueDBSize(1024L * 1024L).setForceSync(false);
+		var values = new ValueStore(dataDir.resolve("values").toFile(), config);
+		try (var triples = new TripleStore(dataDir.resolve("triples").toFile(), config, values)) {
+			String iri = "urn:detached-read:leaf";
+			values.startTransaction(true);
+			long id = values.storeValue(values.createIRI(iri));
+			values.commit();
+
+			int mask = ValuePosition.SUBJECT | ValuePosition.OBJECT;
+			try (var triple = triples.getTxnManager().createReadTxnPinned(triples::getDataRevision);
+					var reserved = values.reserveReadSnapshot();
+					var snapshot = reserved.start(triple);
+					var scope = values.openValueResolutionScope()) {
+				var leaf = values.getLazyValue(snapshot, id, mask, scope);
+				long version = leaf.getSemanticVersion();
+				assertTrue(values.growMapForEstimatedWrite(Math.multiplyExact(values.mapSizeBytes(), 2L), null));
+				assertTrue(snapshot.dictionaryDetached());
+				assertSame(leaf, values.reuseProjectedLazyValue(snapshot, id, mask, scope, leaf, version));
+				assertEquals(iri, leaf.stringValue());
+				snapshot.close();
+				assertThrows(IOException.class,
+						() -> values.reuseProjectedLazyValue(snapshot, id, mask, scope, leaf, version));
+			}
+		} finally {
+			values.close();
+		}
+	}
 
 	@ParameterizedTest
 	@EnumSource(DetachedRead.class)

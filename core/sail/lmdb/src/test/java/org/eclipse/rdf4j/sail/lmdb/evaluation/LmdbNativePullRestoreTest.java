@@ -15,12 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 
@@ -36,14 +38,18 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashBuild;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftGroup;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LexicalFrameLeftJoin;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -56,6 +62,170 @@ class LmdbNativePullRestoreTest {
 	private static final int PAYLOAD = 63;
 	private static final List<String> OPTIONAL_ROWS = List.of("[10, 11, 10, 101]", "[10, 11, 10, 101]",
 			"[20, 11, 20, -1]", "[40, 11, 40, -1]");
+
+	@Test
+	void finishedPullStagesAreNotAdvancedAgain() {
+		long[] roots = { 1, 2, 3 };
+		Kernel ir = new Kernel(5, List.of(new EnumerateDomain(0, 0), probeOptional(),
+				new BindAlias(Operand.col(3), 4)), new Emit(new int[] { 0, 1, 2, 3, 4 }, false, OutputMods.none()));
+		KernelContext context = probeContext(roots, new KernelExpansionContractTest.ArrayView(11),
+				new KernelExpansionContractTest.ArrayView(21), new KernelExpansionContractTest.ArrayView(31));
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
+		assertNotNull(execution);
+		try {
+			execution.bind(context);
+			assertEquals(List.of("[1, 11, 21, 31, 31]", "[2, 11, 21, 31, 31]", "[3, 11, 21, 31, 31]"),
+					drain(ir, execution));
+			List<PullRestoreSite> outer = execution.pullRestoreSites();
+			assertEquals(roots.length - 1, outer.getFirst().restoreApplications(),
+					"the root producer has to resume for the remaining roots");
+			assertNoStageRestore(outer.get(1));
+			assertNoStageRestore(outer.get(2));
+		} finally {
+			execution.close();
+		}
+	}
+
+	private static void assertNoStageRestore(PullRestoreSite site) {
+		assertEquals(0, site.restoreApplications(), site.node().getClass().getSimpleName());
+		for (List<PullRestoreSite> child : site.children()) {
+			child.forEach(LmdbNativePullRestoreTest::assertNoStageRestore);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(PullRestoreTestMode.class)
+	void finishedProbeDoesNotHideLaterMatchesOrUnmatchedOptionals(PullRestoreTestMode mode) {
+		Kernel ir = new Kernel(5, List.of(new EnumerateDomain(0, 0), probeOptional(),
+				new BindAlias(Operand.col(0), 2), new BindAlias(Operand.col(3), 4)),
+				new Emit(new int[] { 0, 1, 2, 3, 4 }, false, OutputMods.none()));
+		var first = new KeyedView(1, new long[][] { { 11, 12, 13 }, {}, { 14 } });
+		var second = new KeyedView(11, new long[][] { { 21 }, { 22, 23 }, {}, { 24 } });
+		var third = new KeyedView(21, new long[][] { { 31, 32 }, {}, { 33 }, { 34 } });
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, mode);
+		assertNotNull(execution);
+		try {
+			execution.bind(probeContext(new long[] { 1, 2, 3 }, first, second, third));
+			assertEquals(List.of("[1, 11, 1, 31, 31]", "[1, 11, 1, 32, 32]", "[1, 12, 1, -1, -1]",
+					"[1, 12, 1, 33, 33]", "[1, 13, 1, -1, -1]", "[2, -1, 2, -1, -1]", "[3, 14, 3, 34, 34]"),
+					drain(ir, execution));
+		} finally {
+			execution.close();
+		}
+	}
+
+	@Test
+	void graphFilteredProbeKeepsSearchingUntilItsPhysicalRunEnds() {
+		Probe graphProbe = new Probe(0, Operand.col(0), 1, 2, null, true);
+		Kernel ir = new Kernel(3, List.of(new EnumerateDomain(0, 0), new LeftGroup(List.of(graphProbe))),
+				new Emit(new int[] { 0, 1, 2 }, false, OutputMods.none()));
+		var view = new KeyedView(1, new long[][] { { 11, 12, 13, 14 }, { 15 }, {} },
+				new long[][] { { 17, 0, 17, 0 }, { 0 }, {} });
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
+		assertNotNull(execution);
+		try {
+			execution.bind(probeContext(new long[] { 1, 2, 3 }, view));
+			assertEquals(List.of("[1, 11, 17]", "[1, 13, 17]", "[2, -1, -1]", "[3, -1, -1]"), drain(ir, execution));
+			PullRestoreSite optional = execution.pullRestoreSites().get(1);
+			assertEquals(2, optional.restoreApplications(),
+					"the accepted rows do not prove physical exhaustion until the rejected last quad is scanned");
+			assertEquals(2, optional.children().getFirst().getFirst().restoreApplications());
+		} finally {
+			execution.close();
+		}
+	}
+
+	@Test
+	void unknownArmCardinalityStillResumesAndClosesOnCancellation() {
+		PlanRows delegated = new PlanRows(0, new int[] { 1 },
+				new Operand[] { Operand.col(0), Operand.constant(0) });
+		Kernel ir = new Kernel(2, List.of(new Probe(0, Operand.constant(0), 0), new LeftGroup(List.of(delegated))),
+				new Emit(new int[] { 0, 1 }, false, OutputMods.none()));
+		Rows plan = new Rows(ignored -> new long[][] { { 21 }, { 22 }, { 23 } });
+		var view = new KernelExpansionContractTest.ArrayView(11);
+		KernelContext context = new KernelContext(new NativeLmdbQuerySource.NativeAdjacency[] { view },
+				new long[] { 1 }, new long[0], null, null, null, new KernelPlan[] { plan }, 16);
+		AtomicBoolean cancelled = new AtomicBoolean();
+		context.cancellation = KernelCancellation.forOrdinaryExecution(null, cancelled::get, null);
+		JaninoKernel execution = LmdbNativeKernelInterpreter.forRows(ir);
+		assertNotNull(execution);
+		try {
+			execution.bind(context);
+			long[] row = new long[ir.stride()];
+			assertEquals(1, execution.fill(row, 1));
+			assertArrayEquals(new long[] { 11, 21 }, row);
+			assertEquals(1, execution.fill(row, 1));
+			assertArrayEquals(new long[] { 11, 22 }, row);
+			assertEquals(2, plan.cursorFills);
+			cancelled.set(true);
+			assertThrows(KernelQueryCancelledException.class, () -> execution.fill(row, 1));
+			assertEquals(2, plan.cursorFills, "cancellation must not pull a later delegated row");
+			assertEquals(1, plan.cursorCloses);
+		} finally {
+			execution.close();
+		}
+		assertEquals(1, plan.cursorCloses);
+	}
+
+	@Test
+	void finishedOptionalStillPollsWhenDownstreamRejectsEveryRow() {
+		long[] roots = IntStream.rangeClosed(1, 4096).mapToLong(i -> i).toArray();
+		Kernel ir = new Kernel(4, List.of(new EnumerateDomain(0, 0), probeOptional(),
+				new FilterCompareId(false, Operand.col(0), Operand.constant(0))),
+				new Emit(new int[] { 0, 1, 2, 3 }, false, OutputMods.none()));
+		var first = new KernelMixedDemandTest.CountingAdjacency(roots.length);
+		var singleton = new KernelExpansionContractTest.ArrayView(21);
+		KernelContext context = probeContext(roots, first, singleton, singleton);
+		context.cancellation = KernelCancellation.forOrdinaryExecution(null, () -> first.finds >= 17, null);
+		JaninoKernel execution = LmdbNativeKernelInterpreter.forRows(ir);
+		assertNotNull(execution);
+		try {
+			execution.bind(context);
+			assertThrows(KernelQueryCancelledException.class, () -> execution.fill(new long[ir.stride()], 1));
+			assertTrue(first.finds >= 17 && first.finds <= 17 + 1024,
+					"cancellation must be observed within one poll window without any emitted rows");
+			assertEquals(0, execution.fill(new long[ir.stride()], 1));
+		} finally {
+			execution.close();
+		}
+	}
+
+	private static LeftGroup probeOptional() {
+		return new LeftGroup(List.of(new Probe(0, Operand.col(0), 1),
+				new LeftGroup(List.of(new Probe(1, Operand.col(1), 2), new LeftProbe(2, Operand.col(2), 3)))));
+	}
+
+	private static KernelContext probeContext(long[] roots, NativeLmdbQuerySource.NativeAdjacency... adjacencies) {
+		return new KernelContext(adjacencies, new long[] { 0 }, new long[0], new long[][] { roots });
+	}
+
+	private record KeyedView(long firstKey, long[][] rows, long[][] contexts)
+			implements NativeLmdbQuerySource.NativeAdjacency {
+		KeyedView(long firstKey, long[][] rows) {
+			this(firstKey, rows, null);
+		}
+
+		@Override
+		public long find(long key) {
+			long index = key - firstKey;
+			return index >= 0 && index < rows.length && rows[(int) index].length != 0 ? index + 1 : NOT_FOUND;
+		}
+
+		@Override
+		public long size(long handle) {
+			return rows[Math.toIntExact(handle) - 1].length;
+		}
+
+		@Override
+		public long neighborAt(long handle, long offset) {
+			return rows[Math.toIntExact(handle) - 1][Math.toIntExact(offset)];
+		}
+
+		@Override
+		public long contextAt(long handle, long offset) {
+			return contexts == null ? 0 : contexts[Math.toIntExact(handle) - 1][Math.toIntExact(offset)];
+		}
+	}
 
 	@Test
 	void childResumesWithLexicallyHiddenCallerColumn() {
