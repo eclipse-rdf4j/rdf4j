@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -29,6 +31,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class QueryExecutionPolicyTest {
 
@@ -80,5 +84,32 @@ class QueryExecutionPolicyTest {
 		assertSame(QueryExecutionPolicy.DEFAULT, strategy.getQueryExecutionPolicy());
 		assertThrows(UnsupportedOperationException.class,
 				() -> strategy.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL));
+	}
+
+	@Test
+	void factoryAllowsAutomaticFallbackForACustomStrategyWithRestrictionsOff() {
+		QueryExecutionPolicy off = QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class, CALLS_REAL_METHODS);
+		doReturn(off).when(strategy).getQueryExecutionPolicy();
+		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory() {
+			@Override
+			public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+					EvaluationStatistics statistics) {
+				return strategy;
+			}
+		};
+		assertSame(strategy, factory.createEvaluationStrategy(null, new EmptyTripleSource(),
+				new EvaluationStatistics(), off));
+		assertSame(strategy, factory.createEvaluationStrategy(null, new EmptyTripleSource(),
+				new EvaluationStatistics(), QueryExecutionPolicy.DEFAULT));
+		assertSame(off, strategy.getQueryExecutionPolicy());
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = GraphRestrictionMode.class, names = { "OFF", "REQUIRE_RESTRICTED", "FORCE_INDEPENDENT" })
+	void unsupportedCustomStrategiesRejectNonDefaultGraphModes(GraphRestrictionMode mode) {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class, CALLS_REAL_METHODS);
+		assertThrows(UnsupportedOperationException.class,
+				() -> strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode)));
 	}
 }

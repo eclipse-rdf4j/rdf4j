@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.jupiter.api.DynamicTest;
@@ -61,6 +62,28 @@ class GraphRestrictionRepositoryTest {
 
 	@TempDir
 	Path dataDirectory;
+
+	@Test
+	void defaultLmdbUsesGraphRestrictionWithTheStandardEvaluator() {
+		LmdbStore sail = new LmdbStore(dataDirectory.resolve("lmdb-default").toFile());
+		assertThat(sail.isExperimentalQueryOptimizations()).isFalse();
+		assertThat(sail.isNativeQueryEngineEnabled()).isFalse();
+		SailRepository repository = new SailRepository(sail);
+		try (var connection = repository.getConnection()) {
+			seed(connection);
+			connection.begin(IsolationLevels.SNAPSHOT_READ);
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+			ValueFactory values = connection.getValueFactory();
+			MapBindingSet expected = statementRow(values.createIRI(NAMESPACE, "wanted"),
+					values.createIRI(NAMESPACE, "match"));
+			expected.addBinding("g", values.createIRI(NAMESPACE, "graph"));
+			assertThat(QueryResults.asList(query.evaluate())).containsExactly(expected, expected);
+			assertThat(usesRestrictionPlan(query)).as("default GRAPH restriction plan").isTrue();
+			connection.commit();
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@TestFactory
 	Stream<DynamicTest> independentAndRestrictedPlansAgreeThroughRepositoryApi() {

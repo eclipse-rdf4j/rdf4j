@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -68,8 +69,10 @@ class GraphScopeOptimizerTest {
 	private static final IRI ABSENT_GRAPH = VF.createIRI("urn:absent");
 
 	@Test
-	void positiveGraphIsLoweredBeforeJoinSelection() {
+	void positiveGraphIsLoweredBeforeJoinSelectionWhenRestrictionsAreOff() {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setQueryExecutionPolicy(
+				QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF));
 		TupleExpr plan = parse("SELECT * WHERE { VALUES ?s { <urn:s> } GRAPH <urn:g> { ?s <urn:p> ?o } }");
 		strategy.optimize(plan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 		assertThat(graphs(plan)).isEmpty();
@@ -79,6 +82,14 @@ class GraphScopeOptimizerTest {
 			assertThat(statement.getSubjectVar().getName()).isEqualTo("s");
 			assertThat(statement.isVariableScopeChange()).isTrue();
 		});
+	}
+
+	@Test
+	void standardPipelinePreservesAConstantGraphForAutomaticProbes() {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		TupleExpr plan = parse("SELECT * WHERE { VALUES ?s { <urn:s> } GRAPH <urn:g> { ?s <urn:p> ?o } }");
+		strategy.optimize(plan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).singleElement();
 	}
 
 	@Test

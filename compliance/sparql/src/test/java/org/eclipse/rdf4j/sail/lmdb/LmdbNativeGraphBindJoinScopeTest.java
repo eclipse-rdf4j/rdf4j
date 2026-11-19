@@ -18,6 +18,8 @@ import java.io.File;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -34,23 +36,29 @@ public class LmdbNativeGraphBindJoinScopeTest {
 
 	private final AtomicInteger counter = new AtomicInteger();
 
-	private Repository newRepository(boolean experimental) {
+	private Repository newRepository(QueryExecutionPolicy policy) {
 		File directory = new File(dataDir, "store" + counter.getAndIncrement());
 		assertTrue(directory.mkdirs());
 		LmdbStore store = new LmdbStore(directory,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true));
-		store.setExperimentalQueryOptimizations(experimental);
+		store.setQueryExecutionPolicy(policy);
 		assertTrue(store.isNativeQueryEngineEnabled(), "the native arm must use its native factory");
 		return new SailRepository(store);
 	}
 
 	@TestFactory
 	Stream<DynamicTest> graphBindJoinScopeNativeStandardOptimizer() {
-		return new GraphBindJoinScopeTest(() -> newRepository(false)).tests();
+		return new GraphBindJoinScopeTest(() -> newRepository(QueryExecutionPolicy.DEFAULT)).tests();
 	}
 
 	@TestFactory
 	Stream<DynamicTest> graphBindJoinScopeNativeExperimentalOptimizer() {
-		return new GraphBindJoinScopeTest(() -> newRepository(true)).tests();
+		return new GraphBindJoinScopeTest(() -> newRepository(QueryExecutionPolicy.EXPERIMENTAL)).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> graphBindJoinScopeNativeRestrictionsOff() {
+		QueryExecutionPolicy policy = QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF);
+		return new GraphBindJoinScopeTest(() -> newRepository(policy)).tests();
 	}
 }

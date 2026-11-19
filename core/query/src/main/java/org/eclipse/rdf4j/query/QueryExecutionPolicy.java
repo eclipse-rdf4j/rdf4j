@@ -33,7 +33,8 @@ public final class QueryExecutionPolicy {
 		FORCE_INDEPENDENT
 	}
 
-	public static final QueryExecutionPolicy DEFAULT = new QueryExecutionPolicy(false, GraphRestrictionMode.OFF);
+	/** Standard query optimizations with automatic GRAPH restriction probes. */
+	public static final QueryExecutionPolicy DEFAULT = new QueryExecutionPolicy(false, GraphRestrictionMode.AUTO);
 	public static final QueryExecutionPolicy EXPERIMENTAL = new QueryExecutionPolicy(true, GraphRestrictionMode.AUTO);
 
 	private final boolean experimentalQueryOptimizations;
