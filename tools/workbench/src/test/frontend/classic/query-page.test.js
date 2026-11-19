@@ -728,6 +728,8 @@ test('primary query draft survives a page reload in the same tab without a query
     firstPage.context.workbench.query.setQueryValue(query);
     firstPage.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
     assert.equal(sessionValues.get('workbench:query-draft:test-session:/rdf4j-workbench/repositories/test/query'), query);
+    // A reload leaves the page: the query tabs write what was typed then.
+    firstPage.window.dispatchEvent({ type: 'pagehide', persisted: false });
 
     const reloadedPage = createQueryBrowserHarness({ href, query: '', window: { sessionStorage } });
     reloadedPage.runPageLoad();
