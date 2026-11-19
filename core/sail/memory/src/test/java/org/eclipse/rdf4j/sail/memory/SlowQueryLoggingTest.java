@@ -41,8 +41,9 @@ class SlowQueryLoggingTest {
 	void logsSlowTupleQueryToConfiguredFile(@TempDir Path tempDir) throws Exception {
 		Path logFile = tempDir.resolve("slow-query.log");
 		TestMemoryStore store = new TestMemoryStore();
+		store.setDataDir(tempDir.toFile());
 		configureSlowQueryThreshold(store, 1L);
-		configureSlowQueryLogFile(store, logFile.toString());
+		configureSlowQueryLogFile(store, "slow-query.log");
 
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -116,8 +117,9 @@ class SlowQueryLoggingTest {
 	void belowThresholdQueryWritesNothing(@TempDir Path tempDir) throws Exception {
 		Path logFile = tempDir.resolve("slow-query.log");
 		TestMemoryStore store = new TestMemoryStore();
+		store.setDataDir(tempDir.toFile());
 		configureSlowQueryThreshold(store, 1L);
-		configureSlowQueryLogFile(store, logFile.toString());
+		configureSlowQueryLogFile(store, "slow-query.log");
 
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -144,9 +146,10 @@ class SlowQueryLoggingTest {
 	void logsQueryWhenFirstResultExceedsConfiguredThreshold(@TempDir Path tempDir) throws Exception {
 		Path logFile = tempDir.resolve("slow-query.log");
 		TestMemoryStore store = new TestMemoryStore();
+		store.setDataDir(tempDir.toFile());
 		configureSlowQueryThreshold(store, 100L);
 		configureSlowQueryFirstResultThreshold(store, 1L);
-		configureSlowQueryLogFile(store, logFile.toString());
+		configureSlowQueryLogFile(store, "slow-query.log");
 		store.queueTimestampMillis(1_000L, 3_000L, 3_200L);
 
 		SailRepository repository = new SailRepository(store);
@@ -203,10 +206,12 @@ class SlowQueryLoggingTest {
 	}
 
 	@Test
-	void invalidConfiguredLogFileFallsBackToLogger() throws Exception {
+	void unwritableConfiguredLogFileFallsBackToLogger(@TempDir Path tempDir) throws Exception {
 		TestMemoryStore store = new TestMemoryStore();
+		store.setDataDir(tempDir.toFile());
+		Files.createDirectory(tempDir.resolve("slow-query.log"));
 		configureSlowQueryThreshold(store, 1L);
-		configureSlowQueryLogFile(store, "slow\u0000query.log");
+		configureSlowQueryLogFile(store, "slow-query.log");
 		store.queueTimestampMillis(1_000L, 3_000L);
 
 		Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger("org.eclipse.rdf4j.sail.slowquery");
@@ -238,7 +243,8 @@ class SlowQueryLoggingTest {
 
 		assertThat(appender.messages(Level.WARN))
 				.anySatisfy(message -> assertThat(message).contains("ASK WHERE { ?s ?p ?o }"))
-				.anySatisfy(message -> assertThat(message).containsIgnoringCase("invalid slow query log file"));
+				.anySatisfy(
+						message -> assertThat(message).containsIgnoringCase("failed to write slow query log entry"));
 	}
 
 	private static void configureSlowQueryThreshold(MemoryStore store, long thresholdSeconds) throws Exception {
