@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -1957,6 +1958,474 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		root.visit(lateralFinder);
 		Join lateralRight = (Join) lateralFinder.getLateral().getRightArg();
 		assertThat(getPredicateValue(lateralRight.getLeftArg())).isEqualTo("ex:pBound");
+	}
+
+	@Test
+	public void testMultipleValuesInterleaving() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   values ?x { ex:a ex:b }",
+				"   values ?y { ex:c ex:d }",
+				"   ?s ex:p1 ?x .",
+				"   ?s ex:p2 ?y .",
+				"}"
+		);
+
+		List<TupleExpr> joinOrder = getJoinOrder(optimize(query));
+
+		int firstBSA = -1;
+		int secondBSA = -1;
+		for (int i = 0; i < joinOrder.size(); i++) {
+			if (joinOrder.get(i) instanceof BindingSetAssignment) {
+				if (firstBSA == -1) {
+					firstBSA = i;
+				} else if (secondBSA == -1) {
+					secondBSA = i;
+				}
+			}
+		}
+
+		assertThat(firstBSA).as("First BSA should exist").isGreaterThanOrEqualTo(0);
+		assertThat(secondBSA).as("Second BSA should exist").isGreaterThan(firstBSA);
+
+		assertThat(secondBSA - firstBSA)
+				.as("BSAs should be interleaved with statement patterns, not grouped together")
+				.isGreaterThan(1);
+	}
+
+	@Test
+	public void testMultipleValuesPairedWithStatementPatterns() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   values ?o3 { ex:k ex:l }",
+				"   ?s1 ex:p1 ?o1 .",
+				"   values ?s4 { ex:m ex:n }",
+				"   values ?o1 { ex:c ex:d }",
+				"   ?s2 ex:p2 ?o2 .",
+				"   values ?s2 { ex:e ex:f }",
+				"   values ?o5 { ex:s ex:t }",
+				"   ?s3 ex:p3 ?o3 .",
+				"   values ?s1 { ex:a ex:b }",
+				"   values ?o4 { ex:o ex:p }",
+				"   ?s4 ex:p4 ?o4 .",
+				"   values ?s5 { ex:q ex:r }",
+				"   values ?o2 { ex:g ex:h }",
+				"   values ?s3 { ex:i ex:j }",
+				"   ?s5 ex:p5 ?o5 .",
+				"   ?s1 ex:link ?s2 .",
+				"   ?o3 ex:related ?o5 .",
+				"   ?lone ex:standalone ?val .",
+				"}"
+		);
+
+		List<TupleExpr> joinOrder = getJoinOrder(optimize(query));
+
+		long bsaCount = joinOrder.stream().filter(e -> e instanceof BindingSetAssignment).count();
+		long spCount = joinOrder.stream().filter(e -> e instanceof StatementPattern).count();
+
+		assertThat(bsaCount).as("All 10 BSAs should be present").isEqualTo(10);
+		assertThat(spCount).as("All 8 statement patterns should be present").isEqualTo(8);
+
+		// BSAs should be interleaved, not all grouped at the front
+		int firstSPIndex = -1;
+		int bsaAfterFirstSP = 0;
+		for (int i = 0; i < joinOrder.size(); i++) {
+			if (joinOrder.get(i) instanceof StatementPattern && firstSPIndex == -1) {
+				firstSPIndex = i;
+			} else if (joinOrder.get(i) instanceof BindingSetAssignment && firstSPIndex >= 0) {
+				bsaAfterFirstSP++;
+			}
+		}
+
+		assertThat(bsaAfterFirstSP)
+				.as("BSAs should be interleaved with statement patterns, not all before the first SP")
+				.isGreaterThan(5);
+	}
+
+	@Test
+	public void testSharedBsaNotDuplicated() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   values ?shared { ex:a ex:b ex:c }",
+				"   values ?x { ex:d ex:e }",
+				"   values ?y { ex:f ex:g }",
+				"   ?shared ex:p1 ?x .",
+				"   ?shared ex:p2 ?y .",
+				"   ?shared ex:p3 ex:fixed .",
+				"}"
+		);
+
+		List<TupleExpr> joinOrder = getJoinOrder(optimize(query));
+
+		long bsaCount = joinOrder.stream().filter(e -> e instanceof BindingSetAssignment).count();
+
+		assertThat(bsaCount)
+				.as("Each BSA should appear exactly once, not duplicated even if it binds multiple statement patterns")
+				.isEqualTo(3);
+	}
+
+	private QueryRoot optimize(String query) {
+		ParsedQuery q = new SPARQLParser().parseQuery(query, null);
+		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
+		getOptimizer().optimize(optRoot, null, null);
+		return optRoot;
+	}
+
+	private static List<TupleExpr> getJoinOrder(TupleExpr root) {
+		List<TupleExpr> result = new ArrayList<>();
+		collectJoinLeaves(root, result);
+		return result;
+	}
+
+	private static void collectJoinLeaves(TupleExpr expr, List<TupleExpr> result) {
+		if (expr instanceof Join) {
+			collectJoinLeaves(((Join) expr).getLeftArg(), result);
+			collectJoinLeaves(((Join) expr).getRightArg(), result);
+		} else if (expr instanceof UnaryTupleOperator) {
+			collectJoinLeaves(((UnaryTupleOperator) expr).getArg(), result);
+		} else {
+			result.add(expr);
+		}
+	}
+
+	/**
+	 * A sub-select is evaluated before the remaining join arguments, so a variable it projects is already bound when
+	 * the following statement pattern is costed.
+	 */
+	@Test
+	public void subselectBoundVariableIsRecognizedByCostEstimation() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   { select ?s where { ?s ex:link ?a . } }",
+				"   ?s ex:p ?o .",
+				"}"
+		);
+
+		// cardinality (100) + 5 = 105. ?s is bound by the sub-select, so only ?o is unbound out of the pattern's two
+		// non-constant vars and the cost is sqrt(105). If ?s were treated as unbound the cost would stay at 105.
+		assertThat(costOfPatternWithObjectVar(query, "o"))
+				.as("Cost must reflect that ?s is already bound by the sub-select")
+				.isCloseTo(Math.sqrt(105), org.assertj.core.data.Offset.offset(0.001));
+	}
+
+	/**
+	 * The extension (BIND) sibling of {@link #subselectBoundVariableIsRecognizedByCostEstimation()}: an extension-bound
+	 * variable is just as available as a sub-select-bound one when the remaining join arguments are costed.
+	 */
+	@Test
+	public void extensionBoundVariableIsRecognizedByCostEstimation() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   bind(ex:x as ?s)",
+				"   ?s ex:p ?o .",
+				"}"
+		);
+
+		// cardinality (100) + 5 = 105. With ?s correctly recognized as already bound by the preceding BIND, only ?o
+		// remains unbound out of the pattern's 2 non-constant vars, so the cost is sqrt(105). If ?s is wrongly still
+		// treated as unbound too, neither var looks bound and the cost stays at the raw 105 (Cartesian estimate).
+		assertThat(costOfPatternWithObjectVar(query, "o"))
+				.as("Cost must reflect that ?s is already bound by the preceding BIND")
+				.isCloseTo(Math.sqrt(105), org.assertj.core.data.Offset.offset(0.001));
+	}
+
+	/**
+	 * A sub-select only exports the variables it projects. {@code ?x} is used inside the sub-select but not projected,
+	 * so the outer {@code ?x} is an entirely different, still unbound variable.
+	 */
+	@Test
+	public void subselectUnprojectedVariableIsNotAddedToBoundVars() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   { select ?a where { ?x ex:link ?a . } }",
+				"   ?x ex:p ?y .",
+				"}"
+		);
+
+		// ?x is not projected out of the sub-select, so neither ?x nor ?y is bound when this pattern is costed: the
+		// cost must stay at the raw cardinality (100) + 5 = 105 (Cartesian estimate), not sqrt(105).
+		assertThat(costOfPatternWithObjectVar(query, "y"))
+				.as("An unprojected sub-select variable must not be treated as bound")
+				.isCloseTo(105, org.assertj.core.data.Offset.offset(0.001));
+	}
+
+	/**
+	 * The extension sibling of {@link #subselectUnprojectedVariableIsNotAddedToBoundVars()}. Here the BIND wraps a
+	 * sub-select, so the extension join argument exports the projected {@code ?a} plus the bound {@code ?b}, but not
+	 * the sub-select's internal {@code ?x}.
+	 */
+	@Test
+	public void extensionUnprojectedVariableIsNotAddedToBoundVars() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   { { select ?a where { ?x ex:link ?a . } } bind(ex:z as ?b) }",
+				"   ?x ex:p ?y .",
+				"}"
+		);
+
+		assertThat(costOfPatternWithObjectVar(query, "y"))
+				.as("An unprojected variable under an extension must not be treated as bound")
+				.isCloseTo(105, org.assertj.core.data.Offset.offset(0.001));
+	}
+
+	/**
+	 * Optimizes {@code query} with a fixed statement pattern cardinality of 100 and returns the cost estimate the
+	 * optimizer assigned to the single statement pattern whose object variable is named {@code objectVarName}.
+	 */
+	private double costOfPatternWithObjectVar(String query, String objectVarName) {
+		ParsedQuery q = new SPARQLParser().parseQuery(query, null);
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new FixedCardinalityStatistics(100), new EmptyTripleSource());
+		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
+		opt.optimize(optRoot, null, null);
+
+		StatementFinder stmtFinder = new StatementFinder();
+		optRoot.visit(stmtFinder);
+		return stmtFinder.getStatements()
+				.stream()
+				.filter(sp -> objectVarName.equals(sp.getObjectVar().getName()))
+				.findFirst()
+				.orElseThrow()
+				.getCostEstimate();
+	}
+
+	private static final class FixedCardinalityStatistics extends EvaluationStatistics {
+
+		private final double cardinality;
+
+		FixedCardinalityStatistics(double cardinality) {
+			this.cardinality = cardinality;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				return cardinality;
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	/**
+	 * A {@code FILTER NOT EXISTS} block is evaluated once per solution of the filter's own argument, so every variable
+	 * that argument binds is already bound when the block runs. The join inside the block must therefore be ordered
+	 * with those variables treated as bound, exactly as the right-hand side of a {@link LeftJoin} is.
+	 * <p>
+	 * Here {@code ?group} is bound by the outer join. That makes {@code ?link ex:memberOf ?group} the cheaper pattern
+	 * to start from despite its higher raw cardinality (418 vs 283), because the bound object restricts it to the
+	 * handful of links belonging to the current group, whereas the {@code rdf:type} pattern has to be scanned in full.
+	 */
+	@Test
+	public void notExistsJoinOrderAccountsForVarsBoundByTheFilterArgument() throws RDF4JException {
+		String query = "PREFIX ex: <ex:>\n"
+				+ "SELECT ?group ?label WHERE {\n"
+				+ "  ?group a ex:Group ; ex:label ?label .\n"
+				+ "  FILTER NOT EXISTS {\n"
+				+ "    ?link ex:memberOf ?group .\n"
+				+ "    ?link a ex:Link .\n"
+				+ "  }\n"
+				+ "}";
+
+		Join existsJoin = existsJoinsOf(query).get(0);
+
+		assertThat(getPredicateValue(existsJoin.getLeftArg()))
+				.as("the pattern whose object is already bound by the filter argument must be evaluated first")
+				.isEqualTo("ex:memberOf");
+		assertThat(getPredicateValue(existsJoin.getRightArg())).isEqualTo(RDF.TYPE.stringValue());
+	}
+
+	/**
+	 * The body of every {@code EXISTS} used by the sibling tests below, written {@code rdf:type}-first on purpose. The
+	 * optimizer has to <em>swap</em> the two patterns to get the right answer, so "left in parse order because the
+	 * subquery was never reordered" and "reordered correctly" produce different results.
+	 */
+	private static final String TYPE_FIRST_EXISTS_BODY = "    ?link a ex:Link .\n"
+			+ "    ?link ex:memberOf ?group .\n";
+
+	/**
+	 * A {@code FILTER} inside an {@code OPTIONAL} becomes {@link LeftJoin#getCondition()}. A subquery hanging off the
+	 * condition must still be reached by the join optimizer: its statement patterns must receive a cardinality
+	 * estimate.
+	 */
+	@Test
+	public void notExistsInsideOptionalIsReachedByTheOptimizer() throws RDF4JException {
+		Join existsJoin = existsJoinsOf(optionalQuery()).get(0);
+
+		assertThat(((StatementPattern) existsJoin.getLeftArg()).getResultSizeEstimate())
+				.as("statement patterns inside an OPTIONAL's FILTER must receive a cardinality estimate; "
+						+ "-1 means the optimizer never visited them")
+				.isNotEqualTo(-1.0);
+	}
+
+	/**
+	 * Ordering counterpart of {@link #notExistsInsideOptionalIsReachedByTheOptimizer()}. Inside an {@code OPTIONAL},
+	 * {@code ?group} is bound by the left argument before the condition runs, so the anchored pattern must lead.
+	 */
+	@Test
+	public void notExistsInsideOptionalJoinOrderAccountsForOuterBoundVars() throws RDF4JException {
+		assertLeadsWithAnchoredPattern(optionalQuery());
+	}
+
+	/**
+	 * {@code BIND(EXISTS {...} AS ?x)} puts the subquery in an {@link Extension} element, which is evaluated with
+	 * everything bound by the extension's argument.
+	 */
+	@Test
+	public void existsInBindJoinOrderAccountsForOuterBoundVars() throws RDF4JException {
+		assertLeadsWithAnchoredPattern("PREFIX ex: <ex:>\n"
+				+ "SELECT * WHERE {\n"
+				+ "  ?group a ex:Group ; ex:label ?label .\n"
+				+ "  BIND(EXISTS {\n" + TYPE_FIRST_EXISTS_BODY + "  } AS ?hasLink)\n"
+				+ "}");
+	}
+
+	/**
+	 * {@code SELECT (EXISTS {...} AS ?x)} also lowers to an {@link Extension}. Kept as its own test because it is the
+	 * spelling most likely to show up in a real query.
+	 */
+	@Test
+	public void existsInSelectExpressionJoinOrderAccountsForOuterBoundVars() throws RDF4JException {
+		assertLeadsWithAnchoredPattern("PREFIX ex: <ex:>\n"
+				+ "SELECT ?group (EXISTS {\n" + TYPE_FIRST_EXISTS_BODY + "} AS ?hasLink) WHERE {\n"
+				+ "  ?group a ex:Group ; ex:label ?label .\n"
+				+ "}");
+	}
+
+	/**
+	 * {@code ORDER BY (EXISTS {...})} puts the subquery in an {@link OrderElem}.
+	 */
+	@Test
+	public void existsInOrderByJoinOrderAccountsForOuterBoundVars() throws RDF4JException {
+		assertLeadsWithAnchoredPattern("PREFIX ex: <ex:>\n"
+				+ "SELECT ?group WHERE {\n"
+				+ "  ?group a ex:Group ; ex:label ?label .\n"
+				+ "} ORDER BY (EXISTS {\n" + TYPE_FIRST_EXISTS_BODY + "})");
+	}
+
+	/**
+	 * An aggregate argument can carry a subquery too, reaching it through a {@link GroupElem} rather than through a
+	 * filter condition.
+	 */
+	@Test
+	public void existsInAggregateArgumentJoinOrderAccountsForOuterBoundVars() throws RDF4JException {
+		assertLeadsWithAnchoredPattern("PREFIX ex: <ex:>\n"
+				+ "SELECT ?group (SUM(IF(EXISTS {\n" + TYPE_FIRST_EXISTS_BODY + "}, 1, 0)) AS ?n) WHERE {\n"
+				+ "  ?group a ex:Group ; ex:label ?label .\n"
+				+ "} GROUP BY ?group");
+	}
+
+	/**
+	 * {@code HAVING} lowers to a {@code Filter} over the {@code Group}. Pinned so that a change to how {@code HAVING}
+	 * is lowered cannot silently reintroduce the defect.
+	 */
+	@Test
+	public void notExistsInHavingJoinOrderAccountsForOuterBoundVars() throws RDF4JException {
+		assertLeadsWithAnchoredPattern("PREFIX ex: <ex:>\n"
+				+ "SELECT ?group WHERE {\n"
+				+ "  ?group a ex:Group ; ex:label ?label .\n"
+				+ "} GROUP BY ?group HAVING (NOT EXISTS {\n" + TYPE_FIRST_EXISTS_BODY + "})");
+	}
+
+	/**
+	 * {@code MINUS} becomes a {@code Difference} with two {@code TupleExpr} arms and no condition of its own, so an
+	 * {@code EXISTS} inside it is reached through the arm's own {@code Filter}. Note that {@code ?group} is anchored by
+	 * the <em>arm's</em> patterns, not by the statement outside the {@code MINUS}.
+	 */
+	@Test
+	public void notExistsInsideMinusJoinOrderAccountsForOuterBoundVars() throws RDF4JException {
+		assertLeadsWithAnchoredPattern("PREFIX ex: <ex:>\n"
+				+ "SELECT * WHERE {\n"
+				+ "  ?group a ex:Group .\n"
+				+ "  MINUS {\n"
+				+ "    ?group ex:label ?label .\n"
+				+ "    FILTER NOT EXISTS {\n" + TYPE_FIRST_EXISTS_BODY + "    }\n"
+				+ "  }\n"
+				+ "}");
+	}
+
+	private static String optionalQuery() {
+		return "PREFIX ex: <ex:>\n"
+				+ "SELECT * WHERE {\n"
+				+ "  ?group a ex:Group .\n"
+				+ "  OPTIONAL {\n"
+				+ "    ?group ex:label ?label .\n"
+				+ "    FILTER NOT EXISTS {\n" + TYPE_FIRST_EXISTS_BODY + "    }\n"
+				+ "  }\n"
+				+ "}";
+	}
+
+	private void assertLeadsWithAnchoredPattern(String query) throws RDF4JException {
+		for (Join existsJoin : existsJoinsOf(query)) {
+			assertThat(getPredicateValue(existsJoin.getLeftArg()))
+					.as("the pattern anchored on the already-bound ?group must be evaluated first, "
+							+ "even though rdf:type has the lower raw cardinality")
+					.isEqualTo("ex:memberOf");
+			assertThat(getPredicateValue(existsJoin.getRightArg())).isEqualTo(RDF.TYPE.stringValue());
+		}
+	}
+
+	/**
+	 * Returns the join inside every {@code Exists} in the optimized model. There can legitimately be more than one for
+	 * a single {@code EXISTS} in the query text: an aggregate such as {@code SUM(IF(EXISTS {...}, 1, 0))} is lowered
+	 * into both a {@code GroupElem} and an {@code ExtensionElem}, each carrying its own copy of the expression.
+	 */
+	private List<Join> existsJoinsOf(String query) throws RDF4JException {
+		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryRoot root = new QueryRoot(pq.getTupleExpr());
+		new QueryJoinOptimizer(new GroupLinkStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+
+		List<Join> joins = new ArrayList<>();
+		for (Exists exists : findAllExists(root)) {
+			JoinFinder existsJoinFinder = new JoinFinder();
+			exists.getSubQuery().visit(existsJoinFinder);
+			Join existsJoin = existsJoinFinder.getJoin();
+			assertThat(existsJoin).as("expected a Join inside the Exists subquery").isNotNull();
+			joins.add(existsJoin);
+		}
+		assertThat(joins).as("expected at least one Exists in the query model").isNotEmpty();
+		return joins;
+	}
+
+	private static List<Exists> findAllExists(QueryModelNode root) {
+		List<Exists> found = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists node) {
+				found.add(node);
+				super.meet(node);
+			}
+		});
+		return found;
+	}
+
+	/**
+	 * Cardinalities for the NOT EXISTS tests: the {@code rdf:type ex:Link} pattern is the smaller of the two patterns
+	 * inside the {@code NOT EXISTS} when neither is considered bound.
+	 */
+	private static final class GroupLinkStatistics extends EvaluationStatistics {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				StatementPattern pattern = (StatementPattern) expr;
+				Value predicate = pattern.getPredicateVar().getValue();
+				Value object = pattern.getObjectVar() == null ? null : pattern.getObjectVar().getValue();
+				if (RDF.TYPE.equals(predicate)) {
+					return "ex:Link".equals(String.valueOf(object)) ? 283 : 200;
+				}
+				if (predicate != null && "ex:memberOf".equals(predicate.stringValue())) {
+					return 418;
+				}
+				return 600;
+			}
+			return super.getCardinality(expr);
+		}
 	}
 
 	@Override
