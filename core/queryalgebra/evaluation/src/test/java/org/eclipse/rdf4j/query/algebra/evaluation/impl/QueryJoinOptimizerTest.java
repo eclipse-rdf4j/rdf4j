@@ -82,6 +82,7 @@ import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -895,53 +896,53 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void projectedSubselectBindingDoesNotOverrideCheaperDisconnectedPatternWithoutJoinEstimation() {
+	public void projectedSubselectBindingConnectsPatternBeforeCheaperDisconnectedPatternWithoutJoinEstimation() {
 		assertPriorityPatternsStartWithExpectedPattern(
 				"SELECT * WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } "
 						+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 						+ "?shared <urn:outer-cheap2> ?z . }",
-				new ScopeAndPairwiseStatistics(false), "urn:outer-cheap");
+				new ScopeAndPairwiseStatistics(false), "urn:outer-expensive");
 	}
 
 	@Test
-	public void projectedSubselectBindingDoesNotOverrideCheaperDisconnectedPatternWithPairwiseEstimation() {
+	public void projectedSubselectBindingConnectsPatternBeforeCheaperDisconnectedPatternWithPairwiseEstimation() {
 		assertPriorityPatternsStartWithExpectedPattern(
 				"SELECT * WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } "
 						+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 						+ "?shared <urn:outer-cheap2> ?z . }",
-				new ScopeAndPairwiseStatistics(true), "urn:outer-cheap");
+				new ScopeAndPairwiseStatistics(true), "urn:outer-expensive");
 	}
 
 	@Test
-	public void projectionAliasDoesNotOverrideCheaperDisconnectedPattern() {
+	public void projectionAliasConnectsPatternBeforeCheaperDisconnectedPattern() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
 			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { { SELECT (?inner AS ?seed) WHERE { ?inner <urn:sub> ?raw } } "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
 		}
 	}
 
 	@Test
-	public void projectedBindDoesNotOverrideCheaperDisconnectedPattern() {
+	public void projectedBindConnectsPatternBeforeCheaperDisconnectedPattern() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
 			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?raw . BIND(?raw AS ?seed) } } "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
 		}
 	}
 
 	@Test
-	public void nestedProjectedSubselectBindingDoesNotOverrideCheaperDisconnectedPattern() {
+	public void nestedProjectedSubselectBindingConnectsPatternBeforeCheaperDisconnectedPattern() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
 			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { { SELECT ?seed WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } } } "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
 		}
 	}
 
@@ -955,20 +956,20 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 							+ "?x <urn:outer-cheap> ?shared . ?shared <urn:outer-cheap2> ?z . }",
 					new ScopeAndPairwiseStatistics(supportsJoinEstimation));
 
-			assertThat(predicates).startsWith("urn:outer-cheap");
+			assertThat(predicates).startsWith("urn:outer-seed", "urn:outer-other", "urn:outer-cheap");
 			assertThat(predicates).contains("urn:outer-seed", "urn:outer-other");
 		}
 	}
 
 	@Test
-	public void optionalPriorityBindingDoesNotOverrideCheaperDisconnectedPattern() {
+	public void optionalPriorityBindingConnectsPatternBeforeCheaperDisconnectedPattern() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
 			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { VALUES ?base { <urn:base> } OPTIONAL { "
 							+ "{ SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . } }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
 		}
 	}
 
@@ -996,30 +997,30 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 							+ "?x <urn:outer-cheap> ?shared . ?shared <urn:outer-cheap2> ?z . }",
 					new ScopeAndPairwiseStatistics(supportsJoinEstimation));
 
-			assertThat(predicates).startsWith("urn:outer-cheap");
+			assertThat(predicates).startsWith("urn:outer-seed", "urn:outer-other", "urn:outer-cheap");
 			assertThat(predicates).contains("urn:outer-seed", "urn:outer-other");
 		}
 	}
 
 	@Test
-	public void pairwiseOrderingUsesCheaperConstantPatternBeforeVariableOnlyConnectedPattern() {
+	public void pairwiseOrderingUsesConnectedVariableOnlyPatternBeforeCheaperConstantPattern() {
 		List<String> predicates = optimizePriorityQuery(
 				"SELECT * WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } "
 						+ "?seed ?outerp ?value . ?x <urn:outer-cheap> ?shared . "
 						+ "?shared <urn:outer-cheap2> ?z . }",
 				new ScopeAndPairwiseStatistics(true));
 
-		assertThat(predicates).startsWith("urn:outer-cheap");
+		assertThat(predicates.getFirst()).as("the variable-only pattern is connected through ?seed").isNull();
 	}
 
 	@Test
-	public void sameScopeBindProviderDoesNotOverrideCheaperDisconnectedPatternInBothEstimatorModes() {
+	public void sameScopeBindProviderConnectsPatternBeforeCheaperDisconnectedPatternInBothEstimatorModes() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
 			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { BIND(<urn:seed> AS ?seed) "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
 		}
 	}
 
@@ -1696,7 +1697,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void selectNextTupleExprPrefersCheaperCartesianCandidateOverConnectedCandidate() throws Exception {
+	public void selectNextTupleExprPrefersConnectedCandidateOverCheaperCartesianCandidate() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		StatementPattern connected = new StatementPattern(new Var("s"),
@@ -1725,11 +1726,11 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		TupleExpr selected = (TupleExpr) selectNextTupleExpr.invoke(joinVisitor, expressions, cardinalityMap, varsMap,
 				varFreqMap);
 
-		assertThat(getPredicateValue(selected)).isEqualTo("ex:pDisconnected");
+		assertThat(getPredicateValue(selected)).isEqualTo("ex:pConnected");
 	}
 
 	@Test
-	public void selectNextTupleExprUsesConnectivityOnlyAsEqualCostTieBreak() throws Exception {
+	public void selectNextTupleExprPrefersConnectedCandidateAtEqualCost() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		StatementPattern connected = new StatementPattern(Var.of("s"),
 				Var.of("pc", vf.createIRI("ex:pConnected")), Var.of("o"));
@@ -1758,7 +1759,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void selectNextTupleExprReturnsReadyZeroCostCandidateBeforeConnectedPreference() throws Exception {
+	public void selectNextTupleExprPrefersConnectedCandidateOverZeroCostDisconnectedCandidate() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		StatementPattern zeroCost = new StatementPattern(new Var("x"),
 				new Var("pz", vf.createIRI("ex:pZero")), new Var("z"));
@@ -1782,11 +1783,11 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		TupleExpr selected = (TupleExpr) selectNextTupleExpr.invoke(joinVisitor, expressions, cardinalityMap, varsMap,
 				varFreqMap);
 
-		assertThat(getPredicateValue(selected)).isEqualTo("ex:pZero");
+		assertThat(getPredicateValue(selected)).isEqualTo("ex:pConnected");
 	}
 
 	@Test
-	public void pairwiseOrderingUsesCheaperCartesianCandidateBeforeNonFiniteConnectedEstimate() throws Exception {
+	public void pairwiseOrderingKeepsConnectedNonFiniteCandidateBeforeCheaperCartesianCandidate() throws Exception {
 		for (double estimate : List.of(Double.MAX_VALUE, Double.POSITIVE_INFINITY)) {
 			ValueFactory vf = SimpleValueFactory.getInstance();
 			StatementPattern anchor = new StatementPattern(new Var("s"),
@@ -1812,13 +1813,14 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 					.map(QueryJoinOptimizerTest::getPredicateValue)
 					.collect(Collectors.toList());
 			assertThat(predicateOrder.indexOf("ex:pNonFinite"))
-					.as("the finite cheaper candidate must precede the connected candidate with estimate %s", estimate)
-					.isGreaterThan(predicateOrder.indexOf("ex:pDisconnected"));
+					.as("the connected candidate must precede the cheaper disconnected candidate with estimate %s",
+							estimate)
+					.isLessThan(predicateOrder.indexOf("ex:pDisconnected"));
 		}
 	}
 
 	@Test
-	public void incomingSelectionUsesFiniteCheaperEstimateBeforeNonFiniteConnectedEstimate() throws Exception {
+	public void incomingSelectionPrefersConnectedNonFiniteEstimateOverCheaperDisconnectedCandidate() throws Exception {
 		for (double estimate : List.of(Double.MAX_VALUE, Double.POSITIVE_INFINITY)) {
 			ValueFactory vf = SimpleValueFactory.getInstance();
 			StatementPattern connected = new StatementPattern(new Var("s"),
@@ -1838,8 +1840,9 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered, Set.of("s"));
 
 			assertThat(getPredicateValue(reordered.getFirst()))
-					.as("the finite cheaper candidate must precede the connected candidate at estimate %s", estimate)
-					.isEqualTo("ex:pDisconnected");
+					.as("the connected candidate must precede the cheaper disconnected candidate at estimate %s",
+							estimate)
+					.isEqualTo("ex:pNonFinite");
 		}
 	}
 
@@ -2423,6 +2426,463 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 					return 418;
 				}
 				return 600;
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	/**
+	 * Greedy ordering (statistics without join estimation): after the first pick, a pattern that shares no bound
+	 * variable with what was already evaluated must not be chosen while a connected pattern remains, even when the
+	 * disconnected pattern is much cheaper.
+	 */
+	@Test
+	public void greedyOrderingNeverPicksDisconnectedPatternWhileConnectedOneRemains() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   values ?a { ex:v }",
+				"   ?a ex:pA ?b .",
+				"   ?b ex:pB ?c .",
+				"   ?c ex:pD ?d .",
+				"}"
+		);
+
+		List<String> order = statementPredicates(optimizeWith(query, connectedPlanStatistics(false)));
+
+		assertThat(order).as("A(?a ?b), then B(?b ?c), then D(?c ?d), each sharing a variable with the prefix")
+				.containsExactly("ex:pA", "ex:pB", "ex:pD");
+	}
+
+	/**
+	 * Statistics-based reordering (statistics with join estimation): a pattern that is disconnected from the prefix is
+	 * never chosen while a connected candidate remains, even if its estimated pairwise join is cheaper.
+	 */
+	@Test
+	public void pairwiseReorderingNeverPicksDisconnectedPatternWhileConnectedOneRemains() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   ?x ex:pA ?y .",
+				"   ?y ex:pB ?z .",
+				"   ?w ex:pD ?v .",
+				"}"
+		);
+
+		List<String> order = statementPredicates(optimizeWith(query, connectedPlanStatistics(true)));
+
+		assertThat(order).as("the connected patterns A and B stay adjacent; the cross product comes last")
+				.hasSize(3);
+		assertThat(Math.abs(order.indexOf("ex:pA") - order.indexOf("ex:pB")))
+				.as("A and B share ?y and must not be separated by the disconnected D, plan was %s", order)
+				.isEqualTo(1);
+	}
+
+	/**
+	 * Variables bound by the left side of an OPTIONAL count as bound inside its right side: the pattern using the outer
+	 * variable is connected and is chosen before a cheaper pattern that only uses variables nobody has bound yet.
+	 */
+	@Test
+	public void optionalRightSideUsesOuterBoundVariableAsConnection() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   ?s ex:pOuter ?o .",
+				"   optional {",
+				"      ?x ex:pCheapInner ?y .",
+				"      ?s ex:pExpensiveInner ?z .",
+				"   }",
+				"}"
+		);
+
+		LeftJoin leftJoin = findFirst(optimizeWith(query, connectedPlanStatistics(false)), LeftJoin.class);
+
+		assertThat(statementPredicates(leftJoin.getRightArg()))
+				.containsExactly("ex:pExpensiveInner", "ex:pCheapInner");
+	}
+
+	/**
+	 * The argument of a FILTER NOT EXISTS binds its variables for the subquery, so the pattern using them is connected.
+	 */
+	@Test
+	public void notExistsSubqueryUsesFilterArgumentVariableAsConnection() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   ?s ex:pOuter ?o .",
+				"   filter not exists {",
+				"      ?x ex:pCheapInner ?y .",
+				"      ?s ex:pExpensiveInner ?z .",
+				"   }",
+				"}"
+		);
+
+		Exists exists = findFirst(optimizeWith(query, connectedPlanStatistics(false)), Exists.class);
+
+		assertThat(statementPredicates(exists.getSubQuery()))
+				.containsExactly("ex:pExpensiveInner", "ex:pCheapInner");
+	}
+
+	/**
+	 * Values bound from outside the query (initial bindings) connect patterns inside a sub-select the same way.
+	 */
+	@Test
+	public void subselectUsesOuterBindingAsConnection() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   { select * where {",
+				"      ?x ex:pCheapInner ?y .",
+				"      ?s ex:pExpensiveInner ?z .",
+				"   } }",
+				"}"
+		);
+		ParsedQuery parsed = new SPARQLParser().parseQuery(query, null);
+		QueryRoot root = new QueryRoot(parsed.getTupleExpr());
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("s", SimpleValueFactory.getInstance().createIRI("ex:bound"));
+		new QueryJoinOptimizer(connectedPlanStatistics(false), new EmptyTripleSource()).optimize(root, null, bindings);
+
+		assertThat(statementPredicates(root)).containsExactly("ex:pExpensiveInner", "ex:pCheapInner");
+	}
+
+	/**
+	 * Two groups of patterns that share no variables: each group is evaluated contiguously, so the plan has exactly one
+	 * cross product, at the boundary between the groups.
+	 */
+	@Test
+	public void disconnectedGroupsAreEvaluatedContiguously() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   ?a ex:pA ?b .",
+				"   ?b ex:pB ?c .",
+				"   ?x ex:pX ?y .",
+				"   ?y ex:pY ?z .",
+				"}"
+		);
+
+		List<String> order = statementPredicates(optimizeWith(query, connectedPlanStatistics(false)));
+
+		assertThat(order).hasSize(4);
+		assertThat(Math.abs(order.indexOf("ex:pA") - order.indexOf("ex:pB")))
+				.as("group 1 must be contiguous, plan was %s", order)
+				.isEqualTo(1);
+		assertThat(Math.abs(order.indexOf("ex:pX") - order.indexOf("ex:pY")))
+				.as("group 2 must be contiguous, plan was %s", order)
+				.isEqualTo(1);
+	}
+
+	/**
+	 * A fully ground statement pattern outputs no variables, so it yields at most one row and is never a cross product.
+	 * It may run before a high-fan-out pattern that is connected to the prefix, and cost decides that it should.
+	 */
+	@Test
+	public void groundGuardRunsBeforeHighFanOutConnectedPattern() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   values ?s { ex:a ex:b }",
+				"   ?s ex:pFanout ?x .",
+				"   ex:cfg ex:enabled true .",
+				"}"
+		);
+
+		List<String> order = statementPredicates(optimizeWith(query, connectedPlanStatistics(false)));
+
+		assertThat(order).as("the ground guard short-circuits before the high-fan-out pattern")
+				.containsExactly("ex:enabled", "ex:pFanout");
+	}
+
+	/**
+	 * A VALUES block that is not yet connected is placed only when a connected consumer uses its variable, and the
+	 * consumer is the very next pick even though another connected pattern is cheaper.
+	 */
+	@Test
+	public void valuesBlockIsPlacedDirectlyBeforeItsConsumer() {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   values ?s { ex:a }",
+				"   ?s ex:pCheapOther ?z .",
+				"   ?s ex:pConsumer ?o .",
+				"   values ?o { ex:v ex:w }",
+				"}"
+		);
+
+		List<TupleExpr> leaves = getJoinOrder(optimizeWith(query, connectedPlanStatistics(false)));
+
+		int valuesForO = -1;
+		for (int i = 0; i < leaves.size(); i++) {
+			if (leaves.get(i) instanceof BindingSetAssignment assignment
+					&& assignment.getBindingNames().contains("o")) {
+				valuesForO = i;
+			}
+		}
+		assertThat(valuesForO).as("VALUES ?o must be in the plan: %s", leaves).isGreaterThanOrEqualTo(0);
+		assertThat(predicate(leaves.get(valuesForO + 1)))
+				.as("the consumer of ?o directly follows the VALUES block, plan was %s", leaves)
+				.isEqualTo("ex:pConsumer");
+		int cheapOther = -1;
+		for (int i = 0; i < leaves.size(); i++) {
+			if ("ex:pCheapOther".equals(predicate(leaves.get(i)))) {
+				cheapOther = i;
+			}
+		}
+		assertThat(cheapOther).as("the cheaper unrelated pattern comes after the consumer, plan was %s", leaves)
+				.isGreaterThan(valuesForO + 1);
+	}
+
+	/**
+	 * VALUES placement guarantee: in the final order every multi-row VALUES block sits directly before its first
+	 * consumer, no consumer precedes it, and no argument that ignores the VALUES variables sits between the block and
+	 * its consumer. Checked with and without join estimation.
+	 */
+	@Test
+	public void valuesBlockSitsDirectlyBeforeFirstConsumerWhenCheaperUnrelatedPatternExists() {
+		for (boolean supportsJoinEstimation : List.of(false, true)) {
+			assertValuesDirectlyBeforeFirstConsumer(String.join("\n", "",
+					"prefix ex: <ex:> ",
+					"select * where {",
+					"   values ?s { ex:a ex:b }",
+					"   ?s ex:pCheapOther ?z .",
+					"   ?s ex:pConsumer ?o .",
+					"   values ?o { ex:v ex:w }",
+					"}"), connectedPlanStatistics(supportsJoinEstimation));
+		}
+	}
+
+	@Test
+	public void valuesBlockSitsDirectlyBeforeConsumerWithTwoValuesBlocks() {
+		for (boolean supportsJoinEstimation : List.of(false, true)) {
+			assertValuesDirectlyBeforeFirstConsumer(String.join("\n", "",
+					"prefix ex: <ex:> ",
+					"select * where {",
+					"   values ?s { ex:a ex:b }",
+					"   values ?o { ex:v ex:w }",
+					"   values ?q { ex:x ex:y }",
+					"   ?s ex:pCheapOther ?z .",
+					"   ?s ex:pConsumer ?o .",
+					"   ?s ex:pOuter ?q .",
+					"}"), connectedPlanStatistics(supportsJoinEstimation));
+		}
+	}
+
+	@Test
+	public void singleValuesBlockSitsDirectlyBeforeConsumerNotBeforeCheapNonConsumer() {
+		for (boolean supportsJoinEstimation : List.of(false, true)) {
+			assertValuesDirectlyBeforeFirstConsumer(String.join("\n", "",
+					"prefix ex: <ex:> ",
+					"select * where {",
+					"   ?s ex:pOuter ?x .",
+					"   ?s ex:pCheapOther ?z .",
+					"   ?s ex:pConsumer ?o .",
+					"   values ?o { ex:v ex:w }",
+					"}"), connectedPlanStatistics(supportsJoinEstimation));
+		}
+	}
+
+	@Test
+	public void valuesPlacementSurvivesPairwiseReordering() {
+		assertValuesDirectlyBeforeFirstConsumer(String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"   ?s ex:pOuter ?x .",
+				"   ?s ex:pCheapOther ?z .",
+				"   ?s ex:pConsumer ?o .",
+				"   ?o ex:pB ?b .",
+				"   ?s ex:pFanout ?f .",
+				"   values ?o { ex:v ex:w }",
+				"}"), connectedPlanStatistics(true));
+	}
+
+	@Test
+	public void valuesWithUndefColumnSitsDirectlyBeforeFirstArgumentUsingThatVariable() {
+		for (boolean supportsJoinEstimation : List.of(false, true)) {
+			assertValuesDirectlyBeforeFirstConsumer(String.join("\n", "",
+					"prefix ex: <ex:> ",
+					"select * where {",
+					"   ?s ex:pOuter ?x .",
+					"   ?s ex:pCheapOther ?z .",
+					"   ?s ex:pConsumer ?u .",
+					"   values (?o ?u) { (ex:v UNDEF) (ex:w ex:k) }",
+					"}"), connectedPlanStatistics(supportsJoinEstimation));
+		}
+	}
+
+	/**
+	 * A sub-select that uses a variable internally without projecting it does not consume the VALUES variable of the
+	 * same name; the VALUES block goes before the real consumer.
+	 */
+	@Test
+	public void subselectUsingUnprojectedVariableIsNotAConsumerOfValues() {
+		for (boolean supportsJoinEstimation : List.of(false, true)) {
+			String query = String.join("\n", "",
+					"prefix ex: <ex:> ",
+					"select * where {",
+					"   values ?o { ex:v ex:w }",
+					"   ?s ex:pOuter ?x .",
+					"   { select ?s where { ?s ex:pCheapOther ?o } }",
+					"   ?s ex:pConsumer ?o .",
+					"}");
+			assertValuesDirectlyBeforeFirstConsumer(query, connectedPlanStatistics(supportsJoinEstimation));
+		}
+	}
+
+	@Test
+	public void valuesBlockSitsDirectlyBeforeConsumerThatIsAFilteredPattern() {
+		for (boolean supportsJoinEstimation : List.of(false, true)) {
+			assertValuesDirectlyBeforeFirstConsumer(String.join("\n", "",
+					"prefix ex: <ex:> ",
+					"select * where {",
+					"   values ?s { ex:a ex:b }",
+					"   values ?o { ex:v ex:w }",
+					"   ?s ex:pCheapOther ?z .",
+					"   ?s ex:pConsumer ?o2 . filter(?o2 != ?o)",
+					"}"), connectedPlanStatistics(supportsJoinEstimation));
+		}
+	}
+
+	private void assertValuesDirectlyBeforeFirstConsumer(String query, EvaluationStatistics statistics) {
+		QueryRoot root = optimizeWith(query, statistics);
+		JoinFinder finder = new JoinFinder();
+		root.visit(finder);
+		assertThat(finder.getJoin()).as("a join is expected in %s", root).isNotNull();
+		List<TupleExpr> args = flattenJoinArgs(finder.getJoin());
+		boolean checkedAny = false;
+		for (int i = 0; i < args.size(); i++) {
+			if (!(args.get(i) instanceof BindingSetAssignment assignment)) {
+				continue;
+			}
+			Set<String> names = assignment.getBindingNames();
+			int firstConsumer = -1;
+			for (int j = 0; j < args.size(); j++) {
+				if (j != i && !(args.get(j) instanceof BindingSetAssignment) && referencesAny(args.get(j), names)) {
+					firstConsumer = j;
+					break;
+				}
+			}
+			if (firstConsumer < 0) {
+				continue;
+			}
+			checkedAny = true;
+			assertThat(firstConsumer).as("no consumer of %s precedes its VALUES block; args %s", names, args)
+					.isGreaterThan(i);
+			// Between a VALUES block and its first consumer there may only be other VALUES blocks that the same
+			// consumer also reads: together they feed that one lookup. Anything else would be a real cross product.
+			TupleExpr consumer = args.get(firstConsumer);
+			for (int k = i + 1; k < firstConsumer; k++) {
+				assertThat(args.get(k))
+						.as("only VALUES blocks read by the same consumer may sit between; args %s", args)
+						.isInstanceOf(BindingSetAssignment.class);
+				assertThat(referencesAny(consumer, ((BindingSetAssignment) args.get(k)).getBindingNames()))
+						.as("VALUES block at %d is read by the consumer at %d; args %s", k, firstConsumer, args)
+						.isTrue();
+			}
+		}
+		assertThat(checkedAny).as("at least one VALUES block has a consumer in %s", args).isTrue();
+	}
+
+	/**
+	 * Whether {@code expr} reads one of {@code names}. Nested variable scopes (sub-selects, new-scope groups) only
+	 * expose the names they export; variables they use internally are not visible outside.
+	 */
+	private static boolean referencesAny(TupleExpr expr, Set<String> names) {
+		boolean[] found = { false };
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr nested && node instanceof VariableScopeChange scoped
+						&& scoped.isVariableScopeChange()) {
+					for (String bindingName : nested.getBindingNames()) {
+						if (names.contains(bindingName)) {
+							found[0] = true;
+						}
+					}
+					return;
+				}
+				super.meetNode(node);
+			}
+
+			@Override
+			public void meet(Var node) {
+				if (!node.hasValue() && names.contains(node.getName())) {
+					found[0] = true;
+				}
+			}
+		});
+		return found[0];
+	}
+
+	private static List<String> statementPredicates(TupleExpr root) {
+		List<String> predicates = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				predicates.add(predicate(node));
+			}
+		});
+		return predicates;
+	}
+
+	private static <T extends QueryModelNode> T findFirst(TupleExpr root, Class<T> type) {
+		List<T> found = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (type.isInstance(node)) {
+					found.add(type.cast(node));
+				}
+				super.meetNode(node);
+			}
+		});
+		assertThat(found).as("expected a %s in the plan", type.getSimpleName()).isNotEmpty();
+		return found.get(0);
+	}
+
+	private static EvaluationStatistics connectedPlanStatistics(boolean supportsJoinEstimation) {
+		return new ConnectedPlanStatistics(supportsJoinEstimation);
+	}
+
+	/**
+	 * Cardinalities chosen so that a cheap but disconnected pattern looks better than a connected one: a cross product
+	 * is estimated at 1 row by the pairwise estimator and the disconnected patterns have the lowest single-pattern
+	 * costs.
+	 */
+	private static final class ConnectedPlanStatistics extends EvaluationStatistics {
+
+		private final boolean supportsJoinEstimation;
+
+		private ConnectedPlanStatistics(boolean supportsJoinEstimation) {
+			this.supportsJoinEstimation = supportsJoinEstimation;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return supportsJoinEstimation;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern pattern) {
+				return switch (predicate(pattern)) {
+				case "ex:pA" -> 2;
+				case "ex:pB" -> 1000;
+				case "ex:pD" -> supportsJoinEstimation ? 100 : 2;
+				case "ex:pX" -> 3;
+				case "ex:pY", "ex:pExpensiveInner" -> 100;
+				case "ex:pCheapInner" -> 2;
+				case "ex:pFanout" -> 5000;
+				case "ex:enabled" -> 1;
+				case "ex:pConsumer" -> 100;
+				case "ex:pCheapOther" -> 2;
+				default -> 10;
+				};
+			}
+			if (expr instanceof Join join) {
+				Set<String> shared = new HashSet<>(join.getLeftArg().getBindingNames());
+				shared.retainAll(join.getRightArg().getBindingNames());
+				return shared.isEmpty() ? 1 : 1000;
 			}
 			return super.getCardinality(expr);
 		}
