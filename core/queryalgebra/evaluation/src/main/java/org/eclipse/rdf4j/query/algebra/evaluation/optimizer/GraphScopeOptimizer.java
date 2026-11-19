@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
  * Exposes a positive basic graph pattern in one known named graph to ordinary statement and join optimization.
@@ -136,12 +138,12 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 					return;
 				}
 				Value name = graph.getGraphName().getValue();
-				if (graph.getParentNode() != null && name instanceof Resource && !isDefaultAlias(name)
+				if (graph.getParentNode() != null && name instanceof Resource && !requiresSemanticSelection(name)
 						&& hasCompatibleInput(graph.getGraphName(), input)
 						&& (dataset == null || !dataset.getNamedGraphResources().isEmpty()
 								&& dataset.getNamedGraphResources()
 										.stream()
-										.noneMatch(GraphScopeOptimizer::isDefaultAlias))
+										.noneMatch(GraphScopeOptimizer::requiresSemanticSelection))
 						&& isPositiveBasicGraphPattern(graph.getArg(), graph.getGraphName())) {
 					TupleExpr lowered = lowerBasicGraphPattern(graph.getArg(), graph.getGraphName());
 					// GRAPH receives invocation input, not bindings produced by an ordinary join sibling. Keep that
@@ -154,17 +156,21 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 		});
 	}
 
-	private static boolean isDefaultAlias(Value value) {
-		return RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
+	/** Physical context lookup alone cannot resolve a default-graph alias or verify a remote blank node's origin. */
+	@InternalUseOnly
+	public static boolean requiresSemanticSelection(Value value) {
+		return value instanceof RemoteBNode || RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
 	}
 
 	private static boolean hasCompatibleInput(Var graphName, QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
 		// A fixed public graph name still rejects conflicting invocation bindings. Captured API selectors also admit
 		// the prepared plan's proven-absent input: substitution has already fixed their value before execution.
 		// Arbitrary named prevalued selectors retain their invocation check for reusable direct-algebra plans.
+		// A fixed-value fact uses ordinary binding equality. Its blank-node representative may stand for both a
+		// local graph name and a remote binding with the same label, which GRAPH must distinguish.
 		return graphName.isConstant() || input.bindingDomainKnown()
 				&& (graphName.hasApiInputOrigin() && !input.maybeBoundNames().contains(graphName.getName())
-						|| input.guaranteedNames().contains(graphName.getName())
+						|| !graphName.getValue().isBNode() && input.guaranteedNames().contains(graphName.getName())
 								&& graphName.getValue().equals(input.fixedValues().get(graphName.getName())));
 	}
 

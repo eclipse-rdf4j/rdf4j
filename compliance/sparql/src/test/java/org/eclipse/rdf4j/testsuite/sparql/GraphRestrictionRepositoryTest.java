@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -62,6 +63,53 @@ class GraphRestrictionRepositoryTest {
 
 	@TempDir
 	Path dataDirectory;
+
+	@Test
+	void restrictedRepetitionRetainsOptionalPathEndpoint() {
+		assertRestrictedPathResult(":a :p :b", "VALUES ?o { :b } GRAPH :g { :a (:p?)+ ?o }", "b");
+	}
+
+	@Test
+	void restrictedOptionalPathEmitsOneIdentityForAbsentTerm() {
+		assertRestrictedPathResult(":a :p :b", "VALUES ?o { :z } GRAPH :g { :z (:p*/:q*)? ?o }", "z");
+	}
+
+	@Test
+	void restrictedRepetitionTraversesMultipleHopsInEitherDirection() {
+		String chain = ":a :p :b . :b :p :c";
+		assertRestrictedPathResult(chain, "VALUES ?o { :c } GRAPH :g { :a (:p?)+ ?o }", "c");
+		assertRestrictedPathResult(chain, "VALUES ?o { :a } GRAPH :g { ?o (:p?)+ :c }", "a");
+		assertRestrictedPathResult(chain, "VALUES ?o { :c } GRAPH :g { ?o (^:p?)* :a }", "c");
+	}
+
+	@Test
+	void restrictedOptionalPathPreservesAlternativesAndRepeatedInputs() {
+		assertRestrictedPathResult(":a :p :b", "VALUES ?o { :z } GRAPH :g { :z ((:p*/:q*)? | (:p*/:q*)?) ?o }",
+				"z", "z");
+		assertRestrictedPathResult(":a :p :b", "VALUES ?o { :z :z } GRAPH :g { :z (:p*/:q*)? ?o }", "z", "z");
+	}
+
+	private static void assertRestrictedPathResult(String triples, String pattern, String... expectedObjects) {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		try (var connection = repository.getConnection()) {
+			ValueFactory values = connection.getValueFactory();
+			connection.prepareUpdate("PREFIX : <urn:gbj:> INSERT DATA { GRAPH :g { " + triples + " } }").execute();
+			connection.begin(IsolationLevels.SNAPSHOT_READ);
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(
+					"PREFIX : <urn:gbj:> SELECT ?o WHERE { " + pattern + " }");
+			List<BindingSet> expected = Stream.of(expectedObjects)
+					.<BindingSet>map(name -> new ListBindingSet(List.of("o"), values.createIRI(NAMESPACE, name)))
+					.toList();
+			assertThat(QueryResults.asList(query.evaluate())).as(pattern).containsExactlyInAnyOrderElementsOf(expected);
+			GenericPlanNode plan = query.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			assertThat(plans(plan)).as("executed a path probe for %s", pattern)
+					.anyMatch(node -> node.getLongMetricActual("graphRestrictionPathProbes") != null
+							&& node.getLongMetricActual("graphRestrictionPathProbes") > 0);
+			connection.commit();
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@Test
 	void defaultLmdbUsesGraphRestrictionWithTheStandardEvaluator() {

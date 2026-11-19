@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -39,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -72,6 +75,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private final boolean startVarFixed;
 
 	private final boolean endVarFixed;
+
+	private final boolean bindStart;
+
+	private final boolean bindEnd;
 
 	private final Queue<BindingSet> valueQueue;
 
@@ -108,6 +115,27 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar, TupleExpr pathExpression, Var endVar,
 			Var contextVar, long minLength, BindingSet bindings, QueryEvaluationContext context,
 			PathVariableScope names) {
+		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, context, names, true);
+	}
+
+	/** Compile a SPARQL path, whose solution mappings bind only variable endpoints. */
+	@InternalUseOnly
+	public static QueryEvaluationStep prepare(EvaluationStrategy strategy, ArbitraryLengthPath path,
+			QueryEvaluationContext context) {
+		Scope scope = path.getScope();
+		Var start = path.getSubjectVar();
+		Var end = path.getObjectVar();
+		Var graph = path.getContextVar();
+		TupleExpr expression = path.getPathExpression();
+		long minLength = path.getMinLength();
+		PathVariableScope names = PathVariableScope.prepare(path);
+		return bindings -> new PathIteration(strategy, scope, start, expression, end, graph, minLength, bindings,
+				context, names, false);
+	}
+
+	private PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar, TupleExpr pathExpression, Var endVar,
+			Var contextVar, long minLength, BindingSet bindings, QueryEvaluationContext context,
+			PathVariableScope names, boolean includeConstantEndpoints) {
 		variablePrefix = names.freshPrefix(bindings);
 		endVarName = variablePrefix + "end";
 		this.strategy = strategy;
@@ -121,6 +149,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		this.startVarFixed = startVar.hasValue() || bindings.hasBinding(startVar.getName());
 		this.endVarFixed = endVar.hasValue() || bindings.hasBinding(endVar.getName());
+		bindStart = includeConstantEndpoints || !startVar.isConstant();
+		bindEnd = includeConstantEndpoints || !endVar.isConstant();
 
 		this.pathExpression = pathExpression;
 		this.contextVar = contextVar;
@@ -274,13 +304,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 							if (!vp.startValue.equals(vp.endValue)) {
 								addToQueue(valueQueue, vp);
 							}
-							if (!nextElement.hasBinding(startVar.getName())) {
-								addBinding(nextElement, startVar.getName(), vp.startValue);
-							}
-							if (!nextElement.hasBinding(endVar.getName())) {
-								addBinding(nextElement, endVar.getName(), vp.endValue);
-							}
-							return removeIntermediateJoinVars(nextElement);
+							return pathResult(nextElement, vp);
 						} else {
 							if (add(unreportedValues, vp)) {
 								if (!vp.startValue.equals(vp.endValue)) {
@@ -294,13 +318,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 						if (!vp.startValue.equals(vp.endValue)) {
 							addToQueue(valueQueue, vp);
 						}
-						if (!nextElement.hasBinding(startVar.getName())) {
-							addBinding(nextElement, startVar.getName(), vp.startValue);
-						}
-						if (!nextElement.hasBinding(endVar.getName())) {
-							addBinding(nextElement, endVar.getName(), vp.endValue);
-						}
-						return removeIntermediateJoinVars(nextElement);
+						return pathResult(nextElement, vp);
 					}
 				} else {
 					continue again;
@@ -313,7 +331,13 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	private BindingSet removeIntermediateJoinVars(QueryBindingSet nextElement) {
+	private BindingSet pathResult(QueryBindingSet nextElement, ValuePair vp) {
+		if (bindStart && !nextElement.hasBinding(startVar.getName())) {
+			addBinding(nextElement, startVar.getName(), vp.startValue);
+		}
+		if (bindEnd && !nextElement.hasBinding(endVar.getName())) {
+			addBinding(nextElement, endVar.getName(), vp.endValue);
+		}
 		nextElement.removeAll(namedIntermediateJoins);
 		return nextElement;
 	}
@@ -434,7 +458,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
 			}
-			currentIter = evaluatePath(pathExprClone);
+			currentIter = evaluateFirstStep(pathExprClone);
 			currentLength++;
 		} else {
 
@@ -491,6 +515,25 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private String varNameAtPathLengthOf(long atLength) {
 		return variablePrefix + atLength;
+	}
+
+	private CloseableIteration<BindingSet> evaluateFirstStep(TupleExpr expression) {
+		if (context != null && startVarFixed && endVarFixed && !startVar.isConstant()) {
+			Set<String> substitutions = context.getSubstitutionBindingNames();
+			if (!substitutions.contains(startVar.getName())
+					&& (endVar.isConstant() || substitutions.contains(endVar.getName()))
+					&& getVarValue(startVar, true, bindings).equals(getVarValue(endVar, true, bindings))) {
+				// When the concrete endpoints coincide, a closed walk from a term has the same existence in either
+				// direction. Replacing the terminal term with the frontier must preserve that term as the start
+				// of the first step: a nullable edge may reach it even when it is absent from nodes(G).
+				Set<String> anchored = new HashSet<>(substitutions);
+				anchored.add(startVar.getName());
+				QueryEvaluationContext firstStep = new BindingSetQueryEvaluationContext(context, anchored,
+						context.hasEnclosingProjection());
+				return strategy.precompile(expression, firstStep).evaluate(bindings);
+			}
+		}
+		return evaluatePath(expression);
 	}
 
 	private CloseableIteration<BindingSet> evaluatePath(TupleExpr expression) {
@@ -711,6 +754,18 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			this.replacement = replacement;
 			this.index = index;
 			this.replaceAnons = replaceAnons;
+		}
+
+		@Override
+		public void meet(ProjectionElem element) {
+			// A nested zero-or-one path projects its endpoints. Its traversal frontier must pass
+			// through this projection under the same name as the rewritten edge.
+			if (element.getName().equals(toBeReplaced.getName())) {
+				element.setName(replacement.getName());
+			}
+			if (element.getProjectionAlias().filter(toBeReplaced.getName()::equals).isPresent()) {
+				element.setProjectionAlias(replacement.getName());
+			}
 		}
 
 		@Override

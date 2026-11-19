@@ -21,8 +21,6 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF4J;
-import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -31,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
@@ -38,6 +37,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionC
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /** Compilation-only physical exposure of proven positive GRAPH bodies to all existing native specialists. */
 final class NativeGraphFusion {
@@ -61,35 +62,45 @@ final class NativeGraphFusion {
 		}
 		TupleExpr physical = expression.clone();
 		linkLogicalOrigins(expression, physical);
-		NativeValuePositionAnalysis positions = strategy.copyValuePositions(expression, physical);
+		var inputs = QueryAlgebraBindingAnalysis.withBindingValues(physical, EmptyBindingSet.getInstance());
 		Map<Graph, TupleExpr> replacements = new IdentityHashMap<>();
-		Set<String> guarded = new LinkedHashSet<>();
-		Graph rootGraph = physical instanceof Graph graph ? graph : null;
-		TupleExpr loweredRoot = rootGraph == null ? null : lowerIfSafe(rootGraph, dataset);
-		if (loweredRoot != null) {
-			rememberGuard(rootGraph, dataset, guarded);
-			physical = loweredRoot;
-			linkGraphReplacement(rootGraph, physical);
-			replacements.put(rootGraph, physical);
-		} else {
-			physical.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				public void meet(Service service) {
-					// The endpoint owns its dataset and compilation.
-				}
+		physical.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				// The endpoint owns its dataset and compilation.
+			}
 
-				@Override
-				public void meet(Graph graph) {
-					super.meet(graph);
-					TupleExpr lowered = lowerIfSafe(graph, dataset);
+			@Override
+			public void meet(Graph graph) {
+				// An entry guard can inspect invocation bindings. A selector supplied later by a correlated row
+				// needs the GRAPH boundary at that row, where its value and provenance are known.
+				if (hasSafeSelectorAndDataset(graph, dataset) && hasEntrySelector(graph, inputs)) {
+					TupleExpr lowered = GraphScopeOptimizer.lowerPositiveGraphPattern(graph);
 					if (lowered != null) {
-						rememberGuard(graph, dataset, guarded);
-						linkGraphReplacement(graph, lowered);
 						replacements.put(graph, lowered);
-						graph.replaceWith(lowered);
+						return;
 					}
 				}
-			});
+				super.meet(graph);
+			}
+		});
+		if (replacements.isEmpty()) {
+			return new Prepared(expression, null, Set.of());
+		}
+		NativeValuePositionAnalysis positions = strategy.copyValuePositions(expression, physical);
+		Set<String> guarded = new LinkedHashSet<>();
+		for (var entry : replacements.entrySet()) {
+			Graph graph = entry.getKey();
+			TupleExpr lowered = entry.getValue();
+			if (!graph.getGraphName().isConstant()) {
+				guarded.add(graph.getGraphName().getName());
+			}
+			linkGraphReplacement(graph, lowered);
+			if (physical == graph) {
+				physical = lowered;
+			} else {
+				graph.replaceWith(lowered);
+			}
 		}
 		return new Prepared(physical, positions == null ? null : positions.withGraphReplacements(replacements),
 				Set.copyOf(guarded));
@@ -178,27 +189,22 @@ final class NativeGraphFusion {
 		return hasSafeSelectorAndDataset(graph, dataset) && GraphScopeOptimizer.canLowerPositiveGraphPattern(graph);
 	}
 
-	private static TupleExpr lowerIfSafe(Graph graph, Dataset dataset) {
-		return hasSafeSelectorAndDataset(graph, dataset) ? GraphScopeOptimizer.lowerPositiveGraphPattern(graph) : null;
+	private static boolean hasEntrySelector(Graph graph, QueryAlgebraBindingAnalysis inputs) {
+		Var name = graph.getGraphName();
+		if (name.isConstant()) {
+			return true;
+		}
+		var input = inputs.contextAt(graph);
+		return input.bindingDomainKnown() && !input.maybeBoundNames().contains(name.getName());
 	}
 
 	private static boolean hasSafeSelectorAndDataset(Graph graph, Dataset dataset) {
 		Value selector = graph.getGraphName().getValue();
-		return (selector == null || selector instanceof Resource && !isDefaultAlias(selector))
-				&& (dataset == null
-						|| dataset.getNamedGraphResources().stream().noneMatch(NativeGraphFusion::isDefaultAlias));
-	}
-
-	private static void rememberGuard(Graph graph, Dataset dataset, Set<String> guarded) {
-		if (!graph.getGraphName().isConstant() && (dataset == null || !dataset.isExplicitReadDataset()
-				&& dataset.getNamedGraphResources().isEmpty() && dataset.getDefaultGraphResources().isEmpty())) {
-			// Enumeration uses physical nil-named contexts, but an invocation binding of either alias selects default.
-			guarded.add(graph.getGraphName().getName());
-		}
-	}
-
-	static boolean isDefaultAlias(Value value) {
-		return RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
+		return (selector == null
+				|| selector instanceof Resource && !GraphScopeOptimizer.requiresSemanticSelection(selector))
+				&& (dataset == null || dataset.getNamedGraphResources()
+						.stream()
+						.noneMatch(GraphScopeOptimizer::requiresSemanticSelection));
 	}
 
 	/** A lexical compiler mode for the semantic alternative; it is restored even if compilation fails. */

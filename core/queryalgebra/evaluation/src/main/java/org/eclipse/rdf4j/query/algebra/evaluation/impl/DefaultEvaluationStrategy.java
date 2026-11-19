@@ -125,7 +125,6 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
@@ -200,7 +199,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathVariableScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
@@ -885,15 +883,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		final Scope scope = alp.getScope();
-		final Var subjectVar = alp.getSubjectVar();
-		final TupleExpr pathExpression = alp.getPathExpression();
-		final Var objVar = alp.getObjectVar();
-		final Var contextVar = alp.getContextVar();
-		final long minLength = alp.getMinLength();
-		PathVariableScope names = PathVariableScope.prepare(alp);
-		return bindings -> new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
-				contextVar, minLength, bindings, context, names);
+		return PathIteration.prepare(this, alp, context);
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)

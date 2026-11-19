@@ -21,6 +21,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -54,11 +55,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class GraphScopeOptimizerTest {
 
@@ -278,6 +283,35 @@ class GraphScopeOptimizerTest {
 			assertThat(evaluate(strategy, original, conflicting)).isEmpty();
 			assertThat(evaluate(strategy, lowered, conflicting)).as(subjectName).isEmpty();
 		}
+	}
+
+	@ParameterizedTest(name = "lateral driver = {0}")
+	@ValueSource(booleans = { false, true })
+	void prevaluedLocalGraphRejectsAForeignInvocationWithTheSameBlankNodeLabel(boolean lateral) {
+		BNode remote = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, new Object(), false)
+				.map(VF.createBNode("response-label"));
+		BNode local = VF.createBNode(remote.getID());
+		CountingTripleSource source = new CountingTripleSource();
+		source.contextIDs.add(local);
+		source.data.add(VF.createStatement(TARGET_GRAPH, P, OTHER_GRAPH, local));
+		QueryRoot plan = new QueryRoot(new Graph(Var.of("g", local),
+				new StatementPattern(Var.of("s"), Var.of("p", P, true, true), Var.of("o"))));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		assertThat(evaluate(strategy, plan, bindings("g", local))).hasSize(1);
+		BindingSet input = bindings("g", remote);
+		if (lateral) {
+			BindingSetAssignment driver = new BindingSetAssignment();
+			driver.setBindingSets(List.of(bindings("g", local), input));
+			plan.setArg(new Lateral(driver, plan.getArg()));
+			input = EmptyBindingSet.getInstance();
+		}
+		List<BindingSet> expected = evaluate(strategy, plan, input);
+		assertThat(expected).hasSize(lateral ? 1 : 0);
+
+		new GraphScopeOptimizer().optimize(plan, null, input);
+
+		assertThat(evaluate(strategy, plan, input)).containsExactlyElementsOf(expected);
+		assertThat(graphs(plan)).hasSize(1);
 	}
 
 	@Test
