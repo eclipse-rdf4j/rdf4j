@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -430,14 +431,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			if (canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
 				return new RepeatedBindingSetIteration(cachedDirectLookup.statementCount, bindings);
 			}
-			if (cachedDirectLookup.statements == null) {
-				return new JoinStatementWithBindingSetIterator(
-						reopenUncachedIteration((Resource) subject, (IRI) predicate, object, contexts),
-						getConverter(), bindings, context);
+			CloseableIteration<? extends Statement> iteration = cachedDirectLookup.statements == null
+					? reopenUncachedIteration((Resource) subject, (IRI) predicate, object, contexts)
+					: new CloseableIteratorIteration<>(cachedDirectLookup.statements.iterator());
+			try {
+				return new JoinStatementWithBindingSetIterator(iteration, getConverter(), bindings, context);
+			} catch (Throwable failure) {
+				ExternalValuePreparation.closeWithSuppressed(iteration, failure);
+				throw failure;
 			}
-			return new JoinStatementWithBindingSetIterator(
-					new CloseableIteratorIteration<>(cachedDirectLookup.statements.iterator()),
-					getConverter(), bindings, context);
 		}
 
 		if (directLookupKey != null
@@ -481,24 +483,26 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 			if (directLookupKey != null) {
+				CloseableIteration<? extends Statement> probe = iteration;
+				iteration = null;
 				DirectLookupResult directLookupResult = cacheDirectLookupIfSmall(directLookupKey, (Resource) subject,
-						(IRI) predicate, object, contexts, iteration);
+						(IRI) predicate, object, contexts, probe);
+				iteration = directLookupResult.iteration;
 				if (directLookupResult.cachedStatementCount >= 0
 						&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
+					iteration.close();
+					iteration = null;
 					if (directLookupResult.cachedStatementCount == 0) {
 						return null;
 					}
 					return new RepeatedBindingSetIteration(directLookupResult.cachedStatementCount, bindings);
 				}
-				iteration = directLookupResult.iteration;
 			}
 
 			// Return an iterator that converts the statements to var bindings
 			return new JoinStatementWithBindingSetIterator(iteration, getConverter(), bindings, context);
 		} catch (Throwable t) {
-			if (iteration != null) {
-				iteration.close();
-			}
+			ExternalValuePreparation.closeWithSuppressed(iteration, t);
 			if (t instanceof InterruptedException) {
 				Thread.currentThread().interrupt();
 			}
@@ -699,23 +703,33 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private DirectLookupResult cacheDirectLookupIfSmall(DirectLookupKey directLookupKey,
 			Resource subject, IRI predicate, Value object, Resource[] contexts,
 			CloseableIteration<? extends Statement> iteration) {
-		if (directLookupKey == null) {
-			return new DirectLookupResult(iteration, -1);
-		}
-
-		try (iteration) {
+		CloseableIteration<? extends Statement> ownedProbe = iteration;
+		CloseableIteration<? extends Statement> replacement = null;
+		try {
 			List<Statement> statements = new ArrayList<>(DIRECT_LOOKUP_CACHE_MAX_STATEMENTS);
 			while (iteration.hasNext()) {
 				if (statements.size() == DIRECT_LOOKUP_CACHE_MAX_STATEMENTS) {
-					return new DirectLookupResult(reopenUncachedIteration(subject, predicate, object, contexts), -1);
+					replacement = reopenUncachedIteration(subject, predicate, object, contexts);
+					break;
 				}
 				statements.add(iteration.next());
 			}
 
-			statements = List.copyOf(statements);
-
-			putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.statements(statements));
-			return new DirectLookupResult(new CloseableIteratorIteration<>(statements.iterator()), statements.size());
+			long cachedStatementCount = -1;
+			if (replacement == null) {
+				statements = List.copyOf(statements);
+				putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.statements(statements));
+				replacement = new CloseableIteratorIteration<>(statements.iterator());
+				cachedStatementCount = statements.size();
+			}
+			DirectLookupResult result = new DirectLookupResult(replacement, cachedStatementCount);
+			ownedProbe = null;
+			iteration.close();
+			return result;
+		} catch (Throwable failure) {
+			ExternalValuePreparation.closeWithSuppressed(ownedProbe, failure);
+			ExternalValuePreparation.closeWithSuppressed(replacement, failure);
+			throw failure;
 		}
 	}
 
@@ -724,12 +738,17 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		incrementIndexLookupCount();
 		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(subject, predicate, object,
 				contexts);
-		if (iteration instanceof IndexReportingIterator) {
-			String indexName = ((IndexReportingIterator) iteration).getIndexName();
-			statementPattern.setIndexName(indexName);
-			statementPatternForMetrics.setIndexName(indexName);
+		try {
+			if (iteration instanceof IndexReportingIterator) {
+				String indexName = ((IndexReportingIterator) iteration).getIndexName();
+				statementPattern.setIndexName(indexName);
+				statementPatternForMetrics.setIndexName(indexName);
+			}
+			return handleFilter(contexts, subject, predicate, object, iteration);
+		} catch (Throwable failure) {
+			ExternalValuePreparation.closeWithSuppressed(iteration, failure);
+			throw failure;
 		}
-		return handleFilter(contexts, subject, predicate, object, iteration);
 	}
 
 	private ConvertStatementToBindingSetIterator getIteration() {
