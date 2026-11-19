@@ -25,6 +25,10 @@ import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +41,7 @@ import org.slf4j.LoggerFactory;
  *
  */
 public abstract class FedXStatementPattern extends StatementPattern
-		implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr, ExecutionDatasetAware {
+		implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr, ExecutionDatasetAware, BindingAnalysisContract {
 	private static final Logger log = LoggerFactory.getLogger(FedXStatementPattern.class);
 
 	private static final long serialVersionUID = 6588020780262348806L;
@@ -81,6 +85,9 @@ public abstract class FedXStatementPattern extends StatementPattern
 		target.statementSources = new ArrayList<>(statementSources);
 		target.freeVars = new ArrayList<>(freeVars);
 		target.filterExpr = filterExpr == null ? null : (FilterValueExpr) filterExpr.clone();
+		if (target.filterExpr != null) {
+			target.filterExpr.setParentNode(target);
+		}
 		target.boundFilters = boundFilters == null ? null : new QueryBindingSet(boundFilters);
 		target.upperLimit = upperLimit;
 		target.executionDataset = executionDataset;
@@ -113,6 +120,34 @@ public abstract class FedXStatementPattern extends StatementPattern
 		if (filterExpr != null) {
 			filterExpr.visit(visitor);
 		}
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		if (current == filterExpr) {
+			filterExpr = (FilterValueExpr) replacement;
+			replacement.setParentNode(this);
+		} else {
+			super.replaceChildNode(current, replacement);
+		}
+	}
+
+	protected OutputFacts matchedStatementFacts(QueryAlgebraBindingAnalysis analysis, ReadOnlyContext input) {
+		return analysis.statementFacts(getVarList(), input);
+	}
+
+	@Override
+	public OutputFacts bindingOutput(QueryAlgebraBindingAnalysis analysis, ReadOnlyContext input) {
+		return analysis.withRequiredBindings(matchedStatementFacts(analysis, input), boundFilters, input);
+	}
+
+	@Override
+	public ReadOnlyContext bindingInput(QueryAlgebraBindingAnalysis analysis, QueryModelNode child,
+			ReadOnlyContext input) {
+		return child == filterExpr
+				? analysis.withOutput(input, analysis.withRequiredBindings(matchedStatementFacts(analysis, input),
+						boundFilters, input))
+				: input;
 	}
 
 	public void addStatementSource(StatementSource statementSource) {
@@ -213,16 +248,18 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	@Override
 	public void addFilterExpr(FilterExpr expr) {
+		FilterExpr owned = expr.clone();
 
 		if (filterExpr == null) {
-			filterExpr = expr;
+			filterExpr = owned;
 		} else if (filterExpr instanceof ConjunctiveFilterExpr) {
-			((ConjunctiveFilterExpr) filterExpr).addExpression(expr);
+			((ConjunctiveFilterExpr) filterExpr).addExpression(owned);
 		} else if (filterExpr instanceof FilterExpr) {
-			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, expr);
+			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, owned);
 		} else {
 			throw new RuntimeException("Unexpected type: " + filterExpr.getClass().getCanonicalName());
 		}
+		filterExpr.setParentNode(this);
 	}
 
 	@Override
@@ -241,15 +278,15 @@ public abstract class FedXStatementPattern extends StatementPattern
 		// visit Var nodes and set value for matching var names
 		if (getSubjectVar().getName().equals(varName)) {
 			Var var = getSubjectVar();
-			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant()));
+			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant(), var.isBNode()));
 		}
 		if (getPredicateVar().getName().equals(varName)) {
 			Var var = getPredicateVar();
-			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant()));
+			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant(), var.isBNode()));
 		}
 		if (getObjectVar().getName().equals(varName)) {
 			Var var = getObjectVar();
-			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant()));
+			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant(), var.isBNode()));
 		}
 
 		boundFilters.addBinding(varName, value);

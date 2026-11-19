@@ -17,6 +17,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -37,7 +38,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 @Experimental
 @InternalUseOnly
@@ -92,6 +92,19 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	}
 
 	@Override
+	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings,
+			BindingOptimizationContext.Mode mode) {
+		return mode == BindingOptimizationContext.Mode.SAIL_COMPATIBILITY
+				? getOptimizerInputBindings(optimizer, initialBindings)
+				: initialBindings;
+	}
+
+	@Override
+	public boolean preservesPreparedBindings() {
+		return true;
+	}
+
+	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
 			return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, nativeEngine)
@@ -101,7 +114,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				BINDING_ASSIGNER,
 				GRAPH_SCOPE_OPTIMIZER,
 				StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
-				new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()),
+				ConstantOptimizer.forStandardPipeline(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,

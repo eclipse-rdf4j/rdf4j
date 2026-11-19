@@ -25,14 +25,18 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleBNode;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
@@ -48,11 +52,18 @@ public final class RemoteBNode extends SimpleBNode {
 	private static final long serialVersionUID = 1L;
 	private final transient Registry registry;
 	private final transient Object localOwner;
+	private final transient CallerAlias callerAlias;
 
 	private RemoteBNode(String alias, Registry registry, Object localOwner, Provenance provenance) {
+		this(alias, registry, localOwner, provenance, null);
+	}
+
+	private RemoteBNode(String alias, Registry registry, Object localOwner, Provenance provenance,
+			CallerAlias callerAlias) {
 		super(alias);
 		this.registry = Objects.requireNonNull(registry);
 		this.localOwner = Objects.requireNonNull(localOwner);
+		this.callerAlias = callerAlias;
 		registry.register(this, provenance);
 	}
 
@@ -88,6 +99,7 @@ public final class RemoteBNode extends SimpleBNode {
 	public static final class SpillScope implements AutoCloseable {
 		private final Map<BigInteger, SpillEntry> entries = new HashMap<>();
 		private final Map<String, SpilledNode> references = new HashMap<>();
+		private final Map<CallerAlias, SpilledNode> callerReferences = new IdentityHashMap<>();
 		private final Map<BigInteger, RepositoryBNode> repositoryEntries = new HashMap<>();
 		private final Map<RepositoryKey, SpilledRepositoryNode> repositoryReferences = new HashMap<>();
 		private final Registry registry = new Registry();
@@ -122,16 +134,23 @@ public final class RemoteBNode extends SimpleBNode {
 						throw new QueryEvaluationException(
 								"Unsupported blank-node identity: conflicting execution spill authority");
 					}
-					return previous;
+				} else {
+					previous = spillAlias(remote, provenance, null);
+					references.put(remote.getID(), previous);
 				}
-				BigInteger reference = next;
-				next = next.add(BigInteger.ONE);
-				entries.put(reference, new SpillEntry(remote.getID(), remote.localOwner, provenance));
-				SpilledNode node = new SpilledNode(reference, remote.getID());
-				references.put(remote.getID(), node);
-				return node;
+				// An occurrence keeps its own source binding while sharing the alias's validated authority.
+				return remote.callerAlias == null ? previous
+						: callerReferences.computeIfAbsent(remote.callerAlias,
+								caller -> spillAlias(remote, provenance, caller));
 			}
 			return value;
+		}
+
+		private SpilledNode spillAlias(RemoteBNode remote, Provenance provenance, CallerAlias caller) {
+			BigInteger reference = next;
+			next = next.add(BigInteger.ONE);
+			entries.put(reference, new SpillEntry(remote.getID(), remote.localOwner, provenance, caller));
+			return new SpilledNode(reference, remote.getID());
 		}
 
 		public Object resolve(Object value) {
@@ -149,7 +168,8 @@ public final class RemoteBNode extends SimpleBNode {
 					throw new QueryEvaluationException(
 							"Unsupported blank-node identity: unknown execution spill reference");
 				}
-				return new RemoteBNode(entry.alias(), registry, entry.localOwner(), entry.provenance());
+				return new RemoteBNode(entry.alias(), registry, entry.localOwner(), entry.provenance(),
+						entry.callerAlias());
 			}
 			return value;
 		}
@@ -158,6 +178,7 @@ public final class RemoteBNode extends SimpleBNode {
 		public void close() {
 			entries.clear();
 			references.clear();
+			callerReferences.clear();
 			repositoryEntries.clear();
 			repositoryReferences.clear();
 		}
@@ -166,7 +187,10 @@ public final class RemoteBNode extends SimpleBNode {
 	private record RepositoryKey(String id, String rawID, boolean reference) {
 	}
 
-	private record SpillEntry(String alias, Object localOwner, Provenance provenance) {
+	private record SpillEntry(String alias, Object localOwner, Provenance provenance, CallerAlias callerAlias) {
+	}
+
+	private record CallerAlias(Object invocation, String name, Value originalBinding, RemoteBNode originalAlias) {
 	}
 
 	private static boolean sameProvenance(Provenance first, Provenance second) {
@@ -192,8 +216,10 @@ public final class RemoteBNode extends SimpleBNode {
 		private final Object identityScope;
 		private final boolean canonicalIDs;
 		private final Map<String, BNode> nodes = new HashMap<>();
+		private final Map<String, BNode> canonicalOriginals = new HashMap<>();
 		private final Map<Object, Map<String, ImportedNode>> imported = new IdentityHashMap<>();
 		private final Registry registry = new Registry();
+		private final Object callerInvocation = new Object();
 
 		private ResponseScope(BlankNodeAllocationScope allocation, ValueFactory localFactory, Object identityScope,
 				boolean canonicalResultIDs) {
@@ -205,11 +231,43 @@ public final class RemoteBNode extends SimpleBNode {
 
 		public void seedOriginalBindings(BindingSet bindings) {
 			allocation.reserve(bindings);
+			if (!canonicalIDs || bindings == null) {
+				return;
+			}
+			Set<Value> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+			ArrayDeque<Value> pending = new ArrayDeque<>();
+			for (Binding binding : bindings) {
+				seedIdentity(binding.getValue(), visited, pending);
+			}
+		}
+
+		private void seedIdentity(Value value, Set<Value> visited, ArrayDeque<Value> pending) {
+			if (value == null) {
+				return;
+			}
+			pending.push(value);
+			while (!pending.isEmpty()) {
+				Value current = pending.pop();
+				if (current instanceof RemoteBNode remote && visited.add(remote)) {
+					Provenance provenance = requireProvenance(remote);
+					if (provenance.canonicalResultID() && provenance.identityScope() == identityScope) {
+						canonicalOriginals.putIfAbsent(provenance.remoteID(), remote);
+					}
+				} else if (current instanceof TripleTerm triple && visited.add(triple)) {
+					// Visit the subject first to preserve precedence when both components seed the same ID.
+					pending.push(triple.getObject());
+					pending.push(triple.getSubject());
+				}
+			}
 		}
 
 		public Value map(Value value) {
 			if (value instanceof RemoteBNode remote) {
 				Provenance provenance = requireProvenance(remote);
+				if (canonicalIDs && provenance.canonicalResultID() && provenance.identityScope() == identityScope
+						&& canonicalOriginals.containsKey(provenance.remoteID())) {
+					return canonicalOriginals.get(provenance.remoteID());
+				}
 				if (remote.localOwner == allocation.remoteIdentityOwner()) {
 					return value;
 				}
@@ -234,6 +292,9 @@ public final class RemoteBNode extends SimpleBNode {
 				return mapped;
 			}
 			if (value instanceof BNode node) {
+				if (canonicalIDs && canonicalOriginals.containsKey(node.getID())) {
+					return canonicalOriginals.get(node.getID());
+				}
 				return nodes.computeIfAbsent(node.getID(), id -> {
 					String alias = canonicalIDs ? allocation.getOrCreateRemoteAlias(identityScope, id, localFactory)
 							: allocation.createBNode(localFactory).getID();
@@ -254,8 +315,82 @@ public final class RemoteBNode extends SimpleBNode {
 		}
 
 		public BindingSet map(BindingSet row, BindingSet originalBindings) {
-			return BindingSetSnapshots.mapValues(row,
-					(name, value) -> map(value, originalBindings == null ? null : originalBindings.getValue(name)));
+			return BindingSetSnapshots.mapValues(row, (name, value) -> map(value,
+					originalBindings == null ? null : originalBindings.getValue(name)));
+		}
+
+		/** Carry caller ownership through merged vector results without adding a provider-visible binding. */
+		public BindingSet markCallerAliases(BindingSet row) {
+			if (canonicalOriginals.isEmpty()) {
+				return row;
+			}
+			return BindingSetSnapshots.mapValues(originalBindings(row), (name, value) -> rewriteAliases(value, null,
+					(term, ignored) -> markCallerAlias(name, term, value)));
+		}
+
+		private Value markCallerAlias(String name, Value value, Value originalBinding) {
+			if (value instanceof RemoteBNode remote && canonicalOriginal(remote) != null) {
+				return new RemoteBNode(remote.getID(), remote.registry, remote.localOwner, requireProvenance(remote),
+						new CallerAlias(callerInvocation, name, originalBinding, remote));
+			}
+			return value;
+		}
+
+		private Value markedOriginalBinding(String name, Value value) {
+			RemoteBNode remote = findRemoteAlias(value, alias -> isCallerAlias(name, alias));
+			return remote == null ? null : remote.callerAlias.originalBinding();
+		}
+
+		private boolean isCallerAlias(String name, RemoteBNode remote) {
+			CallerAlias alias = remote.callerAlias;
+			return alias != null && alias.invocation() == callerInvocation && alias.name().equals(name);
+		}
+
+		private BNode canonicalOriginal(RemoteBNode remote) {
+			Provenance provenance = remote.getProvenance();
+			return provenance != null && provenance.canonicalResultID() && provenance.identityScope() == identityScope
+					? canonicalOriginals.get(provenance.remoteID())
+					: null;
+		}
+
+		/**
+		 * Recovers seeded canonical parameter identities in a row whose provider already preserves provenance.
+		 * Unrelated caller values and endpoint-owned wrappers retain their objects and authority. Plain labels never
+		 * identify a parameter in this mode, because they may belong to the caller's local blank-node namespace.
+		 */
+		public BindingSet recoverOriginalBindings(BindingSet row) {
+			return recoverOriginalBindings(row, null);
+		}
+
+		/** Recovers parameter identities while retaining the exact original alias at each caller-owned column. */
+		public BindingSet recoverOriginalBindings(BindingSet row, BindingSet originalBindings) {
+			if (canonicalOriginals.isEmpty()) {
+				return row;
+			}
+			return BindingSetSnapshots.mapValues(row, (name, value) -> {
+				Value original = originalBindings == null ? markedOriginalBinding(name, value)
+						: originalBindings.getValue(name);
+				return rewriteAliases(value, original,
+						(term, input) -> recoverOriginalValue(name, term, input, originalBindings != null));
+			});
+		}
+
+		private Value recoverOriginalValue(String name, Value value, Value original, boolean hasOriginalRow) {
+			if (hasOriginalRow && original != null
+					&& (value == original || value instanceof RemoteBNode && corresponds(original, value))) {
+				validateProvenance(original);
+				return original;
+			}
+			if (value instanceof RemoteBNode remote) {
+				if (isCallerAlias(name, remote)) {
+					return remote.callerAlias.originalAlias();
+				}
+				BNode recovered = canonicalOriginal(remote);
+				if (recovered != null) {
+					return recovered;
+				}
+			}
+			return value;
 		}
 
 		public Value map(Value value, Value original) {
@@ -330,9 +465,10 @@ public final class RemoteBNode extends SimpleBNode {
 	/** Adds receiving-query terms without promoting them into the caller's original solution mapping. */
 	public static BindingSet toRemoteBindings(BindingSet bindings, BindingSet additionalBindings,
 			Set<String> relevantNames, Object receivingScope, boolean referenceSupport, boolean canonicalIDs) {
-		BindingSet original = BindingSetSnapshots.copyOf(originalBindings(bindings));
-		MapBindingSet outgoing = new MapBindingSet(original.size() + additionalBindings.size());
-		for (Binding binding : original) {
+		BindingSet original = originalBindings(bindings);
+		BindingSet source = BindingSetSnapshots.copyOf(original);
+		MapBindingSet outgoing = new MapBindingSet(source.size() + additionalBindings.size());
+		for (Binding binding : source) {
 			outgoing.addBinding(binding);
 		}
 		for (Binding binding : additionalBindings) {
@@ -344,7 +480,7 @@ public final class RemoteBNode extends SimpleBNode {
 					receivingScope, referenceSupport, canonicalIDs) : binding.getValue();
 			transported.addBinding(binding.getName(), value);
 		}
-		return new TransportBindings(original, transported);
+		return new TransportBindings(source, transported);
 	}
 
 	private static class Snapshot extends AbstractBindingSet {
@@ -467,10 +603,12 @@ public final class RemoteBNode extends SimpleBNode {
 					"Unsupported blank-node identity: remote provenance is no longer available");
 		}
 		if (captured == remote || captured instanceof RemoteBNode copy && copy.registry == remote.registry
-				&& copy.localOwner == remote.localOwner && copy.getProvenance() == provenance) {
+				&& copy.localOwner == remote.localOwner && copy.getProvenance() == provenance
+				&& copy.callerAlias == remote.callerAlias) {
 			return captured;
 		}
-		return new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner, provenance);
+		return new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner, provenance,
+				remote.callerAlias);
 	}
 
 	/** Preserves nested aliases without recursive calls or a second materialized copy of unchanged triples. */
@@ -598,52 +736,131 @@ public final class RemoteBNode extends SimpleBNode {
 		}
 	}
 
-	private static final class IdentityPair {
-		private final Value original;
-		private final Value captured;
-
-		private IdentityPair(Value original, Value captured) {
-			this.original = original;
-			this.captured = captured;
-		}
+	private record IdentityPair(Value value, Value reference) {
 
 		@Override
 		public int hashCode() {
-			return 31 * System.identityHashCode(original) + System.identityHashCode(captured);
+			return 31 * System.identityHashCode(value) + System.identityHashCode(reference);
 		}
 
 		@Override
 		public boolean equals(Object other) {
 			return this == other || other instanceof IdentityPair pair
-					&& original == pair.original && captured == pair.captured;
+					&& value == pair.value && reference == pair.reference;
+		}
+	}
+
+	/** Rewrites each distinct term and associated original once, preserving shared subterms. */
+	private static Value rewriteAliases(Value value, Value original, BiFunction<Value, Value, Value> rewriteLeaf) {
+		if (!(value instanceof TripleTerm)) {
+			return rewriteLeaf.apply(value, original);
+		}
+		IdentityPair root = new IdentityPair(value, original);
+		Map<IdentityPair, Value> completed = new HashMap<>();
+		Map<IdentityPair, TripleComponents> active = new HashMap<>();
+		ArrayDeque<IdentityPair> pending = new ArrayDeque<>();
+		pending.push(root);
+		while (!pending.isEmpty()) {
+			IdentityPair current = pending.peek();
+			if (!(current.value() instanceof TripleTerm triple)) {
+				completed.put(current, rewriteLeaf.apply(current.value(), current.reference()));
+				pending.pop();
+				continue;
+			}
+			TripleComponents children = active.computeIfAbsent(current,
+					pair -> new TripleComponents(triple, pair.reference()));
+			Value subject = completed.get(children.subject());
+			Value object = completed.get(children.object());
+			if (subject == null || object == null) {
+				IdentityPair child = subject == null ? children.subject() : children.object();
+				if (active.containsKey(child)) {
+					throw new QueryEvaluationException("Cyclic RDF value cannot preserve blank-node provenance");
+				}
+				pending.push(child);
+				continue;
+			}
+			completed.put(current, children.withComponents(triple, subject, object));
+			active.remove(current);
+			pending.pop();
+		}
+		return completed.get(root);
+	}
+
+	private record TripleComponents(TripleTerm original, IdentityPair subject, IdentityPair object) {
+		private TripleComponents(TripleTerm triple, Value original) {
+			this(triple, original instanceof TripleTerm candidate
+					&& triple.getPredicate().equals(candidate.getPredicate()) ? candidate : null);
+		}
+
+		private TripleComponents(TripleTerm triple, TripleTerm original) {
+			this(original, new IdentityPair(triple.getSubject(), original == null ? null : original.getSubject()),
+					new IdentityPair(triple.getObject(), original == null ? null : original.getObject()));
+		}
+
+		private Value withComponents(TripleTerm triple, Value rewrittenSubject, Value rewrittenObject) {
+			if (original != null && rewrittenSubject == subject.reference() && rewrittenObject == object.reference()) {
+				return original;
+			}
+			if (rewrittenSubject == subject.value() && rewrittenObject == object.value()) {
+				return triple;
+			}
+			Resource resource = (Resource) rewrittenSubject;
+			IRI predicate = triple.getPredicate();
+			return triple instanceof Resource ? new ResourceTripleTerm(resource, predicate, rewrittenObject)
+					: SimpleValueFactory.getInstance().createTripleTerm(resource, predicate, rewrittenObject);
+		}
+	}
+
+	/** Retains the subject role of extension triple terms when their components change. */
+	private static final class ResourceTripleTerm extends SimpleTripleTerm implements Resource {
+		private static final long serialVersionUID = 1L;
+
+		private ResourceTripleTerm(Resource subject, IRI predicate, Value object) {
+			super(subject, predicate, object);
+		}
+
+		@Override
+		protected boolean hasStructuralEquals() {
+			return true;
+		}
+
+		@Override
+		protected boolean hasStructuralHashCode() {
+			return true;
+		}
+
+		@Override
+		protected boolean hasStructuralStringValue() {
+			return true;
 		}
 	}
 
 	/** Identifies imported aliases for serializers that promise reusable local repository handles. */
 	public static boolean containsRemoteIdentity(Value value) {
-		if (value == null) {
-			return false;
-		}
-		if (value instanceof RemoteBNode) {
-			return true;
+		return findRemoteAlias(value, ignored -> true) != null;
+	}
+
+	private static RemoteBNode findRemoteAlias(Value value, Predicate<RemoteBNode> accept) {
+		if (value instanceof RemoteBNode remote) {
+			return accept.test(remote) ? remote : null;
 		}
 		if (!(value instanceof TripleTerm)) {
-			return false;
+			return null;
 		}
 		Set<Value> visited = Collections.newSetFromMap(new IdentityHashMap<>());
 		ArrayDeque<Value> pending = new ArrayDeque<>();
 		pending.push(value);
 		while (!pending.isEmpty()) {
 			Value current = pending.pop();
-			if (current instanceof RemoteBNode) {
-				return true;
+			if (current instanceof RemoteBNode remote && accept.test(remote)) {
+				return remote;
 			}
 			if (current instanceof TripleTerm triple && visited.add(current)) {
-				pending.push(triple.getSubject());
 				pending.push(triple.getObject());
+				pending.push(triple.getSubject());
 			}
 		}
-		return false;
+		return null;
 	}
 
 	private static final class Registry {

@@ -109,6 +109,38 @@ class RemoteBNodeSpillAuthorityTest {
 	}
 
 	@Test
+	void markedAndUnmarkedAliasesStillRejectConflictingSpillAuthority() {
+		Object epoch = new Object();
+		var firstAllocation = new BlankNodeAllocationScope("alias-", ignored -> false);
+		var secondAllocation = new BlankNodeAllocationScope("alias-", ignored -> false);
+		BNode first = (BNode) RemoteBNode.newResponseScope(firstAllocation, VF, epoch, true)
+				.map(VF.createBNode("first"));
+		BNode second = (BNode) RemoteBNode.newResponseScope(secondAllocation, VF, epoch, true)
+				.map(VF.createBNode("second"));
+		assertThat(first.getID()).isEqualTo(second.getID());
+
+		var response = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, epoch, true);
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("caller", first);
+		response.seedOriginalBindings(bindings);
+		Value marked = response.markCallerAliases(bindings).getValue("caller");
+		assertThat(marked).isEqualTo(first).isNotSameAs(first);
+
+		try (var spill = new RemoteBNode.SpillScope()) {
+			spill.replace(marked);
+			assertThatThrownBy(() -> spill.replace(second))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("conflicting execution spill authority");
+		}
+		try (var spill = new RemoteBNode.SpillScope()) {
+			spill.replace(second);
+			assertThatThrownBy(() -> spill.replace(marked))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("conflicting execution spill authority");
+		}
+	}
+
+	@Test
 	void restoredNoncanonicalAliasReusesTheOuterSafeAlias() {
 		Object foreignEpoch = new Object();
 		var foreignAllocation = new BlankNodeAllocationScope("foreign-", ignored -> false);

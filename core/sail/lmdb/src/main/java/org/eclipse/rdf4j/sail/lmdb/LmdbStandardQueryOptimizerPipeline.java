@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -82,6 +83,19 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	@Override
 	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
 		return delegate.getOptimizerInputBindings(optimizer, initialBindings);
+	}
+
+	@Override
+	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings,
+			BindingOptimizationContext.Mode mode) {
+		return mode == BindingOptimizationContext.Mode.SAIL_COMPATIBILITY
+				? getOptimizerInputBindings(optimizer, initialBindings)
+				: initialBindings;
+	}
+
+	@Override
+	public boolean preservesPreparedBindings() {
+		return true;
 	}
 
 	@Override

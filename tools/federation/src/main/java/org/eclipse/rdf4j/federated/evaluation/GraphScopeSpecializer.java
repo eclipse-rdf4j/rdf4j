@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.ActiveGraph;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
 
 /** Specializes one active graph boundary, preserving the selected federation plan. */
 final class GraphScopeSpecializer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
@@ -185,9 +186,15 @@ final class GraphScopeSpecializer extends AbstractSimpleQueryModelVisitor<Runtim
 	}
 
 	/** Raw children of a native triple-reference group still need explicit, clone-owned selection provenance. */
-	private static final class SelectedStatementPattern extends StatementPattern implements GraphSelectionAware {
+	private static final class SelectedStatementPattern extends StatementPattern
+			implements GraphSelectionAware, BindingAnalysisContract.Standard {
 		private static final long serialVersionUID = 1L;
 		private final ResolvedGraphSelection selection;
+
+		@Override
+		public Class<? extends QueryModelNode> bindingContractClass() {
+			return SelectedStatementPattern.class;
+		}
 
 		SelectedStatementPattern(StatementPattern original, Scope scope, Var context,
 				ResolvedGraphSelection selection) {

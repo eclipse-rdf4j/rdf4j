@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedQuery;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -166,15 +167,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	// The context that represents the unnamed graph
 	static final Resource[] NULL_CTX = new Resource[] { null };
 
-	// Track the result sizes generated when evaluating a query, used by explain(...)
-	private boolean trackResultSize;
-
-	// By default all tuple expressions are cloned before being optimized and executed. We don't want to do this for
-	// .explain(...) since we need to retrieve the optimized or executed plan.
-	private boolean cloneTupleExpression = true;
-
-	// Track the time used when evaluating a query, used by explain(...)
-	private boolean trackTime;
+	private final ThreadLocal<ExplanationEvaluation> explanationEvaluation = new ThreadLocal<>();
 
 	// current query evaluation mode
 	private QueryEvaluationMode queryEvaluationMode;
@@ -243,8 +236,34 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
+	public boolean supportsSPARQLBindingTransport() {
+		return true;
+	}
+
+	@Override
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+		return evaluateInternal(tupleExpr, dataset, bindings, includeInferred, claimExplanationEvaluation());
+	}
+
+	/**
+	 * Claims the evaluation requested by the current explanation. Nested reads remain ordinary evaluations. Providers
+	 * that reopen an evaluation may pass the claimed state explicitly to each attempt.
+	 */
+	@InternalUseOnly
+	protected final ExplanationEvaluation claimExplanationEvaluation() {
+		ExplanationEvaluation current = explanationEvaluation.get();
+		if (current == null || current.claimed || current.level == Explanation.Level.Unoptimized) {
+			return null;
+		}
+		current.claimed = true;
+		return current;
+	}
+
+	@InternalUseOnly
+	protected final CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred, ExplanationEvaluation explanation)
+			throws SailException {
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		SlowQueryContextHolder.SlowQueryContext slowQueryContext = SlowQueryContextHolder.get();
@@ -258,7 +277,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			slowQueryStartMillis = SlowQuerySupport.getTimestampMillis(getSailBase());
 		}
 
-		if (cloneTupleExpression) {
+		if (explanation == null) {
 			// Clone the tuple expression to allow for more aggressive optimizations
 			tupleExpr = tupleExpr.clone();
 		}
@@ -285,15 +304,19 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
-			if (trackResultSize) {
-				strategy.setTrackResultSize(trackResultSize);
+			if (explanation != null && explanation.level != Explanation.Level.Optimized) {
+				strategy.setTrackResultSize(true);
 			}
 
-			if (trackTime) {
-				strategy.setTrackTime(trackTime);
+			if (explanation != null && explanation.level == Explanation.Level.Timed) {
+				strategy.setTrackTime(true);
 			}
 
-			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			tupleExpr = PreparedQuery.optimizeSail(strategy, (QueryRoot) tupleExpr, store.getEvaluationStatistics(),
+					bindings);
+			if (explanation != null) {
+				explanation.preparedExpression = tupleExpr;
+			}
 			if (runtimeTelemetryEnabled) {
 				setRuntimeTelemetryEnabled(tupleExpr, true);
 			}
@@ -339,32 +362,21 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		TupleExpr explainedTupleExpr = tupleExpr;
 		setRuntimeTelemetryEnabled(tupleExpr, false);
 		setExecutionSummaryEnabled(tupleExpr, false);
+		ExplanationEvaluation previous = explanationEvaluation.get();
+		ExplanationEvaluation evaluation = new ExplanationEvaluation(level);
+		explanationEvaluation.set(evaluation);
 
 		try (var explanationContext = QueryExplanationContext.enter(level, bindings)) {
-
 			switch (level) {
 			case Telemetry:
 				setExecutionSummaryEnabled(tupleExpr, true);
 				setRuntimeTelemetryEnabled(tupleExpr, true);
-				this.trackResultSize = true;
-				this.cloneTupleExpression = false;
 
 				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
 				break;
 
-			case Timed:
+			case Timed, Executed:
 				setExecutionSummaryEnabled(tupleExpr, true);
-				this.trackTime = true;
-				this.trackResultSize = true;
-				this.cloneTupleExpression = false;
-
-				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
-				break;
-
-			case Executed:
-				setExecutionSummaryEnabled(tupleExpr, true);
-				this.trackResultSize = true;
-				this.cloneTupleExpression = false;
 
 				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
 				break;
@@ -373,7 +385,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				// Native evaluators use this transient flag to retain plan-time diagnostics without paying to
 				// render them during ordinary query compilation. Optimized output still excludes runtime summaries.
 				setExecutionSummaryEnabled(tupleExpr, true);
-				this.cloneTupleExpression = false;
 
 				evaluate(tupleExpr, dataset, bindings, includeInferred).close();
 				setExecutionSummaryEnabled(tupleExpr, false);
@@ -402,6 +413,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, explainedTupleExpr);
 
 		} finally {
+			if (previous == null) {
+				explanationEvaluation.remove();
+			} else {
+				explanationEvaluation.set(previous);
+			}
+			if (explainedTupleExpr == tupleExpr) {
+				explainedTupleExpr = evaluation.preparedExpressionOr(tupleExpr);
+			}
 			TupleExpr reportTarget = tupleExpr instanceof QueryRoot root ? root.getArg() : tupleExpr;
 			reportTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
 			setRuntimeTelemetryEnabled(tupleExpr, false);
@@ -413,9 +432,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				setRuntimeTelemetryEnabled(explainedTupleExpr, false);
 				setExecutionSummaryEnabled(explainedTupleExpr, false);
 			}
-			this.cloneTupleExpression = true;
-			this.trackResultSize = false;
-			this.trackTime = false;
 		}
 	}
 
@@ -438,7 +454,25 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 * attempt-specific expression may override this to expose the expression that was actually evaluated.
 	 */
 	protected TupleExpr getTupleExprForExplanation(TupleExpr tupleExpr) {
-		return tupleExpr;
+		ExplanationEvaluation current = explanationEvaluation.get();
+		return current == null ? tupleExpr : current.preparedExpressionOr(tupleExpr);
+	}
+
+	/** Evaluation state carried by one explanation, including any provider-specific retry attempts. */
+	@InternalUseOnly
+	protected static final class ExplanationEvaluation {
+		private final Explanation.Level level;
+		private boolean claimed;
+		private volatile TupleExpr preparedExpression;
+
+		private ExplanationEvaluation(Explanation.Level level) {
+			this.level = level;
+		}
+
+		public TupleExpr preparedExpressionOr(TupleExpr fallback) {
+			TupleExpr prepared = preparedExpression;
+			return prepared == null ? fallback : prepared;
+		}
 	}
 
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,

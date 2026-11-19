@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -42,6 +44,8 @@ import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingContextAwareOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -53,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.slf4j.Logger;
@@ -64,12 +69,13 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  * @author Arjohn Kampman
  */
-public class ConstantOptimizer implements QueryOptimizer {
+public class ConstantOptimizer implements BindingContextAwareOptimizer {
 
 	private static final Logger logger = LoggerFactory.getLogger(ConstantOptimizer.class);
 
 	private final EvaluationStrategy strategy;
 	private final BindingSet evaluationBindings;
+	private final boolean standardPipeline;
 
 	public ConstantOptimizer(EvaluationStrategy strategy) {
 		this(strategy, null);
@@ -80,10 +86,18 @@ public class ConstantOptimizer implements QueryOptimizer {
 	 * null input preserves the direct optimizer contract, which uses the bindings passed to {@link #optimize}.
 	 */
 	public ConstantOptimizer(EvaluationStrategy strategy, BindingSet evaluationBindings) {
+		this(strategy, evaluationBindings, false);
+	}
+
+	private ConstantOptimizer(EvaluationStrategy strategy, BindingSet evaluationBindings, boolean standardPipeline) {
 		this.strategy = strategy;
-		this.evaluationBindings = evaluationBindings == null ? null
-				: evaluationBindings.isEmpty() ? EmptyBindingSet.getInstance()
-						: new QueryBindingSet(evaluationBindings);
+		this.evaluationBindings = evaluationBindings == null ? null : new QueryBindingSet(evaluationBindings);
+		this.standardPipeline = standardPipeline;
+	}
+
+	@InternalUseOnly
+	public static ConstantOptimizer forStandardPipeline(EvaluationStrategy strategy) {
+		return new ConstantOptimizer(strategy, null, true);
 	}
 
 	/**
@@ -91,11 +105,38 @@ public class ConstantOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		BindingOptimizationContext context = BindingOptimizationContext.forOptimizer(tupleExpr, bindings);
+		if (context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT) {
+			optimizeWithInputs(tupleExpr, context.parameters(), context.evaluationInput(), false);
+		} else if (standardPipeline && context.mode() == BindingOptimizationContext.Mode.SAIL_COMPATIBILITY) {
+			optimizeWithInputs(tupleExpr, bindings, context.evaluationInput(), true);
+		} else {
+			optimizeWithInputs(tupleExpr, bindings, evaluationBindings == null ? bindings : evaluationBindings, true);
+		}
+	}
+
+	@Override
+	public Class<? extends QueryOptimizer> bindingContextOptimizerClass() {
+		return ConstantOptimizer.class;
+	}
+
+	@Override
+	public void optimizeWithBindingContext(TupleExpr tupleExpr, Dataset dataset, BindingOptimizationContext context) {
+		optimizeWithInputs(tupleExpr, context.parameters(), context.evaluationInput(),
+				context.mode() != BindingOptimizationContext.Mode.EMPTY_INPUT);
+	}
+
+	private void optimizeWithInputs(TupleExpr tupleExpr, BindingSet parameters, BindingSet evaluationInput,
+			boolean recoverProjectedInputs) {
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr,
-				evaluationBindings == null ? bindings : evaluationBindings);
+				evaluationInput);
 		ConstantVisitor visitor = new ConstantVisitor(strategy, bindingAnalysis,
 				new QueryEvaluationContext.Minimal(new SimpleDataset()));
 		tupleExpr.visit(visitor);
+		if (!recoverProjectedInputs) {
+			// Mandatory prepared capture already recovered proven API reads in their own projection scope.
+			return;
+		}
 		Set<String> varsBefore = visitor.varNames;
 
 		VarNameCollector varCollector = new VarNameCollector();
@@ -124,7 +165,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 						Extension ext = new Extension(proj.getArg());
 						proj.setArg(ext);
 
-						Value value = bindings.getValue(name);
+						Value value = parameters == null ? null : parameters.getValue(name);
 
 						Var lostVar;
 						if (value == null) {
@@ -447,6 +488,12 @@ public class ConstantOptimizer implements QueryOptimizer {
 			List<Var> variables = new ArrayList<>();
 			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
+				public void meet(GroupConcat concat) {
+					super.meet(concat);
+					TupleExprs.visitGroupConcatSeparator(concat, this);
+				}
+
+				@Override
 				public void meet(Var var) {
 					variables.add(var);
 				}
@@ -472,6 +519,12 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 		protected VarNameCollector() {
 			super(true);
+		}
+
+		@Override
+		public void meet(GroupConcat concat) {
+			super.meet(concat);
+			TupleExprs.visitGroupConcatSeparator(concat, this);
 		}
 
 		@Override

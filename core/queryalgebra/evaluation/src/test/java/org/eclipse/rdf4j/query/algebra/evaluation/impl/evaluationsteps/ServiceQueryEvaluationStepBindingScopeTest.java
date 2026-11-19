@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -64,16 +66,22 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ServiceQueryEvaluationStepBindingScopeTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -84,7 +92,7 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 	private static final Object RECEIVING_SCOPE = new Object();
 
 	@Test
-	void askRestoresNamedRuntimeScopeAndCallerValuesWithoutPromotingConstants() {
+	void fullyBoundSelectKeepsCallerDomainAndChecksOnlyServiceOutputs() {
 		Var endpoint = Var.of("endpoint", ENDPOINT, false, false);
 		Var fixedPredicate = Var.of("fixedPredicate", PREDICATE, false, true);
 		Var anonymousConstant = Var.of("anonymousConstant", VF.createIRI("urn:anonymous"), true, true);
@@ -107,16 +115,21 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 		MemoryTripleSource source = new MemoryTripleSource(List.of(
 				VF.createStatement(bodySubject, PREDICATE, OBJECT),
 				VF.createStatement(VF.createIRI("urn:anonymous"), PREDICATE, OBJECT)));
-		AtomicReference<Boolean> bodyHasRow = new AtomicReference<>();
 		AtomicReference<BindingSet> outbound = new AtomicReference<>();
 		FederatedService remote = mock(FederatedService.class);
-		when(remote.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI()))).thenAnswer(invocation -> {
-			BindingSet remoteBindings = invocation.getArgument(1);
-			outbound.set(remoteBindings);
-			boolean hasRow = !evaluateAndProject(expression, source, remoteBindings, Set.of()).isEmpty();
-			bodyHasRow.set(hasRow);
-			return hasRow;
-		});
+		when(remote.select(eq(service), eq(Set.of()), any(BindingSet.class), eq(service.getBaseURI())))
+				.thenAnswer(invocation -> {
+					BindingSet remoteBindings = invocation.getArgument(2);
+					outbound.set(remoteBindings);
+					List<BindingSet> matches = evaluateAndProject(expression, source, remoteBindings,
+							Set.of("bodyVar", "bodyObject"));
+					assertThat(matches).hasSize(1);
+					MapBindingSet wildcard = bindings("caller", VF.createLiteral("hidden in request"),
+							"internal", VF.createLiteral("wildcard-only"));
+					matches.getFirst().forEach(wildcard::addBinding);
+					BindingSet incompatible = bindings("bodyObject", VF.createIRI("urn:wrong"));
+					return new CloseableIteratorIteration<>(List.of(incompatible, wildcard).iterator());
+				});
 		ServiceQueryEvaluationStep step = step(service, remote, ENDPOINT);
 
 		try (CloseableIteration<BindingSet> result = step.evaluate(frame)) {
@@ -131,7 +144,6 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 			assertThat(row.getValue("bodyObject")).isSameAs(OBJECT);
 			assertThat(result.hasNext()).isFalse();
 		}
-		assertThat(bodyHasRow.get()).isTrue();
 		assertThat(outbound.get().getBindingNames()).contains("bodyVar", "bodyObject")
 				.doesNotContain("anonymousConstant");
 	}
@@ -432,15 +444,69 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 		assertThat(selected.get()).containsExactlyInAnyOrderElementsOf(visible).doesNotContain("hiddenLocal");
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void scalarServiceMergesNullAndUndefCallerDomainsAfterTransport(boolean explicitNull) {
+		Value first = VF.createLiteral(1);
+		Value second = VF.createLiteral(2);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("o"));
+		values.setBindingSets(List.of(bindings("o", first), bindings("o", second)));
+		Service service = service(Var.of("endpoint", ENDPOINT, false, true), values, "VALUES ?o { 1 2 }", false);
+		IRI graph = VF.createIRI("urn:service:graph");
+		BindingSet domain = new ListBindingSet(List.of("o", "undef", "graph"), null, null, graph) {
+			@Override
+			public boolean hasBinding(String name) {
+				return explicitNull && "o".equals(name) || super.hasBinding(name);
+			}
+
+			@Override
+			public int size() {
+				return explicitNull ? 2 : 1;
+			}
+		};
+		var frame = GraphFrameBindings.supply(new QueryBindingSet(), "graph", graph);
+		BindingSet caller = BindingSetSnapshots.preserveMetadata(frame, domain);
+		FederatedService provider = mock(FederatedService.class);
+		when(provider.select(eq(service), anySet(), any(BindingSet.class), eq(service.getBaseURI())))
+				.thenAnswer(invocation -> {
+					Set<String> projection = invocation.getArgument(1);
+					BindingSet input = invocation.getArgument(2);
+					assertThat(projection).containsExactly("o");
+					assertThat(input.getBindingNames()).containsExactly("graph");
+					assertThat(input).allSatisfy(binding -> assertThat(binding.getValue()).isNotNull());
+					List<BindingSet> rows = evaluateAndProject(values, new MemoryTripleSource(List.of()), input,
+							projection);
+					// A provider reinserts the RDF terms it received using ordinary bindings and has no null markers.
+					return new CloseableIteratorIteration<>(rows.stream().map(row -> merge(input, row)).iterator());
+				});
+
+		List<BindingSet> results = Iterations.asList(step(service, provider, ENDPOINT).evaluate(caller));
+
+		assertThat(results).hasSize(2);
+		if (explicitNull) {
+			assertThat(results).extracting(row -> row.getValue("o")).containsOnlyNulls();
+		} else {
+			assertThat(results).extracting(row -> row.getValue("o")).containsExactly(first, second);
+		}
+		assertThat(results).allSatisfy(row -> {
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("o", "undef", "graph");
+			assertThat(row.hasBinding("o")).isTrue();
+			assertThat(row.hasBinding("undef")).isFalse();
+			assertThat(row.size()).isEqualTo(2);
+			assertThat(GraphFrameBindings.isSupplied(row, "graph")).isTrue();
+		});
+	}
+
 	@Test
-	void silentAskFailureReturnsOnlyCallerAndRuntimeVisibleBindings() {
+	void silentFullyBoundSelectFailureReturnsOnlyCallerAndRuntimeVisibleBindings() {
 		Service service = simpleService(true);
 		Value callerValue = VF.createLiteral("caller");
 		MapBindingSet caller = bindings("caller", callerValue);
 		BindingSet frame = caller;
 		FederatedService remote = mock(FederatedService.class);
-		when(remote.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI())))
-				.thenThrow(new QueryEvaluationException("remote ASK failure"));
+		when(remote.select(eq(service), eq(Set.of()), any(BindingSet.class), eq(service.getBaseURI())))
+				.thenThrow(new QueryEvaluationException("remote SELECT failure"));
 		ServiceQueryEvaluationStep step = step(service, remote, ENDPOINT);
 
 		try (CloseableIteration<BindingSet> result = step.evaluate(frame)) {

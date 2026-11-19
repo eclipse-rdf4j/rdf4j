@@ -1545,7 +1545,9 @@ public class SpinRenderer {
 							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
-				super.meet(node);
+				if (node.getArg() != null) {
+					node.getArg().visit(this);
+				}
 				handler.handleStatement(valueFactory.createStatement(oldSubject, SP.EXPRESSION_PROPERTY, subject));
 				subject = oldSubject;
 			}

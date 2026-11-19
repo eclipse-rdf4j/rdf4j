@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
@@ -57,16 +59,16 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 	}
 
 	/**
-	 * True when {@code expression} is a {@link TupleFunctionCall} or a chain of plain joins (a scope-changing join only
-	 * as the root) consisting of tuple function calls only: the shape this step schedules per input row.
+	 * True when {@code expression} consists of tuple function calls, optionally restoring fixed argument or predicate
+	 * bindings, linked by plain joins. A scope-changing join is allowed only at the root.
 	 */
 	public static boolean isTupleFunctionGroup(TupleExpr expression) {
 		return collectCalls(expression) != null;
 	}
 
 	/** The calls of a tuple function group in join order, or null when the expression is not such a group. */
-	private static List<TupleFunctionCall> collectCalls(TupleExpr root) {
-		List<TupleFunctionCall> functions = new ArrayList<>();
+	private static List<ScheduledCall> collectCalls(TupleExpr root) {
+		List<ScheduledCall> functions = new ArrayList<>();
 		Deque<TupleExpr> remaining = new ArrayDeque<>();
 		remaining.push(root);
 		while (!remaining.isEmpty()) {
@@ -74,26 +76,41 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 			if (node instanceof Join join && (node == root || !join.isVariableScopeChange())) {
 				remaining.push(join.getRightArg());
 				remaining.push(join.getLeftArg());
-			} else if (node instanceof TupleFunctionCall call) {
-				functions.add(call);
 			} else {
-				return null;
+				TupleExpr candidate = node;
+				if (node instanceof Extension extension && extension.getClass() == Extension.class
+						&& !extension.isVariableScopeChange()
+						&& extension.getElements()
+								.stream()
+								.allMatch(TupleFunctionGroupQueryEvaluationStep::restoresFixedBinding)) {
+					candidate = extension.getArg();
+				}
+				if (!(candidate instanceof TupleFunctionCall call) || call.getFallback() != null) {
+					return null;
+				}
+				functions.add(new ScheduledCall(call, node));
 			}
 		}
 		return functions;
 	}
 
+	/** A fixed named term is exported after the call and never reads from the input mapping. */
+	private static boolean restoresFixedBinding(ExtensionElem element) {
+		return element.getExpr() instanceof Var variable && variable.hasValue() && !variable.isConstant()
+				&& element.getName().equals(variable.getName());
+	}
+
 	/** Returns null for an ordinary right arm, leaving its established join compilation unchanged. */
 	static QueryEvaluationStep tryPrepare(TupleExpr right, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
-		List<TupleFunctionCall> functions = collectCalls(right);
+		List<ScheduledCall> functions = collectCalls(right);
 		if (functions == null) {
 			return null;
 		}
 		QueryEvaluationStep[] calls = new QueryEvaluationStep[functions.size()];
 		String[][] names = new String[functions.size()][];
 		for (int i = 0; i < functions.size(); i++) {
-			TupleFunctionCall call = functions.get(i);
+			TupleFunctionCall call = functions.get(i).call();
 			Set<String> arguments = new LinkedHashSet<>();
 			for (ValueExpr argument : call.getArgs()) {
 				if (argument instanceof Var var) {
@@ -109,7 +126,7 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 			names[i] = arguments.toArray(String[]::new);
 		}
 		for (int i = 0; i < functions.size(); i++) {
-			calls[i] = strategy.precompile(functions.get(i), context);
+			calls[i] = strategy.precompile(functions.get(i).expression(), context);
 		}
 		return new TupleFunctionGroupQueryEvaluationStep(calls, names);
 	}
@@ -223,6 +240,9 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 			}
 		}
 		return -1;
+	}
+
+	private record ScheduledCall(TupleFunctionCall call, TupleExpr expression) {
 	}
 
 	private record Frame(int call, CloseableIteration<BindingSet> results) {

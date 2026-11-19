@@ -28,6 +28,7 @@ import java.util.concurrent.locks.LockSupport;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -46,22 +47,23 @@ import org.junit.jupiter.api.Test;
 class ServiceQueryEvaluationStepTelemetryTest {
 
 	@Test
-	void recordsLatencyQuantilesForAskRequests() {
+	void recordsSelectTelemetryForFullyBoundRequests() {
 		Service service = new Service(
 				Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
 				new SingletonSet(),
-				"{ VALUES ?x { 1 } }",
+				"",
 				Collections.emptyMap(),
 				null,
 				false);
 		service.setRuntimeTelemetryEnabled(true);
 
 		FederatedService federatedService = mock(FederatedService.class);
-		when(federatedService.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI())))
-				.thenAnswer(invocation -> {
-					LockSupport.parkNanos(1_000_000L);
-					return true;
-				});
+		when(federatedService.select(eq(service), eq(Collections.emptySet()), any(BindingSet.class),
+				eq(service.getBaseURI())))
+						.thenAnswer(invocation -> {
+							LockSupport.parkNanos(1_000_000L);
+							return new SingletonIteration<>(EmptyBindingSet.getInstance());
+						});
 
 		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
 		when(resolver.getService("http://example.com/service")).thenReturn(federatedService);
@@ -79,7 +81,7 @@ class ServiceQueryEvaluationStepTelemetryTest {
 		}
 
 		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
-		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
 		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_LATENCY_TOTAL_NANOS_ACTUAL))
 				.isGreaterThan(0L);
 		assertThat(service.getDoubleMetricActual(TelemetryMetricNames.REMOTE_LATENCY_P50_NANOS_ACTUAL))
@@ -158,7 +160,7 @@ class ServiceQueryEvaluationStepTelemetryTest {
 		ServiceQueryEvaluationStep step = new ServiceQueryEvaluationStep(service, service.getServiceRef(), resolver);
 		try (CloseableIteration<BindingSet> result = step.evaluate(bindings)) {
 			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next()).isSameAs(responseRow);
+			assertThat(result.next().getValue("input")).isSameAs(requestValue);
 			assertThat(result.hasNext()).isFalse();
 		}
 

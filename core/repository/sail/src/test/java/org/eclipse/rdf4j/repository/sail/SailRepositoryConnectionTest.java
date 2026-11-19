@@ -45,7 +45,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
@@ -65,6 +67,22 @@ import ch.qos.logback.core.read.ListAppender;
  * @author Jeen Broekstra
  */
 public class SailRepositoryConnectionTest {
+
+	@Test
+	public void bindingTransportCapabilityComesFromTheWrappedSailRatherThanTheRepositoryType() {
+		SailConnection nativeBackend = mock(SailConnection.class);
+		SailConnection serializedBackend = mock(SailConnection.class);
+		when(serializedBackend.supportsSPARQLBindingTransport()).thenReturn(true);
+		RepositoryConnection nativeConnection = new SailRepositoryConnection(sailRepository,
+				new SailConnectionWrapper(new SailConnectionWrapper(nativeBackend)));
+		RepositoryConnection serializedConnection = new SailRepositoryConnection(sailRepository,
+				new SailConnectionWrapper(new SailConnectionWrapper(serializedBackend)));
+		assertThat(new RepositoryConnectionWrapper(sailRepository, nativeConnection).supportsSPARQLBindingTransport())
+				.isFalse();
+		assertThat(
+				new RepositoryConnectionWrapper(sailRepository, serializedConnection).supportsSPARQLBindingTransport())
+						.isTrue();
+	}
 
 	private SailRepositoryConnection subject;
 	private SailConnection sailConnection;

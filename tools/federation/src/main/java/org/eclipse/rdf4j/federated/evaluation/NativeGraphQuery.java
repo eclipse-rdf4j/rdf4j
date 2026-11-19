@@ -109,7 +109,7 @@ final class NativeGraphQuery {
 	static Prepared select(TupleExpr expression, BindingSet bindings, Dataset dataset) {
 		FilterValueExpr filter = expression instanceof FilterTuple filtered ? filtered.getFilterExpr() : null;
 		QueryBindingSet graphBindings = new QueryBindingSet();
-		QueryBindingSet resultBindings = new QueryBindingSet(bindings);
+		QueryBindingSet resultBindings = QueryAlgebraUtil.copyBindings(bindings);
 		if (expression instanceof FilterTuple filtered && filtered.getBoundFilters() != null) {
 			resultBindings.addAll(filtered.getBoundFilters());
 		}
@@ -160,12 +160,7 @@ final class NativeGraphQuery {
 				dataset, selectedGraphIdentities(expression));
 	}
 
-	static Prepared boundJoin(StatementPattern statement, List<BindingSet> bindings) {
-		QueryBindingSet graphBindings = new QueryBindingSet();
-		FilterValueExpr filter = statement instanceof FilterTuple filtered ? filtered.getFilterExpr() : null;
-		String text = QueryStringUtil.selectQueryStringBoundJoinVALUES(statement, bindings, filter,
-				new AtomicBoolean(), null,
-				graphBindings);
+	static Prepared boundJoin(StatementPattern statement, String text, QueryBindingSet graphBindings) {
 		// Batched filters run after row-index conversion, where all original input bindings are available.
 		return new Prepared(text, graphBindings, EmptyBindingSet.getInstance(), null, false,
 				statement instanceof QueryRef query ? query.getExecutionDataset() : null,

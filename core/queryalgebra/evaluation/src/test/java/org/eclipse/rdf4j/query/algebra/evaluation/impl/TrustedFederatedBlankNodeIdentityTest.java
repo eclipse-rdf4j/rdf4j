@@ -135,7 +135,7 @@ class TrustedFederatedBlankNodeIdentityTest {
 			assertEquals(bindings, rows.next());
 			assertFalse(rows.hasNext());
 		}
-		assertTrue(service.askInvoked);
+		assertTrue(service.selectInvoked);
 	}
 
 	private static void assertRejected(RecordingService service, BindingSet bindings) {
@@ -144,7 +144,7 @@ class TrustedFederatedBlankNodeIdentityTest {
 		String message = String.valueOf(exception.getMessage()).toLowerCase();
 		assertTrue(message.contains("identity") || message.contains("blank node") || message.contains("blank-node"),
 				"rejection must identify the unsupported blank-node identity: " + exception);
-		assertFalse(service.askInvoked, "untrusted identity must be rejected before remote invocation");
+		assertFalse(service.selectInvoked, "untrusted identity must be rejected before remote invocation");
 	}
 
 	private static ServiceQueryEvaluationStep step(RecordingService service) {
@@ -175,7 +175,7 @@ class TrustedFederatedBlankNodeIdentityTest {
 		private final Value responseValue;
 		private final Service service = newService();
 		private BindingSet observedBindings;
-		private boolean askInvoked;
+		private boolean selectInvoked;
 
 		private RecordingService(Object scopeAndEpoch, boolean referenceSupport, boolean canonicalIds,
 				Value responseValue) {
@@ -202,14 +202,14 @@ class TrustedFederatedBlankNodeIdentityTest {
 
 		@Override
 		public boolean ask(Service service, BindingSet bindings, String baseUri) {
-			askInvoked = true;
-			observedBindings = bindings;
-			return true;
+			throw new AssertionError("Tuple SERVICE must preserve result multiplicity");
 		}
 
 		@Override
 		public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
 				BindingSet bindings, String baseUri) {
+			selectInvoked = true;
+			observedBindings = bindings;
 			MapBindingSet row = copyBindings(bindings);
 			row.setBinding("s", responseValue);
 			row.setBinding("o", OBJECT);

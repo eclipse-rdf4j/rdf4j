@@ -26,14 +26,26 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 
-/** Immutable copies and compositions of binding domains. */
+/** Immutable row snapshots with metadata supplied explicitly by the representation owning that metadata. */
 @InternalUseOnly
 public final class BindingSetSnapshots {
 	private BindingSetSnapshots() {
 	}
 
-	/** Marker for invocation-owned rows whose values and binding domain are immutable. */
+	/** Marker for invocation-owned rows whose values and metadata are immutable. */
 	public interface Snapshot extends BindingSet {
+	}
+
+	/**
+	 * A representation may preserve immutable metadata around a supplied immutable value snapshot. Implementations must
+	 * not retain a live source row, or infer metadata ownership from equal visible values in another row.
+	 */
+	public interface Metadata {
+		default boolean hasSnapshotMetadata() {
+			return true;
+		}
+
+		BindingSet preserveSnapshotMetadata(BindingSet immutableValues);
 	}
 
 	public static BindingSet copyOf(BindingSet bindings) {
@@ -85,7 +97,7 @@ public final class BindingSetSnapshots {
 			}
 		}
 		int size = excluded.isEmpty() ? bindings.size() : boundNames == null ? names.size() : boundNames.size();
-		return new ValueSnapshot(names, values, boundNames, size);
+		return preserveMetadata(bindings, new ValueSnapshot(names, values, boundNames, size));
 	}
 
 	/** Composes compatible rows. A bound name in the primary row takes precedence, including an explicit null. */
@@ -117,7 +129,21 @@ public final class BindingSetSnapshots {
 			}
 		}
 		int size = boundNames == null ? names.size() : boundNames.size();
-		return new ValueSnapshot(new ArrayList<>(names), values, boundNames, size);
+		BindingSet snapshot = new ValueSnapshot(new ArrayList<>(names), values, boundNames, size);
+		return preserveMetadata(primary, preserveMetadata(secondary, snapshot));
+	}
+
+	/**
+	 * Transfers state along a caller-established source/result association. Without metadata this preserves the
+	 * existing result representation; metadata owners always receive an immutable copy of the supplied values.
+	 */
+	public static BindingSet preserveMetadata(BindingSet metadataSource, BindingSet values) {
+		Objects.requireNonNull(metadataSource, "metadataSource");
+		Objects.requireNonNull(values, "values");
+		if (metadataSource instanceof Metadata metadata && metadata.hasSnapshotMetadata()) {
+			return Objects.requireNonNull(metadata.preserveSnapshotMetadata(copyOf(values)), "metadata snapshot");
+		}
+		return values;
 	}
 
 	private static final class ValueSnapshot extends ListBindingSet implements Snapshot {

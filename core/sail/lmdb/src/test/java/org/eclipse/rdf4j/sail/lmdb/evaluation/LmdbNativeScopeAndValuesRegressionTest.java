@@ -478,8 +478,10 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 
 		List<String> nativeRows = rows(query, true, "external", external);
 		assertThat(nativeRows).isEqualTo(rows(query, false, "external", external));
+		// The projected parameter is read in the query body, so prepared evaluation reports it.
 		assertThat(nativeRows).containsExactly(
-				"[copy=http://example.org/not-present-in-store;s=http://example.org/s4]");
+				"[copy=http://example.org/not-present-in-store;external=http://example.org/not-present-in-store;"
+						+ "s=http://example.org/s4]");
 	}
 
 	@Test

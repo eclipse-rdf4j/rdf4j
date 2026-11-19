@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
+import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -278,7 +279,11 @@ public abstract class TripleSourceBase implements TripleSource {
 
 			// apply filter and/or insert original bindings
 			if (filterExpr != null) {
-				if (!bindings.isEmpty()) {
+				if (QueryAlgebraUtil.hasExplicitNullBindings(bindings)) {
+					// Evaluate the filter after restoring the input's null markers over wildcard matches.
+					res = new InsertBindingsIteration(res, bindings);
+					res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());
+				} else if (!bindings.isEmpty()) {
 					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
 							queryInfo.getStrategy());
 				} else {
@@ -290,7 +295,7 @@ public abstract class TripleSourceBase implements TripleSource {
 					resultHolder.set(new EmptyIteration<>());
 					return;
 				}
-			} else if (!bindings.isEmpty()) {
+			} else if (!bindings.isEmpty() || QueryAlgebraUtil.hasExplicitNullBindings(bindings)) {
 				res = new InsertBindingsIteration(res, bindings);
 			}
 

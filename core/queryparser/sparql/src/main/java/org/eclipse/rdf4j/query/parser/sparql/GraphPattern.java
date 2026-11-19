@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  */
 @InternalUseOnly
 public class GraphPattern {
+	private final SourceProvenance sourceProvenance;
 
 	/**
 	 * The context of this graph pattern.
@@ -71,12 +72,22 @@ public class GraphPattern {
 	 * Creates a new graph pattern.
 	 */
 	public GraphPattern() {
+		this((SourceProvenance) null);
+	}
+
+	GraphPattern(SourceProvenance sourceProvenance) {
+		this.sourceProvenance = sourceProvenance;
+	}
+
+	private Var copyWithSource(Var variable) {
+		return sourceProvenance == null ? variable.clone() : sourceProvenance.copy(variable);
 	}
 
 	/**
 	 * Creates a new graph pattern that inherits the context and scope from a parent graph pattern.
 	 */
 	public GraphPattern(GraphPattern parent) {
+		this.sourceProvenance = parent.sourceProvenance;
 		contextVar = parent.contextVar;
 		spScope = parent.spScope;
 	}
@@ -84,8 +95,8 @@ public class GraphPattern {
 	/** Inherits the active graph, without importing the caller's ordinary variable bindings. */
 	public void enterSubquery() {
 		if (contextVar != null) {
-			projectionContext = contextVar.clone();
-			contextVar = contextVar.clone();
+			projectionContext = copyWithSource(contextVar);
+			contextVar = copyWithSource(contextVar);
 			contextVar.setGraphContextDepth(Math.incrementExact(contextVar.getGraphContextDepth()));
 		}
 	}
@@ -125,7 +136,7 @@ public class GraphPattern {
 	public void addRequiredSP(Var subjVar, Var predVar, Var objVar) {
 
 		addRequiredTE(new StatementPattern(spScope, subjVar, predVar, objVar,
-				contextVar != null ? contextVar.clone() : null));
+				contextVar != null ? copyWithSource(contextVar) : null));
 	}
 
 	public List<TupleExpr> getRequiredTEs() {

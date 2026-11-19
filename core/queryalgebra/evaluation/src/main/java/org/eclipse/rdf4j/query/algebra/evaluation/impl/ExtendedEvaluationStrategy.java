@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -48,6 +47,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ExtendedEvaluationStrategy extends StrictEvaluationStrategy {
+	@Override
+	protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
+		return ExtendedEvaluationStrategy.class;
+	}
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 
@@ -126,29 +129,9 @@ public class ExtendedEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 	}
 
+	@Override
 	protected QueryEvaluationStep prepare(TupleFunctionCall expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
-				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
-
-		List<ValueExpr> args = expr.getArgs();
-		QueryValueEvaluationStep[] argEpresions = new QueryValueEvaluationStep[args.size()];
-		for (int i = 0; i < args.size(); i++) {
-			argEpresions[i] = precompile(args.get(i), context);
-		}
-
-		return captureResultValues(new QueryEvaluationStep() {
-
-			@Override
-			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-				Value[] argValues = new Value[args.size()];
-				for (int i = 0; i < args.size(); i++) {
-					argValues[i] = argEpresions[i].evaluate(bindings);
-				}
-
-				return ExtendedEvaluationStrategy.evaluate(func, expr.getResultVars(), bindings,
-						tripleSource.getValueFactory(), argValues);
-			}
-		});
+		return prepareRegisteredTupleFunction(expr, context, tupleFuncRegistry);
 	}
 }

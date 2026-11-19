@@ -15,16 +15,24 @@ import java.util.List;
 
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
 
 /**
  * A specialization of {@link ZeroLengthPath} that keeps track of {@link QueryInfo} and statement sources.
  *
  * @author Andreas Schwarte
  */
-public class FedXZeroLengthPath extends ZeroLengthPath implements ExecutionDatasetAware {
+public class FedXZeroLengthPath extends ZeroLengthPath
+		implements ExecutionDatasetAware, BindingAnalysisContract.Standard {
+
+	@Override
+	public Class<? extends QueryModelNode> bindingContractClass() {
+		return FedXZeroLengthPath.class;
+	}
 
 	private static final long serialVersionUID = 2241037911187178861L;
 

@@ -26,10 +26,13 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -37,10 +40,12 @@ import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -61,6 +66,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The ordered root stage pipeline (M-A2): wrapper stacks the flat row-root parser cannot represent — notably
@@ -496,6 +503,97 @@ public class LmdbNativeRootPipelineTest {
 	}
 
 	@Test
+	public void optionalTupleFunctionUsesFallbackWhenUnregistered() {
+		var call = optionalTupleCall("urn:rdf4j:test:unregistered-native-tuple-function", null, false);
+		TupleExpr query = projectOptionalLookup(new SingletonSet(), call);
+
+		assertThat(withNativeOff(() -> evaluate(query.clone(), "value"))).containsExactly("fallback");
+		assertThat(evaluate(query.clone(), "value")).containsExactly("fallback");
+		withProperty("rdf4j.lmdb.islands.enabled", "false",
+				() -> assertThat(evaluate(query, "value")).containsExactly("fallback"));
+	}
+
+	@Test
+	public void optionalTupleFunctionHonorsTheGuardForEachInputRow() {
+		ValueFactory vf = repository.getValueFactory();
+		var rejected = new MapBindingSet();
+		rejected.addBinding("accept", vf.createLiteral(false));
+		var accepted = new MapBindingSet();
+		accepted.addBinding("accept", vf.createLiteral(true));
+		var inputs = new BindingSetAssignment();
+		inputs.setBindingSets(List.of(rejected, accepted));
+		TupleExpr query = projectOptionalLookup(inputs, optionalTupleCall(CountingTupleFunction.URI,
+				Var.of("accept"), false));
+
+		TupleFunctionRegistry.getInstance().add(COUNTING_TUPLE_FUNCTION);
+		try {
+			assertThat(withNativeOff(() -> evaluate(query.clone(), "value")))
+					.containsExactly("fallback", "seed:first", "seed:second");
+			COUNTING_TUPLE_FUNCTION.invocations.set(0);
+			assertThat(evaluate(query, "value")).containsExactly("fallback", "seed:first", "seed:second");
+			assertThat(COUNTING_TUPLE_FUNCTION.invocations).hasValue(1);
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(COUNTING_TUPLE_FUNCTION);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void optionalTupleFunctionUsesActiveGraphOrDefaultFallback(boolean defaultGraph) {
+		ValueFactory vf = repository.getValueFactory();
+		IRI graph = defaultGraph ? RDF4J.NIL : vf.createIRI(EX, "named");
+		if (!defaultGraph) {
+			try (var conn = repository.getConnection()) {
+				conn.add(vf.createIRI(EX, "s1"), vf.createIRI(EX, "p"), vf.createLiteral("alpha"), graph);
+			}
+		}
+		TupleFunction graphFunction = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return "urn:rdf4j:test:native-tuple-function-active-graph";
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				return new CloseableIteratorIteration<>(List.of(List.of(args[args.length - 1])).iterator());
+			}
+		};
+		var lookup = new Lateral(new SingletonSet(), optionalTupleCall(graphFunction.getURI(), null, true));
+		lookup.setVariableScopeChange(false);
+		TupleExpr query = new QueryRoot(projectedTupleFunctionArg(
+				new Graph(Var.of("graph", graph, true, true), lookup), "value"));
+		String expected = defaultGraph ? "fallback" : graph.stringValue();
+
+		TupleFunctionRegistry.getInstance().add(graphFunction);
+		try {
+			assertThat(withNativeOff(() -> evaluate(query.clone(), "value"))).containsExactly(expected);
+			assertThat(evaluate(query, "value")).containsExactly(expected);
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(graphFunction);
+		}
+	}
+
+	private TupleFunctionCall optionalTupleCall(String uri, ValueExpr guard, boolean activeGraph) {
+		var call = new TupleFunctionCall();
+		call.setURI(uri);
+		call.addArg(new ValueConstant(repository.getValueFactory().createLiteral("seed")));
+		call.addResultVar(Var.of("value"));
+
+		var row = new MapBindingSet();
+		row.addBinding("value", repository.getValueFactory().createLiteral("fallback"));
+		var fallback = new BindingSetAssignment();
+		fallback.setBindingSets(List.of(row));
+		call.setFallback(fallback, guard, activeGraph);
+		return call;
+	}
+
+	private TupleExpr projectOptionalLookup(TupleExpr input, TupleFunctionCall call) {
+		var lookup = new Lateral(input, call);
+		lookup.setVariableScopeChange(false);
+		return new QueryRoot(projectedTupleFunctionArg(lookup, "value"));
+	}
+
+	@Test
 	public void tupleFunctionEnforcesRepeatedConstantAndPreboundResultsByTermEquality() {
 		ValueFactory vf = repository.getValueFactory();
 		TupleFunctionRegistry.getInstance().add(CONTRACT_TUPLE_FUNCTION);
@@ -557,8 +655,8 @@ public class LmdbNativeRootPipelineTest {
 		return new QueryRoot(projectedTupleFunctionArg(call, bindingName));
 	}
 
-	private TupleExpr projectedTupleFunctionArg(TupleFunctionCall call, String bindingName) {
-		return new org.eclipse.rdf4j.query.algebra.Projection(call,
+	private TupleExpr projectedTupleFunctionArg(TupleExpr input, String bindingName) {
+		return new org.eclipse.rdf4j.query.algebra.Projection(input,
 				new ProjectionElemList(new ProjectionElem(bindingName)));
 	}
 

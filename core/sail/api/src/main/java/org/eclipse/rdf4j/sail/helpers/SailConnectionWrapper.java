@@ -85,6 +85,11 @@ public class SailConnectionWrapper
 	}
 
 	@Override
+	public boolean supportsSPARQLBindingTransport() {
+		return wrappedCon.supportsSPARQLBindingTransport();
+	}
+
+	@Override
 	public <T> CloseableIteration<? extends T> exposeIteration(CloseableIteration<? extends T> source,
 			SailResultValueExtractor<T> extractor) {
 		return extractor.hasValues() && wrappedCon instanceof SailResultValueExposure exposure

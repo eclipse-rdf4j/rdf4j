@@ -15,10 +15,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -103,6 +105,26 @@ class ServiceGraphScopeParserTest {
 		assertThat(graphsOutsideNestedServices(explicit.getArg())).singleElement().satisfies(graph -> {
 			assertThat(graph.getGraphName().getValue()).isEqualTo(VF.createIRI("urn:inner"));
 			assertDefaultGraphBody(graph);
+		});
+	}
+
+	@Test
+	void preparedGraphSelectorPreservesSameNamedValuesInsideGraph() {
+		var graphName = VF.createIRI("urn:g");
+		Service logical = services(parse("SERVICE <urn:service> { GRAPH ?g { VALUES ?g { <urn:g> } } }")
+				.getTupleExpr()).getFirst();
+		logical.setPreparedInputBindings(Map.of("g", graphName));
+
+		Service request = SPARQLQueries.prepareServiceRequest(logical, List.of(), null, false, false).service();
+
+		assertThat(request.getPreparedBindingRequest().parameters()).containsEntry("g", graphName);
+		assertThat(request.getBindingNames()).contains("g");
+		assertThat(graphsOutsideNestedServices(request.getArg())).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().isConstant()).isTrue();
+			assertThat(graph.getGraphName().getValue()).isEqualTo(graphName);
+			assertThat(graph.getArg()).isInstanceOfSatisfying(BindingSetAssignment.class,
+					assignment -> assertThat(assignment.getBindingSets()).singleElement()
+							.satisfies(row -> assertThat(row.getValue("g")).isEqualTo(graphName)));
 		});
 	}
 

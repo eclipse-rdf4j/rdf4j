@@ -142,6 +142,20 @@ public class LmdbNativeNonCountAggregateTest {
 	}
 
 	@Test
+	public void apiParameterOverConflictingRowsKeepsNativeAggregation() {
+		long before = LmdbNativeAggregateCompiler.COMPILED.get();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			var query = conn.prepareTupleQuery("SELECT (SUM(?v) AS ?sum) WHERE { VALUES ?v { 1 2 UNDEF } }");
+			query.setBinding("v", conn.getValueFactory().createLiteral(99));
+			try (var result = query.evaluate()) {
+				assertThat(result.next().getValue("sum").stringValue()).isEqualTo("297");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+		assertThat(LmdbNativeAggregateCompiler.COMPILED.get()).isGreaterThan(before);
+	}
+
+	@Test
 	public void globalSum() {
 		assertNativeAggregation(q("SELECT (SUM(?v) AS ?sum) WHERE { ?s ex:price ?v }"));
 	}

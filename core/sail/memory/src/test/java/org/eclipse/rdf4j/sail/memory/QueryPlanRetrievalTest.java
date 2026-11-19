@@ -665,6 +665,32 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	public void sequentialExplanationsKeepTheirOwnPreparedPlanAndMetrics() throws IOException {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(TUPLE_QUERY);
+			JsonNode executed = OBJECT_MAPPER.readTree(query.explain(Explanation.Level.Executed).toJson());
+			assertThat(executed.path("resultSizeActual").asLong()).isEqualTo(2L);
+
+			String otherUnoptimized = connection.prepareTupleQuery("SELECT ?s WHERE { ?s ?p ?o }")
+					.explain(Explanation.Level.Unoptimized)
+					.toString();
+			assertThat(otherUnoptimized).contains("StatementPattern")
+					.doesNotContain("LeftJoin", "resultSizeActual=", "resultSizeEstimate=");
+			assertThat(query.explain(Explanation.Level.Unoptimized).toString())
+					.doesNotContain("LeftJoinIterator", "resultSizeActual=", "resultSizeEstimate=");
+			assertThat(query.explain(Explanation.Level.Optimized).toString()).contains("LeftJoinIterator")
+					.doesNotContain("resultSizeActual=");
+			JsonNode telemetry = OBJECT_MAPPER.readTree(query.explain(Explanation.Level.Telemetry).toJson());
+			assertThat(telemetry.path("resultSizeActual").asLong()).isEqualTo(2L);
+			assertThat(telemetry.path("nextCallCountActual").asLong()).isGreaterThan(0L);
+		} finally {
+			sailRepository.shutDown();
+		}
+	}
+
+	@Test
 	public void testTupleQueryOptimized() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);

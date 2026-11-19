@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
@@ -59,7 +61,7 @@ public class TupleExprs {
 	 * Returns the nearest projection that exports a scalar expression's input in the same result scope.
 	 */
 	@InternalUseOnly
-	public static UnaryTupleOperator projectingExpressionScope(Var variable) {
+	public static UnaryTupleOperator projectingExpressionScope(Var variable, String sourceName) {
 		UnaryTupleOperator projection = null;
 		QueryModelNode child = variable;
 		for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
@@ -83,7 +85,7 @@ public class TupleExprs {
 				: ((MultiProjection) projection).getProjections();
 		for (ProjectionElemList list : lists) {
 			for (ProjectionElem element : list.getElements()) {
-				if (variable.getName().equals(element.getName())) {
+				if (sourceName.equals(element.getName())) {
 					return projection;
 				}
 			}
@@ -146,6 +148,12 @@ public class TupleExprs {
 		boolean[] observes = { false };
 		subtree.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
 			@Override
+			public void meet(GroupConcat concat) {
+				super.meet(concat);
+				visitGroupConcatSeparator(concat, this);
+			}
+
+			@Override
 			public void meet(Projection projection) {
 				if (observes[0]) {
 					return;
@@ -163,6 +171,15 @@ public class TupleExprs {
 			}
 		});
 		return observes[0];
+	}
+
+	/** Visits the separator expression omitted by the ordinary GROUP_CONCAT child traversal. */
+	@InternalUseOnly
+	public static <X extends Exception> void visitGroupConcatSeparator(QueryModelNode node,
+			QueryModelVisitor<X> visitor) throws X {
+		if (node instanceof GroupConcat concat && concat.getSeparator() != null) {
+			concat.getSeparator().visit(visitor);
+		}
 	}
 
 	/**
@@ -255,7 +272,7 @@ public class TupleExprs {
 			if (current instanceof Slice) {
 				return true;
 			}
-			if (current instanceof Distinct || current instanceof Reduced) {
+			if (current instanceof Distinct distinct && !distinct.isInputScoped() || current instanceof Reduced) {
 				TupleExpr argument = ((UnaryTupleOperator) current).getArg();
 				QueryAlgebraBindingAnalysis.ReadOnlyContext modifierInput = scopedAnalysis.contextAt(current);
 				QueryAlgebraBindingAnalysis.ReadOnlyContext argumentInput = scopedAnalysis.childInput(current, argument,

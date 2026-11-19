@@ -198,19 +198,39 @@ class OptimizerBindingAnalysisConsumersTest {
 		bindings.addBinding("x", value);
 		TupleExpr original = new QueryRoot(
 				new Filter(new SingletonSet(), new SameTerm(Var.of("x"), new ValueConstant(value))));
+		List<BindingSet> runtimeExpected = evaluate(original.clone(), bindings);
+		assertThat(runtimeExpected).as("runtime filter hides the input x").isEmpty();
+		TupleExpr runtimeOptimized = original.clone();
+		new SameTermFilterOptimizer().optimize(runtimeOptimized, null, bindings);
+		new BindingAssignerOptimizer().optimize(runtimeOptimized, null, bindings);
+		assertThat(evaluate(runtimeOptimized, bindings)).as("runtime optimized results")
+				.containsExactlyElementsOf(runtimeExpected);
+
 		TupleExpr baseline = original.clone();
-		new BindingAssignerOptimizer().optimize(baseline, null, bindings);
+		new BindingAssignerOptimizer().optimizeForPreparedQuery(baseline, bindings);
 		List<BindingSet> expected = evaluate(baseline, EmptyBindingSet.getInstance());
-		assertThat(expected).hasSize(1);
+		assertThat(expected).as("prepared captured results").hasSize(1);
 
 		TupleExpr optimized = original.clone();
-		new SameTermFilterOptimizer().optimize(optimized, null, bindings);
-		new BindingAssignerOptimizer().optimize(optimized, null, bindings);
+		new BindingAssignerOptimizer().optimizeForPreparedQuery(optimized, bindings);
+		new SameTermFilterOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
 
 		assertThat(((QueryRoot) optimized).getArg())
 				.as("an input binding is available even when the tuple argument exports no x")
 				.isNotInstanceOf(EmptySet.class);
 		assertThat(evaluate(optimized, EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+
+		Filter allScope = new Filter(new SingletonSet(), new SameTerm(Var.of("x"), new ValueConstant(value)));
+		allScope.setConditionBindingScope(Filter.ConditionBindingScope.ALL);
+		TupleExpr allScopeRuntime = new QueryRoot(allScope);
+		List<BindingSet> allScopeExpected = evaluate(allScopeRuntime.clone(), bindings);
+		assertThat(allScopeExpected).as("runtime ALL filter retains x")
+				.extracting(row -> row.getValue("x"))
+				.containsExactly(value);
+		new SameTermFilterOptimizer().optimize(allScopeRuntime, null, bindings);
+		new BindingAssignerOptimizer().optimize(allScopeRuntime, null, bindings);
+		assertThat(evaluate(allScopeRuntime, bindings)).as("runtime optimized ALL filter")
+				.containsExactlyElementsOf(allScopeExpected);
 	}
 
 	@Test

@@ -17,6 +17,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /** Shared identity checks at scalar, batched, and directly invoked SERVICE transports. */
 @InternalUseOnly
@@ -62,9 +64,9 @@ public final class FederatedServiceIdentity {
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(service.getServiceExpr(),
 				originals);
 		QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(service.getServiceExpr());
-		BindingSet additional = runtimeAssignedInputs(service, originals,
+		BindingSet recovered = runtimeAssignedInputs(service, originals,
 				outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : Set.of(), analysis);
-		return RemoteBNode.toRemoteBindings(bindings, additional, relevantBindingNames(service), receivingScope,
+		return RemoteBNode.toRemoteBindings(bindings, recovered, relevantBindingNames(service), receivingScope,
 				referencesSupported, canonicalIDs);
 	}
 
@@ -76,7 +78,13 @@ public final class FederatedServiceIdentity {
 			QueryAlgebraBindingAnalysis analysis) {
 		MapBindingSet additional = new MapBindingSet();
 		Var endpoint = service.getServiceRef();
-		if (isRuntimeAssigned(endpoint) && !originals.hasBinding(endpoint.getName())) {
+		Binding publicEndpoint = publicEndpointInput(service);
+		if (publicEndpoint != null) {
+			if (!originals.hasBinding(publicEndpoint.getName())) {
+				additional.addBinding(publicEndpoint);
+			}
+		} else if (service.getRuntimeEndpointBindings().isEmpty() && isRuntimeAssigned(endpoint, service)
+				&& !originals.hasBinding(endpoint.getName())) {
 			additional.addBinding(endpoint.getName(), endpoint.getValue());
 		}
 		QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(service.getServiceExpr());
@@ -114,7 +122,7 @@ public final class FederatedServiceIdentity {
 			@Override
 			public void meet(Var variable) {
 				String name = variable.getName();
-				if (isRuntimeAssigned(variable) && visibleNames.contains(name) && !originals.hasBinding(name)
+				if (isRuntimeAssigned(variable, service) && visibleNames.contains(name) && !originals.hasBinding(name)
 						&& !produced.contains(name) && outputs.guaranteedOutputs().contains(name)
 						&& variable.getValue().equals(outputs.fixedValues().get(name))) {
 					additional.setBinding(name, variable.getValue());
@@ -122,6 +130,24 @@ public final class FederatedServiceIdentity {
 			}
 		});
 		return additional;
+	}
+
+	/** The public caller input retained by endpoint specialization, or null for a fixed or unresolved selector. */
+	public static Binding publicEndpointInput(Service service) {
+		Var selector = service.getServiceRef();
+		var history = service.getRuntimeEndpointBindings();
+		if (!history.isEmpty()) {
+			// The optimizer may give the executable selector its own private name.
+			var input = history.entrySet().iterator().next();
+			return input.getValue().equals(selector.getValue())
+					? new SimpleBinding(input.getKey(), input.getValue())
+					: null;
+		}
+		// The same parameter may also be consumed by the saved body. Endpoint selection independently reads the
+		// public caller mapping, even when that other occurrence was specialized in the request.
+		return selector.hasApiInputOrigin() && selector.getName() != null
+				? new SimpleBinding(selector.getName(), selector.getValue())
+				: null;
 	}
 
 	private static Set<String> locallyProducedNames(Service service, QueryAlgebraBindingAnalysis analysis) {
@@ -192,12 +218,18 @@ public final class FederatedServiceIdentity {
 		return produced;
 	}
 
-	private static boolean isRuntimeAssigned(Var variable) {
-		return variable.hasValue() && !variable.isAnonymous() && !variable.isConstant();
+	private static boolean isRuntimeAssigned(Var variable, Service service) {
+		// Origin records historical specialization in both modes. Only ownership in the logical parameter
+		// channel distinguishes a pending API substitution from an input retained by runtime optimization.
+		return variable.hasValue() && !variable.isAnonymous() && !variable.isConstant()
+				&& !service.getPreparedInputBindings().containsKey(variable.getName());
 	}
 
 	public static Set<String> relevantBindingNames(Service service) {
 		Set<String> names = new HashSet<>(service.getServiceVars());
+		names.addAll(service.getSavedPossibleReadNames());
+		// Optimizers may erase a captured read from the algebra while the saved SERVICE text still contains it.
+		names.addAll(service.getPreparedInputBindings().keySet());
 		service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
 			@Override
 			public void meet(Service nested) {

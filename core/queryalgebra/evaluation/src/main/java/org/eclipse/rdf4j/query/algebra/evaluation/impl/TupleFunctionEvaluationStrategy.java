@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
@@ -23,11 +24,9 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
@@ -40,8 +39,22 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
+	@Override
+	protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
+		return TupleFunctionEvaluationStrategy.class;
+	}
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
+
+	/** Allocates the core tuple-function evaluator for a Sail wrapper with a preparation-aware pipeline. */
+	@InternalUseOnly
+	public static TupleFunctionEvaluationStrategy createForSail(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFunctionRegistry) {
+		var strategy = new TupleFunctionEvaluationStrategy(tripleSource, dataset, serviceResolver,
+				tupleFunctionRegistry);
+		strategy.enableSailBindingPreparation();
+		return strategy;
+	}
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver) {
@@ -102,30 +115,10 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 		return precompile(expr).evaluate(bindings);
 	}
 
+	@Override
 	protected QueryEvaluationStep prepare(TupleFunctionCall expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
-				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
-
-		List<ValueExpr> args = expr.getArgs();
-		QueryValueEvaluationStep[] argEpresions = new QueryValueEvaluationStep[args.size()];
-		for (int i = 0; i < args.size(); i++) {
-			argEpresions[i] = precompile(args.get(i), context);
-		}
-
-		return captureResultValues(new QueryEvaluationStep() {
-
-			@Override
-			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-				Value[] argValues = new Value[args.size()];
-				for (int i = 0; i < args.size(); i++) {
-					argValues[i] = argEpresions[i].evaluate(bindings);
-				}
-
-				return TupleFunctionEvaluationStrategy.evaluate(func, expr.getResultVars(), bindings,
-						tripleSource.getValueFactory(), argValues);
-			}
-		});
+		return prepareRegisteredTupleFunction(expr, context, tupleFuncRegistry);
 	}
 
 	public static CloseableIteration<BindingSet> evaluate(TupleFunction func,

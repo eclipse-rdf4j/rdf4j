@@ -83,8 +83,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -219,6 +221,23 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource())
 				.optimize(parsed.getTupleExpr(), null, EmptyBindingSet.getInstance());
+	}
+
+	@Test
+	public void reorderScopedOperandsRetainsTheOptimizedRoots() {
+		String query = "SELECT * WHERE { "
+				+ "{ GRAPH <urn:first> { VALUES ?x { 1 } } VALUES ?y { 1 } } "
+				+ "{ GRAPH <urn:second> { VALUES ?x { 2 } } VALUES ?y { 2 } } }";
+		QueryRoot root = (QueryRoot) new SPARQLParser().parseQuery(query, null).getTupleExpr();
+		var bindings = EmptyBindingSet.getInstance();
+		var optimizer = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+
+		optimizer.optimize(root, null, bindings);
+
+		new ParentReferenceChecker(optimizer).optimize(root, null, bindings);
+		Join outer = (Join) ((Projection) root.getArg()).getArg();
+		assertTrue(((Join) outer.getLeftArg()).isVariableScopeChange());
+		assertTrue(((Join) outer.getRightArg()).isVariableScopeChange());
 	}
 
 	@Test
@@ -2716,11 +2735,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars, BindingSet bindings,
 				String baseUri) {
 			selectCalls++;
-			MapBindingSet row = new MapBindingSet();
-			for (org.eclipse.rdf4j.query.Binding binding : bindings) {
-				row.addBinding(binding);
+			BindingSet row = bindings;
+			if (!bindings.hasBinding("o")) {
+				MapBindingSet remote = new MapBindingSet(1);
+				remote.addBinding("o", VF.createIRI("urn:o1"));
+				row = BindingSetSnapshots.mergeWithPrecedence(bindings, remote);
 			}
-			row.addBinding("o", VF.createIRI("urn:o1"));
 			return new CloseableIteratorIteration<>(List.of(row).iterator());
 		}
 

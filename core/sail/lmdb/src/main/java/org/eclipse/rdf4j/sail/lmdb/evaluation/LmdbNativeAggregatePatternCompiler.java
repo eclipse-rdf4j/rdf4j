@@ -82,9 +82,10 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 
 	/** The plain variable, constant, or native-computable copies of an extension. */
 	CopyBinding[] compileExtensionCopies(Extension extension) {
-		CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
+		List<ExtensionElem> elements = evaluatedExtensionElements(extension);
+		CopyBinding[] copies = new CopyBinding[elements.size()];
 		for (int i = 0; i < copies.length; i++) {
-			ExtensionElem elem = extension.getElements().get(i);
+			ExtensionElem elem = elements.get(i);
 			ValueExpr expression = elem.getExpr();
 			if (expression instanceof ValueConstant valueConstant) {
 				long id = idOfExtensionConstant(valueConstant.getValue(), elem.getName());

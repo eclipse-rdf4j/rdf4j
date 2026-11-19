@@ -35,6 +35,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -64,6 +65,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -141,6 +143,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -194,6 +197,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -204,6 +208,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -249,7 +254,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	// track the exeution time of each node in the plan
 	private boolean trackTime;
 
+	private final QueryOptimizerPipeline standardPipeline;
 	private QueryOptimizerPipeline pipeline;
+	private boolean sailBindingPreparationEnabled;
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 	private final EvaluationStatistics evaluationStatistics;
@@ -415,8 +422,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
-		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
-				tripleSource, this.evaluationStatistics);
+		this.standardPipeline = new StandardQueryOptimizerPipeline(this, tripleSource, this.evaluationStatistics);
+		this.pipeline = standardPipeline;
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
 		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
@@ -443,6 +450,21 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.pipeline = pipeline;
 	}
 
+	/** Registers the core evaluator allocated by a strategy factory, including its compilation contract. */
+	protected final void enableSailBindingPreparation() {
+		this.sailBindingPreparationEnabled = true;
+	}
+
+	@InternalUseOnly
+	public final boolean ownsSailBindingPreparation() {
+		return sailBindingPreparationEnabled && (pipeline == standardPipeline || pipeline.preservesPreparedBindings());
+	}
+
+	/** Structural lowerers registered for the explicit empty-input preparation boundary. */
+	protected final Iterable<QueryOptimizerPipeline.PreparationStep> getBindingPreparationSteps() {
+		return pipeline.getPreparationSteps();
+	}
+
 	/**
 	 * Execute the {@link QueryOptimizerPipeline} on the given {@link TupleExpr} to optimize its execution plan.
 	 *
@@ -455,6 +477,52 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+		BindingOptimizationContext context = BindingOptimizationContext.resolve(expr, bindings);
+		if (context.mode() == BindingOptimizationContext.Mode.SAIL_COMPATIBILITY && ownsSailBindingPreparation()) {
+			return withPreparedTupleExpr(expr, prepared -> {
+				PreparedQuery.prepareSail(prepared, dataset, pipeline.getPreparationSteps());
+				return optimizeWithBindingContext(prepared, evaluationStatistics,
+						BindingOptimizationContext.resolve(prepared, bindings));
+			});
+		}
+		return optimizeWithBindingContext(expr, evaluationStatistics, context);
+	}
+
+	@Override
+	public TupleExpr optimizeForEmptyInput(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+			BindingSet parameters) {
+		if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		}
+		synchronized (this) {
+			queryPreparationStarted = true;
+		}
+		return PreparedQuery.optimize(this, expr, evaluationStatistics, parameters, dataset,
+				pipeline.getPreparationSteps());
+	}
+
+	/**
+	 * Retained for subclasses compiled against the former opt-in mechanism. Preparation now preserves the existing
+	 * virtual optimize entry point and validates capture at the actual algebra boundary.
+	 *
+	 * @deprecated no class opt-in is required
+	 */
+	@Deprecated
+	protected Class<? extends DefaultEvaluationStrategy> preparedBindingStrategyClass() {
+		return DefaultEvaluationStrategy.class;
+	}
+
+	/**
+	 * Shared implementation beneath the existing virtual optimize entry point in both invocation modes.
+	 *
+	 * @param expr                 expression to optimize
+	 * @param evaluationStatistics statistics used by optimizers
+	 * @param context              invocation mode, logical parameters and actual evaluation input
+	 * @return the optimized expression
+	 */
+	protected TupleExpr optimizeWithBindingContext(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+			BindingOptimizationContext context) {
+		BindingSet parameters = context.parameters();
 		LocalBNodeReferences.Analysis original = LocalBNodeReferences.analyze(expr);
 		original.runtimeValues().forEach(blankNodes::reserve);
 		Set<String> references = blankNodes.getReferenceSnapshot(expr, original.structure());
@@ -468,13 +536,39 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		references.forEach(blankNodes::reserve);
 		knownIds.forEach(blankNodes::reserveKnownID);
 		blankNodes.reserve(dataset);
-		blankNodes.reserve(bindings);
+		blankNodes.reserve(parameters);
+		boolean customRuntime = pipeline != standardPipeline
+				&& context.mode() == BindingOptimizationContext.Mode.RUNTIME;
 		TupleExpr result = withPreparedTupleExpr(expr, prepared -> {
-			QueryEvaluationUtility.pinFunctions(prepared);
-			TupleExpr optimized = prepared;
+			// A direct TupleExpr implementation has no durable owner for an incomplete SERVICE rewrite. Give the
+			// custom pipeline its own tree so an exception cannot leave the caller's extension partially rewritten.
+			TupleExpr optimized = customRuntime && !(prepared instanceof AbstractQueryModelNode)
+					? prepared.clone()
+					: prepared;
+			QueryEvaluationUtility.pinFunctions(optimized);
+			if (context.mode() == BindingOptimizationContext.Mode.EMPTY_INPUT) {
+				BindingOptimizationContext.forOptimizer(optimized, parameters);
+			}
+			// The standard binding assigner records its completed substitutions before later rewrites. A custom
+			// pipeline may rewrite immediately, so only substitutions already present on entry are proven.
+			boolean recordRuntimeInputs = customRuntime;
 			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+				if (recordRuntimeInputs) {
+					PreparedQueryBindingPlan.recordRuntimeOptimization(optimized);
+					recordRuntimeInputs = false;
+				}
 				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, optimizerRoot -> {
-					optimizer.optimize(optimizerRoot, dataset, pipeline.getOptimizerInputBindings(optimizer, bindings));
+					BindingSet legacy = PreparedQuery.optimizerInput(optimizerRoot, parameters);
+					BindingSet selected = pipeline == standardPipeline
+							&& context.mode() != BindingOptimizationContext.Mode.SAIL_COMPATIBILITY ? legacy
+									: pipeline.getOptimizerInputBindings(optimizer, legacy, context.mode());
+					BindingSet input = PreparedQuery.optimizerInput(optimizerRoot, selected);
+					if (customRuntime) {
+						return PreparedQueryBindingPlan.trackRuntimeServiceRewrites(optimizerRoot,
+								context.evaluationInput(),
+								() -> optimizer.optimize(optimizerRoot, dataset, input));
+					}
+					optimizer.optimize(optimizerRoot, dataset, input);
 					return optimizerRoot;
 				});
 			}
@@ -644,8 +738,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			public void meet(BindingSetAssignment assignment) {
 				unknown[0] |= !assignment.hasRepeatableBindingSets();
 			}
+
+			@Override
+			public void meet(Service service) {
+				// Constructed SERVICEs may not yet have parsed saved-syntax metadata. A fixed layout would
+				// discard unknown incoming columns before the request can examine them.
+				unknown[0] |= !service.hasSavedPossibleReadNames();
+				super.meet(service);
+			}
 		});
-		// A fixed array layout cannot represent columns discovered only while a streaming source is evaluated.
+		// A fixed layout cannot represent columns discovered only by a streaming source or unparsed SERVICE text.
 		return unknown[0];
 	}
 
@@ -959,6 +1061,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryEvaluationStep rightQes = precompile(node.getRightArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, node.getRightArg(), rightQes);
 
+		if (UnionQueryEvaluationStep.requiresSequentialOpening(node)) {
+			return AdaptiveFilterEvaluationStep.binary(context, node,
+					UnionQueryEvaluationStep.sequential(leftQes, rightQes),
+					UnionQueryEvaluationStep::sequential);
+		}
 		return AdaptiveFilterEvaluationStep.binary(context, node, new UnionQueryEvaluationStep(leftQes, rightQes),
 				UnionQueryEvaluationStep::new);
 	}
@@ -1413,24 +1520,66 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(TupleFunctionCall expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
-				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
+		return prepareRegisteredTupleFunction(expr, context, tupleFuncRegistry);
+	}
 
-		List<ValueExpr> args = expr.getArgs();
-		QueryValueEvaluationStep[] argEpresions = new QueryValueEvaluationStep[args.size()];
-		for (int i = 0; i < args.size(); i++) {
-			argEpresions[i] = precompile(args.get(i), context);
+	/** Evaluation state attached by a physical-plan rewrite to a registered tuple-function call. */
+	@InternalUseOnly
+	@FunctionalInterface
+	public interface TupleFunctionInvocationScope {
+		CloseableIteration<BindingSet> evaluate(Value[] arguments, Supplier<CloseableIteration<BindingSet>> invocation);
+	}
+
+	protected final QueryEvaluationStep prepareRegisteredTupleFunction(TupleFunctionCall expr,
+			QueryEvaluationContext context, TupleFunctionRegistry registry) {
+		TupleFunction func = registry.get(expr.getURI()).orElse(null);
+		var activeGraph = expr.appendsActiveGraph() ? context.getActiveGraph() : null;
+		Resource graph = activeGraph == null ? null : activeGraph.physicalGraph();
+		TupleExpr fallback = expr.getFallback();
+		if (fallback != null && (func == null || activeGraph != null && graph == null)) {
+			return precompile(fallback, context);
 		}
+		if (func == null) {
+			throw new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'");
+		}
+		List<ValueExpr> args = expr.getArgs();
+		QueryValueEvaluationStep[] arguments = new QueryValueEvaluationStep[args.size()];
+		for (int i = 0; i < args.size(); i++) {
+			arguments[i] = precompile(args.get(i), context);
+		}
+		ValueExpr argumentGuard = expr.getArgumentGuard();
+		QueryValueEvaluationStep guard = argumentGuard == null ? null : precompile(argumentGuard, context);
+		QueryEvaluationStep scalar = argumentGuard == null ? null : precompile(fallback, context);
+		var invocationScope = (TupleFunctionInvocationScope) expr
+				.getQueryModelMetadata(TupleFunctionInvocationScope.class);
 
 		return captureResultValues(bindings -> {
-			Value[] argValues = new Value[args.size()];
-			for (int i = 0; i < args.size(); i++) {
-				argValues[i] = argEpresions[i].evaluate(bindings);
+			if (guard != null && !acceptsTupleFunctionInput(guard, bindings)) {
+				return scalar.evaluate(bindings);
+			}
+			Value[] argValues = new Value[arguments.length + (graph == null ? 0 : 1)];
+			for (int i = 0; i < arguments.length; i++) {
+				argValues[i] = arguments[i].evaluate(bindings);
+			}
+			if (graph != null) {
+				argValues[arguments.length] = graph;
 			}
 
-			return evaluate(func, expr.getResultVars(), bindings,
-					tripleSource.getValueFactory(), argValues);
+			if (invocationScope != null) {
+				return invocationScope.evaluate(argValues,
+						() -> evaluate(func, expr.getResultVars(), bindings, tripleSource.getValueFactory(),
+								argValues));
+			}
+			return evaluate(func, expr.getResultVars(), bindings, tripleSource.getValueFactory(), argValues);
 		});
+	}
+
+	private boolean acceptsTupleFunctionInput(QueryValueEvaluationStep guard, BindingSet bindings) {
+		try {
+			return isTrue(guard, bindings);
+		} catch (ValueExprEvaluationException e) {
+			return false;
+		}
 	}
 
 	public static Value getVarValue(Var var, BindingSet bindings) {

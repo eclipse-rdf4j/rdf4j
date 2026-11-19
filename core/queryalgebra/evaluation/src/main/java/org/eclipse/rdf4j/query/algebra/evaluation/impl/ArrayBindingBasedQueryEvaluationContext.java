@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -489,6 +490,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			@Override
 			public void meetOther(QueryModelNode node) throws QueryEvaluationException {
 				super.meetOther(node);
+			}
+
+			@Override
+			public void meet(Service service) throws QueryEvaluationException {
+				// The endpoint executes saved syntax even when optimizers remove its algebra Vars. Reserve slots
+				// for actual incoming values; this does not introduce a logical parameter or an output binding.
+				service.getSavedBindingNames().forEach(name -> varNames.computeIfAbsent(name, k -> k));
+				super.meet(service);
 			}
 
 			@Override

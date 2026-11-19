@@ -84,6 +84,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingOptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -157,6 +158,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		bindings = BindingOptimizationContext.forOptimizer(tupleExpr, bindings).evaluationInput();
 		tupleExpr.visit(new JoinVisitor(tupleExpr, bindings,
 				QueryEvaluationUtility.querySafetySnapshot(tupleExpr, policy)));
 	}
@@ -425,14 +427,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				// get all extensions (BIND clause)
 				List<TupleExpr> orderedExtensions = getExtensionTupleExprs(joinArgs);
-				optimizeInNewScope(orderedExtensions);
 				joinArgs.removeAll(orderedExtensions);
+				orderedExtensions = optimizeInNewScope(orderedExtensions);
 
 				// get all subselects and order them
 				List<TupleExpr> subSelects = getSubSelects(joinArgs);
-				optimizeInNewScope(subSelects);
-				List<TupleExpr> orderedSubselects = reorderSubselects(subSelects);
-				joinArgs.removeAll(orderedSubselects);
+				// Remove the original operands before their optimized roots can replace them in the tree.
+				joinArgs.removeAll(subSelects);
+				List<TupleExpr> orderedSubselects = reorderSubselects(optimizeInNewScope(subSelects));
 
 				// Reorder the subselects and extensions to a more optimal sequence
 				List<TupleExpr> priorityArgs;
@@ -1366,23 +1368,37 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return Double.isNaN(cost) ? Double.POSITIVE_INFINITY : cost;
 		}
 
-		private void optimizeInNewScope(List<TupleExpr> subSelects) {
-			for (TupleExpr subSelect : subSelects) {
+		private List<TupleExpr> optimizeInNewScope(List<TupleExpr> operands) {
+			List<TupleExpr> optimized = operands;
+			for (int index = 0; index < operands.size(); index++) {
+				TupleExpr operand = operands.get(index);
+				Join parent = (Join) operand.getParentNode();
+				boolean leftArgument = parent.getLeftArg() == operand;
 				QueryAlgebraBindingAnalysis.ReadOnlyContext originalContext = currentContext;
 				PhysicalCostPrefix originalBoundVars = boundVars;
 				double originalHighestCost = currentHighestCost;
 				try {
-					currentContext = bindingAnalysis.contextAt(subSelect);
+					currentContext = bindingAnalysis.contextAt(operand);
 					boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(),
 							currentContext.guaranteedNames());
 					currentHighestCost = 1;
-					subSelect.visit(this);
+					operand.visit(this);
 				} finally {
 					currentContext = originalContext;
 					boundVars = originalBoundVars;
 					currentHighestCost = originalHighestCost;
 				}
+				// A scoped join can replace its root while reusing its children. Keep the operand now owned by the
+				// parent.
+				TupleExpr replacement = leftArgument ? parent.getLeftArg() : parent.getRightArg();
+				if (replacement != operand) {
+					if (optimized == operands) {
+						optimized = new ArrayList<>(operands);
+					}
+					optimized.set(index, replacement);
+				}
 			}
+			return optimized;
 		}
 
 		private boolean joinSizeIsTooDifferent(double cardinality, double second) {

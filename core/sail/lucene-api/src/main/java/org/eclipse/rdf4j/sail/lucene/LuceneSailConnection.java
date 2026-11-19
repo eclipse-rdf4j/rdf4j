@@ -35,10 +35,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedQuery;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.QueryContextIteration;
@@ -55,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizer
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
@@ -403,6 +406,10 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		QueryContext qctx = new QueryContext();
 		SearchIndexQueryContextInitializer.init(qctx, luceneIndex);
+		SearchIndexQueryContextInitializer.setGeometrySource(qctx,
+				(subject, property, geometry, context) -> hasIndexedGeometry(subject, property, geometry, context,
+						includeInferred));
+		SearchQueryBindingResolver.setReadDataset(qctx, dataset);
 
 		final CloseableIteration<? extends BindingSet> iter;
 		qctx.begin();
@@ -417,25 +424,34 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		return new QueryContextIteration(iter, qctx);
 	}
 
+	private boolean hasIndexedGeometry(Resource subject, IRI property, Literal geometry, Resource context,
+			boolean includeInferred) {
+		// The index can map several source predicates onto the same geometry field.
+		try (var matches = getWrappedConnection().getStatements(subject, null, geometry, includeInferred, context)) {
+			while (matches.hasNext()) {
+				Statement mapped = sail.mapStatement(matches.next());
+				if (mapped != null && property.equals(mapped.getPredicate())) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	private CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
-		// Don't modify the original tuple expression
-		tupleExpr = tupleExpr.clone();
+		// Own the working tree and keep a root through which the interpreters can replace its top-level operator.
+		TupleExpr copy = tupleExpr.clone();
+		QueryRoot root = copy instanceof QueryRoot queryRoot ? queryRoot : new QueryRoot(copy);
 
-		if (!(tupleExpr instanceof QueryRoot)) {
-			// Add a dummy root node to the tuple expressions to allow the
-			// optimizers to modify the actual root node
-			tupleExpr = new QueryRoot(tupleExpr);
-		}
-
-		// Inline any externally set bindings, lucene statement patterns can also
-		// use externally bound variables
-		new BindingAssignerOptimizer().optimize(tupleExpr, dataset, bindings);
+		// Search lowering may consume API reads under projections. Specialize only proven logical reads,
+		// retaining their provenance and projected values; final empty-input capture still belongs to the evaluator.
+		new BindingAssignerOptimizer().optimizeQueryParameters(root, bindings);
 
 		List<SearchQueryEvaluator> queries = new ArrayList<>();
 
 		for (SearchQueryInterpreter interpreter : sail.getSearchQueryInterpreters()) {
-			interpreter.process(tupleExpr, bindings, queries);
+			interpreter.process(root, bindings, queries);
 		}
 
 		// constant optimizer - evaluate lucene queries
@@ -446,39 +462,41 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
 			ValueFactory vf = sail.getValueFactory();
 			SailTripleSource tripleSource = new SailTripleSource(this, includeInferred, vf);
-			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
+			var strategy = TupleFunctionEvaluationStrategy.createForSail(
 					tripleSource, dataset, sail.getFederatedServiceResolver(),
 					sail.getTupleFunctionRegistry());
 
-			// do standard optimizations
-			new BindingAssignerOptimizer().optimize(tupleExpr, dataset, bindings);
-			// magic-property syntax of the set-returning extension functions (the standard pipeline is bypassed here)
-			StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER.optimize(tupleExpr, dataset,
-					bindings);
-			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
-			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
-			new ConjunctiveConstraintSplitterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
-			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new UnionScopeChangeOptimizer().optimize(tupleExpr, dataset, bindings);
-			new QueryModelNormalizerOptimizer().optimize(tupleExpr, dataset, bindings);
-			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics(), tripleSource).optimize(tupleExpr, dataset,
-					bindings);
-			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
-			// bindings);
-			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);
-			new FilterOptimizer().optimize(tupleExpr, dataset, bindings);
-			new OrderLimitOptimizer().optimize(tupleExpr, dataset, bindings);
+			var statistics = new TupleFunctionEvaluationStatistics();
+			strategy.setOptimizerPipeline(new QueryOptimizerPipeline() {
+				@Override
+				public Iterable<QueryOptimizer> getOptimizers() {
+					return List.of(
+							StandardQueryOptimizerPipeline.BINDING_ASSIGNER,
+							StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
+							new ConstantOptimizer(strategy), new CompareOptimizer(),
+							new ConjunctiveConstraintSplitterOptimizer(),
+							new DisjunctiveConstraintOptimizer(), new SameTermFilterOptimizer(),
+							new UnionScopeChangeOptimizer(),
+							new QueryModelNormalizerOptimizer(), new QueryJoinOptimizer(statistics, tripleSource),
+							new IterativeEvaluationOptimizer(), new FilterOptimizer(), new OrderLimitOptimizer());
+				}
 
-			logger.trace("Optimized query model:\n{}", tupleExpr);
+				@Override
+				public boolean preservesPreparedBindings() {
+					return true;
+				}
+			});
+			TupleExpr optimized = PreparedQuery.optimizeSail(strategy, root, statistics, bindings);
+
+			logger.trace("Optimized query model:\n{}", optimized);
 
 			try {
-				return strategy.evaluate(tupleExpr, bindings);
+				return strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance());
 			} catch (QueryEvaluationException e) {
 				throw new SailException(e);
 			}
 		} else {
-			return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
+			return super.evaluate(root, dataset, bindings, includeInferred);
 		}
 	}
 
@@ -502,7 +520,9 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		// evaluate queries, generate binding sets, and remove queries
 		for (SearchQueryEvaluator query : queries) {
 			// evaluate the Lucene query and generate bindings
-			final Collection<BindingSet> bindingSets = luceneIndex.evaluate(query);
+			final Collection<BindingSet> bindingSets = query instanceof MergedDefaultGraphQuery merged
+					? merged.evaluate(luceneIndex)
+					: luceneIndex.evaluate(query);
 
 			final BindingSetAssignment bsa = new BindingSetAssignment();
 

@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -62,10 +63,26 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationContext context;
 	private final Set<String> rightInputBindingNames;
 
+	/** Invocation state for a LATERAL created during physical query preparation. */
+	@InternalUseOnly
+	@FunctionalInterface
+	public interface InvocationScope {
+		QueryEvaluationStep wrap(QueryEvaluationStep step);
+	}
+
+	@InternalUseOnly
+	public static void setInvocationScope(Lateral lateral, InvocationScope scope) {
+		lateral.setQueryModelMetadata(InvocationScope.class, scope);
+	}
+
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, Lateral lateral,
 			QueryEvaluationContext context) {
 		QueryEvaluationStep left = strategy.precompile(lateral.getLeftArg(), context);
-		return new LateralQueryEvaluationStep(left, strategy, lateral.getRightArg(), context, lateral);
+		QueryEvaluationStep step = new LateralQueryEvaluationStep(left, strategy, lateral.getRightArg(), context,
+				lateral);
+		return lateral.getQueryModelMetadata(InvocationScope.class) instanceof InvocationScope scope
+				? scope.wrap(step)
+				: step;
 	}
 
 	public LateralQueryEvaluationStep(QueryEvaluationStep left, QueryEvaluationStep right, Lateral lateral) {
