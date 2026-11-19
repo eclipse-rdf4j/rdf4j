@@ -377,6 +377,35 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	/**
+	 * Whether the operator this step picks for {@code join} emits its rows in the order the left argument produced
+	 * them.
+	 * <p>
+	 * {@link JoinIterator} re-evaluates the right argument once per left row, and {@link InnerMergeJoinIterator} emits
+	 * in the merge key both arguments were ordered on, so both inherit the left argument's order. The other two do not:
+	 * {@link HashJoinIteration} scans whichever side turns out to be the greater relation, which is the right one
+	 * whenever the left is exhausted first, and {@link ServiceJoinIterator} sends blocks of bindings to a remote
+	 * endpoint that is under no obligation to answer them in order.
+	 * <p>
+	 * This lives next to the selection above so the two cannot drift apart: a caller reasoning about the order a
+	 * finished plan emits has to ask the code that decides how the plan is evaluated, not re-derive it from the
+	 * algebra.
+	 */
+	public static boolean preservesLeftArgOrder(Join join) {
+		TupleExpr rightArg = join.getRightArg();
+		if (rightArg instanceof Service) {
+			return false;
+		}
+		if (GraphFrameMapping.forSubqueries(rightArg, join.getLeftArg()).length > 0
+				|| GraphFrameMapping.forSubqueries(join.getLeftArg(), rightArg).length > 0) {
+			return false;
+		}
+		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+				EmptyBindingSet.getInstance());
+		return !(isOutOfScopeForLeftArgBindings(rightArg, bindingAnalysis)
+				|| subqueryObservesInjectedBindings(rightArg, join.getLeftArg().getBindingNames()));
+	}
+
+	/**
 	 * Whether a bind join would leak a left-row binding into a sub-select nested anywhere in {@code subtree} (Join
 	 * operands included, which {@link TupleExprs#containsSubquery(TupleExpr)} deliberately skips). A sub-select's
 	 * non-projected variables are local to it: an injected binding of such a name is not a join on that variable but a
