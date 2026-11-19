@@ -105,7 +105,9 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return canBind(distinct.arg);
 		}
 		if (input instanceof DrainGuardPlan guard) {
-			return canBind(guard.delegate) && canBind(guard.drained);
+			// A partition can be empty even when the driver has rows in another partition.
+			return guard.trigger != DrainGuardPlan.Trigger.ON_EMPTY && canBind(guard.delegate)
+					&& canBind(guard.drained);
 		}
 		return false;
 	}
@@ -182,7 +184,7 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return new RowDistinctPlan(bind(distinct.arg), distinct.slots);
 		}
 		if (input instanceof DrainGuardPlan guard) {
-			return new DrainGuardPlan(bind(guard.delegate), bind(guard.drained), guard.drainBeforeDelegate);
+			return new DrainGuardPlan(bind(guard.delegate), bind(guard.drained), guard.trigger);
 		}
 		if (input instanceof ExtensionPlan extension) {
 			CopyBinding[] bindings = extension.copies.clone();

@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.DefaultGraphTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.DescribeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.FilterScopeTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.GraphBindJoinScopeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.LateralScopeTest;
@@ -110,6 +111,11 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	@TestFactory
 	Stream<DynamicTest> defaultGraph() throws RDF4JException, IOException {
 		return new DefaultGraphTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> graphBindJoinScope() {
+		return new GraphBindJoinScopeTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory

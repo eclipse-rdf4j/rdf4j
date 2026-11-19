@@ -147,7 +147,7 @@ final class NativeAliasJoinPlan implements SlotPlan {
 			return Arrays.equals(left.slots, right.slots) && sameOrderedShape(left.arg, right.arg);
 		}
 		if (original instanceof DrainGuardPlan left && cloned instanceof DrainGuardPlan right) {
-			return left.drainBeforeDelegate == right.drainBeforeDelegate
+			return left.trigger == right.trigger
 					&& sameOrderedShape(left.delegate, right.delegate)
 					&& sameOrderedShape(left.drained, right.drained);
 		}
