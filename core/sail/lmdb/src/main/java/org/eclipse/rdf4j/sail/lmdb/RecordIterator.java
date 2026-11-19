@@ -46,9 +46,7 @@ public interface RecordIterator extends Closeable, CooperativeCancellation {
 
 	/** Forwards a request to the selection captured when the delegate was adopted. */
 	static boolean forwardCancellation(RecordIterator delegate, long generation) {
-		return delegate != null && (generation == 0
-				? delegate.requestCancellation()
-				: delegate.requestCancellation(generation));
+		return delegate != null && delegate.requestCancellation(generation);
 	}
 
 	/**

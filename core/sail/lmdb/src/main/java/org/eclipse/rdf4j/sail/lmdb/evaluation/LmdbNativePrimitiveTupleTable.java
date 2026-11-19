@@ -693,14 +693,26 @@ final class WideDistinctTupleSet {
 		return true;
 	}
 
-	void clear() {
-		if (size != 0) {
-			Arrays.fill(buckets, 0L);
-			int usedBlocks = ((size - 1) >>> blockShift) + 1;
-			Arrays.fill(keys, 1, usedBlocks, null);
-			size = 0;
-			overflow = null;
+	/** Resets the index and returns the number of bucket slots initialized. */
+	int clear() {
+		if (size == 0) {
+			return 0;
 		}
+		if (buckets.length > INITIAL_BUCKETS && size < (buckets.length >>> 2)) {
+			// A large previous partition can leave this one sparse. Shrink to at most half the old capacity
+			// while leaving room for the next partition to grow. The reset initializes at most four slots per
+			// live key, with the initial capacity as the minimum.
+			int capacity = Math.max(INITIAL_BUCKETS, Integer.highestOneBit(size) << 2);
+			buckets = new long[capacity];
+			threshold = capacity - (capacity >>> 2);
+		} else {
+			Arrays.fill(buckets, 0L);
+		}
+		int usedBlocks = ((size - 1) >>> blockShift) + 1;
+		Arrays.fill(keys, 1, usedBlocks, null);
+		size = 0;
+		overflow = null;
+		return buckets.length;
 	}
 
 	long size() {

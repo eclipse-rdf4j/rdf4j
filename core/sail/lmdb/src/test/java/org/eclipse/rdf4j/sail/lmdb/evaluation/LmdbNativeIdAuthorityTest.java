@@ -302,6 +302,32 @@ public class LmdbNativeIdAuthorityTest {
 	}
 
 	@Test
+	public void wideDistinctClearWorkFollowsPartitionSize() {
+		WideDistinctTupleSet table = new WideDistinctTupleSet(5);
+		long[] key = { 11L, 22L, 33L, 44L, 0L };
+		int largePartitionSize = 4097;
+		for (int i = 0; i < largePartitionSize; i++) {
+			key[4] = i;
+			assertThat(table.add(key)).isTrue();
+		}
+		assertThat(table.clear()).isLessThanOrEqualTo(4 * largePartitionSize);
+
+		for (int partitionSize : new int[] { 9, 1, 65, 4, 1 }) {
+			for (int i = 0; i < partitionSize; i++) {
+				key[4] = i;
+				assertThat(table.add(key)).isTrue();
+				assertThat(table.add(key)).isFalse();
+			}
+			assertThat(table.size()).isEqualTo(partitionSize);
+			assertThat(table.clear())
+					.as("bucket slots reset for a partition with %s live keys", partitionSize)
+					.isLessThanOrEqualTo(Math.max(16, 4 * partitionSize));
+			assertThat(table.size()).isZero();
+		}
+		assertThat(table.clear()).isZero();
+	}
+
+	@Test
 	public void wideDistinctRetainsBothTuplesWithTheSameFullHash() {
 		NativeDistinctTracker tracker = new NativeDistinctTracker(new int[] { 0, 1, 2, 3, 4 });
 		// Both tuples produce the same 32-bit DISTINCT hash (0x6df65900).
