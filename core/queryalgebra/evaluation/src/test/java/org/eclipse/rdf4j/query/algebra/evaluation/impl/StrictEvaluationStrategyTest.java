@@ -17,6 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -125,13 +128,13 @@ public class StrictEvaluationStrategyTest {
 
 		strategy.setOptimizerPipeline(() -> Arrays.asList(optimizer1, optimizer2));
 
-		TupleExpr expr = mock(TupleExpr.class);
+		TupleExpr expr = new SingletonSet();
 		EvaluationStatistics stats = new EvaluationStatistics();
 		BindingSet bindings = new QueryBindingSet();
 
 		strategy.optimize(expr, stats, bindings);
-		verify(optimizer1, times(1)).optimize(expr, null, bindings);
-		verify(optimizer2, times(1)).optimize(expr, null, bindings);
+		verify(optimizer1, times(1)).optimize(same(expr), isNull(), eq(bindings));
+		verify(optimizer2, times(1)).optimize(same(expr), isNull(), eq(bindings));
 	}
 
 	@ParameterizedTest

@@ -1,8 +1,8 @@
 diff --git a/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilderTokenManager.java b/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilderTokenManager.java
-index dbdce8c..256f652 100644
+index 8586589..256f652 100644
 --- a/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilderTokenManager.java
 +++ b/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilderTokenManager.java
-@@ -1,3954 +1,3047 @@
+@@ -1,3955 +1,3047 @@
 +/*******************************************************************************
 + * Copyright (c) 2026 Eclipse RDF4J contributors.
 + *
@@ -20,6 +20,7 @@ index dbdce8c..256f652 100644
 +
  import java.util.ArrayList;
  import java.util.List;
+-import java.util.Map;
 -import org.eclipse.rdf4j.model.IRI;
 +
  import org.eclipse.rdf4j.query.impl.BlankNodeReferences;

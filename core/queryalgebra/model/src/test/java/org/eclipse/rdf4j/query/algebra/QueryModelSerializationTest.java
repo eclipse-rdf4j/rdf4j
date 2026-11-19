@@ -18,6 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.util.List;
 import java.util.Set;
 
@@ -27,6 +28,31 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class QueryModelSerializationTest {
+	@Test
+	void minusRetainsItsSerializedClassDescriptor() {
+		// Descriptor in query trees written before the operand-domain helper was added.
+		assertThat(ObjectStreamClass.lookup(Difference.class).getSerialVersionUID()).isEqualTo(-7653926650606410344L);
+	}
+
+	@Test
+	void querySerializedBeforePreparedBindingsRetainsItsServiceAndSeparator() throws Exception {
+		// Written by the query model at 8fc7b0137164ffdc1f5d080b943fd362931137dd.
+		try (ObjectInputStream input = new ObjectInputStream(getClass()
+				.getResourceAsStream("/query-before-prepared-bindings.ser"))) {
+			QueryRoot root = (QueryRoot) input.readObject();
+			Group group = (Group) root.getArg();
+			Service service = (Service) group.getArg();
+			GroupConcat concat = (GroupConcat) group.getGroupElements().get(0).getOperator();
+			assertThat(root.getBindingPreparation()).isNull();
+			assertThat(concat.getSeparator()).isEqualTo(new Str(Var.of("sep")));
+			assertSame(concat, concat.getSeparator().getParentNode());
+			assertThat(service.getPreparedInputBindings()).isEmpty();
+			assertThat(service.getRuntimeBindingHistory().values()).isEmpty();
+			assertThat(service.getServiceRef().getName()).isEqualTo("endpoint");
+			assertThat(root.clone()).isEqualTo(root).hasSameHashCodeAs(root);
+		}
+	}
+
 	@Test
 	void filterSerializedBeforeConditionScopesRetainsAutomaticVisibility() throws Exception {
 		// Captured from immutable pre-change commit a794f9432d08978d91f9c5dd4cd37cc19647b364.

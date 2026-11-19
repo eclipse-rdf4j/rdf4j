@@ -263,6 +263,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSum;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTimezone;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleFunc;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleTerm;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTriplesSameSubjectPath;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTrue;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTz;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUUID;
@@ -327,7 +328,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	private final Set<String> occupiedVarNames = new HashSet<>();
 	private long nextConstantVar;
 
-	GraphPattern graphPattern = new GraphPattern();
+	private final SourceProvenance sourceProvenance;
+	GraphPattern graphPattern;
 
 	private final Deque<LateralScope> lateralScopes = new ArrayDeque<>();
 
@@ -351,7 +353,18 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 *--------------*/
 
 	public TupleExprBuilder(ValueFactory valueFactory) {
+		this(valueFactory, null);
+	}
+
+	TupleExprBuilder(ValueFactory valueFactory, SourceProvenance sourceProvenance) {
 		this.valueFactory = valueFactory;
+		this.sourceProvenance = sourceProvenance;
+		this.graphPattern = new GraphPattern(sourceProvenance);
+	}
+
+	@SuppressWarnings("unchecked")
+	private <T extends QueryModelNode> T copyWithSource(T node) {
+		return sourceProvenance == null ? (T) node.clone() : sourceProvenance.copy(node);
 	}
 
 	/** Reserves user and parser-created names before allocating internal constant bindings. */
@@ -390,15 +403,15 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	protected Var mapValueExprToVar(Object valueExpr) {
 		if (valueExpr instanceof Var) {
 			// Return a clone to prevent the Var object from being used in more than one place.
-			return ((Var) valueExpr).clone();
+			return copyWithSource(((Var) valueExpr));
 		} else if (valueExpr instanceof ValueConstant) {
 			return constantVar(((ValueConstant) valueExpr).getValue());
 		} else if (valueExpr instanceof ReifiedTripleRef) {
 			ReifiedTripleRef ret = (ReifiedTripleRef) valueExpr;
-			return ret.getReifVar().clone();
+			return copyWithSource(ret.getReifVar());
 		} else if (valueExpr instanceof TripleRef) {
 			// Return a clone to prevent the Var object from being used in more than one place.
-			return ((TripleRef) valueExpr).getExprVar().clone();
+			return copyWithSource(((TripleRef) valueExpr).getExprVar());
 		} else if (valueExpr == null) {
 			throw new IllegalArgumentException("valueExpr is null");
 		} else {
@@ -560,7 +573,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		for (int i = 0; i < noOfArguments; i++) {
 			Node argNode = node.jjtGetChild(i);
-			functionCall.addArg((ValueExpr) argNode.jjtAccept(this, null));
+			functionCall.addArg(castToValueExpr(argNode.jjtAccept(this, null)));
 		}
 
 		return functionCall;
@@ -743,7 +756,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			Extension extension = new Extension(group);
 			tupleExpr = extension;
 			for (int i = 0; i < havingNode.jjtGetNumChildren(); i++) {
-				ValueExpr expr = (ValueExpr) havingNode.jjtGetChild(i).jjtAccept(this, tupleExpr);
+				ValueExpr expr = castToValueExpr(havingNode.jjtGetChild(i).jjtAccept(this, tupleExpr));
 				AggregateCollector collector = new AggregateCollector();
 				// visit the condition itself, not just its children: the aggregate may BE the whole condition
 				expr.visit(collector);
@@ -758,7 +771,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						replacer.meetOther(expr);
 					}
 					String alias = var.getName();
-					ExtensionElem extensionElem = new ExtensionElem(operator.clone(), alias);
+					ExtensionElem extensionElem = new ExtensionElem(copyWithSource(operator), alias);
 					extensionElem.setAnonymousTarget(var.isAnonymous());
 					extension.addElement(extensionElem);
 					GroupElem groupElem = new GroupElem(alias, operator);
@@ -796,7 +809,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					// name.
 					String alias = var.getName();
 
-					ExtensionElem pe = new ExtensionElem(operator.clone(), alias);
+					ExtensionElem pe = new ExtensionElem(copyWithSource(operator), alias);
 					pe.setAnonymousTarget(var.isAnonymous());
 					extension.addElement(pe);
 
@@ -892,7 +905,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							Extension anonymousExtension = new Extension();
 							Var anonVar = createAnonVar();
 							expr.replaceChildNode(operator, anonVar);
-							ExtensionElem binding = new ExtensionElem(operator.clone(), anonVar.getName());
+							ExtensionElem binding = new ExtensionElem(copyWithSource(operator), anonVar.getName());
 							binding.setAnonymousTarget(anonVar.isAnonymous());
 							anonymousExtension.addElement(binding);
 
@@ -979,6 +992,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		result = new Projection(result, projElemList, node.isSubSelect());
+		if (sourceProvenance != null) {
+			sourceProvenance.record(result, node);
+		}
 		if (group != null) {
 			Set<String> groupNames = group.getBindingNames();
 			if (window != null) {
@@ -1020,7 +1036,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			// to distinguish named graphs selected in the
 			// outer query from named graphs selected as part of the sub-select.
 			Var callerContext = graphPattern.getProjectionContext();
-			((Projection) result).setProjectionContext(callerContext == null ? null : callerContext.clone());
+			((Projection) result).setProjectionContext(callerContext == null ? null : copyWithSource(callerContext));
 		}
 
 		if (node.isDistinct()) {
@@ -1074,7 +1090,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					partitionBySeen = true;
 					for (ValueExpr expr : marker.getArgs()) {
 						rejectNestedWindowFunctions(expr, "winf:partitionBy");
-						operator.addPartitionBy(expr.clone());
+						operator.addPartitionBy(copyWithSource(expr));
 					}
 					break;
 				case "orderBy":
@@ -1096,7 +1112,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							}
 						}
 						rejectNestedWindowFunctions(key, "winf:orderBy");
-						operator.addOrderBy(new OrderElem(key.clone(), ascending));
+						operator.addOrderBy(new OrderElem(copyWithSource(key), ascending));
 					}
 					break;
 				case "rows":
@@ -1127,7 +1143,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 			} else {
 				rejectNestedWindowFunctions(arg, call.getURI());
-				operator.addArg(arg.clone());
+				operator.addArg(copyWithSource(arg));
 			}
 		}
 		return operator;
@@ -1219,7 +1235,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	private ValueExpr cloneIfAggregate(ValueExpr valueExpr) {
 		if (valueExpr instanceof AggregateOperator) {
-			return ((AggregateOperator) valueExpr).clone();
+			return copyWithSource(((AggregateOperator) valueExpr));
 		}
 		return valueExpr;
 	}
@@ -1516,7 +1532,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 					if (subj.equals(left) || subj.equals(right)) {
 						if (obj.equals(left) || obj.equals(right)) {
-							sp.replaceChildNode(sp.getObjectVar(), subj.clone());
+							sp.replaceChildNode(sp.getObjectVar(), copyWithSource(subj));
 						}
 					}
 				}
@@ -1688,9 +1704,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			TripleRef t = (TripleRef) node;
 			ValueExpr expression = tripleConstructorExpressions.get(t.getExprVar().getName());
 			return expression == null
-					? new ValueExprTripleRef(t.getExprVar().getName(), t.getSubjectVar().clone(),
-							t.getPredicateVar().clone(), t.getObjectVar().clone())
-					: expression.clone();
+					? new ValueExprTripleRef(t.getExprVar().getName(), copyWithSource(t.getSubjectVar()),
+							copyWithSource(t.getPredicateVar()), copyWithSource(t.getObjectVar()))
+					: copyWithSource(expression);
 		}
 		throw new IllegalArgumentException("could not cast " + node.getClass().getName() + " to ValueExpr");
 	}
@@ -1773,7 +1789,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public OrderElem visit(ASTOrderCondition node, Object data) throws VisitorException {
-		ValueExpr valueExpr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr valueExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new OrderElem(valueExpr, node.isAscending());
 	}
 
@@ -1841,6 +1857,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 			Service service = new Service(serviceVar, serviceExpr, node.getPatternString(),
 					node.getPrefixDeclarations(), node.getBaseURI(), node.isSilent());
+			SPARQLQueries.initializeServiceBindingNames(service, node.jjtGetChild(1));
 			Set<String> remoteIDs = BNodeReferenceProcessor.ownedIDs(node);
 			Set<String> remoteNames = new HashSet<>();
 			constantVars.forEach((value, variable) -> {
@@ -1921,7 +1938,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		TupleExpr rightArg = graphPattern.buildTupleExpr();
 
 		parentGP = new GraphPattern();
-		parentGP.addRequiredTE(new Difference(leftArg, rightArg));
+		Difference minus = new Difference(leftArg, rightArg);
+		if (sourceProvenance != null) {
+			sourceProvenance.record(minus, node);
+		}
+		parentGP.addRequiredTE(minus);
 		graphPattern = parentGP;
 
 		return null;
@@ -1935,7 +1956,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		ObjectListSyntax.forEach(propListNode.getObjectList(), (object, suffixes) -> {
 			Var objVar = mapValueExprToVar(object.jjtAccept(this, null));
-			graphPattern.addRequiredSP(subjVar.clone(), predVar.clone(), objVar);
+			graphPattern.addRequiredSP(copyWithSource(subjVar), copyWithSource(predVar), objVar);
 			applyAnnotationSuffixes(suffixes, subjVar, predVar, objVar);
 		});
 
@@ -2054,7 +2075,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private TupleExpr replacePathEndpoint(TupleExpr expression, Var endpoint, Var replacement) throws VisitorException {
-		QueryRoot root = new QueryRoot(expression.clone());
+		QueryRoot root = new QueryRoot(copyWithSource(expression));
 		root.visit(new AbstractQueryModelVisitor<VisitorException>() {
 			@Override
 			public void meet(ArbitraryLengthPath path) throws VisitorException {
@@ -2064,9 +2085,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				if (path.getSubjectVar().equals(endpoint) && path.getObjectVar().equals(replacement)
 						|| path.getObjectVar().equals(endpoint) && path.getSubjectVar().equals(replacement)) {
 					Var alias = createAnonPathVar(false);
-					ArbitraryLengthPath renamed = path.clone();
+					ArbitraryLengthPath renamed = copyWithSource(path);
 					renamed.visit(new VarReplacer(endpoint, alias));
-					path.replaceWith(new Filter(renamed, new SameTerm(replacement.clone(), alias.clone())));
+					path.replaceWith(
+							new Filter(renamed, new SameTerm(copyWithSource(replacement), copyWithSource(alias))));
 				} else {
 					super.meet(path);
 				}
@@ -2103,9 +2125,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			pathElementExpression = createTupleExprForNegatedPropertySets(psElems, pathSequenceContext);
 		} else {
 			Var predVar = mapValueExprToVar(pathElement.jjtGetChild(0).jjtAccept(this, pathSequenceContext));
-			pathElementExpression = new StatementPattern(pathSequenceContext.scope, startVar.clone(), predVar,
-					endVar.clone(),
-					pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null);
+			pathElementExpression = new StatementPattern(pathSequenceContext.scope, copyWithSource(startVar), predVar,
+					copyWithSource(endVar),
+					pathSequenceContext.contextVar != null ? copyWithSource(pathSequenceContext.contextVar) : null);
 		}
 
 		final ASTPathMod pathMod = pathElement.getPathMod();
@@ -2119,7 +2141,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				lowerBound = upperBound;
 			}
 			pathElementExpression = handlePathModifiers(pathSequenceContext.scope, startVar, pathElementExpression,
-					endVar, pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null,
+					endVar,
+					pathSequenceContext.contextVar != null ? copyWithSource(pathSequenceContext.contextVar) : null,
 					lowerBound, upperBound);
 		}
 
@@ -2128,7 +2151,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	protected Var buildReifiedTripleVar(Object reifier, Var subjVar, Var predVar, Var objVar) throws VisitorException {
 		AnnotationTripleRef ref = buildReifiedTripleRef(subjVar, predVar, objVar, reifier);
-		graphPattern.addRequiredSP(ref.getReifVar().clone(), constantVar(RDF.REIFIES), ref.getExprVar().clone());
+		graphPattern.addRequiredSP(copyWithSource(ref.getReifVar()), constantVar(RDF.REIFIES),
+				copyWithSource(ref.getExprVar()));
 		graphPattern.addRequiredTE(ref);
 
 		return ref.getReifVar();
@@ -2137,12 +2161,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	protected AnnotationTripleRef buildReifiedTripleRef(Var subjVar, Var predVar, Var objVar, Object reifier)
 			throws VisitorException {
 		AnnotationTripleRef rtr = new AnnotationTripleRef();
-		rtr.setSubjectVar(subjVar.clone());
-		rtr.setPredicateVar(predVar.clone());
-		rtr.setObjectVar(objVar.clone());
+		rtr.setSubjectVar(copyWithSource(subjVar));
+		rtr.setPredicateVar(copyWithSource(predVar));
+		rtr.setObjectVar(copyWithSource(objVar));
 		String key = reifiedTripleKey(subjVar, predVar, objVar);
 		Var exprVar = reifiedTripleExprVars.computeIfAbsent(key, k -> createAnonVar());
-		rtr.setExprVar(exprVar.clone());
+		rtr.setExprVar(copyWithSource(exprVar));
 		rtr.setReifVar(getReifVar(reifier));
 		return rtr;
 	}
@@ -2184,14 +2208,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			ValueConstant predicate = elem.getPredicate();
 
 			if (elem.isInverse()) {
-				Compare compare = new Compare(predVar.clone(), predicate, CompareOp.NE);
+				Compare compare = new Compare(copyWithSource(predVar), predicate, CompareOp.NE);
 				if (filterConditionInverse == null) {
 					filterConditionInverse = compare;
 				} else {
 					filterConditionInverse = new And(filterConditionInverse, compare);
 				}
 			} else {
-				Compare compare = new Compare(predVar.clone(), predicate, CompareOp.NE);
+				Compare compare = new Compare(copyWithSource(predVar), predicate, CompareOp.NE);
 				if (filterCondition == null) {
 					filterCondition = compare;
 				} else {
@@ -2200,16 +2224,19 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		TupleExpr patternMatch = new StatementPattern(pathSequenceContext.scope, subjVar.clone(), predVar.clone(),
-				endVar.clone(), pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null);
+		TupleExpr patternMatch = new StatementPattern(pathSequenceContext.scope, copyWithSource(subjVar),
+				copyWithSource(predVar),
+				copyWithSource(endVar),
+				pathSequenceContext.contextVar != null ? copyWithSource(pathSequenceContext.contextVar) : null);
 
 		TupleExpr patternMatchInverse = null;
 
 		// build an inverse statement pattern if needed
 		if (filterConditionInverse != null) {
-			patternMatchInverse = new StatementPattern(pathSequenceContext.scope, endVar.clone(), predVar.clone(),
-					subjVar.clone(),
-					pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null);
+			patternMatchInverse = new StatementPattern(pathSequenceContext.scope, copyWithSource(endVar),
+					copyWithSource(predVar),
+					copyWithSource(subjVar),
+					pathSequenceContext.contextVar != null ? copyWithSource(pathSequenceContext.contextVar) : null);
 		}
 
 		TupleExpr completeMatch = null;
@@ -2235,16 +2262,16 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// * and + modifiers
 		if (upperBound == Long.MAX_VALUE) {
 			// upperbound is abitrary-length
-			return new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(),
-					contextVar != null ? contextVar.clone() : null, lowerBound);
+			return new ArbitraryLengthPath(scope, copyWithSource(subjVar), te, copyWithSource(endVar),
+					contextVar != null ? copyWithSource(contextVar) : null, lowerBound);
 		}
 
 		// ? modifier
 		if (lowerBound == 0L && upperBound == 1L) {
 			final Union zeroOne = new Union();
 			zeroOne.setVariableScopeChange(false);
-			zeroOne.setLeftArg(new ZeroLengthPath(scope, subjVar.clone(), endVar.clone(),
-					contextVar != null ? contextVar.clone() : null));
+			zeroOne.setLeftArg(new ZeroLengthPath(scope, copyWithSource(subjVar), copyWithSource(endVar),
+					contextVar != null ? copyWithSource(contextVar) : null));
 			zeroOne.setRightArg(te);
 			ProjectionElemList pelist = new ProjectionElemList();
 			for (String name : zeroOne.getAssuredBindingNames()) {
@@ -2295,7 +2322,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	}
 
-	private static class VarReplacer extends AbstractQueryModelVisitor<VisitorException> {
+	private class VarReplacer extends AbstractQueryModelVisitor<VisitorException> {
 
 		private final Var toBeReplaced;
 
@@ -2310,7 +2337,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		public void meet(Var var) {
 			if (toBeReplaced.equals(var)) {
 				QueryModelNode parent = var.getParentNode();
-				parent.replaceChildNode(var, replacement.clone());
+				parent.replaceChildNode(var, copyWithSource(replacement));
 			}
 		}
 
@@ -2336,11 +2363,22 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			Var predicate = mapValueExprToVar(simplePredicate.jjtAccept(this, null));
 			ObjectListSyntax.forEach(property.getObjectList(), (object, suffixes) -> {
 				Var value = mapValueExprToVar(object.jjtAccept(this, null));
-				graphPattern.addRequiredSP(subject.clone(), predicate.clone(), value);
+				graphPattern.addRequiredSP(copyWithSource(subject), copyWithSource(predicate), value);
 				applyAnnotationSuffixes(suffixes, subject, predicate, value);
 			});
 		} else {
-			graphPattern.addRequiredTE((TupleExpr) verbNode.jjtAccept(this, data));
+			TupleExpr relation = (TupleExpr) verbNode.jjtAccept(this, data);
+			if (sourceProvenance != null) {
+				Node syntax = property;
+				while (syntax != null && !(syntax instanceof ASTTriplesSameSubjectPath)) {
+					syntax = syntax.jjtGetParent();
+				}
+				if (syntax != null) {
+					// Internal path aliases, filters and zero-length alternatives belong to this one source operand.
+					sourceProvenance.record(relation, syntax);
+				}
+			}
+			graphPattern.addRequiredTE(relation);
 		}
 		ASTPropertyListPath next = property.getNextPropertyList();
 		if (next != null) {
@@ -2404,7 +2442,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		for (int i = 0; i < childCount; i++) {
 			Var childValue = mapValueExprToVar(node.jjtGetChild(i).jjtAccept(this, null));
 
-			graphPattern.addRequiredSP(listVar.clone(), constantVar(RDF.FIRST),
+			graphPattern.addRequiredSP(copyWithSource(listVar), constantVar(RDF.FIRST),
 					childValue);
 
 			Var nextListVar;
@@ -2414,7 +2452,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				nextListVar = createAnonCollectionVar();
 			}
 
-			graphPattern.addRequiredSP(listVar.clone(), constantVar(RDF.REST), nextListVar);
+			graphPattern.addRequiredSP(copyWithSource(listVar), constantVar(RDF.REST), nextListVar);
 			listVar = nextListVar;
 		}
 
@@ -2423,7 +2461,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTConstraint node, Object data) throws VisitorException {
-		ValueExpr valueExpr = (ValueExpr) super.visit(node, null);
+		ValueExpr valueExpr = castToValueExpr(super.visit(node, null));
 		graphPattern.addConstraint(valueExpr);
 
 		return valueExpr;
@@ -2445,7 +2483,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Not visit(ASTNot node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) super.visit(node, null);
+		ValueExpr arg = castToValueExpr(super.visit(node, null));
 		return new Not(arg);
 	}
 
@@ -2731,7 +2769,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public IRIFunction visit(ASTIRIFunc node, Object data) throws VisitorException {
-		ValueExpr expr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr expr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		IRIFunction fn = new IRIFunction(expr);
 		fn.setBaseURI(node.getBaseURI());
 		return fn;
@@ -2739,7 +2777,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Lang visit(ASTLang node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new Lang(arg);
 	}
 
@@ -2771,14 +2809,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Datatype visit(ASTDatatype node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new Datatype(arg);
 	}
 
 	@Override
 	public Object visit(ASTLangMatches node, Object data) throws VisitorException {
-		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
-		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);
+		ValueExpr leftArg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr rightArg = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
 		return new LangMatches(leftArg, rightArg);
 	}
 
@@ -2896,25 +2934,25 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public IsURI visit(ASTIsIRI node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new IsURI(arg);
 	}
 
 	@Override
 	public IsBNode visit(ASTIsBlank node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new IsBNode(arg);
 	}
 
 	@Override
 	public IsLiteral visit(ASTIsLiteral node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new IsLiteral(arg);
 	}
 
 	@Override
 	public IsNumeric visit(ASTIsNumeric node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new IsNumeric(arg);
 	}
 
@@ -2924,7 +2962,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		BNodeGenerator generator = new BNodeGenerator();
 
 		if (node.jjtGetNumChildren() > 0) {
-			ValueExpr nodeIdExpr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+			ValueExpr nodeIdExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 			generator.setNodeIdExpr(nodeIdExpr);
 		}
 
@@ -2933,11 +2971,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTRegexExpression node, Object data) throws VisitorException {
-		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
-		ValueExpr pattern = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr pattern = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
 		ValueExpr flags = null;
 		if (node.jjtGetNumChildren() > 2) {
-			flags = (ValueExpr) node.jjtGetChild(2).jjtAccept(this, null);
+			flags = castToValueExpr(node.jjtGetChild(2).jjtAccept(this, null));
 		}
 		return new Regex(arg, pattern, flags);
 	}
@@ -2990,9 +3028,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			throw new VisitorException("IF construction missing required number of arguments");
 		}
 
-		ValueExpr condition = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
-		ValueExpr resultExpr = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);
-		ValueExpr alternative = (ValueExpr) node.jjtGetChild(2).jjtAccept(this, null);
+		ValueExpr condition = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr resultExpr = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
+		ValueExpr alternative = castToValueExpr(node.jjtGetChild(2).jjtAccept(this, null));
 
 		result = new If(condition, resultExpr, alternative);
 
@@ -3001,8 +3039,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public ValueExpr visit(ASTInfix node, Object data) throws VisitorException {
-		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, data);
-		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, leftArg);
+		ValueExpr leftArg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
+		ValueExpr rightArg = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, leftArg));
 
 		return rightArg;
 	}
@@ -3016,14 +3054,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (listItemCount == 0) {
 			result = new ValueConstant(BooleanLiteral.FALSE);
 		} else if (listItemCount == 1) {
-			ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+			ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 			result = new Compare(leftArg, arg, CompareOp.EQ);
 		} else {
 			ListMemberOperator listMemberOperator = new ListMemberOperator();
 			listMemberOperator.addArgument(leftArg);
 
 			for (int i = 0; i < listItemCount; i++) {
-				ValueExpr arg = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);
+				ValueExpr arg = castToValueExpr(node.jjtGetChild(i).jjtAccept(this, null));
 				listMemberOperator.addArgument(arg);
 			}
 			result = listMemberOperator;
@@ -3042,7 +3080,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (listItemCount == 0) {
 			result = new ValueConstant(BooleanLiteral.TRUE);
 		} else if (listItemCount == 1) {
-			ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
+			ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 
 			result = new Compare(leftArg, arg, CompareOp.NE);
 		} else {
@@ -3051,13 +3089,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			And and = new And();
 			And currentAnd = and;
 			for (int i = 0; i < listItemCount - 1; i++) {
-				ValueExpr arg = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);
+				ValueExpr arg = castToValueExpr(node.jjtGetChild(i).jjtAccept(this, null));
 
-				currentAnd.setLeftArg(new Compare(leftArg.clone(), arg, CompareOp.NE));
+				currentAnd.setLeftArg(new Compare(copyWithSource(leftArg), arg, CompareOp.NE));
 
 				if (i == listItemCount - 2) { // second-to-last item
-					arg = (ValueExpr) node.jjtGetChild(i + 1).jjtAccept(this, null);
-					currentAnd.setRightArg(new Compare(leftArg.clone(), arg, CompareOp.NE));
+					arg = castToValueExpr(node.jjtGetChild(i + 1).jjtAccept(this, null));
+					currentAnd.setRightArg(new Compare(copyWithSource(leftArg), arg, CompareOp.NE));
 				} else {
 					And newAnd = new And();
 					currentAnd.setRightArg(newAnd);
@@ -3072,7 +3110,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Var visit(ASTVar node, Object data) throws VisitorException {
-		return Var.of(node.getName(), node.isAnonymous(), node.isBNode());
+		Var variable = Var.of(node.getName(), node.isAnonymous(), node.isBNode());
+		if (sourceProvenance != null) {
+			sourceProvenance.record(variable, node);
+		}
+		return variable;
 	}
 
 	@Override
@@ -3137,7 +3179,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		verifyLateralAssignment(alias, "BIND clause alias");
 
 		Extension extension = new Extension();
-		extension.addElement(new ExtensionElem(ve.clone(), alias));
+		extension.addElement(new ExtensionElem(copyWithSource(ve), alias));
 
 		TupleExpr result;
 
@@ -3255,7 +3297,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		GroupConcat gc = new GroupConcat(ve, node.isDistinct());
 
 		if (node.jjtGetNumChildren() > 1) {
-			ValueExpr separator = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, data);
+			ValueExpr separator = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, data));
 			gc.setSeparator(separator);
 		}
 
@@ -3469,10 +3511,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		String key = reifiedTripleKey(ref.getSubjectVar(), ref.getPredicateVar(), ref.getObjectVar());
 		Var exprVar = reifiedTripleExprVars.computeIfAbsent(key, k -> createAnonVar());
 
-		ref.setExprVar(exprVar.clone());
-		ref.setReifVar(reifVar.clone());
+		ref.setExprVar(copyWithSource(exprVar));
+		ref.setReifVar(copyWithSource(reifVar));
 
-		graphPattern.addRequiredSP(ref.getReifVar().clone(), constantVar(RDF.REIFIES), ref.getExprVar().clone());
+		graphPattern.addRequiredSP(copyWithSource(ref.getReifVar()), constantVar(RDF.REIFIES),
+				copyWithSource(ref.getExprVar()));
 		graphPattern.addRequiredTE(ref);
 
 		return ref;
@@ -3508,7 +3551,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public IsTriple visit(ASTIsTriple node, Object data) throws VisitorException {
-		return new IsTriple((ValueExpr) node.childrenAccept(this, data));
+		return new IsTriple(castToValueExpr(node.childrenAccept(this, data)));
 	}
 
 	@Override

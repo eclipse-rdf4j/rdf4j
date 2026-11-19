@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration
 import org.eclipse.rdf4j.federated.evaluation.iterator.StatementConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.BoundFilterUtil;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
@@ -254,6 +255,11 @@ public class SailTripleSource extends TripleSourceBase {
 	}
 
 	public CloseableIteration<BindingSet> getStatements(ExclusiveGroup group, BindingSet bindings) {
+		var compatibleBindings = BoundFilterUtil.merge(bindings, group);
+		if (compatibleBindings.isEmpty()) {
+			return new EmptyIteration<>();
+		}
+		bindings = compatibleBindings.get();
 		CloseableIteration<BindingSet> result = preparedStatements(group, bindings, group.getFilterExpr(),
 				group.getQueryInfo(),
 				typed -> QueryStringUtil.selectQueryString(group, typed, null, new AtomicBoolean(), null),
@@ -262,12 +268,22 @@ public class SailTripleSource extends TripleSourceBase {
 	}
 
 	public CloseableIteration<BindingSet> getStatements(ExclusiveTupleExprRenderer expression, BindingSet bindings) {
+		var compatibleBindings = BoundFilterUtil.merge(bindings, expression);
+		if (compatibleBindings.isEmpty()) {
+			return new EmptyIteration<>();
+		}
+		bindings = compatibleBindings.get();
 		return preparedStatements(expression, bindings, null, expression.getQueryInfo(),
 				typed -> QueryStringUtil.selectQueryString(expression, typed, null, new AtomicBoolean(), null),
 				typed -> QueryStringUtil.askQueryString(expression, typed, null), expression.getExecutionDataset());
 	}
 
 	public CloseableIteration<BindingSet> getStatements(TripleRefJoinGroup group, BindingSet bindings) {
+		var compatibleBindings = BoundFilterUtil.merge(bindings, group);
+		if (compatibleBindings.isEmpty()) {
+			return new EmptyIteration<>();
+		}
+		bindings = compatibleBindings.get();
 		return preparedStatements(group, bindings, null, group.getQueryInfo(),
 				typed -> QueryStringUtil.selectQueryStringTripleRefJoinGroup(group, typed, null),
 				typed -> QueryStringUtil.askQueryString(group, typed, null), group.getExecutionDataset());

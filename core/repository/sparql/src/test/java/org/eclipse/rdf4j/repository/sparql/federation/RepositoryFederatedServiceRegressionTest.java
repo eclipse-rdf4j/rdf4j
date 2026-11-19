@@ -22,9 +22,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,16 +37,21 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -55,17 +62,24 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.PreparedQueryBindingPlan;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.sparql.query.InsertBindingSetCursor;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -79,7 +93,45 @@ class RepositoryFederatedServiceRegressionTest {
 		SCALAR,
 		SERIALIZED_CROSS_PRODUCT,
 		SERIALIZED_ROW_INDEX,
-		LOCAL_JOIN
+		NATIVE_LOCAL_JOIN
+	}
+
+	@Test
+	void repositoryCapabilitiesFollowInheritedEvaluationHooks() {
+		Repository repository = mock(Repository.class);
+		class Inherited extends RepositoryFederatedService {
+			Inherited() {
+				super(repository, false);
+			}
+		}
+		var inherited = new Inherited() {
+		};
+		var internalOverride = new Inherited() {
+			@Override
+			protected CloseableIteration<BindingSet> evaluateInternal(Service service,
+					CloseableIteration<BindingSet> bindings, String baseUri) {
+				return bindings;
+			}
+		};
+		var batchOverride = new Inherited() {
+			@Override
+			public CloseableIteration<BindingSet> evaluateBoundJoinBatch(Service service,
+					CloseableIteration<BindingSet> bindings, String baseUri) {
+				return bindings;
+			}
+		};
+		var selectOverride = new Inherited() {
+			@Override
+			public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
+					BindingSet bindings, String baseUri) {
+				return new ListIteration<>(List.of(bindings));
+			}
+		};
+		for (RepositoryFederatedService provider : List.of(inherited, internalOverride, batchOverride,
+				selectOverride)) {
+			assertEquals(provider == inherited, provider.preservesCallerBindingDomain());
+			assertEquals(provider == inherited, provider.validatesRuntimeBindingTransport());
+		}
 	}
 
 	@Test
@@ -88,14 +140,11 @@ class RepositoryFederatedServiceRegressionTest {
 				() -> assertServiceJoinPreservesCallerExplicitNull(ServiceTransport.SCALAR),
 				() -> assertServiceJoinPreservesCallerExplicitNull(ServiceTransport.SERIALIZED_CROSS_PRODUCT),
 				() -> assertServiceJoinPreservesCallerExplicitNull(ServiceTransport.SERIALIZED_ROW_INDEX),
-				() -> assertServiceJoinPreservesCallerExplicitNull(ServiceTransport.LOCAL_JOIN));
+				() -> assertServiceJoinPreservesCallerExplicitNull(ServiceTransport.NATIVE_LOCAL_JOIN));
 	}
 
 	private static void assertServiceJoinPreservesCallerExplicitNull(ServiceTransport transport) throws Exception {
-		Harness harness = new Harness();
-		if (transport == ServiceTransport.LOCAL_JOIN) {
-			harness.service.setBoundJoinBlockSize(1);
-		}
+		Harness harness = new Harness(transport != ServiceTransport.NATIVE_LOCAL_JOIN);
 		IRI subject = VF.createIRI("urn:test:subject");
 		Value value = VF.createLiteral("remote");
 		SPARQLQueryBindingSet caller = new SPARQLQueryBindingSet();
@@ -128,6 +177,48 @@ class RepositoryFederatedServiceRegressionTest {
 			row.forEach(binding -> iteratedNames.add(binding.getName()));
 			assertEquals(List.of("subject"), iteratedNames);
 		}
+	}
+
+	@Test
+	void existingBoundJoinBatchKeepsItsBoundaryWithoutChangingProviderConfiguration() throws Exception {
+		for (boolean wrapInputs : List.of(false, true)) {
+			assertBoundJoinBatchBoundary(wrapInputs, false);
+		}
+	}
+
+	@Test
+	void cloningForwarderPreservesTheScheduledBatchBoundary() throws Exception {
+		assertBoundJoinBatchBoundary(true, true);
+	}
+
+	private static void assertBoundJoinBatchBoundary(boolean wrapInputs, boolean clone) throws Exception {
+		Harness harness = new Harness();
+		RepositoryFederatedService provider = spy(wrapInputs ? new RepositoryFederatedService(harness.repository) {
+			@Override
+			public CloseableIteration<BindingSet> evaluate(Service service, CloseableIteration<BindingSet> input,
+					String baseUri) {
+				return super.evaluate(clone ? service.clone() : service, new ConvertingIteration<>(input) {
+					@Override
+					protected BindingSet convert(BindingSet row) {
+						return row;
+					}
+				}, baseUri);
+			}
+		} : harness.service);
+		provider.setBoundJoinBlockSize(1);
+		provider.setPartitionToleranceDeclared(true);
+		TupleQueryResult remote = tupleResult(List.of(binding("subject", VF.createIRI("urn:test:subject"))));
+		when(harness.query.evaluate()).thenReturn(remote);
+		Service service = parsedService("?subject <urn:test:p> ?value");
+		List<BindingSet> callers = List.of(binding("tag", VF.createLiteral(1)), binding("tag", VF.createLiteral(1)));
+
+		var results = collect(provider.evaluateBoundJoinBatch(service, new ListIteration<>(callers), null));
+
+		assertEquals(2, results.size());
+		verify(provider).evaluate(any(Service.class), any(), nullable(String.class));
+		verify(harness.query).evaluate();
+		assertEquals(1, provider.getBoundJoinBlockSize());
+		assertTrue(provider.isPartitionToleranceDeclared());
 	}
 
 	@Test
@@ -207,6 +298,508 @@ class RepositoryFederatedServiceRegressionTest {
 		assertTrue(row.hasBinding(name), name);
 		assertNull(row.getValue(name), name);
 		assertNull(row.getBinding(name), name);
+	}
+
+	@Test
+	void nativeServiceSelectReceivesCapturedLogicalParameters() throws Exception {
+		assertNativePreparedSelect(false);
+	}
+
+	@Test
+	void nativeServiceSelectRetainsParametersAfterRequestLowering() throws Exception {
+		assertNativePreparedSelect(true);
+	}
+
+	private void assertNativePreparedSelect(boolean lowered) throws Exception {
+		Harness harness = new Harness(false);
+		MapBindingSet nativeInputs = new MapBindingSet();
+		doAnswer(invocation -> {
+			nativeInputs.setBinding(invocation.getArgument(0), invocation.getArgument(1));
+			return null;
+		}).when(harness.query).setBinding(anyString(), any(Value.class));
+		when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(
+				VF.createLiteral("bob").equals(nativeInputs.getValue("id"))
+						? List.of(binding("person", VF.createIRI("urn:bob")))
+						: List.of(binding("person", VF.createIRI("urn:bob")),
+								binding("person", VF.createIRI("urn:alice")))));
+		Service service = preparedService(VF.createLiteral("bob"), lowered);
+		assertEquals(List.of(binding("person", VF.createIRI("urn:bob"))),
+				collect(harness.service.select(service, Set.of("person"), EmptyBindingSet.getInstance(), null)));
+		assertEquals(binding("id", VF.createLiteral("bob")), nativeInputs);
+	}
+
+	@Test
+	void nativeServiceAskReceivesCapturedLogicalParameters() throws Exception {
+		assertNativePreparedAsk(false);
+	}
+
+	@Test
+	void nativeServiceAskRetainsParametersAfterRequestLowering() throws Exception {
+		assertNativePreparedAsk(true);
+	}
+
+	private void assertNativePreparedAsk(boolean lowered) throws Exception {
+		Harness harness = new Harness(false);
+		BooleanQuery query = mock(BooleanQuery.class);
+		MapBindingSet nativeInputs = new MapBindingSet();
+		when(harness.connection.prepareBooleanQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+				.thenReturn(query);
+		doAnswer(invocation -> {
+			nativeInputs.setBinding(invocation.getArgument(0), invocation.getArgument(1));
+			return null;
+		}).when(query).setBinding(anyString(), any(Value.class));
+		when(query.evaluate()).thenAnswer(invocation -> nativeInputs.getValue("id") == null
+				|| VF.createLiteral("bob").equals(nativeInputs.getValue("id")));
+		assertEquals(false, harness.service.ask(preparedService(VF.createLiteral("missing"), lowered),
+				EmptyBindingSet.getInstance(), null));
+		assertEquals(binding("id", VF.createLiteral("missing")), nativeInputs);
+	}
+
+	@Test
+	void nativeMultirowServiceRetainsLogicalParametersWithoutProducingInputColumns() throws Exception {
+		Harness harness = new Harness(false);
+		MapBindingSet nativeInputs = new MapBindingSet();
+		doAnswer(invocation -> {
+			nativeInputs.setBinding(invocation.getArgument(0), invocation.getArgument(1));
+			return null;
+		}).when(harness.query).setBinding(anyString(), any(Value.class));
+		when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(
+				VF.createLiteral("bob").equals(nativeInputs.getValue("id"))
+						? List.of(binding("person", VF.createIRI("urn:bob")))
+						: List.of()));
+		BindingSet input = binding("input", VF.createLiteral("duplicate"));
+		assertEquals(List.of(binding("person", VF.createIRI("urn:bob"), "input", VF.createLiteral("duplicate")),
+				binding("person", VF.createIRI("urn:bob"), "input", VF.createLiteral("duplicate"))),
+				evaluate(harness.service, preparedService(VF.createLiteral("bob"), true), List.of(input, input)));
+		assertEquals(binding("id", VF.createLiteral("bob")), nativeInputs);
+		verify(harness.query).evaluate();
+	}
+
+	private static Service preparedService(Value value, boolean lowered) {
+		Service logical = service(statement("person", "id"), "?person <urn:test:p> ?id", false);
+		logical.setPreparedInputBindings(Map.of("id", value));
+		return lowered ? SPARQLQueries.prepareServiceRequest(logical, List.of(), new Object(), false, false).service()
+				: logical;
+	}
+
+	@Test
+	void nativePreparedOutputChecksConflictingAndEqualCallerBindings() throws Exception {
+		for (String input : List.of("alice", "bob")) {
+			Harness harness = new Harness(false);
+			AtomicBoolean projectedId = new AtomicBoolean();
+			when(harness.connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+					.thenAnswer(invocation -> {
+						String source = invocation.getArgument(1);
+						projectedId.set(source.substring(0, source.indexOf("WHERE")).contains("?id"));
+						return harness.query;
+					});
+			when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(List.of(projectedId.get()
+					? binding("person", VF.createIRI("urn:bob"), "id", VF.createLiteral("bob"))
+					: binding("person", VF.createIRI("urn:bob")))));
+			List<BindingSet> actual = collect(harness.service.select(preparedService(VF.createLiteral("bob"), true),
+					Set.of("person"), binding("id", VF.createLiteral(input)), null));
+			assertEquals(input.equals("bob")
+					? List.of(binding("person", VF.createIRI("urn:bob"), "id", VF.createLiteral("bob")))
+					: List.of(), actual);
+			verify(harness.query).setBinding("id", VF.createLiteral("bob"));
+			verify(harness.query, never()).setBinding("id", VF.createLiteral("alice"));
+		}
+	}
+
+	@Test
+	void nativePreparedExpressionPreservesAnIndependentlyNamedCallerBinding() throws Exception {
+		Harness harness = new Harness(false);
+		TupleQueryResult remote = tupleResult(List.of(binding("person", VF.createIRI("urn:bob"))));
+		when(harness.query.evaluate()).thenReturn(remote);
+		Service service = parsedService("?person <urn:test:p> ?value FILTER(?id = \"bob\")");
+		service.setPreparedInputBindings(Map.of("id", VF.createLiteral("bob")));
+		assertEquals(List.of(binding("person", VF.createIRI("urn:bob"), "id", VF.createLiteral("alice"))),
+				collect(harness.service.select(service, Set.of("person"), binding("id", VF.createLiteral("alice")),
+						null)));
+		verify(harness.query).setBinding("id", VF.createLiteral("bob"));
+		verify(harness.query, never()).setBinding("id", VF.createLiteral("alice"));
+	}
+
+	@Test
+	void nativePreparedAskChecksActualSharedOutputs() throws Exception {
+		Harness harness = new Harness(false);
+		TupleQueryResult remote = tupleResult(List.of(binding("id", VF.createLiteral("bob"))));
+		when(harness.query.evaluate()).thenReturn(remote);
+		assertEquals(false, harness.service.ask(preparedService(VF.createLiteral("bob"), true),
+				binding("id", VF.createLiteral("alice")), null));
+		verify(harness.query).evaluate();
+		verify(harness.query).setBinding("id", VF.createLiteral("bob"));
+	}
+
+	@Test
+	void nativePreparedRequestsOmitLocallyOwnedAndUnusedParameters() throws Exception {
+		record ScopeCase(String assignment, BindingSet expectedNative) {
+		}
+		for (ScopeCase scope : List.of(new ScopeCase("BIND(\"local\" AS ?id)", EmptyBindingSet.getInstance()),
+				new ScopeCase("VALUES ?id {\"local\" UNDEF}", binding("id", VF.createLiteral("bob"))))) {
+			Harness harness = new Harness(false);
+			MapBindingSet nativeInputs = new MapBindingSet();
+			doAnswer(invocation -> {
+				nativeInputs.setBinding(invocation.getArgument(0), invocation.getArgument(1));
+				return null;
+			}).when(harness.query).setBinding(anyString(), any(Value.class));
+			TupleQueryResult remote = tupleResult(List.of(binding("person", VF.createIRI("urn:local"))));
+			when(harness.query.evaluate()).thenReturn(remote);
+			Service service = parsedService(scope.assignment() + " ?person <urn:test:p> ?value FILTER(BOUND(?id))");
+			PreparedQueryBindingPlan.create(new QueryRoot(service),
+					binding("id", VF.createLiteral("bob"), "unused", VF.createLiteral("ignored")),
+					PreparedQueryBindingPlan.Mode.EMPTY_INPUT,
+					SPARQLQueries.preparedServiceReadValidator())
+					.apply();
+			assertEquals(List.of(binding("person", VF.createIRI("urn:local"))),
+					collect(harness.service.select(service, Set.of("person"), EmptyBindingSet.getInstance(), null)));
+			assertEquals(scope.expectedNative(), nativeInputs);
+		}
+	}
+
+	@Test
+	void serializedPreparedRequestsDoNotAlsoBindNativeParameters() throws Exception {
+		Harness harness = new Harness();
+		TupleQueryResult remote = tupleResult(List.of());
+		when(harness.query.evaluate()).thenReturn(remote);
+		collect(harness.service.select(preparedService(VF.createLiteral("bob"), true), Set.of("person"),
+				EmptyBindingSet.getInstance(), null));
+		verify(harness.query, never()).setBinding(anyString(), any(Value.class));
+		ArgumentCaptor<String> source = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), source.capture(),
+				nullable(String.class));
+		assertTrue(source.getValue().contains("\"bob\""), source.getValue());
+	}
+
+	@Test
+	void clonedPreparedRequestsRetainOriginalIdentityAndValidateSourceOwnership() {
+		Object receivingScope = new Object();
+		Value original = canonicalAlias(receivingScope);
+		Service service = preparedService(original, false);
+		Service lowered = SPARQLQueries.prepareServiceRequest(service, List.of(), receivingScope, true, true).service();
+		SPARQLQueries.ServiceRequest repeated = SPARQLQueries.prepareServiceRequest(lowered.clone(), List.of(),
+				receivingScope, true, true);
+		assertSame(original, repeated.parameterIdentities().getValue("id"));
+		assertEquals(VF.createBNode("canonical"), repeated.nativeParameters().getValue("id"));
+		assertThrows(QueryEvaluationException.class, () -> SPARQLQueries.prepareServiceRequest(lowered.clone(),
+				List.of(), new Object(), true, true));
+		Service changed = lowered.clone();
+		changed.setExpressionString("?person <urn:test:p> ?changed");
+		assertThrows(QueryEvaluationException.class, () -> SPARQLQueries.prepareServiceRequest(changed,
+				List.of(), receivingScope, true, true));
+		Service changedBase = lowered.clone();
+		changedBase.setBaseURI("urn:changed-base:");
+		assertThrows(QueryEvaluationException.class, () -> SPARQLQueries.prepareServiceRequest(changedBase,
+				List.of(), receivingScope, true, true));
+	}
+
+	@Test
+	void preparedParameterDoesNotReplaceCallerOutputAliasInSingletonEvaluation() throws Exception {
+		assertPreparedParameterPreservesCallerAlias(false, 1);
+	}
+
+	@Test
+	void preparedParameterDoesNotReplaceUnrelatedCallerAliasInSingletonEvaluation() throws Exception {
+		assertPreparedParameterPreservesCallerAlias(true, 1);
+	}
+
+	@Test
+	void preparedParameterPreservesCallerAliasesInMultirowEvaluation() throws Exception {
+		assertPreparedParameterPreservesCallerAlias(false, 2);
+		assertPreparedParameterPreservesCallerAlias(true, 2);
+	}
+
+	private void assertPreparedParameterPreservesCallerAlias(boolean expressionOnly, int rowCount) throws Exception {
+		for (boolean serialized : List.of(false, true)) {
+			Harness harness = new Harness(serialized);
+			Object epoch = new Object();
+			Value parameterAlias = canonicalAlias(epoch);
+			Value runtimeAlias = canonicalAlias(epoch);
+			Value secondRuntimeAlias = canonicalAlias(epoch);
+			TripleTerm nested = VF.createTripleTerm((Resource) runtimeAlias, PREDICATE,
+					VF.createTripleTerm((Resource) secondRuntimeAlias, PREDICATE, runtimeAlias));
+			assertTrue(parameterAlias != runtimeAlias);
+			assertTrue(secondRuntimeAlias != runtimeAlias && secondRuntimeAlias != parameterAlias);
+			harness.service.setBNodeIdentityScope(epoch);
+			harness.service.setBlankNodeReferencesSupported(true);
+			harness.service.setCanonicalBNodeIDsSupported(true);
+			Service service = expressionOnly
+					? parsedService("?person <urn:test:p> ?value FILTER(?id = ?id)")
+					: parsedService("?person <urn:test:p> ?id");
+			service.setPreparedInputBindings(Map.of("id", parameterAlias));
+			String callerColumn = expressionOnly ? "caller" : "id";
+			BindingSet input = binding(callerColumn, runtimeAlias, "secondCaller", secondRuntimeAlias, "nested",
+					nested);
+			when(harness.query.evaluate()).thenAnswer(invocation -> {
+				BindingSet remote = expressionOnly ? binding("person", VF.createIRI("urn:bob"))
+						: binding("person", VF.createIRI("urn:bob"), "id", VF.createBNode("canonical"));
+				return tupleResult(List.of(remote));
+			});
+			List<BindingSet> direct = collect(harness.service.select(service, Set.of("person"), input, null));
+			assertEquals(1, direct.size());
+			assertSame(runtimeAlias, direct.get(0).getValue(callerColumn));
+			assertSame(secondRuntimeAlias, direct.get(0).getValue("secondCaller"));
+			assertSame(nested, direct.get(0).getValue("nested"));
+			if (rowCount > 1 && serialized) {
+				// Subqueries use the same one-invocation local join as native batch providers, without a row index.
+				service = parsedService("{ SELECT * WHERE { " + service.getServiceExpressionString() + " } }");
+				service.setPreparedInputBindings(Map.of("id", parameterAlias));
+			}
+			List<BindingSet> actual = evaluate(harness.service, service,
+					rowCount == 1 ? List.of(input) : List.of(input, input));
+			assertEquals(rowCount, actual.size());
+			for (BindingSet row : actual) {
+				assertSame(runtimeAlias, row.getValue(callerColumn));
+				assertSame(secondRuntimeAlias, row.getValue("secondCaller"));
+				assertSame(nested, row.getValue("nested"));
+				TripleTerm actualNested = (TripleTerm) row.getValue("nested");
+				assertSame(runtimeAlias, actualNested.getSubject());
+				assertSame(secondRuntimeAlias, ((TripleTerm) actualNested.getObject()).getSubject());
+				assertSame(runtimeAlias, ((TripleTerm) actualNested.getObject()).getObject());
+				assertEquals(Set.of("person", callerColumn, "secondCaller", "nested"), row.getBindingNames());
+			}
+		}
+	}
+
+	private static Service parsedService(String body) {
+		TupleExpr query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { SERVICE <urn:test:endpoint> { " + body + " } }", null).getTupleExpr();
+		List<Service> services = new ArrayList<>();
+		query.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				services.add(service);
+			}
+		});
+		return services.get(0);
+	}
+
+	@Test
+	void nativeServiceSelectReceivesApiBindingsRatherThanOnlyInlineValues() throws Exception {
+		Harness harness = new Harness(false);
+		MapBindingSet nativeInputs = new MapBindingSet();
+		doAnswer(invocation -> {
+			nativeInputs.setBinding(invocation.getArgument(0), invocation.getArgument(1));
+			return null;
+		}).when(harness.query).setBinding(anyString(), any(Value.class));
+		when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(
+				VF.createLiteral("bob").equals(nativeInputs.getValue("id"))
+						? List.of(binding("person", VF.createIRI("urn:bob")))
+						: List.of(binding("person", VF.createIRI("urn:bob")),
+								binding("person", VF.createIRI("urn:alice")))));
+		Service service = service(statement("person", "id"), "?person <urn:test:p> ?id", false);
+		List<BindingSet> rows = collect(harness.service.select(service, Set.of("person"),
+				binding("id", VF.createLiteral("bob")), null));
+		assertEquals(List.of(binding("person", VF.createIRI("urn:bob"), "id", VF.createLiteral("bob"))), rows);
+		assertEquals(VF.createLiteral("bob"), nativeInputs.getValue("id"));
+		assertRequestOmitsValues(harness);
+	}
+
+	@Test
+	void nativeServiceAskReceivesApiBindingsRatherThanOnlyInlineValues() throws Exception {
+		Harness harness = new Harness(false);
+		BooleanQuery query = mock(BooleanQuery.class);
+		MapBindingSet nativeInputs = new MapBindingSet();
+		when(harness.connection.prepareBooleanQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+				.thenReturn(query);
+		doAnswer(invocation -> {
+			nativeInputs.setBinding(invocation.getArgument(0), invocation.getArgument(1));
+			return null;
+		}).when(query).setBinding(anyString(), any(Value.class));
+		when(query.evaluate()).thenAnswer(invocation -> nativeInputs.getValue("id") == null
+				|| VF.createLiteral("bob").equals(nativeInputs.getValue("id")));
+		Service service = service(statement("person", "id"), "?person <urn:test:p> ?id", false);
+		assertEquals(false, harness.service.ask(service, binding("id", VF.createLiteral("missing")), null));
+		assertEquals(VF.createLiteral("missing"), nativeInputs.getValue("id"));
+		ArgumentCaptor<String> source = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection).prepareBooleanQuery(any(QueryLanguage.class), source.capture(),
+				nullable(String.class));
+		assertTrue(!source.getValue().contains("VALUES"), source.getValue());
+	}
+
+	@Test
+	void nativeMultirowServiceEvaluatesOnceAndJoinsCompatibleMappingsLocally() throws Exception {
+		Harness harness = new Harness(false);
+		Value bob = VF.createLiteral("bob");
+		Value alice = VF.createLiteral("alice");
+		Value bobPerson = VF.createIRI("urn:bob");
+		Value alicePerson = VF.createIRI("urn:alice");
+		TupleQueryResult remote = tupleResult(List.of(
+				binding("person", bobPerson, "id", bob), binding("person", alicePerson, "id", alice)));
+		when(harness.query.evaluate()).thenReturn(remote);
+		BindingSet bound = binding("id", bob, "input", VF.createLiteral("bound"));
+		BindingSet unbound = binding("input", VF.createLiteral("unbound"));
+		StatementPattern pattern = new StatementPattern(Var.of("person"), Var.of("p", PREDICATE, true, true),
+				Var.of("id"));
+		List<BindingSet> actual = evaluate(harness.service,
+				service(pattern, "?person <urn:test:p> ?id", false),
+				List.of(bound, bound, unbound));
+		assertEquals(List.of(
+				binding("person", bobPerson, "id", bob, "input", VF.createLiteral("bound")),
+				binding("person", bobPerson, "id", bob, "input", VF.createLiteral("bound")),
+				binding("person", bobPerson, "id", bob, "input", VF.createLiteral("unbound")),
+				binding("person", alicePerson, "id", alice, "input", VF.createLiteral("unbound"))), actual);
+		verify(harness.repository).getConnection();
+		verify(harness.query).evaluate();
+		verify(harness.query, never()).setBinding(anyString(), any(Value.class));
+		assertRequestOmitsValues(harness);
+	}
+
+	@Test
+	void nativeIndependentFallbackLeavesCallerReadsOutsideTheInvocation() throws Exception {
+		for (boolean subquery : List.of(false, true)) {
+			for (boolean equalInputs : List.of(false, true)) {
+				Harness harness = new Harness(false);
+				if (!subquery) {
+					harness.service.setBoundJoinBlockSize(1);
+				}
+				String pattern = "?person <urn:test:p> ?id";
+				String body = subquery ? "{ SELECT ?person ?id WHERE { " + pattern + " } }" : pattern;
+				Service service = parsedService(body + " FILTER(?gate = \"allow\")");
+				BindingSet first = binding("gate", VF.createLiteral("allow"));
+				BindingSet second = binding("gate", VF.createLiteral(equalInputs ? "allow" : "deny"));
+				when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(List.of()));
+
+				assertEquals(List.of(), evaluate(harness.service, service, List.of(first, second)));
+				verify(harness.query).evaluate();
+				verify(harness.query, never()).setBinding(anyString(), any(Value.class));
+				ArgumentCaptor<String> source = ArgumentCaptor.forClass(String.class);
+				verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), source.capture(),
+						nullable(String.class));
+				assertTrue(!source.getValue().contains("__rowIdx"), source.getValue());
+			}
+		}
+	}
+
+	@Test
+	void serializedScalarRequestsOmitAnEqualIndependentlyFixedAssignment() throws Exception {
+		Harness harness = new Harness();
+		Service service = parsedService("BIND(<urn:a> AS ?x) BIND(1 AS ?result)");
+		BindingSet input = binding("x", VF.createIRI("urn:a"));
+		BindingSet result = binding("x", VF.createIRI("urn:a"), "result", VF.createLiteral(1));
+		when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(List.of(result)));
+		BooleanQuery ask = mock(BooleanQuery.class);
+		when(harness.connection.prepareBooleanQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+				.thenReturn(ask);
+		when(ask.evaluate()).thenReturn(true);
+
+		assertEquals(List.of(result), collect(harness.service.select(service, Set.of("result"), input, null)));
+		assertTrue(harness.service.ask(service, input, null));
+		assertRequestOmitsValues(harness);
+		verify(ask).evaluate();
+	}
+
+	@Test
+	void serializedBatchKeepsEachAliasOfAnIndependentlyFixedOutput() throws Exception {
+		Harness harness = new Harness();
+		Object scope = new Object();
+		harness.service.setBNodeIdentityScope(scope);
+		harness.service.setBlankNodeReferencesSupported(true);
+		harness.service.setCanonicalBNodeIDsSupported(true);
+		Value parameter = canonicalAlias(scope);
+		Value first = canonicalAlias(scope);
+		Value second = canonicalAlias(scope);
+		Service service = service(new StatementPattern(Var.of("id", parameter).withApiInputOrigin(),
+				Var.of("p", PREDICATE, true, true), Var.of("person")), "?id <urn:test:p> ?person", false);
+		service.setPreparedInputBindings(Map.of("id", parameter));
+		Value person = VF.createIRI("urn:person");
+		when(harness.query.evaluate())
+				.thenAnswer(invocation -> tupleResult(List.of(binding("id", VF.createBNode("canonical"),
+						"person", person))));
+
+		List<BindingSet> result = evaluate(harness.service, service,
+				List.of(binding("id", first), binding("id", second)));
+
+		assertEquals(2, result.size());
+		assertSame(first, result.get(0).getValue("id"));
+		assertSame(second, result.get(1).getValue("id"));
+		assertEquals(person, result.get(0).getValue("person"));
+		assertEquals(person, result.get(1).getValue("person"));
+		verify(harness.query).evaluate();
+	}
+
+	@Test
+	void independentlyFixedServiceOutputDoesNotRemoveItsDynamicSelector() throws Exception {
+		for (boolean serialized : List.of(false, true)) {
+			Harness harness = new Harness(serialized);
+			Service service = parsedService("BIND(<urn:different> AS ?endpoint) BIND(1 AS ?result)");
+			service.setServiceRef(Var.of("endpoint"));
+			BindingSet input = binding("endpoint", VF.createIRI("urn:actual"));
+			BindingSet result = binding("endpoint", VF.createIRI("urn:different"), "result", VF.createLiteral(1));
+			when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(List.of(result)));
+			BooleanQuery ask = mock(BooleanQuery.class);
+			when(harness.connection.prepareBooleanQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+					.thenReturn(ask);
+			when(ask.evaluate()).thenReturn(true);
+
+			assertEquals(List.of(), collect(harness.service.select(service, Set.of("result"), input, null)));
+			assertTrue(!harness.service.ask(service, input, null));
+			verify(harness.query).evaluate();
+			verify(ask).evaluate();
+		}
+	}
+
+	@Test
+	void serializedScalarTransportDoesNotAlsoApplyNativeParameters() throws Exception {
+		Harness harness = new Harness();
+		TupleQueryResult remote = tupleResult(List.of());
+		when(harness.query.evaluate()).thenReturn(remote);
+		BooleanQuery ask = mock(BooleanQuery.class);
+		when(harness.connection.prepareBooleanQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+				.thenReturn(ask);
+		Service service = service(statement("person", "id"), "?person <urn:test:p> ?id", false);
+		BindingSet input = binding("id", VF.createLiteral("bob"));
+		collect(harness.service.select(service, Set.of("person"), input, null));
+		harness.service.ask(service, input, null);
+		verify(harness.query, never()).setBinding(anyString(), any(Value.class));
+		verify(ask, never()).setBinding(anyString(), any(Value.class));
+		ArgumentCaptor<String> selectSource = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), selectSource.capture(),
+				nullable(String.class));
+		ArgumentCaptor<String> askSource = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection).prepareBooleanQuery(any(QueryLanguage.class), askSource.capture(),
+				nullable(String.class));
+		assertTrue(selectSource.getValue().contains("VALUES"), selectSource.getValue());
+		assertTrue(askSource.getValue().contains("VALUES"), askSource.getValue());
+	}
+
+	@Test
+	void nativeMultirowUnsupportedFailureIsNotRetried() throws Exception {
+		assertNativeMultirowFailureIsNotRetried(new UnsupportedOperationException("native evaluation failed"), false);
+	}
+
+	@Test
+	void nativeMultirowMalformedFailureIsNotRetried() throws Exception {
+		assertNativeMultirowFailureIsNotRetried(new MalformedQueryException("native evaluation failed"), false);
+	}
+
+	@Test
+	void silentNativeMultirowUnsupportedFailurePassesInputsThroughOnce() throws Exception {
+		assertNativeMultirowFailureIsNotRetried(new UnsupportedOperationException("native evaluation failed"), true);
+	}
+
+	@Test
+	void silentNativeMultirowMalformedFailurePassesInputsThroughOnce() throws Exception {
+		assertNativeMultirowFailureIsNotRetried(new MalformedQueryException("native evaluation failed"), true);
+	}
+
+	private static void assertNativeMultirowFailureIsNotRetried(RuntimeException failure, boolean silent)
+			throws Exception {
+		Harness harness = new Harness(false);
+		TupleQueryResult retryResult = tupleResult(List.of());
+		when(harness.query.evaluate()).thenThrow(failure).thenReturn(retryResult);
+		List<BindingSet> inputs = List.of(binding("id", VF.createLiteral("bob")),
+				binding("id", VF.createLiteral("alice")));
+		Service service = service(statement("person", "id"), "?person <urn:test:p> ?id", silent);
+		if (silent) {
+			assertEquals(inputs, evaluate(harness.service, service, inputs));
+		} else {
+			assertSame(failure, assertThrows(RuntimeException.class, () -> evaluate(harness.service, service, inputs)));
+		}
+		verify(harness.query).evaluate();
+		verify(harness.repository).getConnection();
+		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class));
+		verify(harness.connection).close();
 	}
 
 	@Test
@@ -328,6 +921,47 @@ class RepositoryFederatedServiceRegressionTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void compatibilityWrappersCloseRawDelegateExactlyOnceOnEarlyClose() {
+		assertAll(List.of(false, true).stream().map(indexed -> () -> {
+			CloseableIteration<BindingSet> raw = mock(CloseableIteration.class);
+			when(raw.hasNext()).thenReturn(true);
+			when(raw.next()).thenReturn(indexed ? binding("x", PREDICATE, "__rowIdx", VF.createLiteral(0))
+					: binding("x", PREDICATE));
+			BindingSet input = binding("x", PREDICATE);
+			try (CloseableIteration<BindingSet> rows = indexed
+					? new ServiceJoinConversionIteration(raw, List.of(input))
+					: new InsertBindingSetCursor(raw, input)) {
+				assertTrue(rows.hasNext());
+				rows.next();
+			}
+			verify(raw).close();
+		}));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void compatibilityWrappersCloseRawDelegateExactlyOnceWhenPredicateFails() {
+		assertAll(List.of(false, true).stream().map(indexed -> () -> {
+			CloseableIteration<BindingSet> raw = mock(CloseableIteration.class);
+			when(raw.hasNext()).thenReturn(true);
+			QueryEvaluationException failure = new QueryEvaluationException("compatibility predicate failed");
+			BindingSet broken = mock(BindingSet.class);
+			when(broken.isEmpty()).thenReturn(false);
+			when(broken.getBinding("x")).thenThrow(failure);
+			when(broken.getValue("__rowIdx")).thenThrow(failure);
+			when(raw.next()).thenReturn(broken);
+			BindingSet input = binding("x", PREDICATE);
+			try (CloseableIteration<BindingSet> rows = indexed
+					? new ServiceJoinConversionIteration(raw, List.of(input))
+					: new InsertBindingSetCursor(raw, input)) {
+				assertSame(failure, assertThrows(QueryEvaluationException.class, rows::hasNext));
+			}
+			verify(raw).close();
+		}));
+	}
+
+	@Test
 	void scalarSelectDoesNotExposeDerivedEndpointOrFixedPredicateBindings() throws Exception {
 		Harness harness = new Harness();
 		Object epoch = new Object();
@@ -404,7 +1038,21 @@ class RepositoryFederatedServiceRegressionTest {
 		assertSame(alias, row.getValue("s"));
 		assertEquals(PREDICATE, row.getValue("p"));
 		assertEquals(callerEndpoint, row.getValue("endpoint"));
-		verify(harness.query).setBinding("p", PREDICATE);
+		ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), queryCaptor.capture(),
+				nullable(String.class));
+		TupleExpr request = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, queryCaptor.getValue(), null)
+				.getTupleExpr();
+		List<BindingSet> transported = new ArrayList<>();
+		request.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment values) {
+				values.getBindingSets().forEach(transported::add);
+			}
+		});
+		// Runtime inputs are represented in executable source, with the canonical subject and real predicate.
+		assertEquals(List.of(binding("s", VF.createBNode("canonical"), "p", PREDICATE)), transported);
+		assertEquals(binding("s", alias, "p", PREDICATE, "endpoint", callerEndpoint), input);
 	}
 
 	@Test
@@ -601,6 +1249,84 @@ class RepositoryFederatedServiceRegressionTest {
 	}
 
 	@Test
+	void localJoinPreservesSelectOverrideDispatch() throws Exception {
+		assertSelectOverrideDispatch(true, List.of(
+				binding("x", VF.createLiteral("first")),
+				binding("x", VF.createLiteral("second"))));
+		assertSelectOverrideDispatch(false, List.of(
+				binding("x", VF.createLiteral("same")),
+				binding("x", VF.createLiteral("same"))));
+	}
+
+	private static void assertSelectOverrideDispatch(boolean serializedBindingTransport, List<BindingSet> inputs)
+			throws Exception {
+		Harness harness = new Harness(serializedBindingTransport);
+		when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(List.of()));
+		AtomicInteger selectCalls = new AtomicInteger();
+		RepositoryFederatedService serviceOverride = new RepositoryFederatedService(harness.repository, false) {
+			@Override
+			public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
+					BindingSet bindings, String baseUri) throws QueryEvaluationException {
+				selectCalls.incrementAndGet();
+				return new ListIteration<>(List.of());
+			}
+		};
+		serviceOverride.setBoundJoinBlockSize(1);
+
+		Service service = parsedService("BIND(?x AS ?y)");
+		assertEquals(List.of(), evaluate(serviceOverride, service, inputs));
+
+		assertEquals(1, selectCalls.get());
+		verify(harness.query, never()).evaluate();
+	}
+
+	@Test
+	void nestedSelectOverrideDoesNotConsumeOuterConnection() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection outerConnection = mock(RepositoryConnection.class);
+		RepositoryConnection nestedConnection = mock(RepositoryConnection.class);
+		TupleQuery outerQuery = mock(TupleQuery.class);
+		TupleQuery nestedQuery = mock(TupleQuery.class);
+		when(repository.getConnection()).thenReturn(outerConnection, nestedConnection);
+		when(outerConnection.supportsSPARQLBindingTransport()).thenReturn(true);
+		when(nestedConnection.supportsSPARQLBindingTransport()).thenReturn(true);
+		when(outerConnection.prepareTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+				.thenReturn(outerQuery);
+		when(nestedConnection.prepareTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+				.thenReturn(nestedQuery);
+		when(outerQuery.evaluate()).thenAnswer(invocation -> tupleResult(List.of()));
+		when(nestedQuery.evaluate()).thenAnswer(invocation -> tupleResult(List.of()));
+		AtomicBoolean enterNested = new AtomicBoolean(true);
+		Service nestedService = parsedService("BIND(\"nested\" AS ?z)");
+		RepositoryFederatedService serviceOverride = new RepositoryFederatedService(repository, false) {
+			@Override
+			public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
+					BindingSet bindings, String baseUri) throws QueryEvaluationException {
+				if (enterNested.getAndSet(false)) {
+					assertEquals(List.of(), RepositoryFederatedServiceRegressionTest.evaluate(this, nestedService,
+							inputBindings(2)));
+				}
+				return super.select(service, projectionVars, bindings, baseUri);
+			}
+		};
+		serviceOverride.setBoundJoinBlockSize(1);
+
+		Service outerService = parsedService("BIND(?x AS ?y)");
+		assertEquals(List.of(), evaluate(serviceOverride, outerService, List.of(
+				binding("x", VF.createLiteral("first")),
+				binding("x", VF.createLiteral("second")))));
+
+		ArgumentCaptor<String> outerSource = ArgumentCaptor.forClass(String.class);
+		verify(outerConnection).prepareTupleQuery(any(QueryLanguage.class), outerSource.capture(),
+				nullable(String.class));
+		ArgumentCaptor<String> nestedSource = ArgumentCaptor.forClass(String.class);
+		verify(nestedConnection).prepareTupleQuery(any(QueryLanguage.class), nestedSource.capture(),
+				nullable(String.class));
+		assertTrue(outerSource.getValue().contains("BIND(?x AS ?y)"), outerSource.getValue());
+		assertTrue(nestedSource.getValue().contains("BIND(\"nested\" AS ?z)"), nestedSource.getValue());
+	}
+
+	@Test
 	void localJoinDoesNotReadRemoteRowsUntilConsumedAndClosesOnEarlyClose() throws Exception {
 		Harness harness = new Harness();
 		Value value = VF.createLiteral("value");
@@ -643,6 +1369,13 @@ class RepositoryFederatedServiceRegressionTest {
 				nullable(String.class));
 		assertTrue(queryCaptor.getValue().contains("VALUES (?" + rowVariable + " ?x)"),
 				"row correlation must use a variable distinct from user variables: " + queryCaptor.getValue());
+	}
+
+	private static void assertRequestOmitsValues(Harness harness) {
+		ArgumentCaptor<String> source = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), source.capture(),
+				nullable(String.class));
+		assertTrue(!source.getValue().contains("VALUES"), source.getValue());
 	}
 
 	private static List<BindingSet> evaluate(RepositoryFederatedService service, Service expression,
@@ -741,7 +1474,12 @@ class RepositoryFederatedServiceRegressionTest {
 		private final RepositoryFederatedService service = new RepositoryFederatedService(repository, false);
 
 		private Harness() throws Exception {
+			this(true);
+		}
+
+		private Harness(boolean serializedBindingTransport) throws Exception {
 			when(repository.getConnection()).thenReturn(connection);
+			when(connection.supportsSPARQLBindingTransport()).thenReturn(serializedBindingTransport);
 			when(connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
 					.thenReturn(query);
 		}

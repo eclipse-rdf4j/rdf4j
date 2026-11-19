@@ -74,6 +74,11 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
+	public boolean supportsSPARQLBindingTransport() {
+		return getDelegate().supportsSPARQLBindingTransport();
+	}
+
+	@Override
 	public void setDelegate(RepositoryConnection delegate) {
 		this.delegate = delegate;
 		setParserConfig(delegate.getParserConfig());

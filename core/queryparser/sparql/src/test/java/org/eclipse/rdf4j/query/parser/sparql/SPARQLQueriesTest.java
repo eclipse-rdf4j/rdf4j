@@ -19,8 +19,12 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.junit.jupiter.api.Test;
 
 public class SPARQLQueriesTest {
@@ -79,5 +83,54 @@ public class SPARQLQueriesTest {
 		assertThat(List.copyOf(first)).isEqualTo(List.copyOf(second));
 		assertThatThrownBy(() -> first.add("late"))
 				.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	public void testPossibleBindingReadsExcludeDeclarationsWithoutSerializingValues() {
+		String query = """
+				ASK {
+				  # ?commentOnly
+				  VALUES ?valuesOnly { 2 }
+				  BIND(?expression AS ?targetOnly)
+				  BIND(2 AS ?declaredAndRead)
+				  FILTER(?declaredAndRead = 2)
+				  <urn:?iriOnly> <urn:p> "?literalOnly" .
+				}
+				""";
+		Set<String> candidates = Set.of("commentOnly", "valuesOnly", "expression", "targetOnly", "declaredAndRead",
+				"iriOnly", "literalOnly");
+		assertThat(SPARQLQueries.getPossibleBindingReadNames(query, candidates))
+				.containsExactlyInAnyOrder("expression", "declaredAndRead");
+
+		String projection = "SELECT (?input AS ?projectionAlias) (COUNT(*) AS ?countAlias) "
+				+ "WHERE { ?s ?p ?o } GROUP BY (?groupInput AS ?groupAlias)";
+		assertThat(SPARQLQueries.getPossibleBindingReadNames(projection,
+				Set.of("input", "projectionAlias", "countAlias", "groupInput", "groupAlias")))
+						.containsExactlyInAnyOrder("input", "groupInput");
+		String bare = "ASK { { SELECT ?projectedOnly WHERE {} } "
+				+ "{ SELECT (COUNT(*) AS ?count) WHERE {} GROUP BY ?groupOnly } }";
+		assertThat(SPARQLQueries.getPossibleBindingReadNames(bare, Set.of("projectedOnly", "groupOnly"))).isEmpty();
+	}
+
+	@Test
+	public void testSavedServiceReadNamesFollowTextRatherThanRewrittenAlgebra() {
+		var parsed = new SPARQLParser().parseQuery(
+				"SELECT ?o WHERE { SERVICE <urn:endpoint> { ?s <urn:p> ?o FILTER(?x = 1) } }", null);
+		var service = new AtomicReference<Service>();
+		parsed.getTupleExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service node) {
+				service.set(node);
+				super.meet(node);
+			}
+		});
+		SPARQLQueries.initializeServiceReferences(service.get());
+		assertThat(service.get().getSavedPossibleReadNames()).contains("x").doesNotContain("y");
+		service.get().setArg(new SingletonSet());
+		SPARQLQueries.initializeServiceReferences(service.get());
+		assertThat(service.get().getSavedPossibleReadNames()).contains("x").doesNotContain("y");
+		service.get().setExpressionString("?s <urn:p> ?o FILTER(?y = 1)");
+		SPARQLQueries.initializeServiceReferences(service.get());
+		assertThat(service.get().getSavedPossibleReadNames()).contains("y").doesNotContain("x");
 	}
 }

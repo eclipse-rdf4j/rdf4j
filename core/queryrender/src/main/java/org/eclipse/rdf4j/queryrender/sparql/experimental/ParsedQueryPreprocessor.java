@@ -505,6 +505,9 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	@Override
 	public void meet(GroupConcat node) throws RuntimeException {
 		super.meet(node);
+		if (node.getSeparator() != null) {
+			node.getSeparator().visit(this);
+		}
 	}
 
 	@Override

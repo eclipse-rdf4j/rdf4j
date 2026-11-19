@@ -994,7 +994,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		ExplainTupleExprCapture explanationCapture = explainTupleExprCapture.get();
+		ExplanationEvaluation explanation = claimExplanationEvaluation();
+		ExplainTupleExprCapture explanationCapture = explanation == null ? null : explainTupleExprCapture.get();
 		LmdbSailStore cacheOwner = resultCacheOwner(explanationCapture);
 		LmdbQueryResultCache.Key cacheKey = null;
 		long cacheRevision = 0L;
@@ -1027,12 +1028,13 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 			TupleExpr attemptExpression = explanationCapture == null ? expression : (TupleExpr) expression.clone();
 			CloseableIteration<? extends BindingSet> evaluation = openEvaluation(attemptExpression, queryDataset,
-					queryBindings, queryIncludeInferred);
+					queryBindings, queryIncludeInferred, explanation);
 			if (explanationCapture != null) {
 				// The optimized model itself escapes through Explanation after its iteration is closed.
 				// Complete its values while this read attempt still owns its epoch and native capabilities.
-				detachTupleValues(attemptExpression);
-				explanationCapture.tupleExpr = attemptExpression;
+				TupleExpr explainedExpression = explanation.preparedExpressionOr(attemptExpression);
+				detachTupleValues(explainedExpression);
+				explanationCapture.tupleExpr = explainedExpression;
 			}
 			return evaluation;
 		};
@@ -1060,11 +1062,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private CloseableIteration<? extends BindingSet> openEvaluation(TupleExpr expression, Dataset dataset,
-			BindingSet bindings, boolean includeInferred) throws SailException {
+			BindingSet bindings, boolean includeInferred, ExplanationEvaluation explanation) throws SailException {
 		Dataset datasetCopy = copyDataset(dataset);
 		BindingSet bindingsCopy = copyBindings(bindings);
 		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(expression, datasetCopy, bindingsCopy, includeInferred)) {
+				super.evaluateInternal(expression, datasetCopy, bindingsCopy, includeInferred, explanation)) {
 			@Override
 			public BindingSet next() {
 				BindingSet row = super.next();

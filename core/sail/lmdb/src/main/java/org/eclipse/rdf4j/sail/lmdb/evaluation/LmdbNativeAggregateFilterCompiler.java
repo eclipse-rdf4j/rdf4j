@@ -285,14 +285,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 */
 	@Override
 	CopyBinding[] compileExtensionCopies(Extension extension) {
-		CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
+		List<ExtensionElem> elements = evaluatedExtensionElements(extension);
+		CopyBinding[] copies = new CopyBinding[elements.size()];
 		for (int i = 0; i < copies.length; i++) {
-			ExtensionElem elem = extension.getElements().get(i);
+			ExtensionElem elem = elements.get(i);
 			ValueExpr expression = elem.getExpr();
 			if (containsAggregateOperator(expression)) {
-				// Aggregate-valued assignments belong to the aggregate root stack (NativeBindingSetExtensionStep over
-				// the Group step). The row tier cannot evaluate them per input row, so the Extension islands instead
-				// of failing the whole compile inside the semantic value compiler.
+				// Aggregates nested inside an executed expression are not placeholders. The row tier cannot
+				// evaluate them per input row, so the generic evaluator owns the complete Extension.
 				return null;
 			}
 			if (expression instanceof ValueConstant valueConstant) {

@@ -147,6 +147,35 @@ class TupleFunctionMagicPropertyRegressionTest {
 	}
 
 	@Test
+	void capturedArgumentKeepsTheConsumerSchedulable() {
+		assertEquals(List.of("1,1,2", "1,2,2", "2,2,2"), query("""
+				SELECT ?x ?y ?limit WHERE {
+				  (?x ?limit) arrf:generateSeries ?y . (1 2) arrf:generateSeries ?x
+				} ORDER BY ?x ?y
+				""", "limit", 2, "x", "y", "limit"));
+	}
+
+	@Test
+	void capturedArgumentsKeepNestedProducerAndConsumerSchedulable() {
+		assertEquals(List.of("1,1,2", "1,2,2", "2,2,2"), query("""
+				SELECT ?x ?y ?limit WHERE {
+				  { (1 ?limit) arrf:generateSeries ?x . (?x ?limit) arrf:generateSeries ?y }
+				  FILTER(?y <= ?limit)
+				} ORDER BY ?x ?y
+				""", "limit", 2, "x", "y", "limit"));
+	}
+
+	@Test
+	void capturedArgumentKeepsUnboundAndIllTypedArgumentsRowLocal() {
+		assertEquals(List.of("1,1,2", "1,2,2"), query("""
+				SELECT ?start ?n ?limit WHERE {
+				  VALUES ?start { 1 UNDEF "invalid" }
+				  (?start ?limit) arrf:generateSeries ?n
+				} ORDER BY ?n
+				""", "limit", 2, "start", "n", "limit"));
+	}
+
+	@Test
 	void existsAndNotExistsRetainCorrelation() {
 		assertEquals(List.of("1", "2"), query("""
 				SELECT ?x WHERE {(1 2) arrf:generateSeries ?x
@@ -211,14 +240,18 @@ class TupleFunctionMagicPropertyRegressionTest {
 	}
 
 	private static List<String> query(String text, boolean bindInput, String... names) {
+		return query(text, bindInput ? "x" : null, 1, names);
+	}
+
+	private static List<String> query(String text, String inputName, int inputValue, String... names) {
 		SailRepository repository = new SailRepository(new MemoryStore());
 		try (var connection = repository.getConnection()) {
 			var vf = SimpleValueFactory.getInstance();
 			connection.add(vf.createIRI("urn:s1"), vf.createIRI("urn:start"), vf.createLiteral(1));
 			connection.add(vf.createIRI("urn:s2"), vf.createIRI("urn:start"), vf.createLiteral(2));
 			TupleQuery query = connection.prepareTupleQuery(PREFIXES + text);
-			if (bindInput) {
-				query.setBinding("x", vf.createLiteral(1));
+			if (inputName != null) {
+				query.setBinding(inputName, vf.createLiteral(inputValue));
 			}
 			try (var rows = query.evaluate()) {
 				List<String> values = new ArrayList<>();

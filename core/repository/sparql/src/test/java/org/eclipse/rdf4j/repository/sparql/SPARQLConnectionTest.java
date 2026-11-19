@@ -55,6 +55,11 @@ public class SPARQLConnectionTest {
 	}
 
 	@Test
+	public void protocolConnectionSupportsSerializedInitialMappings() {
+		assertThat(subject.supportsSPARQLBindingTransport()).isTrue();
+	}
+
+	@Test
 	public void prepareUpdateRejectsMalformedInsertDeleteData() {
 		assertThrows(MalformedQueryException.class,
 				() -> subject.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }", null));

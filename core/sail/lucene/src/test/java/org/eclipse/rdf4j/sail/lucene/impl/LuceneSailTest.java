@@ -21,15 +21,26 @@ import java.util.Map;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.store.ByteBuffersDirectory;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailConnection;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
@@ -119,8 +130,122 @@ public class LuceneSailTest extends AbstractGenericLuceneTest {
 
 		assertThat(actual.rows()).containsExactlyInAnyOrder(
 				luceneRow(SUBJECT_1, PREDICATE_1, "one", true),
+				luceneRow(SUBJECT_1, PREDICATE_2, "one", true),
 				luceneRow(SUBJECT_2, PREDICATE_1, "one", true),
-				luceneRow(SUBJECT_1, PREDICATE_1, "two", true));
+				luceneRow(SUBJECT_2, PREDICATE_2, "one", true),
+				luceneRow(SUBJECT_1, PREDICATE_1, "two", true),
+				luceneRow(SUBJECT_1, PREDICATE_2, "two", true));
+	}
+
+	@Test
+	public void materializedSearchOracleKeepsValuesDomainWithApiExpressionReads() {
+		String query = luceneUnionQuery("BIND(BOUND(?pMatch) AS ?source)",
+				"BIND(BOUND(?pMatch) AS ?source)");
+		assertThat(materializedSearchRows(query, Map.of("pMatch", PREDICATE_1), false))
+				.containsExactlyInAnyOrderElementsOf(expectedUnionRows(true));
+	}
+
+	@Test
+	public void materializedSearchOracleWithoutApiInputKeepsBranchExpressionsUnbound() {
+		String query = luceneUnionQuery("BIND(BOUND(?pMatch) AS ?source)",
+				"BIND(BOUND(?pMatch) AS ?source)");
+		assertThat(materializedSearchRows(query, Map.of(), false))
+				.containsExactlyInAnyOrderElementsOf(expectedUnionRows(false));
+	}
+
+	@Test
+	public void materializedSearchOracleDistinguishesRuntimeInputCompatibility() {
+		String query = luceneUnionQuery("BIND(BOUND(?pMatch) AS ?source)",
+				"BIND(BOUND(?pMatch) AS ?source)");
+		assertThat(materializedSearchRows(query, Map.of("pMatch", PREDICATE_1), true))
+				.containsExactlyInAnyOrder(
+						luceneRow(SUBJECT_1, PREDICATE_1, "one", true),
+						luceneRow(SUBJECT_2, PREDICATE_1, "one", true),
+						luceneRow(SUBJECT_1, PREDICATE_1, "two", true));
+	}
+
+	@Test
+	public void nestedLocalBindShadowsApiInputInLuceneAndMaterializedSearch() {
+		String local = "{ SELECT ?pMatch ?source WHERE { BIND(<urn:predicate2> AS ?pMatch) "
+				+ "BIND(STR(?pMatch) AS ?source) } }";
+		String query = luceneUnionQuery(local, local);
+		List<List<Value>> expected = List.of(
+				luceneRow(SUBJECT_1, PREDICATE_2, "one", "urn:predicate2"),
+				luceneRow(SUBJECT_2, PREDICATE_2, "one", "urn:predicate2"),
+				luceneRow(SUBJECT_1, PREDICATE_2, "two", "urn:predicate2"));
+		for (Map<String, Value> bindings : List.of(Map.<String, Value>of(),
+				Map.<String, Value>of("pMatch", PREDICATE_1))) {
+			assertThat(materializedSearchRows(query, bindings, false))
+					.as("materialized search, bindings=%s", bindings)
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(evaluateAndCapturePlan(query, bindings).rows())
+					.as("indexed search, bindings=%s", bindings)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	private List<List<Value>> materializedSearchRows(String queryString, Map<String, Value> bindings,
+			boolean runtimeInput) {
+		SailRepository oracle = new SailRepository(new MemoryStore());
+		oracle.init();
+		try (RepositoryConnection oracleConnection = oracle.getConnection()) {
+			try (var statements = connection.getStatements(null, null, null, false)) {
+				while (statements.hasNext()) {
+					oracleConnection.add(statements.next());
+				}
+			}
+			// Model the three index hits as ordinary RDF statements. The identical complete query now runs
+			// through MemoryStore without Lucene interpretation, result lowering, or its custom optimizer pipeline.
+			addMaterializedSearchHit(oracleConnection, SUBJECT_1, PREDICATE_1, "one");
+			addMaterializedSearchHit(oracleConnection, SUBJECT_2, PREDICATE_1, "one");
+			addMaterializedSearchHit(oracleConnection, SUBJECT_1, PREDICATE_2, "two");
+			if (runtimeInput) {
+				var parsed = new SPARQLParser().parseQuery(queryString, null);
+				var strategy = new DefaultEvaluationStrategy(new RepositoryTripleSource(oracleConnection),
+						parsed.getDataset(), null);
+				MapBindingSet input = new MapBindingSet(bindings.size());
+				bindings.forEach(input::addBinding);
+				try (var result = strategy.precompile(parsed.getTupleExpr()).evaluate(input)) {
+					return readUnionRows(result);
+				}
+			}
+			TupleQuery query = oracleConnection.prepareTupleQuery(queryString);
+			bindings.forEach(query::setBinding);
+			try (var result = query.evaluate()) {
+				return readUnionRows(result);
+			}
+		} finally {
+			oracle.shutDown();
+		}
+	}
+
+	private static void addMaterializedSearchHit(RepositoryConnection target, IRI subject, IRI property,
+			String query) {
+		var hit = vf.createBNode();
+		target.add(subject, LuceneSailSchema.MATCHES, hit);
+		target.add(hit, LuceneSailSchema.QUERY, vf.createLiteral(query));
+		target.add(hit, LuceneSailSchema.PROPERTY, property);
+		target.add(hit, LuceneSailSchema.SCORE, vf.createLiteral(1.0));
+	}
+
+	private static List<List<Value>> readUnionRows(CloseableIteration<? extends BindingSet> result) {
+		List<List<Value>> rows = new ArrayList<>();
+		while (result.hasNext()) {
+			BindingSet row = result.next();
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("subj", "pMatch", "m", "source");
+			rows.add(List.of(row.getValue("subj"), row.getValue("pMatch"), row.getValue("m"), row.getValue("source")));
+		}
+		return rows;
+	}
+
+	private static List<List<Value>> expectedUnionRows(boolean source) {
+		return List.of(
+				luceneRow(SUBJECT_1, PREDICATE_1, "one", source),
+				luceneRow(SUBJECT_1, PREDICATE_2, "one", source),
+				luceneRow(SUBJECT_2, PREDICATE_1, "one", source),
+				luceneRow(SUBJECT_2, PREDICATE_2, "one", source),
+				luceneRow(SUBJECT_1, PREDICATE_1, "two", source),
+				luceneRow(SUBJECT_1, PREDICATE_2, "two", source));
 	}
 
 	private void assertExternalDependentUnionRows(String leftBind, String rightBind) {

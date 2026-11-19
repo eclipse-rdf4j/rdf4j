@@ -12,21 +12,26 @@
 package org.eclipse.rdf4j.repository.sparql.federation;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
@@ -44,11 +49,24 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
@@ -56,11 +74,12 @@ import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries.ServiceBindingScopes;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.sparql.SPARQLConnection;
 import org.eclipse.rdf4j.repository.sparql.query.InsertBindingSetCursor;
 import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
 import org.slf4j.Logger;
@@ -74,6 +93,39 @@ import org.slf4j.LoggerFactory;
 public class RepositoryFederatedService implements FederatedService {
 
 	private static final String ROW_IDX_VAR = "__rowIdx";
+
+	private static final ClassValue<Boolean> BUILT_IN_VECTOR_EVALUATION = new ClassValue<>() {
+		@Override
+		protected Boolean computeValue(Class<?> type) {
+			// Inspect dispatch only. A class inheriting the repository's plan needs no capability override.
+			// An overridden SELECT can also supply the vector plan's singleton result directly.
+			for (Class<?> implementation = type; implementation != RepositoryFederatedService.class; implementation = implementation
+					.getSuperclass()) {
+				if (declares(implementation, "evaluate", Service.class, CloseableIteration.class, String.class)
+						|| declares(implementation, "evaluateBoundJoinBatch", Service.class, CloseableIteration.class,
+								String.class)
+						|| declares(implementation, "evaluateInternal", Service.class, CloseableIteration.class,
+								String.class)
+						|| declares(implementation, "select", Service.class, Set.class, BindingSet.class,
+								String.class)) {
+					return false;
+				}
+			}
+			return true;
+		}
+	};
+
+	private static boolean declares(Class<?> type, String name, Class<?>... parameters) {
+		try {
+			type.getDeclaredMethod(name, parameters);
+			return true;
+		} catch (NoSuchMethodException inherited) {
+			return false;
+		}
+	}
+
+	private final ScopedValue<CallerRead> callerRead = ScopedValue.newInstance();
+	private static final CallerRead OPAQUE_READ = new CallerRead();
 
 	final static Logger logger = LoggerFactory.getLogger(RepositoryFederatedService.class);
 
@@ -122,16 +174,25 @@ public class RepositoryFederatedService implements FederatedService {
 		protected void handleBindings() throws Exception {
 			// Note: any exceptions here will be intercepted by the caller and tossed asynchronously
 			// via the rightQueue.
-			while (!isClosed() && leftIter.hasNext()) {
+			while (!isClosed()) {
 				ArrayList<BindingSet> blockBindings = new ArrayList<>(blockSize);
-				for (int i = 0; i < blockSize; i++) {
-					if (!leftIter.hasNext()) {
-						break;
+				CallerRead read = new CallerRead();
+				ScopedValue.where(callerRead, read).run(() -> {
+					while ((read.scheduled || blockBindings.size() < blockSize) && leftIter.hasNext()) {
+						blockBindings.add(leftIter.next());
 					}
-					blockBindings.add(leftIter.next());
+				});
+				if (blockBindings.isEmpty()) {
+					break;
 				}
 				CloseableIteration<BindingSet> materializedIter = new CollectionIteration<>(
 						blockBindings);
+				if (read.prepare != null) {
+					materializedIter = guardRuntimeInputs(materializedIter, read.prepare);
+				}
+				if (read.scheduled) {
+					materializedIter = new BoundJoinBatch(materializedIter);
+				}
 				// evaluateInternal is BLOCKING if the HTTP pool is exhausted
 				try (var active = allocation.activate()) {
 					addResult(evaluateInternal(service, materializedIter, service.getBaseURI()));
@@ -193,6 +254,7 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	private final Repository rep;
+	private final ThreadLocal<SelectConnectionContext> selectConnectionContext = new ThreadLocal<>();
 	private volatile boolean blankNodeReferencesSupported;
 	private volatile boolean canonicalBNodeIDsSupported;
 	private volatile Object bnodeIdentityScope;
@@ -247,6 +309,23 @@ public class RepositoryFederatedService implements FederatedService {
 
 	private RepositoryConnection managedConn = null;
 
+	private static final class SelectConnectionContext {
+		private final RepositoryConnection connection;
+		private boolean claimed;
+
+		private SelectConnectionContext(RepositoryConnection connection) {
+			this.connection = connection;
+		}
+
+		private RepositoryConnection claim() {
+			if (claimed) {
+				return null;
+			}
+			claimed = true;
+			return connection;
+		}
+	}
+
 	/**
 	 * @param repo the repository to be used
 	 */
@@ -271,32 +350,101 @@ public class RepositoryFederatedService implements FederatedService {
 	@Override
 	public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
 			BindingSet bindings, String baseUri) throws QueryEvaluationException {
+		SelectConnectionContext context = selectConnectionContext.get();
+		return select(service, projectionVars, bindings, baseUri, context == null ? null : context.claim());
+	}
+
+	private CloseableIteration<BindingSet> dispatchSelect(Service service, Set<String> projectionVars,
+			BindingSet bindings, String baseUri, RepositoryConnection suppliedConnection) {
+		SelectConnectionContext previous = selectConnectionContext.get();
+		SelectConnectionContext current = new SelectConnectionContext(suppliedConnection);
+		selectConnectionContext.set(current);
+		try {
+			return select(service, projectionVars, bindings, baseUri);
+		} finally {
+			if (previous == null) {
+				selectConnectionContext.remove();
+			} else {
+				selectConnectionContext.set(previous);
+			}
+			if (!current.claimed && suppliedConnection != null && useFreshConnection) {
+				closeQuietly(suppliedConnection);
+			}
+		}
+	}
+
+	private CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
+			BindingSet bindings, String baseUri, RepositoryConnection suppliedConnection)
+			throws QueryEvaluationException {
 		BindingSet original = BindingSetSnapshots.copyOf(RemoteBNode.originalBindings(bindings));
 		BlankNodeAllocationScope allocation = BlankNodeAllocationScope.currentOrNew();
 		allocation.reserve(original);
-		RepositoryConnection conn = null;
+		RepositoryConnection conn = suppliedConnection;
 		CloseableIteration<BindingSet> result = null;
 		try {
+			List<BindingSet> originals = List.of(original);
+			Service logical = withResolvedSelector(service, originals);
+			SPARQLQueries.ServiceRequest request = SPARQLQueries.prepareServiceRequest(logical,
+					List.of(), bnodeIdentityScope, blankNodeReferencesSupported, canonicalBNodeIDsSupported);
+			service = request.service();
 			SPARQLQueries.initializeServiceReferences(service);
-			BindingSet outgoing = FederatedServiceIdentity.prepareBindings(service, bindings, bnodeIdentityScope,
-					blankNodeReferencesSupported, canonicalBNodeIDsSupported);
+			TransportInput input = omitIndependentFixedOutputs(original,
+					provenIndependentFixedOutputs(logical, service, originals));
+			BindingSet outgoing = request.prepareRuntimeInput(input.bindings());
 			BindingSet queryBindings = relevantBindings(service, outgoing);
 			BindingSet resultBindings = original;
-			String queryString = service.getSelectQueryString(projectionVars);
-			conn = useFreshConnection ? freshConnection() : getConnection();
-			if (conn instanceof SPARQLConnection) {
+			Set<String> requested = new HashSet<>(projectionVars);
+			requested.addAll(input.omitted());
+			if (conn == null) {
+				conn = useFreshConnection ? freshConnection() : getConnection();
+			}
+			boolean serializedBindings = conn.supportsSPARQLBindingTransport();
+			if (!serializedBindings) {
+				// A consumed parameter is not an initial solution mapping. Preserve every real shared output
+				// needed by the local compatibility join, including names pruned by the caller's bound input.
+				requested.addAll(nativeSharedOutputNames(service, original, request.nativeParameters()));
+				queryBindings = nativeRuntimeBindings(queryBindings, request.nativeParameters());
+			}
+			String privateProjection = null;
+			if (serializedBindings && requested.isEmpty() && !queryBindings.isEmpty()) {
+				// A wildcard would expose expression-only inputs introduced by VALUES. Keep real outputs for the
+				// compatibility join, or project one fresh unbound name to represent each zero-column solution.
+				requested.addAll(remoteOutputBindingNames(service));
+				if (requested.isEmpty()) {
+					Set<String> occupied = occupiedVariableNames(service, originals);
+					occupied.addAll(request.nativeParameters().getBindingNames());
+					privateProjection = freshVariableName(occupied, "__serviceUnit");
+					requested.add(privateProjection);
+				}
+			}
+			String queryString = service.getSelectQueryString(requested);
+			if (serializedBindings) {
 				queryString = SPARQLQueries.withInitialBindings(queryString, queryBindings);
 			}
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
-			if (!(conn instanceof SPARQLConnection)) {
+			if (!serializedBindings) {
+				for (Binding binding : request.nativeParameters()) {
+					query.setBinding(binding.getName(), binding.getValue());
+				}
 				for (Binding binding : queryBindings) {
 					query.setBinding(binding.getName(), binding.getValue());
 				}
 			}
+
 			RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
 					SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
 			response.seedOriginalBindings(original);
+			response.seedOriginalBindings(request.parameterIdentities());
 			result = mapResponse(query.evaluate(), response, resultBindings);
+			if (privateProjection != null) {
+				Set<String> excluded = Set.of(privateProjection);
+				result = new ConvertingIteration<BindingSet, BindingSet>(result) {
+					@Override
+					protected BindingSet convert(BindingSet row) {
+						return BindingSetSnapshots.without(row, excluded);
+					}
+				};
+			}
 			result = new InsertBindingSetCursor(result, resultBindings);
 			if (useFreshConnection) {
 				result = new CloseConnectionIteration(result, conn);
@@ -316,24 +464,50 @@ public class RepositoryFederatedService implements FederatedService {
 
 	@Override
 	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException {
+		BindingSet original = RemoteBNode.originalBindings(bindings);
 		RepositoryConnection conn = null;
 		try {
+			List<BindingSet> originals = List.of(original);
+			Service logical = withResolvedSelector(service, originals);
+			SPARQLQueries.ServiceRequest request = SPARQLQueries.prepareServiceRequest(logical,
+					List.of(), bnodeIdentityScope, blankNodeReferencesSupported, canonicalBNodeIDsSupported);
+			service = request.service();
 			SPARQLQueries.initializeServiceReferences(service);
-			BindingSet outgoing = FederatedServiceIdentity.prepareBindings(service, bindings, bnodeIdentityScope,
-					blankNodeReferencesSupported, canonicalBNodeIDsSupported);
+			TransportInput input = omitIndependentFixedOutputs(original,
+					provenIndependentFixedOutputs(logical, service, originals));
+			BindingSet outgoing = request.prepareRuntimeInput(input.bindings());
 			BindingSet queryBindings = relevantBindings(service, outgoing);
 			String queryString = service.getAskQueryString();
 			conn = useFreshConnection ? freshConnection() : getConnection();
-			if (conn instanceof SPARQLConnection) {
+			boolean serializedBindings = conn.supportsSPARQLBindingTransport();
+			if (!serializedBindings
+					&& !nativeSharedOutputNames(service, original, request.nativeParameters()).isEmpty()) {
+				// ASK alone cannot check compatibility of nullable or locally produced result names. One SELECT
+				// retains those actual outputs and applies the same compatibility join as scalar evaluation.
+				RepositoryConnection nativeConnection = conn;
+				conn = null;
+				try (CloseableIteration<BindingSet> rows = select(service, Set.of(), bindings, baseUri,
+						nativeConnection)) {
+					return rows.hasNext();
+				}
+			}
+			if (serializedBindings) {
 				queryString = SPARQLQueries.withInitialBindings(queryString, queryBindings);
+			} else {
+				queryBindings = nativeRuntimeBindings(queryBindings, request.nativeParameters());
 			}
 			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, queryString, baseUri);
-			if (!(conn instanceof SPARQLConnection)) {
+			if (!serializedBindings) {
+				for (Binding binding : request.nativeParameters()) {
+					query.setBinding(binding.getName(), binding.getValue());
+				}
 				for (Binding binding : queryBindings) {
 					query.setBinding(binding.getName(), binding.getValue());
 				}
 			}
-			return query.evaluate();
+
+			boolean exists = query.evaluate();
+			return exists && !input.hasConflict();
 		} catch (RuntimeException failure) {
 			if (service.isSilent() && !QueryExecutionContext.isReplaySafepointFailure(failure)) {
 				return true;
@@ -351,6 +525,22 @@ public class RepositoryFederatedService implements FederatedService {
 		return true;
 	}
 
+	@Override
+	public boolean validatesRuntimeBindingTransport() {
+		// These implementations use the transport checks below. Existing subclasses can override the
+		// evaluation hooks and keep receiving validated inputs unless they opt into taking responsibility.
+		return usesBuiltInVectorEvaluation();
+	}
+
+	@Override
+	public boolean preservesCallerBindingDomain() {
+		return usesBuiltInVectorEvaluation();
+	}
+
+	private boolean usesBuiltInVectorEvaluation() {
+		return BUILT_IN_VECTOR_EVALUATION.get(getClass());
+	}
+
 	private static BindingSet relevantBindings(Service service, BindingSet outgoing) {
 		MapBindingSet relevant = new MapBindingSet();
 		Set<String> names = FederatedServiceIdentity.relevantBindingNames(service);
@@ -360,6 +550,27 @@ public class RepositoryFederatedService implements FederatedService {
 			}
 		}
 		return relevant;
+	}
+
+	private static Set<String> nativeSharedOutputNames(Service service, BindingSet original,
+			BindingSet parameters) {
+		Set<String> shared = remoteOutputBindingNames(service);
+		shared.retainAll(original.getBindingNames());
+		shared.retainAll(parameters.getBindingNames());
+		return shared;
+	}
+
+	private static BindingSet nativeRuntimeBindings(BindingSet runtime, BindingSet parameters) {
+		if (parameters.isEmpty()) {
+			return runtime;
+		}
+		MapBindingSet independent = new MapBindingSet(runtime.size());
+		for (Binding binding : runtime) {
+			if (!parameters.hasBinding(binding.getName())) {
+				independent.addBinding(binding);
+			}
+		}
+		return independent;
 	}
 
 	private static CloseableIteration<BindingSet> mapResponse(CloseableIteration<BindingSet> raw,
@@ -403,10 +614,90 @@ public class RepositoryFederatedService implements FederatedService {
 		// Invocation can produce. Partitioned (batched) evaluation is therefore only used when the endpoint
 		// has been explicitly declared partition-tolerant; otherwise the input is either pushed down in one
 		// single request (when small enough) or the service pattern is evaluated once and joined locally.
-		if (partitionToleranceDeclared && boundJoinBlockSize > 0) {
+		if (!(bindings instanceof BoundJoinBatch) && partitionToleranceDeclared && boundJoinBlockSize > 0) {
 			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);
 		}
 		return evaluateInternal(service, bindings, service.getBaseURI());
+	}
+
+	/** Sends an existing caller-owned batch through the normal provider hook without partitioning it again. */
+	@Override
+	@InternalUseOnly
+	public CloseableIteration<BindingSet> evaluateBoundJoinBatch(Service service,
+			CloseableIteration<BindingSet> bindings, String baseUri) {
+		return evaluate(service, new BoundJoinBatch(bindings), baseUri);
+	}
+
+	private final class BoundJoinBatch extends IterationWrapper<BindingSet> {
+		private BoundJoinBatch(CloseableIteration<BindingSet> bindings) {
+			super(bindings);
+		}
+
+		@Override
+		public BindingSet next() {
+			if (readsCallerBindings()) {
+				callerRead.get().scheduled = true;
+			}
+			return super.next();
+		}
+	}
+
+	/** Whether this repository's evaluation plan currently owns consumption of the caller stream. */
+	@InternalUseOnly
+	private boolean readsCallerBindings() {
+		return callerRead.isBound() && callerRead.get() != OPAQUE_READ;
+	}
+
+	/**
+	 * Prepares runtime RDF terms when an extension consumes its inputs. Hooks forwarding the iteration to the
+	 * repository implementation let that implementation validate precisely the terms sent by its chosen query plan.
+	 */
+	private CloseableIteration<BindingSet> guardRuntimeInputs(CloseableIteration<BindingSet> callers,
+			UnaryOperator<BindingSet> prepare) {
+		return new IterationWrapper<>(callers) {
+			@Override
+			public BindingSet next() {
+				BindingSet input = super.next();
+				if (readsCallerBindings()) {
+					// This receiving plan owns transport validation. The extension may have wrapped the
+					// iterator before forwarding it; the consumer still determines which values reach the wire.
+					callerRead.get().prepare = prepare;
+					return input;
+				}
+				return prepare.apply(input);
+			}
+		};
+	}
+
+	private static final class CallerRead {
+		private UnaryOperator<BindingSet> prepare;
+		private boolean scheduled;
+	}
+
+	/** An extension may start another query while an outer repository call is consuming its own input. */
+	@InternalUseOnly
+	public CloseableIteration<BindingSet> evaluateCallerStream(Service service, CloseableIteration<BindingSet> callers,
+			boolean scheduled, UnaryOperator<BindingSet> prepare) {
+		var scope = ScopedValue.where(callerRead, OPAQUE_READ);
+		var inputs = guardRuntimeInputs(callers, prepare);
+		var result = scope.call(() -> scheduled ? evaluateBoundJoinBatch(service, inputs, service.getBaseURI())
+				: evaluate(service, inputs, service.getBaseURI()));
+		return new IterationWrapper<>(Iterations.closeOnce(result)) {
+			@Override
+			public boolean hasNext() {
+				return scope.call(super::hasNext);
+			}
+
+			@Override
+			public BindingSet next() {
+				return scope.call(super::next);
+			}
+
+			@Override
+			protected void handleClose() {
+				scope.run(super::handleClose);
+			}
+		};
 	}
 
 	/**
@@ -419,47 +710,149 @@ public class RepositoryFederatedService implements FederatedService {
 			CloseableIteration<BindingSet> bindings, String baseUri) throws QueryEvaluationException {
 		BlankNodeAllocationScope allocation = BlankNodeAllocationScope.currentOrNew();
 		List<BindingSet> originals = new ArrayList<>();
+		CallerRead read = new CallerRead();
 		try (bindings) {
-			while (bindings.hasNext()) {
-				BindingSet snapshot = BindingSetSnapshots.copyOf(RemoteBNode.originalBindings(bindings.next()));
-				originals.add(snapshot);
-				allocation.reserve(snapshot);
-			}
+			ScopedValue.where(callerRead, read).run(() -> {
+				while (bindings.hasNext()) {
+					BindingSet snapshot = BindingSetSnapshots.copyOf(RemoteBNode.originalBindings(bindings.next()));
+					originals.add(snapshot);
+					allocation.reserve(snapshot);
+				}
+			});
 		}
 		if (originals.isEmpty()) {
 			return new EmptyIteration<>();
 		}
 		RepositoryConnection conn = null;
 		CloseableIteration<BindingSet> result = null;
+		BindingSet parameterIdentities = EmptyBindingSet.getInstance();
+		boolean valuesTransportAttempted = false;
 		try (var active = allocation.activate()) {
+			boolean fixedEndpoint = service.hasFixedEndpoint();
+			Service logical = withResolvedSelector(service, originals);
+			SPARQLQueries.ServiceRequest request = SPARQLQueries.prepareServiceRequest(logical, List.of(),
+					bnodeIdentityScope, blankNodeReferencesSupported, canonicalBNodeIDsSupported);
+			service = request.service();
+			parameterIdentities = request.parameterIdentities();
 			SPARQLQueries.initializeServiceReferences(service);
-			List<BindingSet> transported = new ArrayList<>(originals.size());
-			for (BindingSet input : originals) {
-				transported.add(FederatedServiceIdentity.prepareBindings(service, input, bnodeIdentityScope,
-						blankNodeReferencesSupported, canonicalBNodeIDsSupported));
+			Map<String, Value> independentFixed = provenIndependentFixedOutputs(logical, service, originals);
+			List<BindingSet> queryInputs = new ArrayList<>(originals.size());
+			boolean inputOmitted = false;
+			for (BindingSet original : originals) {
+				TransportInput input = omitIndependentFixedOutputs(original, independentFixed);
+				inputOmitted |= !input.omitted().isEmpty();
+				queryInputs.add(input.bindings());
+			}
+			if (fixedEndpoint) {
+				var independentOutputs = SPARQLQueries.independentExistsOutputNames(service, queryInputs,
+						request.nativeParameters());
+				if (independentOutputs.isPresent()) {
+					return evaluateOnceAndJoinLocally(service, originals, baseUri, parameterIdentities, null,
+							EmptyBindingSet.getInstance(), independentOutputs.get());
+				}
+			}
+			List<BindingSet> transported = new ArrayList<>(queryInputs.size());
+			for (BindingSet input : queryInputs) {
+				transported.add(request.prepareRuntimeInput(input));
 			}
 			// Preserve one logical invocation and subquery input scope, after validating every outgoing identity.
 			int singleRequestLimit = boundJoinBlockSize > 0 ? boundJoinBlockSize : Integer.MAX_VALUE;
-			if (!partitionToleranceDeclared && originals.size() > singleRequestLimit
-					|| TupleExprs.containsSubquery(service.getArg())) {
-				return evaluateOnceAndJoinLocally(service, originals, baseUri);
+			boolean localJoin = !read.scheduled && !partitionToleranceDeclared
+					&& originals.size() > singleRequestLimit
+					|| TupleExprs.containsSubquery(service.getArg());
+			boolean scalar = !localJoin && originals.size() == 1;
+			ServiceBindingScopes scopes = localJoin || scalar
+					? nativeBindingScopes(service, transported, request.nativeParameters())
+					: null;
+			if (localJoin && nativeInputPlan(service, scopes).readNames().isEmpty()) {
+				return evaluateOnceAndJoinLocally(service, originals, baseUri, parameterIdentities);
 			}
-			Set<String> projectionVars = new HashSet<>(service.getServiceVars());
-			Set<String> assuredInputNames = new HashSet<>(originals.get(0).getBindingNames());
-			for (BindingSet input : originals) {
+			Set<String> outputNames = remoteOutputBindingNames(service);
+			Set<String> projectionVars = new HashSet<>(outputNames);
+			Set<String> assuredInputNames = new HashSet<>(queryInputs.get(0).getBindingNames());
+			for (BindingSet input : queryInputs) {
 				assuredInputNames.removeIf(name -> input.getValue(name) == null);
 			}
 			projectionVars.removeAll(assuredInputNames);
-			if (originals.size() == 1) {
-				return select(service, projectionVars, transported.get(0), baseUri);
+			if (!scalar || !scopes.independentNames().isEmpty()) {
+				conn = useFreshConnection ? freshConnection() : getConnection();
 			}
-			String rowIndexVar = getRowIndexVar(service, originals);
-			projectionVars.add(rowIndexVar);
+			if (localJoin) {
+				// Retain the selected connection across the overridable select call. The independent request
+				// still uses an empty caller mapping, even on a connection that accepts native inputs.
+				RepositoryConnection localConnection = conn;
+				conn = null;
+				return evaluateOnceAndJoinLocally(service, originals, baseUri, parameterIdentities, localConnection,
+						EmptyBindingSet.getInstance(), outputNames);
+			}
+			boolean serializedBindings = conn != null && conn.supportsSPARQLBindingTransport();
+			if (scalar && (conn == null || serializedBindings)) {
+				RepositoryConnection scalarConnection = conn;
+				conn = null;
+				CloseableIteration<BindingSet> single = dispatchSelect(service, projectionVars, transported.get(0),
+						baseUri, scalarConnection);
+				if (!parameterIdentities.isEmpty()) {
+					RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
+							SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
+					response.seedOriginalBindings(originals.get(0));
+					response.seedOriginalBindings(parameterIdentities);
+					single = new ConvertingIteration<BindingSet, BindingSet>(single) {
+						@Override
+						protected BindingSet convert(BindingSet row) {
+							return response.recoverOriginalBindings(row, originals.get(0));
+						}
+					};
+				}
+				return inputOmitted ? new InsertBindingSetCursor(single, originals.get(0)) : single;
+			}
+			BindingSet nativeBindings = EmptyBindingSet.getInstance();
+			boolean joinCommonNativeResults = false;
+			NativeInputPlan nativePlan = null;
+			if (!serializedBindings) {
+				if (scopes == null) {
+					scopes = nativeBindingScopes(service, transported, request.nativeParameters());
+				}
+				nativePlan = nativeInputPlan(service, scopes);
+				projectionVars = nativePlan.readNames().isEmpty() ? outputNames : new HashSet<>(nativePlan.outputs());
+				BindingSet common = commonNativeInputs(queryInputs, nativePlan.readNames());
+				if (common != null
+						&& common.getBindingNames().stream().noneMatch(scopes.independentNames()::contains)) {
+					// The same native read bindings apply to every row. Check remaining constraints against the
+					// genuine outputs of the one invocation, preserving the original input bag.
+					RepositoryConnection nativeConnection = conn;
+					conn = null;
+					return evaluateOnceAndJoinLocally(service, originals, baseUri, parameterIdentities,
+							nativeConnection, common, projectionVars);
+				}
+				// Assign a common name in the outer relation if a private subquery also uses that spelling.
+				joinCommonNativeResults = common != null;
+			}
+			Set<String> occupiedNames = occupiedVariableNames(service, originals);
+			occupiedNames.addAll(request.nativeParameters().getBindingNames());
+			String rowIndexVar = freshVariableName(occupiedNames, ROW_IDX_VAR);
+			if (!joinCommonNativeResults || projectionVars.isEmpty()) {
+				projectionVars.add(rowIndexVar);
+			}
 			String queryString = service.getSelectQueryString(projectionVars);
-			Set<String> lexicalNames = SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(),
-					FederatedServiceIdentity.relevantBindingNames(service));
-			List<String> relevantNames = getRelevantBindingNames(transported, lexicalNames);
-			if (!relevantNames.isEmpty()) {
+			List<String> relevantNames;
+			if (!serializedBindings) {
+				relevantNames = nativePlan.readNames();
+				MapBindingSet parameters = new MapBindingSet(request.nativeParameters().size());
+				for (Binding parameter : request.nativeParameters()) {
+					parameters.addBinding(parameter);
+				}
+				List<BindingSet> relationInputs = joinCommonNativeResults ? List.of(transported.get(0)) : transported;
+				String relation = nativeInputRelation(relationInputs, relevantNames,
+						joinCommonNativeResults ? null : rowIndexVar, occupiedNames, parameters);
+				queryString = SPARQLQueries.withServiceBindingRelation(queryString, relation);
+				nativeBindings = parameters;
+			} else {
+				Set<String> lexicalNames = SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(),
+						FederatedServiceIdentity.relevantBindingNames(service));
+				relevantNames = getRelevantBindingNames(transported, lexicalNames);
+			}
+			if (serializedBindings && !relevantNames.isEmpty()) {
+				valuesTransportAttempted = true;
 				// Validate each initial mapping's scope before serializing a combined VALUES request.
 				for (BindingSet input : transported) {
 					SPARQLQueries.withInitialBindings(queryString, relevantBindings(service, input));
@@ -468,14 +861,21 @@ public class RepositoryFederatedService implements FederatedService {
 				queryString = insertValuesClause(queryString,
 						buildVALUESClause(transported, relevantNames, rowIndexVar));
 			}
-			conn = useFreshConnection ? freshConnection() : getConnection();
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
+			for (Binding binding : nativeBindings) {
+				query.setBinding(binding.getName(), binding.getValue());
+			}
 			query.setMaxExecutionTime(60);
 			RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
 					SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
+			response.seedOriginalBindings(parameterIdentities);
 			CloseableIteration<BindingSet> raw = query.evaluate();
-			if (relevantNames.isEmpty()) {
-				result = new SPARQLCrossProductIteration(mapResponse(raw, response, null), originals);
+			if (joinCommonNativeResults) {
+				result = new LocalServiceJoinIteration(mapResponse(raw, response, null), originals, response);
+			} else if (relevantNames.isEmpty()) {
+				// A join on omitted output names still needs the caller's own alias for each compatible row.
+				result = inputOmitted ? new LocalServiceJoinIteration(raw, originals, response)
+						: new SPARQLCrossProductIteration(mapResponse(raw, response, null), originals);
 			} else {
 				CloseableIteration<BindingSet> mapped = new ConvertingIteration<BindingSet, BindingSet>(raw) {
 					@Override
@@ -498,8 +898,16 @@ public class RepositoryFederatedService implements FederatedService {
 			return finishSilentResponse(service, owned);
 		} catch (MalformedQueryException | UnsupportedOperationException failure) {
 			closeFailedResponse(result, useFreshConnection ? conn : null, failure);
+			if (!valuesTransportAttempted) {
+				// Native and uncorrelated requests already are the single logical invocation. Retrying them
+				// cannot repair an unsupported VALUES transport and may repeat endpoint effects.
+				if (service.isSilent()) {
+					return new CollectionIteration<>(originals);
+				}
+				throw failure;
+			}
 			try (var active = allocation.activate()) {
-				return evaluateOnceAndJoinLocally(service, originals, baseUri);
+				return evaluateOnceAndJoinLocally(service, originals, baseUri, parameterIdentities);
 			}
 		} catch (RuntimeException failure) {
 			closeFailedResponse(result, useFreshConnection ? conn : null, failure);
@@ -508,6 +916,104 @@ public class RepositoryFederatedService implements FederatedService {
 			}
 			throw failure;
 		}
+	}
+
+	/** Captures dispatch authority before independent result bindings can be removed from executable input rows. */
+	private Service withResolvedSelector(Service service, List<BindingSet> originals) {
+		Var selector = service.getServiceRef();
+		if (selector.hasValue()) {
+			return service;
+		}
+		for (BindingSet original : originals) {
+			FederatedServiceIdentity.validate(service, original, blankNodeReferencesSupported);
+		}
+		// This provider already identifies the receiving repository. The caller's selector can independently
+		// occur as a result column in the SERVICE body, so later filtering must not change dispatch authority.
+		Service resolved = service.clone();
+		resolved.setServiceRef(Var.of(selector.getName(), originals.getFirst().getValue(selector.getName()),
+				selector.isAnonymous(), true, selector.isBNode()));
+		return resolved;
+	}
+
+	/** Values omitted from executable transport remain in the original solution mapping used by every result join. */
+	private record TransportInput(BindingSet bindings, Set<String> omitted, boolean hasConflict) {
+	}
+
+	private Map<String, Value> provenIndependentFixedOutputs(Service logical, Service executable,
+			List<BindingSet> inputs) {
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(logical.getServiceExpr(),
+				EmptyBindingSet.getInstance());
+		var outputs = analysis.outputFacts(logical.getServiceExpr());
+		if (!outputs.guaranteedOutputsKnown() || outputs.fixedValues().isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Value> candidates = new HashMap<>();
+		for (String name : outputs.guaranteedOutputs()) {
+			Value fixed = outputs.fixedValues().get(name);
+			if (fixed != null && inputs.stream().anyMatch(row -> row.getValue(name) != null)) {
+				candidates.put(name, fixed);
+			}
+		}
+		if (candidates.isEmpty()) {
+			return Map.of();
+		}
+		TupleExpr exactSource = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, executable.getAskQueryString(),
+				executable.getBaseURI()).getTupleExpr();
+		QueryAlgebraBindingAnalysis sourceAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(exactSource,
+				EmptyBindingSet.getInstance());
+		var sourceOutputs = sourceAnalysis.outputFacts(exactSource);
+		Map<String, Value> proven = new HashMap<>();
+		for (var candidate : candidates.entrySet()) {
+			String name = candidate.getKey();
+			Value fixed = candidate.getValue();
+			Value sourceFixed = sourceOutputs.fixedValues().get(name);
+			if (fixed == null || sourceFixed == null || !sourceOutputs.guaranteedOutputsKnown()
+					|| !sourceOutputs.guaranteedOutputs().contains(name)
+					|| !QueryAlgebraBindingAnalysis.provesUnusedIncomingValue(logical.getServiceExpr(), name)
+					|| !QueryAlgebraBindingAnalysis.provesUnusedIncomingValue(exactSource, name)) {
+				continue;
+			}
+			Value transportedFixed;
+			try {
+				transportedFixed = RemoteBNode.toRemoteValue(fixed, bnodeIdentityScope, blankNodeReferencesSupported,
+						canonicalBNodeIDsSupported);
+			} catch (QueryEvaluationException unsupportedIdentity) {
+				// An unowned fixed blank node cannot establish remote compatibility authority.
+				continue;
+			}
+			if (transportedFixed.equals(sourceFixed)) {
+				proven.put(name, fixed);
+			}
+		}
+		return Map.copyOf(proven);
+	}
+
+	private static TransportInput omitIndependentFixedOutputs(BindingSet original, Map<String, Value> fixedOutputs) {
+		Set<String> omitted = new HashSet<>();
+		boolean conflict = false;
+		for (var fixed : fixedOutputs.entrySet()) {
+			Value incoming = original.getValue(fixed.getKey());
+			if (incoming != null) {
+				omitted.add(fixed.getKey());
+				conflict |= !sameFixedValue(incoming, fixed.getValue());
+			}
+		}
+		if (omitted.isEmpty()) {
+			return new TransportInput(original, Set.of(), false);
+		}
+		return new TransportInput(BindingSetSnapshots.without(original, omitted), Set.copyOf(omitted), conflict);
+	}
+
+	private static boolean sameFixedValue(Value first, Value second) {
+		if (first.equals(second)) {
+			return true;
+		}
+		if (first instanceof RemoteBNode a && second instanceof RemoteBNode b) {
+			return RemoteBNode.sameTrustedIdentity(a, b);
+		}
+		return first instanceof TripleTerm a && second instanceof TripleTerm b
+				&& a.getPredicate().equals(b.getPredicate()) && sameFixedValue(a.getSubject(), b.getSubject())
+				&& sameFixedValue(a.getObject(), b.getObject());
 	}
 
 	/**
@@ -525,12 +1031,18 @@ public class RepositoryFederatedService implements FederatedService {
 	 * @return resulting iteration
 	 */
 	private CloseableIteration<BindingSet> evaluateOnceAndJoinLocally(Service service,
-			List<BindingSet> allBindings, String baseUri) {
+			List<BindingSet> allBindings, String baseUri, BindingSet parameterIdentities) {
+		return evaluateOnceAndJoinLocally(service, allBindings, baseUri, parameterIdentities, null,
+				EmptyBindingSet.getInstance(), remoteOutputBindingNames(service));
+	}
+
+	private CloseableIteration<BindingSet> evaluateOnceAndJoinLocally(Service service,
+			List<BindingSet> allBindings, String baseUri, BindingSet parameterIdentities,
+			RepositoryConnection suppliedConnection, BindingSet nativeInput, Set<String> projectionVars) {
 		BlankNodeAllocationScope allocation = BlankNodeAllocationScope.currentOrNew();
-		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
 		CloseableIteration<BindingSet> remote;
 		try (var active = allocation.activate()) {
-			remote = select(service, projectionVars, EmptyBindingSet.getInstance(), baseUri);
+			remote = dispatchSelect(service, projectionVars, nativeInput, baseUri, suppliedConnection);
 		} catch (RuntimeException e) {
 			if (!service.isSilent() || QueryExecutionContext.isReplaySafepointFailure(e)) {
 				throw e;
@@ -541,7 +1053,140 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 		RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
 				SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
+		response.seedOriginalBindings(parameterIdentities);
 		return new LocalServiceJoinIteration(remote, allBindings, response);
+	}
+
+	/** Only real SERVICE result names are projected; expression-only transport inputs are not result columns. */
+	private static Set<String> remoteOutputBindingNames(Service service) {
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(service.getServiceExpr(),
+				EmptyBindingSet.getInstance());
+		QueryAlgebraBindingAnalysis.OutputFacts facts = analysis.outputFacts(service.getServiceExpr());
+		Set<String> candidates = facts.possibleOutputsKnown() ? facts.possibleOutputs() : service.getServiceVars();
+		return new HashSet<>(SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(), candidates));
+	}
+
+	private record NativeInputPlan(Set<String> outputs, List<String> readNames) {
+	}
+
+	private ServiceBindingScopes nativeBindingScopes(Service service, List<BindingSet> transported,
+			BindingSet nativeParameters) {
+		Set<String> candidates = new HashSet<>(service.getSavedPossibleReadNames());
+		candidates.removeAll(nativeParameters.getBindingNames());
+		List<String> present = getRelevantBindingNames(transported, candidates);
+		return present.isEmpty()
+				? new ServiceBindingScopes(Set.of(), Set.of())
+				: SPARQLQueries.serviceBindingScopes(service.getAskQueryString(), Set.copyOf(present));
+	}
+
+	private static NativeInputPlan nativeInputPlan(Service service, ServiceBindingScopes scopes) {
+		Set<String> outerReads = scopes.outerReads();
+		if (outerReads.isEmpty()) {
+			return new NativeInputPlan(Set.of(), List.of());
+		}
+		// The saved request can produce results its optimized body no longer advertises. Use the exact
+		// executable source to decide which columns belong to the caller and which must be projected.
+		TupleExpr source = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, service.getAskQueryString(),
+				service.getBaseURI()).getTupleExpr();
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(source,
+				EmptyBindingSet.getInstance());
+		var facts = analysis.outputFacts(source);
+		Set<String> outputs = new HashSet<>(
+				facts.possibleOutputsKnown() ? facts.possibleOutputs() : source.getBindingNames());
+		outputs.retainAll(service.getSavedBindingNames());
+		Set<String> required = new LinkedHashSet<>(outerReads);
+		required.removeAll(outputs);
+		Set<String> shared = new HashSet<>(outerReads);
+		shared.retainAll(outputs);
+		if (!shared.isEmpty()) {
+			// A projected name can still need its caller value when a scalar read has no guaranteed local value.
+			analysis.visitScoped(source, analysis.rootContext(), (node, input) -> {
+				if (node instanceof Projection projection && projection.isSubquery()
+						|| node instanceof TupleExpr tuple
+								&& (TupleExprs.isVariableScopeChange(tuple) || tuple instanceof Graph)
+								&& !insideExists(tuple)) {
+					return false;
+				}
+				if (node instanceof Var variable && shared.contains(variable.getName()) && !variable.hasValue()
+						&& !input.guaranteedNames().contains(variable.getName()) && nativeScalarRead(variable)) {
+					required.add(variable.getName());
+				}
+				return true;
+			});
+		}
+		return new NativeInputPlan(outputs, List.copyOf(required));
+	}
+
+	private static boolean nativeScalarRead(Var variable) {
+		QueryModelNode parent = variable.getParentNode();
+		if (parent instanceof ValueExpr || parent instanceof ExtensionElem || parent instanceof OrderElem
+				|| parent instanceof Filter filter && filter.getCondition() == variable
+				|| parent instanceof LeftJoin optional && optional.getCondition() == variable
+				|| parent instanceof TupleFunctionCall function && function.getArgs().contains(variable)) {
+			return true;
+		}
+		// Relational occurrences inside EXISTS also consume a correlated mapping.
+		return insideExists(variable);
+	}
+
+	private static boolean insideExists(QueryModelNode node) {
+		for (QueryModelNode ancestor = node.getParentNode(); ancestor != null; ancestor = ancestor.getParentNode()) {
+			if (ancestor instanceof Exists) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Returns the one native input mapping common to all rows, or null if a relation is required. */
+	private static BindingSet commonNativeInputs(List<BindingSet> rows, List<String> names) {
+		MapBindingSet common = new MapBindingSet(names.size());
+		for (String name : names) {
+			Value value = rows.get(0).getValue(name);
+			if (value == null) {
+				return null;
+			}
+			for (int index = 1; index < rows.size(); index++) {
+				Value other = rows.get(index).getValue(name);
+				if (other == null || !sameFixedValue(value, other)) {
+					return null;
+				}
+			}
+			common.addBinding(name, value);
+		}
+		return common;
+	}
+
+	private static String nativeInputRelation(List<BindingSet> rows, List<String> names, String rowIndexVar,
+			Set<String> occupiedNames, MapBindingSet parameters) {
+		StringBuilder relation = new StringBuilder(" ");
+		appendNativeInputRelation(relation, rows, 0, rows.size(), names, rowIndexVar, occupiedNames, parameters);
+		return relation.append(' ').toString();
+	}
+
+	private static void appendNativeInputRelation(StringBuilder relation, List<BindingSet> rows, int start, int end,
+			List<String> names, String rowIndexVar, Set<String> occupiedNames, MapBindingSet parameters) {
+		relation.append("{ ");
+		if (end - start == 1) {
+			if (rowIndexVar != null) {
+				relation.append("BIND(\"").append(start).append("\" AS ?").append(rowIndexVar).append(") ");
+			}
+			for (String name : names) {
+				Value value = rows.get(start).getValue(name);
+				if (value != null) {
+					String holder = freshVariableName(occupiedNames, "__serviceInput_" + parameters.size());
+					parameters.addBinding(holder, value);
+					relation.append("BIND(?").append(holder).append(" AS ?").append(name).append(") ");
+				}
+			}
+		} else {
+			// Keep the UNION tree shallow even when all the inputs must fit into one request.
+			int middle = (start + end) >>> 1;
+			appendNativeInputRelation(relation, rows, start, middle, names, rowIndexVar, occupiedNames, parameters);
+			relation.append(" UNION ");
+			appendNativeInputRelation(relation, rows, middle, end, names, rowIndexVar, occupiedNames, parameters);
+		}
+		relation.append(" }");
 	}
 
 	/**
@@ -635,12 +1280,9 @@ public class RepositoryFederatedService implements FederatedService {
 		return sb.toString();
 	}
 
-	/**
-	 * Returns a synthetic row-index variable name that cannot collide with any user-visible variable in the service
-	 * algebra or any input binding.
-	 */
-	private String getRowIndexVar(Service service, List<BindingSet> inputs) {
-		Set<String> occupiedNames = new HashSet<>(service.getServiceVars());
+	private static Set<String> occupiedVariableNames(Service service, List<BindingSet> inputs) {
+		Set<String> occupiedNames = new HashSet<>(service.getSavedBindingNames());
+		occupiedNames.addAll(service.getServiceVars());
 		service.getServiceExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(BindingSetAssignment assignment) {
@@ -656,9 +1298,13 @@ public class RepositoryFederatedService implements FederatedService {
 		for (BindingSet input : inputs) {
 			occupiedNames.addAll(input.getBindingNames());
 		}
-		String name = ROW_IDX_VAR;
-		for (int suffix = 1; occupiedNames.contains(name); suffix++) {
-			name = ROW_IDX_VAR + "_" + suffix;
+		return occupiedNames;
+	}
+
+	private static String freshVariableName(Set<String> occupiedNames, String prefix) {
+		String name = prefix;
+		for (int suffix = 1; !occupiedNames.add(name); suffix++) {
+			name = prefix + "_" + suffix;
 		}
 		return name;
 	}

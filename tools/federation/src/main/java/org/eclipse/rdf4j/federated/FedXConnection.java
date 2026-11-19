@@ -47,9 +47,10 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -78,6 +79,11 @@ import org.slf4j.LoggerFactory;
  * @see WriteStrategy
  */
 public class FedXConnection extends AbstractSailConnection {
+
+	@Override
+	public boolean supportsSPARQLBindingTransport() {
+		return true;
+	}
 
 	private static final Logger log = LoggerFactory.getLogger(FedXConnection.class);
 	protected final FedX federation;
@@ -127,10 +133,18 @@ public class FedXConnection extends AbstractSailConnection {
 			log.debug("Optimization start (Query: " + queryInfo.getQueryID() + ")");
 			start = System.currentTimeMillis();
 		}
+		BindingSet executionInput;
 		try {
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
-			FederationEvaluationStatistics stats = new FederationEvaluationStatistics(queryInfo, dataset);
+			QueryBindingSet logical = new QueryBindingSet(bindings);
+			logical.removeAll(FedXRepositoryConnection.FEDX_BINDINGS);
+			BindingSet parameters = logical.isEmpty() && GraphFrameBindings.from(logical) == GraphFrameBindings.EMPTY
+					? EmptyBindingSet.getInstance()
+					: logical;
+			FederationEvaluationStatistics stats = new FederationEvaluationStatistics(queryInfo, dataset, parameters);
+			// Custom optimizers receive the original metadata and may leave reads for evaluate().
 			query = strategy.optimize(query, stats, bindings);
+			executionInput = stats.getExecutionInput();
 		} catch (Exception e) {
 			log.warn(
 					"Exception occured during optimization (Query: " + queryInfo.getQueryID() + "): " + e.getMessage());
@@ -154,21 +168,9 @@ public class FedXConnection extends AbstractSailConnection {
 		}
 
 		try {
-			// make sure to apply any external bindings
-			BindingSet queryBindings = EmptyBindingSet.getInstance();
-			if (!FedXRepositoryConnection.FEDX_BINDINGS.containsAll(bindings.getBindingNames())) {
-				MapBindingSet actualQueryBindings = new MapBindingSet();
-				bindings.forEach(binding -> {
-					if (!FedXRepositoryConnection.FEDX_BINDINGS.contains(binding.getName())) {
-						actualQueryBindings.addBinding(binding);
-					}
-				});
-				queryBindings = actualQueryBindings;
-			}
-
 			CloseableIteration<? extends BindingSet> res = null;
 			try {
-				res = strategy.evaluate(query, queryBindings);
+				res = strategy.evaluate(query, executionInput);
 
 				// mark the query as PassedThrough, such that outer result handlers are aware of this
 				// Note: for SingleSourceQuery (i.e. where we use pass through) res is explicitly

@@ -81,8 +81,18 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 		if (bindingSet instanceof QueryBindingSet) {
 			bindings.putAll(((QueryBindingSet) bindingSet).bindings);
 		} else {
+			int visibleBindings = 0;
 			for (Binding binding : bindingSet) {
 				this.addBinding(binding);
+				visibleBindings++;
+			}
+			if (visibleBindings < bindingSet.size()) {
+				// Explicit-null bindings occupy the source domain even though its iterator omits them.
+				for (String name : bindingSet.getBindingNames()) {
+					if (bindingSet.hasBinding(name) && bindingSet.getValue(name) == null) {
+						bindings.put(name, null);
+					}
+				}
 			}
 		}
 		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));

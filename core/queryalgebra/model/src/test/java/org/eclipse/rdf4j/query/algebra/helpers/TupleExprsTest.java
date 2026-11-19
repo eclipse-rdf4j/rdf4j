@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class TupleExprsTest {
@@ -169,6 +170,24 @@ public class TupleExprsTest {
 						EmptyBindingSet.getInstance());
 				assertThat(TupleExprs.containsResultSetModifier(composition, analysis)).isTrue();
 			}
+		}
+	}
+
+	@Test
+	public void inputScopedDistinctPreservesCallerBindingsAndNestedScopes() {
+		var nullable = new Union(new SingletonSet(), new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		var independent = new Distinct(nullable);
+		var correlated = Distinct.perInput(nullable.clone());
+		var nested = Distinct.perInput(independent.clone());
+		assertThat(correlated.clone()).isEqualTo(correlated).hasSameHashCodeAs(correlated).isNotEqualTo(independent);
+		for (Distinct distinct : List.of(independent, correlated, nested)) {
+			boolean independentInput = distinct != correlated;
+			var left = new BindingSetAssignment();
+			left.setBindingSets(List.of(new ListBindingSet(List.of("seed"), f.createLiteral(1))));
+			var joined = new Join(left, distinct);
+			var analysis = QueryAlgebraBindingAnalysis.withBindingValues(joined, EmptyBindingSet.getInstance());
+			assertThat(TupleExprs.containsResultSetModifier(distinct, analysis)).isEqualTo(independentInput);
+			assertThat(analysis.contextAt(distinct).guaranteedNames().contains("seed")).isNotEqualTo(independentInput);
 		}
 	}
 

@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -445,7 +446,7 @@ public class QueryStringUtil {
 		appendDatasetClause(res, dataset);
 		res.append("WHERE { ").append(s);
 
-		if (filterExpr != null) {
+		if (filterExpr != null && !QueryAlgebraUtil.hasExplicitNullBindings(bindings)) {
 			try {
 				String filter = filterString(filterExpr, varNames);
 				res.append("FILTER ").append(filter);
@@ -644,8 +645,22 @@ public class QueryStringUtil {
 
 	public static String selectQueryStringBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset, QueryBindingSet graphBindings) {
+		return renderBoundJoinVALUES(stmt, unionBindings, filterExpr, dataset, graphBindings, false).queryString();
+	}
 
-		Set<String> varNames = new ProjectionVariables(stmt, unionBindings, filterExpr, true, graphBindings);
+	public record BoundJoinQuery(String queryString, String indexBindingName, Set<String> valueNames) {
+	}
+
+	public static BoundJoinQuery prepareBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
+			FilterValueExpr filterExpr, Dataset dataset, QueryBindingSet graphBindings) {
+		return renderBoundJoinVALUES(stmt, unionBindings, filterExpr, dataset, graphBindings, true);
+	}
+
+	private static BoundJoinQuery renderBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
+			FilterValueExpr filterExpr, Dataset dataset, QueryBindingSet graphBindings, boolean allocateIndexName) {
+		var varNames = new ProjectionVariables(stmt, unionBindings, filterExpr, true, graphBindings);
+		String legacyIndexName = BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME;
+		String indexName = allocateIndexName ? varNames.privateName(legacyIndexName + "_") : legacyIndexName;
 		StringBuilder res = new StringBuilder();
 
 		String stmtPattern = constructStatement(stmt, varNames, new EmptyBindingSet());
@@ -655,7 +670,7 @@ public class QueryStringUtil {
 			res.append(" ?").append(var);
 		}
 
-		res.append(" ?").append(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME);
+		res.append(" ?").append(indexName);
 
 		res.append(" ");
 		appendDatasetClause(res, dataset);
@@ -673,14 +688,15 @@ public class QueryStringUtil {
 		for (String var : varNames) {
 			res.append("?").append(var).append(" ");
 		}
-		res.append(" ?__index) { ");
+		res.append(" ?").append(indexName).append(") { ");
 
 		int index = 0;
 		for (BindingSet b : unionBindings) {
 			res.append("(");
 			for (String var : varNames) {
-				if (b.hasBinding(var)) {
-					appendValue(res, b.getValue(var)).append(" ");
+				Value value = b.getValue(var);
+				if (value != null) {
+					appendValue(res, value).append(" ");
 				} else {
 					res.append("UNDEF ");
 				}
@@ -695,7 +711,7 @@ public class QueryStringUtil {
 
 		res.append(" }");
 
-		return res.toString();
+		return new BoundJoinQuery(res.toString(), indexName, Set.copyOf(varNames));
 	}
 
 	/**
@@ -1075,15 +1091,11 @@ public class QueryStringUtil {
 				&& variables.graphBindings != null && variables.graphIdentities.contains(value)) {
 			return sb.append("?").append(variables.nativeValue(value));
 		}
-		if (!var.hasValue()) {
-			if (bindings.hasBinding(var.getName())) {
-				return appendValue(sb, bindings.getValue(var.getName()));
-			}
-			varNames.add(var.getName());
-			return sb.append("?").append(var.getName());
-		} else {
-			return appendValue(sb, var.getValue());
+		if (value != null) {
+			return appendValue(sb, value);
 		}
+		varNames.add(var.getName());
+		return sb.append("?").append(var.getName());
 	}
 
 	/**
@@ -1192,7 +1204,7 @@ public class QueryStringUtil {
 	 */
 	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
 		sb.append("'''");
-		sb.append(lit.getLabel().replace("\"", "\\\"").replace("'", "\\'"));
+		sb.append(NTriplesUtil.escapeString(lit.getLabel()).replace("'", "\\'"));
 		sb.append("'''");
 
 		if (lit.getLanguage().isPresent()) {

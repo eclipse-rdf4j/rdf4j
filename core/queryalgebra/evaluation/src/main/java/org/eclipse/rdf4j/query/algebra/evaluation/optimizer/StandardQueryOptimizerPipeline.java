@@ -99,7 +99,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				GRAPH_SCOPE_OPTIMIZER,
 				TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
 				BINDING_SET_ASSIGNMENT_INLINER,
-				new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()),
+				ConstantOptimizer.forStandardPipeline(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,

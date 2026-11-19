@@ -12,13 +12,30 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -28,6 +45,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -40,11 +58,401 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * @author MJAHale
  */
 public class JoinIteratorTest {
+
+	@ParameterizedTest
+	@CsvSource({ "true, true, false", "false, true, false", "false, true, true",
+			"true, false, false", "false, false, false", "false, false, true" })
+	void cleanupOfOpeningOrExhaustedOperandPreservesCancellation(boolean opening, boolean cancel,
+			boolean buffered) throws Exception {
+		var blocked = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		var closes = new AtomicInteger();
+		var cleanup = new IllegalStateException("provider cleanup failed");
+		@SuppressWarnings("unchecked")
+		CloseableIteration<BindingSet> right = mock(CloseableIteration.class,
+				withSettings().extraInterfaces(CooperativeCancellation.class));
+		when(right.hasNext()).thenAnswer(ignored -> {
+			blocked.countDown();
+			assertTrue(release.await(10, TimeUnit.SECONDS));
+			return buffered;
+		});
+		when(((CooperativeCancellation) right).requestCancellation()).thenAnswer(ignored -> {
+			release.countDown();
+			return true;
+		});
+		doAnswer(ignored -> {
+			closes.incrementAndGet();
+			release.countDown();
+			throw cleanup;
+		}).when(right).close();
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+				var join = JoinIterator.getInstance(ignored -> new SingletonIteration<>(EmptyBindingSet.getInstance()),
+						ignored -> {
+							if (opening) {
+								blocked.countDown();
+								try {
+									assertTrue(release.await(10, TimeUnit.SECONDS));
+								} catch (InterruptedException e) {
+									Thread.currentThread().interrupt();
+									throw new AssertionError(e);
+								}
+							}
+							return right;
+						}, EmptyBindingSet.getInstance())) {
+			var read = executor.submit(join::hasNext);
+			try {
+				assertTrue(blocked.await(10, TimeUnit.SECONDS));
+				if (cancel) {
+					assertTrue(CooperativeCancellation.forward(join));
+				} else if (opening) {
+					join.close();
+				} else {
+					assertSame(cleanup, assertThrows(IllegalStateException.class, join::close));
+				}
+				release.countDown();
+				if (cancel || opening) {
+					var failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS))
+							.getCause();
+					if (cancel) {
+						assertInstanceOf(QueryInterruptedException.class, failure);
+						assertTrue(List.of(failure.getSuppressed()).contains(cleanup));
+					} else {
+						assertSame(cleanup, failure);
+					}
+				} else {
+					assertFalse(read.get(10, TimeUnit.SECONDS));
+				}
+				assertEquals(1, closes.get(), "the stopped operand must be released before the reader returns");
+				join.close();
+				assertEquals(1, closes.get());
+			} finally {
+				release.countDown();
+			}
+		}
+	}
+
+	private enum ProviderOutcome {
+		INTERRUPTED,
+		EXHAUSTED,
+		ROW,
+		PROVIDER_FAILURE,
+		PROVIDER_ERROR
+	}
+
+	@ParameterizedTest
+	@EnumSource
+	void rightCleanupPreservesTheReadFailureAfterCancellation(ProviderOutcome outcome) throws Exception {
+		assertRightCleanupFailure(outcome, true);
+	}
+
+	@ParameterizedTest
+	@EnumSource
+	void rightCleanupReportsFailuresAfterClose(ProviderOutcome outcome) throws Exception {
+		assertRightCleanupFailure(outcome, false);
+	}
+
+	private void assertRightCleanupFailure(ProviderOutcome outcome, boolean cancel) throws Exception {
+		var reading = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		var closes = new AtomicInteger();
+		var cleanup = new IllegalStateException("provider cleanup failed");
+		Throwable providerFailure = switch (outcome) {
+		case INTERRUPTED -> new QueryInterruptedException("provider interrupted");
+		case EXHAUSTED -> new NoSuchElementException("provider exhausted");
+		case ROW -> null;
+		case PROVIDER_FAILURE -> new QueryEvaluationException("provider failed");
+		case PROVIDER_ERROR -> new AssertionError("provider failed");
+		};
+		@SuppressWarnings("unchecked")
+		CloseableIteration<BindingSet> right = mock(CloseableIteration.class,
+				withSettings().extraInterfaces(CooperativeCancellation.class));
+		when(right.hasNext()).thenReturn(true);
+		when(right.next()).thenAnswer(ignored -> {
+			reading.countDown();
+			assertTrue(release.await(10, TimeUnit.SECONDS));
+			if (providerFailure != null) {
+				throw providerFailure;
+			}
+			return EmptyBindingSet.getInstance();
+		});
+		when(((CooperativeCancellation) right).requestCancellation()).thenAnswer(ignored -> {
+			release.countDown();
+			return true;
+		});
+		doAnswer(ignored -> {
+			closes.incrementAndGet();
+			throw cleanup;
+		}).when(right).close();
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+				var join = JoinIterator.getInstance(ignored -> new SingletonIteration<>(EmptyBindingSet.getInstance()),
+						ignored -> right, EmptyBindingSet.getInstance())) {
+			var read = executor.submit(join::hasNext);
+			try {
+				assertTrue(reading.await(10, TimeUnit.SECONDS));
+				if (cancel) {
+					assertTrue(CooperativeCancellation.forward(join));
+				} else {
+					join.close();
+				}
+				var failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS)).getCause();
+				if (outcome == ProviderOutcome.EXHAUSTED || outcome == ProviderOutcome.ROW) {
+					if (cancel) {
+						assertInstanceOf(QueryInterruptedException.class, failure);
+					} else {
+						assertSame(cleanup, failure);
+					}
+				} else {
+					assertSame(providerFailure, failure);
+				}
+				if (failure != cleanup) {
+					assertTrue(List.of(failure.getSuppressed()).contains(cleanup));
+				}
+				join.close();
+				assertEquals(1, closes.get());
+			} finally {
+				release.countDown();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false, false", "false, true", "true, false", "true, true" })
+	void stopClosesAnInFlightNextWithoutCooperativeCancellation(boolean cancel, boolean exhausted) throws Exception {
+		var reading = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		var closes = new AtomicInteger();
+		@SuppressWarnings("unchecked")
+		CloseableIteration<BindingSet> right = mock(CloseableIteration.class);
+		when(right.hasNext()).thenReturn(true);
+		when(right.next()).thenAnswer(ignored -> {
+			reading.countDown();
+			assertTrue(release.await(10, TimeUnit.SECONDS));
+			if (exhausted) {
+				throw new NoSuchElementException("provider was closed");
+			}
+			return EmptyBindingSet.getInstance();
+		});
+		doAnswer(ignored -> {
+			closes.incrementAndGet();
+			release.countDown();
+			return null;
+		}).when(right).close();
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+				var join = JoinIterator.getInstance(ignored -> new SingletonIteration<>(EmptyBindingSet.getInstance()),
+						ignored -> right, EmptyBindingSet.getInstance())) {
+			var read = executor.submit(join::hasNext);
+			try {
+				assertTrue(reading.await(10, TimeUnit.SECONDS));
+				var control = executor.submit(() -> {
+					if (cancel) {
+						assertTrue(CooperativeCancellation.forward(join));
+					} else {
+						join.close();
+					}
+				});
+				control.get(5, TimeUnit.SECONDS);
+				assertEquals(1, closes.get(), "control must release the blocking provider");
+				if (cancel) {
+					var failure = assertThrows(ExecutionException.class, () -> read.get(5, TimeUnit.SECONDS));
+					assertInstanceOf(QueryInterruptedException.class, failure.getCause());
+				} else {
+					assertFalse(read.get(5, TimeUnit.SECONDS));
+				}
+				join.close();
+				assertEquals(1, closes.get());
+			} finally {
+				release.countDown();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void stoppedJoinDiscardsAnInFlightNext(boolean cancel) throws Exception {
+		var reading = new CountDownLatch(1);
+		var interrupted = new CountDownLatch(1);
+		var nextReturned = new CountDownLatch(1);
+		var closes = new AtomicInteger();
+		class ReadingOperand implements CloseableIteration<BindingSet>, CooperativeCancellation {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+
+			@Override
+			public BindingSet next() {
+				reading.countDown();
+				try {
+					assertTrue(interrupted.await(10, TimeUnit.SECONDS));
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(e);
+				}
+				nextReturned.countDown();
+				return EmptyBindingSet.getInstance();
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				interrupted.countDown();
+				return true;
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+				assertEquals(0, nextReturned.getCount(), "close raced the provider's active next call");
+			}
+		}
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+				var join = JoinIterator.getInstance(ignored -> new SingletonIteration<>(EmptyBindingSet.getInstance()),
+						ignored -> new ReadingOperand(), EmptyBindingSet.getInstance())) {
+			var read = executor.submit(join::hasNext);
+			try {
+				assertTrue(reading.await(10, TimeUnit.SECONDS));
+				if (cancel) {
+					assertTrue(CooperativeCancellation.forward(join));
+					var failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+					assertInstanceOf(QueryInterruptedException.class, failure.getCause());
+				} else {
+					join.close();
+					assertFalse(read.get(10, TimeUnit.SECONDS));
+				}
+				join.close();
+				assertEquals(1, closes.get());
+			} finally {
+				interrupted.countDown();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false, false", "false, true", "true, false", "true, true" })
+	void stoppedRightOperandNeverReadsBufferedRow(boolean previouslyActive, boolean cancel) throws Exception {
+		var checking = new CountDownLatch(1);
+		var stopped = new CountDownLatch(1);
+		var nextCalls = new AtomicInteger();
+		class BufferedOperand implements CloseableIteration<BindingSet>, CooperativeCancellation {
+			@Override
+			public boolean hasNext() {
+				if (!previouslyActive || nextCalls.get() == 1) {
+					checking.countDown();
+					try {
+						assertTrue(stopped.await(10, TimeUnit.SECONDS));
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(e);
+					}
+				}
+				return true;
+			}
+
+			@Override
+			public BindingSet next() {
+				nextCalls.incrementAndGet();
+				return EmptyBindingSet.getInstance();
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				stopped.countDown();
+				return true;
+			}
+
+			@Override
+			public void close() {
+				stopped.countDown();
+			}
+		}
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+				var join = JoinIterator.getInstance(ignored -> new SingletonIteration<>(EmptyBindingSet.getInstance()),
+						ignored -> new BufferedOperand(), EmptyBindingSet.getInstance())) {
+			if (previouslyActive) {
+				assertEquals(EmptyBindingSet.getInstance(), join.next());
+			}
+			var read = executor.submit(join::hasNext);
+			try {
+				assertTrue(checking.await(10, TimeUnit.SECONDS));
+				if (cancel) {
+					assertTrue(CooperativeCancellation.forward(join));
+					var failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+					assertInstanceOf(QueryInterruptedException.class, failure.getCause());
+				} else {
+					join.close();
+					assertFalse(read.get(10, TimeUnit.SECONDS));
+				}
+				assertEquals(previouslyActive ? 1 : 0, nextCalls.get());
+			} finally {
+				stopped.countDown();
+			}
+		}
+	}
+
+	@Test
+	void lateRightOperandIsClosedOnceWhenReaderAndControllerBothOwnItsClose() throws Exception {
+		var opening = new CountDownLatch(1);
+		var finishOpen = new CountDownLatch(1);
+		var closingLeft = new CountDownLatch(1);
+		var finishLeftClose = new CountDownLatch(1);
+		var closingRight = new CountDownLatch(1);
+		var finishRightClose = new CountDownLatch(1);
+		var rightCloses = new AtomicInteger();
+		@SuppressWarnings("unchecked")
+		CloseableIteration<BindingSet> left = mock(CloseableIteration.class);
+		when(left.hasNext()).thenReturn(true, false);
+		when(left.next()).thenReturn(EmptyBindingSet.getInstance());
+		doAnswer(invocation -> {
+			closingLeft.countDown();
+			assertTrue(finishLeftClose.await(10, TimeUnit.SECONDS));
+			return null;
+		}).when(left).close();
+		@SuppressWarnings("unchecked")
+		CloseableIteration<BindingSet> right = mock(CloseableIteration.class);
+		doAnswer(invocation -> {
+			if (rightCloses.incrementAndGet() == 1) {
+				closingRight.countDown();
+				assertTrue(finishRightClose.await(10, TimeUnit.SECONDS));
+			}
+			return null;
+		}).when(right).close();
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+				var join = JoinIterator.getInstance(ignored -> left, ignored -> {
+					opening.countDown();
+					try {
+						assertTrue(finishOpen.await(10, TimeUnit.SECONDS));
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(interrupted);
+					}
+					return right;
+				}, EmptyBindingSet.getInstance())) {
+			var read = executor.submit(join::hasNext);
+			try {
+				assertTrue(opening.await(10, TimeUnit.SECONDS));
+				var close = executor.submit(join::close);
+				assertTrue(closingLeft.await(10, TimeUnit.SECONDS));
+				finishOpen.countDown();
+				assertTrue(closingRight.await(10, TimeUnit.SECONDS));
+				finishLeftClose.countDown();
+				close.get(10, TimeUnit.SECONDS);
+				assertEquals(1, rightCloses.get());
+				finishRightClose.countDown();
+				assertFalse(read.get(10, TimeUnit.SECONDS));
+			} finally {
+				finishOpen.countDown();
+				finishLeftClose.countDown();
+				finishRightClose.countDown();
+			}
+		}
+	}
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 

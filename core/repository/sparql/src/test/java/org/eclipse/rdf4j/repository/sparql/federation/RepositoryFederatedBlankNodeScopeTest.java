@@ -14,15 +14,20 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,13 +41,16 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
@@ -95,16 +103,112 @@ class RepositoryFederatedBlankNodeScopeTest {
 	@Test
 	void directCanonicalAskRestoresTrustedRemoteIdentity() {
 		var fixture = fixture();
+		// This test records serialized initial mappings in the executable SPARQL request.
+		when(fixture.connection.supportsSPARQLBindingTransport()).thenReturn(true);
 		Object epoch = new Object();
 		fixture.service.setBNodeIdentityScope(epoch);
 		fixture.service.setBlankNodeReferencesSupported(true);
 		fixture.service.setCanonicalBNodeIDsSupported(true);
 		var response = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, epoch, true);
 		Value alias = response.map(VF.createBNode("canonical-remote"));
-		fixture.service.ask(service(false), binding("s", alias), null);
-		var value = ArgumentCaptor.forClass(Value.class);
-		verify(fixture.ask).setBinding(eq("s"), value.capture());
-		assertEquals(VF.createBNode("canonical-remote"), value.getValue());
+		MapBindingSet input = binding("s", alias);
+		BNode unrelated = VF.createBNode("canonical-remote");
+		input.addBinding("local", unrelated);
+		Service logical = service(false);
+		Service snapshot = logical.clone();
+		assertTrue(fixture.service.ask(logical, input, null));
+		var source = ArgumentCaptor.forClass(String.class);
+		verify(fixture.connection).prepareBooleanQuery(eq(QueryLanguage.SPARQL), source.capture(), isNull());
+		verify(fixture.ask).evaluate();
+		List<BindingSetAssignment> mappings = new ArrayList<>();
+		QueryParserUtil.parseBooleanQuery(QueryLanguage.SPARQL, source.getValue(), null)
+				.getTupleExpr()
+				.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(BindingSetAssignment assignment) {
+						mappings.add(assignment);
+					}
+				});
+		assertEquals(1, mappings.size());
+		var rows = mappings.get(0).getBindingSets().iterator();
+		BindingSet transported = rows.next();
+		assertFalse(rows.hasNext());
+		assertEquals(Set.of("s"), transported.getBindingNames());
+		assertEquals(VF.createBNode("canonical-remote"), transported.getValue("s"));
+		assertFalse(transported.getValue("s") instanceof RemoteBNode);
+		assertEquals(Set.of("s", "local"), input.getBindingNames());
+		assertSame(alias, input.getValue("s"));
+		assertSame(unrelated, input.getValue("local"));
+		assertEquals(snapshot, logical);
+
+		Value foreign = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, new Object(), true)
+				.map(VF.createBNode("canonical-remote"));
+		for (Value unsupported : List.of(unrelated, foreign)) {
+			assertThrows(QueryEvaluationException.class,
+					() -> fixture.service.ask(logical, binding("s", unsupported), null));
+		}
+		verify(fixture.connection, times(1)).prepareBooleanQuery(any(QueryLanguage.class), anyString(), isNull());
+		verify(fixture.ask, times(1)).evaluate();
+		assertEquals(snapshot, logical);
+	}
+
+	@Test
+	void nativeCanonicalAskAndSelectRetainTrustedIdentityThroughApiBindings() {
+		var fixture = fixture();
+		Object epoch = new Object();
+		fixture.service.setBNodeIdentityScope(epoch);
+		fixture.service.setBlankNodeReferencesSupported(true);
+		fixture.service.setCanonicalBNodeIDsSupported(true);
+		BNode canonical = VF.createBNode("canonical-remote");
+		Value alias = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, epoch, true).map(canonical);
+		BNode unrelated = VF.createBNode("canonical-remote");
+		MapBindingSet input = binding("s", alias);
+		input.addBinding("local", unrelated);
+		MapBindingSet askInputs = new MapBindingSet();
+		doAnswer(call -> {
+			askInputs.setBinding(call.getArgument(0), call.getArgument(1));
+			return null;
+		}).when(fixture.ask).setBinding(anyString(), any(Value.class));
+		when(fixture.ask.evaluate()).thenAnswer(ignored -> canonical.equals(askInputs.getValue("s")));
+		Service logical = service(false);
+		Service snapshot = logical.clone();
+		assertTrue(fixture.service.ask(logical, input, null));
+		assertEquals(canonical, askInputs.getValue("s"));
+		assertFalse(askInputs.getValue("s") instanceof RemoteBNode);
+		assertFalse(askInputs.hasBinding("local"));
+
+		TupleQuery select = mock(TupleQuery.class);
+		MapBindingSet selectInputs = new MapBindingSet();
+		when(fixture.connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), isNull())).thenReturn(select);
+		doAnswer(call -> {
+			selectInputs.setBinding(call.getArgument(0), call.getArgument(1));
+			return null;
+		}).when(select).setBinding(anyString(), any(Value.class));
+		MapBindingSet remote = binding("s", canonical);
+		remote.addBinding("o", canonical);
+		when(select.evaluate()).thenAnswer(ignored -> new IteratingTupleQueryResult(List.of("s", "o"),
+				canonical.equals(selectInputs.getValue("s")) ? List.of(remote) : List.of()));
+		try (var rows = fixture.service.select(logical, Set.of("s", "o"), input, null)) {
+			BindingSet row = rows.next();
+			assertSame(alias, row.getValue("s"));
+			assertSame(alias, row.getValue("o"));
+			assertSame(unrelated, row.getValue("local"));
+			assertFalse(rows.hasNext());
+		}
+		assertEquals(canonical, selectInputs.getValue("s"));
+		assertFalse(selectInputs.getValue("s") instanceof RemoteBNode);
+		assertFalse(selectInputs.hasBinding("local"));
+		assertSame(alias, input.getValue("s"));
+		assertSame(unrelated, input.getValue("local"));
+		assertEquals(snapshot, logical);
+		var askSource = ArgumentCaptor.forClass(String.class);
+		verify(fixture.connection).prepareBooleanQuery(eq(QueryLanguage.SPARQL), askSource.capture(), isNull());
+		var selectSource = ArgumentCaptor.forClass(String.class);
+		verify(fixture.connection).prepareTupleQuery(eq(QueryLanguage.SPARQL), selectSource.capture(), isNull());
+		assertFalse(askSource.getValue().contains("VALUES"));
+		assertFalse(selectSource.getValue().contains("VALUES"));
+		verify(fixture.ask).evaluate();
+		verify(select).evaluate();
 	}
 
 	@Test
@@ -135,7 +239,7 @@ class RepositoryFederatedBlankNodeScopeTest {
 			return new IteratingTupleQueryResult(List.of("o"), List.of(row, row));
 		});
 		when(ask.evaluate()).thenReturn(true);
-		return new Fixture(new RepositoryFederatedService(repository), ask);
+		return new Fixture(new RepositoryFederatedService(repository), connection, ask);
 	}
 
 	private static MapBindingSet binding(String name, Value value) {
@@ -150,6 +254,6 @@ class RepositoryFederatedBlankNodeScopeTest {
 				silent);
 	}
 
-	private record Fixture(RepositoryFederatedService service, BooleanQuery ask) {
+	private record Fixture(RepositoryFederatedService service, RepositoryConnection connection, BooleanQuery ask) {
 	}
 }

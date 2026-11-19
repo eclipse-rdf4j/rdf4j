@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 
 /** Immutable lexical binding metadata captured before optimizers discard pattern uses or aliases. */
@@ -181,12 +182,14 @@ final class NativeValuePositionAnalysis {
 
 	private static List<QueryModelNode> children(QueryModelNode node) {
 		List<QueryModelNode> children = new ArrayList<>();
-		node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+		var collector = new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode child) {
 				children.add(child);
 			}
-		});
+		};
+		node.visitChildren(collector);
+		TupleExprs.visitGroupConcatSeparator(node, collector);
 		return children;
 	}
 
@@ -255,6 +258,7 @@ final class NativeValuePositionAnalysis {
 		protected void meetNode(QueryModelNode node) {
 			scopes.put(node, scope);
 			super.meetNode(node);
+			TupleExprs.visitGroupConcatSeparator(node, this);
 		}
 
 		@Override
@@ -362,6 +366,10 @@ final class NativeValuePositionAnalysis {
 		@Override
 		public void meet(ExtensionElem node) {
 			Symbol output = scope.symbol(node.getName());
+			if (!TupleExprs.isEvaluatedExtensionElement(node)) {
+				scopes.put(node, scope);
+				return;
+			}
 			if (node.getExpr() instanceof Var var && variable(var)) {
 				output.join(scope.symbol(var.getName()));
 			}

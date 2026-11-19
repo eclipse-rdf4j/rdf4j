@@ -114,7 +114,7 @@ class FederatedBlankNodeScopeTest {
 	}
 
 	@Test
-	void silentAskFailureRetainsEndpointSemantics() {
+	void silentFullyBoundSelectFailureRetainsEndpointSemantics() {
 		for (EndpointKind endpointKind : EndpointKind.values()) {
 			assertSilentFailure(endpointKind, true, false);
 		}
@@ -144,13 +144,13 @@ class FederatedBlankNodeScopeTest {
 		return service(silent, EndpointKind.CONSTANT, false);
 	}
 
-	private static Service service(boolean silent, EndpointKind endpointKind, boolean askOnly) {
+	private static Service service(boolean silent, EndpointKind endpointKind, boolean fullyBound) {
 		Var endpoint = switch (endpointKind) {
 		case CONSTANT -> Var.of("endpoint", VF.createIRI("urn:service"), true, true);
 		case RUNTIME_ASSIGNED -> Var.of("endpoint", VF.createIRI("urn:service"), false, false);
 		case API_BOUND -> Var.of("endpoint");
 		};
-		if (askOnly) {
+		if (fullyBound) {
 			var pattern = new StatementPattern(Var.of("s", VF.createIRI("urn:s"), true, true),
 					Var.of("p", VF.createIRI("urn:p"), true, true),
 					Var.of("o", VF.createIRI("urn:o"), true, true));
@@ -160,8 +160,8 @@ class FederatedBlankNodeScopeTest {
 		return new Service(endpoint, pattern, "?s <urn:p> ?o", Map.of(), null, silent);
 	}
 
-	private static void assertSilentFailure(EndpointKind endpointKind, boolean askOnly, boolean unsupportedBNode) {
-		Service service = service(true, endpointKind, askOnly);
+	private static void assertSilentFailure(EndpointKind endpointKind, boolean fullyBound, boolean unsupportedBNode) {
+		Service service = service(true, endpointKind, fullyBound);
 		MapBindingSet input = new MapBindingSet();
 		input.addBinding("caller", VF.createLiteral("original"));
 		if (endpointKind == EndpointKind.API_BOUND) {
@@ -181,11 +181,10 @@ class FederatedBlankNodeScopeTest {
 		}
 		try (var rows = step.evaluate(input)) {
 			assertEquals(expected, rows.next(),
-					endpointKind + " / ask=" + askOnly + " / preflight=" + unsupportedBNode);
+					endpointKind + " / fully bound=" + fullyBound + " / preflight=" + unsupportedBNode);
 			assertFalse(rows.hasNext());
 		}
-		assertEquals(askOnly && !unsupportedBNode ? 1 : 0, remote.askCalls);
-		assertEquals(!askOnly && !unsupportedBNode ? 1 : 0, remote.selectCalls);
+		assertEquals(unsupportedBNode ? 0 : 1, remote.selectCalls);
 	}
 
 	private enum EndpointKind {
@@ -195,13 +194,11 @@ class FederatedBlankNodeScopeTest {
 	}
 
 	private static final class FailingRemoteService implements FederatedService {
-		private int askCalls;
 		private int selectCalls;
 
 		@Override
 		public boolean ask(Service service, BindingSet bindings, String baseURI) {
-			askCalls++;
-			throw new QueryEvaluationException("remote ASK failed");
+			throw new AssertionError("Tuple SERVICE must preserve result multiplicity");
 		}
 
 		@Override

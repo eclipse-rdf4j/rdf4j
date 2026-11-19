@@ -57,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.IsResource;
 import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -86,6 +87,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.TupleFunctionGroupQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -1786,7 +1788,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * declared {@code rightInputBindingNames} plus the operator-entry frame visible. Inexact-visibility laterals return
 	 * null and fall back to the existing island path unchanged.
 	 */
-	private SlotPlan compileLateral(org.eclipse.rdf4j.query.algebra.Lateral lateral, boolean duplicateInsensitive) {
+	private SlotPlan compileLateral(Lateral lateral, boolean duplicateInsensitive) {
 		if (lateral.getRightArg() instanceof Join join
 				&& TupleFunctionGroupQueryEvaluationStep.isTupleFunctionGroup(join)) {
 			// A tuple-only group chooses its next call from each row's actual argument bindings. Native joins have
@@ -1880,6 +1882,14 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return demoted;
 			}
 		}
+		if (expr instanceof Lateral lateral
+				&& lateral.getQueryModelMetadata(LateralQueryEvaluationStep.InvocationScope.class) != null) {
+			// The generic LATERAL step applies the scope around the whole invocation, including lazy reads.
+			return island(lateral);
+		}
+		if (expr instanceof Union union && UnionQueryEvaluationStep.requiresSequentialOpening(union)) {
+			return island(union);
+		}
 		if (islandScopeChanges && expr != lexicalCompileRoot && TupleExprs.isVariableScopeChange(expr)) {
 			// An unsafe nested scope change must evaluate against its lexical entry frame, never the mutable outer
 			// row. Compile every legal scope boundary as an evaluation-scoped native plan; the legacy island remains
@@ -1903,8 +1913,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			return plan;
 		}
-		if (expr instanceof TupleFunctionCall) {
-			return compileTupleFunction((TupleFunctionCall) expr);
+		if (expr instanceof TupleFunctionCall call) {
+			// The generic evaluator owns guarded dispatch, fallback, and active-graph arguments.
+			return call.getFallback() == null ? compileTupleFunction(call) : null;
 		}
 		if (expr instanceof org.eclipse.rdf4j.query.algebra.TripleRef) {
 			SlotPlan tripleScan = compileTripleRef((org.eclipse.rdf4j.query.algebra.TripleRef) expr);
@@ -1913,10 +1924,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			// fall through to the island whitelist tail below (kill switch off, unsupported source, ...)
 		}
-		if (expr instanceof org.eclipse.rdf4j.query.algebra.Lateral) {
-			SlotPlan lateral = compileLateral((org.eclipse.rdf4j.query.algebra.Lateral) expr, duplicateInsensitive);
-			if (lateral != null) {
-				return lateral;
+		if (expr instanceof Lateral lateral) {
+			SlotPlan plan = compileLateral(lateral, duplicateInsensitive);
+			if (plan != null) {
+				return plan;
 			}
 			// fall through to the island fallback (kill switch off, inexact visibility, uncompilable arms)
 		}
@@ -2222,7 +2233,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			HashSet<String> extensionRequired = new HashSet<>(previousRequired);
 			// BIND inputs must keep duplicate-insensitive OPTIONAL pruning sound when the expression observes them.
 			for (ExtensionElem elem : extension.getElements()) {
-				extensionRequired.addAll(VarNameCollector.process(elem.getExpr()));
+				if (TupleExprs.isEvaluatedExtensionElement(elem)) {
+					extensionRequired.addAll(VarNameCollector.process(elem.getExpr()));
+				}
 			}
 			requiredAggregateNames = extensionRequired;
 			SlotPlan arg;

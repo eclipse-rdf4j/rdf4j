@@ -84,6 +84,11 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
  */
 public class SPARQLConnection extends AbstractRepositoryConnection implements HttpClientDependent {
 
+	@Override
+	public boolean supportsSPARQLBindingTransport() {
+		return true;
+	}
+
 	private static final String COUNT_EVERYTHING = "SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }";
 
 	private static final String EVERYTHING = "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }";

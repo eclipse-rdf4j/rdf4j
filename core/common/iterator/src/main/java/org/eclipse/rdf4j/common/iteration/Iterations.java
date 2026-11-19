@@ -17,10 +17,13 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * This class consists exclusively of static methods that operate on or return Iterations. It is the
@@ -28,6 +31,24 @@ import java.util.stream.StreamSupport;
  *
  */
 public class Iterations {
+
+	/**
+	 * Owns a cursor that may be closed by its reader on exhaustion and concurrently by a controlling thread. Only the
+	 * first close reaches the delegate, even if its cleanup is still in progress.
+	 */
+	@InternalUseOnly
+	public static <E> CloseableIteration<E> closeOnce(CloseableIteration<E> delegate) {
+		return new IterationWrapper<>(delegate) {
+			private final AtomicBoolean released = new AtomicBoolean();
+
+			@Override
+			protected void handleClose() {
+				if (released.compareAndSet(false, true)) {
+					super.handleClose();
+				}
+			}
+		};
+	}
 
 	/**
 	 * Get a List containing all elements obtained from the specified iteration.

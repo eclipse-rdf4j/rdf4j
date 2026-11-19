@@ -27,12 +27,10 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -43,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Semantic native Extension over BindingSets after a Group has materialized authoritative RDF values. */
@@ -56,10 +55,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
 		List<Assignment> assignments = new ArrayList<>();
 		for (ExtensionElem element : extension.getElements()) {
-			if (element.getExpr() instanceof AggregateOperator) {
-				if (!matchesGroupBinding(element, group)) {
-					return null;
-				}
+			if (!TupleExprs.isEvaluatedExtensionElement(element)) {
+				// Group owns the result. Its unevaluated placeholder may retain the original parameter syntax.
 				continue;
 			}
 			NativeBindingSetValueEvaluator evaluator = NativeBindingSetValueCompiler.compile(element.getExpr(),
@@ -74,16 +71,6 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 		}
 		return assignments.isEmpty() ? arg
 				: new NativeBindingSetExtensionStep(arg, assignments.toArray(Assignment[]::new));
-	}
-
-	private static boolean matchesGroupBinding(ExtensionElem extensionElem, Group group) {
-		for (GroupElem groupElem : group.getGroupElements()) {
-			if (extensionElem.getName().equals(groupElem.getName())
-					&& extensionElem.getExpr().equals(groupElem.getOperator())) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private NativeBindingSetExtensionStep(QueryEvaluationStep arg, Assignment[] assignments) {

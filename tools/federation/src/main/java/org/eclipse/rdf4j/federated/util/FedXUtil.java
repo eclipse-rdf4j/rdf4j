@@ -215,7 +215,11 @@ public class FedXUtil {
 	}
 
 	private static Resource physicalContext(Resource graph) {
-		return RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph) ? null : graph;
+		return isDefaultGraphAlias(graph) ? null : graph;
+	}
+
+	public static boolean isDefaultGraphAlias(Value graph) {
+		return RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph);
 	}
 
 	/**

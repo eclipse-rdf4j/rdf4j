@@ -50,18 +50,19 @@ class ServiceJoinIteratorTelemetryTest {
 		Service service = new Service(
 				Var.of("serviceRef"),
 				new SingletonSet(),
-				"{ VALUES ?x { 1 } }",
+				"",
 				Collections.emptyMap(),
 				null,
 				false);
 		service.setRuntimeTelemetryEnabled(true);
 
 		FederatedService federatedService = mock(FederatedService.class);
-		when(federatedService.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI())))
-				.thenAnswer(invocation -> {
-					LockSupport.parkNanos(1_000_000L);
-					return true;
-				});
+		when(federatedService.select(eq(service), eq(Collections.emptySet()), any(BindingSet.class),
+				eq(service.getBaseURI())))
+						.thenAnswer(invocation -> {
+							LockSupport.parkNanos(1_000_000L);
+							return new SingletonIteration<>(EmptyBindingSet.getInstance());
+						});
 
 		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
 		when(resolver.getService("http://example.com/service-1")).thenReturn(federatedService);
@@ -101,14 +102,15 @@ class ServiceJoinIteratorTelemetryTest {
 		Service service = new Service(
 				Var.of("serviceRef"),
 				new SingletonSet(),
-				"{ VALUES ?x { 1 } }",
+				"",
 				Collections.emptyMap(),
 				null,
 				false);
 		service.setRuntimeTelemetryEnabled(true);
 
 		FederatedService federatedService = mock(FederatedService.class);
-		when(federatedService.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI()))).thenReturn(true);
+		when(federatedService.select(eq(service), eq(Collections.emptySet()), any(BindingSet.class),
+				eq(service.getBaseURI()))).thenReturn(new SingletonIteration<>(EmptyBindingSet.getInstance()));
 
 		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
 		when(resolver.getService("http://example.com/service")).thenReturn(federatedService);
@@ -133,8 +135,8 @@ class ServiceJoinIteratorTelemetryTest {
 		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
 		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL))
 				.isEqualTo(1L);
-		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
-		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL)).isEqualTo(4L);
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL)).isPositive();
 	}
 
 	@Test
@@ -222,6 +224,7 @@ class ServiceJoinIteratorTelemetryTest {
 		ClosingIteration result = new ClosingIteration();
 		FederatedService federatedService = mock(FederatedService.class);
 		when(federatedService.preservesBNodeResultProvenance()).thenReturn(true);
+		when(federatedService.preservesCallerBindingDomain()).thenReturn(true);
 		when(federatedService.evaluate(eq(service), any(), eq(service.getBaseURI()))).thenReturn(result);
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.getService("http://example.com/service")).thenReturn(federatedService);

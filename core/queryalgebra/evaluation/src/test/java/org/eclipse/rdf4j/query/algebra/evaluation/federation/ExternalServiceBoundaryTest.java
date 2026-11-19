@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQu
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
@@ -64,13 +65,11 @@ class ExternalServiceBoundaryTest {
 			bindings.addBinding("input", input);
 			Service service = service(ask, constant);
 			FederatedService remote = mock(FederatedService.class);
-			when(remote.ask(any(), any(), any())).thenAnswer(call -> {
-				assertTrue(initialized.contains(input));
-				return true;
-			});
 			when(remote.select(any(), anySet(), any(), any())).thenAnswer(call -> {
 				assertTrue(initialized.contains(input));
-				assertTrue(initialized.contains(constant));
+				if (!ask) {
+					assertTrue(initialized.contains(constant));
+				}
 				return new SingletonIteration<>(bindings);
 			});
 			FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
@@ -93,11 +92,12 @@ class ExternalServiceBoundaryTest {
 		Service service = service(false, null);
 		FederatedService remote = mock(FederatedService.class);
 		when(remote.preservesBNodeResultProvenance()).thenReturn(true);
+		when(remote.preservesCallerBindingDomain()).thenReturn(true);
 		when(remote.evaluate(any(), any(), any())).thenAnswer(call -> {
 			CloseableIteration<BindingSet> rows = call.getArgument(1);
 			BindingSet row = rows.next();
 			assertTrue(initialized.contains(input), "Remote code can retain each input row");
-			return new SingletonIteration<>(row);
+			return new SingletonIteration<>(RemoteBNode.originalBindings(row));
 		});
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.getService("urn:test:service")).thenReturn(remote);
@@ -151,6 +151,6 @@ class ExternalServiceBoundaryTest {
 	private static Service service(boolean ask, Value subject) {
 		return new Service(Var.of("service", SimpleValueFactory.getInstance().createIRI("urn:test:service")),
 				ask ? new SingletonSet() : new StatementPattern(Var.of("s", subject), new Var("p"), new Var("o")),
-				"{ ?s ?p ?o }", Collections.emptyMap(), null, false);
+				ask ? "" : "{ ?s ?p ?o }", Collections.emptyMap(), null, false);
 	}
 }

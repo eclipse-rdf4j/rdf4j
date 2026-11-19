@@ -16,6 +16,7 @@ import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -102,7 +103,7 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 	}
 
 	protected BindingSet convert(Statement st) {
-		QueryBindingSet result = new QueryBindingSet(bindings);
+		QueryBindingSet result = QueryAlgebraUtil.copyBindings(bindings);
 
 		if (updateSubj) {
 			result.addBinding(stmt.getSubjectVar().getName(), st.getSubject());

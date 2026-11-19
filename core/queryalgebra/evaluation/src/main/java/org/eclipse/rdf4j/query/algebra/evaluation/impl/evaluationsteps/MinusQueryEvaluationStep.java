@@ -19,13 +19,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Intersection;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Lateral;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
 
@@ -50,8 +44,8 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 	/** Shared operand-output domain for generic and native MINUS compatibility checks. */
 	@InternalUseOnly
 	public static Set<String> comparisonBindingNames(TupleExpr leftArg, TupleExpr rightArg) {
-		Set<String> leftOutputNames = actualOutputBindingNames(leftArg);
-		Set<String> rightOutputNames = actualOutputBindingNames(rightArg);
+		Set<String> leftOutputNames = Difference.actualOutputBindingNames(leftArg);
+		Set<String> rightOutputNames = Difference.actualOutputBindingNames(rightArg);
 		Set<String> shared = new HashSet<>(leftOutputNames);
 		shared.retainAll(rightOutputNames);
 		return Set.copyOf(shared);
@@ -65,38 +59,4 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 		return new SPARQLMinusIteration(leftQes.evaluate(bindings), rightQes.apply(bindings), comparisonBindingNames);
 	}
 
-	private static Set<String> actualOutputBindingNames(TupleExpr expression) {
-		if (expression instanceof Difference) {
-			return actualOutputBindingNames(((Difference) expression).getLeftArg());
-		}
-		if (expression instanceof Filter) {
-			return actualOutputBindingNames(((Filter) expression).getArg());
-		}
-		if (expression instanceof Join join) {
-			return union(actualOutputBindingNames(join.getLeftArg()), actualOutputBindingNames(join.getRightArg()));
-		}
-		if (expression instanceof LeftJoin leftJoin) {
-			return union(actualOutputBindingNames(leftJoin.getLeftArg()),
-					actualOutputBindingNames(leftJoin.getRightArg()));
-		}
-		if (expression instanceof Lateral lateral) {
-			return union(actualOutputBindingNames(lateral.getLeftArg()),
-					actualOutputBindingNames(lateral.getRightArg()));
-		}
-		if (expression instanceof Union union) {
-			return union(actualOutputBindingNames(union.getLeftArg()), actualOutputBindingNames(union.getRightArg()));
-		}
-		if (expression instanceof Intersection intersection) {
-			Set<String> names = actualOutputBindingNames(intersection.getLeftArg());
-			names.retainAll(actualOutputBindingNames(intersection.getRightArg()));
-			return names;
-		}
-		return new HashSet<>(expression.getBindingNames());
-	}
-
-	private static Set<String> union(Set<String> left, Set<String> right) {
-		Set<String> result = new HashSet<>(left);
-		result.addAll(right);
-		return result;
-	}
 }

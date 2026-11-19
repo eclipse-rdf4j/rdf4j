@@ -15,21 +15,25 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -41,8 +45,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
@@ -90,8 +95,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(body);
 			Set<String> visibleNames = SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(),
 					outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : service.getServiceVars());
-			resultBindings = restoreRuntimeBindings(originalBindings,
-					FederatedServiceIdentity.runtimeAssignedInputs(service, originalBindings, visibleNames, analysis));
+			resultBindings = BindingSetSnapshots.copyOf(restoreRuntimeBindings(originalBindings,
+					FederatedServiceIdentity.runtimeAssignedInputs(service, originalBindings, visibleNames, analysis)));
 			BindingSet invocationBindings = resultBindings;
 			if (!(endpoint instanceof IRI)) {
 				throw new QueryEvaluationException("SERVICE endpoint must be an IRI bound at evaluation time");
@@ -105,47 +110,36 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 						"Unsupported blank-node identity: receiving SERVICE lacks reference support");
 			}
 
-			// create a copy of the free variables, and remove those for which
-			// bindings are available (we can set them as constraints!)
-			Set<String> freeVars = new HashSet<>(visibleNames);
-			freeVars.removeAll(invocationBindings.getBindingNames());
+			SPARQLQueries.ServiceRequest request = SPARQLQueries.prepareServiceRequest(service,
+					List.of(), receivingScope, referenceSupport, canonicalIDs);
+			Service requestService = request.service();
 
-			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport,
-					canonicalIDs);
+			Optional<Set<String>> independentOutputs = service.hasFixedEndpoint()
+					? SPARQLQueries.independentExistsOutputNames(requestService, List.of(invocationBindings),
+							request.nativeParameters())
+					: Optional.empty();
+			boolean independent = independentOutputs.isPresent();
+			Set<String> serviceOutputs = independentOutputs.orElse(visibleNames);
+			Set<String> freeVars = new HashSet<>(serviceOutputs);
+			if (independent) {
+				// Shared output names must remain available for the compatibility join.
+				bindings = EmptyBindingSet.getInstance();
+			} else {
+				// A domain entry without an RDF term leaves the remote output unconstrained.
+				freeVars.removeIf(name -> invocationBindings.getValue(name) != null);
+				bindings = request.prepareRuntimeInput(invocationBindings);
+			}
 			if (runtimeTelemetryEnabled) {
 				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
 						estimateRequestBytes(service, bindings, freeVars));
 			}
 
 			String baseUri = service.getBaseURI();
-			ExternalValuePreparation.initializeQueryModel(service);
+			ExternalValuePreparation.initializeQueryModel(requestService);
 			QueryExecutionContext.initializeExternalBindings(bindings);
 
-			// special case: no free variables => perform ASK query
-			if (outputs.possibleOutputsKnown() && freeVars.isEmpty()) {
-				if (runtimeTelemetryEnabled) {
-					incrementLongMetric(service, TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL);
-				}
-				boolean exists;
-				try (var allocationActivation = allocation.activate();
-						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					exists = fs.ask(service, bindings, baseUri);
-				}
-				QueryExecutionContext.checkpointReplaySafepoint();
-				if (runtimeTelemetryEnabled) {
-					addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL, exists ? 4 : 5);
-				}
-
-				// check if triples are available (with inserted bindings)
-				if (exists) {
-					return new SingletonIteration<>(invocationBindings);
-				} else {
-					return EMPTY_ITERATION;
-				}
-
-			}
-
-			// otherwise: perform a SELECT query
+			// A fully bound tuple request still contributes one caller row per compatible remote solution.
+			Set<String> boundOutputs = outputs.possibleOutputsKnown() && freeVars.isEmpty() ? serviceOutputs : null;
 			if (runtimeTelemetryEnabled) {
 				incrementLongMetric(service, TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL);
 			}
@@ -153,7 +147,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			try {
 				try (var allocationActivation = allocation.activate();
 						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					results = fs.select(service, freeVars, bindings, baseUri);
+					results = fs.select(requestService, freeVars, bindings, baseUri);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				if (runtimeTelemetryEnabled) {
@@ -162,12 +156,16 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation, localFactory,
 						receivingScope, canonicalIDs);
 				response.seedOriginalBindings(invocationBindings);
+				response.seedOriginalBindings(request.parameterIdentities());
 				results = new ConvertingIteration<BindingSet, BindingSet>(results) {
 					@Override
 					protected BindingSet convert(BindingSet row) {
 						return response.map(row, invocationBindings);
 					}
 				};
+				// Providers receive the transportable RDF terms. Reattach the caller's full domain even when a
+				// provider has already inserted those terms into its result rows.
+				results = joinServiceResults(results, invocationBindings, boundOutputs);
 				CloseableIteration<BindingSet> checked = ExternalValuePreparation.checkReplayAfterCalls(results);
 				if (service.isSilent()) {
 					results = null;
@@ -204,15 +202,56 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
+	private static CloseableIteration<BindingSet> joinServiceResults(CloseableIteration<BindingSet> remote,
+			BindingSet input, Set<String> boundOutputs) {
+		if (boundOutputs == null && input == EmptyBindingSet.getInstance()) {
+			return remote;
+		}
+		return new LookAheadIteration<>() {
+			@Override
+			protected BindingSet getNextElement() {
+				while (remote.hasNext()) {
+					BindingSet row = remote.next();
+					if (boundOutputs != null) {
+						// An empty projection may use SELECT *. Ignore columns outside the SERVICE output domain.
+						if (compatibleBoundOutputs(input, row, boundOutputs)) {
+							return input;
+						}
+					} else if (QueryResults.bindingSetsCompatible(input, row)) {
+						return BindingSetSnapshots.mergeWithPrecedence(input, row);
+					}
+				}
+				return null;
+			}
+
+			@Override
+			protected void handleClose() {
+				remote.close();
+			}
+
+			@Override
+			protected boolean forwardCancellation() {
+				return CooperativeCancellation.forward(remote);
+			}
+		};
+	}
+
+	private static boolean compatibleBoundOutputs(BindingSet input, BindingSet remote, Set<String> names) {
+		for (String name : names) {
+			Value remoteValue = remote.getValue(name);
+			Value inputValue = input.getValue(name);
+			if (remoteValue != null && inputValue != null && !inputValue.equals(remoteValue)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private static BindingSet restoreRuntimeBindings(BindingSet originals, BindingSet runtimeInputs) {
-		MapBindingSet restored = new MapBindingSet(originals.size() + 1);
-		for (Binding binding : originals) {
-			restored.addBinding(binding);
+		if (runtimeInputs.isEmpty()) {
+			return originals;
 		}
-		for (Binding binding : runtimeInputs) {
-			restored.addBinding(binding);
-		}
-		return restored;
+		return BindingSetSnapshots.mergeWithPrecedence(originals, runtimeInputs);
 	}
 
 	/** Shared validation for scalar and vectored SERVICE inputs; lexical constants remain receiving-service owned. */
