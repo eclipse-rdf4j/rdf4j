@@ -125,7 +125,12 @@ public class SailConnectionWrapper
 		wrappedCon.close();
 	}
 
+	/**
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
 	@Override
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public boolean supportsGraphAlgebra() {
 		// A subclass may inspect or replace algebra and must explicitly confirm its own compatibility.
 		return getClass() == SailConnectionWrapper.class && wrappedCon.supportsGraphAlgebra();

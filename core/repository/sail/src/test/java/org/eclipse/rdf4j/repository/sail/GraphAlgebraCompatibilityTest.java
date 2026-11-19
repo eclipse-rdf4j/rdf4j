@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -23,12 +24,64 @@ import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class GraphAlgebraCompatibilityTest {
+
+	@Test
+	void jvmPolicyKeepsCapabilityGatesAndExplicitPrecedence() {
+		String key = "org.eclipse.rdf4j.query.graphAlgebraMode";
+		String saved = System.getProperty(key);
+		try {
+			for (boolean capable : new boolean[] { false, true }) {
+				SailConnection sail = mock(SailConnection.class, CALLS_REAL_METHODS);
+				when(sail.supportsGraphAlgebra()).thenReturn(capable);
+				try (var connection = new SailRepositoryConnection(mock(SailRepository.class), sail)) {
+					for (String property : new String[] { "AUTO", "GRAPH", "LEGACY", " legacy " }) {
+						System.setProperty(key, property);
+						GraphAlgebraMode expected = property.trim().equalsIgnoreCase("LEGACY") || !capable
+								? GraphAlgebraMode.LEGACY
+								: GraphAlgebraMode.GRAPH;
+						var tuple = connection.prepareTupleQuery(QueryLanguage.SPARQL,
+								"SELECT * WHERE { GRAPH ?g { ?s ?p ?o } }", null);
+						assertEquals(expected, tuple.getParsedQuery().getParseOptions().graphAlgebraMode());
+						var update = (SailUpdate) connection.prepareUpdate(
+								"INSERT { ?s ?p ?o } WHERE { GRAPH ?g { ?s ?p ?o } }");
+						assertEquals(expected, update.getParsedUpdate().getParseOptions().graphAlgebraMode());
+					}
+					System.setProperty(key, "true");
+					assertThrows(IllegalArgumentException.class,
+							() -> connection.prepareBooleanQuery("ASK { GRAPH ?g {} }"));
+					for (GraphAlgebraMode explicit : new GraphAlgebraMode[] { GraphAlgebraMode.GRAPH,
+							GraphAlgebraMode.LEGACY }) {
+						connection.setQueryParseOptions(QueryParseOptions.DEFAULT.withGraphAlgebraMode(explicit));
+						var query = connection.prepareTupleQuery(QueryLanguage.SPARQL,
+								"SELECT * WHERE { GRAPH ?g {} }", null);
+						assertEquals(explicit, query.getParsedQuery().getParseOptions().graphAlgebraMode());
+					}
+				}
+			}
+			// Standalone parsing and the existing capability-only resolver do not inherit repository JVM policy.
+			System.setProperty(key, "invalid");
+			assertEquals(GraphAlgebraMode.LEGACY, QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT * WHERE { GRAPH ?g {} }", null).getParseOptions().graphAlgebraMode());
+			assertEquals(GraphAlgebraMode.GRAPH, QueryParserUtil.resolveQueryParseOptions(QueryLanguage.SPARQL,
+					QueryParseOptions.DEFAULT, true).graphAlgebraMode());
+		} finally {
+			if (saved == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, saved);
+			}
+		}
+	}
 
 	@Test
 	void unknownSailReceivesLegacyAlgebraByDefault() {

@@ -23,10 +23,41 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class TransactionGraphAlgebraCompatibilityTest {
+	private static final String GRAPH_ALGEBRA_MODE = "org.eclipse.rdf4j.query.graphAlgebraMode";
+
+	@Test
+	void workerUpdateReadsJvmDefaultAtPreparation() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		String previous = System.getProperty(GRAPH_ALGEBRA_MODE);
+		try (Transaction transaction = new Transaction(repository)) {
+			transaction.setQueryParseOptions(QueryParseOptions.STRICT);
+			transaction.begin();
+			System.setProperty(GRAPH_ALGEBRA_MODE, "LEGACY");
+			transaction.executeUpdate(QueryLanguage.SPARQL,
+					"INSERT { <urn:result> <urn:p> <urn:o> } WHERE { GRAPH <urn:missing> {} }",
+					null, true, null, Map.of());
+			transaction.commit();
+			try (var connection = repository.getConnection()) {
+				assertThat(connection.size()).isEqualTo(1);
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(GRAPH_ALGEBRA_MODE);
+			} else {
+				System.setProperty(GRAPH_ALGEBRA_MODE, previous);
+			}
+			repository.shutDown();
+		}
+	}
+
 	@ParameterizedTest
 	@EnumSource(GraphAlgebraMode.class)
 	void workerUpdateExecutionKeepsTheSelectedAlgebra(GraphAlgebraMode mode) throws Exception {

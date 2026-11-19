@@ -28,7 +28,12 @@ final class LmdbDefaultEvaluationStrategyFactory extends DefaultEvaluationStrate
 		super(resolver);
 	}
 
+	/**
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
 	@Override
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public boolean supportsGraphAlgebra() {
 		return getOptimizerPipeline().isEmpty();
 	}

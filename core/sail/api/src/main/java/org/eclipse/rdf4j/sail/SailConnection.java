@@ -89,7 +89,10 @@ public interface SailConnection extends AutoCloseable {
 	 * evaluation path must remain compatible while its prepared operations are in use.
 	 *
 	 * @return whether the connection's wrapper, optimizer, and evaluation-strategy path supports GRAPH
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
 	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	default boolean supportsGraphAlgebra() {
 		return false;
 	}

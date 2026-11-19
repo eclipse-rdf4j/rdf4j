@@ -37,7 +37,10 @@ public interface EvaluationStrategyFactory {
 	 * algebra and does not support Graph, callers must explicitly select LEGACY.
 	 *
 	 * @return whether the configured optimizer pipeline and evaluation strategy support GRAPH
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
 	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	default boolean supportsGraphAlgebra() {
 		return false;
 	}

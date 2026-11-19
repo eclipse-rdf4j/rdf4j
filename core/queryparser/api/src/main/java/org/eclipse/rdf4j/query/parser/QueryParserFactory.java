@@ -25,7 +25,10 @@ public interface QueryParserFactory {
 	 * parser and evaluator support; existing factories remain on legacy algebra until they explicitly opt in.
 	 *
 	 * @return whether the factory's parsers support the GRAPH representation
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
 	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	default boolean supportsGraphAlgebra() {
 		return false;
 	}

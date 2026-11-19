@@ -35,7 +35,12 @@ public class ExtensibleStoreConnection<E extends ExtensibleStore> extends SailSo
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
 	}
 
+	/**
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
 	@Override
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public boolean supportsGraphAlgebra() {
 		return getClass() == ExtensibleStoreConnection.class && supportsGraphAlgebraEvaluation();
 	}

@@ -19,26 +19,65 @@ import java.util.List;
 
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.sparql.SPARQLConnection;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** The text protocols do not carry a client-side GRAPH algebra selection. */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class GraphAlgebraTransportBoundaryTest {
+	private static final String GRAPH_ALGEBRA_MODE = "org.eclipse.rdf4j.query.graphAlgebraMode";
+
 	@ParameterizedTest
-	@EnumSource(value = GraphAlgebraMode.class, names = { "LEGACY", "GRAPH" })
-	void textRepositoriesRejectAnUnsupportedExplicitMode(GraphAlgebraMode mode) {
-		HTTPRepository repository = new HTTPRepository("http://example.invalid/rdf4j-server", "compatibility") {
+	@ValueSource(strings = { "AUTO", "LEGACY", "GRAPH", "invalid" })
+	void textRepositoriesIgnoreTheJvmPolicyAndPreserveQueryText(String mode) {
+		String previous = System.setProperty(GRAPH_ALGEBRA_MODE, mode);
+		HTTPRepository repository = mockHttpRepository();
+		try (RepositoryConnection http = repository.getConnection();
+				RepositoryConnection sparql = new SPARQLConnection(mock(SPARQLRepository.class),
+						mock(SPARQLProtocolSession.class))) {
+			String query = "SELECT ?g WHERE { GRAPH ?g {} }";
+			for (var connection : List.of(http, sparql)) {
+				connection.setQueryParseOptions(QueryParseOptions.DEFAULT);
+				assertThat(connection.prepareTupleQuery(QueryLanguage.SPARQL, query, null).toString())
+						.isEqualTo(query);
+				assertThat(connection.getQueryParseOptions()).isEqualTo(QueryParseOptions.DEFAULT);
+			}
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				if (previous == null) {
+					System.clearProperty(GRAPH_ALGEBRA_MODE);
+				} else {
+					System.setProperty(GRAPH_ALGEBRA_MODE, previous);
+				}
+			}
+		}
+	}
+
+	private static HTTPRepository mockHttpRepository() {
+		return new HTTPRepository("http://example.invalid/rdf4j-server", "compatibility") {
 			@Override
 			protected RDF4JProtocolSession createHTTPClient() {
 				return mock(RDF4JProtocolSession.class);
 			}
 		};
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = GraphAlgebraMode.class, names = { "LEGACY", "GRAPH" })
+	void textRepositoriesRejectAnUnsupportedExplicitMode(GraphAlgebraMode mode) {
+		HTTPRepository repository = mockHttpRepository();
 		try (RepositoryConnection http = repository.getConnection();
 				RepositoryConnection sparql = new SPARQLConnection(mock(SPARQLRepository.class),
 						mock(SPARQLProtocolSession.class))) {

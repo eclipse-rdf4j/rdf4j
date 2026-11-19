@@ -52,7 +52,12 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 		this.includeInferredStatements = includeInferredStatements;
 	}
 
+	/**
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
 	@Override
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public boolean supportsGraphAlgebra() {
 		return getClass() == VerySimpleRdfsBackwardsChainingConnection.class
 				&& getWrappedConnection().supportsGraphAlgebra();

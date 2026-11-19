@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.federated;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,12 +37,16 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 /** Probes the local parse boundaries used by the federation engine. */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class GraphAlgebraCompatibilityTest {
 
+	private static final String GRAPH_ALGEBRA_MODE = "org.eclipse.rdf4j.query.graphAlgebraMode";
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI FIRST_GRAPH = VF.createIRI("urn:compat:first");
 	private static final IRI SECOND_GRAPH = VF.createIRI("urn:compat:second");
@@ -105,8 +110,64 @@ class GraphAlgebraCompatibilityTest {
 		assertThat(federation.getFederationContext().getQueryManager().getQueryPlan(QUERY)).contains("Graph");
 	}
 
+	@ParameterizedTest
+	@EnumSource(GraphAlgebraMode.class)
+	void jvmPolicyAppliesToPublicPreparationAndQueryManagerPlans(GraphAlgebraMode jvmMode) {
+		String previous = System.setProperty(GRAPH_ALGEBRA_MODE, jvmMode.name());
+		try (var connection = federation.getConnection()) {
+			boolean graphExpected = jvmMode != GraphAlgebraMode.LEGACY;
+			assertThat(graphCount(connection.prepareTupleQuery(QueryLanguage.SPARQL, QUERY, null)
+					.getParsedQuery()
+					.getTupleExpr())).isEqualTo(graphExpected ? 1 : 0);
+			String plan = federation.getFederationContext().getQueryManager().getQueryPlan(QUERY);
+			assertThat(plan.contains("Graph")).as("Graph boundary in plan: %s", plan).isEqualTo(graphExpected);
+			assertThat(connection.getQueryParseOptions()).isEqualTo(QueryParseOptions.DEFAULT);
+		} finally {
+			restoreJvmMode(previous);
+		}
+	}
+
 	@Test
-	void unknownFederationFactoryConservativelyUsesLegacyAlgebra() {
+	void explicitConnectionModesWinEvenWhenTheJvmSettingIsInvalid() {
+		String previous = System.setProperty(GRAPH_ALGEBRA_MODE, "invalid");
+		try (var connection = federation.getConnection()) {
+			assertThatThrownBy(() -> connection.prepareTupleQuery(QueryLanguage.SPARQL, QUERY, null))
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining(GRAPH_ALGEBRA_MODE);
+			assertThatThrownBy(() -> federation.getFederationContext().getQueryManager().getQueryPlan(QUERY))
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining(GRAPH_ALGEBRA_MODE);
+			for (var mode : List.of(GraphAlgebraMode.LEGACY, GraphAlgebraMode.GRAPH)) {
+				connection.setQueryParseOptions(QueryParseOptions.DEFAULT.withGraphAlgebraMode(mode));
+				assertThat(graphCount(connection.prepareTupleQuery(QueryLanguage.SPARQL, QUERY, null)
+						.getParsedQuery()
+						.getTupleExpr())).isEqualTo(mode == GraphAlgebraMode.GRAPH ? 1 : 0);
+			}
+		} finally {
+			restoreJvmMode(previous);
+		}
+	}
+
+	private static void restoreJvmMode(String previous) {
+		if (previous == null) {
+			System.clearProperty(GRAPH_ALGEBRA_MODE);
+		} else {
+			System.setProperty(GRAPH_ALGEBRA_MODE, previous);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = GraphAlgebraMode.class, names = { "AUTO", "GRAPH" })
+	void unknownFederationFactoryConservativelyUsesLegacyAlgebra(GraphAlgebraMode jvmMode) {
+		String previous = System.setProperty(GRAPH_ALGEBRA_MODE, jvmMode.name());
+		try {
+			assertUnknownFederationFactoryConservativelyUsesLegacyAlgebra();
+		} finally {
+			restoreJvmMode(previous);
+		}
+	}
+
+	private void assertUnknownFederationFactoryConservativelyUsesLegacyAlgebra() {
 		FedXRepository custom = FedXFactory.newFederation()
 				.withMembers(List.of(EndpointFactory.loadEndpoint("custom-first", first)))
 				.withFederationEvaluationStrategyFactory(new FederationEvaluationStrategyFactory() {

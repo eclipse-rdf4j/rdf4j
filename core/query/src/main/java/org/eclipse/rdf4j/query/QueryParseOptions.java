@@ -30,7 +30,13 @@ public record QueryParseOptions(boolean blankNodeReferences, GraphAlgebraMode gr
 
 	private static final long serialVersionUID = 0L;
 
-	/** The local algebra representation for a SPARQL GRAPH pattern. */
+	/**
+	 * The local algebra representation for a SPARQL GRAPH pattern.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public enum GraphAlgebraMode {
 		/** Let the preparing evaluator select its supported default; standalone parsing selects LEGACY. */
 		AUTO,
@@ -45,11 +51,28 @@ public record QueryParseOptions(boolean blankNodeReferences, GraphAlgebraMode gr
 		this(blankNodeReferences, GraphAlgebraMode.AUTO);
 	}
 
-	/** A missing mode in a serialized instance of the original record is interpreted as AUTO. */
+	/**
+	 * A missing mode in a serialized instance of the original record is interpreted as AUTO.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public QueryParseOptions {
 		if (graphAlgebraMode == null) {
 			graphAlgebraMode = GraphAlgebraMode.AUTO;
 		}
+	}
+
+	/**
+	 * Returns the requested GRAPH algebra representation.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public GraphAlgebraMode graphAlgebraMode() {
+		return graphAlgebraMode;
 	}
 
 	/** RDF4J's default syntax, including fixed blank node references. */
@@ -63,13 +86,25 @@ public record QueryParseOptions(boolean blankNodeReferences, GraphAlgebraMode gr
 		return enabled == blankNodeReferences ? this : new QueryParseOptions(enabled, graphAlgebraMode);
 	}
 
-	/** Select an algebra mode without changing the syntax policy. */
+	/**
+	 * Select an algebra mode without changing the syntax policy.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public QueryParseOptions withGraphAlgebraMode(GraphAlgebraMode mode) {
 		Objects.requireNonNull(mode);
 		return mode == graphAlgebraMode ? this : new QueryParseOptions(blankNodeReferences, mode);
 	}
 
-	/** Resolve AUTO exactly once at a preparation or standalone parsing boundary. */
+	/**
+	 * Resolve AUTO exactly once at a preparation or standalone parsing boundary.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public QueryParseOptions resolveGraphAlgebraMode(GraphAlgebraMode fallback) {
 		Objects.requireNonNull(fallback);
 		if (fallback == GraphAlgebraMode.AUTO) {

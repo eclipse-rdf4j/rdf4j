@@ -31,9 +31,61 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.springframework.mock.web.MockHttpServletRequest;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class QueryParseOptionsHttpTest {
+	private static final String GRAPH_ALGEBRA_MODE = "org.eclipse.rdf4j.query.graphAlgebraMode";
+
+	@Test
+	void jvmDefaultIsResolvedAtPreparationAndExplicitEndpointModeWins() throws Exception {
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		String previous = System.getProperty(GRAPH_ALGEBRA_MODE);
+		try (var connection = repository.getConnection()) {
+			var factory = connection.getValueFactory();
+			var graph = factory.createIRI("urn:compat:graph");
+			connection.add(factory.createIRI("urn:s"), factory.createIRI("urn:p"), factory.createLiteral(1), graph);
+			String text = "SELECT ?g WHERE { GRAPH ?g {} }";
+			var request = new MockHttpServletRequest();
+			request.setAttribute(QueryParseOptions.class.getName(), QueryParseOptions.STRICT);
+			System.setProperty(GRAPH_ALGEBRA_MODE, " legacy ");
+			var legacy = (SailTupleQuery) handler.getQuery(request, connection, text);
+			assertThat(legacy.getParsedQuery().getParseOptions().graphAlgebraMode()).isEqualTo(GraphAlgebraMode.LEGACY);
+			assertThat(legacy.getParsedQuery().getParseOptions().blankNodeReferences()).isFalse();
+			assertThat(connection.getQueryParseOptions().graphAlgebraMode()).isEqualTo(GraphAlgebraMode.AUTO);
+
+			System.setProperty(GRAPH_ALGEBRA_MODE, "GRAPH");
+			var graphQuery = (SailTupleQuery) handler.getQuery(request, connection, text);
+			assertThat(graphQuery.getParsedQuery().getParseOptions().graphAlgebraMode())
+					.isEqualTo(GraphAlgebraMode.GRAPH);
+			try (var result = graphQuery.evaluate()) {
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("g")).containsExactly(graph);
+			}
+			try (var result = legacy.evaluate()) {
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().hasBinding("g")).isFalse();
+				assertThat(result.hasNext()).isFalse();
+			}
+
+			request.setAttribute(QueryParseOptions.class.getName(),
+					QueryParseOptions.STRICT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY));
+			var endpointLegacy = (SailTupleQuery) handler.getQuery(request, connection, text);
+			assertThat(endpointLegacy.getParsedQuery().getParseOptions().graphAlgebraMode())
+					.isEqualTo(GraphAlgebraMode.LEGACY);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(GRAPH_ALGEBRA_MODE);
+			} else {
+				System.setProperty(GRAPH_ALGEBRA_MODE, previous);
+			}
+			repository.shutDown();
+		}
+	}
+
 	@Test
 	void syntaxOnlyEndpointPolicyPreservesExplicitRepositoryMode() throws Exception {
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));

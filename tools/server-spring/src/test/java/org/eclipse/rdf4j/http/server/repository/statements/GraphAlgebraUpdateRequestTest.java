@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -33,13 +35,16 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 /** Every request transport must apply the same independent syntax/algebra precedence before preparing updates. */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class GraphAlgebraUpdateRequestTest {
+	private static final String GRAPH_ALGEBRA_MODE = "org.eclipse.rdf4j.query.graphAlgebraMode";
 	private static final String UPDATE = "INSERT { <urn:result> <urn:p> <urn:o> } WHERE { GRAPH <urn:missing> {} }";
 
-	@ParameterizedTest(name = "{0}, repository={1}, endpoint={2}, effective={3}")
+	@ParameterizedTest(name = "{0}, JVM={1}, repository={2}, endpoint={3}, effective={4}")
 	@MethodSource("policies")
-	void updateRequestsUseTheMergedRepositoryPolicy(String transport, GraphAlgebraMode repositoryMode,
-			GraphAlgebraMode endpointMode, GraphAlgebraMode effectiveMode) throws Exception {
+	void updateRequestsUseTheMergedRepositoryPolicy(String transport, GraphAlgebraMode jvmMode,
+			GraphAlgebraMode repositoryMode, GraphAlgebraMode endpointMode, GraphAlgebraMode effectiveMode)
+			throws Exception {
 		SailRepository repository = new SailRepository(new MemoryStore()) {
 			@Override
 			public SailRepositoryConnection getConnection() {
@@ -49,7 +54,13 @@ class GraphAlgebraUpdateRequestTest {
 			}
 		};
 		repository.init();
+		String previous = System.getProperty(GRAPH_ALGEBRA_MODE);
 		try {
+			if (jvmMode == null) {
+				System.clearProperty(GRAPH_ALGEBRA_MODE);
+			} else {
+				System.setProperty(GRAPH_ALGEBRA_MODE, jvmMode.name());
+			}
 			var request = new MockHttpServletRequest("POST", "/repositories/compatibility/statements");
 			request.setAttribute("repository", repository);
 			request.setAttribute("repositoryID", "compatibility");
@@ -80,23 +91,35 @@ class GraphAlgebraUpdateRequestTest {
 				assertThat(connection.size()).isEqualTo(effectiveMode == GraphAlgebraMode.LEGACY ? 1 : 0);
 			}
 		} finally {
+			if (previous == null) {
+				System.clearProperty(GRAPH_ALGEBRA_MODE);
+			} else {
+				System.setProperty(GRAPH_ALGEBRA_MODE, previous);
+			}
 			repository.shutDown();
 		}
 	}
 
 	private static Stream<Arguments> policies() {
 		return Stream.of(
-				new Policy(GraphAlgebraMode.AUTO, GraphAlgebraMode.AUTO, GraphAlgebraMode.GRAPH),
-				new Policy(GraphAlgebraMode.LEGACY, GraphAlgebraMode.AUTO, GraphAlgebraMode.LEGACY),
-				new Policy(GraphAlgebraMode.GRAPH, GraphAlgebraMode.AUTO, GraphAlgebraMode.GRAPH),
-				new Policy(GraphAlgebraMode.LEGACY, GraphAlgebraMode.GRAPH, GraphAlgebraMode.GRAPH),
-				new Policy(GraphAlgebraMode.GRAPH, GraphAlgebraMode.LEGACY, GraphAlgebraMode.LEGACY))
+				new Policy(null, GraphAlgebraMode.AUTO, GraphAlgebraMode.AUTO, GraphAlgebraMode.GRAPH),
+				new Policy(null, GraphAlgebraMode.LEGACY, GraphAlgebraMode.AUTO, GraphAlgebraMode.LEGACY),
+				new Policy(null, GraphAlgebraMode.GRAPH, GraphAlgebraMode.AUTO, GraphAlgebraMode.GRAPH),
+				new Policy(null, GraphAlgebraMode.LEGACY, GraphAlgebraMode.GRAPH, GraphAlgebraMode.GRAPH),
+				new Policy(null, GraphAlgebraMode.GRAPH, GraphAlgebraMode.LEGACY, GraphAlgebraMode.LEGACY),
+				new Policy(GraphAlgebraMode.AUTO, GraphAlgebraMode.AUTO, GraphAlgebraMode.AUTO, GraphAlgebraMode.GRAPH),
+				new Policy(GraphAlgebraMode.LEGACY, GraphAlgebraMode.AUTO, GraphAlgebraMode.AUTO,
+						GraphAlgebraMode.LEGACY),
+				new Policy(GraphAlgebraMode.LEGACY, GraphAlgebraMode.GRAPH, GraphAlgebraMode.AUTO,
+						GraphAlgebraMode.GRAPH),
+				new Policy(GraphAlgebraMode.GRAPH, GraphAlgebraMode.AUTO, GraphAlgebraMode.LEGACY,
+						GraphAlgebraMode.LEGACY))
 				.flatMap(policy -> Stream.of("body", "form", "transaction")
-						.map(transport -> Arguments.of(transport, policy.repositoryMode(), policy.endpointMode(),
-								policy.effectiveMode())));
+						.map(transport -> Arguments.of(transport, policy.jvmMode(), policy.repositoryMode(),
+								policy.endpointMode(), policy.effectiveMode())));
 	}
 
-	private record Policy(GraphAlgebraMode repositoryMode, GraphAlgebraMode endpointMode,
+	private record Policy(GraphAlgebraMode jvmMode, GraphAlgebraMode repositoryMode, GraphAlgebraMode endpointMode,
 			GraphAlgebraMode effectiveMode) {
 	}
 }

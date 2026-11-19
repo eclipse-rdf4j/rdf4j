@@ -27,15 +27,62 @@ import org.eclipse.rdf4j.query.parser.QueryPrologLexer.Token;
 public class QueryParserUtil {
 
 	/**
+	 * JVM-wide default for repository AUTO preparation: AUTO, LEGACY, or GRAPH. GRAPH retains parser and evaluator
+	 * capability negotiation; it does not force support. Read at preparation, not at connection creation.
+	 *
+	 * @deprecated Temporary backward compatibility, removed in the next major release when explicit Graph is required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public static final String GRAPH_ALGEBRA_MODE_PROPERTY = "org.eclipse.rdf4j.query.graphAlgebraMode";
+
+	/**
+	 * Resolve repository AUTO using the JVM default and the complete parser/evaluator capability path. Explicit
+	 * connection modes win without reading the property. Missing, AUTO, and GRAPH preserve capability negotiation;
+	 * LEGACY disables explicit Graph. Already prepared operations are unaffected by later property changes.
+	 *
+	 * @param language                the query language
+	 * @param requested               requested connection policy
+	 * @param evaluationSupportsGraph whether the complete local evaluation path supports GRAPH
+	 * @return options with a concrete algebra mode
+	 * @throws IllegalArgumentException if an AUTO preparation encounters an invalid property value
+	 * @deprecated Temporary backward compatibility, removed in the next major release when explicit Graph is required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public static QueryParseOptions resolveRepositoryQueryParseOptions(QueryLanguage language,
+			QueryParseOptions requested, boolean evaluationSupportsGraph) {
+		Objects.requireNonNull(requested);
+		if (requested.graphAlgebraMode() != GraphAlgebraMode.AUTO) {
+			return requested;
+		}
+		String value = System.getProperty(GRAPH_ALGEBRA_MODE_PROPERTY);
+		GraphAlgebraMode mode = GraphAlgebraMode.AUTO;
+		if (value != null) {
+			try {
+				mode = GraphAlgebraMode.valueOf(value.trim().toUpperCase(Locale.ROOT));
+			} catch (IllegalArgumentException e) {
+				throw new IllegalArgumentException(
+						GRAPH_ALGEBRA_MODE_PROPERTY + " must be AUTO, LEGACY, or GRAPH", e);
+			}
+		}
+		if (mode == GraphAlgebraMode.LEGACY) {
+			return requested.withGraphAlgebraMode(GraphAlgebraMode.LEGACY);
+		}
+		return resolveQueryParseOptions(language, requested, evaluationSupportsGraph);
+	}
+
+	/**
 	 * Resolve requested AUTO policy against both the registered parser factory and the local evaluation path. Explicit
 	 * choices are returned unchanged. Configure parser registrations before preparing operations, just as evaluation
-	 * factories must be configured before preparing operations that depend on their capabilities.
+	 * factories must be configured before preparing operations that depend on their capabilities. This capability-only
+	 * helper does not consult the repository JVM default.
 	 *
 	 * @param language                the query language
 	 * @param requested               the requested immutable parsing policy
 	 * @param evaluationSupportsGraph whether the complete local evaluation path supports GRAPH
 	 * @return options with a concrete algebra mode
+	 * @deprecated Temporary backward compatibility, removed in the next major release when explicit Graph is required.
 	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
 	public static QueryParseOptions resolveQueryParseOptions(QueryLanguage language, QueryParseOptions requested,
 			boolean evaluationSupportsGraph) {
 		Objects.requireNonNull(requested);

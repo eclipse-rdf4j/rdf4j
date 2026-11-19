@@ -14,7 +14,7 @@ The immutable options contain independent settings for blank node reference synt
 
 | Mode | Local preparation behavior |
 | --- | --- |
-| `AUTO` | Require positive declarations from the selected parser factory and the local connection, wrapper, optimizer, and evaluation-strategy path. If both support `Graph`, select `GRAPH`; otherwise select `LEGACY`. Standalone parsing selects `LEGACY`. See the unnegotiated consumer boundaries below. |
+| `AUTO` | Repository preparation first applies the temporary JVM default described below. Otherwise require positive declarations from the selected parser factory and the local connection, wrapper, optimizer, and evaluation-strategy path. If both support `Graph`, select `GRAPH`; otherwise select `LEGACY`. Standalone parsing selects `LEGACY`. See the unnegotiated consumer boundaries below. |
 | `LEGACY` | Use the historical representation: named-context statement patterns, with the historical limitations of that representation. |
 | `GRAPH` | Keep an explicit `Graph` operator around the body. The caller must ensure that downstream algebra consumers support it. |
 
@@ -41,6 +41,30 @@ public final class LegacyAlgebra {
 The connection keeps the requested options, so `getQueryParseOptions()` may continue to return `AUTO`. RDF4J's standard preparation paths capture those options once, resolve the algebra mode, and attach the concrete options to the parsed query or update. Later option changes affect later preparations. A prepared operation does not change when a different store starts or another connection changes its settings. Manually constructed algebra and external parser implementations remain responsible for their own policy metadata.
 
 An explicit mode wins without consulting the evaluator's default capability. `GRAPH` is an opt-in, not a check that every extension can evaluate the new node.
+
+## Temporary JVM-wide repository default
+
+The GRAPH compatibility switches are deprecated since 6.2.0 and scheduled for removal in the next major release, when explicit `Graph` algebra will be required. This includes the JVM property below; it is a migration aid, not a permanent server setting.
+
+For a server JVM, add this to its Java startup options to retain historical algebra while updating extensions:
+
+```text
+-Dorg.eclipse.rdf4j.query.graphAlgebraMode=LEGACY
+```
+
+The accepted names are `AUTO`, `LEGACY`, and `GRAPH` (case-insensitive, with surrounding whitespace ignored). A missing property is equivalent to `AUTO`. Boolean values are not accepted.
+
+For each local repository query or update preparation:
+
+1. An explicit connection mode wins, including a concrete endpoint policy merged onto the connection.
+2. If the connection still requests `AUTO`, JVM `LEGACY` selects legacy algebra.
+3. JVM `AUTO`, JVM `GRAPH`, or an unset property use the normal parser **and** evaluator capability checks. `GRAPH` deliberately does **not** force an unsupported extension to consume `Graph`; today it has the same safe negotiation behavior as `AUTO`.
+
+Explicit per-connection `GRAPH` remains an opt-in responsibility, as described above. The JVM property does not add any parser or evaluator capability.
+
+The property is read when resolving repository `AUTO`, not when a store or connection is created. Changing it affects subsequent preparations, including preparations on existing connections, but never changes an already prepared query or update. Connections still report their requested `AUTO` options. Invalid values, including blank values and `true`/`false`, cause an `IllegalArgumentException` at `AUTO` preparation with the property name and supported values. An explicit connection mode does not read the property.
+
+This default applies to Sail repository preparation (including LMDB and server query/update handlers) and FedX query-plan preparation. It does not change standalone parser defaults, capability-only internal inferencer parsing, manually supplied algebra, or client-side HTTP/SPARQL text passthrough. For remote repositories set the property in the JVM that performs local server-side preparation, not just in the client JVM.
 
 ## Standalone parsers and internal consumers
 

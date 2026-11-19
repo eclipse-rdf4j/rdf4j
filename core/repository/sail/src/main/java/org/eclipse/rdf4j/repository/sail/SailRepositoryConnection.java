@@ -331,7 +331,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		if (requested.graphAlgebraMode() != GraphAlgebraMode.AUTO) {
 			return requested;
 		}
-		return QueryParserUtil.resolveQueryParseOptions(language, requested, sailConnection.supportsGraphAlgebra());
+		return QueryParserUtil.resolveRepositoryQueryParseOptions(language, requested,
+				sailConnection.supportsGraphAlgebra());
 	}
 
 	@Override

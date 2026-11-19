@@ -25,10 +25,15 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbGraphAlgebraPreparationTest {
+
+	private static final String GRAPH_ALGEBRA_MODE = "org.eclipse.rdf4j.query.graphAlgebraMode";
 
 	@TempDir
 	Path directory;
@@ -77,6 +82,45 @@ class LmdbGraphAlgebraPreparationTest {
 			}
 		} finally {
 			memory.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void jvmGraphAlgebraPolicyIsSnapshottedAtPreparation(boolean nativeEvaluation) {
+		String queryText = "SELECT ?x WHERE { GRAPH <urn:missing> { BIND(1 AS ?x) } }";
+		String previous = System.getProperty(GRAPH_ALGEBRA_MODE);
+		try {
+			LmdbStoreConfig config = new LmdbStoreConfig().setNativeEvaluationEnabled(nativeEvaluation);
+			SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config));
+			try (var connection = repository.getConnection()) {
+				System.setProperty(GRAPH_ALGEBRA_MODE, GraphAlgebraMode.LEGACY.name());
+				var legacy = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryText, null);
+				assertEquals(GraphAlgebraMode.LEGACY, legacy.getParsedQuery().getParseOptions().graphAlgebraMode());
+
+				System.setProperty(GRAPH_ALGEBRA_MODE, GraphAlgebraMode.GRAPH.name());
+				var graph = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryText, null);
+				assertEquals(GraphAlgebraMode.GRAPH, graph.getParsedQuery().getParseOptions().graphAlgebraMode());
+				assertEquals(GraphAlgebraMode.AUTO, connection.getQueryParseOptions().graphAlgebraMode());
+				try (var result = legacy.evaluate()) {
+					assertTrue(result.hasNext());
+					assertEquals("1", result.next().getValue("x").stringValue());
+					assertFalse(result.hasNext());
+				}
+
+				System.setProperty(GRAPH_ALGEBRA_MODE, GraphAlgebraMode.LEGACY.name());
+				try (var result = graph.evaluate()) {
+					assertFalse(result.hasNext());
+				}
+			} finally {
+				repository.shutDown();
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(GRAPH_ALGEBRA_MODE);
+			} else {
+				System.setProperty(GRAPH_ALGEBRA_MODE, previous);
+			}
 		}
 	}
 }

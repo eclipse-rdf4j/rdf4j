@@ -307,7 +307,8 @@ public class QueryManager {
 		RepositoryConnection connection = getOrCreateConn();
 		boolean supportsGraph = connection instanceof SailRepositoryConnection sail
 				&& sail.getSailConnection().supportsGraphAlgebra();
-		var options = QueryParserUtil.resolveQueryParseOptions(QueryLanguage.SPARQL, connection.getQueryParseOptions(),
+		var options = QueryParserUtil.resolveRepositoryQueryParseOptions(QueryLanguage.SPARQL,
+				connection.getQueryParseOptions(),
 				supportsGraph);
 		ParsedOperation query = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryString, null, options);
 		if (!(query instanceof ParsedQuery)) {

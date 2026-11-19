@@ -1124,7 +1124,12 @@ public class LmdbStore extends AbstractNotifyingSail
 	private final class AdaptiveEvaluationStrategyFactory
 			implements EvaluationStrategyFactory, FederatedServiceResolverClient {
 
+		/**
+		 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+		 *             required.
+		 */
 		@Override
+		@Deprecated(since = "6.2.0", forRemoval = true)
 		public boolean supportsGraphAlgebra() {
 			return getEvaluationStrategyFactory().supportsGraphAlgebra();
 		}
