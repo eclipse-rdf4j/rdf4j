@@ -461,3 +461,18 @@ acceptance analysis because its timing protocol and sample count differ.
 [backup-performance-evidence.json](backup-performance-evidence.json) is self-contained for the measurements: it contains every final, original-main, and earlier-compressed fork result and command, raw counts/durations, phase/JIT/CPU/validation fields, pair and aggregate calculations, runtime/dependency/source hashes, the full 399-test inventory, and input-artifact hashes. It does not require the original temporary workspace to inspect those data. Complementary fresh-profile and crossover results remain separate, including all twelve crossover windows, exact commands, source/class/CodeSource provenance, thread/GC/heap/readiness metadata and crossover source files. Crossover window consoles and environment samples are embedded; original independent-fork environment samples and build/test log contents are not duplicated. Binary JFR recordings are not embedded or delivered by these two documents; SHA-256 values identify the historical workspace files, and derived summaries and independent raw-reader evidence are embedded. Historical workspace paths alone are not downloadable copies of omitted recordings or logs.
 
 Evidence SHA-256: `8a8c63e5c6dc43da575e3394071c5e3c0525167cc9b89afa4843bad387db6d74`.
+
+## Backup-root isolation limitation
+
+Use a separate backup root for each independently writable store. Root ownership is not currently
+validated durably. Different journal generations can archive overlapping numeric transaction IDs,
+but the public delta export uses one filename per numeric ID and rejects conflicting contents.
+Full-backup selection and artifact retention also operate across the root, not per source.
+Consequently, sharing a root between independent writers is not a supported isolation boundary.
+
+Native journal retention now applies only the current source generation's durably checkpointed
+acknowledgement. It must not prune another generation using that proof: the other publisher may
+still need its archived bytes for crash replay. The regression holds a second source between archive
+commit and acknowledgement and verifies that the first source's retention preserves exact replay.
+This protects native recovery evidence; it does not solve root ownership or mixed-source export.
+Older generations are retained conservatively rather than inferring their safe prune boundary.

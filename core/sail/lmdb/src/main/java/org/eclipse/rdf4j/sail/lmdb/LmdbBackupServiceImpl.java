@@ -1617,12 +1617,13 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			for (Path log : listTransactionLogs(backupDirectory, Long.MIN_VALUE, cutoff)) {
 				Files.deleteIfExists(log);
 			}
-			for (UUID generation : journalGenerations(backupDirectory)) {
-				withJournal(backupDirectory, generation, true, journal -> {
-					journal.pruneThrough(cutoff);
-					return null;
-				});
-			}
+			// This acknowledgement proves replay safety only for the current source generation. Other
+			// generations may belong to a publisher still between durable archival and acknowledgement,
+			// or to retained history from an earlier enablement. Never prune them using this source's proof.
+			withJournal(backupDirectory, journalState.generation(), true, journal -> {
+				journal.pruneThrough(cutoff);
+				return null;
+			});
 			Path logDirectory = backupDirectory.resolve(TXLOG_DIR);
 			if (Files.isDirectory(logDirectory)) {
 				StoreProperties.forceParentDirectory(logDirectory);
