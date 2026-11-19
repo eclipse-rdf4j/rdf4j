@@ -69,6 +69,11 @@ public class TupleQueryResultView extends QueryResultView {
 		return null;
 	}
 
+	@Override
+	public boolean supportsResponseHeartbeat() {
+		return true;
+	}
+
 	@SuppressWarnings("rawtypes")
 	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)

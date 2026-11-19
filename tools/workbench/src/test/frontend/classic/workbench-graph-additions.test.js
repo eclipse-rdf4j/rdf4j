@@ -32,8 +32,17 @@ const context = { basePath: '/wb/', repositoryId: 'my repo', serverIdentity: 'se
 test('a resource is queued under the repository of the page', () => {
     const storage = memoryStorage();
     assert.equal(graphAdditions.add(context, { kind: 'resource', term: '<urn:a>' }, storage), 1);
-    assert.deepEqual([...storage.values.keys()], ['rdf4j-workbench-graph-additions:["repository-v2","/wb","server","my repo"]']);
+    assert.deepEqual([...storage.values.keys()], ['rdf4j-workbench-graph-additions:["repository-v3","/wb","server","","my repo"]']);
     assert.deepEqual(graphAdditions.pending(context, storage), [{ kind: 'resource', term: '<urn:a>' }]);
+});
+
+test('each user keeps their own queue, across browser sessions of the same server', () => {
+    const storage = memoryStorage();
+    const ada = { basePath: '/wb', repositoryId: 'r', serverIdentity: 'sha256:abc:session-1', serverUser: 'ada' };
+    assert.equal(graphAdditions.add(ada, { kind: 'resource', term: '<urn:a>' }, storage), 1);
+    assert.deepEqual(graphAdditions.pending({ ...ada, serverIdentity: 'sha256:abc:session-2' }, storage),
+        [{ kind: 'resource', term: '<urn:a>' }], 'a later browser session of the same user sees the queue');
+    assert.deepEqual(graphAdditions.pending({ ...ada, serverUser: 'bob' }, storage), [], 'another user does not');
 });
 
 test('the same addition is queued once, statements and queries alongside resources', () => {
@@ -100,7 +109,7 @@ test('queue producers isolate identical repository IDs by resolved server identi
 
 test('a write through the Workbench gives the repository a new data revision the Graph page watches', () => {
     const storage = memoryStorage();
-    const key = 'rdf4j-workbench-data-revision:["repository-v2","/wb","server","my repo"]';
+    const key = 'rdf4j-workbench-data-revision:["repository-v3","/wb","server","my repo"]';
     assert.equal(graphAdditions.dataRevisionKey(context), key);
     graphAdditions.dataChanged(context, storage);
     const first = storage.getItem(key);
@@ -118,5 +127,5 @@ test('creating or deleting a repository changes the data revision of that reposi
     const app = { getAttribute: (name) => ({ 'data-workbench-base-path': '/wb', 'data-workbench-server-identity': 'server' })[name] ?? null };
     const document = { getElementById: (id) => (id === 'workbench-app' ? app : null) };
     graphAdditions.repositoryChanged('my repo', document, storage);
-    assert.ok(storage.getItem('rdf4j-workbench-data-revision:["repository-v2","/wb","server","my repo"]'));
+    assert.ok(storage.getItem('rdf4j-workbench-data-revision:["repository-v3","/wb","server","my repo"]'));
 });
