@@ -125,7 +125,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 		GraphProbe candidate = null;
 		if (restrictionEnabled && rightFrames.length == 0 && leftFrames.length == 0
 				&& !(join.getRightArg() instanceof Service)) {
-			candidate = selectGraphProbe(join, leftRaw, rightRaw, independent, rightDiscardable, statistics);
+			candidate = selectGraphProbe(join, leftRaw, rightRaw, independent, rightDiscardable, statistics,
+					bindingAnalysis);
 			if (candidate != null) {
 				candidate.cost().explain(join);
 			}
@@ -296,13 +297,15 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 
 	private static GraphProbe selectGraphProbe(Join join, QueryEvaluationStep leftStep,
 			QueryEvaluationStep rightStep, boolean originallyIndependent, boolean rightDiscardable,
-			EvaluationStatistics statistics) {
+			EvaluationStatistics statistics, QueryAlgebraBindingAnalysis bindingAnalysis) {
 		if (!rightDiscardable) {
 			return null;
 		}
 		TupleExpr left = join.getLeftArg();
 		TupleExpr right = join.getRightArg();
-		GraphProbe direct = originallyIndependent ? graphProbe(left, right, rightStep, statistics, false) : null;
+		GraphProbe direct = originallyIndependent
+				? graphProbe(left, right, rightStep, statistics, bindingAnalysis, false)
+				: null;
 		if (join.isMergeJoin() || !TupleExprs.containsGraphBoundary(left)
 				|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(left)
 				|| !RestrictionCompiler.movable(right)
@@ -312,7 +315,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 		}
 		// The original GRAPH-left operand already sees only the join-entry input. Reverse the physical loop only
 		// when its sibling also has an independent contract, or injecting GRAPH output is equivalent to compatibility.
-		GraphProbe reversed = graphProbe(right, left, leftStep, statistics, true);
+		GraphProbe reversed = graphProbe(right, left, leftStep, statistics, bindingAnalysis, true);
 		if (direct == null || reversed != null && reversed.cost().preferProbes()
 				&& (!direct.cost().preferProbes() || reversed.cost().fullProbeWork() < direct.cost().fullProbeWork())) {
 			return reversed;
@@ -321,7 +324,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 	}
 
 	private static GraphProbe graphProbe(TupleExpr outer, TupleExpr inner, QueryEvaluationStep innerStep,
-			EvaluationStatistics statistics, boolean reversed) {
+			EvaluationStatistics statistics, QueryAlgebraBindingAnalysis bindingAnalysis, boolean reversed) {
 		if (!TupleExprs.containsGraphBoundary(inner)) {
 			return null;
 		}
@@ -329,7 +332,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 		if (plan == null || Collections.disjoint(outer.getBindingNames(), plan.seekNames())) {
 			return null;
 		}
-		return new GraphProbe(plan, RestrictionJoinCost.estimate(outer, inner, plan, statistics), reversed);
+		return new GraphProbe(plan, RestrictionJoinCost.estimate(outer, inner, plan, statistics, bindingAnalysis),
+				reversed);
 	}
 
 	/**

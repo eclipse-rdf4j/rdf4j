@@ -28,12 +28,13 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 
 /** Prices a certified join in estimated row visits plus cursor opens. No estimate participates in proof admission. */
 public record RestrictionJoinCost(boolean preferProbes, boolean cacheResults, double opens, double fullProbeWork,
 		double independentWork, double firstProbeWork, double independentStartupWork) {
 	public static RestrictionJoinCost estimate(TupleExpr outer, TupleExpr inner, PreparedRestrictionPlan candidate,
-			EvaluationStatistics stats) {
+			EvaluationStatistics stats, QueryAlgebraBindingAnalysis bindingAnalysis) {
 		Graph graph = inner instanceof Graph g ? g : null;
 		StatementPattern leaf = graphLeaf(graph);
 		double innerRows = innerRows(inner, graph, leaf, stats);
@@ -46,6 +47,15 @@ public record RestrictionJoinCost(boolean preferProbes, boolean cacheResults, do
 		// A possible output name does not imply a bound key on every row (notably after OPTIONAL).
 		// Without an assured seek, price each probe as an unrestricted read of the original relation.
 		boolean assuredSeek = !Collections.disjoint(outer.getAssuredBindingNames(), candidate.seekNames());
+		if (!assuredSeek) {
+			// TupleExpr's structural assurance deliberately omits BIND targets. Use the scoped expression analysis
+			// only when the structural check cannot prove a key; unknown or error-prone expressions stay nullable.
+			// Each physical orientation starts from the join-entry frame. The original right child's context can
+			// include left-row bindings, which are not available when that child becomes the probe's outer side.
+			var facts = bindingAnalysis.outputFacts(outer, bindingAnalysis.rootContext());
+			assuredSeek = facts.guaranteedOutputsKnown()
+					&& !Collections.disjoint(facts.guaranteedOutputs(), candidate.seekNames());
+		}
 		double workPerProbe = 1 + (assuredSeek ? Math.sqrt(innerRows) : innerRows);
 		double probe = outerRows * workPerProbe;
 		return choose(assuredSeek, false, outerRows, probe, independent, workPerProbe, innerRows, inner);

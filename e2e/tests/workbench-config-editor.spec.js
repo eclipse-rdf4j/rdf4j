@@ -320,6 +320,7 @@ test('repository picker switches filtered configuration layers without replacing
                 'tag:rdf4j.org,2023:config/sail.slowQueryLogFirstResultThresholdSeconds',
                 'tag:rdf4j.org,2023:config/sail.slowQueryLogFile',
                 'tag:rdf4j.org,2023:config/sail.experimentalQueryOptimizations',
+                'tag:rdf4j.org,2023:config/sail.graphRestrictionMode',
                 'tag:rdf4j.org,2023:config/mem.persist',
                 'tag:rdf4j.org,2023:config/mem.syncDelay'
             ]
