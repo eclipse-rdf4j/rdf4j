@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -109,6 +110,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			Value supplied, long semanticVersion) {
 		// The same immutable first-source choice owns ordinary lazy lookup and its snapshot validation.
 		return sources.get(0).reuseProjectedValue(snapshot, id, positionMask, valueScope, supplied, semanticVersion);
+	}
+
+	@Override
+	public boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
+		return sources.get(0).withProjectedValueAccess(scope, capture);
 	}
 
 	@Override

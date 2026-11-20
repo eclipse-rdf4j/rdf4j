@@ -162,6 +162,7 @@ class LmdbValueResolutionScopeTest {
 					AtomicInteger ambientLookups = new AtomicInteger();
 					Set<Value> subjects = new HashSet<>();
 					long lazyLookups = LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get();
+					List<Long> lookupsPerRow = new ArrayList<>(2);
 					try (var lookups = mockStatic(ValueResolutionScope.class, invocation -> {
 						// Repository lexical decoding still uses its own ambient scope.
 						if (invocation.getMethod().getName().equals("activeExposure")
@@ -176,10 +177,14 @@ class LmdbValueResolutionScopeTest {
 							BindingSet row = rows.next();
 							assertEquals(expected, row.getValue("value"));
 							subjects.add(row.getValue("s"));
+							long currentLookups = LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get();
+							lookupsPerRow.add(currentLookups - lazyLookups);
+							lazyLookups = currentLookups;
 						}
 					}
 					assertEquals(Set.of(explicit, inferred), subjects);
-					assertEquals(4, LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get() - lazyLookups);
+					// The second row reuses the resolved literal and looks up only its different subject.
+					assertEquals(List.of(2L, 1L), lookupsPerRow);
 					assertEquals(0, ambientLookups.get());
 				}
 			}

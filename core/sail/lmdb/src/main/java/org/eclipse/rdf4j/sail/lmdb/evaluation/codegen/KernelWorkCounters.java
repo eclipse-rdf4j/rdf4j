@@ -34,6 +34,8 @@ public final class KernelWorkCounters {
 	private long contextValuesCopied;
 	private long bindEvaluations;
 	private long valueFilterEvaluations;
+	private long optionalArmOpens;
+	private long optionalArmReplays;
 
 	public void recordBind() {
 		bindEvaluations = increment(bindEvaluations);
@@ -41,6 +43,14 @@ public final class KernelWorkCounters {
 
 	public void recordValueFilter() {
 		valueFilterEvaluations = increment(valueFilterEvaluations);
+	}
+
+	public void recordOptionalArmOpen() {
+		optionalArmOpens = increment(optionalArmOpens);
+	}
+
+	public void recordOptionalArmReplay() {
+		optionalArmReplays = increment(optionalArmReplays);
 	}
 
 	/** Adds counters observed by a producer projection cursor after that cursor has been closed. */
@@ -64,6 +74,8 @@ public final class KernelWorkCounters {
 			contextValuesCopied = add(contextValuesCopied, contextValuesCopied);
 			bindEvaluations = add(bindEvaluations, bindEvaluations);
 			valueFilterEvaluations = add(valueFilterEvaluations, valueFilterEvaluations);
+			optionalArmOpens = add(optionalArmOpens, optionalArmOpens);
+			optionalArmReplays = add(optionalArmReplays, optionalArmReplays);
 			return;
 		}
 		pagesVisited = add(pagesVisited, other.pagesVisited);
@@ -73,6 +85,8 @@ public final class KernelWorkCounters {
 		contextValuesCopied = add(contextValuesCopied, other.contextValuesCopied);
 		bindEvaluations = add(bindEvaluations, other.bindEvaluations);
 		valueFilterEvaluations = add(valueFilterEvaluations, other.valueFilterEvaluations);
+		optionalArmOpens = add(optionalArmOpens, other.optionalArmOpens);
+		optionalArmReplays = add(optionalArmReplays, other.optionalArmReplays);
 	}
 
 	public long pagesVisited() {
@@ -101,6 +115,14 @@ public final class KernelWorkCounters {
 
 	public long valueFilterEvaluations() {
 		return valueFilterEvaluations;
+	}
+
+	public long optionalArmOpens() {
+		return optionalArmOpens;
+	}
+
+	public long optionalArmReplays() {
+		return optionalArmReplays;
 	}
 
 	private static long increment(long value) {

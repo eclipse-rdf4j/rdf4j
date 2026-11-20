@@ -73,6 +73,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
@@ -145,6 +146,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeIdDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ProjectedValueAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
@@ -13888,6 +13890,15 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private boolean withNativeProjectedValueAccess(ReadView readView, ValueResolutionScope scope,
+			Predicate<ProjectedValueAccess> capture) {
+		try {
+			return valueStore.withProjectedValueAccess(readView.valueSnapshot(), scope, capture);
+		} catch (IOException failure) {
+			throw new QueryEvaluationException(failure);
+		}
+	}
+
 	private final class ParallelSnapshotSource implements NativeLmdbQuerySource.ParallelSource {
 
 		private final Txn txn;
@@ -14125,6 +14136,11 @@ class LmdbSailStore implements SailStore {
 				Value supplied, long semanticVersion) {
 			return reuseNativeProjectedValue(lease.readView, snapshot, id, positionMask, valueScope, supplied,
 					semanticVersion);
+		}
+
+		@Override
+		public boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
+			return withNativeProjectedValueAccess(lease.readView, scope, capture);
 		}
 
 		@Override
@@ -15791,6 +15807,11 @@ class LmdbSailStore implements SailStore {
 				Value supplied, long semanticVersion) {
 			return reuseNativeProjectedValue(readView, snapshot, id, positionMask, valueScope, supplied,
 					semanticVersion);
+		}
+
+		@Override
+		public boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
+			return withNativeProjectedValueAccess(readView, scope, capture);
 		}
 
 		@Override
@@ -17695,6 +17716,29 @@ class LmdbSailStore implements SailStore {
 			long objPattern = obj == null ? LmdbValue.UNKNOWN_ID : 1L;
 			long contextPattern = contexts.length == 1 ? contextID : LmdbValue.UNKNOWN_ID;
 			return tripleStore.getSupportedOrders(txn, subjPattern, predPattern, objPattern, contextPattern);
+		}
+
+		StatementOrder getNaturalStatementOrder(boolean subjectBound, boolean predicateBound, boolean objectBound) {
+			ensureSnapshot();
+			if (directAdjacency != null || !canReplayStatementRows()) {
+				return null;
+			}
+			long subject = subjectBound ? 1L : LmdbValue.UNKNOWN_ID;
+			long predicate = predicateBound ? 1L : LmdbValue.UNKNOWN_ID;
+			long object = objectBound ? 1L : LmdbValue.UNKNOWN_ID;
+			return tripleStore.getNaturalStatementOrder(txn, subject, predicate, object, LmdbValue.UNKNOWN_ID);
+		}
+
+		boolean canReplayStatementRows() {
+			return txn.isReadOnly() && !valueStore.getFormat().isLegacy();
+		}
+
+		void validateStatementReplaySnapshot() {
+			ensureSnapshot();
+		}
+
+		Function<Value, Value> statementReplayCapturer() {
+			return valueStore.valueReplayCapturer(readView.valueSnapshot());
 		}
 
 		@Override

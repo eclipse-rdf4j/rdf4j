@@ -324,10 +324,20 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	void slotsReplaced() {
 		if (!stable) {
-			boundSlotCount = countBoundSlots();
-			empty = baseEmpty && boundSlotCount == 0;
-			evictTransientCaches();
+			updateBoundSlotCount(countBoundSlots());
 		}
+	}
+
+	void slotsReplaced(int count) {
+		if (!stable) {
+			updateBoundSlotCount(count);
+		}
+	}
+
+	private void updateBoundSlotCount(int count) {
+		boundSlotCount = count;
+		empty = baseEmpty && count == 0;
+		evictTransientCaches();
 	}
 
 	private int countBoundSlots() {
