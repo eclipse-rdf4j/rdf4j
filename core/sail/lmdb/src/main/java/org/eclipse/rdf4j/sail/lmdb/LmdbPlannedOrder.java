@@ -188,8 +188,7 @@ final class LmdbPlannedOrder {
 						needsBoundKey |= right.getBindingNames().contains(name);
 					} else {
 						OutputFacts rightOutputs = rightOutputs(right);
-						if (!rightOutputs.possibleOutputsKnown()
-								|| rightOutputs.overwrittenInputNames().contains(name)) {
+						if (!preservesBinding(right, name)) {
 							return null;
 						}
 						needsBoundKey |= rightOutputs.possibleOutputs().contains(name);
@@ -202,6 +201,21 @@ final class LmdbPlannedOrder {
 				return null;
 			}
 		}
+	}
+
+	private boolean preservesBinding(TupleExpr expression, String name) {
+		OutputFacts outputs = rightOutputs(expression);
+		if (outputs.isKnownEmpty()) {
+			return true;
+		}
+		if (!outputs.guaranteedOutputsKnown() || outputs.overwrittenInputNames().contains(name)
+				|| !(outputs.retainedInputNames().contains(name) || outputs.guaranteedOutputs().contains(name))) {
+			return false;
+		}
+		// A projection can restore the input via its parent-binding fallback. For other composite operators,
+		// require the proof down the tree: a bind join emits its right row even if that row dropped a left binding.
+		return expression instanceof Projection || expression instanceof MultiProjection
+				|| TupleExprs.getChildren(expression).stream().allMatch(child -> preservesBinding(child, name));
 	}
 
 	private OutputFacts rightOutputs(TupleExpr right) {

@@ -36,11 +36,9 @@ import org.eclipse.rdf4j.spring.tx.TransactionalRepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.tx.TxProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
@@ -71,13 +69,7 @@ public class RDF4JConfig {
 	}
 
 	@Bean
-	RepositoryConnectionFactory getRepositoryConnectionFactory(ConnectionFactoryChain chain) {
-		return chain.factory();
-	}
-
-	@Bean
-	@Lazy
-	ConnectionFactoryChain getConnectionFactoryChain(
+	RepositoryConnectionFactory getRepositoryConnectionFactory(
 			@Autowired Repository repository,
 			@Autowired(required = false) PoolProperties poolProperties,
 			@Autowired(required = false) ResultCacheProperties resultCacheProperties,
@@ -113,8 +105,7 @@ public class RDF4JConfig {
 			} else {
 				logger.debug("Spring transaction integration is not enabled");
 			}
-			// Spring already destroys the public factory when it is the pool itself.
-			return new ConnectionFactoryChain(factory, factory == pool ? null : pool);
+			return factory;
 		} catch (RuntimeException | Error failure) {
 			if (pool != null) {
 				try {
@@ -157,15 +148,5 @@ public class RDF4JConfig {
 	TransactionalRepositoryConnectionFactory wrapWithTxRepositoryConnectionFactory(
 			RepositoryConnectionFactory delegate) {
 		return new TransactionalRepositoryConnectionFactory(delegate);
-	}
-
-	record ConnectionFactoryChain(RepositoryConnectionFactory factory, PooledRepositoryConnectionFactory hiddenPool)
-			implements DisposableBean {
-		@Override
-		public void destroy() throws Exception {
-			if (hiddenPool != null) {
-				hiddenPool.destroy();
-			}
-		}
 	}
 }

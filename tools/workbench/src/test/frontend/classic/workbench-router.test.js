@@ -2440,6 +2440,7 @@ function loadRouterWithWorkspaces(harness = loadRouter()) {
     const defaultMetadata = { 'server-identity': 'sha256:abc:session-1', 'server-user': '' };
     const model = harness.model;
     harness.model = (viewId, extra) => model(viewId, Object.assign({ metadata: defaultMetadata }, extra));
+    harness.info = () => harness.model('info', { vars: ['id'] });
     harness.session.model.metadata = defaultMetadata;
     workbench.app.viewContext = (appMount, loaded, url) => ({
         repositoryId: new URL(url).pathname.split('/')[3],
@@ -2460,6 +2461,89 @@ function loadRouterWithWorkspaces(harness = loadRouter()) {
 
 const repo = (id, rest) => 'https://example.test/workbench/repositories/' + id + '/' + rest;
 const switchLink = (id, view) => link(repo(id, view), { 'data-workbench-repository-switch': 'true' });
+
+for (const view of ['types', 'contexts']) {
+    test(`switching from ${view} restores the saved Query without loading the destination listing`, async () => {
+        const harness = loadRouterWithWorkspaces(loadRouter({ href: repo('repo-1', view) }));
+        harness.session.model = harness.model(view);
+        harness.register('query');
+        const workspace = harness.workbench.workspace;
+        workspace.rememberPage(workspace.scopeOf('sha256:abc:session-1', '', 'repo-2'), 'query', {
+            url: '/workbench/repositories/repo-2/query', form: []
+        });
+        const requests = [];
+        harness.workbench.app.loadModel = async (fetcher, url) => {
+            requests.push(url);
+            const requestedView = new URL(url).pathname.split('/').at(-1);
+            return harness.model(requestedView, requestedView === view
+                ? { error: { status: 504, code: 'timed-out', message: 'Listing took too long' } }
+                : { vars: ['id'] });
+        };
+        harness.start();
+
+        assert.equal(await harness.router.navigate(repo('repo-2', view), {
+            history: 'push', repositorySwitch: true
+        }), 'committed');
+        await settle();
+
+        assert.deepEqual(requests, [repo('repo-2', 'info'), repo('repo-2', 'query')]);
+        assert.equal(harness.window.location.href, repo('repo-2', 'query'));
+        assert.equal(harness.toasts.length, 1);
+        assert.deepEqual(harness.disposed, ['info'], 'the metadata probe is released without mounting');
+    });
+}
+
+for (const issue of ['failed', 'redirected', 'refused']) {
+    test(`switching with ${issue} destination Info opens the requested route without restoring a workspace`, async () => {
+        const harness = loadRouterWithWorkspaces();
+        harness.register('query');
+        const workspace = harness.workbench.workspace;
+        workspace.rememberPage(workspace.scopeOf('sha256:abc:session-1', '', 'repo-2'), 'query', {
+            url: '/workbench/repositories/repo-2/query', form: []
+        });
+        const requests = [];
+        harness.workbench.app.loadModel = async (fetcher, url) => {
+            requests.push(url);
+            if (url === repo('repo-2', 'info')) {
+                if (issue === 'failed') {
+                    throw new Error('Could not load repository metadata');
+                }
+                return issue === 'redirected'
+                    ? harness.model('info', { vars: ['id'], finalUrl: repo('repo-3', 'info') })
+                    : harness.model('info', { vars: ['error-message'] });
+            }
+            return harness.model('summary');
+        };
+        harness.start();
+
+        assert.equal(await harness.router.navigate(repo('repo-2', 'summary'), {
+            history: 'push', repositorySwitch: true
+        }), 'committed');
+        await settle();
+
+        assert.deepEqual(requests, [repo('repo-2', 'info'), repo('repo-2', 'summary')]);
+        assert.equal(harness.window.location.href, repo('repo-2', 'summary'));
+        assert.equal(harness.toasts.length, 0);
+    });
+}
+
+test('a later navigation can replace a repository switch while Info is pending', async () => {
+    const harness = loadRouterWithWorkspaces();
+    const workspace = harness.workbench.workspace;
+    workspace.rememberPage(workspace.scopeOf('sha256:abc:session-1', '', 'repo-2'), 'explore', {
+        url: '/workbench/repositories/repo-2/explore', form: []
+    });
+    harness.start();
+    const switching = harness.router.navigate(repo('repo-2', 'summary'), { history: 'push', repositorySwitch: true });
+    await visit(harness, 'types');
+    await harness.answerUrl(repo('repo-2', 'info'), harness.info());
+
+    assert.equal(await switching, 'abandoned');
+    assert.deepEqual(harness.loadModelCalls.map(({ url }) => url), [repo('repo-2', 'info'), base + 'types']);
+    assert.equal(harness.window.location.href, base + 'types');
+    assert.equal(harness.toasts.length, 0);
+    assert.ok(harness.disposed.includes('info'));
+});
 
 for (const [change, responseIdentity, responseUser] of [
     ['server', 'sha256:def:session-2', 'alice'],
@@ -2483,6 +2567,7 @@ for (const [change, responseIdentity, responseUser] of [
         harness.workbench.app.loadModel = async (fetcher, url) => {
             requests.push(url);
             return harness.model(new URL(url).pathname.split('/').at(-1), {
+                vars: ['id'],
                 metadata: { 'server-identity': responseIdentity, 'server-user': responseUser }
             });
         };
@@ -2494,11 +2579,36 @@ for (const [change, responseIdentity, responseUser] of [
 
         assert.equal(textarea.value, '', 'a draft from the old scope must not populate the form');
         assert.equal(harness.window.location.href, repo('repo-2', 'summary'), 'open the requested destination');
-        assert.deepEqual(requests, [repo('repo-2', 'summary')], 'the new scope never receives the old saved address');
+        assert.deepEqual(requests, [repo('repo-2', 'info'), repo('repo-2', 'summary')],
+            'the new scope never receives the old saved address');
         assert.equal(harness.toasts.length, 0);
         assert.equal(workspace.readWorkspace(previousScope).lastView, 'update', 'keep the previous owner’s workspace');
     });
 }
+
+test('repository switching restores the workspace of the account confirmed by destination Info', async () => {
+    const harness = loadRouterWithWorkspaces();
+    const alice = { 'server-identity': 'sha256:abc:session-1', 'server-user': 'alice' };
+    const bob = { 'server-identity': 'sha256:abc:session-2', 'server-user': 'bob' };
+    harness.session.model = harness.model('summary', { metadata: alice });
+    const workspace = harness.workbench.workspace;
+    workspace.rememberPage(workspace.scopeOf(alice['server-identity'], 'alice', 'repo-2'), 'explore', {
+        url: '/workbench/repositories/repo-2/explore?resource=alice', form: []
+    });
+    workspace.rememberPage(workspace.scopeOf(bob['server-identity'], 'bob', 'repo-2'), 'namespaces', {
+        url: '/workbench/repositories/repo-2/namespaces', form: []
+    });
+    harness.start();
+    const switching = harness.router.navigate(repo('repo-2', 'summary'), { history: 'push', repositorySwitch: true });
+    await harness.answerUrl(repo('repo-2', 'info'), harness.model('info', { vars: ['id'], metadata: bob }));
+    assert.deepEqual(harness.loadModelCalls.map(({ url }) => url), [repo('repo-2', 'info'), repo('repo-2', 'namespaces')]);
+    await harness.answerUrl(repo('repo-2', 'namespaces'), harness.model('namespaces', { metadata: bob }));
+
+    assert.equal(await switching, 'committed');
+    assert.equal(harness.window.location.href, repo('repo-2', 'namespaces'));
+    assert.equal(harness.mount.getAttribute('data-workbench-server-user'), 'bob');
+    assert.equal(harness.toasts.length, 1);
+});
 
 test('repository workspace restoration ignores state when the destination redirects to a different repository', async () => {
     const harness = loadRouterWithWorkspaces();
@@ -2523,6 +2633,42 @@ test('repository workspace restoration ignores state when the destination redire
     assert.equal(harness.toasts.length, 0);
 });
 
+for (const issue of ['failed', 'redirected']) {
+    test(`switching falls back to the requested route when the saved page is ${issue}`, async () => {
+        const harness = loadRouterWithWorkspaces();
+        const workspace = harness.workbench.workspace;
+        workspace.rememberPage(workspace.scopeOf('sha256:abc:session-1', '', 'repo-2'), 'explore', {
+            url: '/workbench/repositories/repo-2/explore?resource=saved', form: []
+        });
+        const requests = [];
+        harness.workbench.app.loadModel = async (fetcher, url) => {
+            requests.push(url);
+            if (url === repo('repo-2', 'info')) {
+                return harness.info();
+            }
+            if (url === repo('repo-2', 'explore?resource=saved')) {
+                if (issue === 'failed') {
+                    throw new Error('Could not load the saved page');
+                }
+                return harness.model('explore', { finalUrl: repo('repo-3', 'explore?resource=saved') });
+            }
+            return harness.model('summary');
+        };
+        harness.start();
+
+        assert.equal(await harness.router.navigate(repo('repo-2', 'summary'), {
+            history: 'push', repositorySwitch: true
+        }), 'committed');
+        await settle();
+
+        assert.deepEqual(requests, [repo('repo-2', 'info'), repo('repo-2', 'explore?resource=saved'),
+            repo('repo-2', 'summary')]);
+        assert.equal(harness.window.location.href, repo('repo-2', 'summary'));
+        assert.equal(harness.log.includes('mount explore'), false);
+        assert.equal(harness.toasts.length, 0);
+    });
+}
+
 test('a repository workspace is revalidated if credentials change while loading the saved address', async () => {
     const harness = loadRouterWithWorkspaces();
     harness.session.model = harness.model('summary', {
@@ -2536,9 +2682,11 @@ test('a repository workspace is revalidated if credentials change while loading 
     const requests = [];
     harness.workbench.app.loadModel = async (fetcher, url) => {
         requests.push(url);
-        return harness.model(new URL(url).pathname.split('/').at(-1), { metadata: {
-            'server-identity': 'sha256:abc:session-1', 'server-user': requests.length === 1 ? 'alice' : 'bob'
-        } });
+        return harness.model(new URL(url).pathname.split('/').at(-1), {
+            vars: ['id'], metadata: {
+                'server-identity': 'sha256:abc:session-1', 'server-user': requests.length === 1 ? 'alice' : 'bob'
+            }
+        });
     };
     harness.start();
 
@@ -2546,7 +2694,7 @@ test('a repository workspace is revalidated if credentials change while loading 
         history: 'push', repositorySwitch: true
     }), 'committed');
 
-    assert.deepEqual(requests, [repo('repo-2', 'summary'), repo('repo-2', 'update'), repo('repo-2', 'summary')]);
+    assert.deepEqual(requests, [repo('repo-2', 'info'), repo('repo-2', 'update'), repo('repo-2', 'summary')]);
     assert.equal(harness.window.location.href, repo('repo-2', 'summary'));
     assert.equal(harness.mount.getAttribute('data-workbench-server-user'), 'bob');
     assert.equal(harness.log.includes('mount update'), false);
@@ -2559,7 +2707,7 @@ test('a confirmed repository switch to Explore can use the previous resource wit
         '?resource=%3Curn%3Atest%3E');
     harness.start();
     harness.document.dispatch('click', click(switchLink('repo-2', 'explore')));
-    await harness.answerUrl(repo('repo-2', 'explore'), harness.model('explore'));
+    await harness.answerUrl(repo('repo-2', 'info'), harness.info());
     await harness.answerUrl(repo('repo-2', 'explore?resource=%3Curn%3Atest%3E'), harness.model('explore'));
 
     assert.equal(harness.window.location.href, repo('repo-2', 'explore?resource=%3Curn%3Atest%3E'));
@@ -2614,6 +2762,7 @@ test('switching to a repository opens the page it was left on, says so, and offe
     harness.window.scrollY = 420;
 
     harness.document.dispatch('click', click(switchLink('repo-2', 'explore')));
+    await harness.answerUrl(repo('repo-2', 'info'), harness.info());
     await harness.answerUrl(repo('repo-2', 'explore'), harness.model('explore'));
     assert.equal(harness.toasts.length, 0, 'a repository not left before opens as usual, without a notice');
     const kept = JSON.parse(harness.localStorage.getItem('rdf4j.workbench.workspace.v1:'
@@ -2625,7 +2774,7 @@ test('switching to a repository opens the page it was left on, says so, and offe
     harness.router.navigate(repo('repo-2', 'types'), { history: 'push' });
     await harness.answerUrl(repo('repo-2', 'types'), harness.model('types'));
     harness.document.dispatch('click', click(switchLink('repo-1', 'types')));
-    await harness.answerUrl(repo('repo-1', 'types'), harness.model('types'));
+    await harness.answerUrl(repo('repo-1', 'info'), harness.info());
     assert.equal(harness.loadModelCalls[harness.loadModelCalls.length - 1].url,
         repo('repo-1', 'explore?resource=%3Curn%3Ax%3E'), 'the switch opens the page repo-1 was left on');
     await harness.answerUrl(repo('repo-1', 'explore?resource=%3Curn%3Ax%3E'), harness.model('explore'));
@@ -2669,6 +2818,7 @@ test('Undo can copy the queries of the repository the switch came from, without 
             scrollY: 0, form: [], at: 1 } }, at: 1 }));
     harness.start();
     harness.document.dispatch('click', click(switchLink('repo-2', 'summary')));
+    await harness.answerUrl(repo('repo-2', 'info'), harness.info());
     await harness.answerUrl(repo('repo-2', 'summary'), harness.model('summary'));
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(harness.toasts.length, 1);
@@ -2714,7 +2864,7 @@ test('Undo of a repository workspace preserves the parked Query of another repos
     assert.deepEqual(harness.kept.children, [queryOutlet]);
 
     harness.document.dispatch('click', click(switchLink('repo-2', 'summary')));
-    await harness.answerUrl(repo('repo-2', 'summary'), harness.model('summary'));
+    await harness.answerUrl(repo('repo-2', 'info'), harness.info());
     await harness.answerUrl(repo('repo-2', 'explore'), harness.model('explore'));
     assert.equal(harness.toasts.length, 1);
     harness.choose('empty');
@@ -2743,7 +2893,7 @@ test('Undo of a repository workspace leaves its saved tabs if the response belon
     });
     let serverUser = 'alice';
     harness.workbench.app.loadModel = async (fetcher, url) => harness.model(new URL(url).pathname.split('/').at(-1), {
-        metadata: { 'server-identity': 'sha256:abc:session-1', 'server-user': serverUser }
+        vars: ['id'], metadata: { 'server-identity': 'sha256:abc:session-1', 'server-user': serverUser }
     });
     harness.start();
     await harness.router.navigate(repo('repo-2', 'summary'), { history: 'push', repositorySwitch: true });

@@ -1254,6 +1254,40 @@ namespace workbench {
             }
             // The hash only matters to the page once it is shown (M8.2); the page model is the same without it.
             const request = target.href.split('#')[0];
+            const openRequestedRepository = (): Promise<Outcome> => {
+                model?.rowStore.dispose();
+                model = null;
+                const originalUrl = workspaceNavigation?.originalUrl || target.href;
+                return openRoute(originalUrl, Object.assign({}, options, { workspaceRestore: null }), { originalUrl });
+            };
+            if (!options.body && options.repositorySwitch && !workspaceNavigation && workspace()
+                    && repositoryIdOf(target)) {
+                // Resolve the destination's owner without running the view's listing or query. The metadata-only
+                // Info endpoint establishes the scope before we read any saved address for this repository.
+                const infoUrl = new URL('info', target).href;
+                return app().loadModel(fetcher, infoUrl, signal).then((info: PageModel): Outcome | Promise<Outcome> => {
+                    info.rowStore.dispose();
+                    if (stale()) {
+                        return 'abandoned';
+                    }
+                    const scope = info.viewId === 'info' && info.vars.indexOf('id') >= 0
+                        && (info.finalUrl || infoUrl) === infoUrl ? scopeOfResponse(info, target) : null;
+                    if (!scope) {
+                        return openRequestedRepository();
+                    }
+                    const restore = workspaceRestoreFor(target, scope);
+                    const selected = new URL(restore ? restore.page.url : target.href);
+                    const identity = info.metadata['server-identity'];
+                    const user = info.metadata['server-user'];
+                    if (!restore && sameWorkspaceOwner(scopeOfRoute(currentRoute), scope)
+                            && sameConnection(currentRoute.context, { serverIdentity: identity, serverUser: user })) {
+                        exploreAgain(selected, identity);
+                    }
+                    return openRoute(selected.href, Object.assign({}, options, { workspaceRestore: restore }), {
+                        originalUrl: target.href, scope: restore || selected.href !== target.href ? scope : undefined
+                    });
+                }, (): Outcome | Promise<Outcome> => stale() ? 'abandoned' : openRequestedRepository());
+            }
             let answer: Promise<any>;
             /** The HTTP status of a form POST's answer, and the answer itself. */
             let answerStatus = 0;
@@ -1285,12 +1319,6 @@ namespace workbench {
             } else {
                 answer = app().loadModel(fetcher, request, signal);
             }
-            const openRequestedRepository = (): Promise<Outcome> => {
-                model?.rowStore.dispose();
-                model = null;
-                const originalUrl = workspaceNavigation.originalUrl;
-                return openRoute(originalUrl, Object.assign({}, options, { workspaceRestore: null }), { originalUrl });
-            };
             const show = (): Promise<Outcome> => {
                 if (options.body) {
                     // Another page (a redirect, or Saved queries' Edit answered by the Query page) is a new
@@ -1334,26 +1362,6 @@ namespace workbench {
                         }
                         const identity = model.metadata?.['server-identity'];
                         const user = model.metadata?.['server-user'];
-                        if (options.repositorySwitch && !workspaceNavigation && finalRequest === request
-                                && model.viewId === viewId) {
-                            const scope = scopeOfResponse(model, finalUrl);
-                            const restore = workspaceRestoreFor(target, scope);
-                            const saved = new URL(restore ? restore.page.url : target.href);
-                            if (!restore && sameWorkspaceOwner(scopeOfRoute(currentRoute), scope)
-                                    && sameConnection(currentRoute.context, { serverIdentity: identity, serverUser: user })) {
-                                exploreAgain(saved, identity);
-                            }
-                            if (saved.href.split('#')[0] !== request) {
-                                model.rowStore.dispose();
-                                model = null;
-                                return openRoute(saved.href, Object.assign({}, options, { workspaceRestore: restore }),
-                                    { originalUrl: target.href, scope });
-                            }
-                            if (restore) {
-                                target.hash = saved.hash;
-                                options = Object.assign({}, options, { workspaceRestore: restore });
-                            }
-                        }
                         // A kept Query is private to the connection and route it was mounted with.
                         if (kept && !options.prepare && !model.error && typeof identity === 'string' && identity
                                 && typeof user === 'string'

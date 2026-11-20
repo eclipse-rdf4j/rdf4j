@@ -48,9 +48,8 @@ public final class LmdbPartitionedDistinctSteps {
 	/**
 	 * Wraps {@code child} so that each evaluation deduplicates one partition of {@code partitionBindingName} at a time.
 	 * <p>
-	 * Each evaluation owns its own {@link CollectionFactory}: the iteration closes what it was handed, so a factory
-	 * shared across the prepared step would be closed by the first evaluation and a correlated re-run would operate on
-	 * a closed factory, a real resource-release failure for disk-backed factories.
+	 * Each evaluation owns its {@link CollectionFactory}. The iteration can also replace it when its membership set has
+	 * grown too large for the current partition sizes. Correlated re-runs and disk-backed sets stay independent.
 	 */
 	@InternalUseOnly
 	public static QueryEvaluationStep partitioned(QueryEvaluationStep child, String partitionBindingName,
@@ -61,7 +60,8 @@ public final class LmdbPartitionedDistinctSteps {
 			try {
 				evaluate = child.evaluate(bindings);
 				LmdbPartitionedDistinctIteration result = new LmdbPartitionedDistinctIteration(evaluate,
-						collectionFactory.createSet(), partitionBindingName, collectionFactory);
+						collectionFactory.createSet(), partitionBindingName, collectionFactory,
+						collectionFactorySupplier);
 				PARTITIONED_EVALUATIONS.incrementAndGet();
 				return result;
 			} catch (RuntimeException | Error e) {

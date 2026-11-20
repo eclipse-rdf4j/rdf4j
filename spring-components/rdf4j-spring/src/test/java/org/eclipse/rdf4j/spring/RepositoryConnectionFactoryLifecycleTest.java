@@ -57,6 +57,30 @@ class RepositoryConnectionFactoryLifecycleTest {
 
 	@ParameterizedTest
 	@MethodSource("wrappers")
+	void standaloneWrapperDestroysItsDisposableDelegate(
+			Function<RepositoryConnectionFactory, RepositoryConnectionFactory> wrapper) throws Exception {
+		RepositoryConnectionFactory delegate = mock(RepositoryConnectionFactory.class,
+				withSettings().extraInterfaces(DisposableBean.class));
+
+		assertInstanceOf(DisposableBean.class, wrapper.apply(delegate)).destroy();
+
+		verify((DisposableBean) delegate).destroy();
+	}
+
+	@ParameterizedTest
+	@MethodSource("wrappers")
+	void standaloneWrapperLeavesNonDisposableDelegateAlone(
+			Function<RepositoryConnectionFactory, RepositoryConnectionFactory> wrapper) throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnectionFactory delegate = new DirectRepositoryConnectionFactory(repository);
+
+		assertInstanceOf(DisposableBean.class, wrapper.apply(delegate)).destroy();
+
+		verifyNoInteractions(repository);
+	}
+
+	@ParameterizedTest
+	@MethodSource("wrappers")
 	void springDestroysAnIndependentlyManagedDelegateExactlyOnce(
 			Function<RepositoryConnectionFactory, RepositoryConnectionFactory> wrapper) throws Exception {
 		RepositoryConnectionFactory delegate = mock(RepositoryConnectionFactory.class,
@@ -87,6 +111,69 @@ class RepositoryConnectionFactoryLifecycleTest {
 				child.refresh();
 			}
 			verifyNoInteractions(delegate);
+		}
+		verify((DisposableBean) delegate).destroy();
+	}
+
+	@Test
+	void customInlineDecoratorChainClosesPooledConnectionsBeforeRepository() throws Exception {
+		InlineDecoratorConfiguration configuration = null;
+		try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(
+				InlineDecoratorConfiguration.class)) {
+			configuration = context.getBean(InlineDecoratorConfiguration.class);
+			TransactionalRepositoryConnectionFactory factory = context.getBean(
+					TransactionalRepositoryConnectionFactory.class);
+			factory.createTransaction();
+			factory.closeConnection();
+			verify(configuration.connection, never()).close();
+
+			context.close();
+
+			InOrder shutdown = inOrder(configuration.connection, configuration.repository);
+			shutdown.verify(configuration.connection).close();
+			shutdown.verify(configuration.repository).shutDown();
+		} finally {
+			if (configuration != null && configuration.pool != null) {
+				configuration.pool.destroy();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void inlineDecoratorsLeaveTheirParentDelegateToItsContext(boolean closeParentFirst) throws Exception {
+		RepositoryConnectionFactory delegate = mock(RepositoryConnectionFactory.class,
+				withSettings().extraInterfaces(DisposableBean.class));
+		try (AnnotationConfigApplicationContext parent = new AnnotationConfigApplicationContext()) {
+			parent.registerBean(RepositoryConnectionFactory.class, () -> delegate);
+			parent.refresh();
+			try (AnnotationConfigApplicationContext child = new AnnotationConfigApplicationContext()) {
+				child.setParent(parent);
+				child.registerBean(RepositoryConnectionFactory.class,
+						() -> new TransactionalRepositoryConnectionFactory(
+								new LoggingRepositoryConnectionFactory(
+										parent.getBean(RepositoryConnectionFactory.class), new OperationLog())));
+				child.refresh();
+				if (closeParentFirst) {
+					parent.close();
+				}
+			}
+			if (!closeParentFirst) {
+				verifyNoInteractions(delegate);
+			}
+		}
+		verify((DisposableBean) delegate).destroy();
+	}
+
+	@Test
+	void delegateRegisteredAfterDecoratorStillHasItsOwnLifecycle() throws Exception {
+		RepositoryConnectionFactory delegate = mock(RepositoryConnectionFactory.class,
+				withSettings().extraInterfaces(DisposableBean.class));
+		try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+			context.registerBean("wrapper", RepositoryConnectionFactory.class,
+					() -> new LoggingRepositoryConnectionFactory(delegate, new OperationLog()));
+			context.registerBean("delegate", RepositoryConnectionFactory.class, () -> delegate);
+			context.refresh();
 		}
 		verify((DisposableBean) delegate).destroy();
 	}
@@ -160,6 +247,20 @@ class RepositoryConnectionFactoryLifecycleTest {
 			PoolProperties properties = new PoolProperties();
 			properties.setEnabled(true);
 			return properties;
+		}
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	static class InlineDecoratorConfiguration extends LifecycleConfiguration {
+		PooledRepositoryConnectionFactory pool;
+
+		@Bean
+		TransactionalRepositoryConnectionFactory connectionFactory(Repository repository) {
+			pool = new PooledRepositoryConnectionFactory(new DirectRepositoryConnectionFactory(repository));
+			RepositoryConnectionFactory caching = new CachingRepositoryConnectionFactory(pool,
+					new ResultCacheProperties());
+			RepositoryConnectionFactory logging = new LoggingRepositoryConnectionFactory(caching, new OperationLog());
+			return new TransactionalRepositoryConnectionFactory(logging);
 		}
 	}
 

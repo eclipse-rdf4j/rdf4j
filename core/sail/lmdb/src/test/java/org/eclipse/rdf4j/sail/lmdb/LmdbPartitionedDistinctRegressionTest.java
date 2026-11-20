@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
@@ -44,10 +45,12 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -55,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -65,6 +69,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -95,7 +100,9 @@ class LmdbPartitionedDistinctRegressionTest {
 		IRI rightSubject = VF.createIRI("urn:right-subject");
 		IRI rightPredicate = VF.createIRI("urn:right");
 		List<IRI> graphs = IntStream.range(0, 20).mapToObj(i -> VF.createIRI("urn:g" + i)).toList();
-		LmdbStore store = openStore(false);
+		boolean contextCanBeUnbound = scope == Scope.DEFAULT_CONTEXTS || namedDataset != NamedDataset.WILDCARD;
+		// The positive case needs a context order that retains the two constant prefix bindings.
+		LmdbStore store = contextCanBeUnbound ? openStore(false) : openStore(false, "spoc,posc,pocs");
 		try (var connection = store.getConnection()) {
 			connection.begin();
 			connection.addStatement(VF.createIRI("urn:l1"), leftPredicate, leftObject);
@@ -121,7 +128,6 @@ class LmdbPartitionedDistinctRegressionTest {
 				dataset.addNamedGraph(namedDataset.defaultAlias);
 				dataset.addNamedGraph(graphs.getFirst());
 			}
-			boolean contextCanBeUnbound = scope == Scope.DEFAULT_CONTEXTS || dataset != null;
 			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
 			assertThat(evaluate(connection, query, dataset)).extracting(row -> row.getValue("graph"))
 					.containsExactlyInAnyOrderElementsOf(contextCanBeUnbound ? graphs : List.of(graphs.getFirst()));
@@ -143,6 +149,116 @@ class LmdbPartitionedDistinctRegressionTest {
 		NamedDataset(Resource defaultAlias) {
 			this.defaultAlias = defaultAlias;
 		}
+	}
+
+	@Test
+	void joinRightOperandCanDropABoundPartitionKey() {
+		IRI first = VF.createIRI("urn:first");
+		IRI second = VF.createIRI("urn:second");
+		IRI predicate = VF.createIRI("urn:p");
+		IRI object = VF.createIRI("urn:o");
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(first, predicate, object);
+			connection.addStatement(second, predicate, object);
+			connection.commit();
+
+			var left = new StatementPattern(Var.of("a"), TupleExprs.createConstVar(predicate),
+					TupleExprs.createConstVar(object));
+			var right = new MultiProjection(new SingletonSet(), List.of(
+					new ProjectionElemList(new ProjectionElem("a")), new ProjectionElemList()));
+			var query = new QueryRoot(new Distinct(new Projection(new Join(left, right),
+					new ProjectionElemList(new ProjectionElem("a")))));
+
+			assertThat(evaluate(connection, query)).extracting(row -> row.getValue("a"))
+					.containsExactlyInAnyOrder(first, second, null);
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource(delimiter = '|', value = {
+			"spoc,posc | ?o | false",
+			"pcso,ospc | <urn:o> | false",
+			"psoc,posc | ?o | true"
+	})
+	void distinctKeepsThePredicatePrefixWhenOnlySubjectIsProjected(String indexes, String objectPattern,
+			boolean partitioned) {
+		IRI common = VF.createIRI("urn:common");
+		IRI rare = VF.createIRI("urn:rare");
+		IRI object = VF.createIRI("urn:o");
+		IRI match = VF.createIRI("urn:s21");
+		LmdbStore store = openStore(false, indexes);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < 64; i++) {
+				connection.addStatement(VF.createIRI("urn:s" + i), common, object);
+			}
+			connection.addStatement(match, rare, object);
+			connection.commit();
+
+			var query = parse("SELECT DISTINCT ?s WHERE { ?s <urn:rare> " + objectPattern + " }");
+			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+			assertThat(evaluate(connection, query)).extracting(row -> row.getValue("s")).containsExactly(match);
+			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - before)
+					.isEqualTo(partitioned ? 1 : 0);
+			var plan = connection.explain(Explanation.Level.Telemetry, query, null,
+					EmptyBindingSet.getInstance(), true, 10);
+			assertThat(largestScan(plan.toGenericPlanNode())).isEqualTo(1L);
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static long largestScan(GenericPlanNode plan) {
+		Long scanned = plan.getSourceRowsScannedActual();
+		long largest = scanned == null ? 0 : scanned;
+		if (plan.getPlans() != null) {
+			for (GenericPlanNode child : plan.getPlans()) {
+				largest = Math.max(largest, largestScan(child));
+			}
+		}
+		return largest;
+	}
+
+	@Test
+	void singletonPartitionsDoNotKeepClearingAnOversizedMembershipTable() {
+		List<BindingSet> rows = aliasedRows(VF.createIRI("urn:large"), 128);
+		for (int i = 0; i < 32; i++) {
+			rows.addAll(aliasedRows(VF.createIRI("urn:small:" + i), 1));
+		}
+		var oversizedClears = new AtomicInteger();
+		var step = LmdbPartitionedDistinctSteps.partitioned(
+				ignored -> new CloseableIteratorIteration<>(rows.iterator()), "s",
+				() -> new DefaultCollectionFactory() {
+					@Override
+					public <T> Set<T> createSet() {
+						return new HashSet<>() {
+							private int peakSize;
+
+							@Override
+							public boolean add(T key) {
+								boolean added = super.add(key);
+								peakSize = Math.max(peakSize, size());
+								return added;
+							}
+
+							@Override
+							public void clear() {
+								if (peakSize >= 128) {
+									oversizedClears.incrementAndGet();
+								}
+								super.clear();
+							}
+						};
+					}
+				});
+		try (var result = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(Iterations.asList(result)).hasSize(160);
+		}
+		assertThat(oversizedClears.get()).isLessThanOrEqualTo(1);
 	}
 
 	@Test
@@ -230,6 +346,7 @@ class LmdbPartitionedDistinctRegressionTest {
 	@Test
 	void partitionedDistinctSpillsSharedKeysAndClearsPartitions() {
 		List<BindingSet> rows = aliasedRows(VF.createIRI("urn:first"), 32);
+		rows.addAll(aliasedRows(VF.createIRI("urn:small"), 1));
 		rows.addAll(aliasedRows(VF.createIRI("urn:second"), 32));
 		List<BindingSet> expected = IntStream.range(0, rows.size() / 2).mapToObj(i -> rows.get(i * 2)).toList();
 		assertDiskBackedDistinct(rows, expected);
@@ -488,7 +605,11 @@ class LmdbPartitionedDistinctRegressionTest {
 	}
 
 	private LmdbStore openStore(boolean nativeFactory) {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,cspo").setNativeEvaluationEnabled(nativeFactory);
+		return openStore(nativeFactory, "spoc,posc,cspo");
+	}
+
+	private LmdbStore openStore(boolean nativeFactory, String indexes) {
+		LmdbStoreConfig config = new LmdbStoreConfig(indexes).setNativeEvaluationEnabled(nativeFactory);
 		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
 		store.init();

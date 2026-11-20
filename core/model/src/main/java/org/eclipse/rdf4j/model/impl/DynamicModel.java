@@ -108,6 +108,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		return model;
 	}
 
+	long statementVersion() {
+		return statementVersion;
+	}
+
 	@Override
 	public Model unmodifiable() {
 		upgrade();

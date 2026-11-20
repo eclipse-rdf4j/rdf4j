@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -21,9 +22,12 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -86,7 +90,7 @@ public final class LmdbDistinctOrderMarker {
 			return plannedOrder.partitionBindingName();
 		}
 
-		Set<Var> supportedOrders = leading.getSupportedOrders(tripleSource);
+		Set<Var> supportedOrders = prefixPreservingOrders(leading, tripleSource, dataset, boundOutside);
 		if (supportedOrders.isEmpty()) {
 			return Optional.empty();
 		}
@@ -132,10 +136,56 @@ public final class LmdbDistinctOrderMarker {
 		return Optional.of(bestName);
 	}
 
+	private static Set<Var> prefixPreservingOrders(StatementPattern pattern, TripleSource tripleSource, Dataset dataset,
+			Set<String> boundOutside) {
+		if (!(tripleSource instanceof SailDatasetTripleTermSource sailSource)) {
+			return pattern.getSupportedOrders(tripleSource);
+		}
+		var datasets = sailSource.getDatasets(LmdbSailStore.LmdbSailDataset.class);
+		if (datasets.isEmpty()) {
+			// Behind an opaque dataset wrapper we cannot compare the snapshot's access paths.
+			return Set.of();
+		}
+		int possiblyBound = possiblyBoundComponents(pattern, dataset, boundOutside);
+		return pattern.getSupportedOrders((subject, predicate, object, contexts) -> {
+			Set<StatementOrder> supported = sailSource.getSupportedOrders(subject, predicate, object, contexts);
+			if (supported.isEmpty()) {
+				return supported;
+			}
+			int fixed = (subject != null ? 1 : 0) | (predicate != null ? 2 : 0) | (object != null ? 4 : 0)
+					| (contexts.length == 1 ? 8 : 0);
+			var orders = EnumSet.copyOf(supported);
+			for (var source : datasets) {
+				orders.retainAll(source.getPrefixPreservingOrders(fixed, possiblyBound));
+			}
+			return orders;
+		});
+	}
+
+	private static int possiblyBoundComponents(StatementPattern pattern, Dataset dataset, Set<String> boundOutside) {
+		int mask = (isBoundOutside(pattern.getSubjectVar(), boundOutside) ? 1 : 0)
+				| (isBoundOutside(pattern.getPredicateVar(), boundOutside) ? 2 : 0)
+				| (isBoundOutside(pattern.getObjectVar(), boundOutside) ? 4 : 0);
+		// Dataset and graph scopes can supply a context even when the pattern itself has no context variable.
+		if (pattern.getContextVar() != null || dataset != null) {
+			return mask | 8;
+		}
+		for (QueryModelNode parent = pattern.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			if (parent instanceof Graph) {
+				return mask | 8;
+			}
+		}
+		return mask;
+	}
+
+	private static boolean isBoundOutside(Var variable, Set<String> boundOutside) {
+		return variable != null && variable.getName() != null && boundOutside.contains(variable.getName());
+	}
+
 	/**
 	 * The binding names that are already fixed when {@code distinctLike} is evaluated: the bindings of the query
-	 * itself, plus, for every {@code Join}/{@code LeftJoin} ancestor in whose right argument the node sits, everything
-	 * the left argument binds (the right argument is evaluated once per left row with those bindings in place).
+	 * itself, plus the left argument's bindings from each enclosing {@code Join}, {@code LeftJoin} or {@code Lateral}
+	 * where this node occurs in the right argument.
 	 */
 	@InternalUseOnly
 	public static Set<String> boundOutside(UnaryTupleOperator distinctLike, BindingSet queryBindings) {
@@ -150,6 +200,8 @@ public final class LmdbDistinctOrderMarker {
 				names.addAll(((Join) parent).getLeftArg().getBindingNames());
 			} else if (parent instanceof LeftJoin && ((LeftJoin) parent).getRightArg() == child) {
 				names.addAll(((LeftJoin) parent).getLeftArg().getBindingNames());
+			} else if (parent instanceof Lateral lateral && lateral.getRightArg() == child) {
+				names.addAll(lateral.getLeftArg().getBindingNames());
 			}
 			child = parent;
 			parent = parent.getParentNode();

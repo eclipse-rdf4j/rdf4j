@@ -507,14 +507,17 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 				// Sample at growing checkpoints, when pressure changes, or when additions cross the payload budget.
 				nextPartialBatchCheckSize = size < BATCH_SIZE ? (int) Math.min(2L * size, BATCH_SIZE)
 						: Integer.MAX_VALUE;
-				spillPayload = null;
 				if (!underMemoryPressure()) {
+					spillPayload = null;
 					return;
 				}
 				// Starting a disk store consumes heap. Retain an ordinary partial batch in memory, but also let a
 				// partial batch spill if its payload alone is as large as a typical full batch of statements.
 				if (size < BATCH_SIZE) {
-					SpillPayload payload = new SpillPayload();
+					if (spillPayload != null && spillPayload.isCurrent(candidate, size)) {
+						return;
+					}
+					SpillPayload payload = new SpillPayload(candidate, size);
 					for (Statement statement : candidate) {
 						payload.accountFor(statement);
 						if (payload.atLimit()) {
@@ -528,6 +531,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 				}
 
 				// Do not delay a retry if a migration fails while the original model is still owned here.
+				spillPayload = null;
 				nextPartialBatchCheckSize = 0;
 				logger.debug("Syncing triples to disk due to memory pressure or retry");
 				overflowToDisk();
@@ -550,7 +554,22 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		private final Set<Object> counted = Collections
 				.newSetFromMap(new MapMaker().weakKeys().concurrencyLevel(1).makeMap());
 		private final ArrayDeque<Value> pending = new ArrayDeque<>();
-		private long remaining = (long) BATCH_SIZE * ESTIMATED_BYTES_PER_STATEMENT;
+		private final int batchSize = BATCH_SIZE;
+		private final int statementCount;
+		private final long statementVersion;
+		private long remaining = (long) batchSize * ESTIMATED_BYTES_PER_STATEMENT;
+
+		SpillPayload(Model model, int size) {
+			statementCount = size;
+			statementVersion = model instanceof DynamicModel dynamic ? dynamic.statementVersion() : 0;
+		}
+
+		boolean isCurrent(Model model, int size) {
+			// Filtered iterators can remove directly from the indexed delegate. Compare the size as well as the
+			// revision so those removals invalidate the measurement.
+			return !atLimit() && batchSize == BATCH_SIZE && statementCount == size
+					&& model instanceof DynamicModel dynamic && statementVersion == dynamic.statementVersion();
+		}
 
 		boolean atLimit() {
 			return remaining <= 0;

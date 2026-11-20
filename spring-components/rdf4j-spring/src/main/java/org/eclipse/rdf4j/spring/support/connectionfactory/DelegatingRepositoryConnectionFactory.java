@@ -13,13 +13,24 @@
 package org.eclipse.rdf4j.spring.support.connectionfactory;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.HierarchicalBeanFactory;
+import org.springframework.beans.factory.config.SingletonBeanRegistry;
 
 /**
+ * Disposes a disposable delegate created inline. A delegate registered as a separate Spring singleton retains its own
+ * lifecycle, including beans from parent factories.
+ *
  * @author Florian Kleedorfer
  * @since 4.0.0
  */
-public abstract class DelegatingRepositoryConnectionFactory implements RepositoryConnectionFactory {
+public abstract class DelegatingRepositoryConnectionFactory
+		implements RepositoryConnectionFactory, BeanFactoryAware, DisposableBean {
 	private final RepositoryConnectionFactory delegate;
+	private BeanFactory containingBeanFactory;
+	private boolean separatelyManagedDelegate;
 
 	public DelegatingRepositoryConnectionFactory(RepositoryConnectionFactory delegate) {
 		this.delegate = delegate;
@@ -28,6 +39,43 @@ public abstract class DelegatingRepositoryConnectionFactory implements Repositor
 	@Override
 	public RepositoryConnection getConnection() {
 		return delegate.getConnection();
+	}
+
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) {
+		setContainingBeanFactory(beanFactory);
+	}
+
+	private void setContainingBeanFactory(BeanFactory beanFactory) {
+		containingBeanFactory = beanFactory;
+		separatelyManagedDelegate = delegate instanceof DisposableBean && isRegisteredSingleton(delegate, beanFactory);
+		if (!separatelyManagedDelegate && delegate instanceof DelegatingRepositoryConnectionFactory inlineDelegate) {
+			// Spring supplies the bean factory to the exposed decorator. Share it with inline decorators so they
+			// can identify a managed delegate deeper in the chain.
+			inlineDelegate.setContainingBeanFactory(beanFactory);
+		}
+	}
+
+	@Override
+	public void destroy() throws Exception {
+		if (delegate instanceof DisposableBean disposable && !separatelyManagedDelegate
+				&& !isRegisteredSingleton(delegate, containingBeanFactory)) {
+			disposable.destroy();
+		}
+	}
+
+	private static boolean isRegisteredSingleton(RepositoryConnectionFactory delegate, BeanFactory beanFactory) {
+		for (BeanFactory current = beanFactory; current != null;) {
+			if (current instanceof SingletonBeanRegistry singletonRegistry) {
+				for (String name : singletonRegistry.getSingletonNames()) {
+					if (singletonRegistry.containsSingleton(name) && singletonRegistry.getSingleton(name) == delegate) {
+						return true;
+					}
+				}
+			}
+			current = current instanceof HierarchicalBeanFactory hierarchy ? hierarchy.getParentBeanFactory() : null;
+		}
+		return false;
 	}
 
 	protected RepositoryConnectionFactory getDelegate() {

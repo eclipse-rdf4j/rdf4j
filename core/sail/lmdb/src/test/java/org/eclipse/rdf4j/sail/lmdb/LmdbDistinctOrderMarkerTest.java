@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -29,18 +30,22 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Unit tests for {@link LmdbDistinctOrderMarker}: it marks only the pattern that already leads and never moves. */
 class LmdbDistinctOrderMarkerTest {
@@ -136,5 +141,20 @@ class LmdbDistinctOrderMarkerTest {
 
 		assertThat(LmdbDistinctOrderMarker.mark(distinct.getArg(), orderedSource, null, Set.of())).isEmpty();
 		assertThat(leading.getOrder()).isNull();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nestedJoinMustRetainTheKeyInEveryProjectionArm(boolean retainsKey) {
+		StatementPattern leading = pattern("a", "urn:p", "b");
+		leading.setOrder(leading.getSubjectVar());
+		var projection = new MultiProjection(new SingletonSet(), List.of(
+				new ProjectionElemList(new ProjectionElem("a"), new ProjectionElem("x")),
+				retainsKey ? new ProjectionElemList(new ProjectionElem("a")) : new ProjectionElemList()));
+		var right = new Join(pattern("b", "urn:q", "x"), projection);
+		var result = new Projection(new Join(leading, right), new ProjectionElemList(new ProjectionElem("a")));
+
+		assertThat(new LmdbPlannedOrder(result, null).partitionBindingName())
+				.isEqualTo(retainsKey ? Optional.of("a") : Optional.empty());
 	}
 }

@@ -94,6 +94,21 @@ public class AbstractMemoryOverflowModelTest {
 		runInConstrainedHeap("sub-batch-payload");
 	}
 
+	@Test
+	void repeatedPressureProbesDoNotRescanAnUnchangedModel() throws Exception {
+		runInConstrainedHeap("repeated-pressure-probes");
+	}
+
+	@Test
+	void pressureProbesRevalidateAfterStatementChanges() throws Exception {
+		runInConstrainedHeap("pressure-probes-after-changes");
+	}
+
+	@Test
+	void pressureProbesRevalidateAfterBudgetChanges() throws Exception {
+		runInConstrainedHeap("pressure-probes-after-budget-change");
+	}
+
 	public static void main(String[] args) throws Exception {
 		if (args.length != 1) {
 			throw new IllegalArgumentException("Expected one pressure probe name");
@@ -138,6 +153,15 @@ public class AbstractMemoryOverflowModelTest {
 			break;
 		case "sub-batch-payload":
 			test.subBatchPayloadProbe();
+			break;
+		case "repeated-pressure-probes":
+			test.repeatedPressureProbes();
+			break;
+		case "pressure-probes-after-changes":
+			test.pressureProbesAfterChanges();
+			break;
+		case "pressure-probes-after-budget-change":
+			test.pressureProbesAfterBudgetChange();
 			break;
 		default:
 			throw new IllegalArgumentException("Unknown pressure probe: " + args[0]);
@@ -424,6 +448,80 @@ public class AbstractMemoryOverflowModelTest {
 			assertThat(distinct).containsExactlyInAnyOrderElementsOf(statements);
 		} finally {
 			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void repeatedPressureProbes() {
+		AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			CountingLiteral literal = new CountingLiteral("small payload");
+			model.add(values.createIRI("urn:subject"), values.createIRI("urn:predicate"), literal);
+			model.spillToDiskIfNeeded();
+			int readsAfterFirstProbe = literal.labelReads;
+			assertThat(readsAfterFirstProbe).isPositive();
+
+			for (int i = 0; i < 10; i++) {
+				model.spillToDiskIfNeeded();
+			}
+
+			assertThat(literal.labelReads).isEqualTo(readsAfterFirstProbe);
+			assertThat(model.spillCount).isZero();
+		}
+	}
+
+	private void pressureProbesAfterChanges() {
+		AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			CountingLiteral survivor = new CountingLiteral("surviving payload");
+			var predicate = values.createIRI("urn:predicate");
+			var first = values.createIRI("urn:first");
+			var second = values.createIRI("urn:second");
+			var retained = values.createIRI("urn:retained");
+			model.add(first, predicate, values.createLiteral("first payload"));
+			model.add(second, predicate, values.createLiteral("second payload"));
+			model.add(retained, predicate, survivor);
+
+			var filtered = model.filter(first, predicate, null).iterator();
+			filtered.next();
+			model.spillToDiskIfNeeded();
+			filtered.remove();
+			int readsAfterRemoval = survivor.labelReads;
+			model.spillToDiskIfNeeded();
+			assertThat(survivor.labelReads).as("a retained filtered iterator can remove a measured statement")
+					.isGreaterThan(readsAfterRemoval);
+
+			var replacement = values.createLiteral("replacement payload");
+			assertThat(model.remove(second, predicate, null)).isTrue();
+			assertThat(model.add(first, predicate, replacement)).isTrue();
+			assertThat(model).hasSize(2);
+			int readsAfterReplacement = survivor.labelReads;
+			model.spillToDiskIfNeeded();
+			assertThat(survivor.labelReads).as("equal cardinality does not imply unchanged statements")
+					.isGreaterThan(readsAfterReplacement);
+
+			int readsAfterProbe = survivor.labelReads;
+			model.spillToDiskIfNeeded();
+			assertThat(survivor.labelReads).isEqualTo(readsAfterProbe);
+			assertThat(model.spillCount).isZero();
+		}
+	}
+
+	private void pressureProbesAfterBudgetChange() {
+		AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			Statement statement = values.createStatement(values.createIRI("urn:subject"),
+					values.createIRI("urn:predicate"), values.createLiteral("x".repeat(1024)));
+			model.add(statement);
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).isZero();
+
+			AbstractMemoryOverflowModel.BATCH_SIZE = 4;
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).isOne();
+			assertThat(model).containsExactly(statement);
 		}
 	}
 
@@ -823,6 +921,22 @@ public class AbstractMemoryOverflowModelTest {
 		@Override
 		protected void innerClose() {
 			// no-op
+		}
+	}
+
+	private static final class CountingLiteral extends SimpleLiteral {
+		private static final long serialVersionUID = 1L;
+
+		private int labelReads;
+
+		private CountingLiteral(String label) {
+			super(label);
+		}
+
+		@Override
+		public String getLabel() {
+			labelReads++;
+			return super.getLabel();
 		}
 	}
 

@@ -17388,6 +17388,11 @@ class LmdbSailStore implements SailStore {
 			return tripleStore.getSupportedOrders(txn, subjPattern, predPattern, objPattern, contextPattern);
 		}
 
+		Set<StatementOrder> getPrefixPreservingOrders(int fixedMask, int possiblyBoundMask) {
+			ensureSnapshot();
+			return tripleStore.getPrefixPreservingOrders(txn, fixedMask, possiblyBoundMask);
+		}
+
 		@Override
 		public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
