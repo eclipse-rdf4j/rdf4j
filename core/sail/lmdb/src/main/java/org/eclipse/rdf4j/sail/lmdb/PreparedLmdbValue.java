@@ -38,6 +38,19 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Query-owned semantic values. Only their dictionary proof changes when a read generation changes. */
 final class PreparedLmdbValue {
+	/** State of a built-in prepared value whose only possible child is its literal datatype. */
+	static State nonTripleState(Value value) {
+		if (value instanceof PreparedIRI iri) {
+			return iri.state;
+		}
+		if (value instanceof PreparedLiteral literal) {
+			return literal.state;
+		}
+		if (value instanceof PreparedBNode bnode) {
+			return bnode.state;
+		}
+		return null;
+	}
 
 	/** Deliberately contains no store, source, connection, reader, or model references. */
 	static final class Owner {

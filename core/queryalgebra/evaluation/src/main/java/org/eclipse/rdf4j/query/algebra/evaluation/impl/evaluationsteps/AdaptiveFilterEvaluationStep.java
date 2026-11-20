@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -1385,6 +1386,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		@Override
 		public MutableBindingSet createBindingSet() {
 			return delegate.createBindingSet();
+		}
+
+		@Override
+		public IndexedLayout indexedBindingLayout() {
+			return delegate.indexedBindingLayout();
 		}
 
 		@Override
