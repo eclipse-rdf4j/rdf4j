@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,6 +77,21 @@ public class ElasticsearchStoreFactoryTest {
 		config.setExperimentalQueryOptimizations(true);
 		ElasticsearchStore optedInStore = (ElasticsearchStore) subject.getSail(config);
 		assertThat(optedInStore.isExperimentalQueryOptimizations()).isTrue();
+	}
+
+	@Test
+	public void getSailCopiesGraphRestrictionMode() {
+		ElasticsearchStoreConfig config = new ElasticsearchStoreConfig();
+		config.setHostname("localhost");
+		config.setClusterName("elasticsearch");
+		config.setIndex("index1");
+		config.setPort(9300);
+		config.setGraphRestrictionMode(GraphRestrictionMode.OFF);
+		config.setExperimentalQueryOptimizations(true);
+
+		ElasticsearchStore store = (ElasticsearchStore) subject.getSail(config);
+		assertThat(store.getQueryExecutionPolicy().graphRestrictionMode()).isEqualTo(GraphRestrictionMode.OFF);
+		assertThat(store.getQueryExecutionPolicy().experimentalQueryOptimizations()).isTrue();
 	}
 
 	private void assertMatchesConfig(ElasticsearchStore sail, ElasticsearchStoreConfig config) {

@@ -236,6 +236,9 @@ public class CONFIG {
 		public final static IRI experimentalQueryOptimizations = createIRI(NAMESPACE,
 				"sail.experimentalQueryOptimizations");
 
+		/** <var>tag:rdf4j.org,2023:config/sail.graphRestrictionMode</var> */
+		public final static IRI graphRestrictionMode = createIRI(NAMESPACE, "sail.graphRestrictionMode");
+
 		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogThresholdSeconds</var> */
 		public final static IRI slowQueryLogThresholdSeconds = createIRI(NAMESPACE,
 				"sail.slowQueryLogThresholdSeconds");

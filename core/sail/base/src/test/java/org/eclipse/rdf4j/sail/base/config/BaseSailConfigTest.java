@@ -20,10 +20,78 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.jupiter.api.Test;
 
 public class BaseSailConfigTest {
+
+	@Test
+	public void testGraphRestrictionModeRoundTrip() {
+		var implNode = bnode();
+		var setting = CONFIG.Sail.graphRestrictionMode;
+		var config = new BaseSailConfig("stub") {
+		};
+		assertThat(config.getGraphRestrictionMode()).isEqualTo(GraphRestrictionMode.AUTO);
+		assertThat(config.getQueryExecutionPolicy().graphRestrictionMode()).isEqualTo(GraphRestrictionMode.AUTO);
+		var defaultExport = new LinkedHashModel();
+		var defaultNode = config.export(defaultExport);
+		assertThat(defaultExport.contains(defaultNode, setting, null)).isFalse();
+
+		config.parse(new ModelBuilder().add(implNode, setting, literal("OFF")).build(), implNode);
+		assertThat(config.getGraphRestrictionMode()).isEqualTo(GraphRestrictionMode.OFF);
+		var exported = new LinkedHashModel();
+		var exportedNode = config.export(exported);
+
+		assertThat(exported.contains(exportedNode, setting, literal("OFF"))).isTrue();
+		for (boolean experimental : new boolean[] { false, true }) {
+			config.setExperimentalQueryOptimizations(experimental);
+			assertThat(config.getQueryExecutionPolicy().experimentalQueryOptimizations()).isEqualTo(experimental);
+			assertThat(config.getQueryExecutionPolicy().graphRestrictionMode()).isEqualTo(GraphRestrictionMode.OFF);
+		}
+	}
+
+	@Test
+	public void testGraphRestrictionModeLegacyAndDiagnosticValues() {
+		var implNode = bnode();
+		var legacySetting = BaseSailSchema.GRAPH_RESTRICTION_MODE;
+		for (GraphRestrictionMode mode : GraphRestrictionMode.values()) {
+			var config = new BaseSailConfig("stub") {
+			};
+			config.parse(new ModelBuilder().add(implNode, legacySetting, literal(mode.name())).build(), implNode);
+			assertThat(config.getGraphRestrictionMode()).isEqualTo(mode);
+		}
+	}
+
+	@Test
+	public void testGraphRestrictionModeLegacyExport() {
+		String propertyName = "org.eclipse.rdf4j.model.vocabulary.useLegacyConfig";
+		String previousValue = System.getProperty(propertyName);
+		System.setProperty(propertyName, "true");
+		try {
+			var config = new BaseSailConfig("stub") {
+			};
+			config.setGraphRestrictionMode(GraphRestrictionMode.OFF);
+			var model = new LinkedHashModel();
+			var node = config.export(model);
+			assertThat(model.contains(node, BaseSailSchema.GRAPH_RESTRICTION_MODE, literal("OFF"))).isTrue();
+		} finally {
+			if (previousValue == null) {
+				System.clearProperty(propertyName);
+			} else {
+				System.setProperty(propertyName, previousValue);
+			}
+		}
+	}
+
+	@Test
+	public void testGraphRestrictionModeRejectsUnknownValue() {
+		var implNode = bnode();
+		var config = new BaseSailConfig("stub") {
+		};
+		var model = new ModelBuilder().add(implNode, CONFIG.Sail.graphRestrictionMode, literal("disabled")).build();
+		assertThatExceptionOfType(SailConfigException.class).isThrownBy(() -> config.parse(model, implNode));
+	}
 
 	@Test
 	public void testParseQueryEvaluationMode() {

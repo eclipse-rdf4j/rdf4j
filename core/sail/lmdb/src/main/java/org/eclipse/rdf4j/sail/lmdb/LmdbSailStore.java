@@ -6774,7 +6774,7 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
-				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()));
+				config.getQueryExecutionPolicy());
 	}
 
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
@@ -6828,7 +6828,7 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
-				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()), null, null,
+				config.getQueryExecutionPolicy(), null, null,
 				valueStoreFactory, tripleStoreFactory, PersistentSetFactory::new, LmdbFilterSelectivityStats::new,
 				asyncQueueCapacity, temporaryOverflow);
 	}
@@ -6839,7 +6839,7 @@ class LmdbSailStore implements SailStore {
 			FilterSelectivityStatsFactory statsFactory) throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
-				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()), null, null,
+				config.getQueryExecutionPolicy(), null, null,
 				valueStoreFactory, tripleStoreFactory, setFactoryFactory, statsFactory);
 	}
 

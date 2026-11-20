@@ -306,7 +306,7 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
-	void baseSailTemplatesExposeSlowQueryLoggerFields() throws Exception {
+	void baseSailTemplatesExposeGraphRestrictionAndSlowQueryLoggerFields() throws Exception {
 		for (String templateType : List.of(
 				"lmdb",
 				"memory",
@@ -328,6 +328,14 @@ class CreateTemplateConfigTest {
 			assertThat(field(template, "Slow query log threshold (seconds)")).isNotNull();
 			assertThat(field(template, "Slow query first-result threshold (seconds)")).isNotNull();
 			assertThat(field(template, "Slow query log file")).isNotNull();
+			CreateTemplateConfig.Field graphRestriction = field(template, "Graph restriction mode");
+			assertThat(graphRestriction.getProperty()).isEqualTo("config:sail.graphRestrictionMode");
+			assertThat(graphRestriction.getDefaultValue()).isEqualTo("AUTO");
+			assertThat(graphRestriction.getValues()).containsExactly("AUTO", "OFF");
+			Map<String, String> values = defaultTemplateValues(template);
+			assertThat(template.render(values)).contains("config:sail.graphRestrictionMode \"AUTO\"");
+			values.put("Graph restriction mode", "OFF");
+			assertThat(template.render(values)).contains("config:sail.graphRestrictionMode \"OFF\"");
 		}
 	}
 
