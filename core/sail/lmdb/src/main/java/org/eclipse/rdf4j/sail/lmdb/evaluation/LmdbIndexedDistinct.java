@@ -191,7 +191,7 @@ public final class LmdbIndexedDistinct {
 
 		@Override
 		protected void handleClose() {
-			cursor.close();
+			scan.close(cursor);
 		}
 	}
 }

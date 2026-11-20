@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BiFunction;
 
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -40,7 +42,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
 
 /**
  * Extends {@link LmdbIndexAwareJoinOptimizer} so that a {@code DISTINCT} whose rows can be streamed out of an LMDB
@@ -110,8 +112,8 @@ final class LmdbDistinctAnchorJoinOptimizer extends LmdbIndexAwareJoinOptimizer 
 	}
 
 	@Override
-	protected JoinVisitor createJoinVisitor() {
-		return new StableOrderJoinVisitor();
+	protected JoinVisitor createJoinVisitor(Dataset dataset, BindingSet bindings) {
+		return new StableOrderJoinVisitor(dataset, bindings);
 	}
 
 	/**
@@ -119,47 +121,66 @@ final class LmdbDistinctAnchorJoinOptimizer extends LmdbIndexAwareJoinOptimizer 
 	 * any renaming operators on the way down. Used only to pick which pattern to discount; it decides nothing on its
 	 * own, so it may look at both arguments of a join even though only one of them will end up leading.
 	 */
-	private Resolution resolve(TupleExpr tupleExpr, String requestedName, String visibleBindingName) {
+	private Resolution resolve(TupleExpr tupleExpr, String requestedName, String visibleBindingName, Dataset dataset,
+			Set<String> boundOutside) {
 		if (tupleExpr instanceof QueryRoot) {
-			return resolve(((QueryRoot) tupleExpr).getArg(), requestedName, visibleBindingName);
+			return resolve(((QueryRoot) tupleExpr).getArg(), requestedName, visibleBindingName, dataset, boundOutside);
 		}
 		if (tupleExpr instanceof Projection) {
 			Projection projection = (Projection) tupleExpr;
 			String sourceName = LmdbPlannedOrder.mapProjection(projection.getProjectionElemList(), requestedName);
-			return sourceName == null ? null : resolve(projection.getArg(), sourceName, visibleBindingName);
+			return sourceName == null ? null
+					: resolve(projection.getArg(), sourceName, visibleBindingName, dataset, boundOutside);
 		}
 		if (tupleExpr instanceof MultiProjection) {
 			MultiProjection multiProjection = (MultiProjection) tupleExpr;
 			String sourceName = LmdbPlannedOrder.mapMultiProjection(multiProjection, requestedName);
-			return sourceName == null ? null : resolve(multiProjection.getArg(), sourceName, visibleBindingName);
+			return sourceName == null ? null
+					: resolve(multiProjection.getArg(), sourceName, visibleBindingName, dataset, boundOutside);
 		}
 		if (tupleExpr instanceof Extension) {
 			Extension extension = (Extension) tupleExpr;
 			String sourceName = LmdbPlannedOrder.mapExtension(extension, requestedName);
-			return sourceName == null ? null : resolve(extension.getArg(), sourceName, visibleBindingName);
+			return sourceName == null ? null
+					: resolve(extension.getArg(), sourceName, visibleBindingName, dataset, boundOutside);
 		}
 		if (tupleExpr instanceof Filter || tupleExpr instanceof Slice || tupleExpr instanceof Distinct
 				|| tupleExpr instanceof Reduced) {
-			return resolve(((UnaryTupleOperator) tupleExpr).getArg(), requestedName, visibleBindingName);
+			return resolve(((UnaryTupleOperator) tupleExpr).getArg(), requestedName, visibleBindingName, dataset,
+					boundOutside);
 		}
 		if (tupleExpr instanceof Join) {
 			Join join = (Join) tupleExpr;
-			Resolution left = resolve(join.getLeftArg(), requestedName, visibleBindingName);
-			return left != null ? left : resolve(join.getRightArg(), requestedName, visibleBindingName);
+			if (JoinQueryEvaluationStep.hasNullableGraphJoinKey(join, dataset)) {
+				return null;
+			}
+			Resolution left = resolve(join.getLeftArg(), requestedName, visibleBindingName, dataset, boundOutside);
+			return left != null ? left
+					: resolve(join.getRightArg(), requestedName, visibleBindingName, dataset, boundOutside);
 		}
 		if (tupleExpr instanceof LeftJoin) {
 			// Only the required side is guaranteed to produce rows, and it is the side that drives the optional.
-			return resolve(((LeftJoin) tupleExpr).getLeftArg(), requestedName, visibleBindingName);
+			return resolve(((LeftJoin) tupleExpr).getLeftArg(), requestedName, visibleBindingName, dataset,
+					boundOutside);
 		}
 		if (tupleExpr instanceof StatementPattern) {
-			return resolve((StatementPattern) tupleExpr, requestedName, visibleBindingName);
+			return resolve((StatementPattern) tupleExpr, requestedName, visibleBindingName, dataset, boundOutside);
 		}
 		// A union, a service, a group and everything else cannot be relied on to produce rows in index order.
 		return null;
 	}
 
-	private Resolution resolve(StatementPattern statementPattern, String requestedName, String visibleBindingName) {
-		for (Var supportedOrder : statementPattern.getSupportedOrders(tripleSource)) {
+	private Resolution resolve(StatementPattern statementPattern, String requestedName, String visibleBindingName,
+			Dataset dataset, Set<String> boundOutside) {
+		if (!canPartitionOn(boundOutside, visibleBindingName, requestedName)) {
+			return null;
+		}
+		Var existing = statementPattern.getOrder();
+		if (existing != null && !requestedName.equals(existing.getName())) {
+			return null;
+		}
+		for (Var supportedOrder : LmdbDistinctOrderMarker.prefixPreservingOrders(statementPattern, tripleSource,
+				dataset, boundOutside)) {
 			if (requestedName.equals(supportedOrder.getName())) {
 				return new Resolution(visibleBindingName, statementPattern, supportedOrder);
 			}
@@ -222,12 +243,19 @@ final class LmdbDistinctAnchorJoinOptimizer extends LmdbIndexAwareJoinOptimizer 
 	private final class StableOrderJoinVisitor extends IndexAwareJoinVisitor {
 
 		private final Deque<AnchorScope> anchorScopes = new ArrayDeque<>();
+		private final Dataset dataset;
+		private final BindingSet bindings;
 
 		private Resolution activeResolution;
 		private StatementPattern activeAnchor;
 		private boolean firstPickPending;
 		private boolean discountActive;
 		private TupleExpr anchorWonFirstPick;
+
+		private StableOrderJoinVisitor(Dataset dataset, BindingSet bindings) {
+			this.dataset = dataset;
+			this.bindings = bindings;
+		}
 
 		@Override
 		public void meet(Distinct node) {
@@ -237,7 +265,7 @@ final class LmdbDistinctAnchorJoinOptimizer extends LmdbIndexAwareJoinOptimizer 
 			}
 			// Which bindings the enclosing scope has already fixed has to be sampled before the traversal below
 			// rewrites the join hierarchy under this node.
-			Set<String> boundOutside = LmdbDistinctOrderMarker.boundOutside(node, EmptyBindingSet.getInstance());
+			Set<String> boundOutside = LmdbDistinctOrderMarker.boundOutside(node, bindings);
 			Resolution resolution = findAnchorCandidate(node.getArg(), boundOutside);
 			anchorScopes.push(new AnchorScope(resolution));
 			try {
@@ -256,9 +284,8 @@ final class LmdbDistinctAnchorJoinOptimizer extends LmdbIndexAwareJoinOptimizer 
 			Collections.sort(bindingNames);
 			Resolution best = null;
 			for (String bindingName : bindingNames) {
-				Resolution candidate = resolve(arg, bindingName, bindingName);
-				if (candidate == null
-						|| !canPartitionOn(boundOutside, bindingName, candidate.getAnchorVar().getName())) {
+				Resolution candidate = resolve(arg, bindingName, bindingName, dataset, boundOutside);
+				if (candidate == null) {
 					continue;
 				}
 				if (best == null || RESOLUTION_COMPARATOR.compare(candidate, best) < 0) {

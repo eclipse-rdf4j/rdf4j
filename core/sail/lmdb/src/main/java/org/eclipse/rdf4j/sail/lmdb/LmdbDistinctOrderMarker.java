@@ -136,7 +136,7 @@ public final class LmdbDistinctOrderMarker {
 		return Optional.of(bestName);
 	}
 
-	private static Set<Var> prefixPreservingOrders(StatementPattern pattern, TripleSource tripleSource, Dataset dataset,
+	static Set<Var> prefixPreservingOrders(StatementPattern pattern, TripleSource tripleSource, Dataset dataset,
 			Set<String> boundOutside) {
 		if (!(tripleSource instanceof SailDatasetTripleTermSource sailSource)) {
 			return pattern.getSupportedOrders(tripleSource);

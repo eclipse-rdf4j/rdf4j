@@ -33,6 +33,7 @@ import javax.management.NotificationEmitter;
 import javax.management.openmbean.CompositeData;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -101,6 +102,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	private volatile Model memory;
 	private transient int nextPartialBatchCheckSize = 1;
+	private transient int lastMemoryCheckSize;
 	private transient SpillPayload spillPayload;
 
 	protected transient volatile T disk;
@@ -259,8 +261,8 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	@Override
 	public synchronized boolean add(Statement st) {
 		Model delegate = getDelegate();
-		if (count++ % BATCH_SIZE == 0 || (nextPartialBatchCheckSize != Integer.MAX_VALUE
-				&& delegate instanceof DynamicModel && partialBatchCheckDue(delegate.size()))) {
+		if (count++ % BATCH_SIZE == 0
+				|| (delegate instanceof DynamicModel && partialBatchCheckDue(delegate.size()))) {
 			checkMemoryOverflow(false);
 			delegate = getDelegate();
 		}
@@ -479,7 +481,12 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	}
 
 	private boolean partialBatchCheckDue(int size) {
-		return size >= nextPartialBatchCheckSize || spillPayload != null && spillPayload.atLimit()
+		if (size >= BATCH_SIZE) {
+			return nextPartialBatchCheckSize != Integer.MAX_VALUE;
+		}
+		// Size is authoritative even when a live model view or iterator removed statements.
+		return size < lastMemoryCheckSize || nextPartialBatchCheckSize == Integer.MAX_VALUE
+				|| size >= nextPartialBatchCheckSize || spillPayload != null && spillPayload.atLimit()
 				|| (spillPayload != null) != underMemoryPressure();
 	}
 
@@ -498,6 +505,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 				int size = candidate.size();
 				if (size == 0) {
 					nextPartialBatchCheckSize = 1;
+					lastMemoryCheckSize = 0;
 					spillPayload = null;
 					return;
 				}
@@ -505,6 +513,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 					return;
 				}
 				// Sample at growing checkpoints, when pressure changes, or when additions cross the payload budget.
+				lastMemoryCheckSize = size;
 				nextPartialBatchCheckSize = size < BATCH_SIZE ? (int) Math.min(2L * size, BATCH_SIZE)
 						: Integer.MAX_VALUE;
 				if (!underMemoryPressure()) {
@@ -591,13 +600,15 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			try {
 				while (!pending.isEmpty() && !atLimit()) {
 					Value value = pending.pop();
+					// Some values compute their lexical form on demand, so that form need not have a stable identity.
+					if (!counted.add(value)) {
+						continue;
+					}
 					if (value instanceof TripleTerm triple) {
-						if (counted.add(triple)) {
-							remaining -= ESTIMATED_BYTES_PER_TRIPLE_TERM;
-							pending.push(triple.getObject());
-							pending.push(triple.getSubject());
-							pending.push(triple.getPredicate());
-						}
+						remaining -= ESTIMATED_BYTES_PER_TRIPLE_TERM;
+						pending.push(triple.getObject());
+						pending.push(triple.getSubject());
+						pending.push(triple.getPredicate());
 					} else if (value instanceof Literal literal) {
 						accountForText(literal.getLabel());
 						accountForText(literal.getLanguage().orElse(null));
@@ -605,6 +616,8 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 						if (datatype != null) {
 							pending.push(datatype);
 						}
+					} else if (value instanceof BNode bnode) {
+						accountForText(bnode.getID());
 					} else {
 						accountForText(value.stringValue());
 					}

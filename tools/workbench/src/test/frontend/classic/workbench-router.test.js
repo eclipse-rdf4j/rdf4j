@@ -2669,6 +2669,74 @@ for (const issue of ['failed', 'redirected']) {
     });
 }
 
+for (const issue of ['timeout', 'changed owner', 'network failure']) {
+    test(`a repository switch requests the original listing once after ${issue}`, async () => {
+        const harness = loadRouterWithWorkspaces();
+        const destination = repo('repo-2', 'types?limit=20');
+        const workspace = harness.workbench.workspace;
+        workspace.rememberPage(workspace.scopeOf('sha256:abc:session-1', '', 'repo-2'), 'types', {
+            url: destination + '#saved', form: []
+        });
+        const requests = [];
+        harness.workbench.app.loadModel = async (fetcher, url) => {
+            requests.push(url);
+            if (url === repo('repo-2', 'info')) {
+                return harness.info();
+            }
+            if (issue === 'network failure') {
+                throw new Error('Repository unavailable');
+            }
+            return harness.model('types', issue === 'timeout'
+                ? { error: { status: 504, code: 'timed-out', message: 'Listing took too long' } }
+                : { metadata: { 'server-identity': 'sha256:abc:session-1', 'server-user': 'bob' } });
+        };
+        harness.start();
+
+        const requested = destination + '#requested';
+        const outcome = await harness.router.navigate(requested, { history: 'push', repositorySwitch: true });
+        await settle();
+
+        assert.deepEqual(requests, [repo('repo-2', 'info'), destination]);
+        assert.equal(harness.toasts.length, 0, 'skip the unconfirmed workspace');
+        if (issue === 'network failure') {
+            assert.equal(outcome, 'fallback');
+            assert.deepEqual(harness.window.assigned, [requested]);
+        } else {
+            assert.equal(outcome, 'committed');
+            assert.equal(harness.window.location.href, requested);
+            assert.deepEqual(harness.disposed, ['info'], 'the response is still owned by the visible page');
+            assert.equal(harness.log.includes('render types'), true);
+            assert.equal(harness.log.includes('mount types'), issue === 'changed owner');
+        }
+    });
+}
+
+for (const requestedPage of ['saved page', 'redirect destination']) {
+    test(`a switch follows a saved page redirect when the requested URL is the ${requestedPage}`, async () => {
+        const harness = loadRouterWithWorkspaces();
+        const destination = repo('repo-2', 'types');
+        const saved = repo('repo-2', 'explore?resource=saved');
+        const workspace = harness.workbench.workspace;
+        workspace.rememberPage(workspace.scopeOf('sha256:abc:session-1', '', 'repo-2'), 'explore', { url: saved });
+        const requests = [];
+        harness.workbench.app.loadModel = async (fetcher, url) => {
+            requests.push(url);
+            return url === repo('repo-2', 'info') ? harness.info() : harness.model('types', { finalUrl: destination });
+        };
+        harness.start();
+
+        const requested = requestedPage === 'saved page' ? saved : destination;
+        assert.equal(await harness.router.navigate(requested, { history: 'push', repositorySwitch: true }), 'committed');
+        await settle();
+
+        assert.deepEqual(requests, [repo('repo-2', 'info'), saved]);
+        assert.equal(harness.window.location.href, destination);
+        assert.equal(harness.log.includes('mount types'), true);
+        assert.equal(harness.log.includes('mount explore'), false);
+        assert.equal(harness.toasts.length, 0);
+    });
+}
+
 test('a repository workspace is revalidated if credentials change while loading the saved address', async () => {
     const harness = loadRouterWithWorkspaces();
     harness.session.model = harness.model('summary', {

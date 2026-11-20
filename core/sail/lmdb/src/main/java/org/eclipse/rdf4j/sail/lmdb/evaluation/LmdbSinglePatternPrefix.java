@@ -26,9 +26,11 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 /** Snapshot access for generic operators that need one representative per tuple of statement fields. */
 final class LmdbSinglePatternPrefix {
@@ -36,14 +38,16 @@ final class LmdbSinglePatternPrefix {
 	private final SailDatasetTripleTermSource tripleSource;
 	private final NativeLmdbQuerySource source;
 	private final QueryEvaluationContext context;
+	private final StatementPattern statement;
 	private final Var[] fields;
 	private final long[] ids;
 
 	private LmdbSinglePatternPrefix(SailDatasetTripleTermSource tripleSource, NativeLmdbQuerySource source,
-			QueryEvaluationContext context, Var[] fields, long[] ids) {
+			QueryEvaluationContext context, StatementPattern statement, Var[] fields, long[] ids) {
 		this.tripleSource = tripleSource;
 		this.source = source;
 		this.context = context;
+		this.statement = statement;
 		this.fields = fields;
 		this.ids = ids;
 	}
@@ -88,7 +92,7 @@ final class LmdbSinglePatternPrefix {
 				ids[i] = UNKNOWN_ID;
 			}
 		}
-		return new LmdbSinglePatternPrefix(sailSource, source, context, fields, ids);
+		return new LmdbSinglePatternPrefix(sailSource, source, context, pattern, fields, ids);
 	}
 
 	private static boolean unrestrictedDataset(Dataset dataset) {
@@ -107,20 +111,60 @@ final class LmdbSinglePatternPrefix {
 
 	Scan plan(int... prefix) {
 		LmdbPrefixRunPlan plan = source.prefixRunPlan(prefix, ids[0], ids[1], ids[2], UNKNOWN_ID);
-		return plan == null ? null : new Scan(source, plan, ids[0], ids[1], ids[2]);
+		return plan == null ? null : new Scan(source, plan, statement, ids[0], ids[1], ids[2]);
 	}
 
 	boolean accepts(BindingSet bindings) {
 		return bindings.isEmpty() && context.getActiveGraph() == null && !tripleSource.hasPendingStatementChanges();
 	}
 
-	record Scan(NativeLmdbQuerySource source, LmdbPrefixRunPlan plan, long subject, long predicate, long object) {
+	record Scan(NativeLmdbQuerySource source, LmdbPrefixRunPlan plan, StatementPattern statement, long subject,
+			long predicate, long object) {
 		LmdbPrefixRunCursor open() throws IOException {
 			return source.prefixRuns(plan, subject, predicate, object, UNKNOWN_ID, false);
 		}
 
 		Value value(long id) {
 			return source.lazyValue(id);
+		}
+
+		long measureGroupSize(int field, long key) throws IOException {
+			// This is a diagnostic count on the same snapshot, independent of work done by the prefix cursor.
+			// Preparing this scan excludes dataset restrictions, repeated fields, and pending statement changes, so
+			// every matching quad contributes one logical GROUP input, including across explicit and inferred planes.
+			return source.count(field == TripleIndex.SUBJ_IDX ? key : subject,
+					field == TripleIndex.PRED_IDX ? key : predicate, field == TripleIndex.OBJ_IDX ? key : object,
+					UNKNOWN_ID);
+		}
+
+		void close(LmdbPrefixRunCursor cursor) {
+			try {
+				cursor.close();
+			} finally {
+				if (cursor != LmdbPrefixRunCursor.EMPTY) {
+					recordWork(cursor);
+				}
+			}
+		}
+
+		private void recordWork(LmdbPrefixRunCursor cursor) {
+			if (!statement.isRuntimeTelemetryEnabled() && !statement.isExecutionSummaryEnabled()) {
+				return;
+			}
+			synchronized (statement) {
+				statement.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, cursor.getIndexName());
+				if (!statement.isRuntimeTelemetryEnabled()) {
+					return;
+				}
+				// These are actual cursor reads. The scan can skip matching keys without decoding their rows.
+				statement.incrementLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL);
+				statement.setSourceRowsScannedActual(Math.max(0L, statement.getSourceRowsScannedActual())
+						+ cursor.getSourceRowsScannedActual());
+				statement.setSourceRowsMatchedActual(Math.max(0L, statement.getSourceRowsMatchedActual())
+						+ cursor.getSourceRowsMatchedActual());
+				statement.setSourceRowsFilteredActual(Math.max(0L, statement.getSourceRowsFilteredActual())
+						+ cursor.getSourceRowsFilteredActual());
+			}
 		}
 	}
 }

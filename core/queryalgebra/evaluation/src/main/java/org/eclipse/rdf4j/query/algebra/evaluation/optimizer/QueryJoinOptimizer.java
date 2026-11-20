@@ -158,9 +158,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		JoinVisitor visitor = createJoinVisitor();
+		JoinVisitor visitor = createJoinVisitor(dataset, bindings);
 		visitor.initialize(tupleExpr, bindings, QueryEvaluationUtility.querySafetySnapshot(tupleExpr, policy));
 		tupleExpr.visit(visitor);
+	}
+
+	/**
+	 * Creates the visitor with the query's dataset and initial bindings when a storage-specific optimizer needs them.
+	 */
+	protected JoinVisitor createJoinVisitor(Dataset dataset, BindingSet bindings) {
+		return createJoinVisitor();
 	}
 
 	/**

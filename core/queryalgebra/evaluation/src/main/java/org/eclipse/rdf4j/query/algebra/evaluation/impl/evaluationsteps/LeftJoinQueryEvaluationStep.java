@@ -19,6 +19,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -60,10 +61,18 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 						runtimeTelemetryTrackingActive);
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
 				EmptyBindingSet.getInstance());
+		TupleExpr rightArg = leftJoin.getRightArg();
+		Set<String> siblingNames = leftJoin.getLeftArg().getBindingNames();
+		var defaultContextScan = JoinQueryEvaluationStep.defaultContextScan(context);
+		NullableGraphJoinInputs graphInputs = JoinQueryEvaluationStep.observesNullableGraphBinding(rightArg,
+				siblingNames, defaultContextScan)
+						? NullableGraphJoinInputs.analyze(rightArg, siblingNames, defaultContextScan, rightRaw)
+						: null;
 		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
 				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), bindingAnalysis)
 				|| JoinQueryEvaluationStep.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
-						leftJoin.getLeftArg().getBindingNames())) {
+						leftJoin.getLeftArg().getBindingNames())
+				|| graphInputs != null && graphInputs.parameters().isEmpty()) {
 			// The right side is evaluated once with the query input (once per active GRAPH frame the left side
 			// binds for its sub-selects) and hashed on the names both sides may share.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
@@ -83,6 +92,14 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 					trackedRight -> ScopedLeftJoinIterator.withGraphFrames(left, trackedRight, isolatedCondition, bs,
 							context, joinAttributes, graphFrames));
 		}
+		if (graphInputs != null) {
+			QueryValueEvaluationStep condition = leftJoin.hasCondition()
+					? precompileScopedCondition(strategy, leftJoin, context)
+					: null;
+			leftJoin.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
+			return JoinQueryEvaluationStep.parameterizedGraphJoin(strategy, leftJoin, context, left, rightRaw,
+					graphInputs, condition, HashJoinIteration.hashJoinAttributeNames(leftJoin), true);
+		}
 
 		// The usual evaluation below re-evaluates the right operand once per left solution with the left
 		// solution's bindings pushed in (a bind join). That is only an as-if optimization when re-evaluation
@@ -93,7 +110,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// per-input evaluation is their defined semantics (GH-3053), so they always keep the bind-join path.
 		// A MINUS inside the right operand is evaluated bottom-up: its right side must not be narrowed by a left
 		// row's binding of a name its own left side does not assure, so such operands are replayed as well.
-		TupleExpr rightArg = leftJoin.getRightArg();
 		boolean safeForBoundEvaluation = QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
 				|| QueryEvaluationUtility.isRepeatable(rightArg)
 						&& !minusObservesInjectedBindings(rightArg, leftJoin.getLeftArg().getBindingNames());
@@ -248,18 +264,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-
-		// Possible columns such as SERVICE UNDEF slots need not belong to this solution's binding domain.
-		Set<String> problemVars = null;
-		for (String optionalVar : optionalVars) {
-			if (bindings.hasBinding(optionalVar)) {
-				if (problemVars == null) {
-					problemVars = new HashSet<>();
-				}
-				problemVars.add(optionalVar);
-			}
-		}
-
+		Set<String> problemVars = findProblemVars(bindings);
 		if (problemVars == null) {
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
 			return LeftJoinIterator.getInstance(left, bindings, rightWithCondition);
@@ -268,6 +273,70 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// condition.
 		leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
 		return new BadlyDesignedLeftJoinIterator(left, bindings, problemVars, rightWithCondition);
+	}
+
+	private Set<String> findProblemVars(BindingSet bindings) {
+		if (optionalVars.isEmpty()) {
+			return null;
+		}
+		if (optionalVars.size() == 1) {
+			String name = optionalVars.iterator().next();
+			return bindings.hasBinding(name) ? Set.of(name) : null;
+		}
+
+		int bindingCount = bindings.size();
+		if (bindingCount == 0) {
+			return null;
+		}
+		Set<String> possibleNames = bindings.getBindingNames();
+		if (possibleNames.size() == bindingCount) {
+			// The names already give the exact domain. Match without reading any of the values.
+			return intersect(possibleNames, optionalVars);
+		}
+
+		// Possible columns such as SERVICE UNDEF need not belong to the row's binding domain.
+		// Walk the row once to avoid scanning the same list or array for each optional variable.
+		Set<String> problemVars = null;
+		int visited = 0;
+		for (Binding binding : bindings) {
+			String name = binding.getName();
+			if (optionalVars.contains(name)) {
+				problemVars = addProblemVar(problemVars, name);
+			}
+			visited++;
+		}
+		if (visited < bindingCount) {
+			// Some rows have explicit-null bindings that the iterator omits.
+			for (String name : optionalVars) {
+				if ((problemVars == null || !problemVars.contains(name)) && bindings.hasBinding(name)) {
+					problemVars = addProblemVar(problemVars, name);
+				}
+			}
+		}
+		return problemVars;
+	}
+
+	private static Set<String> intersect(Set<String> first, Set<String> second) {
+		if (first.size() > second.size()) {
+			Set<String> swap = first;
+			first = second;
+			second = swap;
+		}
+		Set<String> problemVars = null;
+		for (String name : first) {
+			if (second.contains(name)) {
+				problemVars = addProblemVar(problemVars, name);
+			}
+		}
+		return problemVars;
+	}
+
+	private static Set<String> addProblemVar(Set<String> problemVars, String name) {
+		if (problemVars == null) {
+			problemVars = new HashSet<>();
+		}
+		problemVars.add(name);
+		return problemVars;
 	}
 
 	/**

@@ -1254,10 +1254,14 @@ namespace workbench {
             }
             // The hash only matters to the page once it is shown (M8.2); the page model is the same without it.
             const request = target.href.split('#')[0];
+            const originalUrl = workspaceNavigation?.originalUrl || target.href;
+            const originalRequest = originalUrl.split('#')[0];
+            // A fetch of the saved address can also reach the requested page by following a redirect.
+            const needsOriginalRequest = () => request !== originalRequest
+                && model?.finalUrl?.split('#')[0] !== originalRequest;
             const openRequestedRepository = (): Promise<Outcome> => {
                 model?.rowStore.dispose();
                 model = null;
-                const originalUrl = workspaceNavigation?.originalUrl || target.href;
                 return openRoute(originalUrl, Object.assign({}, options, { workspaceRestore: null }), { originalUrl });
             };
             if (!options.body && options.repositorySwitch && !workspaceNavigation && workspace()
@@ -1358,7 +1362,18 @@ namespace workbench {
                         const finalRequest = finalUrl.href.split('#')[0];
                         if (workspaceNavigation?.scope && (finalRequest !== request || model.viewId !== viewId
                                 || !matchesWorkspaceResponse(model, finalUrl, workspaceNavigation.scope))) {
-                            return openRequestedRepository();
+                            if (needsOriginalRequest()) {
+                                return openRequestedRepository();
+                            }
+                            // This is already the requested page's response. Discard the saved state and fragment.
+                            options = Object.assign({}, options, { workspaceRestore: null });
+                            target.hash = new URL(originalUrl).hash;
+                            if (finalRequest !== request) {
+                                if (!routable(finalUrl)) {
+                                    throw new Error('The answer redirected outside the Workbench router.');
+                                }
+                                shownDefinition = routes.get(viewIdOf(finalUrl));
+                            }
                         }
                         const identity = model.metadata?.['server-identity'];
                         const user = model.metadata?.['server-user'];
@@ -1406,7 +1421,7 @@ namespace workbench {
                     if (error && error.name === 'AbortError') {
                         return 'abandoned';
                     }
-                    if (workspaceNavigation?.scope) {
+                    if (needsOriginalRequest()) {
                         model = null;
                         return openRequestedRepository();
                     }
@@ -1429,7 +1444,7 @@ namespace workbench {
                     // Showing a page in place should not fail, so say why the browser loads it instead (M12.1).
                     console.error('The Workbench could not show ' + target.href + ' in place; loading it instead.', error);
                     // A form's answer cannot be posted again; the browser loads the page it led to instead.
-                    windowObject.location.assign(model && model.finalUrl || target.href);
+                    windowObject.location.assign(model && model.finalUrl || originalUrl);
                     return 'fallback';
                 });
         }

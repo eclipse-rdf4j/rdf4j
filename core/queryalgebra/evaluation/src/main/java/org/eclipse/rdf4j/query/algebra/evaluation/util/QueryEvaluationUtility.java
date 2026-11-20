@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Supplier;
 
 import javax.xml.datatype.DatatypeConstants;
@@ -60,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -125,6 +127,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
@@ -570,6 +573,19 @@ public class QueryEvaluationUtility {
 		return snapshotFor(subtree).usesMappingParameterizedEvaluation(subtree);
 	}
 
+	/** Names from a sibling mapping that can be read as parameters by operators in this subtree. */
+	@InternalUseOnly
+	public static Set<String> mappingParameterNames(QueryModelNode subtree, Set<String> candidates) {
+		if (candidates.isEmpty()) {
+			return Set.of();
+		}
+		var snapshot = snapshotFor(subtree);
+		Set<String> names = new TreeSet<>();
+		snapshot.collectMappingParameterNames(subtree, candidates, names);
+		names.retainAll(candidates);
+		return names;
+	}
+
 	@Experimental
 	public static final class QuerySafetySnapshot {
 		private static final NodeSafetySummary[] NO_CHILDREN = new NodeSafetySummary[0];
@@ -724,7 +740,7 @@ public class QueryEvaluationUtility {
 			boolean fatal = node instanceof Service service && !service.isSilent();
 			boolean mappingParameterized = node instanceof ZeroLengthPath || node instanceof ArbitraryLengthPath
 					|| node instanceof Service || node instanceof Lateral || node instanceof TripleRef
-					|| node instanceof Graph
+					|| node instanceof Graph || node instanceof TupleFunctionCall
 					|| unknownNodes.contains(node);
 			boolean containsLateral = node instanceof Lateral;
 			boolean containsExtension = node instanceof Extension;
@@ -960,6 +976,31 @@ public class QueryEvaluationUtility {
 		public boolean usesMappingParameterizedEvaluation(QueryModelNode node) {
 			node = ensureNode(node);
 			return summaries.get(node).mappingParameterized;
+		}
+
+		private void collectMappingParameterNames(QueryModelNode node, Set<String> candidates, Set<String> names) {
+			node = ensureNode(node);
+			if (!summaries.get(node).mappingParameterized) {
+				return;
+			}
+			if (node instanceof Service || node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
+					|| node instanceof TripleRef || node instanceof TupleFunctionCall) {
+				names.addAll(VarNameCollector.process(node));
+				return;
+			}
+			if (unknownNodes.contains(node)) {
+				names.addAll(candidates);
+				return;
+			}
+			if (node instanceof Graph graph && !graph.getGraphName().hasValue()) {
+				names.add(graph.getGraphName().getName());
+			}
+			if (node instanceof Lateral lateral) {
+				names.addAll(lateral.getRightInputBindingNames());
+			}
+			for (QueryModelNode child : childrenByNode.get(node)) {
+				collectMappingParameterNames(child, candidates, names);
+			}
 		}
 
 		public boolean permitsBindingInjection(TupleExpr node, Set<String> injectedNames) {

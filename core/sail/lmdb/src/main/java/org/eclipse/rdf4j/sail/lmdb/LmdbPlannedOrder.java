@@ -50,12 +50,13 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  * A {@link Join} evaluated as a nested-loop join runs its left argument once and re-evaluates its right argument for
  * every row the left produces, so the rows it emits arrive grouped by whatever grouping its left argument had. Not
  * every join is evaluated that way, which is why the walk asks
- * {@link JoinQueryEvaluationStep#preservesLeftArgOrder(Join)} before descending. Following left arguments down from a
- * node, through operators that neither reorder nor regroup rows, reaches the single operator whose ordering the whole
- * subtree inherits: the <em>leading</em> statement pattern. If the plan committed that pattern to an index order (see
- * {@link StatementPattern#setOrder(Var)}, honoured at evaluation time by {@code StatementPatternQueryEvaluationStep}),
- * then every row reaching the enclosing {@code DISTINCT} is grouped on that variable, provided each join keeps its
- * value, including when absent. {@link LmdbPartitionedDistinctIteration} can then deduplicate one group at a time.
+ * {@link JoinQueryEvaluationStep#preservesLeftArgOrder(Join, Dataset)} before descending. Following left arguments down
+ * from a node, through operators that neither reorder nor regroup rows, reaches the single operator whose ordering the
+ * whole subtree inherits: the <em>leading</em> statement pattern. If the plan committed that pattern to an index order
+ * (see {@link StatementPattern#setOrder(Var)}, honoured at evaluation time by
+ * {@code StatementPatternQueryEvaluationStep}), then every row reaching the enclosing {@code DISTINCT} is grouped on
+ * that variable, provided each join keeps its value, including when absent. {@link LmdbPartitionedDistinctIteration}
+ * can then deduplicate one group at a time.
  * <p>
  * This class reads the plan and the selected graphs. It takes no triple source or statistics, so
  * {@link LmdbDistinctOrderMarker} (which records the order during optimization or preparation) and
@@ -169,7 +170,8 @@ final class LmdbPlannedOrder {
 				current = ((UnaryTupleOperator) current).getArg();
 			} else if (current instanceof Join || current instanceof LeftJoin) {
 				BinaryTupleOperator join = (BinaryTupleOperator) current;
-				if (join instanceof Join innerJoin && !JoinQueryEvaluationStep.preservesLeftArgOrder(innerJoin)) {
+				if (join instanceof Join innerJoin
+						&& !JoinQueryEvaluationStep.preservesLeftArgOrder(innerJoin, dataset)) {
 					// A hash join scans whichever side is the greater relation and a service join takes back whatever
 					// order the remote endpoint answers in, so neither inherits the left argument's grouping. Which of
 					// the four operators actually runs is decided by JoinQueryEvaluationStep, so the question is asked

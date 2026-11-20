@@ -163,6 +163,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQuer
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.NativeTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RebindableQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RegexValueEvaluationStepSupplier;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
@@ -182,7 +183,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Qu
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleRefEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleTermComponentEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
@@ -928,7 +928,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Projection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep temp = precompile(node.getArg(), context);
-		return new ProjectionQueryEvaluationStep(node, temp, context);
+		return RebindableQueryEvaluationStep.unary(node, temp,
+				arg -> new ProjectionQueryEvaluationStep(node, arg, context));
 	}
 
 	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
@@ -951,7 +952,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryEvaluationStep rightQes = precompile(node.getRightArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, node.getRightArg(), rightQes);
 
-		return AdaptiveFilterEvaluationStep.binary(context, node, new UnionQueryEvaluationStep(leftQes, rightQes),
+		QueryEvaluationStep union = RebindableQueryEvaluationStep.union(node, leftQes, rightQes);
+		return AdaptiveFilterEvaluationStep.binary(context, node, union,
 				UnionQueryEvaluationStep::new);
 	}
 
@@ -963,9 +965,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Extension node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		Consumer<MutableBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(node, this,
-				context);
-		return new ExtensionQueryEvaluationStep(arg, consumer, context);
+		return RebindableQueryEvaluationStep.unary(node, arg,
+				ExtensionQueryEvaluationStep.prepare(node, this, context));
 	}
 
 	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)

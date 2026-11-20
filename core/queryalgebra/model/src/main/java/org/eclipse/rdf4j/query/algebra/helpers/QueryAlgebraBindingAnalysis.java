@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -115,7 +117,9 @@ public final class QueryAlgebraBindingAnalysis {
 	private final TupleExpr root;
 	private final ReadOnlyContext rootContext;
 	private final boolean bindingAssignment;
+	private final Predicate<StatementPattern> datasetCanScanDefaultContext;
 	private final Map<QueryModelNode, ReadOnlyContext> contextCache = new IdentityHashMap<>();
+	private final Map<TupleExpr, Boolean> nullableContextSubtrees = new IdentityHashMap<>();
 	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
 	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
@@ -125,13 +129,15 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
 			Set<String> possibleInputNames) {
-		this(root, initialBindings, externalNames, possibleInputNames, false);
+		this(root, initialBindings, externalNames, possibleInputNames, false, null);
 	}
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
-			Set<String> possibleInputNames, boolean bindingAssignment) {
+			Set<String> possibleInputNames, boolean bindingAssignment,
+			Predicate<StatementPattern> datasetCanScanDefaultContext) {
 		this.root = root;
 		this.bindingAssignment = bindingAssignment;
+		this.datasetCanScanDefaultContext = datasetCanScanDefaultContext;
 		Map<String, Value> values = new HashMap<>();
 		if (initialBindings != null) {
 			for (String name : initialBindings.getBindingNames()) {
@@ -151,13 +157,21 @@ public final class QueryAlgebraBindingAnalysis {
 		this.root = root;
 		this.rootContext = rootContext;
 		this.bindingAssignment = false;
+		this.datasetCanScanDefaultContext = null;
 		if (root != null) {
 			contextCache.put(root, rootContext);
 		}
 	}
 
 	public static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings) {
-		return withBindingValues(root, initialBindings, false);
+		return withBindingValues(root, initialBindings, false, null);
+	}
+
+	/** Uses the actual dataset selection, including the store defaults when {@code dataset} is {@code null}. */
+	public static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings,
+			Dataset dataset) {
+		return withBindingValues(root, initialBindings, false,
+				statement -> TupleExprs.canScanDefaultContext(statement, dataset));
 	}
 
 	/**
@@ -166,11 +180,11 @@ public final class QueryAlgebraBindingAnalysis {
 	 * Compatible relational outputs constrain an API value rather than assigning a new value to its name.
 	 */
 	public static QueryAlgebraBindingAnalysis forBindingAssignment(TupleExpr root, BindingSet initialBindings) {
-		return withBindingValues(root, initialBindings, true);
+		return withBindingValues(root, initialBindings, true, null);
 	}
 
 	private static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings,
-			boolean bindingAssignment) {
+			boolean bindingAssignment, Predicate<StatementPattern> datasetCanScanDefaultContext) {
 		BindingSet values = initialBindings == null ? EmptyBindingSet.getInstance() : initialBindings;
 		Set<String> names = new HashSet<>();
 		for (String name : values.getBindingNames()) {
@@ -188,7 +202,8 @@ public final class QueryAlgebraBindingAnalysis {
 				}
 			});
 		}
-		return new QueryAlgebraBindingAnalysis(root, values, names, Set.of(), bindingAssignment);
+		return new QueryAlgebraBindingAnalysis(root, values, names, Set.of(), bindingAssignment,
+				datasetCanScanDefaultContext);
 	}
 
 	/**
@@ -398,7 +413,7 @@ public final class QueryAlgebraBindingAnalysis {
 
 		ReadOnlyContext parentInput = contextAt(parent);
 		if (parent instanceof Join join && replacedNode == join.getRightArg()) {
-			return withOutput(parentInput, outputFacts(join.getLeftArg(), parentInput));
+			return siblingInput(join.getLeftArg(), join.getRightArg(), parentInput, true);
 		}
 		return childInput(parent, replacedNode, parentInput);
 	}
@@ -413,6 +428,7 @@ public final class QueryAlgebraBindingAnalysis {
 
 	public void invalidate() {
 		contextCache.clear();
+		nullableContextSubtrees.clear();
 		if (root != null) {
 			contextCache.put(root, rootContext);
 		}
@@ -570,7 +586,7 @@ public final class QueryAlgebraBindingAnalysis {
 						|| containsResultSetModifier(leftJoin.getRightArg(), input)) {
 					return input;
 				}
-				return withOutput(leftJoinInput, outputFacts(leftJoin.getLeftArg(), leftJoinInput));
+				return siblingInput(leftJoin.getLeftArg(), leftJoin.getRightArg(), leftJoinInput, false);
 			}
 			if (child == leftJoin.getLeftArg()) {
 				return leftJoinInput;
@@ -692,9 +708,12 @@ public final class QueryAlgebraBindingAnalysis {
 			// right subtree, so its inherited input is preserved while parent links outside that subtree are ignored.
 			if (!isOutOfScopeForLeftBindings(right, input)
 					&& !TupleExprs.subqueryObservesInjectedBindings(right, join.getLeftArg().getBindingNames())) {
-				return withOutput(input, outputFacts(join.getLeftArg(), input));
+				return siblingInput(join.getLeftArg(), right, input, true);
 			}
 			return input;
+		}
+		if ("ScopedLeftJoinIterator".equals(algorithm) && maySelectSiblingInputs(join.getLeftArg(), right, true)) {
+			return possibleSiblingInput(input, outputFacts(join.getLeftArg(), input));
 		}
 		// Preparation may have selected another contract after the optimizer marked a merge candidate.
 		if (INPUT_ONLY_JOIN_ALGORITHMS.contains(algorithm)) {
@@ -704,6 +723,70 @@ public final class QueryAlgebraBindingAnalysis {
 			return withOutput(input, outputFacts(join.getLeftArg(), input));
 		}
 		return input.withUnknownDomain();
+	}
+
+	private ReadOnlyContext siblingInput(TupleExpr left, TupleExpr right, ReadOnlyContext input, boolean innerJoin) {
+		OutputFacts leftOutput = outputFacts(left, input);
+		return maySelectSiblingInputs(left, right, innerJoin) ? possibleSiblingInput(input, leftOutput)
+				: withOutput(input, leftOutput);
+	}
+
+	private ReadOnlyContext possibleSiblingInput(ReadOnlyContext input, OutputFacts leftOutput) {
+		// Nullable-context joins may evaluate different arms with different subsets of the sibling row. Only
+		// invocation bindings retained by the sibling are guaranteed at a site shared by those arms.
+		ReadOnlyContext retained = input.without(leftOutput.overwrittenInputNames);
+		return leftOutput.possibleOutputsKnown ? retained.withPossibleInputs(leftOutput.possibleOutputs)
+				: retained.withUnknownDomain();
+	}
+
+	private boolean maySelectSiblingInputs(TupleExpr left, TupleExpr right, boolean innerJoin) {
+		return overlapsNullableContexts(right, left) || innerJoin && overlapsNullableContexts(left, right);
+	}
+
+	private boolean overlapsNullableContexts(TupleExpr expression, TupleExpr sibling) {
+		return containsNullableContext(expression) && observesNullableContext(expression, sibling.getBindingNames());
+	}
+
+	private boolean containsNullableContext(TupleExpr expression) {
+		Boolean cached = nullableContextSubtrees.get(expression);
+		if (cached != null) {
+			return cached;
+		}
+		boolean contains = false;
+		if (expression instanceof StatementPattern statement) {
+			contains = nullableContextBinding(statement) != null;
+		} else if (!(expression instanceof Service)) {
+			for (TupleExpr child : TupleExprs.getChildren(expression)) {
+				if (containsNullableContext(child)) {
+					contains = true;
+					break;
+				}
+			}
+		}
+		nullableContextSubtrees.put(expression, contains);
+		return contains;
+	}
+
+	private boolean observesNullableContext(TupleExpr expression, Set<String> names) {
+		if (names.isEmpty() || !containsNullableContext(expression)) {
+			return false;
+		}
+		if (expression instanceof StatementPattern statement) {
+			return names.contains(nullableContextBinding(statement));
+		}
+		for (TupleExpr child : TupleExprs.getChildren(expression)) {
+			if (observesNullableContext(child, names)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private String nullableContextBinding(StatementPattern statement) {
+		String name = TupleExprs.contextOnlyBindingName(statement);
+		return name != null && (datasetCanScanDefaultContext == null || datasetCanScanDefaultContext.test(statement))
+				? name
+				: null;
 	}
 
 	private ReadOnlyContext unknownChildInput(QueryModelNode parent, ReadOnlyContext input) {
@@ -946,7 +1029,13 @@ public final class QueryAlgebraBindingAnalysis {
 		if (expression instanceof StatementPattern statement) {
 			Set<String> names = variableNames(statement.getVarList());
 			Map<String, Value> fixed = fixedFromVars(statement.getVarList(), input);
-			return OutputFacts.known(names, names, fixed, kindsFromValues(fixed), input, true);
+			String nullableContext = nullableContextBinding(statement);
+			Set<String> guaranteed = names;
+			if (nullableContext != null && !input.guaranteedNames.contains(nullableContext)) {
+				guaranteed = new HashSet<>(names);
+				guaranteed.remove(nullableContext);
+			}
+			return OutputFacts.known(names, guaranteed, fixed, kindsFromValues(fixed), input, true);
 		}
 		if (expression instanceof ZeroLengthPath path) {
 			Set<String> names = variableNames(path.getVarList());

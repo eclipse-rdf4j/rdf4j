@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CancellationPoints;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 
 /** Counts distinct pattern values from ordered prefix runs without retaining the group or its members. */
@@ -95,7 +96,7 @@ public final class LmdbIndexedDistinctCount {
 				QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 				LmdbPrefixRunCursor cursor = scan.open();
 				return cursor == null ? ordinary.evaluate(bindings)
-						: new GroupCountIteration(cursor, scan, groupField, context, groupSetter, countSetters);
+						: new GroupCountIteration(cursor, scan, group, groupField, context, groupSetter, countSetters);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
@@ -109,20 +110,27 @@ public final class LmdbIndexedDistinctCount {
 	private static final class GroupCountIteration extends LookAheadIteration<BindingSet> {
 		private final LmdbPrefixRunCursor cursor;
 		private final LmdbSinglePatternPrefix.Scan scan;
+		private final Group telemetryGroup;
 		private final int groupField;
 		private final QueryEvaluationContext context;
 		private final BiConsumer<Value, MutableBindingSet> groupSetter;
 		private final List<BiConsumer<Value, MutableBindingSet>> countSetters;
 		private final QueryExecutionContext.ReplayCheckpoint replay = QueryExecutionContext.replayCheckpoint();
 		private int runs;
+		private long groupsCreated;
+		private long distinctValues;
+		private long largestGroup;
+		private double groupInputRows;
+		private boolean groupSizesKnown = true;
 		private boolean started;
 		private boolean exhausted;
 
-		private GroupCountIteration(LmdbPrefixRunCursor cursor, LmdbSinglePatternPrefix.Scan scan, int groupField,
-				QueryEvaluationContext context, BiConsumer<Value, MutableBindingSet> groupSetter,
+		private GroupCountIteration(LmdbPrefixRunCursor cursor, LmdbSinglePatternPrefix.Scan scan, Group group,
+				int groupField, QueryEvaluationContext context, BiConsumer<Value, MutableBindingSet> groupSetter,
 				List<BiConsumer<Value, MutableBindingSet>> countSetters) {
 			this.cursor = cursor;
 			this.scan = scan;
+			this.telemetryGroup = group.isRuntimeTelemetryEnabled() ? group : null;
 			this.groupField = groupField;
 			this.context = context;
 			this.groupSetter = groupSetter;
@@ -154,6 +162,9 @@ public final class LmdbIndexedDistinctCount {
 				for (var setter : countSetters) {
 					setter.accept(countValue, result);
 				}
+				if (telemetryGroup != null) {
+					measureGroup(groupId, count);
+				}
 				return result;
 			} catch (IOException e) {
 				QueryEvaluationException failure = new QueryEvaluationException(e);
@@ -183,7 +194,52 @@ public final class LmdbIndexedDistinctCount {
 
 		@Override
 		protected void handleClose() {
-			cursor.close();
+			try {
+				scan.close(cursor);
+			} finally {
+				recordGroupWork();
+			}
+		}
+
+		private void measureGroup(long groupId, long count) throws IOException {
+			groupsCreated++;
+			distinctValues += count;
+			if (groupSizesKnown) {
+				CancellationPoints.check(isCancellationRequested() || Thread.currentThread().isInterrupted());
+				long rows = scan.measureGroupSize(groupField, groupId);
+				groupSizesKnown = rows > 0;
+				if (groupSizesKnown) {
+					groupInputRows += rows;
+					largestGroup = Math.max(largestGroup, rows);
+				}
+			}
+		}
+
+		private void recordGroupWork() {
+			if (telemetryGroup == null) {
+				return;
+			}
+			synchronized (telemetryGroup) {
+				String groupsMetric = TelemetryMetricNames.GROUPS_CREATED_ACTUAL;
+				String evaluationsMetric = TelemetryMetricNames.AGGREGATE_EVAL_COUNT_ACTUAL;
+				long previousGroups = Math.max(0L, telemetryGroup.getLongMetricActual(groupsMetric));
+				long totalGroups = previousGroups + groupsCreated;
+				telemetryGroup.setLongMetricActual(groupsMetric, totalGroups);
+				// All COUNT aliases share a single accumulator, which processes one key per distinct value.
+				telemetryGroup.setLongMetricActual(evaluationsMetric,
+						Math.max(0L, telemetryGroup.getLongMetricActual(evaluationsMetric)) + distinctValues);
+				String maxSizeMetric = TelemetryMetricNames.MAX_GROUP_SIZE_ACTUAL;
+				String averageSizeMetric = TelemetryMetricNames.AVG_GROUP_SIZE_ACTUAL;
+				double previousAverage = telemetryGroup.getDoubleMetricActual(averageSizeMetric);
+				if (groupSizesKnown && (previousGroups == 0 || previousAverage >= 0.0)) {
+					telemetryGroup.setLongMetricActual(maxSizeMetric,
+							Math.max(largestGroup, telemetryGroup.getLongMetricActual(maxSizeMetric)));
+					if (totalGroups > 0) {
+						telemetryGroup.setDoubleMetricActual(averageSizeMetric,
+								(groupInputRows + Math.max(0.0, previousAverage) * previousGroups) / totalGroups);
+					}
+				}
+			}
 		}
 	}
 }

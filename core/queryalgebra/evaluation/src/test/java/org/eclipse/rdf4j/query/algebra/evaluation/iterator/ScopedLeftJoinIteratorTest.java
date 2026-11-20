@@ -12,21 +12,99 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.ParameterizedArm;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class ScopedLeftJoinIteratorTest {
+
+	@Test
+	public void cancellationDoesNotOpenDiscardableArms() {
+		AtomicInteger opens = new AtomicInteger();
+		List<ParameterizedArm> arms = List.of(
+				new ParameterizedArm(JoinTestSupport.step(List.of(JoinTestSupport.row("r", "first"))), Set.of(), true,
+						true),
+				new ParameterizedArm(bindings -> {
+					opens.incrementAndGet();
+					return QueryEvaluationStep.EMPTY_ITERATION;
+				}, Set.of("k"), true, true));
+		try (var iteration = withArms(arms, JoinTestSupport.row("k", "a"))) {
+			assertEquals(JoinTestSupport.row("k", "a", "r", "first"), iteration.next());
+			assertTrue(iteration.requestCancellation());
+			assertThrows(QueryInterruptedException.class, iteration::hasNext);
+		}
+		assertEquals(0, opens.get());
+	}
+
+	@Test
+	public void cancellationStopsConditionsOnRemainingCachedCandidates() {
+		AtomicInteger conditions = new AtomicInteger();
+		QueryValueEvaluationStep condition = row -> BooleanLiteral.valueOf(conditions.incrementAndGet() == 1);
+		var row = JoinTestSupport.row("k", "a");
+		var arm = new ParameterizedArm(JoinTestSupport.step(Collections.nCopies(32, row)), Set.of(), true, true);
+		try (var iteration = ScopedLeftJoinIterator.withParameters(JoinTestSupport.step(List.of(row)), List.of(arm),
+				condition, EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null),
+				new String[] { "k" }, Set.of(), true)) {
+			assertEquals(row, iteration.next());
+			assertTrue(iteration.requestCancellation());
+			assertThrows(QueryInterruptedException.class, iteration::hasNext);
+		}
+		assertEquals(1, conditions.get());
+	}
+
+	@Test
+	public void aFatalArmIsCheckedBeforeExposingEarlierRows() {
+		QueryEvaluationException failure = new QueryEvaluationException("fatal arm");
+		List<ParameterizedArm> arms = List.of(
+				new ParameterizedArm(JoinTestSupport.step(List.of(JoinTestSupport.row("r", "first"))), Set.of(), true,
+						true),
+				new ParameterizedArm(bindings -> {
+					throw failure;
+				}, Set.of("k"), false, false));
+		try (var iteration = withArms(arms, JoinTestSupport.row("k", "a"))) {
+			assertSame(failure, assertThrows(QueryEvaluationException.class, iteration::hasNext));
+		}
+	}
+
+	@Test
+	public void nonrepeatableArmsAreReopenedForTheSameParameter() {
+		AtomicInteger opens = new AtomicInteger();
+		List<ParameterizedArm> arms = List.of(new ParameterizedArm(bindings -> {
+			int next = opens.incrementAndGet();
+			return JoinTestSupport.step(List.of(JoinTestSupport.row("r", Integer.toString(next))))
+					.evaluate(bindings);
+		}, Set.of("k"), false, true));
+		var row = JoinTestSupport.row("k", "a");
+		try (var iteration = withArms(arms, row, row)) {
+			assertEquals(JoinTestSupport.normalize(List.of(JoinTestSupport.row("k", "a", "r", "1"),
+					JoinTestSupport.row("k", "a", "r", "2"))), JoinTestSupport.drain(iteration));
+		}
+		assertEquals(2, opens.get());
+	}
+
+	private static ScopedLeftJoinIterator withArms(List<ParameterizedArm> arms, BindingSet... rows) {
+		return ScopedLeftJoinIterator.withParameters(JoinTestSupport.step(List.of(rows)), arms, null,
+				EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null), new String[] { "k" },
+				Set.of("k"), true);
+	}
 
 	@Test
 	public void rightRowsWithoutTheKeyDoNotDisableHashing() {

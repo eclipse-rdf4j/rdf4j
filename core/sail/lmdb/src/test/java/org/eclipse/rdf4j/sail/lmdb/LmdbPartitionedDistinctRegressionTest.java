@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -22,6 +23,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
+import org.assertj.core.groups.Tuple;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -40,21 +42,35 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -92,6 +108,126 @@ class LmdbPartitionedDistinctRegressionTest {
 	@EnumSource(NamedDataset.class)
 	void namedContextJoinAccountsForDefaultGraphAlias(NamedDataset namedDataset) {
 		assertContextJoin(false, Scope.NAMED_CONTEXTS, namedDataset);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "DEFAULT_CONTEXTS,WILDCARD", "NAMED_CONTEXTS,WILDCARD", "NAMED_CONTEXTS,RDF4J_ALIAS",
+			"NAMED_CONTEXTS,SESAME_ALIAS", "NAMED_CONTEXTS,EXPLICIT_NULL" })
+	void contextFilterDistinguishesBoundAndUnboundRows(Scope scope, NamedDataset datasetMode) {
+		IRI predicate = VF.createIRI("urn:predicate");
+		IRI graph = VF.createIRI("urn:graph");
+		IRI object = VF.createIRI("urn:object");
+		IRI defaultSubject = VF.createIRI("urn:default");
+		IRI namedSubject = VF.createIRI("urn:named");
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(defaultSubject, predicate, object);
+			connection.addStatement(namedSubject, predicate, object, graph);
+			connection.commit();
+
+			SimpleDataset dataset = null;
+			if (datasetMode != NamedDataset.WILDCARD) {
+				dataset = new SimpleDataset();
+				dataset.addNamedGraph(datasetMode.defaultAlias);
+				dataset.addNamedGraph(graph);
+			}
+			var lookup = new StatementPattern(scope, Var.of("s"), TupleExprs.createConstVar(predicate),
+					TupleExprs.createConstVar(object), Var.of("g"));
+			var bound = new Filter(lookup.clone(), new Bound(Var.of("g")));
+			var unbound = new Filter(lookup, new Not(new Bound(Var.of("g"))));
+			assertThat(evaluate(connection, new QueryRoot(bound), dataset))
+					.extracting(row -> row.getValue("s"), row -> row.getValue("g"))
+					.containsExactly(tuple(namedSubject, graph));
+			List<Tuple> expected = scope == Scope.DEFAULT_CONTEXTS || dataset != null
+					? List.of(tuple(defaultSubject, null))
+					: List.of();
+			assertThat(evaluate(connection, new QueryRoot(unbound), dataset))
+					.extracting(row -> row.getValue("s"), row -> row.getValue("g"))
+					.containsExactlyElementsOf(expected);
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false,WILDCARD", "true,false,WILDCARD", "false,true,WILDCARD", "true,true,WILDCARD",
+			"false,false,RDF4J_ALIAS", "true,false,RDF4J_ALIAS", "false,true,SESAME_ALIAS",
+			"true,true,EXPLICIT_NULL" })
+	void nullableGraphJoinPreservesBagsInEitherOrder(boolean reversed, boolean bothNullable, NamedDataset datasetMode) {
+		assertNullableGraphJoin(false, reversed, bothNullable, datasetMode);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphOptionalPreservesBagsInEitherOrder(boolean reversed) {
+		assertNullableGraphJoin(true, reversed, false, NamedDataset.WILDCARD);
+	}
+
+	private void assertNullableGraphJoin(boolean optional, boolean reversed, boolean bothNullable,
+			NamedDataset datasetMode) {
+		IRI p = VF.createIRI("urn:graph-join:left");
+		IRI q = VF.createIRI("urn:graph-join:right");
+		IRI object = VF.createIRI("urn:graph-join:object");
+		IRI firstGraph = VF.createIRI("urn:g0");
+		LmdbStore store = openStore(false, "spoc,posc,ospc");
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(VF.createIRI("urn:l1"), p, object);
+			connection.addStatement(VF.createIRI("urn:l2"), p, object);
+			connection.addStatement(VF.createIRI("urn:l3"), p, object, firstGraph);
+			for (int i = 0; i < 100; i++) {
+				IRI graph = VF.createIRI("urn:g" + i);
+				if (bothNullable) {
+					connection.addStatement(VF.createIRI("urn:right"), q, object, graph);
+				} else {
+					connection.addStatement(VF.createIRI("urn:right"), q, graph);
+				}
+			}
+			if (bothNullable) {
+				connection.addStatement(VF.createIRI("urn:right"), q, object);
+			}
+			connection.commit();
+
+			boolean restrictDataset = datasetMode != NamedDataset.WILDCARD;
+			Scope leftScope = restrictDataset ? Scope.NAMED_CONTEXTS : Scope.DEFAULT_CONTEXTS;
+			var left = new StatementPattern(leftScope, Var.of("s"), TupleExprs.createConstVar(p),
+					TupleExprs.createConstVar(object), Var.of("g"));
+			var right = bothNullable
+					? new StatementPattern(leftScope, TupleExprs.createConstVar(VF.createIRI("urn:right")),
+							TupleExprs.createConstVar(q), TupleExprs.createConstVar(object), Var.of("g"))
+					: new StatementPattern(TupleExprs.createConstVar(VF.createIRI("urn:right")),
+							TupleExprs.createConstVar(q), Var.of("g"));
+			TupleExpr first = reversed ? right : left;
+			TupleExpr second = reversed ? left : right;
+			var join = optional ? new LeftJoin(first, second) : new Join(first, second);
+			var projection = new Projection(join, new ProjectionElemList(new ProjectionElem("g")));
+			SimpleDataset dataset = null;
+			if (restrictDataset) {
+				dataset = new SimpleDataset();
+				dataset.addDefaultGraph(RDF4J.NIL);
+				dataset.addNamedGraph(datasetMode.defaultAlias);
+				for (int i = 0; i < 100; i++) {
+					dataset.addNamedGraph(VF.createIRI("urn:g" + i));
+				}
+			}
+			assertThat(evaluate(connection, new QueryRoot(projection.clone()), dataset))
+					.hasSize(bothNullable ? 204 : 201);
+			assertThat(evaluate(connection, new QueryRoot(new Distinct(projection.clone())), dataset))
+					.hasSize(bothNullable ? 101 : 100);
+			if (restrictDataset) {
+				var emptyNamedGraphs = new SimpleDataset();
+				emptyNamedGraphs.addDefaultGraph(RDF4J.NIL);
+				assertThat(evaluate(connection, new QueryRoot(projection.clone()), emptyNamedGraphs)).isEmpty();
+			}
+			var incoming = new MapBindingSet();
+			incoming.addBinding("g", firstGraph);
+			try (var rows = connection.evaluate(new QueryRoot(projection), dataset, incoming, false)) {
+				assertThat(Iterations.asList(rows)).extracting(row -> row.getValue("g")).containsExactly(firstGraph);
+			}
+		} finally {
+			store.shutDown();
+		}
 	}
 
 	private void assertContextJoin(boolean optional, Scope scope, NamedDataset namedDataset) {
@@ -149,6 +285,323 @@ class LmdbPartitionedDistinctRegressionTest {
 		NamedDataset(Resource defaultAlias) {
 			this.defaultAlias = defaultAlias;
 		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false,false", "true,false,false", "false,true,false", "true,true,false", "false,true,true",
+			"true,true,true" })
+	void nullableGraphLookupKeepsPathParameterScope(boolean optional, boolean correlated, boolean parameterIsGraph) {
+		IRI predicate = VF.createIRI("urn:branch-predicate");
+		IRI object = VF.createIRI("urn:branch-object");
+		IRI firstGraph = VF.createIRI("urn:g0");
+		IRI secondGraph = VF.createIRI("urn:g1");
+		IRI firstSeed = VF.createIRI("urn:seed0");
+		IRI secondSeed = VF.createIRI("urn:seed1");
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(VF.createIRI("urn:l1"), predicate, object);
+			connection.addStatement(VF.createIRI("urn:l2"), predicate, object);
+			connection.addStatement(VF.createIRI("urn:l3"), predicate, object, firstGraph);
+			IRI unrelatedPredicate = VF.createIRI("urn:node-membership");
+			for (IRI endpoint : List.of(firstGraph, secondGraph, firstSeed, secondSeed)) {
+				connection.addStatement(endpoint, unrelatedPredicate, object);
+			}
+			connection.commit();
+
+			var contextLookup = new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"),
+					TupleExprs.createConstVar(predicate), TupleExprs.createConstVar(object), Var.of("g"));
+			TupleExpr path;
+			if (correlated) {
+				path = new ZeroLengthPath(Var.of(parameterIsGraph ? "g" : "seed"), Var.of("end"));
+			} else {
+				Var start = TupleExprs.createConstVar(VF.createIRI("urn:missing-start"));
+				Var end = TupleExprs.createConstVar(VF.createIRI("urn:missing-end"));
+				path = new ArbitraryLengthPath(start,
+						new StatementPattern(start.clone(), TupleExprs.createConstVar(predicate), end.clone()), end, 1);
+			}
+			var first = new MapBindingSet();
+			first.addBinding("g", firstGraph);
+			first.addBinding("seed", firstSeed);
+			var second = new MapBindingSet();
+			second.addBinding("g", secondGraph);
+			second.addBinding("seed", secondSeed);
+			var left = new BindingSetAssignment();
+			left.setBindingSets(List.of(first, second));
+			var right = new Union(contextLookup, path);
+			TupleExpr join = optional ? new LeftJoin(left, right) : new Join(left, right);
+			var rows = evaluate(connection, new QueryRoot(join));
+			assertThat(rows).hasSize(correlated ? 7 : 5);
+			List<IRI> pathValues = parameterIsGraph ? List.of(firstGraph, secondGraph) : List.of(firstSeed, secondSeed);
+			assertThat(rows.stream().map(row -> row.getValue("end")).filter(value -> value != null).toList())
+					.containsExactlyInAnyOrderElementsOf(correlated ? pathValues : List.of());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionKeepsPathAndDefaultRowsUnderBind(boolean optional) {
+		IRI predicate = VF.createIRI("urn:p");
+		IRI membership = VF.createIRI("urn:q");
+		IRI object = VF.createIRI("urn:o");
+		IRI firstGraph = VF.createIRI("urn:g0");
+		IRI secondGraph = VF.createIRI("urn:g1");
+		IRI namedSubject = VF.createIRI("urn:s");
+		IRI firstDefaultSubject = VF.createIRI("urn:left1");
+		IRI secondDefaultSubject = VF.createIRI("urn:left2");
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(namedSubject, predicate, object, firstGraph);
+			connection.addStatement(firstDefaultSubject, predicate, object);
+			connection.addStatement(secondDefaultSubject, predicate, object);
+			connection.addStatement(firstGraph, membership, object);
+			connection.addStatement(secondGraph, membership, object);
+			connection.commit();
+
+			var first = new MapBindingSet();
+			first.addBinding("g", firstGraph);
+			var second = new MapBindingSet();
+			second.addBinding("g", secondGraph);
+			var left = new BindingSetAssignment();
+			left.setBindingSets(List.of(first, second));
+			var lookup = new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"),
+					TupleExprs.createConstVar(predicate), TupleExprs.createConstVar(object), Var.of("g"));
+			var right = new Extension(new Union(lookup, new ZeroLengthPath(Var.of("g"), Var.of("end"))),
+					new ExtensionElem(new ValueConstant(object), "constant"));
+			TupleExpr join = optional ? new LeftJoin(left, right) : new Join(left, right);
+
+			var rows = evaluate(connection, new QueryRoot(join));
+			assertThat(rows).extracting(row -> row.getValue("g"), row -> row.getValue("s"),
+					row -> row.getValue("end"), row -> row.getValue("constant"))
+					.containsExactlyInAnyOrder(
+							tuple(firstGraph, namedSubject, null, object),
+							tuple(firstGraph, firstDefaultSubject, null, object),
+							tuple(firstGraph, secondDefaultSubject, null, object),
+							tuple(firstGraph, null, firstGraph, object),
+							tuple(secondGraph, firstDefaultSubject, null, object),
+							tuple(secondGraph, secondDefaultSubject, null, object),
+							tuple(secondGraph, null, secondGraph, object));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionNestedRowOperatorsPreserveBindingsAndMultiplicity(boolean optional) {
+		assertNullableGraphUnionNestedRowOperators(optional, false);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionUnderBindUsesActiveGraphSelection(boolean optional) {
+		assertNullableGraphUnionNestedRowOperators(optional, true);
+	}
+
+	private void assertNullableGraphUnionNestedRowOperators(boolean optional, boolean activeGraph) {
+		IRI graph = VF.createIRI("urn:graph");
+		IRI secondGraph = VF.createIRI("urn:graph2");
+		IRI predicate = VF.createIRI("urn:predicate");
+		IRI membership = VF.createIRI("urn:membership");
+		IRI object = VF.createIRI("urn:object");
+		IRI defaultSubject = VF.createIRI("urn:default");
+		IRI namedSubject = VF.createIRI("urn:named");
+		var accept = VF.createLiteral(true);
+		var reject = VF.createLiteral(false);
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(defaultSubject, predicate, object);
+			connection.addStatement(namedSubject, predicate, object, graph);
+			connection.addStatement(graph, membership, object);
+			connection.addStatement(secondGraph, membership, object);
+			connection.commit();
+
+			var accepted = new MapBindingSet();
+			accepted.addBinding("g", graph);
+			accepted.addBinding("accepted", accept);
+			var rejected = new MapBindingSet();
+			rejected.addBinding("g", secondGraph);
+			rejected.addBinding("accepted", reject);
+			var left = new BindingSetAssignment();
+			left.setBindingSets(List.of(accepted, rejected));
+
+			var lookup = new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"),
+					TupleExprs.createConstVar(predicate), TupleExprs.createConstVar(object), Var.of("g"));
+			var path = new ZeroLengthPath(Var.of("g"), Var.of("end"));
+			var duplicatePaths = new Extension(new Union(path, path.clone()),
+					new ExtensionElem(Var.of("end"), "pathValue"));
+			var bind = new Extension(new Union(lookup, duplicatePaths),
+					new ExtensionElem(new ValueConstant(object), "constant"),
+					new ExtensionElem(Var.of("constant"), "copied"),
+					new ExtensionElem(Var.of("accepted"), "leaked"));
+			var projection = new Projection(bind, new ProjectionElemList(new ProjectionElem("g"),
+					new ProjectionElem("s"), new ProjectionElem("pathValue", "destination"),
+					new ProjectionElem("copied", "alias"), new ProjectionElem("leaked")));
+			projection.setSubquery(false);
+			var filter = new Filter(projection, new Or(new Not(new Bound(Var.of("g"))),
+					new Bound(Var.of("destination"))));
+			var right = new Extension(filter, new ExtensionElem(Var.of("alias"), "outerAlias"));
+			TupleExpr join = optional
+					? new LeftJoin(left, right,
+							new Compare(Var.of("accepted"), new ValueConstant(accept), CompareOp.EQ))
+					: new Join(left, right);
+
+			SimpleDataset dataset = null;
+			if (activeGraph) {
+				dataset = new SimpleDataset();
+				dataset.addDefaultGraph(VF.createIRI("urn:unused-default-graph"));
+				dataset.addNamedGraph(RDF4J.NIL);
+				join = new Graph(Var.of("active"), join);
+			}
+			var rows = evaluate(connection, new QueryRoot(join), dataset);
+			if (activeGraph) {
+				assertThat(rows).extracting(row -> row.getValue("active")).containsOnly(RDF4J.NIL);
+			}
+			var expected = new ArrayList<>(List.of(
+					tuple(graph, accept, defaultSubject, null, object, null),
+					tuple(graph, accept, null, graph, object, null),
+					tuple(graph, accept, null, graph, object, null)));
+			if (optional) {
+				expected.add(tuple(secondGraph, reject, null, null, null, null));
+			} else {
+				expected.add(tuple(secondGraph, reject, defaultSubject, null, object, null));
+				expected.add(tuple(secondGraph, reject, null, secondGraph, object, null));
+				expected.add(tuple(secondGraph, reject, null, secondGraph, object, null));
+			}
+			assertThat(rows).extracting(row -> row.getValue("g"), row -> row.getValue("accepted"),
+					row -> row.getValue("s"), row -> row.getValue("destination"), row -> row.getValue("outerAlias"),
+					row -> row.getValue("leaked")).containsExactlyInAnyOrderElementsOf(expected);
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void nullableGraphUnionVolatileBindRunsForEachOccurrenceInRepeatedFrames() {
+		IRI graph = VF.createIRI("urn:graph");
+		IRI secondGraph = VF.createIRI("urn:graph2");
+		IRI predicate = VF.createIRI("urn:predicate");
+		IRI membership = VF.createIRI("urn:membership");
+		IRI object = VF.createIRI("urn:object");
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(VF.createIRI("urn:default"), predicate, object);
+			connection.addStatement(graph, membership, object);
+			connection.addStatement(secondGraph, membership, object);
+			connection.commit();
+
+			var binding = new MapBindingSet();
+			binding.addBinding("g", graph);
+			var second = new MapBindingSet();
+			second.addBinding("g", secondGraph);
+			var left = new BindingSetAssignment();
+			left.setBindingSets(List.of(binding, second, binding));
+			var lookup = new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"),
+					TupleExprs.createConstVar(predicate), TupleExprs.createConstVar(object), Var.of("g"));
+			var right = new Extension(new Union(lookup, new ZeroLengthPath(Var.of("g"), Var.of("end"))),
+					new ExtensionElem(new BNodeGenerator(), "fresh"));
+
+			var rows = evaluate(connection, new QueryRoot(new LeftJoin(left, right)));
+			assertThat(rows).hasSize(6);
+			assertThat(rows).extracting(row -> row.getValue("fresh")).doesNotContainNull().doesNotHaveDuplicates();
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void nullableGraphUnionUnderBindKeepsLimitOverWholeUnion() {
+		IRI graph = VF.createIRI("urn:graph");
+		IRI predicate = VF.createIRI("urn:predicate");
+		IRI object = VF.createIRI("urn:object");
+		IRI subject = VF.createIRI("urn:default");
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(subject, predicate, object);
+			connection.addStatement(graph, VF.createIRI("urn:membership"), object);
+			connection.commit();
+
+			var binding = new MapBindingSet();
+			binding.addBinding("g", graph);
+			var left = new BindingSetAssignment();
+			left.setBindingSets(List.of(binding));
+			var lookup = new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"),
+					TupleExprs.createConstVar(predicate), TupleExprs.createConstVar(object), Var.of("g"));
+			var union = new Union(lookup, new ZeroLengthPath(Var.of("g"), Var.of("end")));
+			var right = new Extension(new Slice(union, 0, 1), new ExtensionElem(new ValueConstant(object), "constant"));
+
+			var rows = evaluate(connection, new QueryRoot(new LeftJoin(left, right)));
+			assertThat(rows).extracting(row -> row.getValue("g"), row -> row.getValue("s"),
+					row -> row.getValue("end"), row -> row.getValue("constant"))
+					.containsExactly(tuple(graph, subject, null, object));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void nullableGraphUnionReusesEachArmByItsOwnParameters(boolean optional, boolean bind) {
+		int frames = 100;
+		IRI predicate = VF.createIRI("urn:cache-predicate");
+		IRI membership = VF.createIRI("urn:cache-membership");
+		IRI object = VF.createIRI("urn:cache-object");
+		IRI subject = VF.createIRI("urn:cache-subject");
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			List<BindingSet> values = new ArrayList<>();
+			for (int i = 0; i < frames; i++) {
+				IRI graph = VF.createIRI("urn:cache-graph-" + i);
+				connection.addStatement(subject, predicate, object, graph);
+				connection.addStatement(graph, membership, object);
+				var binding = new MapBindingSet();
+				binding.addBinding("g", graph);
+				values.add(binding);
+			}
+			connection.commit();
+			values.add(values.getFirst());
+			var missing = new MapBindingSet();
+			missing.addBinding("g", VF.createIRI("urn:cache-missing-graph"));
+			values.add(missing);
+			var left = new BindingSetAssignment();
+			left.setBindingSets(values);
+			var graphLookup = new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"),
+					TupleExprs.createConstVar(predicate), TupleExprs.createConstVar(object), Var.of("g"));
+			TupleExpr right = new Union(graphLookup, new ZeroLengthPath(Var.of("g"), Var.of("end")));
+			if (bind) {
+				right = new Extension(right, new ExtensionElem(new ValueConstant(object), "constant"));
+			}
+			TupleExpr join = optional ? new LeftJoin(left, right) : new Join(left, right);
+			var plan = connection.explain(Explanation.Level.Telemetry, new QueryRoot(join), null,
+					EmptyBindingSet.getInstance(), false, 10).toGenericPlanNode();
+			assertThat(plan.getResultSizeActual()).isEqualTo(2L * (frames + 1) + (optional ? 1 : 0));
+			assertThat(actualRowsOfType(plan, "StatementPattern")).as("rows from the independent graph arm")
+					.isEqualTo(frames);
+			var pathRows = assertThat(actualRowsOfType(plan, "ZeroLengthPath")).as("rows from the path arm");
+			if (optional) {
+				pathRows.isEqualTo(frames);
+			} else {
+				// An inner join can evaluate the UNION first, scanning the two non-graph endpoints as well.
+				pathRows.isBetween((long) frames, frames + 2L);
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static long actualRowsOfType(GenericPlanNode node, String type) {
+		if (node.getType().startsWith(type) && node.getResultSizeActual() != null) {
+			return node.getResultSizeActual();
+		}
+		return node.getPlans() == null ? 0
+				: node.getPlans().stream().mapToLong(child -> actualRowsOfType(child, type)).sum();
 	}
 
 	@Test

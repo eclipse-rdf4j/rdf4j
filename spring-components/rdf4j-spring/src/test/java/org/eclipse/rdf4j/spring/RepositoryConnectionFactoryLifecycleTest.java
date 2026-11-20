@@ -16,11 +16,13 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -38,6 +40,7 @@ import org.eclipse.rdf4j.spring.tx.TransactionalRepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.tx.TxProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InOrder;
@@ -176,6 +179,297 @@ class RepositoryConnectionFactoryLifecycleTest {
 			context.refresh();
 		}
 		verify((DisposableBean) delegate).destroy();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void closingContextClosesManuallyRegisteredPool(boolean registerAfterRefresh) throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = newPool(connection);
+		try {
+			try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+				if (!registerAfterRefresh) {
+					context.getBeanFactory().registerSingleton("pool", pool);
+				}
+				context.registerBean("wrapper", RepositoryConnectionFactory.class, () -> decorate(pool));
+				context.refresh();
+				if (registerAfterRefresh) {
+					context.getBeanFactory().registerSingleton("pool", pool);
+				}
+				context.getBean("wrapper", RepositoryConnectionFactory.class).getConnection().close();
+				verify(connection, never()).close();
+			}
+			verify(connection).close();
+		} finally {
+			pool.destroy();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void manuallyRegisteredParentPoolStaysOpenUntilParentCloses(boolean registerAfterRefresh, boolean closeParentFirst)
+			throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = spy(newPool(connection));
+		try {
+			try (AnnotationConfigApplicationContext parent = new AnnotationConfigApplicationContext()) {
+				if (!registerAfterRefresh) {
+					parent.getBeanFactory().registerSingleton("pool", pool);
+				}
+				parent.refresh();
+				try (AnnotationConfigApplicationContext child = new AnnotationConfigApplicationContext()) {
+					child.setParent(parent);
+					child.registerBean("wrapper", RepositoryConnectionFactory.class, () -> decorate(pool));
+					child.refresh();
+					child.getBean("wrapper", RepositoryConnectionFactory.class).getConnection().close();
+					if (registerAfterRefresh) {
+						parent.getBeanFactory().registerSingleton("pool", pool);
+					}
+					verify(connection, never()).close();
+					if (closeParentFirst) {
+						parent.close();
+						verify(connection).close();
+					}
+				}
+				if (!closeParentFirst) {
+					verify(connection, never()).close();
+				}
+			}
+			verify(pool).destroy();
+			verify(connection).close();
+		} finally {
+			pool.destroy();
+		}
+	}
+
+	@Test
+	void manuallyRegisteredDestroyCallbackStillRunsForPool() throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = spy(newPool(connection));
+		AtomicInteger callbacks = new AtomicInteger();
+		try {
+			try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+				context.getBeanFactory().registerSingleton("pool", pool);
+				context.getDefaultListableBeanFactory().registerDisposableBean("pool", () -> {
+					verify(connection, never()).close();
+					callbacks.incrementAndGet();
+					pool.destroy();
+				});
+				context.registerBean("wrapper", RepositoryConnectionFactory.class, () -> decorate(pool));
+				context.refresh();
+				context.getBean("wrapper", RepositoryConnectionFactory.class).getConnection().close();
+				verify(connection, never()).close();
+			}
+			assertEquals(1, callbacks.get());
+			verify(pool).destroy();
+			verify(connection).close();
+		} finally {
+			pool.destroy();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void rawSingletonShadowingLazyDefinitionStillClosesItsPool(boolean shadowWithDecorator, boolean explicitCallback)
+			throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = spy(newPool(connection));
+		AtomicInteger suppliers = new AtomicInteger();
+		AtomicInteger callbacks = new AtomicInteger();
+		AtomicInteger explicitCallbacks = new AtomicInteger();
+		RepositoryConnectionFactory registered = shadowWithDecorator
+				? new LoggingRepositoryConnectionFactory(pool, new OperationLog()) {
+					@Override
+					public void destroy() throws Exception {
+						callbacks.incrementAndGet();
+						super.destroy();
+					}
+				}
+				: pool;
+		try {
+			try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+				context.registerBean("delegate", RepositoryConnectionFactory.class, () -> {
+					suppliers.incrementAndGet();
+					return registered;
+				}, definition -> definition.setLazyInit(true));
+				context.getBeanFactory().registerSingleton("delegate", registered);
+				if (explicitCallback) {
+					context.getDefaultListableBeanFactory().registerDisposableBean("delegate", () -> {
+						verify(connection, never()).close();
+						explicitCallbacks.incrementAndGet();
+						((DisposableBean) registered).destroy();
+					});
+				}
+				context.registerBean("wrapper", RepositoryConnectionFactory.class,
+						() -> decorate(context.getBean("delegate", RepositoryConnectionFactory.class)));
+				context.refresh();
+				context.getBean("wrapper", RepositoryConnectionFactory.class).getConnection().close();
+				assertEquals(0, suppliers.get());
+				verify(connection, never()).close();
+			}
+			assertEquals(0, suppliers.get());
+			assertEquals(shadowWithDecorator ? 1 : 0, callbacks.get());
+			assertEquals(explicitCallback ? 1 : 0, explicitCallbacks.get());
+			verify(pool).destroy();
+			verify(connection).close();
+		} finally {
+			pool.destroy();
+		}
+	}
+
+	@Test
+	void springPreservesDisposalOrderForAnIndependentlyManagedPool() throws Exception {
+		try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+			context.register(LifecycleConfiguration.class);
+			context.registerBean("pool", PooledRepositoryConnectionFactory.class,
+					() -> spy(new PooledRepositoryConnectionFactory(
+							new DirectRepositoryConnectionFactory(context.getBean(Repository.class)))),
+					definition -> definition.setDependsOn("repository"));
+			context.registerBean("wrapper", LoggingRepositoryConnectionFactory.class,
+					() -> spy(new LoggingRepositoryConnectionFactory(
+							context.getBean("pool", RepositoryConnectionFactory.class), new OperationLog())),
+					definition -> definition.setDependsOn("pool"));
+			context.refresh();
+			LifecycleConfiguration configuration = context.getBean(LifecycleConfiguration.class);
+			var pool = context.getBean("pool", PooledRepositoryConnectionFactory.class);
+			var wrapper = context.getBean("wrapper", LoggingRepositoryConnectionFactory.class);
+			wrapper.getConnection().close();
+			verify(configuration.connection, never()).close();
+
+			context.close();
+
+			InOrder shutdown = inOrder(wrapper, pool, configuration.connection, configuration.repository);
+			shutdown.verify(wrapper).destroy();
+			shutdown.verify(pool).destroy();
+			shutdown.verify(configuration.connection).close();
+			shutdown.verify(configuration.repository).shutDown();
+		}
+	}
+
+	@Test
+	void manuallyRegisteredThirdPartyFactoryRetainsItsExplicitCallback() throws Exception {
+		RepositoryConnectionFactory delegate = mock(RepositoryConnectionFactory.class,
+				withSettings().extraInterfaces(DisposableBean.class));
+		try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+			context.getBeanFactory().registerSingleton("delegate", delegate);
+			context.getDefaultListableBeanFactory().registerDisposableBean("delegate", (DisposableBean) delegate);
+			context.registerBean("wrapper", RepositoryConnectionFactory.class, () -> decorate(delegate));
+			context.refresh();
+		}
+		verify((DisposableBean) delegate).destroy();
+	}
+
+	@Test
+	void aManualChildRegistrationLeavesAParentManagedPoolOpen() throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = newPool(connection);
+		try {
+			try (AnnotationConfigApplicationContext parent = new AnnotationConfigApplicationContext()) {
+				parent.registerBean("parentPool", PooledRepositoryConnectionFactory.class, () -> pool);
+				parent.refresh();
+				try (AnnotationConfigApplicationContext child = new AnnotationConfigApplicationContext()) {
+					child.getBeanFactory().registerSingleton("childPool", pool);
+					child.setParent(parent);
+					child.registerBean("wrapper", RepositoryConnectionFactory.class, () -> decorate(pool));
+					child.refresh();
+					child.getBean("wrapper", RepositoryConnectionFactory.class).getConnection().close();
+				}
+				verify(connection, never()).close();
+			}
+			verify(connection).close();
+		} finally {
+			pool.destroy();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({
+			"false,false,false", "false,true,false", "true,false,false", "true,true,false",
+			"false,false,true", "false,true,true", "true,false,true", "true,true,true"
+	})
+	void manualChildRegistrationLeavesTheSharedPoolWithItsParent(boolean registerParentLate, boolean closeParentFirst,
+			boolean explicitCallbacks) throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = spy(newPool(connection));
+		AtomicInteger parentCallbacks = new AtomicInteger();
+		AtomicInteger childCallbacks = new AtomicInteger();
+		try {
+			try (AnnotationConfigApplicationContext parent = new AnnotationConfigApplicationContext()) {
+				if (!registerParentLate) {
+					parent.getBeanFactory().registerSingleton("parentPool", pool);
+				}
+				parent.refresh();
+				try (AnnotationConfigApplicationContext child = new AnnotationConfigApplicationContext()) {
+					child.setParent(parent);
+					child.getBeanFactory().registerSingleton("childPool", pool);
+					if (explicitCallbacks) {
+						child.getDefaultListableBeanFactory()
+								.registerDisposableBean("childPool", childCallbacks::incrementAndGet);
+					}
+					child.registerBean("wrapper", RepositoryConnectionFactory.class, () -> decorate(pool));
+					child.refresh();
+					child.getBean("wrapper", RepositoryConnectionFactory.class).getConnection().close();
+					if (registerParentLate) {
+						parent.getBeanFactory().registerSingleton("parentPool", pool);
+					}
+					if (explicitCallbacks) {
+						parent.getDefaultListableBeanFactory().registerDisposableBean("parentPool", () -> {
+							parentCallbacks.incrementAndGet();
+							pool.destroy();
+						});
+					}
+					verify(connection, never()).close();
+					if (closeParentFirst) {
+						parent.close();
+						verify(connection).close();
+						assertEquals(0, childCallbacks.get());
+					}
+				}
+				if (!closeParentFirst) {
+					verify(connection, never()).close();
+					assertEquals(0, parentCallbacks.get());
+				}
+			}
+			verify(pool).destroy();
+			verify(connection).close();
+			assertEquals(explicitCallbacks ? 1 : 0, parentCallbacks.get());
+			assertEquals(explicitCallbacks ? 1 : 0, childCallbacks.get());
+		} finally {
+			pool.destroy();
+		}
+	}
+
+	@Test
+	void manuallyRegisteredDecoratorClosesItsInlinePool() throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = newPool(connection);
+		try {
+			RepositoryConnectionFactory inner = decorate(pool);
+			try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+				context.getBeanFactory().registerSingleton("inner", inner);
+				context.registerBean("wrapper", RepositoryConnectionFactory.class,
+						() -> new CachingRepositoryConnectionFactory(inner, new ResultCacheProperties()));
+				context.refresh();
+				context.getBean("wrapper", RepositoryConnectionFactory.class).getConnection().close();
+				verify(connection, never()).close();
+			}
+			verify(connection).close();
+		} finally {
+			pool.destroy();
+		}
+	}
+
+	private static PooledRepositoryConnectionFactory newPool(RepositoryConnection connection) {
+		Repository repository = mock(Repository.class);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.getRepository()).thenReturn(repository);
+		when(connection.isOpen()).thenReturn(true);
+		return new PooledRepositoryConnectionFactory(new DirectRepositoryConnectionFactory(repository));
+	}
+
+	private static RepositoryConnectionFactory decorate(RepositoryConnectionFactory delegate) {
+		return new LoggingRepositoryConnectionFactory(
+				new CachingRepositoryConnectionFactory(delegate, new ResultCacheProperties()), new OperationLog());
 	}
 
 	@ParameterizedTest

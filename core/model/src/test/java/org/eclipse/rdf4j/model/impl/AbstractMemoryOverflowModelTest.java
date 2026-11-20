@@ -22,6 +22,7 @@ import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -33,7 +34,10 @@ import javax.management.NotificationListener;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.AbstractIRI;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
 public class AbstractMemoryOverflowModelTest {
@@ -89,6 +93,17 @@ public class AbstractMemoryOverflowModelTest {
 		runInConstrainedHeap("sustained-pressure");
 	}
 
+	@ParameterizedTest
+	@ValueSource(strings = { "clear", "pattern", "iterator", "filtered-iterator", "filtered-term-iterator" })
+	void statementAddsResumePartialBatchChecksAfterShrinkage(String removalPath) throws Exception {
+		runInConstrainedHeap("shrink-" + removalPath);
+	}
+
+	@Test
+	void sharedIriWithAnAllocatingStringValueCountsAsOneLexicalPayload() throws Exception {
+		runInConstrainedHeap("shared-allocating-iri");
+	}
+
 	@Test
 	void subBatchSpillCountsSharedTermsOnceAndRetriesLargeNestedPayload() throws Exception {
 		runInConstrainedHeap("sub-batch-payload");
@@ -120,6 +135,10 @@ public class AbstractMemoryOverflowModelTest {
 			AbstractMemoryOverflowModel.BATCH_SIZE = 1;
 		}
 		AbstractMemoryOverflowModelTest test = new AbstractMemoryOverflowModelTest();
+		if (args[0].startsWith("shrink-")) {
+			test.shrinkProbe(args[0].substring("shrink-".length()));
+			return;
+		}
 		switch (args[0]) {
 		case "pressure-hook":
 			test.pressureHookProbe();
@@ -150,6 +169,9 @@ public class AbstractMemoryOverflowModelTest {
 			break;
 		case "sustained-pressure":
 			test.sustainedPressureProbe();
+			break;
+		case "shared-allocating-iri":
+			test.sharedAllocatingIriProbe();
 			break;
 		case "sub-batch-payload":
 			test.subBatchPayloadProbe();
@@ -415,6 +437,117 @@ public class AbstractMemoryOverflowModelTest {
 			assertThat(model).hasSize(7);
 		} finally {
 			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void shrinkProbe(String removalPath) {
+		AbstractMemoryOverflowModel.BATCH_SIZE = 8;
+		AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:subject");
+			var predicate = values.createIRI("urn:predicate");
+			var removedContext = values.createIRI("urn:removed");
+			var survivingContext = values.createIRI("urn:surviving");
+			Statement survivor = values.createStatement(subject, predicate, values.createLiteral("surviving"),
+					survivingContext);
+			for (int i = 0; i < 7; i++) {
+				model.add(subject, predicate, values.createLiteral(i), removedContext);
+			}
+			model.add(survivor);
+			model.spillToDiskIfNeeded();
+			assertThat(model).hasSize(8);
+			assertThat(model.spillCount).isZero();
+
+			switch (removalPath) {
+			case "clear":
+				model.clear();
+				break;
+			case "pattern":
+				model.remove(subject, predicate, null, removedContext);
+				break;
+			case "iterator":
+				removeAllWithIterator(model.iterator());
+				break;
+			case "filtered-iterator":
+				removeAllWithIterator(model.filter(null, predicate, null, removedContext).iterator());
+				break;
+			case "filtered-term-iterator":
+				removeAllWithIterator(model.filter(null, predicate, null, removedContext).subjects().iterator());
+				break;
+			default:
+				throw new IllegalArgumentException(removalPath);
+			}
+			List<Statement> expected = new ArrayList<>();
+			if (!removalPath.equals("clear") && !removalPath.equals("iterator")) {
+				expected.add(survivor);
+			}
+			assertThat(model).containsExactlyElementsOf(expected);
+
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			Statement large = values.createStatement(subject, predicate, values.createLiteral("x".repeat(2048)));
+			Statement next = values.createStatement(subject, predicate, values.createLiteral("next"));
+			model.add(large);
+			assertThat(model.spillCount).isZero();
+			model.add(next);
+			expected.add(large);
+			expected.add(next);
+			assertThat(model.spillCount).as("a reused partial batch should spill after " + removalPath).isOne();
+			assertThat(model).containsExactlyElementsOf(expected);
+		}
+	}
+
+	private static void removeAllWithIterator(Iterator<?> iterator) {
+		while (iterator.hasNext()) {
+			iterator.next();
+			iterator.remove();
+		}
+	}
+
+	private void sharedAllocatingIriProbe() {
+		AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:subject");
+			var predicate = values.createIRI("urn:predicate");
+			var shared = new SplitIRI("x".repeat(24 * 1024));
+			var nested = values.createTripleTerm(shared, predicate, values.createLiteral("nested", shared));
+			for (int i = 0; i < 12; i++) {
+				var context = values.createIRI("urn:context:" + i);
+				model.add(shared, predicate, nested, context);
+				model.add(subject, predicate, values.createLiteral(i), shared);
+			}
+
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).as("shared IRI text should not be charged for every use").isZero();
+
+			var distinct = new SplitIRI("y".repeat(112 * 1024));
+			Statement large = values.createStatement(subject, predicate, values.createLiteral("typed", distinct));
+			model.add(large);
+			model.add(values.createStatement(subject, predicate, values.createLiteral("next")));
+			assertThat(model.spillCount).as("a distinct large datatype IRI contributes to the spill budget").isOne();
+			assertThat(model).hasSize(26).contains(large);
+		}
+	}
+
+	private static final class SplitIRI extends AbstractIRI {
+		private static final long serialVersionUID = 1L;
+
+		private final String localName;
+
+		private SplitIRI(String localName) {
+			this.localName = localName;
+		}
+
+		@Override
+		public String getNamespace() {
+			return "urn:split:";
+		}
+
+		@Override
+		public String getLocalName() {
+			return localName;
 		}
 	}
 

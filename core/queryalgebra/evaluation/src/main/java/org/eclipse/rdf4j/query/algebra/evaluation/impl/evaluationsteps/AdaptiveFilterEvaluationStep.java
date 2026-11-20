@@ -154,8 +154,13 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 	public static QueryEvaluationStep decorate(QueryEvaluationStep step,
 			Function<QueryEvaluationStep, QueryEvaluationStep> decorator) {
 		if (step instanceof PhysicalOperator physical) {
-			return new PhysicalOperator(physical.kind, decorator.apply(physical.step), physical.rebind == null ? null
-					: (left, right) -> decorator.apply(physical.rebind.apply(left, right)), physical.untrackedRebind);
+			return new PhysicalOperator(physical.kind, decorate(physical.step, decorator),
+					physical.rebind == null ? null
+							: (left, right) -> decorator.apply(physical.rebind.apply(left, right)),
+					physical.untrackedRebind);
+		}
+		if (step instanceof RebindableQueryEvaluationStep rebindable) {
+			return rebindable.decorate(decorator);
 		}
 		return decorator.apply(step);
 	}

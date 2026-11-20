@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.repository.Repository;
@@ -54,6 +55,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactor
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junitpioneer.jupiter.SetSystemProperty;
 
 /**
@@ -74,6 +78,54 @@ class LmdbDistinctStableOrderPlanningTest {
 
 	@TempDir
 	File dir;
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void anchorDiscountRequiresAnOrderTheDistinctMarkerCanUse(boolean prefixCompatible) {
+		String indexes = prefixCompatible ? "spoc,psoc,posc" : "spoc,posc";
+		var config = new LmdbStoreConfig(indexes)
+				.setNativeEvaluationEnabled(false)
+				.setSketchEstimatorEnabled(false)
+				.setDirectAdjacencyEnabled(false);
+		var store = new LmdbStore(dir, config);
+		store.setExperimentalQueryOptimizations(true);
+		store.init();
+		try (var connection = store.getConnection()) {
+			var vf = store.getValueFactory();
+			IRI p = vf.createIRI("urn:p");
+			IRI q = vf.createIRI("urn:q");
+			connection.begin();
+			for (int i = 0; i < 200; i++) {
+				connection.addStatement(vf.createIRI("urn:s" + i), p, vf.createIRI("urn:x" + i));
+			}
+			for (int i = 0; i < 100; i++) {
+				connection.addStatement(vf.createIRI("urn:x" + i), q, vf.createIRI("urn:y" + i));
+			}
+			connection.commit();
+
+			var drive = new StatementPattern(Var.of("x"), TupleExprs.createConstVar(q), Var.of("y"));
+			var anchor = new StatementPattern(Var.of("s"), TupleExprs.createConstVar(p), Var.of("x"));
+			var projection = new Projection(new Join(drive, anchor), new ProjectionElemList(new ProjectionElem("s")));
+			var distinct = new QueryRoot(new Distinct(projection));
+			var explanation = connection.explain(Explanation.Level.Telemetry, distinct, null,
+					EmptyBindingSet.getInstance(), false, 4);
+			var plan = explanation.toGenericPlanNode();
+			var join = plan.getPlans()
+					.getFirst()
+					.getPlans()
+					.stream()
+					.filter(node -> node.getType().startsWith("Join"))
+					.findFirst()
+					.orElseThrow();
+			assertThat(plan.getResultSizeActual()).isEqualTo(100);
+			assertThat(join.getPlans().getFirst().getResultSizeActual())
+					.as("the input rows from the selected leading pattern")
+					.isEqualTo(prefixCompatible ? 200 : 100);
+			assertThat(explanation.toString().contains("statementOrder")).isEqualTo(prefixCompatible);
+		} finally {
+			store.shutDown();
+		}
+	}
 
 	@Test
 	void nativeResidualDistinctKeepsRowsUnderPushedDownFilter() {
@@ -199,18 +251,26 @@ class LmdbDistinctStableOrderPlanningTest {
 		}
 	}
 
-	@Test
-	void experimentalOptimizationsOffRestoresPlainDistinct() {
+	@ParameterizedTest
+	@CsvSource({ "spoc, false", "'spoc,posc,ospc', true" })
+	void defaultPartitionedDistinctRequiresACompatibleIndex(String indexes, boolean prefixCompatible) {
 		Repository memory = memory();
-		Repository lmdb = lmdb("experimental_off", false, false);
+		var config = new LmdbStoreConfig(indexes).setNativeEvaluationEnabled(false);
+		config.setExperimentalQueryOptimizations(false);
+		Repository lmdb = lmdb("experimental_off", config);
 		try {
 			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
 			StringBuilder explain = new StringBuilder();
 			Map<String, Integer> expected = run(memory, PLAIN_DISTINCT, null);
 			Map<String, Integer> actual = run(lmdb, PLAIN_DISTINCT, explain);
 			assertThat(actual).isEqualTo(expected);
-			assertThat(explain.toString()).doesNotContain("statementOrder");
-			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(before);
+			if (prefixCompatible) {
+				assertThat(explain.toString()).contains("statementOrder");
+				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isGreaterThan(before);
+			} else {
+				assertThat(explain.toString()).doesNotContain("statementOrder");
+				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(before);
+			}
 		} finally {
 			memory.shutDown();
 			lmdb.shutDown();
@@ -275,12 +335,12 @@ class LmdbDistinctStableOrderPlanningTest {
 	}
 
 	private Repository lmdb(String sub, boolean nativeEnabled) {
-		return lmdb(sub, nativeEnabled, true);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(nativeEnabled);
+		config.setExperimentalQueryOptimizations(true);
+		return lmdb(sub, config);
 	}
 
-	private Repository lmdb(String sub, boolean nativeEnabled, boolean experimental) {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(nativeEnabled);
-		config.setExperimentalQueryOptimizations(experimental);
+	private Repository lmdb(String sub, LmdbStoreConfig config) {
 		LmdbStore store = new LmdbStore(new File(dir, sub), config);
 		SailRepository repo = new SailRepository(store);
 		repo.init();

@@ -21,6 +21,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
@@ -51,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RebindableQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -82,23 +84,34 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 		QueryEvaluationStep arg = strategy.precompile(filter.getArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, filter.getArg(), arg);
+		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+		UnaryOperator<QueryEvaluationStep> wrapper = prepareRowFilter(filter, strategy, context, evaluationStatistics,
+				bindingScope);
+		if (wrapper == null) {
+			return QueryEvaluationStep.EMPTY;
+		}
+		QueryEvaluationStep rowFilter = RebindableQueryEvaluationStep.unary(filter, arg, wrapper);
+		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context, rowFilter);
+		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic, bindingScope);
+		return batched != null ? batched : generic;
+	}
+
+	private static UnaryOperator<QueryEvaluationStep> prepareRowFilter(Filter filter, EvaluationStrategy strategy,
+			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics,
+			ConditionBindingScope bindingScope) {
 		QueryValueEvaluationStep ves;
 		try {
 			ves = strategy.precompile(filter.getCondition(), context);
 		} catch (QueryEvaluationException e) {
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
-			return QueryEvaluationStep.EMPTY;
+			return null;
 		}
-		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
 		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
 				: retainBindings(bindingScope.bindingNames(), context);
 
-		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context,
-				(bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
-						context.getBlankNodeAllocationScope()));
-		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic, bindingScope);
-		return batched != null ? batched : generic;
+		return arg -> bs -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
+				context.getBlankNodeAllocationScope());
 	}
 
 	/**

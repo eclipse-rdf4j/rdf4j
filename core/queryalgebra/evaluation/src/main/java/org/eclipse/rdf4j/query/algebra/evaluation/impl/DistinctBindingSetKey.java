@@ -17,7 +17,8 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
@@ -61,17 +62,36 @@ public final class DistinctBindingSetKey implements Serializable {
 	private void writeObject(ObjectOutputStream output) throws IOException {
 		// Store the binding domain, including explicit nulls. A private stream isolates values from disk factories'
 		// custom class-descriptor handling.
-		List<String> names = bindings.getBindingNames().stream().filter(bindings::hasBinding).toList();
 		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 		try (ObjectOutputStream values = new ObjectOutputStream(bytes)) {
-			values.writeInt(names.size());
-			for (String name : names) {
-				values.writeObject(name);
-				values.writeObject(bindings.getValue(name));
+			int size = bindings.size();
+			values.writeInt(size);
+			int written = 0;
+			for (Binding binding : bindings) {
+				values.writeObject(binding.getName());
+				values.writeObject(binding.getValue());
+				written++;
+			}
+			if (written < size) {
+				writeExplicitNulls(values);
 			}
 		}
 		output.writeInt(bytes.size());
 		output.write(bytes.toByteArray());
+	}
+
+	private void writeExplicitNulls(ObjectOutputStream output) throws IOException {
+		// The iterator omits explicit nulls. Exclude the names already written before checking for UNDEF columns.
+		Set<String> nonNullNames = new HashSet<>();
+		for (Binding binding : bindings) {
+			nonNullNames.add(binding.getName());
+		}
+		for (String name : bindings.getBindingNames()) {
+			if (!nonNullNames.contains(name) && bindings.hasBinding(name)) {
+				output.writeObject(name);
+				output.writeObject(null);
+			}
+		}
 	}
 
 	private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
