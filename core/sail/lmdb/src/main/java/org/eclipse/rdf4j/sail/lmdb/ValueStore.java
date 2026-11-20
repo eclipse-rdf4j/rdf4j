@@ -16000,14 +16000,31 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return value;
 	}
 
+	/**
+	 * Core datatype of a literal whose id carries no core-datatype tag, derived from its resolved dictionary datatype.
+	 * Single resolution point for both {@code data2literal} variants.
+	 */
+	private CoreDatatype resolveLiteralCoreDatatype(long literalId, IRI datatype) {
+		return CoreDatatype.from(datatype);
+	}
+
 	private LmdbLiteral data2literal(ReadSnapshot snapshot, long txn, long id, byte[] data, LmdbLiteral value)
 			throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		bb.get();
 		long datatypeID = Varint.readUnsignedHeap(bb);
-		IRI datatype = datatypeID > 0 ? (IRI) getValue(snapshot, txn, datatypeID) : null;
-		if (datatypeID > 0 && datatype == null) {
-			return null;
+		CoreDatatype coreDatatype = ValueIds.coreDatatypeOfCoreLiteral(id);
+		IRI datatype = null;
+		if (coreDatatype == CoreDatatype.NONE && datatypeID > 0) {
+			datatype = (IRI) getValue(snapshot, txn, datatypeID);
+			if (datatype == null) {
+				return null;
+			}
+			coreDatatype = resolveLiteralCoreDatatype(id, datatype);
+		} else {
+			assert coreDatatype == CoreDatatype.NONE || datatypeID <= 0
+					|| coreDatatype.getIri().equals(getValue(snapshot, txn, datatypeID))
+					: "Core literal tag " + coreDatatype + " does not match stored datatype of id " + id;
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
@@ -16031,6 +16048,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (value == null) {
 			if (lang != null) {
 				return new LmdbLiteral(snapshot.completedRevision(), label, lang, baseDirection, id);
+			} else if (coreDatatype != CoreDatatype.NONE) {
+				return new LmdbLiteral(snapshot.completedRevision(), label, coreDatatype.getIri(), coreDatatype, id);
 			} else if (datatype != null) {
 				return new LmdbLiteral(snapshot.completedRevision(), label, datatype, id);
 			}
@@ -16043,6 +16062,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			value.setBaseDirection(baseDirection);
 			value.setDatatype(baseDirection != Literal.BaseDirection.NONE ? CoreDatatype.RDF.DIRLANGSTRING
 					: CoreDatatype.RDF.LANGSTRING);
+		} else if (coreDatatype != CoreDatatype.NONE) {
+			value.setDatatype(coreDatatype);
 		} else if (datatype != null) {
 			value.setDatatype(datatype);
 		} else {
@@ -16085,10 +16106,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		bb.get();
 		// Get datatype
 		long datatypeID = Varint.readUnsignedHeap(bb);
+		CoreDatatype coreDatatype = ValueIds.coreDatatypeOfCoreLiteral(id);
 		IRI datatype = null;
 		// literal without a datatype
-		if (datatypeID > 0) {
+		if (coreDatatype == CoreDatatype.NONE && datatypeID > 0) {
 			datatype = (IRI) getValue(datatypeID, valueRevision);
+			coreDatatype = resolveLiteralCoreDatatype(id, datatype);
+		} else {
+			assert coreDatatype == CoreDatatype.NONE || datatypeID <= 0
+					|| coreDatatype.getIri().equals(getValue(datatypeID, valueRevision))
+					: "Core literal tag " + coreDatatype + " does not match stored datatype of id " + id;
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
@@ -16120,6 +16147,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (value == null) {
 			if (lang != null) {
 				return new LmdbLiteral(completedRevision(valueRevision), label, lang, baseDirection, id);
+			} else if (coreDatatype != CoreDatatype.NONE) {
+				return new LmdbLiteral(completedRevision(valueRevision), label, coreDatatype.getIri(), coreDatatype,
+						id);
 			} else if (datatype != null) {
 				return new LmdbLiteral(completedRevision(valueRevision), label, datatype, id);
 			} else {
@@ -16136,6 +16166,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				} else {
 					value.setDatatype(CoreDatatype.RDF.LANGSTRING);
 				}
+			} else if (coreDatatype != CoreDatatype.NONE) {
+				value.setDatatype(coreDatatype);
 			} else if (datatype != null) {
 				value.setDatatype(datatype);
 			} else {
