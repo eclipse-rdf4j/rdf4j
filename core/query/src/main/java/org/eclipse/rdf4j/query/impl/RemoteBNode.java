@@ -254,22 +254,8 @@ public final class RemoteBNode extends SimpleBNode {
 		}
 
 		public BindingSet map(BindingSet row, BindingSet originalBindings) {
-			MapBindingSet mapped = null;
-			for (String name : row.getBindingNames()) {
-				Value original = originalBindings == null ? null : originalBindings.getValue(name);
-				Value value = row.getValue(name);
-				Value replacement = map(value, original);
-				if (replacement != value) {
-					if (mapped == null) {
-						mapped = new MapBindingSet(row.size());
-						for (String bindingName : row.getBindingNames()) {
-							mapped.addBinding(bindingName, row.getValue(bindingName));
-						}
-					}
-					mapped.setBinding(name, replacement);
-				}
-			}
-			return mapped == null ? row : mapped;
+			return BindingSetSnapshots.mapValues(row,
+					(name, value) -> map(value, originalBindings == null ? null : originalBindings.getValue(name)));
 		}
 
 		public Value map(Value value, Value original) {
@@ -344,11 +330,9 @@ public final class RemoteBNode extends SimpleBNode {
 	/** Adds receiving-query terms without promoting them into the caller's original solution mapping. */
 	public static BindingSet toRemoteBindings(BindingSet bindings, BindingSet additionalBindings,
 			Set<String> relevantNames, Object receivingScope, boolean referenceSupport, boolean canonicalIDs) {
-		BindingSet original = originalBindings(bindings);
-		MapBindingSet source = new MapBindingSet(original.size());
+		BindingSet original = BindingSetSnapshots.copyOf(originalBindings(bindings));
 		MapBindingSet outgoing = new MapBindingSet(original.size() + additionalBindings.size());
 		for (Binding binding : original) {
-			source.addBinding(binding);
 			outgoing.addBinding(binding);
 		}
 		for (Binding binding : additionalBindings) {
@@ -360,7 +344,7 @@ public final class RemoteBNode extends SimpleBNode {
 					receivingScope, referenceSupport, canonicalIDs) : binding.getValue();
 			transported.addBinding(binding.getName(), value);
 		}
-		return new TransportBindings(new Snapshot(source), transported);
+		return new TransportBindings(original, transported);
 	}
 
 	private static class Snapshot extends AbstractBindingSet {
