@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -119,10 +118,9 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 						"Unsupported blank-node identity: receiving SERVICE lacks reference support");
 			}
 
-			// create a copy of the free variables, and remove those for which
-			// bindings are available (we can set them as constraints!)
+			// Explicit-null caller names remain in the result domain and still leave the remote variable free.
 			Set<String> freeVars = new HashSet<>(visibleNames);
-			freeVars.removeAll(invocationBindings.getBindingNames());
+			freeVars.removeIf(name -> invocationBindings.getValue(name) != null);
 
 			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport,
 					canonicalIDs);
@@ -221,14 +219,11 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static BindingSet restoreRuntimeBindings(BindingSet originals, BindingSet runtimeInputs) {
-		QueryBindingSet restored = new QueryBindingSet(originals.size() + 1);
-		for (Binding binding : originals) {
-			restored.addBinding(binding);
-		}
+		QueryBindingSet restored = new QueryBindingSet(originals);
 		for (Binding binding : runtimeInputs) {
 			restored.addBinding(binding);
 		}
-		return BindingFrameBindings.preserve(originals, GraphFrameBindings.preserve(originals, restored));
+		return restored;
 	}
 
 	/** A successful constrained query witnesses its declared outputs even when they were omitted from SELECT rows. */
