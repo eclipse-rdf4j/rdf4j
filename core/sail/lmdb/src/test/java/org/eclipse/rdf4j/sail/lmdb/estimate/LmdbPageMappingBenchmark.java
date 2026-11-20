@@ -73,12 +73,12 @@ public class LmdbPageMappingBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		directory = Files.createTempDirectory("rdf4j-lmdb-page-mapping-benchmark");
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pointer = stack.mallocPointer(1);
-			check(mdb_env_create(pointer));
-			environment = pointer.get(0);
-			try {
+		try {
+			directory = Files.createTempDirectory("rdf4j-lmdb-page-mapping-benchmark");
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer pointer = stack.mallocPointer(1);
+				check(mdb_env_create(pointer));
+				environment = pointer.get(0);
 				check(mdb_env_set_mapsize(environment, MAP_SIZE));
 				check(mdb_env_set_maxdbs(environment, 2));
 				check(mdb_env_open(environment, directory.toString(), 0, 0664));
@@ -113,11 +113,15 @@ public class LmdbPageMappingBenchmark {
 							"Benchmark setup returned unexpected counts: conservative=" + conservativeEntries
 									+ ", managed=" + managedEntries);
 				}
-			} catch (Throwable failure) {
-				mdb_env_close(environment);
-				environment = 0L;
-				throw failure;
 			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 

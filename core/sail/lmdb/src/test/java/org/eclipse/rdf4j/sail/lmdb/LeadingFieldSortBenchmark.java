@@ -61,17 +61,27 @@ public class LeadingFieldSortBenchmark {
 
 	@Setup(Level.Trial)
 	public void setupTrial() throws Exception {
-		dataDir = java.nio.file.Files.createTempDirectory("leading-field-sort-benchmark").toFile();
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,psoc,opsc,ospc"), null);
-		subj = new long[size];
-		pred = new long[size];
-		obj = new long[size];
-		context = new long[size];
-		baseOrder = new int[size];
-		statementIndices = new int[size];
+		try {
+			dataDir = java.nio.file.Files.createTempDirectory("leading-field-sort-benchmark").toFile();
+			tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,psoc,opsc,ospc"), null);
+			subj = new long[size];
+			pred = new long[size];
+			obj = new long[size];
+			context = new long[size];
+			baseOrder = new int[size];
+			statementIndices = new int[size];
 
-		initializeData();
-		initializeScenario();
+			initializeData();
+			initializeScenario();
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDownTrial();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	@Setup(Level.Invocation)

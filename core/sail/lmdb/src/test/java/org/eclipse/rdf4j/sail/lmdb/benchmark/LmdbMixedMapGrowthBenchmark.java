@@ -122,28 +122,39 @@ public class LmdbMixedMapGrowthBenchmark {
 
 	@Setup(Level.Invocation)
 	public void openFreshStore() throws IOException {
-		dataDirectory = Files.createTempDirectory("rdf4j-lmdb-mixed-growth-benchmark");
-		long mapSize = "growing".equals(mapSizing) ? GROWING_MAP_SIZE : PRE_SIZED_MAP_SIZE;
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-				.setForceSync(false)
-				.setTripleDBSize(mapSize)
-				.setValueDBSize(mapSize);
-		if (mapGrowthReadDrainTimeoutMillis >= 0) {
-			config.setMapGrowthReadDrainTimeoutMillis(mapGrowthReadDrainTimeoutMillis);
-		}
-		// Let the common short readers drain under the store default; only the separate long-observed case forces early
-		// invalidation to report its conflict behavior.
-		if ("longObserved".equals(readerScenario)) {
-			config.setMapGrowthReadDrainTimeoutMillis(LONG_OBSERVED_DRAIN_TIMEOUT_MILLIS);
-		}
-		store = new LmdbStore(dataDirectory.toFile(), config);
-		store.init();
-		seedStore();
-		baseline = store.getBackingStore().growthMetricsSnapshot();
+		try {
+			dataDirectory = Files.createTempDirectory("rdf4j-lmdb-mixed-growth-benchmark");
+			long mapSize = "growing".equals(mapSizing) ? GROWING_MAP_SIZE : PRE_SIZED_MAP_SIZE;
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+					.setForceSync(false)
+					.setTripleDBSize(mapSize)
+					.setValueDBSize(mapSize);
+			if (mapGrowthReadDrainTimeoutMillis >= 0) {
+				config.setMapGrowthReadDrainTimeoutMillis(mapGrowthReadDrainTimeoutMillis);
+			}
+			// Let the common short readers drain under the store default; only the separate long-observed case forces
+			// early
+			// invalidation to report its conflict behavior.
+			if ("longObserved".equals(readerScenario)) {
+				config.setMapGrowthReadDrainTimeoutMillis(LONG_OBSERVED_DRAIN_TIMEOUT_MILLIS);
+			}
+			store = new LmdbStore(dataDirectory.toFile(), config);
+			store.init();
+			seedStore();
+			baseline = store.getBackingStore().growthMetricsSnapshot();
 
-		workers = new ThreadPoolExecutor(MAX_WORKERS, MAX_WORKERS, 0L, TimeUnit.MILLISECONDS,
-				new LinkedBlockingQueue<>(), Thread.ofPlatform().name("LmdbMixedMapGrowth-", 0).factory());
-		workers.prestartAllCoreThreads();
+			workers = new ThreadPoolExecutor(MAX_WORKERS, MAX_WORKERS, 0L, TimeUnit.MILLISECONDS,
+					new LinkedBlockingQueue<>(), Thread.ofPlatform().name("LmdbMixedMapGrowth-", 0).factory());
+			workers.prestartAllCoreThreads();
+
+		} catch (Exception | Error failure) {
+			try {
+				closeFreshStore();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	private void seedStore() {

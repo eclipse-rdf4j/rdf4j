@@ -84,7 +84,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
-				clientProvider);
+				clientProvider, shutdown);
 
 	}
 
@@ -120,14 +120,41 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	}
 
 	@Override
+	public void shutDown() throws SailException {
+		initializationLock.writeLock().lock();
+		try {
+			if (isInitialized()) {
+				super.shutDown();
+			} else if (shutdown.compareAndSet(false, true)) {
+				closeClientProvider();
+			}
+		} finally {
+			initializationLock.writeLock().unlock();
+		}
+	}
+
+	@Override
 	protected void shutDownInternal() throws SailException {
 		if (shutdown.compareAndSet(false, true)) {
-			super.shutDownInternal();
 			try {
-				clientProvider.close();
-			} catch (Exception e) {
-				throw new SailException(e);
+				super.shutDownInternal();
+			} catch (RuntimeException | Error failure) {
+				try {
+					closeClientProvider();
+				} catch (RuntimeException | Error closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
 			}
+			closeClientProvider();
+		}
+	}
+
+	private void closeClientProvider() throws SailException {
+		try {
+			clientProvider.close();
+		} catch (Exception e) {
+			throw new SailException(e);
 		}
 	}
 
@@ -188,8 +215,8 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	}
 
 	// this code does some final safety cleanup when the user's ElasticsearchStore gets garbage collected
-	private void startGarbageCollectionMonitoring(ReferenceQueue<ElasticsearchStore> referenceQueue,
-			Reference<ElasticsearchStore> ref, ClientProvider clientProvider) {
+	private static void startGarbageCollectionMonitoring(ReferenceQueue<ElasticsearchStore> referenceQueue,
+			Reference<ElasticsearchStore> ref, ClientProvider clientProvider, AtomicBoolean shutdown) {
 
 		ExecutorService ex = Executors.newSingleThreadExecutor(r -> {
 			Thread t = Executors.defaultThreadFactory().newThread(r);
@@ -199,7 +226,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 		});
 
 		ex.execute(() -> {
-			while (referenceQueue.poll() != ref) {
+			while (!shutdown.get() && referenceQueue.poll() != ref) {
 				// don't hang forever
 				try {
 					Thread.sleep(100);
@@ -207,6 +234,10 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 					// should never be interrupted
 					break;
 				}
+			}
+
+			if (shutdown.get()) {
+				return;
 			}
 
 			if (ref.get() != null) {

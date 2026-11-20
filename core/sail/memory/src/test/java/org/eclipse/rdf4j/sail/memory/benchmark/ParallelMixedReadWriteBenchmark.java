@@ -105,37 +105,47 @@ public class ParallelMixedReadWriteBenchmark extends BaseConcurrentBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		super.setup();
-		Logger root = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.memory.MemorySailStore");
-		root.setLevel(ch.qos.logback.classic.Level.DEBUG);
+		boolean initialized = false;
+		try {
+			super.setup();
+			Logger root = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.memory.MemorySailStore");
+			root.setLevel(ch.qos.logback.classic.Level.DEBUG);
 
-		repository = new SailRepository(new MemoryStore());
-		try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-			data = Rio.parse(resourceAsStream, RDFFormat.TURTLE);
-		}
-		try (RepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(data);
-			connection.commit();
+			repository = new SailRepository(new MemoryStore());
+			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+				data = Rio.parse(resourceAsStream, RDFFormat.TURTLE);
+			}
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(data);
+				connection.commit();
+			}
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				tearDown();
+			}
 		}
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		super.tearDown();
+		try {
+			super.tearDown();
+		} finally {
+			Logger root = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.memory.MemorySailStore");
+			root.setLevel(ch.qos.logback.classic.Level.WARN);
 
-		Logger root = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.memory.MemorySailStore");
-		root.setLevel(ch.qos.logback.classic.Level.WARN);
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
 
-		if (repository != null) {
-			repository.shutDown();
-			repository = null;
+			System.gc();
+			Thread.sleep(100);
+			System.gc();
+			Thread.sleep(100);
 		}
-
-		System.gc();
-		Thread.sleep(100);
-		System.gc();
-		Thread.sleep(100);
 	}
 
 	@TearDown(Level.Invocation)
