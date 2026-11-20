@@ -26,7 +26,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import java.io.IOException;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkOutput;

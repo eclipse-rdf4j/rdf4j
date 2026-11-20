@@ -19,6 +19,25 @@ storage that is fast, scalable and reliable.
 For the user-visible effects of transaction snapshots, map growth, recovery and store upgrades, see
 [LMDB transactions, map growth, and recovery](/documentation/programming/lmdb-store-transactions/).
 
+## Statement counts and metadata
+
+The triple-store LMDB environment contains a named `meta` database for extensible
+store metadata. Its `statement-counts-explicit` and `statement-counts-inferred`
+keys hold exact logical statement totals as nonnegative, big-endian 64-bit integers;
+`statement-counts-format` identifies their schema version. Counts include contexts:
+the same subject, predicate, and object in different graphs count separately.
+
+Counter changes commit atomically with statement changes, and readers see the
+counts belonging to their transaction snapshot. Duplicate inserts and physical
+chunk splits do not increase the totals; promoting an inferred statement to an
+explicit statement transfers one count between the two totals.
+
+On the first open of a store without these counters, RDF4J initializes them by
+scanning one statement index per explicit/inferred database and summing the tuple
+counts stored in chunk footers. Subsequent whole-store counts read the metadata
+instead of scanning statements. Native LMDB statistics still report physical
+index entries (chunks), not logical statement totals.
+
 ## Dependencies for the LMDB Store and native extensions
 
 To make use of the LMDB Store, you'll need to include the following Maven dependency:
@@ -109,8 +128,16 @@ breaking ties with fewer hops. Already-bound fields skip unnecessary intermediat
 configured full index can serve as the terminal, though this may require a scan if its leading
 fields are not bound; choose index combinations with useful bound prefixes for efficient reads.
 
-A partial index is selected only when its bound prefix is longer than that of every configured
-full index; full indexes win ties. Enabling a partial index on an existing store backfills its
+For ordinary pattern scans, a partial index is selected only when its bound prefix is longer
+than that of every configured full index; full indexes win ties. Ordered scans consider only
+plans that preserve the requested order and can enumerate an unbound leading partial-index
+field when no full index provides that order. Retained probes can switch between full and
+partial resolution plans as their bindings change. Raw-key range scans preserve the named full
+index's order and apply the original bounds to resolved statements when using a partial index.
+Plans and their terminal indexes belong to the reader's index generation, including across a
+background index rebuild.
+
+Enabling a partial index on an existing store backfills its
 explicit and inferred pairs independently. Partial indexes are not supported for triple-term
 indexes, and stores using them currently fall back to individual writes instead of aligned bulk writes.
 

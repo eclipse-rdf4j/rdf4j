@@ -535,7 +535,7 @@ final class TripleStoreIndexUpdater {
 	}
 
 	void sortStatementIndicesByLeadingFields(int[] idx, int length, TripleIndex index,
-		long[] subj, long[] pred, long[] obj, long[] context) {
+			long[] subj, long[] pred, long[] obj, long[] context) {
 		if (length < 2) {
 			return;
 		}
@@ -554,7 +554,7 @@ final class TripleStoreIndexUpdater {
 			}
 			long[] fv = acc.get(subj, pred, obj, context);
 			for (int k = 0; k < length; k++) {
-				keys[k] = fv[idx[k]];          // gather in current order
+				keys[k] = fv[idx[k]]; // gather in current order
 			}
 
 			hasOpenGroup = false;
@@ -567,10 +567,10 @@ final class TripleStoreIndexUpdater {
 				if (to - from > 1) {
 					if (!isSorted(keys, from, to)) {
 						LeadingFieldSorters.lsdRadixSort(idx, keys, from, to,
-							ws.scratchIndices, ws.scratchValues,
-							ws.radixCounts, ws.radixOffsets);
+								ws.scratchIndices, ws.scratchValues,
+								ws.radixCounts, ws.radixOffsets);
 					}
-					for (int k = from + 1; k < to; k++) {   // refine groups
+					for (int k = from + 1; k < to; k++) { // refine groups
 						if (keys[k] != keys[k - 1]) {
 							groupStart[k] = true;
 						} else {

@@ -36,6 +36,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -191,8 +193,50 @@ public final class LmdbCompatibilityFixtures {
 		}
 	}
 
+	/**
+	 * Logical statement count of the plane (explicit or inferred) that {@code database} belongs to. Chunked indexes
+	 * pack many tuples into one LMDB record, so the authoritative count is the store's {@code meta} database. Stores
+	 * that were never opened by the patched Sail (authentic legacy fixtures) carry no counts there and store one tuple
+	 * per record, so their LMDB entry count is used instead.
+	 */
 	static long nativeTripleEntryCount(Path directory, String database) throws IOException {
-		return nativeEntryCount(directory.resolve("triples"), database);
+		boolean explicit = !database.endsWith("-inf");
+		long env = NULL;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_env_create(handle));
+			env = handle.get(0);
+			E(mdb_env_set_maxdbs(env, 49));
+			E(mdb_env_open(env, directory.resolve("triples").toString(), MDB_NOTLS | MDB_RDONLY, 0664));
+			return LmdbUtil.readTransaction(env, (inner, txn) -> {
+				var databaseHandle = inner.mallocInt(1);
+				int rc = mdb_dbi_open(txn, TripleStore.META_DATABASE_NAME, 0, databaseHandle);
+				if (rc == MDB_SUCCESS) {
+					MDBVal key = MDBVal.calloc(inner)
+							.mv_data(inner.bytes((explicit ? "statement-counts-explicit" : "statement-counts-inferred")
+									.getBytes(StandardCharsets.US_ASCII)));
+					MDBVal value = MDBVal.calloc(inner);
+					rc = mdb_get(txn, databaseHandle.get(0), key, value);
+					if (rc == MDB_SUCCESS) {
+						if (value.mv_size() != Long.BYTES) {
+							throw new IOException("Malformed statement count in meta database");
+						}
+						return value.mv_data().order(ByteOrder.BIG_ENDIAN).getLong();
+					}
+				}
+				if (rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				E(mdb_dbi_open(txn, database, 0, databaseHandle));
+				MDBStat stat = MDBStat.calloc(inner);
+				E(mdb_stat(txn, databaseHandle.get(0), stat));
+				return stat.ms_entries();
+			});
+		} finally {
+			if (env != NULL) {
+				mdb_env_close(env);
+			}
+		}
 	}
 
 	static long nativeValueEntryCount(Path directory, String database) throws IOException {

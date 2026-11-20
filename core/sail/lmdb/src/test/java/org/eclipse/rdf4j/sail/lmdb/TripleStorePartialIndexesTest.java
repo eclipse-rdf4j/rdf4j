@@ -19,6 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.lwjgl.system.MemoryStack.stackPush;
+import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -28,13 +35,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.lwjgl.system.MemoryStack.stackPush;
-import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -332,8 +332,8 @@ class TripleStorePartialIndexesTest {
 			store.storeTriple(11, 22, 33, 0, true);
 			store.commit();
 			try (Txn txn = store.getTxnManager().createReadTxn();
-					var children = mockConstruction(LmdbRecordIterator.class, (child, context) ->
-							when(child.next()).thenReturn(new long[] { 11, 22, 33, 0 }))) {
+					var children = mockConstruction(LmdbRecordIterator.class,
+							(child, context) -> when(child.next()).thenReturn(new long[] { 11, 22, 33, 0 }))) {
 				try (RecordIterator iterator = store.getTriples(txn, 11, -1, -1, -1, true)) {
 					assertEquals("[11, 22, 33, 0]", Arrays.toString(iterator.next()));
 				}
@@ -349,8 +349,8 @@ class TripleStorePartialIndexesTest {
 			store.storeTriple(11, 22, 33, 0, true);
 			store.commit();
 			try (Txn txn = store.getTxnManager().createReadTxn();
-					var children = mockConstruction(LmdbRecordIterator.class, (child, context) ->
-							when(child.next()).thenThrow(new SailException("scan failed")))) {
+					var children = mockConstruction(LmdbRecordIterator.class,
+							(child, context) -> when(child.next()).thenThrow(new SailException("scan failed")))) {
 				try (RecordIterator iterator = store.getTriples(txn, 11, -1, -1, -1, true)) {
 					assertThrows(SailException.class, iterator::next);
 					verify(children.constructed().get(0)).dispose();

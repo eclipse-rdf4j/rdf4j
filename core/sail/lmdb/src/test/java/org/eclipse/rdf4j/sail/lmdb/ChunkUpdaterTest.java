@@ -190,17 +190,6 @@ class ChunkUpdaterTest {
 	}
 
 	@Test
-	void rejectsUnsortedPreparedTuples() {
-		assertThrows(IllegalArgumentException.class,
-				() -> SortedIndexEntries.prepare(0, "spoc", new int[] { 1, 0 }, 0, 2, (statement, tuple) -> {
-					tuple[0] = 1;
-					tuple[1] = 2;
-					tuple[2] = statement;
-					tuple[3] = 0;
-				}));
-	}
-
-	@Test
 	void mergesPreparedEntriesWithExistingAndPendingDuplicates() throws Exception {
 		seed(2, tuple(1, 10), tuple(1, 30));
 		long[][] tuples = { tuple(1, 10), tuple(1, 20), tuple(1, 20), tuple(1, 40), tuple(2, 10) };

@@ -32,13 +32,12 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * Buffers insertions across a configurable number of anchor ranges and pending tuples before merging chunks into
- * LMDB.
+ * Buffers insertions across a configurable number of anchor ranges and pending tuples before merging chunks into LMDB.
  * <p>
  * All buffers start small and grow geometrically up to the configured limits; storage is retained across flushes.
  * Decoded chunks and range boundaries are owned by this updater, not borrowed from mutable LMDB pages. Instances are
- * confined to one writer; flush before changing the same database independently or switching cursors or transactions.
- * A failed flush must be followed by transaction abort and {@link #reset(int, int)} before reuse.
+ * confined to one writer; flush before changing the same database independently or switching cursors or transactions. A
+ * failed flush must be followed by transaction abort and {@link #reset(int, int)} before reuse.
  */
 public final class ChunkUpdater {
 	static final int DEFAULT_MAX_ANCHORS = 64;
@@ -94,7 +93,7 @@ public final class ChunkUpdater {
 		}
 		if (maxPendingTuples < 1 || maxPendingTuples > MAX_PENDING_LIMIT) {
 			throw new IllegalArgumentException(
-				"maxPendingTuples must be in [1, " + MAX_PENDING_LIMIT + "]: " + maxPendingTuples);
+					"maxPendingTuples must be in [1, " + MAX_PENDING_LIMIT + "]: " + maxPendingTuples);
 		}
 		this.maxAnchors = maxAnchors;
 		this.maxPendingTuples = maxPendingTuples;
@@ -123,8 +122,8 @@ public final class ChunkUpdater {
 
 	/**
 	 * Adds a tuple to its cached anchor range, returning {@code MDB_KEYEXIST} for an existing or pending duplicate.
-	 * Cache misses read and decode the selected chunk once. Cache hits require no native cursor operations. Both
-	 * cache limits trigger an automatic flush before admitting more buffered state.
+	 * Cache misses read and decode the selected chunk once. Cache hits require no native cursor operations. Both cache
+	 * limits trigger an automatic flush before admitting more buffered state.
 	 *
 	 * @throws IOException if a native lookup or automatic flush fails
 	 */
@@ -245,7 +244,7 @@ public final class ChunkUpdater {
 
 	private boolean inRange(AnchorState anchor, long[] tuple) {
 		return samePrefix(anchor.lower, tuple) && compare(anchor.lower, 0, tuple, 0) <= 0
-			&& (!anchor.hasUpper || compare(tuple, 0, anchor.upper, 0) < 0);
+				&& (!anchor.hasUpper || compare(tuple, 0, anchor.upper, 0) < 0);
 	}
 
 	private boolean samePrefix(long[] a, long[] b) {
@@ -365,8 +364,8 @@ public final class ChunkUpdater {
 	}
 
 	/**
-	 * Merges all cached ranges into LMDB in anchor order and clears pending state. Existing anchors are overwritten
-	 * in place; additional output chunks are inserted without changing neighboring ranges.
+	 * Merges all cached ranges into LMDB in anchor order and clears pending state. Existing anchors are overwritten in
+	 * place; additional output chunks are inserted without changing neighboring ranges.
 	 *
 	 * @throws IOException if writing an updated chunk fails
 	 */
@@ -396,7 +395,7 @@ public final class ChunkUpdater {
 			for (int j = 0; j < size; j++) {
 				int offset = indexes.get(j);
 				while (existingIndex < existingCount
-					&& compare(existing, existingIndex * TUPLE_STRIDE, tuples, offset) < 0) {
+						&& compare(existing, existingIndex * TUPLE_STRIDE, tuples, offset) < 0) {
 					append(cursor, keyVal, dataVal, existing, existingIndex++ * TUPLE_STRIDE);
 				}
 				append(cursor, keyVal, dataVal, tuples, offset);

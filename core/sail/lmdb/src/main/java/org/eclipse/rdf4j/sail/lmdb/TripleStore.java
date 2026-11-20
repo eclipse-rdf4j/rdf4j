@@ -80,7 +80,6 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -129,7 +128,6 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
-import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexes;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesSupplier;
 import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesTask;
@@ -237,7 +235,7 @@ class TripleStore implements Closeable {
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
 	private final List<PartialIndex> partialIndexes = new ArrayList<>();
-	private final int splitPosition = 0;
+	private final int splitPosition = 0; // split between key and value storage in the chunk representation
 	private volatile List<TripleIndex> indexes = new ArrayList<>();
 	private final TripleStoreIndexUpdater indexUpdater = new TripleStoreIndexUpdater(() -> indexes);
 	private final Map<String, TripleIndex> indexHandles = new LinkedHashMap<>();
@@ -413,7 +411,8 @@ class TripleStore implements Closeable {
 			if (!seeded) {
 				for (boolean explicit : new boolean[] { true, false }) {
 					long visited = 0L;
-					try (RecordIterator records = getTriples(txnManager.createTxn(writeTxn), -1, -1, -1, -1, explicit)) {
+					try (RecordIterator records = getTriples(txnManager.createTxn(writeTxn), -1, -1, -1, -1,
+							explicit)) {
 						long[] quad;
 						while ((quad = records.next()) != null) {
 							add(quad, explicit);
@@ -675,7 +674,8 @@ class TripleStore implements Closeable {
 			}
 			E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
 			environmentLifecycle.afterOpen(env);
-			// Open the unnamed main database and metadata databases in one serialized setup transaction. The main DBI is
+			// Open the unnamed main database and metadata databases in one serialized setup transaction. The main DBI
+			// is
 			// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
 			// comparator state.
 			DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
@@ -1345,9 +1345,9 @@ class TripleStore implements Closeable {
 	}
 
 	void sortStatementIndicesByLeadingFields(int[] statementIndices, int length, TripleIndex index,
-		long[] subj, long[] pred, long[] obj, long[] context) {
+			long[] subj, long[] pred, long[] obj, long[] context) {
 		indexUpdater.sortStatementIndicesByLeadingFields(statementIndices, length, index, subj, pred, obj,
-			context);
+				context);
 	}
 
 	long getNativeCommitGeneration() {
@@ -2714,8 +2714,8 @@ class TripleStore implements Closeable {
 	RecordIterator getTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
 			long context, boolean explicit) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
-			IndexResolutionPlan plan = selectedGeneration.orderedPlans[statementOrder.ordinal()]
-					[boundMask(subj, pred, obj, context)];
+			IndexResolutionPlan plan = selectedGeneration.orderedPlans[statementOrder.ordinal()][boundMask(subj, pred,
+					obj, context)];
 			if (plan == null) {
 				throw new UnsupportedOperationException("StatementOrder is not supported: " + statementOrder);
 			}
@@ -5021,7 +5021,8 @@ class TripleStore implements Closeable {
 						index.getFieldSeq())) {
 					System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
 				}
-				indexUpdater.sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj, context);
+				indexUpdater.sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj,
+						context);
 				currentFieldSeq = index.getFieldSeq();
 				long secondaryWriteCursor = addedCount > 0 ? getAlignedWriteCursor(i, index, explicit, cursorHandle)
 						: 0;
@@ -6517,7 +6518,7 @@ class TripleStore implements Closeable {
 		if (!partialIndexes.isEmpty()) {
 			for (int row = 0; row < count; row++) {
 				if (storeTripleDirect(subj[row], pred[row], obj[row], context[row], explicit)
-					&& addedIndexConsumer != null) {
+						&& addedIndexConsumer != null) {
 					addedIndexConsumer.accept(row);
 				}
 			}
@@ -6537,32 +6538,32 @@ class TripleStore implements Closeable {
 		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer cursorHandle = REUSE_ALIGNED_WRITE_CURSOR
-				? stack.mallocPointer(1)
-				: null;
+					? stack.mallocPointer(1)
+					: null;
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			long[] tupleScratch = new long[4];
 			int[] sortedIndices = ensureAlignedWriteSortedIndices(count);
 			boolean[] addedStatements = preparedSecondaryIndexesSupplier == null ? null
-				: ensureAlignedWriteAddedStatements(count);
+					: ensureAlignedWriteAddedStatements(count);
 			if (addedStatements != null) {
 				Arrays.fill(addedStatements, 0, count, false);
 			}
 			boolean[] promotedFromImplicit = explicit && mayHaveInferred
-				? ensureAlignedWritePromotedFromImplicit(count)
-				: null;
+					? ensureAlignedWritePromotedFromImplicit(count)
+					: null;
 			if (promotedFromImplicit != null) {
 				Arrays.fill(promotedFromImplicit, 0, count, false);
 			}
 			LongIntHashMap contextIncrements = alignedContextIncrements;
 			contextIncrements.clear();
 			long mainWriteCursor = REUSE_ALIGNED_WRITE_CURSOR
-				? getAlignedWriteCursor(0, mainIndex, explicit, cursorHandle)
-				: 0;
+					? getAlignedWriteCursor(0, mainIndex, explicit, cursorHandle)
+					: 0;
 			SortedIndexEntries sortedMainIndex = preparedMainIndex != null
-				&& preparedMainIndex.specification.equals(mainIndex.toString()) ? preparedMainIndex : null;
+					&& preparedMainIndex.specification.equals(mainIndex.toString()) ? preparedMainIndex : null;
 			SortedIndexEntries.Reader mainReader = sortedMainIndex == null ? null
-				: sortedMainIndex.reader();
+					: sortedMainIndex.reader();
 			updater.reset(4, mainIndex.getIndexSplitPosition());
 			updater.setSortedInsertion(mainReader != null);
 
@@ -6611,15 +6612,15 @@ class TripleStore implements Closeable {
 						promotedFromImplicit[statementIndex] = removeResult == MDB_SUCCESS;
 					}
 					synchronizeStagingQuad(subj[statementIndex], pred[statementIndex], obj[statementIndex],
-						context[statementIndex], explicit);
+							context[statementIndex], explicit);
 					if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
 						synchronizeStagingQuad(subj[statementIndex], pred[statementIndex], obj[statementIndex],
-							context[statementIndex], false);
+								context[statementIndex], false);
 						recordFanOutRemoved(subj[statementIndex], pred[statementIndex], obj[statementIndex],
-							context[statementIndex], false);
+								context[statementIndex], false);
 					}
 					recordFanOutAdded(subj[statementIndex], pred[statementIndex], obj[statementIndex],
-						context[statementIndex], explicit);
+							context[statementIndex], explicit);
 					if (promotedFromImplicit == null || !promotedFromImplicit[statementIndex]) {
 						contextIncrements.addToValue(context[statementIndex], 1);
 					}
@@ -6637,15 +6638,15 @@ class TripleStore implements Closeable {
 			}
 
 			try (PreparedSecondaryIndexes preparedIndexes = preparedSecondaryIndexesSupplier == null
-				? null
-				: preparedSecondaryIndexesSupplier.get()) {
+					? null
+					: preparedSecondaryIndexesSupplier.get()) {
 				if (preparedIndexes != null && preparedIndexesMatchGeneration(preparedIndexes)) {
 					for (SortedIndexEntries sortedIndex : preparedIndexes.indexes) {
 						int indexPosition = sortedIndex.indexPosition;
 						TripleIndex index = indexes.get(indexPosition);
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
-							? getAlignedWriteCursor(indexPosition, index, explicit, cursorHandle)
-							: 0;
+								? getAlignedWriteCursor(indexPosition, index, explicit, cursorHandle)
+								: 0;
 						updater.reset(4, index.getIndexSplitPosition());
 						updater.setSortedInsertion(true);
 						SortedIndexEntries.Reader reader = sortedIndex.reader();
@@ -6675,14 +6676,15 @@ class TripleStore implements Closeable {
 					for (int i = 1; i < indexes.size(); i++) {
 						TripleIndex index = indexes.get(i);
 						if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSeq,
-							index.getFieldSeq())) {
+								index.getFieldSeq())) {
 							System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
 						}
-						indexUpdater.sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj, context);
+						indexUpdater.sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred,
+								obj, context);
 						currentFieldSeq = index.getFieldSeq();
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
-							? getAlignedWriteCursor(i, index, explicit, cursorHandle)
-							: 0;
+								? getAlignedWriteCursor(i, index, explicit, cursorHandle)
+								: 0;
 						updater.reset(4, index.getIndexSplitPosition());
 						updater.setSortedInsertion(true);
 						for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
@@ -6691,7 +6693,7 @@ class TripleStore implements Closeable {
 								throw new MapFullException();
 							}
 							index.toEntry(tupleScratch, subj[statementIndex], pred[statementIndex], obj[statementIndex],
-								context[statementIndex]);
+									context[statementIndex]);
 
 							if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
 								int removeResult = deleteIndexEntry(index, false, tupleScratch);
