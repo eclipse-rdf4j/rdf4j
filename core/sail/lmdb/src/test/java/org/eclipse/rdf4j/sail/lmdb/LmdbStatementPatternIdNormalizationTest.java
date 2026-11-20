@@ -281,15 +281,24 @@ class LmdbStatementPatternIdNormalizationTest {
 			store.setQueryExecutionPolicy(
 					QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(graphRestrictionMode));
 			repository = new SailRepository(store);
-			repository.init();
-			connection = repository.getConnection();
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.add(FIRST, PREDICATE, object, GRAPH);
-			connection.add(SECOND, PREDICATE, object, GRAPH);
-			connection.add(FIRST, LINK, SECOND, GRAPH);
-			connection.add(SECOND, LINK, FIRST, GRAPH);
-			connection.commit();
-			connection.begin(IsolationLevels.SNAPSHOT_READ);
+			RepositoryConnection openedConnection = null;
+			try {
+				repository.init();
+				openedConnection = repository.getConnection();
+				openedConnection.begin(IsolationLevels.SNAPSHOT);
+				openedConnection.add(FIRST, PREDICATE, object, GRAPH);
+				openedConnection.add(SECOND, PREDICATE, object, GRAPH);
+				openedConnection.add(FIRST, LINK, SECOND, GRAPH);
+				openedConnection.add(SECOND, LINK, FIRST, GRAPH);
+				openedConnection.commit();
+				openedConnection.begin(IsolationLevels.SNAPSHOT_READ);
+				connection = openedConnection;
+			} catch (RuntimeException | Error failure) {
+				try (var repositoryCleanup = LmdbTestUtil.onClose(repository::shutDown);
+						var connectionCleanup = openedConnection) {
+					throw failure;
+				}
+			}
 		}
 
 		private int evaluate(String text, Value bound, SimpleDataset dataset) {

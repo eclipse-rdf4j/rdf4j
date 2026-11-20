@@ -59,32 +59,52 @@ public class ColdDictionaryOrderBenchmark {
 
 	@Setup(Level.Trial)
 	public void prepareDictionary() throws Exception {
-		directory = Files.createTempDirectory("lmdb-cold-dictionary-order-").toFile();
-		openColdRepository();
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-		IRI predicate = vf.createIRI("urn:cold-dictionary:predicate");
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			for (int i = 0; i < rows; i++) {
-				int mixed = (i * 8191) & (rows - 1);
-				String label = String.format("dictionary-label-%08d", mixed);
-				connection.add(vf.createIRI("urn:cold-dictionary:subject:" + i), predicate,
-						vf.createLiteral(label, vf.createIRI("urn:cold-dictionary:datatype:" + (i & 7))));
+		try {
+			directory = Files.createTempDirectory("lmdb-cold-dictionary-order-").toFile();
+			openColdRepository();
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			IRI predicate = vf.createIRI("urn:cold-dictionary:predicate");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				for (int i = 0; i < rows; i++) {
+					int mixed = (i * 8191) & (rows - 1);
+					String label = String.format("dictionary-label-%08d", mixed);
+					connection.add(vf.createIRI("urn:cold-dictionary:subject:" + i), predicate,
+							vf.createLiteral(label, vf.createIRI("urn:cold-dictionary:datatype:" + (i & 7))));
+				}
+				connection.commit();
+			} finally {
+				repository.shutDown();
+				repository = null;
 			}
-			connection.commit();
-		} finally {
-			repository.shutDown();
-			repository = null;
+
+		} catch (Exception | Error failure) {
+			try {
+				removePreparedStore();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
 	@Setup(Level.Invocation)
 	public void openColdRepository() {
-		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc").setInlineLiterals(false));
-		// Exercise the repository's model comparator and its context-aware ORDER BY workers.
-		store.setEvaluationStrategyFactory(new DefaultEvaluationStrategyFactory());
-		repository = new SailRepository(store);
-		repository.init();
+		try {
+			LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc").setInlineLiterals(false));
+			// Exercise the repository's model comparator and its context-aware ORDER BY workers.
+			store.setEvaluationStrategyFactory(new DefaultEvaluationStrategyFactory());
+			repository = new SailRepository(store);
+			repository.init();
+
+		} catch (Exception | Error failure) {
+			try {
+				closeRepository();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	@Benchmark
@@ -118,7 +138,11 @@ public class ColdDictionaryOrderBenchmark {
 
 	@TearDown(Level.Trial)
 	public void removePreparedStore() throws Exception {
-		closeRepository();
-		LmdbTestUtil.deleteDir(directory);
+		try (var directoryCleanup = LmdbTestUtil.onClose(() -> {
+			LmdbTestUtil.deleteDir(directory);
+			directory = null;
+		})) {
+			closeRepository();
+		}
 	}
 }

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.MatrixLoadSupport;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -81,18 +82,28 @@ public class MatchedDatagovLoadIsolationBenchmark {
 
 	@Setup(Level.Invocation)
 	public void setupInvocation() throws Exception {
-		MatrixLoadSupport.require(bulkOperationSize == 1024, "shared matrix bulk size");
-		Path artifacts = Path.of(Objects.requireNonNull(System.getProperty("rdf4j.matrix.artifacts")));
-		Files.createDirectories(artifacts);
-		storeDirectory = Files.createTempDirectory(artifacts, "datagov-store-");
-		config = MatrixLoadSupport.config(1_073_741_824L, true);
-		LmdbStore store = MatrixLoadSupport.store(storeDirectory, config, automaticEvaluationStrategy);
-		repository = new SailRepository(store);
-		repository.init();
-		MatrixLoadSupport.verifyRuntime(store, config);
-		connection = repository.getConnection();
-		System.out.println("datagov retainedStore=" + storeDirectory);
-		profile = new MatrixLoadSupport.Profile(storeDirectory);
+		try {
+			MatrixLoadSupport.require(bulkOperationSize == 1024, "shared matrix bulk size");
+			Path artifacts = Path.of(Objects.requireNonNull(System.getProperty("rdf4j.matrix.artifacts")));
+			Files.createDirectories(artifacts);
+			storeDirectory = Files.createTempDirectory(artifacts, "datagov-store-");
+			config = MatrixLoadSupport.config(1_073_741_824L, true);
+			LmdbStore store = MatrixLoadSupport.store(storeDirectory, config, automaticEvaluationStrategy);
+			repository = new SailRepository(store);
+			repository.init();
+			MatrixLoadSupport.verifyRuntime(store, config);
+			connection = repository.getConnection();
+			System.out.println("datagov retainedStore=" + storeDirectory);
+			profile = new MatrixLoadSupport.Profile(storeDirectory);
+
+		} catch (Exception | Error failure) {
+			try {
+				closeFixture();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	@Benchmark
@@ -104,12 +115,13 @@ public class MatchedDatagovLoadIsolationBenchmark {
 
 	@TearDown(Level.Invocation)
 	public void tearDownInvocation() throws Exception {
-		profile.close();
-		try {
+		MatrixLoadSupport.Profile activeProfile = profile;
+		profile = null;
+		try (AutoCloseable cleanup = this::closeFixture) {
+			if (activeProfile != null) {
+				activeProfile.close();
+			}
 			MatrixLoadSupport.verifyModel(repository, data, "committed");
-		} finally {
-			connection.close();
-			repository.shutDown();
 		}
 		MatrixLoadSupport.verifyClosedIndexes(storeDirectory, data.size());
 		LmdbStore reopenedStore = MatrixLoadSupport.store(storeDirectory, config, automaticEvaluationStrategy);
@@ -123,4 +135,15 @@ public class MatchedDatagovLoadIsolationBenchmark {
 		}
 		System.out.println("datagov committed-and-reopened-verification=PASS retainedStore=" + storeDirectory);
 	}
+
+	private void closeFixture() throws Exception {
+		try {
+			LmdbTestUtil.cleanup(null, profile, connection, repository == null ? null : repository::shutDown);
+		} finally {
+			profile = null;
+			connection = null;
+			repository = null;
+		}
+	}
+
 }

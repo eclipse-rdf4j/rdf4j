@@ -41,7 +41,8 @@ public class CreateTest extends AbstractCommandTest {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
 		when(mockConsoleState.getDataDirectory()).thenReturn(locationFile);
-		when(mockConsoleState.getManager()).thenReturn(new LocalRepositoryManager(locationFile));
+		manager = new LocalRepositoryManager(locationFile);
+		when(mockConsoleState.getManager()).thenReturn(manager);
 
 		io = new ConsoleIO(input, out, mockConsoleState) {
 

@@ -72,14 +72,24 @@ public class AggregationBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() {
-		if (inputRows <= 0) {
-			throw new IllegalArgumentException("inputRows must be positive");
+		try {
+			if (inputRows <= 0) {
+				throw new IllegalArgumentException("inputRows must be positive");
+			}
+			dataDir = Files.newTemporaryFolder();
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+			loadData();
+			expectedDigests = expectedDigests(inputRows);
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		loadData();
-		expectedDigests = expectedDigests(inputRows);
 	}
 
 	private void loadData() {

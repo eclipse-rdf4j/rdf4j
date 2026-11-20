@@ -100,27 +100,36 @@ public class QueryWriteBenchmark {
 
 	@Setup(Level.Invocation)
 	public void beforeClass() {
-		repository = new SailRepository(new MemoryStore());
+		boolean initialized = false;
+		try {
+			repository = new SailRepository(new MemoryStore());
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(data);
-			connection.commit();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(data);
+				connection.commit();
+			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+				connection.commit();
+			}
+
+			System.gc();
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				afterClass();
+			}
 		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
-			connection.commit();
-		}
-
-		System.gc();
-
 	}
 
 	@TearDown(Level.Invocation)
 	public void afterClass() {
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 	}
 
 	@Benchmark

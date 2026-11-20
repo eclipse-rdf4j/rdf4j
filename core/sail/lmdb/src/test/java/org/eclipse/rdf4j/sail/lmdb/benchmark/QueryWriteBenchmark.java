@@ -97,34 +97,46 @@ public class QueryWriteBenchmark {
 
 	@Setup(Level.Invocation)
 	public void beforeClass() {
-		file = Files.newTemporaryFolder();
+		try {
+			file = Files.newTemporaryFolder();
 
-		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig()));
+			repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig()));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(data);
-			connection.commit();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(data);
+				connection.commit();
+			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+				connection.commit();
+			}
+
+			System.gc();
+
+		} catch (Exception | Error failure) {
+			try {
+				afterClass();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
-			connection.commit();
-		}
-
-		System.gc();
-
 	}
 
 	@TearDown(Level.Invocation)
 	public void afterClass() throws IOException {
 		try {
-			repository.shutDown();
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
 		} finally {
 			LmdbTestUtil.deleteDir(file);
+			file = null;
 		}
-
 	}
 
 	@Benchmark
