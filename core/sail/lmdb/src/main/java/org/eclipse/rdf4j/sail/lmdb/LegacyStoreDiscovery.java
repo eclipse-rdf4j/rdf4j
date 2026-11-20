@@ -1866,44 +1866,8 @@ final class LegacyStoreDiscovery {
 			throws IOException {
 		decodeIndexKey(fieldSequence, key.mv_data());
 		int splitPosition = indexSplitPosition(fieldSequence, termIndex);
-		validateChunkFooter(value.mv_data(), fieldSequence.length() - splitPosition);
 		return new ChunkInput(key.mv_data().duplicate(), value.mv_data().duplicate(), fieldSequence.length(),
 				splitPosition);
-	}
-
-	private static long validateChunkFooter(ByteBuffer value, int elements) throws IOException {
-		if (!value.hasRemaining()) {
-			return 0;
-		}
-		try {
-			ByteBuffer footer = value.duplicate();
-			int end = footer.limit() - 1;
-			int length = Byte.toUnsignedInt(footer.get(end));
-			int start = end - length;
-			if (length == 0 || start < footer.position()) {
-				throw new IOException("Malformed native index chunk footer");
-			}
-			footer.limit(end).position(start);
-			long payloadLength = 0;
-			for (int i = 0; i < elements; i++) {
-				long sectionLength = readCanonicalUnsigned(footer);
-				int flags = Byte.toUnsignedInt(footer.get());
-				if (sectionLength < 0 || sectionLength == 0 && flags != 0
-						|| (flags & 0x80) == 0 && (flags & 0x3f) != 0
-						|| (flags & 0x80) != 0 && (flags & 0x3f) == 0) {
-					throw new IOException("Malformed native index chunk section");
-				}
-				payloadLength = Math.addExact(payloadLength, sectionLength);
-			}
-			long tuples = readCanonicalUnsigned(footer);
-			if (tuples <= 0 || tuples > Integer.MAX_VALUE || footer.hasRemaining()
-					|| payloadLength != start - value.position()) {
-				throw new IOException("Malformed native index chunk footer");
-			}
-			return tuples;
-		} catch (RuntimeException malformed) {
-			throw new IOException("Malformed native index chunk footer", malformed);
-		}
 	}
 
 	private static long[] nextChunkTuple(ChunkInput input) throws IOException {
