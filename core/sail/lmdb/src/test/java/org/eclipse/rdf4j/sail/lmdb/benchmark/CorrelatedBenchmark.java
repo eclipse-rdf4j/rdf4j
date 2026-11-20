@@ -111,23 +111,34 @@ public class CorrelatedBenchmark {
 
 		@Setup(Level.Trial)
 		public void setUp() {
-			if (outerRows <= 0 || innerFanOut <= 0 || distinctPathStarts <= 0 || pathDepth <= 0
-					|| outerRows % distinctPathStarts != 0) {
-				throw new IllegalArgumentException("positive sizes required and outerRows must divide by path starts");
-			}
-			captureProperties();
-			System.setProperty(NATIVE_ENABLED, "true");
-			System.setProperty(NATIVE_PATH_ENABLED, "true");
-			System.setProperty(PARALLEL_ENABLED, "false");
-			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir,
-					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-			loadData();
-			expectedDigests = expectedDigests(outerRows, innerFanOut, distinctPathStarts, pathDepth);
-			executionPaths = new EnumMap<>(Workload.class);
-			for (Workload workload : Workload.values()) {
-				verifyDigest(workload, runWorkload(workload));
-				executionPaths.put(workload, executionPath(workload));
+			try {
+				if (outerRows <= 0 || innerFanOut <= 0 || distinctPathStarts <= 0 || pathDepth <= 0
+						|| outerRows % distinctPathStarts != 0) {
+					throw new IllegalArgumentException(
+							"positive sizes required and outerRows must divide by path starts");
+				}
+				captureProperties();
+				System.setProperty(NATIVE_ENABLED, "true");
+				System.setProperty(NATIVE_PATH_ENABLED, "true");
+				System.setProperty(PARALLEL_ENABLED, "false");
+				dataDir = Files.newTemporaryFolder();
+				repository = new SailRepository(new LmdbStore(dataDir,
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				loadData();
+				expectedDigests = expectedDigests(outerRows, innerFanOut, distinctPathStarts, pathDepth);
+				executionPaths = new EnumMap<>(Workload.class);
+				for (Workload workload : Workload.values()) {
+					verifyDigest(workload, runWorkload(workload));
+					executionPaths.put(workload, executionPath(workload));
+				}
+
+			} catch (Exception | Error failure) {
+				try {
+					tearDown();
+				} catch (Exception | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
 			}
 		}
 

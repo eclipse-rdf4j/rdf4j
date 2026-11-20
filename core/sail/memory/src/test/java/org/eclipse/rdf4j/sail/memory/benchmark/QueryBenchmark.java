@@ -131,32 +131,45 @@ public class QueryBenchmark {
 
 		QueryBenchmark queryBenchmark = new QueryBenchmark();
 		queryBenchmark.beforeClass();
+		try {
 
-		long l = queryBenchmark.complexQuery();
-		System.out.println("complexQuery: " + l);
-		queryBenchmark.afterClass();
+			long l = queryBenchmark.complexQuery();
+			System.out.println("complexQuery: " + l);
+		} finally {
+			queryBenchmark.afterClass();
+		}
 		System.out.println(k);
 
 	}
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
-		repository = new SailRepository(new MemoryStore());
+		boolean initialized = false;
+		try {
+			repository = new SailRepository(new MemoryStore());
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				connection.add(resourceAsStream, RDFFormat.TURTLE);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+					connection.add(resourceAsStream, RDFFormat.TURTLE);
+				}
+				connection.commit();
 			}
-			connection.commit();
-		}
 
-		Thread.sleep(10000);
+			Thread.sleep(10000);
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				afterClass();
+			}
+		}
 	}
 
 	@TearDown(Level.Trial)
 	public void afterClass() {
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 	}
 
 	@Benchmark
