@@ -453,13 +453,15 @@ public class RepositoryFederatedService implements FederatedService {
 			if (originals.size() == 1) {
 				return select(service, projectionVars, transported.get(0), baseUri);
 			}
-			String rowIndexVar = getRowIndexVar(service, originals);
-			projectionVars.add(rowIndexVar);
-			String queryString = service.getSelectQueryString(projectionVars);
 			Set<String> lexicalNames = SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(),
 					FederatedServiceIdentity.relevantBindingNames(service));
 			List<String> relevantNames = getRelevantBindingNames(transported, lexicalNames);
-			if (!relevantNames.isEmpty()) {
+			String rowIndexVar = relevantNames.isEmpty() ? null : getRowIndexVar(service, originals);
+			if (rowIndexVar != null) {
+				projectionVars.add(rowIndexVar);
+			}
+			String queryString = service.getSelectQueryString(projectionVars);
+			if (rowIndexVar != null) {
 				// Validate each initial mapping's scope before serializing a combined VALUES request.
 				for (BindingSet input : transported) {
 					SPARQLQueries.withInitialBindings(queryString, relevantBindings(service, input));
@@ -474,7 +476,7 @@ public class RepositoryFederatedService implements FederatedService {
 			RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
 					SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
 			CloseableIteration<BindingSet> raw = query.evaluate();
-			if (relevantNames.isEmpty()) {
+			if (rowIndexVar == null) {
 				result = new SPARQLCrossProductIteration(mapResponse(raw, response, null), originals);
 			} else {
 				CloseableIteration<BindingSet> mapped = new ConvertingIteration<BindingSet, BindingSet>(raw) {
