@@ -118,7 +118,6 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private boolean exactKeyFound = false;
 
-
 	private static final int SKIP_MIN_RUN = 4;
 	private int consecutiveFiltered;
 	private long[] skipKeyValues;
