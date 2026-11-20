@@ -2284,6 +2284,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			AdjacencyAccessObserver observer, CursorCancellation cancellation)
 			throws IOException {
 		if (cancellation != null) {
+			cancellation = cancellation.forWorker();
 			cancellation.checkpoint();
 		}
 		if (view == null || !view.servesSnapshot() || closed) {
@@ -2341,7 +2342,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return null;
 			}
 			if (options.mode() == DirectAdjacencyMode.SHADOW) {
-				maybeShadowCompare(view, txn, subject, predicate, object, context, explicit, row, key, direction);
+				maybeShadowCompare(view, txn, subject, predicate, object, context, explicit, row, key, direction,
+						cancellation);
 				observe(observer, false, "MODE_SHADOW", order, subject, predicate, object, context);
 				return null;
 			}
@@ -2405,7 +2407,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					shadowCompare(view, txn, subject, predicate, object, context, explicit,
 							new LmdbDirectNodeIterator(view, plane, key, context, direction, neighbor,
 									this::onNodePredicateInconsistency, cancellation),
-							direction);
+							direction, cancellation);
 				}
 				observe(observer, false, "MODE_SHADOW", order, subject, predicate, object, context);
 				return null;
@@ -3174,7 +3176,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private void maybeShadowCompare(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object,
-			long context, boolean explicit, ResolvedRow row, long key, int direction) throws IOException {
+			long context, boolean explicit, ResolvedRow row, long key, int direction, CursorCancellation cancellation)
+			throws IOException {
 		if (!shadowSampleDue(txn)) {
 			return;
 		}
@@ -3182,10 +3185,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (row.handle > 0) {
 			LmdbDirectAdjacencyIterator rowIterator = new LmdbDirectAdjacencyIterator();
 			rowIterator.init(view, row.catalog, view.state().contextCatalog(), row.handle, key, predicate, context,
-					direction, "direct-shadow");
+					direction, "direct-shadow", cancellation);
 			iterator = rowIterator;
 		}
-		shadowCompare(view, txn, subject, predicate, object, context, explicit, iterator, direction);
+		shadowCompare(view, txn, subject, predicate, object, context, explicit, iterator, direction, cancellation);
 	}
 
 	/**
@@ -3193,29 +3196,34 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * closes {@code directIterator}. A null iterator means the derived path proved the answer empty.
 	 */
 	private void shadowCompare(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object,
-			long context, boolean explicit, RecordIterator directIterator, int direction) throws IOException {
+			long context, boolean explicit, RecordIterator directIterator, int direction,
+			CursorCancellation cancellation)
+			throws IOException {
 		metrics.recordShadowComparison();
 		List<long[]> direct = new ArrayList<>();
 		if (directIterator != null) {
-			try {
+			try (directIterator) {
 				long[] quad;
 				while ((quad = directIterator.next()) != null) {
 					direct.add(new long[] { quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
 							quad[TripleIndex.OBJ_IDX], Math.max(0, quad[TripleIndex.CONTEXT_IDX]) });
 				}
-			} finally {
-				directIterator.close();
 			}
 		}
 		List<long[]> lmdb = new ArrayList<>();
-		try (RecordIterator it = tripleStore.getTriples(txn, subject, predicate, object, context, explicit)) {
+		try (RecordIterator it = tripleStore.getTriples(txn, subject, predicate, object, context, explicit,
+				cancellation)) {
 			long[] quad;
 			while ((quad = it.next()) != null) {
 				lmdb.add(new long[] { quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
 						quad[TripleIndex.OBJ_IDX], Math.max(0, quad[TripleIndex.CONTEXT_IDX]) });
 			}
 		}
+		Runnable poll = cancellation == null ? null : new CountCancellationPoll(cancellation);
 		java.util.Comparator<long[]> comparator = (a, b) -> {
+			if (poll != null) {
+				poll.run();
+			}
 			for (int i = 0; i < 4; i++) {
 				int cmp = Long.compareUnsigned(a[i], b[i]);
 				if (cmp != 0) {
@@ -3229,6 +3237,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		boolean equal = direct.size() == lmdb.size();
 		for (int i = 0; equal && i < direct.size(); i++) {
 			equal = comparator.compare(direct.get(i), lmdb.get(i)) == 0;
+		}
+		if (cancellation != null) {
+			cancellation.checkpoint();
 		}
 		if (!equal) {
 			metrics.recordShadowMismatch();

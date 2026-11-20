@@ -37,6 +37,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -55,12 +56,15 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -186,6 +190,11 @@ class LmdbDirectAdjacencyQueryTest {
 
 	private void openStore(String tripleIndexes, DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage,
 			List<IRI> selected) throws IOException {
+		openStore(tripleIndexes, mode, coverage, selected, config -> new LmdbStore(dataDir, config));
+	}
+
+	private void openStore(String tripleIndexes, DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage,
+			List<IRI> selected, Function<LmdbStoreConfig, LmdbStore> storeFactory) throws IOException {
 		// The node-predicate projection ships off by default (both the build-time and the per-call switch), so every
 		// test in this class that exercises bound-node/unbound-predicate serving turns it on here rather than
 		// individually. Tests that need it off set the properties themselves after this helper returns.
@@ -202,7 +211,7 @@ class LmdbDirectAdjacencyQueryTest {
 		if (selected != null) {
 			config.setDirectAdjacencyPredicates(selected);
 		}
-		sail = new LmdbStore(dataDir, config);
+		sail = storeFactory.apply(config);
 		repo = new SailRepository(sail);
 		repo.init();
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -3838,6 +3847,62 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(metrics.shadowComparisons).isGreaterThan(comparisonsBefore);
 			assertThat(metrics.shadowMismatches).isZero();
 			assertThat(metrics.lookupHits).isZero();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void shadowComparisonPollsDeadlineOnAuthoritativeScan(boolean boundPredicate) throws IOException {
+		System.setProperty(LmdbDirectAdjacencyOptions.SHADOW_SAMPLE_EVERY_PROPERTY, "1");
+		ThreadLocal<Runnable> afterAuthoritativeOpen = new ThreadLocal<>();
+		openStore("spoc,posc", DirectAdjacencyMode.SHADOW, null, null, config -> new LmdbStore(dataDir, config) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig settings,
+					boolean sketches) throws IOException {
+				return new LmdbSailStore(directory, properties, settings, sketches, ValueStore::new,
+						(tripleDir, tripleProperties, tripleSettings, values) -> new TripleStore(tripleDir,
+								tripleProperties, tripleSettings, values) {
+							@Override
+							public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context,
+									boolean explicit) throws IOException {
+								return opened(super.getTriples(txn, subj, pred, obj, context, explicit));
+							}
+
+							@Override
+							RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context,
+									boolean explicit, CursorCancellation cancellation) throws IOException {
+								return opened(super.getTriples(txn, subj, pred, obj, context, explicit, cancellation));
+							}
+
+							private RecordIterator opened(RecordIterator iterator) {
+								Runnable onOpen = afterAuthoritativeOpen.get();
+								if (onOpen != null) {
+									afterAuthoritativeOpen.remove();
+									onOpen.run();
+								}
+								return iterator;
+							}
+						});
+			}
+		});
+		long predicate = boundPredicate ? p1 : -1L;
+		try (var dataset = dataset()) {
+			long comparisonsBefore = direct.snapshotMetrics().shadowComparisons;
+			try {
+				assertThatThrownBy(() -> NativeCancellationTestAccess.withTrippableProbeDeadline(
+						afterAuthoritativeOpen::set, () -> {
+							var cancellation = NativeLmdbQuerySource.captureCursorCancellation();
+							try (RecordIterator records = dataset.source.statements(s1, predicate, -1L, -1L, null,
+									cancellation)) {
+								return null;
+							}
+						})).isSameAs(NativeCancellationTestAccess.probeDeadlineSignal());
+			} finally {
+				afterAuthoritativeOpen.remove();
+			}
+			assertThat(direct.snapshotMetrics().shadowComparisons).isEqualTo(comparisonsBefore + 1);
+			assertThat(direct.snapshotMetrics().shadowMismatches).isZero();
+			assertThat(dataset.rows(s1, predicate, -1L, -1L)).hasSize(boundPredicate ? 2 : 4);
 		}
 	}
 }
