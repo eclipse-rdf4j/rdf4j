@@ -86,8 +86,8 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	}
 
 	/**
-	 * @param stableOrderDistinct when {@code true}, mark the leading pattern of each {@code DISTINCT}/{@code REDUCED}
-	 *                            with the index order that enables partitioned deduplication (see
+	 * @param stableOrderDistinct when {@code true}, mark the leading pattern of each {@code DISTINCT} with the index
+	 *                            order that enables partitioned deduplication (see
 	 *                            {@link LmdbDistinctOrderMarkingOptimizer}). Join ordering is not steered here:
 	 *                            {@link LmdbSketchJoinOptimizer} has no extension hooks. Only for strategies that
 	 *                            evaluate through the generic engine, so it cannot be combined with

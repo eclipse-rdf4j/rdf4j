@@ -26,6 +26,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -126,11 +127,11 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 		private boolean closed;
 
 		@Override
-		public java.util.Set<BindingSet> createSetOfBindingSets() {
+		public <T> Set<T> createSet() {
 			if (closed) {
 				throw new IllegalStateException("collection factory used after close");
 			}
-			return super.createSetOfBindingSets();
+			return super.createSet();
 		}
 
 		@Override
@@ -141,14 +142,14 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 	}
 
 	@Test
-	void testReducedUsesPartitionedIteratorForVisibleStableOrder() {
+	void testReducedUsesBoundedIterationForVisibleStableOrder() {
 		EvaluationStrategy strategy = createExperimentalStrategy();
 		Reduced reduced = new Reduced(((Distinct) findNode(parse("select distinct ?type where { ?a a ?type. }"),
 				Distinct.class)).getArg().clone());
 
 		QueryEvaluationStep prepared = strategy.precompile(reduced);
 		try (CloseableIteration<BindingSet> iteration = prepared.evaluate(EmptyBindingSet.getInstance())) {
-			assertEquals(PARTITIONED_ITERATOR, iteration.getClass().getSimpleName());
+			assertEquals(ReducedIteration.class, iteration.getClass());
 			assertEquals(List.of("urn:type1", "urn:type2"), extractValues(iteration, "type"));
 		}
 	}

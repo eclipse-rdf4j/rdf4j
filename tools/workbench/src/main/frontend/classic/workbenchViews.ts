@@ -1,5 +1,6 @@
 /// <reference path="template.ts" />
 /// <reference path="queryStream.ts" />
+/// <reference path="workbenchWorkspace.ts" />
 /// <reference lib="es2015.collection" />
 
 // WARNING: Do not edit the generated workbenchViews.js file. Edit this source
@@ -5056,7 +5057,7 @@ namespace workbench {
         }
 
         /** What this browser keeps for repositories this user no longer sees on the server goes (workbench.workspace). */
-        function forgetMissingRepositories(document: any, repositories: any[]): void {
+        function forgetMissingRepositories(document: any, model: PageModel, repositories: any[]): void {
             const shared: any = (workbench as any).workspace;
             const app = document && document.getElementById ? document.getElementById('workbench-app') : null;
             const identity = app ? app.getAttribute('data-workbench-server-identity') : '';
@@ -5064,8 +5065,11 @@ namespace workbench {
                 return;
             }
             try {
-                shared.forgetMissingRepositories(shared.serverDigest(identity),
-                    app.getAttribute('data-workbench-server-user') || '', repositories.map((repository: any) => repository.id));
+                const digest = shared.serverDigest(identity);
+                const user = app.getAttribute('data-workbench-server-user') || '';
+                if (workspace.matchesRepositoryListScope(model, digest, user)) {
+                    shared.forgetMissingRepositories(digest, user, repositories.map((repository: any) => repository.id));
+                }
             } catch (error) {
                 // What the browser keeps for them stays.
             }
@@ -5164,25 +5168,17 @@ namespace workbench {
             }
             if (status && !panel.__rdf4jRepositories) { status.textContent = 'Loading repositories…'; }
             const url = new URL(panel.getAttribute('data-workbench-repositories-url'), window.location.href).toString();
-            const loading = app.loadModel(window.fetch.bind(window), url).then((model: any) => {
-                if (model.error) {
-                    // An error page (the server unreachable, say) is not an empty list: nothing is forgotten for it.
-                    model.rowStore.dispose();
-                    throw model.error;
+            const loading = app.loadModel(window.fetch.bind(window), url).then(async (model: PageModel) => {
+                try {
+                    const repositories = await workspace.readRepositoryList(model);
+                    forgetMissingRepositories(panel.ownerDocument, model, repositories);
+                    return repositories;
+                } finally {
+                    await model.rowStore.dispose();
                 }
-                return model.rowStore.read(0, model.rowCount).then((rows: any[][]) => {
-                    model.rowStore.dispose();
-                    return recordsFromRows(model, rows).map((record: any) => ({
-                        id: text(record.id), title: text(record.description)
-                    })).filter((repository: any) => !!repository.id);
-                }, (error: any) => {
-                    model.rowStore.dispose();
-                    throw error;
-                });
             }).then((repositories: any[]) => {
                 panel.__rdf4jRepositoriesLoading = null;
                 panel.__rdf4jRepositoriesLoaded = true;
-                forgetMissingRepositories(panel.ownerDocument, repositories);
                 const shown = panel.__rdf4jRepositories;
                 panel.__rdf4jRepositories = repositories;
                 // An unchanged list is left alone, so keyboard focus in it stays where it is.

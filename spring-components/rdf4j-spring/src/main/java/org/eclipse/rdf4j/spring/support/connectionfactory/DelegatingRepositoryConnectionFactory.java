@@ -13,13 +13,12 @@
 package org.eclipse.rdf4j.spring.support.connectionfactory;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.springframework.beans.factory.DisposableBean;
 
 /**
  * @author Florian Kleedorfer
  * @since 4.0.0
  */
-public abstract class DelegatingRepositoryConnectionFactory implements RepositoryConnectionFactory, DisposableBean {
+public abstract class DelegatingRepositoryConnectionFactory implements RepositoryConnectionFactory {
 	private final RepositoryConnectionFactory delegate;
 
 	public DelegatingRepositoryConnectionFactory(RepositoryConnectionFactory delegate) {
@@ -29,13 +28,6 @@ public abstract class DelegatingRepositoryConnectionFactory implements Repositor
 	@Override
 	public RepositoryConnection getConnection() {
 		return delegate.getConnection();
-	}
-
-	@Override
-	public void destroy() throws Exception {
-		if (delegate instanceof DisposableBean disposable) {
-			disposable.destroy();
-		}
 	}
 
 	protected RepositoryConnectionFactory getDelegate() {

@@ -63,12 +63,44 @@ public class AbstractMemoryOverflowModelTest {
 		runInConstrainedHeap("small-model");
 	}
 
+	@Test
+	void modelWithOneLargeLiteralSpillsUnderMemoryPressure() throws Exception {
+		runInConstrainedHeap("large-literal");
+	}
+
+	@Test
+	void statementAddsCanSpillBeforeTheNextFullBatch() throws Exception {
+		runInConstrainedHeap("large-literal-statement-add");
+	}
+
+	@Test
+	void aLargeValueCanTriggerSpillBetweenInsertionCheckpoints() throws Exception {
+		runInConstrainedHeap("between-insertion-checkpoints");
+	}
+
+	@Test
+	void fallingHeapHeadroomTriggersSpillWithoutWaitingForAGcSignal() throws Exception {
+		runInConstrainedHeap("falling-heap-headroom", "-Xms128m", "-XX:+UnlockExperimentalVMOptions",
+				"-XX:+UseEpsilonGC");
+	}
+
+	@Test
+	void distinctPayloadAddedUnderSustainedPressureTriggersEarlySpill() throws Exception {
+		runInConstrainedHeap("sustained-pressure");
+	}
+
+	@Test
+	void subBatchSpillCountsSharedTermsOnceAndRetriesLargeNestedPayload() throws Exception {
+		runInConstrainedHeap("sub-batch-payload");
+	}
+
 	public static void main(String[] args) throws Exception {
 		if (args.length != 1) {
 			throw new IllegalArgumentException("Expected one pressure probe name");
 		}
 		System.out.println("RUNTIME_MAX_MEMORY_BYTES=" + Runtime.getRuntime().maxMemory());
-		if (!"small-model".equals(args[0])) {
+		if (List.of("pressure-hook", "minimum-memory-reserve", "minimum-memory-reserve-retry", "migration-retry")
+				.contains(args[0])) {
 			// The single-statement fixtures probe spill mechanics, so each statement forms a spillable batch.
 			AbstractMemoryOverflowModel.BATCH_SIZE = 1;
 		}
@@ -89,12 +121,30 @@ public class AbstractMemoryOverflowModelTest {
 		case "small-model":
 			test.smallModelProbe();
 			break;
+		case "large-literal":
+			test.largeLiteralProbe();
+			break;
+		case "large-literal-statement-add":
+			test.largeLiteralStatementAddProbe();
+			break;
+		case "between-insertion-checkpoints":
+			test.betweenInsertionCheckpointsProbe();
+			break;
+		case "falling-heap-headroom":
+			test.fallingHeapHeadroomProbe();
+			break;
+		case "sustained-pressure":
+			test.sustainedPressureProbe();
+			break;
+		case "sub-batch-payload":
+			test.subBatchPayloadProbe();
+			break;
 		default:
 			throw new IllegalArgumentException("Unknown pressure probe: " + args[0]);
 		}
 	}
 
-	private static void runInConstrainedHeap(String probe) throws Exception {
+	private static void runInConstrainedHeap(String probe, String... heapOptions) throws Exception {
 		String classpath = System.getProperty("surefire.test.class.path");
 		if (classpath == null || classpath.isBlank()) {
 			classpath = System.getProperty("java.class.path");
@@ -102,10 +152,13 @@ public class AbstractMemoryOverflowModelTest {
 		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		String mockitoAgent = Path.of(Mockito.class.getProtectionDomain().getCodeSource().getLocation().toURI())
 				.toString();
-		Process process = new ProcessBuilder(java, "-Xmx128m", "-javaagent:" + mockitoAgent, "-cp", classpath,
-				AbstractMemoryOverflowModelTest.class.getName(), probe)
-						.redirectErrorStream(true)
-						.start();
+		List<String> command = new ArrayList<>(List.of(java, "-Xmx128m"));
+		command.addAll(List.of(heapOptions));
+		command.addAll(List.of("-javaagent:" + mockitoAgent, "-cp", classpath,
+				AbstractMemoryOverflowModelTest.class.getName(), probe));
+		Process process = new ProcessBuilder(command)
+				.redirectErrorStream(true)
+				.start();
 		String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 		int exitCode = process.waitFor();
 		System.out.print(output);
@@ -202,6 +255,175 @@ public class AbstractMemoryOverflowModelTest {
 			if (model != null) {
 				model.close();
 			}
+		}
+	}
+
+	private void largeLiteralProbe() {
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel explicit = new RecordingOverflowModel();
+				RecordingOverflowModel automatic = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:overflow:subject");
+			var predicate = values.createIRI("urn:overflow:predicate");
+			var largeLiteral = values.createLiteral("x".repeat(8 * 1024 * 1024));
+			Statement statement = values.createStatement(subject, predicate, largeLiteral);
+			explicit.add(statement);
+			automatic.add(subject, predicate, largeLiteral);
+			assertThat(explicit.spillCount).isZero();
+			assertThat(automatic.spillCount).isZero();
+
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			explicit.spillToDiskIfNeeded();
+			assertThat(explicit.spillCount).as("a large literal needs a spill even below one batch").isOne();
+			assertThat(explicit.spilledStatements).containsExactly(statement);
+
+			var smallLiteral = values.createLiteral("next");
+			automatic.add(subject, predicate, smallLiteral);
+			assertThat(automatic.spillCount).as("insertion also checks a growing partial batch").isOne();
+			assertThat(automatic).containsExactlyInAnyOrder(statement,
+					values.createStatement(subject, predicate, smallLiteral));
+		} finally {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void largeLiteralStatementAddProbe() {
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:overflow:subject");
+			var predicate = values.createIRI("urn:overflow:predicate");
+			Statement first = values.createStatement(subject, predicate,
+					values.createLiteral("x".repeat(8 * 1024 * 1024)));
+			Statement next = values.createStatement(subject, predicate, values.createLiteral("next"));
+			model.add(first);
+			assertThat(model.spillCount).isZero();
+
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			model.add(next);
+			assertThat(model.spillCount).as("changeset insertion must check a growing partial batch").isOne();
+			assertThat(model).containsExactlyInAnyOrder(first, next);
+		} finally {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void betweenInsertionCheckpointsProbe() {
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:overflow:subject");
+			var predicate = values.createIRI("urn:overflow:predicate");
+			List<Statement> expected = new ArrayList<>();
+			for (int i = 0; i < 4; i++) {
+				expected.add(values.createStatement(subject, predicate, values.createLiteral(i)));
+				model.add(expected.get(i));
+			}
+			Statement large = values.createStatement(subject, predicate,
+					values.createLiteral("x".repeat(8 * 1024 * 1024)));
+			expected.add(large);
+			model.add(large);
+			assertThat(model.spillCount).isZero();
+
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			Statement next = values.createStatement(subject, predicate, values.createLiteral("next"));
+			expected.add(next);
+			model.add(next);
+			assertThat(model.spillCount).as("a large payload must be checked between statement-count boundaries")
+					.isOne();
+			assertThat(model).containsExactlyInAnyOrderElementsOf(expected);
+		} finally {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void fallingHeapHeadroomProbe() {
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:overflow:subject");
+			var predicate = values.createIRI("urn:overflow:predicate");
+			for (int i = 0; i < 4; i++) {
+				model.add(values.createStatement(subject, predicate, values.createLiteral(i)));
+			}
+			long bytesPerMiB = 1024L * 1024L;
+			int reserve = Math.toIntExact(availableHeapBytes() / bytesPerMiB - 4);
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = reserve;
+			model.add(values.createStatement(subject, predicate, values.createLiteral("still healthy")));
+			assertThat(availableHeapBytes()).isGreaterThan(reserve * bytesPerMiB);
+
+			Statement large = values.createStatement(subject, predicate,
+					values.createLiteral("x".repeat(12 * 1024 * 1024)));
+			assertThat(availableHeapBytes()).isLessThan(reserve * bytesPerMiB);
+			model.add(large);
+			model.add(values.createStatement(subject, predicate, values.createLiteral("next")));
+			assertThat(model.spillCount).as("allocations alone can cross the reserve between checkpoints").isOne();
+			assertThat(model).hasSize(7).contains(large);
+		} finally {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private static long availableHeapBytes() {
+		Runtime runtime = Runtime.getRuntime();
+		return runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory());
+	}
+
+	private void sustainedPressureProbe() {
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:overflow:subject");
+			var predicate = values.createIRI("urn:overflow:predicate");
+			var shared = values.createLiteral("x".repeat(80 * 1024));
+			var distinct = values.createLiteral("y".repeat(80 * 1024));
+			for (int i = 0; i < 5; i++) {
+				model.add(subject, predicate, shared, values.createIRI("urn:overflow:context:" + i));
+			}
+			assertThat(model.spillCount).as("sharing a large label does not grow its retained payload").isZero();
+			model.add(subject, predicate, distinct);
+			model.add(subject, predicate, values.createLiteral("next"));
+			assertThat(model.spillCount).as("new distinct payload crosses the spill budget before eight rows").isOne();
+			assertThat(model).hasSize(7);
+		} finally {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void subBatchPayloadProbe() {
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel shared = new RecordingOverflowModel();
+				RetryableOverflowModel distinct = new RetryableOverflowModel()) {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:overflow:subject");
+			var predicate = values.createIRI("urn:overflow:predicate");
+			String text = "x".repeat(16 * 1024);
+			var sharedLiteral = values.createLiteral(text);
+			List<Statement> statements = new ArrayList<>();
+			for (int i = 0; i < 32; i++) {
+				var context = values.createIRI("urn:overflow:context:" + i);
+				shared.add(subject, predicate, sharedLiteral, context);
+				var nested = values.createTripleTerm(subject, predicate, values.createLiteral(text + i));
+				statements.add(values.createStatement(subject, predicate,
+						values.createTripleTerm(subject, predicate, nested), context));
+			}
+			distinct.addAll(statements);
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+
+			shared.spillToDiskIfNeeded();
+			assertThat(shared.spillCount).as("shared lexical payload does not grow with each statement").isZero();
+			assertThatThrownBy(distinct::spillToDiskIfNeeded).hasMessage("simulated spill import failure");
+			assertThat(distinct).containsExactlyInAnyOrderElementsOf(statements);
+			distinct.spillToDiskIfNeeded();
+			assertThat(distinct.spillAttempts).isEqualTo(2);
+			assertThat(distinct).containsExactlyInAnyOrderElementsOf(statements);
+		} finally {
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
 		}
 	}
 

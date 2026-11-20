@@ -60,10 +60,10 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	 * @param nativeEngine        when {@code true}, the pipeline is built for the native query engine and adds
 	 *                            {@link LmdbSubqueryGroupPushdownOptimizer} after the first {@link FilterOptimizer}.
 	 * @param stableOrderDistinct when {@code true} (and experimental optimizations are on), steer join ordering towards
-	 *                            plans whose leading pattern can supply the order for a partitioned
-	 *                            {@code DISTINCT}/{@code REDUCED} and mark that pattern. Only for strategies that
-	 *                            evaluate through the generic engine, so it cannot be combined with
-	 *                            {@code nativeEngine}: the native engine keeps its own planner.
+	 *                            plans whose leading pattern can supply the order for a partitioned {@code DISTINCT}
+	 *                            and mark that pattern. Only for strategies that evaluate through the generic engine,
+	 *                            so it cannot be combined with {@code nativeEngine}: the native engine keeps its own
+	 *                            planner.
 	 */
 	@InternalUseOnly
 	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,

@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DistinctBindingSetKey;
 
 @Experimental
 @InternalUseOnly
@@ -28,12 +29,13 @@ public final class LmdbPartitionedDistinctIteration extends FilterIteration<Bind
 
 	private final String partitionBindingName;
 	private final CollectionFactory collectionFactory;
-	private Set<BindingSet> seen;
+	private Set<DistinctBindingSetKey> seen;
 	private Value currentPartitionValue;
 	private boolean partitionInitialized;
 
 	@InternalUseOnly
-	public LmdbPartitionedDistinctIteration(CloseableIteration<? extends BindingSet> iter, Set<BindingSet> seen,
+	public LmdbPartitionedDistinctIteration(CloseableIteration<? extends BindingSet> iter,
+			Set<DistinctBindingSetKey> seen,
 			String partitionBindingName, CollectionFactory collectionFactory) {
 		super(iter);
 		this.seen = seen;
@@ -49,7 +51,7 @@ public final class LmdbPartitionedDistinctIteration extends FilterIteration<Bind
 			currentPartitionValue = partitionValue;
 			partitionInitialized = true;
 		}
-		return seen.add(bindingSet);
+		return seen.add(new DistinctBindingSetKey(bindingSet));
 	}
 
 	@Override

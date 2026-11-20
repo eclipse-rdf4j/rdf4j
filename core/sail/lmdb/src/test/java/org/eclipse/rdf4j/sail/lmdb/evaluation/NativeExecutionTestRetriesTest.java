@@ -35,7 +35,7 @@ class NativeExecutionTestRetriesTest {
 	}
 
 	@Test
-	void returnsTheInterpretedRouteAfterFiveRetries() throws InterruptedException {
+	void checksTheRouteOnceAfterCompilationCompletes() throws InterruptedException {
 		List<String> compiled = List.of("irKernelDistinctParallel");
 		List<String> interpreted = List.of("irKernelDistinctParallelInterpreted");
 		AtomicInteger retries = new AtomicInteger();
@@ -43,7 +43,7 @@ class NativeExecutionTestRetriesTest {
 			retries.incrementAndGet();
 			return interpreted;
 		}, Function.identity(), compiled)).isEqualTo(interpreted);
-		assertThat(retries.get()).isEqualTo(5);
+		assertThat(retries.get()).isEqualTo(1);
 	}
 
 	@Test

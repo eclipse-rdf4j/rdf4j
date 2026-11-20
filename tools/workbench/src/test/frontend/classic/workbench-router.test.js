@@ -93,6 +93,8 @@ function fakeStorage() {
     const values = new Map();
     return {
         values,
+        get length() { return values.size; },
+        key(index) { return Array.from(values.keys())[index] || null; },
         getItem(key) { return values.has(key) ? values.get(key) : null; },
         setItem(key, value) { values.set(key, String(value)); },
         removeItem(key) { values.delete(key); }
@@ -2449,6 +2451,22 @@ function loadRouterWithWorkspaces() {
 
 const repo = (id, rest) => 'https://example.test/workbench/repositories/' + id + '/' + rest;
 const switchLink = (id, view) => link(repo(id, view), { 'data-workbench-repository-switch': 'true' });
+
+test('a refused repositories page keeps the pending deletion’s saved queries', async () => {
+    const harness = loadRouterWithWorkspaces();
+    harness.register('repositories');
+    harness.start();
+    const workspace = harness.workbench.workspace;
+    const saved = workspace.QUERY_TABS_PREFIX + JSON.stringify(['sha256:abc', '', 'gone']);
+    harness.localStorage.setItem(saved, 'query tabs');
+    workspace.deletionStarted('sha256:abc:session-1', 'gone');
+    const url = repo('NONE', 'repositories');
+    harness.router.navigate(url, { history: 'push' });
+    await harness.answerUrl(url, harness.model('repositories', { vars: ['error-message'], rows: [['Unauthorized']],
+        metadata: { 'server-identity': 'sha256:abc:session-1', 'server-user': '' } }));
+    assert.equal(harness.router.current().viewId, 'repositories');
+    assert.equal(harness.localStorage.getItem(saved), 'query tabs');
+});
 
 test('switching to a repository opens the page it was left on, says so, and offers Undo', async () => {
     const harness = loadRouterWithWorkspaces();

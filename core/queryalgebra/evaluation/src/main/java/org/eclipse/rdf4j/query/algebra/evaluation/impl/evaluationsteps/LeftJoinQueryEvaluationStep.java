@@ -43,12 +43,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
-	private final QueryEvaluationStep right;
-	private final QueryValueEvaluationStep condition;
 	private final QueryEvaluationStep left;
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
-	private final QueryEvaluationStep wellDesignedRightEvaluationStep;
+	private final QueryEvaluationStep rightWithCondition;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -220,8 +218,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
 			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
-		this.right = right;
-		this.condition = condition;
 		this.left = left;
 		this.leftJoin = leftJoin;
 		// This is used to determine if the left join is well designed.
@@ -243,7 +239,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 
 		this.optionalVars = optionalVars;
-		this.wellDesignedRightEvaluationStep = determineRightEvaluationStep(
+		this.rightWithCondition = determineRightEvaluationStep(
 				leftJoin,
 				right,
 				condition,
@@ -253,27 +249,25 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 
-		boolean containsNone = true;
-		Set<String> bindingNames = bindings.getBindingNames();
+		// Possible columns such as SERVICE UNDEF slots need not belong to this solution's binding domain.
+		Set<String> problemVars = null;
 		for (String optionalVar : optionalVars) {
-			if (bindingNames.contains(optionalVar)) {
-				containsNone = false;
-				break;
+			if (bindings.hasBinding(optionalVar)) {
+				if (problemVars == null) {
+					problemVars = new HashSet<>();
+				}
+				problemVars.add(optionalVar);
 			}
 		}
 
-		if (containsNone) {
-			// left join is "well designed"
+		if (problemVars == null) {
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
-			return LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep);
-		} else {
-			Set<String> problemVars = new HashSet<>(optionalVars);
-			problemVars.retainAll(bindings.getBindingNames());
-
-			leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
-			var rightEvaluationStep = determineRightEvaluationStep(leftJoin, right, condition, problemVars);
-			return new BadlyDesignedLeftJoinIterator(left, bindings, problemVars, rightEvaluationStep);
+			return LeftJoinIterator.getInstance(left, bindings, rightWithCondition);
 		}
+		// Filter inherited problem variables from the operands while keeping their own output names visible to the
+		// condition.
+		leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
+		return new BadlyDesignedLeftJoinIterator(left, bindings, problemVars, rightWithCondition);
 	}
 
 	/**

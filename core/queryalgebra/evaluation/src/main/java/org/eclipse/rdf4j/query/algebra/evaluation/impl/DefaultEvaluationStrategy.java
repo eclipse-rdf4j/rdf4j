@@ -14,12 +14,6 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -58,7 +52,6 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -207,7 +200,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
@@ -1267,7 +1259,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					@Override
 					public BindingSet next() {
 						try {
-							return distinct.next().bindings;
+							return distinct.next().bindings();
 						} catch (RuntimeException | Error failure) {
 							closeOnFailure(failure);
 							throw failure;
@@ -1346,63 +1338,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				throw failure;
 			}
 		};
-	}
-
-	/**
-	 * DISTINCT's private hash must not use BindingSet's public XOR: repeated values cancel there, so identity paths put
-	 * every row in one bucket. Sum binding hashes instead, keeping iteration order irrelevant and retaining the
-	 * original row for equality and output. Serializable keys keep factory-backed spill available.
-	 */
-	private static final class DistinctBindingSetKey implements Serializable {
-		private static final long serialVersionUID = 1L;
-
-		private transient BindingSet bindings;
-
-		private DistinctBindingSetKey(BindingSet bindings) {
-			this.bindings = bindings;
-		}
-
-		@Override
-		public int hashCode() {
-			int hash = 0;
-			for (Binding binding : bindings) {
-				hash += binding.getName().hashCode() ^ binding.getValue().hashCode();
-			}
-			return hash;
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			return other instanceof DistinctBindingSetKey key && bindings.equals(key.bindings);
-		}
-
-		private void writeObject(ObjectOutputStream output) throws IOException {
-			// Serialize visible bindings, not implementation-specific unbound markers or Binding state.
-			// A private stream also isolates values from disk factories' custom class-descriptor handling.
-			ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-			try (ObjectOutputStream values = new ObjectOutputStream(bytes)) {
-				values.writeInt(bindings.size());
-				for (Binding binding : bindings) {
-					values.writeObject(binding.getName());
-					values.writeObject(binding.getValue());
-				}
-			}
-			output.writeInt(bytes.size());
-			output.write(bytes.toByteArray());
-		}
-
-		private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
-			byte[] bytes = new byte[input.readInt()];
-			input.readFully(bytes);
-			try (ObjectInputStream values = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
-				int size = values.readInt();
-				MapBindingSet snapshot = new MapBindingSet(size);
-				for (int i = 0; i < size; i++) {
-					snapshot.addBinding((String) values.readObject(), (Value) values.readObject());
-				}
-				bindings = snapshot;
-			}
-		}
 	}
 
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)

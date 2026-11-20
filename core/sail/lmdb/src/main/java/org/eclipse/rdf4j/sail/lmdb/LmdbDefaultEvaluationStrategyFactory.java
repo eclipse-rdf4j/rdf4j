@@ -52,7 +52,7 @@ final class LmdbDefaultEvaluationStrategyFactory extends DefaultEvaluationStrate
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
 		strategy.setCollectionFactory(collectionFactorySupplier);
 		if (getOptimizerPipeline().isEmpty()) {
-			// Steer join ordering and mark the leading pattern for partitioned DISTINCT/REDUCED. Only done here: the
+			// Steer join ordering and mark the leading pattern for partitioned DISTINCT. Only done here: the
 			// native engine has its own planner and must keep its optimizer output unchanged.
 			QueryOptimizerPipeline pipeline = effectiveStatistics.supportsJoinEstimation()
 					? new LmdbQueryOptimizerPipeline(strategy, tripleSource, effectiveStatistics, false, true)

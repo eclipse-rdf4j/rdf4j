@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -179,16 +180,17 @@ class LmdbDistinctStableOrderStrategyTest {
 	}
 
 	@Test
-	void testReducedUsesPartitionedIteratorForVisibleStableOrder() {
+	void testReducedUsesBoundedIterationForVisibleStableOrder() {
 		EvaluationStrategy strategy = createStrategy();
 		Reduced reduced = new Reduced(((Distinct) findNode(parse("select distinct ?type where { ?a a ?type. }"),
 				Distinct.class)).getArg().clone());
 
 		strategy.optimize(reduced, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		assertNull(findNode(reduced, StatementPattern.class).getStatementOrder());
 
 		QueryEvaluationStep prepared = strategy.precompile(reduced);
 		try (CloseableIteration<BindingSet> iteration = prepared.evaluate(EmptyBindingSet.getInstance())) {
-			assertEquals(PARTITIONED_ITERATOR, iteration.getClass().getSimpleName());
+			assertTrue(iteration instanceof ReducedIteration);
 			assertEquals(List.of("urn:type1", "urn:type2"), extractValues(iteration, "type"));
 		}
 	}
@@ -304,6 +306,7 @@ class LmdbDistinctStableOrderStrategyTest {
 		strategy.optimize(tupleExpr, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 
 		assertNotNull(findNode(tupleExpr, Order.class), "precondition: the sort survives optimization");
+		assertNotNull(findNode(tupleExpr, Reduced.class), "ordinary value sort still handles duplicate elimination");
 		StatementPattern pattern = findNode(tupleExpr, StatementPattern.class);
 		assertNotNull(pattern);
 		assertNull(pattern.getStatementOrder(),
@@ -329,13 +332,13 @@ class LmdbDistinctStableOrderStrategyTest {
 
 		Projection projection = new Projection(pattern,
 				new ProjectionElemList(new ProjectionElem("a"), new ProjectionElem("name")));
-		assertEquals("a", LmdbPlannedOrder.partitionBindingName(projection).orElse(null),
+		assertEquals("a", new LmdbPlannedOrder(projection, null).partitionBindingName().orElse(null),
 				"precondition: without a sort in the way the plan is grouped on ?a");
 
 		Order order = new Order(projection);
 		order.addElement(new OrderElem(new Var("name")));
 
-		assertTrue(LmdbPlannedOrder.partitionBindingName(order).isEmpty(),
+		assertTrue(new LmdbPlannedOrder(order, null).partitionBindingName().isEmpty(),
 				"a sort re-arranges every row, so nothing underneath it can be treated as grouped");
 	}
 

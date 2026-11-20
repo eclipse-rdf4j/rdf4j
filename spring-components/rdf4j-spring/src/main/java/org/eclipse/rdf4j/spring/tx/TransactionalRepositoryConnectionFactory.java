@@ -27,14 +27,13 @@ import org.eclipse.rdf4j.spring.tx.exception.RDF4JTransactionException;
 import org.eclipse.rdf4j.spring.tx.exception.RollbackException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.DisposableBean;
 
 /**
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
  * @since 4.0.0
  */
-public class TransactionalRepositoryConnectionFactory implements RepositoryConnectionFactory, DisposableBean {
+public class TransactionalRepositoryConnectionFactory implements RepositoryConnectionFactory {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -44,13 +43,6 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 
 	public TransactionalRepositoryConnectionFactory(RepositoryConnectionFactory delegateFactory) {
 		this.delegateFactory = delegateFactory;
-	}
-
-	@Override
-	public void destroy() throws Exception {
-		if (delegateFactory instanceof DisposableBean disposable) {
-			disposable.destroy();
-		}
 	}
 
 	public TransactionObject getTransactionData() {

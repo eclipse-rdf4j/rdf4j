@@ -31,9 +31,7 @@ import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -510,17 +508,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Optional<String> partitionBindingName = markPartitionBinding(node);
-		if (partitionBindingName.isPresent()) {
-			return preparePartitioned(node.getArg(), partitionBindingName.get(), context);
-		}
-		return super.prepare(node, context);
-	}
-
-	@Override
-	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
-			throws QueryEvaluationException {
-		Optional<String> partitionBindingName = markPartitionBinding(node);
+		Optional<String> partitionBindingName = markPartitionBinding(node, context.getDataset());
 		if (partitionBindingName.isPresent()) {
 			return preparePartitioned(node.getArg(), partitionBindingName.get(), context);
 		}
@@ -528,19 +516,19 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	/**
-	 * Partitions generic DISTINCT/REDUCED only when its descendants also use generic preparation. A generic operator in
-	 * a native-enabled plan can still have native descendants. Their physical strategies can reorder the join or emit
+	 * Partitions generic DISTINCT only when its descendants also use generic preparation. A generic operator in a
+	 * native-enabled plan can still have native descendants. Their physical strategies can reorder the join or emit
 	 * parallel results in completion order, so an ordered scan in the algebra cannot establish contiguous groups at the
-	 * DISTINCT/REDUCED boundary. When native preparation is disabled, marking the leading pattern leaves the generic
-	 * join order intact.
+	 * DISTINCT boundary. When native preparation is disabled, marking the leading pattern leaves the generic join order
+	 * intact.
 	 */
-	private Optional<String> markPartitionBinding(UnaryTupleOperator node) {
+	private Optional<String> markPartitionBinding(Distinct node, Dataset dataset) {
 		if ((nativeEnabled && nativeSource != null)
 				|| !getQueryExecutionPolicy().experimentalQueryOptimizations()
 				|| !LmdbDistinctOrderMarker.enabled(tripleSourceArg)) {
 			return Optional.empty();
 		}
-		return LmdbDistinctOrderMarker.mark(node.getArg(), tripleSourceArg,
+		return LmdbDistinctOrderMarker.mark(node.getArg(), tripleSourceArg, dataset,
 				LmdbDistinctOrderMarker.boundOutside(node, EmptyBindingSet.getInstance()));
 	}
 

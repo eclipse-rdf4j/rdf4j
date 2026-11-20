@@ -47,8 +47,9 @@ function load(serverRepositories) {
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({ console, URL, URLSearchParams, Promise, window, workbench, setTimeout });
-    vm.runInContext(fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8'), context,
-        { filename: 'workbenchViews.js' });
+    for (const filename of ['workbenchWorkspace.js', 'workbenchViews.js']) {
+        vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), context, { filename });
+    }
     const wb = context.workbench;
     const opens = [];
     wb.popover = { bind: (button, panel, options) => { if (options && options.onOpen) { opens.push(options.onOpen); } return () => {}; } };
@@ -56,7 +57,8 @@ function load(serverRepositories) {
     wb.app = { loadModel: () => {
         requests++;
         const rows = serverRepositories.map((id) => [{ kind: 'literal', value: id }, { kind: 'literal', value: id + ' store' }]);
-        return Promise.resolve({ vars: ['id', 'description'], rowCount: rows.length,
+        return Promise.resolve({ viewId: 'repositories', metadata: { 'server-identity': 'sha256:abc:session', 'server-user': '' },
+            vars: ['id', 'description'], rowCount: rows.length,
             rowStore: { read: () => Promise.resolve(rows), dispose() {} } });
     } };
     return { wb, opens, requests: () => requests };
@@ -96,8 +98,7 @@ test('A14: opening the switcher twice while its list loads asks the server once'
 test('a repository list the server could not give forgets nothing this browser keeps', async () => {
     const opened = (loaded) => {
         const forgotten = [];
-        loaded.wb.workspace = { serverDigest: (identity) => identity,
-            forgetMissingRepositories: (...args) => forgotten.push(args) };
+        loaded.wb.workspace.forgetMissingRepositories = (...args) => forgotten.push(args);
         const shell = switcher();
         const app = node('div', { 'data-workbench-server-identity': 'sha256:abc:session' });
         const byId = shell.document.getElementById;
@@ -119,6 +120,38 @@ test('a repository list the server could not give forgets nothing this browser k
     await settle();
     assert.deepEqual(failed.forgotten, [], 'an error page is not an empty repository list');
     assert.deepEqual(failed.shell.ids(), []);
+
+    for (const [viewId, vars, rows] of [
+        ['repositories', ['error-message'], [[{ kind: 'literal', value: 'Unauthorized' }]]],
+        ['repositories', ['description'], []],
+        ['summary', ['id'], [[{ kind: 'literal', value: 'a' }]]],
+        ['repositories', ['id'], [[null]]]
+    ]) {
+        const loaded = load([]);
+        let disposed = 0;
+        loaded.wb.app.loadModel = async () => ({ viewId, vars, rowCount: rows.length,
+            metadata: { 'server-identity': 'sha256:abc:session', 'server-user': '' },
+            rowStore: { read: async () => rows, dispose() { disposed++; } } });
+        const result = opened(loaded);
+        await settle();
+        assert.deepEqual(result.forgotten, [], 'preserve saved repositories for ' + viewId + '/' + vars);
+        assert.equal(disposed, 1);
+    }
+
+    const empty = opened(load([]));
+    await settle();
+    assert.equal(empty.forgotten.length, 1, 'a valid empty listing still reconciles saved repositories');
+    assert.deepEqual(Array.from(empty.forgotten[0][2]), []);
+
+    for (const metadata of [{ 'server-identity': 'sha256:other', 'server-user': '' },
+        { 'server-identity': 'sha256:abc', 'server-user': 'other' }, {}]) {
+        const changed = load([]);
+        changed.wb.app.loadModel = async () => ({ viewId: 'repositories', vars: ['id'], metadata, rowCount: 0,
+            rowStore: { read: async () => [], dispose() {} } });
+        const result = opened(changed);
+        await settle();
+        assert.deepEqual(result.forgotten, [], 'only the server and user shown can confirm missing repositories');
+    }
 });
 
 function bindingAfter(template, pattern) {

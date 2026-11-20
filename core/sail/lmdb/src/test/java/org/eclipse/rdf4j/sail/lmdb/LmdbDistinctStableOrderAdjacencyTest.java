@@ -16,12 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -38,6 +35,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeExecutionTestRetries;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +45,7 @@ import org.junitpioneer.jupiter.SetSystemProperty;
 class LmdbDistinctStableOrderAdjacencyTest {
 
 	private static final String NS = "http://example.com/adjgate/";
+	private static final int ADAPTIVE_NODES = 1500;
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
 	private static final String PREFIX = "PREFIX ex: <" + NS + ">\n";
 	private static final String STAR = PREFIX + """
@@ -78,35 +77,62 @@ class LmdbDistinctStableOrderAdjacencyTest {
 	void distinctQueriesKeepNativeAndAdjacencyPathsUnchanged() throws InterruptedException {
 		SailRepository enabled = openAdaptive("adaptive-enabled", true);
 		SailRepository disabled = openAdaptive("adaptive-disabled", false);
-		Map<String, String> queries = new LinkedHashMap<>();
-		queries.put("distinct_subjects", "SELECT DISTINCT ?s WHERE { ?s ex:p1 ?o }");
-		queries.put("distinct_predicates", "SELECT DISTINCT ?p WHERE { ?s ?p ?o }");
-		queries.put("distinct_star", "SELECT DISTINCT ?s ?o2 WHERE { ?s ex:p1 ?o . ?s ex:p2 ?o2 }");
-		for (var query : queries.entrySet()) {
-			String sparql = PREFIX + query.getValue();
-			Run baseline = run(disabled, sparql, null, Explanation.Level.Executed);
-			Run actual = NativeExecutionTestRetries.retryInterpreted(
-					run(enabled, sparql, null, Explanation.Level.Executed),
-					() -> run(enabled, sparql, null, Explanation.Level.Executed), Run::paths, baseline.paths());
-			baseline = NativeExecutionTestRetries.retryInterpreted(baseline,
-					() -> run(disabled, sparql, null, Explanation.Level.Executed), Run::paths, actual.paths());
-
-			assertThat(bag(actual.rows())).as("%s results", query.getKey()).isEqualTo(bag(baseline.rows()));
-			assertThat(actual.rows()).as("%s results", query.getKey()).isNotEmpty();
-			assertThat(actual.paths()).as("%s native execution path", query.getKey())
-					.isNotEmpty()
-					.isEqualTo(baseline.paths());
-			assertThat(actual.plannedExecutions()).as("%s planned execution", query.getKey())
-					.isEqualTo(baseline.plannedExecutions());
-			assertThat(actual.explanation()).doesNotContain("statementOrder", "GenericRootPlan");
-			assertThat(baseline.explanation()).doesNotContain("statementOrder", "GenericRootPlan");
-			assertThat(actual.lookupHits()).as("%s adjacency lookup hits", query.getKey())
-					.isGreaterThanOrEqualTo(baseline.lookupHits());
+		List<BindingSet> subjects = new ArrayList<>(ADAPTIVE_NODES);
+		List<BindingSet> stars = new ArrayList<>(ADAPTIVE_NODES);
+		for (int i = 0; i < ADAPTIVE_NODES; i++) {
+			IRI subject = iri("n" + i);
+			subjects.add(new ListBindingSet(List.of("s"), subject));
+			stars.add(new ListBindingSet(List.of("s", "o2"), subject, iri("n" + ((i * 31 + 3) % ADAPTIVE_NODES))));
 		}
+		assertAdaptiveParity(enabled, disabled, "distinct_subjects",
+				"SELECT DISTINCT ?s WHERE { ?s ex:p1 ?o }", subjects);
+		assertAdaptiveParity(enabled, disabled, "distinct_predicates",
+				"SELECT DISTINCT ?p WHERE { ?s ?p ?o }",
+				List.of(new ListBindingSet(List.of("p"), iri("p1")), new ListBindingSet(List.of("p"), iri("p2"))));
+		assertAdaptiveParity(enabled, disabled, "distinct_star",
+				"SELECT DISTINCT ?s ?o2 WHERE { ?s ex:p1 ?o . ?s ex:p2 ?o2 }", stars);
 	}
 
-	private static Map<BindingSet, Long> bag(List<BindingSet> rows) {
-		return rows.stream().collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+	private static void assertAdaptiveParity(SailRepository enabled, SailRepository disabled, String name,
+			String query, List<BindingSet> expected) throws InterruptedException {
+		try (var baselineConnection = disabled.getConnection(); var actualConnection = enabled.getConnection()) {
+			var baselineQuery = (SailTupleQuery) baselineConnection.prepareTupleQuery(PREFIX + query);
+			var actualQuery = (SailTupleQuery) actualConnection.prepareTupleQuery(PREFIX + query);
+			Evaluation baseline = evaluate((LmdbStore) disabled.getSail(), baselineQuery);
+			Evaluation actual = evaluate((LmdbStore) enabled.getSail(), actualQuery);
+			assertThat(baseline.rows()).as("%s first results with experimental optimizations disabled", name)
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(actual.rows()).as("%s first results with experimental optimizations enabled", name)
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(actual.lookupHits()).as("%s adjacency lookup hits", name)
+					.isGreaterThanOrEqualTo(baseline.lookupHits());
+
+			// Executed explanations run the query again and may observe a different Janino compilation state.
+			ExplainedPlan baselinePlan = explain(baselineQuery, Explanation.Level.Executed);
+			ExplainedPlan actualPlan = NativeExecutionTestRetries.retryInterpreted(
+					explain(actualQuery, Explanation.Level.Executed),
+					() -> explain(actualQuery, Explanation.Level.Executed), ExplainedPlan::paths, baselinePlan.paths());
+			baselinePlan = NativeExecutionTestRetries.retryInterpreted(baselinePlan,
+					() -> explain(baselineQuery, Explanation.Level.Executed), ExplainedPlan::paths, actualPlan.paths());
+
+			assertThat(actualPlan.paths()).as("%s native execution path", name)
+					.isNotEmpty()
+					.isEqualTo(baselinePlan.paths());
+			assertThat(actualPlan.plannedExecutions()).as("%s planned execution", name)
+					.isEqualTo(baselinePlan.plannedExecutions());
+			assertThat(actualPlan.explanation()).doesNotContain("statementOrder", "GenericRootPlan");
+			assertThat(baselinePlan.explanation()).doesNotContain("statementOrder", "GenericRootPlan");
+
+			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS))
+					.as("%s warm native compilations", name)
+					.isTrue();
+			assertThat(QueryResults.asList(baselineQuery.evaluate()))
+					.as("%s warm results with experimental optimizations disabled", name)
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(QueryResults.asList(actualQuery.evaluate()))
+					.as("%s warm results with experimental optimizations enabled", name)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
 	}
 
 	@Test
@@ -126,9 +152,11 @@ class LmdbDistinctStableOrderAdjacencyTest {
 		// Adaptive dispatch may choose different native tiers when compilation or cost estimates differ.
 		for (SailRepository repository : List.of(prefer, policyOff, cursor)) {
 			Run adaptive = run(repository, distinct, null);
-			assertThat(adaptive.rows()).containsExactlyInAnyOrderElementsOf(EXPECTED);
-			assertThat(adaptive.paths()).as("adaptive native execution:\n%s", adaptive.explanation()).isNotEmpty();
-			assertThat(adaptive.explanation()).doesNotContain("statementOrder", "GenericRootPlan");
+			assertThat(adaptive.evaluation().rows()).containsExactlyInAnyOrderElementsOf(EXPECTED);
+			assertThat(adaptive.plan().paths())
+					.as("adaptive native execution:\n%s", adaptive.plan().explanation())
+					.isNotEmpty();
+			assertThat(adaptive.plan().explanation()).doesNotContain("statementOrder", "GenericRootPlan");
 		}
 
 		for (String route : List.of("nestedLoop", "irKernelDistinctInterpreted", "irKernelDistinct")) {
@@ -147,62 +175,74 @@ class LmdbDistinctStableOrderAdjacencyTest {
 	@Test
 	@SetSystemProperty(key = "rdf4j.lmdb.nativeQueryEngine.enabled", value = "true")
 	@SetSystemProperty(key = "rdf4j.lmdb.nativeQueryEngine.forceRootGeneric", value = "true")
-	void genericHostedDistinctAndReducedUsePartitionedEvaluation() {
+	void genericHostedDistinctUsesPartitioningAndReducedKeepsItsOwnSemantics() {
 		SailRepository prefer = open("generic-hosted", DirectAdjacencyMode.PREFER, true);
 		for (String modifier : List.of("DISTINCT", "REDUCED")) {
 			Run hosted = run(prefer, FILTERED_JOIN.formatted(modifier), null);
-			assertThat(hosted.rows()).as(modifier).containsExactlyInAnyOrderElementsOf(EXPECTED);
-			assertThat(hosted.explanation()).contains("genericHostedRoot", "GenericRootPlan(reason=forceRootGeneric)");
-			assertThat(hosted.paths()).isEmpty();
-			assertThat(hosted.partitionedEvaluations()).as(modifier).isPositive();
+			if (modifier.equals("DISTINCT")) {
+				assertThat(hosted.evaluation().rows()).as(modifier).containsExactlyInAnyOrderElementsOf(EXPECTED);
+				assertThat(hosted.evaluation().partitionedEvaluations()).as(modifier).isPositive();
+			} else {
+				assertThat(hosted.evaluation().rows()).as(modifier).containsOnlyElementsOf(EXPECTED);
+				assertThat(hosted.evaluation().partitionedEvaluations()).as(modifier).isZero();
+			}
+			assertThat(hosted.plan().explanation())
+					.contains("genericHostedRoot", "GenericRootPlan(reason=forceRootGeneric)");
+			assertThat(hosted.plan().paths()).isEmpty();
 		}
 	}
 
 	private static void assertNative(SailRepository repository, String query, String route, boolean adjacency) {
 		Run run = run(repository, query, route);
-		assertThat(run.rows()).as("%s results for %s", route, query).containsExactlyInAnyOrderElementsOf(EXPECTED);
-		assertThat(run.paths()).as("forced native execution:\n%s", run.explanation()).containsExactly(route);
-		assertThat(run.explanation()).doesNotContain("statementOrder", "GenericRootPlan");
-		assertThat(run.partitionedEvaluations()).isZero();
+		assertThat(run.evaluation().rows()).as("%s results for %s", route, query)
+				.containsExactlyInAnyOrderElementsOf(EXPECTED);
+		assertThat(run.plan().paths()).as("forced native execution:\n%s", run.plan().explanation())
+				.containsExactly(route);
+		assertThat(run.plan().explanation()).doesNotContain("statementOrder", "GenericRootPlan");
+		assertThat(run.evaluation().partitionedEvaluations()).isZero();
 		if (adjacency) {
-			assertThat(run.lookupHits()).as("%s direct-adjacency lookup hits", route).isPositive();
+			assertThat(run.evaluation().lookupHits()).as("%s direct-adjacency lookup hits", route).isPositive();
 			if (route.startsWith("irKernelDistinct")) {
-				assertThat(run.explanation()).contains("JANINO_ADJACENCY_VIEW[");
+				assertThat(run.plan().explanation()).contains("JANINO_ADJACENCY_VIEW[");
 			}
 		} else {
-			assertThat(run.lookupHits()).isZero();
-			assertThat(run.explanation()).doesNotContain("JANINO_ADJACENCY_VIEW[");
+			assertThat(run.evaluation().lookupHits()).isZero();
+			assertThat(run.plan().explanation()).doesNotContain("JANINO_ADJACENCY_VIEW[");
 		}
 	}
 
 	private static Run run(SailRepository repository, String query, String route) {
-		return run(repository, query, route, Explanation.Level.Telemetry);
-	}
-
-	private static Run run(SailRepository repository, String query, String route, Explanation.Level level) {
 		LmdbStore store = (LmdbStore) repository.getSail();
 		try (var connection = repository.getConnection()) {
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
 			prepared.setForcedLmdbExecutionStrategy(route);
-			long hitsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
-			long partitionsBefore = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
-			List<BindingSet> rows = QueryResults.asList(prepared.evaluate());
-			long hits = AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore;
-			long partitioned = LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - partitionsBefore;
-			Explanation explanation = prepared.explain(level);
-			GenericPlanNode plan = explanation.toGenericPlanNode();
-			List<String> paths = nodes(plan)
-					.map(node -> node.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH))
-					.filter(Objects::nonNull)
-					.toList();
-			List<PlannedExecution> plannedExecutions = nodes(plan)
-					.map(node -> new PlannedExecution(
-							node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE),
-							node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND)))
-					.filter(execution -> execution.engine() != null || execution.kind() != null)
-					.toList();
-			return new Run(rows, explanation.toString(), paths, plannedExecutions, hits, partitioned);
+			return new Run(evaluate(store, prepared), explain(prepared, Explanation.Level.Telemetry));
 		}
+	}
+
+	private static Evaluation evaluate(LmdbStore store, SailTupleQuery prepared) {
+		long hitsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
+		long partitionsBefore = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+		List<BindingSet> rows = QueryResults.asList(prepared.evaluate());
+		long hits = AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore;
+		long partitioned = LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - partitionsBefore;
+		return new Evaluation(rows, hits, partitioned);
+	}
+
+	private static ExplainedPlan explain(SailTupleQuery prepared, Explanation.Level level) {
+		Explanation explanation = prepared.explain(level);
+		GenericPlanNode plan = explanation.toGenericPlanNode();
+		List<String> paths = nodes(plan)
+				.map(node -> node.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH))
+				.filter(Objects::nonNull)
+				.toList();
+		List<PlannedExecution> plannedExecutions = nodes(plan)
+				.map(node -> new PlannedExecution(
+						node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE),
+						node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND)))
+				.filter(execution -> execution.engine() != null || execution.kind() != null)
+				.toList();
+		return new ExplainedPlan(explanation.toString(), paths, plannedExecutions);
 	}
 
 	private static Stream<GenericPlanNode> nodes(GenericPlanNode plan) {
@@ -241,16 +281,15 @@ class LmdbDistinctStableOrderAdjacencyTest {
 
 	private SailRepository openAdaptive(String name, boolean experimental) {
 		SailRepository repository = createRepository(name, DirectAdjacencyMode.PREFER, experimental);
-		int nodes = 1500;
 		IRI first = iri("p1");
 		IRI second = iri("p2");
 		try (var connection = repository.getConnection()) {
 			connection.begin();
-			for (int i = 0; i < nodes; i++) {
+			for (int i = 0; i < ADAPTIVE_NODES; i++) {
 				IRI node = iri("n" + i);
-				connection.add(node, first, iri("n" + ((i + 1) % nodes)));
-				connection.add(node, first, iri("n" + ((i + 7) % nodes)));
-				connection.add(node, second, iri("n" + ((i * 31 + 3) % nodes)));
+				connection.add(node, first, iri("n" + ((i + 1) % ADAPTIVE_NODES)));
+				connection.add(node, first, iri("n" + ((i + 7) % ADAPTIVE_NODES)));
+				connection.add(node, second, iri("n" + ((i * 31 + 3) % ADAPTIVE_NODES)));
 			}
 			connection.commit();
 		}
@@ -282,8 +321,12 @@ class LmdbDistinctStableOrderAdjacencyTest {
 	private record PlannedExecution(String engine, String kind) {
 	}
 
-	private record Run(List<BindingSet> rows, String explanation, List<String> paths,
-			List<PlannedExecution> plannedExecutions, long lookupHits,
-			long partitionedEvaluations) {
+	private record Evaluation(List<BindingSet> rows, long lookupHits, long partitionedEvaluations) {
+	}
+
+	private record ExplainedPlan(String explanation, List<String> paths, List<PlannedExecution> plannedExecutions) {
+	}
+
+	private record Run(Evaluation evaluation, ExplainedPlan plan) {
 	}
 }
