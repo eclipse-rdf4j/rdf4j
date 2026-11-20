@@ -60,6 +60,17 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		long UNKNOWN_ID = -1L;
 
 		long canonicalId(Value value);
+
+		/**
+		 * Identity of the active owner that receives every value captured by this provider, or null when no ownership
+		 * proof can be shared. Every non-null result captured while this token stays active must retain this owner for
+		 * the lifetime of the token. A retired token must not be published again. The token is metadata only and must
+		 * not retain the reader or store. Reading it must not invoke application code. It provides no dictionary
+		 * identity guarantees.
+		 */
+		default Object replayOwnershipToken() {
+			return null;
+		}
 	}
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,

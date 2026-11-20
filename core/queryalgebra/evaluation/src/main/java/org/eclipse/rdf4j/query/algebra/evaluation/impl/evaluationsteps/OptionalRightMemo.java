@@ -34,6 +34,8 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -65,7 +67,7 @@ final class OptionalRightMemo {
 		}
 	}
 
-	private record Entry(Key key, List<Value[]> rows, int cells) {
+	private record Entry(Key key, List<Value[]> rows, int cells, Object replayOwner) {
 	}
 
 	/** Stored keys own immutable values; the reusable probe borrows a left row's values for one lookup. */
@@ -94,6 +96,8 @@ final class OptionalRightMemo {
 	private final Runnable checkSnapshot;
 	private final Function<Value, Value> captureValue;
 	private final ReplayValueCapturer canonicalKeys;
+	private final IndexedLayout indexedLayout;
+	private final int[] replaySlots;
 	private final LeftJoin join;
 	private final int maxRows;
 
@@ -103,11 +107,29 @@ final class OptionalRightMemo {
 		this.checkSnapshot = checkSnapshot;
 		this.captureValue = captureValue;
 		this.canonicalKeys = captureValue instanceof ReplayValueCapturer keys ? keys : null;
+		this.indexedLayout = canonicalKeys == null ? null : context.indexedBindingLayout();
+		this.replaySlots = replaySlots(indexedLayout, names);
 		this.join = join;
 		this.slots = names.stream()
 				.map(name -> new Slot(context.getValue(name), context.hasBinding(name), context.setBinding(name)))
 				.toArray(Slot[]::new);
 		this.maxRows = MAX_CELLS_PER_RUN / (slots.length + ROW_OVERHEAD_CELLS);
+	}
+
+	private static int[] replaySlots(IndexedLayout layout, Set<String> names) {
+		if (layout == null) {
+			return null;
+		}
+		int[] slots = new int[names.size()];
+		int index = 0;
+		for (String name : names) {
+			int slot = layout.slot(name);
+			if (slot < 0) {
+				return null;
+			}
+			slots[index++] = slot;
+		}
+		return slots;
 	}
 
 	static OptionalRightMemo prepare(LeftJoin join, QueryEvaluationContext context, Runnable checkSnapshot,
@@ -232,7 +254,7 @@ final class OptionalRightMemo {
 				if (current.rows().isEmpty()) {
 					return QueryEvaluationStep.EMPTY_ITERATION;
 				}
-				return new Replay(bindings, current.rows());
+				return new Replay(bindings, current);
 			}
 			Key key = new Key(slots.length);
 			readKey(key, bindings);
@@ -243,7 +265,7 @@ final class OptionalRightMemo {
 			}
 			CloseableIteration<BindingSet> input = right.evaluate(bindings);
 			if (input == QueryEvaluationStep.EMPTY_ITERATION) {
-				publish(key, List.of());
+				publish(key, List.of(), null);
 				return input;
 			}
 			return new Capture(this, key, input);
@@ -277,13 +299,13 @@ final class OptionalRightMemo {
 			}
 		}
 
-		synchronized void publish(Key key, List<Value[]> rows) {
+		synchronized void publish(Key key, List<Value[]> rows, Object replayOwner) {
 			if (closed) {
 				return;
 			}
 			int cells = ENTRY_OVERHEAD_CELLS + slots.length
 					+ (rows == null ? 0 : rows.size() * (slots.length + ROW_OVERHEAD_CELLS));
-			Entry next = new Entry(key, rows, cells);
+			Entry next = new Entry(key, rows, cells, replayOwner);
 			if (completed == null && recent != null && (key.indexable || recent.key().indexable)) {
 				completed = new LinkedHashMap<>(16, 0.75f, true);
 				if (recent.key().indexable) {
@@ -317,12 +339,14 @@ final class OptionalRightMemo {
 		private final Scope scope;
 		private final Key key;
 		private final CloseableIteration<BindingSet> input;
+		private final Object replayOwner;
 		private List<Value[]> pending = new ArrayList<>();
 
 		Capture(Scope scope, Key key, CloseableIteration<BindingSet> input) {
 			this.scope = scope;
 			this.key = key;
 			this.input = input;
+			this.replayOwner = replaySlots == null ? null : canonicalKeys.replayOwnershipToken();
 		}
 
 		@Override
@@ -336,7 +360,11 @@ final class OptionalRightMemo {
 						List<Value[]> rows = pending;
 						close();
 						if (!isCancellationRequested() && !Thread.currentThread().isInterrupted()) {
-							scope.publish(key, rows);
+							Object owner = rows != null && replayOwner != null
+									&& canonicalKeys.replayOwnershipToken() == replayOwner
+											? replayOwner
+											: null;
+							scope.publish(key, rows, owner);
 						}
 					}
 					return null;
@@ -394,12 +422,14 @@ final class OptionalRightMemo {
 
 	private final class Replay extends LookAheadIteration<BindingSet> {
 		private final BindingSet left;
+		private final Object replayOwner;
 		private volatile List<Value[]> rows;
 		private int position;
 
-		Replay(BindingSet left, List<Value[]> rows) {
+		Replay(BindingSet left, Entry entry) {
 			this.left = left;
-			this.rows = rows;
+			this.replayOwner = entry.replayOwner();
+			this.rows = entry.rows();
 		}
 
 		@Override
@@ -409,6 +439,12 @@ final class OptionalRightMemo {
 				return null;
 			}
 			Value[] additions = available.get(position++);
+			if (replayOwner != null) {
+				ArrayBindingSet merged = indexedLayout.replay(left, replaySlots, additions, replayOwner);
+				if (merged != null) {
+					return merged;
+				}
+			}
 			MutableBindingSet merged = context.createBindingSet(left);
 			for (int column = 0; column < additions.length; column++) {
 				Value value = additions[column];

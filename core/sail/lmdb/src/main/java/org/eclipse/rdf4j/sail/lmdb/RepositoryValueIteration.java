@@ -31,6 +31,9 @@ import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.InternedIRI;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.ResultSnapshotLayout;
@@ -307,6 +310,53 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 
 	/** Cheap check that a root needs no owner scope, decode or child traversal; uncertain shapes take the full path. */
 	private static boolean isPrepared(Value value) {
+		if (value == null) {
+			return true;
+		}
+		// Exact types keep interface dispatch out of the result scan while leaving subclass hooks intact.
+		Class<?> type = value.getClass();
+		if (type == LmdbIRI.class) {
+			LmdbIRI iri = (LmdbIRI) value;
+			return iri.isInitialized() && !(iri.getValueStoreRevision() instanceof ValueStoreRevision.Lazy);
+		}
+		if (type == LmdbLiteral.class) {
+			LmdbLiteral literal = (LmdbLiteral) value;
+			return literal.isInitialized() && !(literal.getValueStoreRevision() instanceof ValueStoreRevision.Lazy)
+					&& isPrepared(literal.loadedDatatype());
+		}
+		if (type == LmdbBNode.class) {
+			LmdbBNode bnode = (LmdbBNode) value;
+			return bnode.isInitialized() && !(bnode.getValueStoreRevision() instanceof ValueStoreRevision.Lazy);
+		}
+		if (type == InternedIRI.class || type == SimpleIRI.class) {
+			return true;
+		}
+		if (type == SimpleLiteral.class) {
+			return isPrepared(((SimpleLiteral) value).getDatatype());
+		}
+		PreparedLmdbValue.State state = PreparedLmdbValue.nonTripleState(value);
+		if (state != null) {
+			Value payload = state.payload;
+			if (payload == null || state.proof.identity().revision() instanceof ValueStoreRevision.Lazy) {
+				return false;
+			}
+			if (state.type != Value.Type.Literal) {
+				return true;
+			}
+			if (payload instanceof LmdbLiteral literal) {
+				return isPrepared(literal.getDatatype());
+			}
+			if (payload instanceof SimpleLiteral literal) {
+				return isPrepared(literal.getDatatype());
+			}
+			if (payload instanceof Literal literal) {
+				return isPrepared(literal.getDatatype());
+			}
+		}
+		return isOtherValuePrepared(value);
+	}
+
+	private static boolean isOtherValuePrepared(Value value) {
 		if (value instanceof TripleTerm) {
 			return false;
 		}
@@ -315,10 +365,6 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 				return false;
 			}
 			if (value instanceof Literal) {
-				if (value.getClass() == LmdbLiteral.class) {
-					Value datatype = ((LmdbLiteral) value).loadedDatatype();
-					return datatype == null || isPrepared(datatype);
-				}
 				if (lmdb instanceof PreparedLmdbValue.Prepared prepared
 						&& prepared.state().payload instanceof Literal literal) {
 					return isPrepared(literal.getDatatype());

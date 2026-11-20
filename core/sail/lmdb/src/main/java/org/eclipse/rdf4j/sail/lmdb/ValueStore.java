@@ -10811,11 +10811,21 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				return isNativeOfSnapshot(current, value);
 			}
+
+			@Override
+			public Object replayOwnershipToken() {
+				return ValuePreparer.this.replayOwnershipToken();
+			}
 		};
 		private final ReplayValueCapturer replayCapturer = new ReplayValueCapturer() {
 			@Override
 			public Value apply(Value value) {
 				return captureForReplay(value);
+			}
+
+			@Override
+			public Object replayOwnershipToken() {
+				return ValuePreparer.this.replayOwnershipToken();
 			}
 
 			@Override
@@ -10861,6 +10871,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
 			return (!identity.decodedFromDictionary() || !nativeValue.isExternallyOwned())
 					&& current.provesStatementIds(identity);
+		}
+
+		private Object replayOwnershipToken() {
+			ReadSnapshot current = snapshot;
+			return current != null && current.hasStableIds() ? current.preparationOwner : null;
 		}
 
 		private ValuePreparer(ReadSnapshot snapshot) {

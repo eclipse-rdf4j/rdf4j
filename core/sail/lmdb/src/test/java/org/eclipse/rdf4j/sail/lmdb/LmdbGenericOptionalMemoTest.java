@@ -12,12 +12,15 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.io.File;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -110,6 +113,43 @@ class LmdbGenericOptionalMemoTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	void replayedNestedValuesRemainReadableAfterRepositoryClose(@TempDir File dataDir) {
+		var config = new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(false)
+				.setDirectAdjacencyEnabled(false);
+		var repository = new SailRepository(new LmdbStore(dataDir, config));
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		var commonKey = vf.createIRI("urn:shared-key");
+		var absentKey = vf.createIRI("urn:absent-key");
+		var first = vf.createIRI("urn:first");
+		var second = vf.createIRI("urn:second");
+		var third = vf.createIRI("urn:third");
+		var child = vf.createIRI("urn:child");
+		var key = vf.createIRI("urn:key");
+		var leaf = vf.createIRI("urn:leaf");
+		var datatype = vf.createIRI("urn:custom-datatype");
+		var nested = vf.createTripleTerm(child, leaf, vf.createLiteral("typed value", datatype));
+		List<BindingSet> rows;
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			connection.add(first, key, commonKey);
+			connection.add(second, key, commonKey);
+			connection.add(third, key, absentKey);
+			connection.add(commonKey, vf.createIRI("urn:detail"), child);
+			connection.add(child, leaf, nested);
+			var query = connection.prepareTupleQuery(NESTED_OPTIONAL_QUERY);
+			rows = QueryResults.asList(query.evaluate());
+			assertThat(query.explain(Explanation.Level.Telemetry).toString()).contains("optionalRightMemoHitsActual=1");
+		} finally {
+			repository.shutDown();
+		}
+		assertThat(rows).extracting(row -> row.getValue("root"), row -> row.getValue("value"))
+				.containsExactlyInAnyOrder(tuple(first, nested), tuple(second, nested), tuple(third, null));
+		assertThat(rows).filteredOn(row -> third.equals(row.getValue("root")))
+				.singleElement()
+				.satisfies(row -> assertThat(row.hasBinding("value")).isFalse());
 	}
 
 	@Test
