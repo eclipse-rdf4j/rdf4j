@@ -66,7 +66,8 @@ class LmdbIndexAwareJoinOptimizer extends QueryJoinOptimizer {
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 			double cost = super.getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
 			if (!(tupleExpr instanceof StatementPattern pattern)
-					|| !(lmdbStatistics instanceof LmdbEvaluationStatistics statistics)) {
+					|| !(lmdbStatistics instanceof LmdbEvaluationStatistics statistics)
+					|| statistics.supportsJoinEstimation()) {
 				return cost;
 			}
 
@@ -105,8 +106,8 @@ class LmdbIndexAwareJoinOptimizer extends QueryJoinOptimizer {
 			}
 
 			int u = Math.min(k - p, boundVarCount);
-			double cardinality = cardinalityMap.containsKey(pattern) ? cardinalityMap.get(pattern)
-					: pattern.getCardinality();
+			// same lookup as the base cost: the cached cardinality of the node wins over the map
+			double cardinality = pattern.isCardinalitySet() ? pattern.getCardinality() : cardinalityMap.get(pattern);
 			return cost * Math.pow(cardinality + 5, (double) u / nonConstantVarCount);
 		}
 	}
