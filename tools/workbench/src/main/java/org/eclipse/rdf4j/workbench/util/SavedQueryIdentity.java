@@ -40,8 +40,8 @@ import jakarta.servlet.http.HttpServletRequest;
  * Stable, server-keyed owner identifiers for private saved queries. A claimed user name alone is not an identity: a
  * public RDF4J Server may accept any credentials. Knowledge of the complete credential pair is required to claim a
  * private query saved under such an identifier, and the password is neither stored with queries nor sent to the
- * browser. Queries that earlier versions saved under the plain user name have no such proof: whoever connects with that
- * user name can claim them ({@link #legacyOwner}).
+ * browser. Queries that earlier versions saved under the plain user name have no such proof and cannot be automatically
+ * claimed as private queries by a credential-derived owner.
  */
 public final class SavedQueryIdentity {
 
@@ -75,10 +75,12 @@ public final class SavedQueryIdentity {
 	}
 
 	/**
-	 * The owner earlier versions stored for the private queries of {@code owner}: its plain user name, so those queries
-	 * stay the user's. An owner that is no owner ID is its own. A user name that reads as an owner ID claims nothing:
-	 * owner IDs are listed with shared queries, and would otherwise sign in as the user they name.
+	 * Returns the plain username encoded in a credential-derived owner ID. This is retained for migration tooling and
+	 * must not be used to authorize private saved queries: the old records have no password verifier.
+	 *
+	 * @deprecated use a trusted, explicit migration instead of granting access by username
 	 */
+	@Deprecated(since = "6.2")
 	public static String legacyOwner(String owner) {
 		String name = displayName(owner);
 		return owner.startsWith("wb2.") && !name.startsWith("wb2.") ? name : owner;

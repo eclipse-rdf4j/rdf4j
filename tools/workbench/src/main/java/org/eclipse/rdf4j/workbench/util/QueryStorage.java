@@ -133,26 +133,26 @@ public class QueryStorage {
 			+ ":repository ?repository ; :shared ?shared ; :queryLanguage ?queryLanguage ; :query ?queryText ; "
 			+ ":infer ?infer ; :rowsPerPage ?rowsPerPage ; :queryTimeout ?queryTimeout . } WHERE {}";
 
-	// The user's own query of that name, also one saved under the plain user name by earlier versions (?legacyUser).
-	private static final String OWN_QUERY = "?query :repository ?repository ; :userName ?user ; :queryName ?queryName . "
-			+ "FILTER (?user = ?currentUser || ?user = ?legacyUser) ";
+	private static final String OWN_QUERY = "?query :repository ?repository ; :userName ?currentUser ; "
+			+ ":queryName ?queryName ; :shared ?shared . FILTER (?currentUser != \"\" || ?shared) ";
 
 	private static final String ASK_EXISTS = PRE + "ASK { " + OWN_QUERY + "}";
 
-	// ?legacyUser: the owner earlier versions stored for the current user's queries (SavedQueryIdentity.legacyOwner).
-	private static final String UPDATE_FILTER = "FILTER (?user = ?currentUser || ?user = ?legacyUser "
-			+ "|| ?user = \"\" ) } ";
+	private static final String UPDATE_FILTER = "FILTER ((?currentUser != \"\" && ?user = ?currentUser) "
+			+ "|| (?user = \"\" && ?shared)) } ";
 
-	private static final String READ_FILTER = "FILTER (?user = ?currentUser || ?user = ?legacyUser "
-			+ "|| ?user = \"\" || ?shared) } ";
+	private static final String READ_FILTER = "FILTER ((?currentUser != \"\" && ?user = ?currentUser) "
+			+ "|| ?shared) } ";
 
-	private static final String ASK_UPDATABLE = PRE + "ASK { ?query :userName ?user . " + UPDATE_FILTER;
+	private static final String ASK_UPDATABLE = PRE + "ASK { ?query :userName ?user ; :shared ?shared . "
+			+ UPDATE_FILTER;
 
 	private static final String ASK_READABLE = PRE + "ASK { ?query :userName ?user  ; :shared ?shared . "
 			+ READ_FILTER;
 
 	private static final String DELETE = PRE
-			+ "DELETE { ?query ?p ?o } WHERE { ?query :userName ?user ; ?p ?o . " + UPDATE_FILTER;
+			+ "DELETE { ?query ?p ?o } WHERE { ?query :userName ?user ; :shared ?shared ; ?p ?o . "
+			+ UPDATE_FILTER;
 
 	private static final String MATCH = ":shared ?oldShared ; :queryLanguage ?oldQueryLanguage ; "
 			+ ":query ?oldQueryText ; :rowsPerPage ?oldRowsPerPage .\n";
@@ -164,11 +164,19 @@ public class QueryStorage {
 			+ "DELETE { ?query " + MATCH + "?query :infer ?oldInfer .\n?query :queryTimeout ?oldQueryTimeout .\n"
 			+ "}\nINSERT { ?query :shared ?shared ; :queryLanguage ?queryLanguage ; :query ?queryText ; "
 			+ ":infer ?infer ; :rowsPerPage ?rowsPerPage ; :queryTimeout ?queryTimeout . }\n"
-			+ "WHERE { ?query :userName ?user ; " + MATCH + OPTIONAL_UPDATE_FIELDS + UPDATE_FILTER;
+			+ "WHERE { ?query :userName ?user ; " + MATCH + OPTIONAL_UPDATE_FIELDS
+			+ "FILTER ((?currentUser != \"\" && ?user = ?currentUser) "
+			+ "|| (?user = \"\" && ?oldShared)) }";
 
-	// One saved under the current owner comes first.
-	private static final String SELECT_URI = PRE + "SELECT ?query { " + OWN_QUERY
-			+ "} ORDER BY DESC(?user = ?currentUser)";
+	private static final String SELECT_URI = PRE + "SELECT ?query { " + OWN_QUERY + "}";
+
+	private static final String SELECT_READABLE_URI = PRE
+			+ "SELECT ?query { ?query :repository ?repository ; :userName ?user ; :queryName ?queryName ; "
+			+ ":shared ?shared . FILTER (?user = ?owner) " + READ_FILTER + " ORDER BY ?query";
+
+	private static final String SELECT_READABLE_TEXT = PRE
+			+ "SELECT ?queryText { ?query :userName ?user ; :shared ?shared ; :query ?queryText . "
+			+ READ_FILTER;
 
 	private static final String SELECT_TEXT = PRE
 			+ "SELECT ?queryText { [] :repository ?repository ; :userName ?userName ; :queryName ?queryName ; :query ?queryText . } ";
@@ -188,8 +196,6 @@ public class QueryStorage {
 	private static final String USER_NAME = "userName";
 
 	private static final String CURRENT_USER = "currentUser";
-
-	private static final String LEGACY_USER = "legacyUser";
 
 	private static final String REPOSITORY = "repository";
 
@@ -311,6 +317,25 @@ public class QueryStorage {
 	public boolean canRead(IRI query, String currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
 		return performAccessQuery(ASK_READABLE, query, currentUser);
+	}
+
+	/**
+	 * Retrieves text only when the current user can read the same query resource. The access policy and text are
+	 * evaluated together so duplicate names and a concurrent access change cannot redirect the read to another record.
+	 */
+	public String getReadableQueryText(IRI query, String currentUser)
+			throws RepositoryException, QueryEvaluationException, MalformedQueryException, BadRequestException {
+		try (RepositoryConnection connection = this.queries.getConnection()) {
+			TupleQuery select = connection.prepareTupleQuery(QueryLanguage.SPARQL, SELECT_READABLE_TEXT);
+			select.setBinding(QUERY, query);
+			bindCurrentUser(select, currentUser);
+			try (TupleQueryResult result = select.evaluate()) {
+				if (result.hasNext()) {
+					return result.next().getValue("queryText").stringValue();
+				}
+				throw new BadRequestException("Current user may not read the given query.");
+			}
+		}
 	}
 
 	private boolean performAccessQuery(String accessSPARQL, IRI query, String currentUser)
@@ -439,6 +464,30 @@ public class QueryStorage {
 	}
 
 	/**
+	 * Selects a readable query resource by its searchable attributes. Multiple resources can have the same owner and
+	 * name, so inaccessible resources are filtered before the first result is chosen.
+	 */
+	public IRI selectReadableSavedQuery(final String repositoryReference, final String owner,
+			final String queryName, final String currentUser) throws RDF4JException, BadRequestException {
+		try (RepositoryConnection connection = this.queries.getConnection()) {
+			TupleQuery select = connection.prepareTupleQuery(QueryLanguage.SPARQL, SELECT_READABLE_URI);
+			select.setBinding(REPOSITORY, VF.createIRI(repositoryReference));
+			select.setBinding("owner", VF.createLiteral(owner));
+			select.setBinding(QUERY_NAME, VF.createLiteral(queryName));
+			bindCurrentUser(select, currentUser);
+			try (TupleQueryResult result = select.evaluate()) {
+				if (result.hasNext()) {
+					return (IRI) result.next().getValue(QUERY);
+				}
+			}
+		}
+		// Report an inaccessible matching query separately where ordinary owner lookup can find it. An old private
+		// empty-owner record is excluded from that lookup because anonymous requests cannot claim it.
+		selectSavedQuery(repositoryReference, owner, queryName);
+		throw new BadRequestException("Current user may not read the given query.");
+	}
+
+	/**
 	 * Retrieves the specified query text. No security checks are done here. If the saved query exists, its text is
 	 * returned.
 	 *
@@ -467,10 +516,9 @@ public class QueryStorage {
 		}
 	}
 
-	/** The user the access filters check, and the owner earlier versions stored for that user's queries. */
+	/** The user the access filters check. */
 	private static void bindCurrentUser(Operation operation, String currentUser) {
 		operation.setBinding(CURRENT_USER, VF.createLiteral(currentUser));
-		operation.setBinding(LEGACY_USER, VF.createLiteral(SavedQueryIdentity.legacyOwner(currentUser)));
 	}
 
 	private void bindSavedQueryFields(Operation operation, String userName, boolean shared,

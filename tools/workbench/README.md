@@ -134,9 +134,11 @@ JSONP is disabled by the default `org.eclipse.rdf4j.workbench.jsonp.enabled=fals
 Keep it disabled on public deployments: enabling JSONP lets another origin load Workbench responses as scripts.
 
 Private saved queries created before session-backed ownership used a browser-claimed username. Workbench cannot verify
-which password owned them, so they stay with that plain user name: anyone who connects with that user name, whatever
-the password, can read, change and delete them. An operator should review and re-save any legacy private queries under
-the intended account before public release.
+which password owned them. These private legacy queries, including private queries with an empty owner, are therefore
+hidden and cannot be edited through Workbench. Shared legacy queries remain readable. A trusted operator can inspect a
+backup of the saved-query store in the Workbench application data directory, verify ownership outside Workbench, and
+re-create each private query while signed in with the intended account. Workbench does not automatically assign old
+private queries to a credential-derived owner because the stored data contains no proof of that assignment.
 
 ## Build everything from a clean checkout
 

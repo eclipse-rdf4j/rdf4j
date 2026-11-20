@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.workbench.support.TestServerCredentials;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.SavedQueryIdentity;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -163,10 +164,10 @@ class QueryServletFlowCoverageTest {
 		WorkbenchRequest missingCancelRequest = mock(WorkbenchRequest.class);
 		WorkbenchRequest nullCancelRequest = mock(WorkbenchRequest.class);
 		HttpServletResponse response = mock(HttpServletResponse.class);
+		String currentOwner = SavedQueryIdentity.owner(editRequest, null);
 
-		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
-				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
-		when(storage.canRead(any(), eq("alice"))).thenReturn(false);
+		when(storage.selectReadableSavedQuery(anyString(), eq("owner"), eq("saved-query"), eq(currentOwner)))
+				.thenThrow(new BadRequestException("Current user may not read the given query."));
 		stubAction(missingCancelRequest, "cancel-explain");
 		when(missingCancelRequest.isParameterPresent("explain-request-id")).thenReturn(false);
 		stubAction(nullCancelRequest, "cancel-explain");

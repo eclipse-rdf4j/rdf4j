@@ -299,9 +299,10 @@ class QueryServletCoverageTest {
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
 		mockSignedIn(request, "alice");
 
-		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, SavedQueryIdentity.owner(request, null))).thenReturn(true);
-		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"))).thenReturn(SHORT_QUERY);
+		String currentOwner = SavedQueryIdentity.owner(request, null);
+		when(storage.selectReadableSavedQuery(anyString(), eq("owner"), eq("saved-query"), eq(currentOwner)))
+				.thenReturn(queryId);
+		when(storage.getReadableQueryText(queryId, currentOwner)).thenReturn(SHORT_QUERY);
 		when(response.getOutputStream()).thenReturn(outputStream);
 		stubAction(request, "edit");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
@@ -334,9 +335,8 @@ class QueryServletCoverageTest {
 		mockSignedIn(unreadableRequest, "alice");
 		String currentOwner = SavedQueryIdentity.owner(unreadableRequest, null);
 
-		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
-				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
-		when(storage.canRead(any(IRI.class), eq(currentOwner))).thenReturn(false);
+		when(storage.selectReadableSavedQuery(anyString(), eq("owner"), eq("saved-query"), eq(currentOwner)))
+				.thenThrow(new BadRequestException("Current user may not read the given query."));
 		stubAction(unreadableRequest, "exec");
 		when(unreadableRequest.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(unreadableRequest.getParameter(QueryServlet.REF)).thenReturn("id");
