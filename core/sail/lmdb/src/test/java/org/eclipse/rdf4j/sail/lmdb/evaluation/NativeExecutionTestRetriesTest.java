@@ -24,7 +24,8 @@ class NativeExecutionTestRetriesTest {
 	@Test
 	void stopsWhenTheExpectedCompiledRoutesAppear() throws InterruptedException {
 		List<String> compiled = List.of("irKernelDistinct", "irAggregateParallel", "nestedLoop");
-		List<String> interpreted = List.of("irKernelDistinctInterpreted", "irAggregateParallelInterpreted", "nestedLoop");
+		List<String> interpreted = List.of("irKernelDistinctInterpreted", "irAggregateParallelInterpreted",
+				"nestedLoop");
 		AtomicInteger retries = new AtomicInteger();
 		assertThat(NativeExecutionTestRetries.retryInterpreted(interpreted, () -> {
 			retries.incrementAndGet();

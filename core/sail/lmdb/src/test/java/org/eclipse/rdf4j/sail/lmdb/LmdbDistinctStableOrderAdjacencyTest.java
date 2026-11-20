@@ -94,7 +94,8 @@ class LmdbDistinctStableOrderAdjacencyTest {
 			assertThat(bag(actual.rows())).as("%s results", query.getKey()).isEqualTo(bag(baseline.rows()));
 			assertThat(actual.rows()).as("%s results", query.getKey()).isNotEmpty();
 			assertThat(actual.paths()).as("%s native execution path", query.getKey())
-					.isNotEmpty().isEqualTo(baseline.paths());
+					.isNotEmpty()
+					.isEqualTo(baseline.paths());
 			assertThat(actual.plannedExecutions()).as("%s planned execution", query.getKey())
 					.isEqualTo(baseline.plannedExecutions());
 			assertThat(actual.explanation()).doesNotContain("statementOrder", "GenericRootPlan");
