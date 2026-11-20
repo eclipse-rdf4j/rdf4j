@@ -212,7 +212,7 @@ class LmdbDistinctStableOrderStrategyTest {
 	}
 
 	@Test
-	void testDistinctFallsBackWhenExperimentalOptimizationsAreOff() {
+	void testDistinctUsesPartitionedIteratorUnderDefaultPolicy() {
 		EvaluationStrategy strategy = createStrategy(new OrderedDuplicateTripleSource(), QueryExecutionPolicy.DEFAULT);
 		TupleExpr tupleExpr = parse("select distinct ?type where { ?a a ?type. }");
 
@@ -222,7 +222,7 @@ class LmdbDistinctStableOrderStrategyTest {
 
 		QueryEvaluationStep prepared = strategy.precompile(distinct);
 		try (CloseableIteration<BindingSet> iteration = prepared.evaluate(EmptyBindingSet.getInstance())) {
-			assertNotEquals(PARTITIONED_ITERATOR, iteration.getClass().getSimpleName());
+			assertEquals(PARTITIONED_ITERATOR, iteration.getClass().getSimpleName());
 			assertEquals(List.of("urn:type1", "urn:type2"), extractValues(iteration, "type"));
 		}
 	}

@@ -59,9 +59,9 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	/**
 	 * @param nativeEngine        when {@code true}, the pipeline is built for the native query engine and adds
 	 *                            {@link LmdbSubqueryGroupPushdownOptimizer} after the first {@link FilterOptimizer}.
-	 * @param stableOrderDistinct when {@code true} (and experimental optimizations are on), steer join ordering towards
-	 *                            plans whose leading pattern can supply the order for a partitioned {@code DISTINCT}
-	 *                            and mark that pattern. Only for strategies that evaluate through the generic engine,
+	 * @param stableOrderDistinct when {@code true}, mark the leading pattern when it can supply order for partitioned
+	 *                            {@code DISTINCT}. The experimental policy can also steer join selection towards an
+	 *                            ordered leading pattern. Only for strategies that evaluate through the generic engine,
 	 *                            so it cannot be combined with {@code nativeEngine}: the native engine keeps its own
 	 *                            planner.
 	 */
@@ -89,12 +89,16 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
-			if (!nativeEngine) {
+			if (!nativeEngine && !stableOrderDistinct) {
 				return delegate.getOptimizers();
 			}
 			List<QueryOptimizer> plain = new ArrayList<>();
 			delegate.getOptimizers().forEach(plain::add);
-			insertGroupPushdown(plain);
+			if (nativeEngine) {
+				insertGroupPushdown(plain);
+			} else {
+				plain.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
+			}
 			return plain;
 		}
 		List<QueryOptimizer> optimizers = new ArrayList<>();

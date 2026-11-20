@@ -142,19 +142,15 @@ public final class LmdbDistinctOrderMarker {
 			return pattern.getSupportedOrders(tripleSource);
 		}
 		var datasets = sailSource.getDatasets(LmdbSailStore.LmdbSailDataset.class);
-		if (datasets.isEmpty()) {
+		if (datasets.isEmpty() || sailSource.getComparator() == null) {
 			// Behind an opaque dataset wrapper we cannot compare the snapshot's access paths.
 			return Set.of();
 		}
 		int possiblyBound = possiblyBoundComponents(pattern, dataset, boundOutside);
 		return pattern.getSupportedOrders((subject, predicate, object, contexts) -> {
-			Set<StatementOrder> supported = sailSource.getSupportedOrders(subject, predicate, object, contexts);
-			if (supported.isEmpty()) {
-				return supported;
-			}
 			int fixed = (subject != null ? 1 : 0) | (predicate != null ? 2 : 0) | (object != null ? 4 : 0)
 					| (contexts.length == 1 ? 8 : 0);
-			var orders = EnumSet.copyOf(supported);
+			var orders = EnumSet.allOf(StatementOrder.class);
 			for (var source : datasets) {
 				orders.retainAll(source.getPrefixPreservingOrders(fixed, possiblyBound));
 			}

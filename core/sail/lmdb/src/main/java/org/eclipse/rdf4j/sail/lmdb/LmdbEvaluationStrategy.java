@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -27,6 +28,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinct;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinctCount;
 
 /**
  * The standard evaluation strategy plus partitioned {@code DISTINCT}: when the optimizer has committed the pattern that
@@ -46,6 +49,19 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 
 	@Override
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context) {
+		QueryEvaluationStep indexed = LmdbIndexedDistinct.prepare(node, context, tripleSource,
+				() -> preparePartitionedDistinct(node, context));
+		return indexed == null ? preparePartitionedDistinct(node, context) : indexed;
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) {
+		QueryEvaluationStep indexed = LmdbIndexedDistinctCount.prepare(node, context, tripleSource,
+				() -> super.prepare(node, context));
+		return indexed == null ? super.prepare(node, context) : indexed;
+	}
+
+	private QueryEvaluationStep preparePartitionedDistinct(Distinct node, QueryEvaluationContext context) {
 		Optional<String> partitionBindingName = partitionBindingName(node.getArg(), context.getDataset());
 		if (partitionBindingName.isPresent()) {
 			return partitioned(node.getArg(), partitionBindingName.get(), context);
@@ -54,8 +70,7 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	}
 
 	private Optional<String> partitionBindingName(TupleExpr arg, Dataset dataset) {
-		if (!getQueryExecutionPolicy().experimentalQueryOptimizations()
-				|| !LmdbDistinctOrderMarker.enabled(tripleSource)) {
+		if (!LmdbDistinctOrderMarker.enabled(tripleSource)) {
 			return Optional.empty();
 		}
 		return new LmdbPlannedOrder(arg, dataset).partitionBindingName();

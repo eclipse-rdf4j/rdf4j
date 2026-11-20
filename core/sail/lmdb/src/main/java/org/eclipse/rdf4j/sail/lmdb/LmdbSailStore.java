@@ -17390,7 +17390,8 @@ class LmdbSailStore implements SailStore {
 
 		Set<StatementOrder> getPrefixPreservingOrders(int fixedMask, int possiblyBoundMask) {
 			ensureSnapshot();
-			return tripleStore.getPrefixPreservingOrders(txn, fixedMask, possiblyBoundMask);
+			return valueStore.getFormat().isLegacy() ? Set.of()
+					: tripleStore.getPrefixPreservingOrders(txn, fixedMask, possiblyBoundMask);
 		}
 
 		@Override

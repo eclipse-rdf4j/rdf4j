@@ -185,7 +185,7 @@ class LmdbPartitionedDistinctRegressionTest {
 			"psoc,posc | ?o | true"
 	})
 	void distinctKeepsThePredicatePrefixWhenOnlySubjectIsProjected(String indexes, String objectPattern,
-			boolean partitioned) {
+			boolean indexed) {
 		IRI common = VF.createIRI("urn:common");
 		IRI rare = VF.createIRI("urn:rare");
 		IRI object = VF.createIRI("urn:o");
@@ -200,13 +200,20 @@ class LmdbPartitionedDistinctRegressionTest {
 			connection.commit();
 
 			var query = parse("SELECT DISTINCT ?s WHERE { ?s <urn:rare> " + objectPattern + " }");
-			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+			long partitionsBefore = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+			long cursorsBefore = LmdbPrefixRunPlan.OPENED.get();
+			long keysBefore = LmdbPrefixRunPlan.ROWS_SCANNED.get();
 			assertThat(evaluate(connection, query)).extracting(row -> row.getValue("s")).containsExactly(match);
-			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - before)
-					.isEqualTo(partitioned ? 1 : 0);
-			var plan = connection.explain(Explanation.Level.Telemetry, query, null,
-					EmptyBindingSet.getInstance(), true, 10);
-			assertThat(largestScan(plan.toGenericPlanNode())).isEqualTo(1L);
+			if (indexed) {
+				assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get() - keysBefore).isEqualTo(1L);
+			} else {
+				var plan = connection.explain(Explanation.Level.Telemetry, query, null,
+						EmptyBindingSet.getInstance(), true, 10);
+				assertThat(largestScan(plan.toGenericPlanNode())).isEqualTo(1L);
+				assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isEqualTo(keysBefore);
+			}
+			assertThat(LmdbPrefixRunPlan.OPENED.get() - cursorsBefore).isEqualTo(indexed ? 1L : 0L);
+			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(partitionsBefore);
 		} finally {
 			store.shutDown();
 		}
@@ -507,16 +514,20 @@ class LmdbPartitionedDistinctRegressionTest {
 		MEMBERSHIP_ADD
 	}
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void partitionedDistinctHonorsCircuitBreakerDuringPulls(boolean criticalPressure) {
-		String query = "SELECT DISTINCT ?a ?b WHERE { ?a <urn:p> ?b }";
-		LmdbStore store = openStore(false);
+	@ParameterizedTest(name = "indexed={0}, criticalPressure={1}")
+	@CsvSource({ "false, false", "false, true", "true, false", "true, true" })
+	void distinctHonorsCircuitBreakerDuringPulls(boolean indexed, boolean criticalPressure) {
+		String query = indexed ? "SELECT DISTINCT ?a ?b WHERE { ?a <urn:p> ?b }"
+				: "SELECT DISTINCT ?a ?b WHERE { ?a <urn:p> ?b . ?b <urn:q> ?v }";
+		LmdbStore store = openStore(false, "psoc,posc");
 		try (var connection = store.getConnection()) {
 			loadAliasedValues(connection);
-			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+			long partitionsBefore = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+			long cursorsBefore = LmdbPrefixRunPlan.OPENED.get();
 			try (var result = connection.evaluate(parse(query), null, EmptyBindingSet.getInstance(), false)) {
-				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(before + 1);
+				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - partitionsBefore)
+						.isEqualTo(indexed ? 0L : 1L);
+				assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(cursorsBefore);
 
 				QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
 				QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "test",
@@ -532,8 +543,11 @@ class LmdbPartitionedDistinctRegressionTest {
 								.hasMessageContaining("Query cancelled by global memory circuit breaker");
 						assertThat(handle.isCancelRequested()).isTrue();
 					} else {
-						assertThat(Iterations.asList(result)).hasSize(3);
+						assertThat(Iterations.asList(result)).extracting(row -> row.getValue("b"))
+								.containsExactlyInAnyOrder(VF.createIRI("urn:b0"), VF.createIRI("urn:b1"),
+										VF.createIRI("urn:b2"));
 					}
+					assertThat(LmdbPrefixRunPlan.OPENED.get() - cursorsBefore).isEqualTo(indexed ? 1L : 0L);
 					assertThat(handle.getLastHeavyOperator()).isEqualTo("DISTINCT");
 					assertThat(handle.hasHeavyCheckpoint()).isTrue();
 				} finally {

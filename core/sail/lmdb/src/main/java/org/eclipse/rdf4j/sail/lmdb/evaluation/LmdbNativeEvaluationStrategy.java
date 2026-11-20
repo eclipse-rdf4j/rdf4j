@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -508,6 +509,29 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		if (!nativeEnabled) {
+			QueryEvaluationStep indexed = LmdbIndexedDistinct.prepare(node, context, tripleSourceArg,
+					() -> preparePartitionedDistinct(node, context));
+			if (indexed != null) {
+				return indexed;
+			}
+		}
+		return preparePartitionedDistinct(node, context);
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) {
+		if (!nativeEnabled) {
+			QueryEvaluationStep indexed = LmdbIndexedDistinctCount.prepare(node, context, tripleSourceArg,
+					() -> super.prepare(node, context));
+			if (indexed != null) {
+				return indexed;
+			}
+		}
+		return super.prepare(node, context);
+	}
+
+	private QueryEvaluationStep preparePartitionedDistinct(Distinct node, QueryEvaluationContext context) {
 		Optional<String> partitionBindingName = markPartitionBinding(node, context.getDataset());
 		if (partitionBindingName.isPresent()) {
 			return preparePartitioned(node.getArg(), partitionBindingName.get(), context);
@@ -523,9 +547,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * intact.
 	 */
 	private Optional<String> markPartitionBinding(Distinct node, Dataset dataset) {
-		if ((nativeEnabled && nativeSource != null)
-				|| !getQueryExecutionPolicy().experimentalQueryOptimizations()
-				|| !LmdbDistinctOrderMarker.enabled(tripleSourceArg)) {
+		if ((nativeEnabled && nativeSource != null) || !LmdbDistinctOrderMarker.enabled(tripleSourceArg)) {
 			return Optional.empty();
 		}
 		return LmdbDistinctOrderMarker.mark(node.getArg(), tripleSourceArg, dataset,
