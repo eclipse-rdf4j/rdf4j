@@ -444,6 +444,35 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return indexConfiguration;
 	}
 
+	/** An exact count obtained outside the page walker, for example by decoding the chunks of a small range. */
+	public static Estimate exactRows(long rows) {
+		return new Estimate(rows, true, true, rows, rows, Double.POSITIVE_INFINITY, 1.0d, 1.0d, 0.0d, 1.0d, 1.0d,
+				1.0d, 1.0d, false, false, false, false, 0, 0, 0, 0);
+	}
+
+	/**
+	 * Converts an estimate of physical entries into logical rows for databases whose entries each hold between one and
+	 * {@code maxRowsPerEntry} rows (chunked statement indexes, whose key is the first row of the chunk).
+	 * <p>
+	 * The point estimate scales by the mean {@code rowsPerEntry}; relative quality figures are scale invariant and
+	 * kept. Each counted entry contributes at least its key row, so the lower bound is kept. The upper bound allows
+	 * full entries plus one entry that starts before the key range, whose rows may continue into it.
+	 * </p>
+	 */
+	public static Estimate scaleToRows(Estimate entries, double rowsPerEntry, int maxRowsPerEntry) {
+		long upper = entries.hardUpperBound() >= Long.MAX_VALUE / maxRowsPerEntry - 1 ? Long.MAX_VALUE
+				: (entries.hardUpperBound() + 1) * maxRowsPerEntry;
+		long lower = Math.min(entries.hardLowerBound(), upper);
+		long rows = Math.max(lower, Math.min(upper, Math.round(entries.entries() * rowsPerEntry)));
+		return new Estimate(rows, false, false, lower, upper, entries.effectiveSampleSize(),
+				entries.effectiveSampleFraction(), entries.sampledMassFraction(), entries.relativeStandardError(),
+				entries.disagreement(), entries.physicalPilotDisagreement(), entries.pilotFinalDisagreement(),
+				entries.directRatioDisagreement(), entries.lowEffectiveSample(), entries.disagreementDetected(),
+				entries.additionalEvidenceUsed(), entries.secondaryEvidenceRecommended(),
+				entries.physicalProbeBudgetUsed(), entries.residualPilotProbeBudgetUsed(),
+				entries.residualFinalProbeBudgetUsed(), entries.conditionalProbeBudgetUsed());
+	}
+
 	/** Adds reliability evidence for disjoint explicit and inferred databases. */
 	public static CardinalityEstimate combineDatabaseEstimates(Estimate first, Estimate second) {
 		double entries = (double) first.entries() + second.entries();

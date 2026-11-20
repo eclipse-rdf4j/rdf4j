@@ -658,10 +658,10 @@ public class TripleStoreTest {
 				int[] expected = expectedOrder(fieldSequence, subj, pred, obj, context);
 
 				tripleStore.sortStatementIndicesByLeadingFields(statementIndices, size, index,
-					subj, pred, obj, context);
+						subj, pred, obj, context);
 
 				assertArrayEquals("Full sort for " + fieldSequence + ", attempt " + attempt,
-					expected, statementIndices);
+						expected, statementIndices);
 			}
 		}
 	}

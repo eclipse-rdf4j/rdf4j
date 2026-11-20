@@ -540,6 +540,51 @@ public class TripleIndex {
 	 * @return {@link #SKIP_SEEK} when a seek target was produced, {@link #SKIP_EXHAUSTED} when no later key in the
 	 *         current range can match, or {@link #SKIP_NONE} when plain stepping is the right move.
 	 */
+	/**
+	 * Decoded-tuple variant of {@link #skipTarget(long, int, long, long, long, long, long[], long[])} for chunked
+	 * indexes, where a rejected statement is usually not an LMDB key. All arrays are in index order; {@code pattern}
+	 * holds {@code -1} for unbound fields and {@code target} receives the smallest tuple greater than {@code entry}
+	 * that could still match.
+	 */
+	static int skipTargetEntry(long[] entry, int rangePrefixLength, long[] pattern, long[] target) {
+		int pos = -1;
+		for (int i = rangePrefixLength; i < 4; i++) {
+			if (pattern[i] != -1 && entry[i] != pattern[i]) {
+				pos = i;
+				break;
+			}
+		}
+		if (pos < 0) {
+			return SKIP_NONE;
+		}
+		int carry = pos;
+		if (Long.compareUnsigned(entry[pos], pattern[pos]) > 0) {
+			carry = -1;
+			for (int i = pos - 1; i >= rangePrefixLength; i--) {
+				if (pattern[i] == -1) {
+					carry = i;
+					break;
+				}
+			}
+			if (carry < 0) {
+				return SKIP_EXHAUSTED;
+			}
+			if (entry[carry] == -1L) {
+				return SKIP_NONE;
+			}
+		}
+		for (int i = 0; i < 4; i++) {
+			if (i < carry) {
+				target[i] = entry[i];
+			} else if (i == carry) {
+				target[i] = carry == pos ? pattern[pos] : entry[carry] + 1;
+			} else {
+				target[i] = pattern[i] != -1 ? pattern[i] : 0L;
+			}
+		}
+		return SKIP_SEEK;
+	}
+
 	int skipTarget(long keyAddress, int rangePrefixLength, long matchSubj, long matchPred, long matchObj,
 			long matchContext, long[] keyValues, long[] targetQuad) {
 		int offset = 0;

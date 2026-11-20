@@ -3076,6 +3076,10 @@ class LmdbSailStore implements SailStore {
 		return tripleStore.explicitIndexEntryCounts();
 	}
 
+	Map<String, Long> explicitIndexChunkCounts() throws IOException {
+		return tripleStore.explicitIndexChunkCounts();
+	}
+
 	long tripleStoreTransactionId() throws IOException {
 		return tripleStore.lastTransactionId();
 	}
@@ -3733,7 +3737,8 @@ class LmdbSailStore implements SailStore {
 			return tripleStore.getLegacySemanticTriplesForWrite(subject, predicate, object, context, explicit,
 					expected);
 		}
-		RecordIterator physical = tripleStore.getTriples(tripleStore.getTxnManager().createReadTxn(), subject, predicate,
+		RecordIterator physical = tripleStore.getTriples(tripleStore.getTxnManager().createReadTxn(), subject,
+				predicate,
 				semantic ? LmdbValue.UNKNOWN_ID : object, context, explicit);
 		if (!semantic) {
 			return physical;
@@ -15993,9 +15998,9 @@ class LmdbSailStore implements SailStore {
 
 		/**
 		 * Operator-owned probe: one dataset read stamp for the probe's lifetime (instead of one per scan) and one
-		 * retained record iterator that is re-aimed per probe key instead of re-created. A direct iterator is
-		 * retained only until the next open or probe close, matching {@link NativeProbe}'s ownership contract. The
-		 * source-open check runs once per open(), the same granularity the batched wrapper already reduced it to.
+		 * retained record iterator that is re-aimed per probe key instead of re-created. A direct iterator is retained
+		 * only until the next open or probe close, matching {@link NativeProbe}'s ownership contract. The source-open
+		 * check runs once per open(), the same granularity the batched wrapper already reduced it to.
 		 */
 		private final class RetainedNativeProbe implements NativeProbe {
 			private final LmdbAdjacencyLookupContext searchContext = new LmdbAdjacencyLookupContext();

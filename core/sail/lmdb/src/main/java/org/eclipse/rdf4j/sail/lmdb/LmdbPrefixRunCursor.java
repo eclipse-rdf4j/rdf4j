@@ -194,7 +194,8 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		this.matchObj = obj == 0 ? -1 : obj;
 		this.matchContext = context >= 0 ? context : -1;
 		this.countRunRows = countRunRows;
-		this.delegate = new LmdbRecordIterator(index, index.getPatternScore(subj, pred, obj, context), subj, pred, obj, context, explicit, txnRef);
+		this.delegate = new LmdbRecordIterator(index, index.getPatternScore(subj, pred, obj, context), subj, pred, obj,
+				context, explicit, txnRef);
 		LmdbPrefixRunPlan.OPENED.incrementAndGet();
 	}
 

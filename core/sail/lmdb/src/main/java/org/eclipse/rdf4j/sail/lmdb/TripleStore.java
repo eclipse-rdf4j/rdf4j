@@ -959,7 +959,19 @@ class TripleStore implements Closeable {
 		return fanOutStats(explicit).distinctKeys(predicate, bySubject);
 	}
 
+	/** Logical statement counts per active explicit index, decoding every chunk. */
 	Map<String, Long> explicitIndexEntryCounts() throws IOException {
+		return txnManager.doWith((stack, txn) -> {
+			Map<String, Long> counts = new HashMap<>(indexes.size());
+			for (TripleIndex index : indexes) {
+				counts.put(index.toString(), logicalIndexCount(txn, index, true));
+			}
+			return counts;
+		});
+	}
+
+	/** Physical LMDB entry (chunk anchor) counts per active explicit index. */
+	Map<String, Long> explicitIndexChunkCounts() throws IOException {
 		return txnManager.doWith((stack, txn) -> {
 			Map<String, Long> counts = new HashMap<>(indexes.size());
 			MDBStat stat = MDBStat.malloc(stack);
@@ -3871,42 +3883,36 @@ class TripleStore implements Closeable {
 			Thread.currentThread().interrupt();
 			throw new IOException("interrupted while classifying adjacency split keys", e);
 		}
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			long txn = txnRef.get();
-			TripleIndex index = plan.index();
-			int dbi = index.getDB(explicit);
-			MDBVal keyData = MDBVal.malloc(stack);
-			MDBVal valueData = MDBVal.malloc(stack);
-			ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, dbi, pp));
-			long cursor = pp.get(0);
-			try {
-				List<OrderedSplit> result = new ArrayList<>(splitKeys.size());
-				long[] current = new long[4];
-				long[] previous = new long[4];
-				for (byte[] splitKey : splitKeys) {
-					keyBuffer.clear();
-					keyBuffer.put(splitKey).flip();
-					keyData.mv_data(keyBuffer);
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) != MDB_SUCCESS) {
-						continue;
-					}
-					byte[] actualKey = copyKey(keyData);
-					index.keyToQuad(keyData.mv_data().duplicate(), current);
-					boolean continuation = false;
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == MDB_SUCCESS) {
-						index.keyToQuad(keyData.mv_data().duplicate(), previous);
-						continuation = previous[TripleIndex.PRED_IDX] == current[TripleIndex.PRED_IDX]
-								&& previous[rowField] == current[rowField];
-					}
-					result.add(new OrderedSplit(actualKey, continuation, current[TripleIndex.PRED_IDX],
-							current[rowField]));
+		TripleIndex index = plan.index();
+		try (MemoryStack stack = MemoryStack.stackPush();
+				LogicalIndexCursor cursor = new LogicalIndexCursor(stack, txnRef.get(), index.getDB(explicit),
+						index.getIndexSplitPosition())) {
+			// Classify against logical neighbours: a split tuple may sit inside a chunk, and the previous chunk
+			// anchor is not the previous statement.
+			List<OrderedSplit> result = new ArrayList<>(splitKeys.size());
+			long[] target = new long[4];
+			long[] entry = new long[4];
+			long[] current = new long[4];
+			long[] previous = new long[4];
+			for (byte[] splitKey : splitKeys) {
+				Varint.readListUnsigned(ByteBuffer.wrap(splitKey), target);
+				long[] found = cursor.seekCeiling(target);
+				if (found == null) {
+					continue;
 				}
-				return result;
-			} finally {
-				mdb_cursor_close(cursor);
+				System.arraycopy(found, 0, entry, 0, 4);
+				index.entryToQuad(entry, current);
+				boolean continuation = false;
+				long[] before = cursor.floorBelow(entry);
+				if (before != null) {
+					index.entryToQuad(before, previous);
+					continuation = previous[TripleIndex.PRED_IDX] == current[TripleIndex.PRED_IDX]
+							&& previous[rowField] == current[rowField];
+				}
+				result.add(new OrderedSplit(encodeEntry(entry), continuation, current[TripleIndex.PRED_IDX],
+						current[rowField]));
 			}
+			return result;
 		} finally {
 			lockManager.unlockRead(readStamp);
 		}
@@ -3931,94 +3937,69 @@ class TripleStore implements Closeable {
 		} catch (InterruptedException e) {
 			throw new SailException(e);
 		}
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			long txn = txnRef.get();
-			int dbi = index.getDB(explicit);
-
-			MDBVal maxKey = MDBVal.malloc(stack);
-			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
-			maxKeyBuf.flip();
-			maxKey.mv_data(maxKeyBuf);
-
-			MDBVal keyData = MDBVal.malloc(stack);
-			MDBVal valueData = MDBVal.malloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, dbi, pp));
-			long cursor = pp.get(0);
-			try {
-				keyBuf.clear();
-				index.getMinKey(keyBuf, subj, pred, obj, context);
-				keyBuf.flip();
-				keyData.mv_data(keyBuf);
-				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
-					return result;
-				}
-				byte[] firstKey = copyKey(keyData);
-
-				keyData.mv_data(maxKeyBuf);
-				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				if (rc != MDB_SUCCESS) {
-					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-				} else if (mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
-					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
-				}
-				if (rc != MDB_SUCCESS) {
-					return result;
-				}
-				byte[] lastKey = copyKey(keyData);
-				if (Arrays.compareUnsigned(firstKey, lastKey) >= 0) {
-					return result;
-				}
-
-				ArrayList<byte[]> boundaries = new ArrayList<>();
-				boundaries.add(firstKey);
-				boundaries.add(lastKey);
-				long[] lowerValues = new long[4];
-				long[] upperValues = new long[4];
-				long[] midValues = new long[4];
-				while (boundaries.size() - 2 < targetSplits) {
-					ArrayList<byte[]> next = new ArrayList<>(boundaries.size() * 2);
-					boolean progressed = false;
-					for (int i = 0; i + 1 < boundaries.size(); i++) {
-						byte[] lower = boundaries.get(i);
-						byte[] upper = boundaries.get(i + 1);
-						next.add(lower);
-						Varint.readListUnsigned(ByteBuffer.wrap(lower), lowerValues);
-						Varint.readListUnsigned(ByteBuffer.wrap(upper), upperValues);
-						bucketStart(0.5, lowerValues, upperValues, midValues);
-						keyBuf.clear();
-						Varint.writeListUnsigned(keyBuf, midValues);
-						keyBuf.flip();
-						keyData.mv_data(keyBuf);
-						if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) != MDB_SUCCESS) {
-							continue;
-						}
-						byte[] snapped = copyKey(keyData);
-						if (Arrays.compareUnsigned(snapped, lower) > 0
-								&& Arrays.compareUnsigned(snapped, upper) < 0) {
-							next.add(snapped);
-							progressed = true;
-						}
-					}
-					next.add(boundaries.get(boundaries.size() - 1));
-					boundaries = next;
-					if (!progressed) {
+		try (MemoryStack stack = MemoryStack.stackPush();
+				LogicalIndexCursor cursor = new LogicalIndexCursor(stack, txnRef.get(), index.getDB(explicit),
+						index.getIndexSplitPosition())) {
+			// Bisect over logical tuples, not chunk anchors: a chunk holds up to MAX_CHUNK_SIZE statements, and a
+			// range covered by a single chunk must still be divisible.
+			long[] min = new long[4];
+			long[] max = new long[4];
+			index.getMinEntry(min, subj, pred, obj, context);
+			index.getMaxEntry(max, subj, pred, obj, context);
+			if (context == ValueIds.NULL_CONTEXT) {
+				int[] indexMap = index.getIndexMap();
+				for (int i = 0; i < indexMap.length; i++) {
+					if (indexMap[i] == TripleIndex.CONTEXT_IDX) {
+						max[i] = ValueIds.NULL_CONTEXT;
 						break;
 					}
 				}
-				// interior boundaries plus lastKey are valid split points (a split == lastKey yields a
-				// non-empty final partition holding exactly that key); firstKey is the scan start, not a split
-				for (int i = 1; i < boundaries.size() - 1 && result.size() < targetSplits; i++) {
-					result.add(boundaries.get(i));
-				}
-				return result;
-			} finally {
-				mdb_cursor_close(cursor);
 			}
+			long[] found = cursor.seekCeiling(min);
+			if (found == null || Arrays.compareUnsigned(found, max) > 0) {
+				return result;
+			}
+			long[] first = found.clone();
+			found = cursor.seekCeiling(max);
+			if (found == null || Arrays.compareUnsigned(found, max) != 0) {
+				found = cursor.floorBelow(max);
+			}
+			if (found == null || Arrays.compareUnsigned(first, found) >= 0) {
+				return result;
+			}
+			long[] last = found.clone();
+
+			ArrayList<long[]> boundaries = new ArrayList<>();
+			boundaries.add(first);
+			boundaries.add(last);
+			long[] midValues = new long[4];
+			while (boundaries.size() - 2 < targetSplits) {
+				ArrayList<long[]> next = new ArrayList<>(boundaries.size() * 2);
+				boolean progressed = false;
+				for (int i = 0; i + 1 < boundaries.size(); i++) {
+					long[] lower = boundaries.get(i);
+					long[] upper = boundaries.get(i + 1);
+					next.add(lower);
+					bucketStart(0.5, lower, upper, midValues);
+					long[] snapped = cursor.seekCeiling(midValues);
+					if (snapped != null && Arrays.compareUnsigned(snapped, lower) > 0
+							&& Arrays.compareUnsigned(snapped, upper) < 0) {
+						next.add(snapped.clone());
+						progressed = true;
+					}
+				}
+				next.add(boundaries.get(boundaries.size() - 1));
+				boundaries = next;
+				if (!progressed) {
+					break;
+				}
+			}
+			// interior boundaries plus the last tuple are valid split points (a split == last yields a non-empty
+			// final partition holding exactly that tuple); the first tuple is the scan start, not a split
+			for (int i = 1; i < boundaries.size() - 1 && result.size() < targetSplits; i++) {
+				result.add(encodeEntry(boundaries.get(i)));
+			}
+			return result;
 		} finally {
 			lockManager.unlockRead(readStamp);
 		}
@@ -4116,6 +4097,15 @@ class TripleStore implements Closeable {
 		} finally {
 			lockManager.unlockRead(readStamp);
 		}
+	}
+
+	private static byte[] encodeEntry(long[] entry) {
+		ByteBuffer buffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
+		Varint.writeListUnsigned(buffer, entry);
+		buffer.flip();
+		byte[] key = new byte[buffer.remaining()];
+		buffer.get(key);
+		return key;
 	}
 
 	private static byte[] copyKey(MDBVal keyData) {
@@ -4271,38 +4261,31 @@ class TripleStore implements Closeable {
 		if (ids.isEmpty()) {
 			return 0;
 		}
-		MDBVal key = MDBVal.calloc(stack);
-		MDBVal value = MDBVal.calloc(stack);
-		ByteBuffer buffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-		PointerBuffer handle = stack.mallocPointer(1);
-		long explicitCursor = 0;
-		long inferredCursor = 0;
+		// Probe logical tuples: a chunk anchored at one predicate can hold later predicates and objects, so
+		// anchor-only seeks would miss both. Every seekCeiling counts as one seek against the budget.
 		int seeks = 0;
-		try {
-			E(mdb_cursor_open(txn, index.getDB(true), handle));
-			explicitCursor = handle.get(0);
-			E(mdb_cursor_open(txn, index.getDB(false), handle));
-			inferredCursor = handle.get(0);
+		long[] probe = new long[4];
+		try (LogicalIndexCursor explicitCursor = new LogicalIndexCursor(stack, txn, index.getDB(true),
+				index.getIndexSplitPosition());
+				LogicalIndexCursor inferredCursor = new LogicalIndexCursor(stack, txn, index.getDB(false),
+						index.getIndexSplitPosition())) {
 			candidates: for (Iterator<Long> candidates = ids.iterator(); candidates.hasNext();) {
 				long id = candidates.next();
 				for (int plane = 0; plane < 2; plane++) {
-					long cursor = plane == 0 ? explicitCursor : inferredCursor;
+					LogicalIndexCursor cursor = plane == 0 ? explicitCursor : inferredCursor;
 					long nextPredicate = 0;
 					while (true) {
 						if (seeks == seekBudget) {
 							deferLivenessCandidates(candidates, id, unresolved);
 							return seeks;
 						}
-						buffer.clear();
-						index.getMinKey(buffer, -1, nextPredicate, -1, -1);
-						key.mv_data(buffer.flip());
+						index.getMinEntry(probe, -1, nextPredicate, -1, -1);
 						seeks++;
-						int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
-						if (rc == MDB_NOTFOUND) {
+						long[] found = cursor.seekCeiling(probe);
+						if (found == null) {
 							break;
 						}
-						E(rc);
-						long predicate = Varint.readUnsigned(key.mv_data());
+						long predicate = found[0];
 						if (predicate < nextPredicate) {
 							throw new IOException("PO index predicate is outside the nonnegative ordered ID range");
 						}
@@ -4310,22 +4293,15 @@ class TripleStore implements Closeable {
 							deferLivenessCandidates(candidates, id, unresolved);
 							return seeks;
 						}
-						buffer.clear();
-						index.getMinKey(buffer, -1, predicate, id, -1);
-						key.mv_data(buffer.flip());
+						index.getMinEntry(probe, -1, predicate, id, -1);
 						seeks++;
-						rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
-						if (rc == MDB_SUCCESS) {
-							ByteBuffer found = key.mv_data();
-							if (Varint.readUnsigned(found) == predicate && Varint.readUnsigned(found) == id) {
-								candidates.remove();
-								continue candidates;
-							}
-						} else if (rc != MDB_NOTFOUND) {
-							E(rc);
+						found = cursor.seekCeiling(probe);
+						if (found != null && found[0] == predicate && found[1] == id) {
+							candidates.remove();
+							continue candidates;
 						}
 						// Varint IDs are nonnegative longs, not the full unsigned-long domain. Never wrap the
-						// terminal ID to a negative wildcard (getMinKey would restart the scan at zero).
+						// terminal ID to a negative wildcard (getMinEntry would restart the scan at zero).
 						if (predicate == Long.MAX_VALUE) {
 							break;
 						}
@@ -4334,13 +4310,6 @@ class TripleStore implements Closeable {
 				}
 			}
 			return seeks;
-		} finally {
-			if (inferredCursor != 0) {
-				mdb_cursor_close(inferredCursor);
-			}
-			if (explicitCursor != 0) {
-				mdb_cursor_close(explicitCursor);
-			}
 		}
 	}
 
@@ -4628,38 +4597,109 @@ class TripleStore implements Closeable {
 				return CardinalityEstimate.exact((double) readStatementCount(stack, txn, true)
 						+ readStatementCount(stack, txn, false));
 			}
+			long[] minTuple = new long[4];
+			index.getMinEntry(minTuple, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+					indexShape.rangeObject(obj), indexShape.rangeContext(context));
+			long[] maxTuple = new long[4];
+			index.getMaxEntry(maxTuple, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+					indexShape.rangeObject(obj), indexShape.rangeContext(context));
+			long[] pattern = new long[4];
+			index.toEntry(pattern, subj, pred, obj, context);
+
+			// Small ranges are counted exactly from the decoded chunks, including the chunk that starts before the
+			// range. The page walker below only sees physical keys, one per chunk.
+			long explicitRows = countRowsWithinChunkBudget(stack, txn, index, true, minTuple, maxTuple, pattern);
+			long inferredRows = countRowsWithinChunkBudget(stack, txn, index, false, minTuple, maxTuple, pattern);
+			if (explicitRows >= 0 && inferredRows >= 0) {
+				return CardinalityEstimate.exact((double) explicitRows + inferredRows);
+			}
+
 			long generation = mappingGeneration.get();
 			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(txn, generation)) {
-				long[] tuple = new long[4];
-				index.getMinEntry(tuple, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
-						indexShape.rangeObject(obj), indexShape.rangeContext(context));
-				ByteBuffer minKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				for (long v : tuple) {
-					Varint.writeUnsigned(minKeyBuffer, v);
-				}
-				minKeyBuffer.flip();
-				byte[] minKey = toArray(minKeyBuffer);
-
-				ByteBuffer maxKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				index.getMaxEntry(tuple, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
-						indexShape.rangeObject(obj), indexShape.rangeContext(context));
-				for (long v : tuple) {
-					Varint.writeUnsigned(maxKeyBuffer, v);
-				}
-				maxKeyBuffer.flip();
-				byte[] maxKey = toArray(maxKeyBuffer);
-
+				byte[] minKey = encodeKey(stack, minTuple);
+				byte[] maxKey = encodeKey(stack, maxTuple);
 				GroupMatcher matcher = indexShape.residualFieldCount() == 0 ? null
 						: index.createKeyMatcher(subj, pred, obj, context);
-				LmdbPageCardinalityEstimator.Estimate explicit = view.estimateEntriesWithQuality(
-						explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
-						indexShape.residualFieldCount());
-				LmdbPageCardinalityEstimator.Estimate inferred = view.estimateEntriesWithQuality(
-						inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
-						indexShape.residualFieldCount());
+				LmdbPageCardinalityEstimator.Estimate explicit = explicitRows >= 0
+						? LmdbPageCardinalityEstimator.exactRows(explicitRows)
+						: estimateRowsFromChunkKeys(stack, txn, view, explicitDbName, true, minKey, maxKey, matcher,
+								indexShape.residualFieldCount());
+				LmdbPageCardinalityEstimator.Estimate inferred = inferredRows >= 0
+						? LmdbPageCardinalityEstimator.exactRows(inferredRows)
+						: estimateRowsFromChunkKeys(stack, txn, view, inferredDbName, false, minKey, maxKey, matcher,
+								indexShape.residualFieldCount());
 				return LmdbPageCardinalityEstimator.combineDatabaseEstimates(explicit, inferred);
 			}
 		});
+	}
+
+	/**
+	 * Maximum number of chunks decoded to count a pattern exactly before falling back to the page walker. With at most
+	 * {@link Chunks#MAX_CHUNK_SIZE} rows per chunk this answers ranges of a few hundred statements exactly.
+	 */
+	private static final int EXACT_CARDINALITY_CHUNK_BUDGET = 16;
+
+	/**
+	 * Counts the statements of one index database that lie in {@code [minTuple, maxTuple]} and match {@code pattern}
+	 * (index order, negative components are unbound).
+	 *
+	 * @return the exact row count, or {@code -1} when the range spans more than {@link #EXACT_CARDINALITY_CHUNK_BUDGET}
+	 *         chunks
+	 */
+	private static long countRowsWithinChunkBudget(MemoryStack stack, long txn, TripleIndex index, boolean explicit,
+			long[] minTuple, long[] maxTuple, long[] pattern) throws IOException {
+		try (MemoryStack frame = stack.push();
+				LogicalIndexCursor cursor = new LogicalIndexCursor(frame, txn, index.getDB(explicit),
+						index.getIndexSplitPosition())) {
+			long rows = 0;
+			long[] tuple = cursor.seekCeiling(minTuple);
+			while (tuple != null && LogicalIndexCursor.compare(tuple, maxTuple) <= 0) {
+				if (cursor.chunksRead() > EXACT_CARDINALITY_CHUNK_BUDGET) {
+					return -1;
+				}
+				if (matchesPattern(tuple, pattern)) {
+					rows++;
+				}
+				tuple = cursor.next();
+			}
+			return rows;
+		}
+	}
+
+	private static boolean matchesPattern(long[] tuple, long[] pattern) {
+		for (int i = 0; i < tuple.length; i++) {
+			if (pattern[i] >= 0 && tuple[i] != pattern[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Converts the page walker's estimate of matching chunk keys into statement rows using the database's mean rows per
+	 * chunk, which the logical statement count and the physical entry count give exactly.
+	 */
+	private LmdbPageCardinalityEstimator.Estimate estimateRowsFromChunkKeys(MemoryStack stack, long txn,
+			LmdbPageCardinalityEstimator.ReadView view, String dbName, boolean explicit, byte[] minKey, byte[] maxKey,
+			GroupMatcher matcher, int residualFieldCount) throws IOException {
+		LmdbPageCardinalityEstimator.Estimate chunkKeys = view.estimateEntriesWithQuality(dbName, minKey,
+				minKey.length, maxKey, maxKey.length, matcher, residualFieldCount);
+		long physicalEntries = view.totalEntries(dbName);
+		double rowsPerEntry = physicalEntries > 0
+				? (double) readStatementCount(stack, txn, explicit) / physicalEntries
+				: 0.0d;
+		return LmdbPageCardinalityEstimator.scaleToRows(chunkKeys, rowsPerEntry, Chunks.MAX_CHUNK_SIZE);
+	}
+
+	private static byte[] encodeKey(MemoryStack stack, long[] tuple) {
+		try (MemoryStack frame = stack.push()) {
+			ByteBuffer buffer = frame.malloc(TripleIndex.MAX_KEY_LENGTH);
+			for (long v : tuple) {
+				Varint.writeUnsigned(buffer, v);
+			}
+			buffer.flip();
+			return toArray(buffer);
+		}
 	}
 
 	private static byte[] toArray(ByteBuffer buffer) {
@@ -4688,9 +4728,12 @@ class TripleStore implements Closeable {
 	 * <p>
 	 * This method was extracted from the old {@code cardinality} method, and {@code MAX_KEY_LENGTH} moved from
 	 * {@code TripleStore} to {@link TripleIndex}. Whole-store totals use logical statement metadata because physical
-	 * entry counts describe chunks. Do not improve or retune the sampling algorithm in place. Fixes belong in the
-	 * page-walking estimator unless a deliberate change to the 5.3.2 fallback contract is accompanied by updated golden
-	 * compatibility tests.
+	 * entry counts describe chunks. For the same reason the sampler walks a {@link LogicalIndexCursor}: it decodes
+	 * chunks and yields one element per statement, which is the key sequence the sampler read from the unchunked 5.3.2
+	 * layout. As in the tagged source, the maximum key is exclusive, its upper sample is the last value below it, and a
+	 * bound default context stays 0 in the maximum key, so the estimates are identical to 5.3.2. Do not improve or
+	 * retune the sampling algorithm in place. Fixes belong in the page-walking estimator unless a deliberate change to
+	 * the 5.3.2 fallback contract is accompanied by updated golden compatibility tests.
 	 * </p>
 	 */
 	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
@@ -4705,77 +4748,46 @@ class TripleStore implements Closeable {
 		return txnManager.doWithPriority((stack, txn) -> {
 			long[] minTuple = new long[4];
 			long[] maxTuple = new long[4];
-			long[] tuple = new long[4];
 
 			final Statistics s = new Statistics();
-			MDBVal maxKey = MDBVal.malloc(stack);
-			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			MDBVal maxValue = MDBVal.malloc(stack);
-			index.getMaxEntry(maxTuple, subj, pred, obj, context);
-			for (long l : maxTuple) {
-				Varint.writeUnsigned(maxKeyBuf, l);
-			}
-			maxKeyBuf.flip();
-			maxKey.mv_data(maxKeyBuf);
-
-			PointerBuffer pp = stack.mallocPointer(1);
-
-			MDBVal keyData = MDBVal.malloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			MDBVal valueData = MDBVal.malloc(stack);
-			ByteBuffer valueBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			// 5.3.2 max key: unbound components are maximal, but a bound default context (0) stays 0
+			index.toEntry(maxTuple, subj <= 0 ? Long.MAX_VALUE : subj, pred <= 0 ? Long.MAX_VALUE : pred,
+					obj <= 0 ? Long.MAX_VALUE : obj, context < 0 ? Long.MAX_VALUE : context);
 
 			double cardinality = 0;
 			for (boolean explicit : new boolean[] { true, false }) {
 				Arrays.fill(s.avgRowsPerValue, 1.0);
 				Arrays.fill(s.avgRowsPerValueCounts, 0);
 
-				keyBuf.clear();
 				index.getMinEntry(minTuple, subj, pred, obj, context);
-				for (long l : minTuple) {
-					Varint.writeUnsigned(keyBuf, l);
-				}
-				keyBuf.flip();
 
 				int dbi = index.getDB(explicit);
 
 				int pos;
-				long cursor = 0;
-				try {
-					E(mdb_cursor_open(txn, dbi, pp));
-					cursor = pp.get(0);
+				// Chunked indexes store several tuples per key; sample the logical tuples, which are exactly the keys
+				// that the unchunked 5.3.2 layout exposed.
+				try (LogicalIndexCursor cursor = new LogicalIndexCursor(stack, txn, dbi,
+						index.getIndexSplitPosition())) {
 
 					// set cursor to min key
-					keyData.mv_data(keyBuf);
-					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					int keyDiff;
-					if (rc != MDB_SUCCESS || (keyDiff = mdb_cmp(txn, dbi, keyData, maxKey)) > 0) {
+					long[] found = cursor.seekCeiling(minTuple);
+					if (found == null || LogicalIndexCursor.compare(found, maxTuple) >= 0) {
 						break;
 					} else {
-						var keyBuffer = keyData.mv_data();
-						for (int i = 0; i < s.values.length; i++) {
-							s.minValues[i] = Varint.readUnsigned(keyBuffer);
-						}
+						System.arraycopy(found, 0, s.minValues, 0, s.values.length);
 					}
 
-					// set cursor to max key
-					keyData.mv_data(maxKeyBuf);
-					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					if (rc != MDB_SUCCESS) {
-						// directly go to last value
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-					}
-					if (rc == MDB_SUCCESS) {
-						var keyBuffer = keyData.mv_data();
-						for (int i = 0; i < s.values.length; i++) {
-							s.maxValues[i] = Varint.readUnsigned(keyBuffer);
-						}
+					// set cursor to max key and go to the previous value; without a larger value this is the last one
+					found = cursor.floorBelow(maxTuple);
+					if (found != null) {
+						System.arraycopy(found, 0, s.maxValues, 0, s.values.length);
 						// this is required to correctly estimate the range size at a later point
 						s.startValues[Statistics.MAX_BUCKETS] = s.maxValues;
 					} else {
 						break;
 					}
 
+					long[] bucketKey = new long[s.values.length];
 					long allSamplesCount = 0;
 					int bucket = 0;
 					boolean endOfRange = false;
@@ -4783,20 +4795,16 @@ class TripleStore implements Closeable {
 						if (bucket != 0) {
 							bucketStart((double) bucket / Statistics.MAX_BUCKETS, s.minValues, s.maxValues,
 									s.values);
-							keyBuf.clear();
-							for (int i = 0; i < s.values.length; i++) {
-								Varint.writeUnsigned(keyBuf, s.values[i]);
-							}
-							keyBuf.flip();
+							System.arraycopy(s.values, 0, bucketKey, 0, s.values.length);
+						} else {
+							// this is the min key for the first iteration
+							System.arraycopy(minTuple, 0, bucketKey, 0, s.values.length);
 						}
-						// this is the min key for the first iteration
-						keyData.mv_data(keyBuf);
 
 						int currentSamplesCount = 0;
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-						while (rc == MDB_SUCCESS && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
-							keyDiff = mdb_cmp(txn, dbi, keyData, maxKey);
-							if (keyDiff > 0) {
+						found = cursor.seekCeiling(bucketKey);
+						while (found != null && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
+							if (LogicalIndexCursor.compare(found, maxTuple) >= 0) {
 								endOfRange = true;
 								break;
 							} else {
@@ -4804,10 +4812,7 @@ class TripleStore implements Closeable {
 								currentSamplesCount++;
 
 								System.arraycopy(s.values, 0, s.lastValues[bucket], 0, s.values.length);
-								var keyBuffer = keyData.mv_data();
-								for (int i = 0; i < s.values.length; i++) {
-									s.values[i] = Varint.readUnsigned(keyBuffer);
-								}
+								System.arraycopy(found, 0, s.values, 0, s.values.length);
 
 								if (currentSamplesCount == 1) {
 									Arrays.fill(s.counts, 1);
@@ -4826,8 +4831,8 @@ class TripleStore implements Closeable {
 										}
 									}
 								}
-								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-								if (rc != MDB_SUCCESS) {
+								found = cursor.next();
+								if (found == null) {
 									// no more elements are available
 									endOfRange = true;
 								}
@@ -4856,10 +4861,6 @@ class TripleStore implements Closeable {
 							// of current bucket
 							cardinality += s.avgRowsPerValue[pos] * diffBetweenGroups;
 						}
-					}
-				} finally {
-					if (cursor != 0) {
-						mdb_cursor_close(cursor);
 					}
 				}
 			}
@@ -5192,7 +5193,7 @@ class TripleStore implements Closeable {
 						index.getFieldSeq())) {
 					System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
 				}
-				indexUpdater.sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj,
+				sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred, obj,
 						context);
 				currentFieldSeq = index.getFieldSeq();
 				long secondaryWriteCursor = addedCount > 0 ? getAlignedWriteCursor(i, index, explicit, cursorHandle)
@@ -6850,7 +6851,7 @@ class TripleStore implements Closeable {
 								index.getFieldSeq())) {
 							System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
 						}
-						indexUpdater.sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred,
+						sortStatementIndicesByLeadingFields(sortedIndices, addedCount, index, subj, pred,
 								obj, context);
 						currentFieldSeq = index.getFieldSeq();
 						long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0

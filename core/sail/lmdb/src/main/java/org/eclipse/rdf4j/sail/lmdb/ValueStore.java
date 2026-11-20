@@ -3469,6 +3469,38 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return quad;
 	}
 
+	/**
+	 * Logical rows of one active triple-term index. LMDB entry statistics count chunks, so this decodes each chunk's
+	 * footer instead.
+	 */
+	long termIndexRowCount(String spec) throws IOException {
+		TripleIndex index = tripleTermIndexes.stream()
+				.filter(candidate -> new String(candidate.getFieldSeq()).equals(spec))
+				.findFirst()
+				.orElseThrow(() -> new IOException("Triple-term index is not active: " + spec));
+		return readTransaction(env, (stack, txn) -> {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, index.getDB(true), handle));
+			long cursor = handle.get(0);
+			try {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				long rows = 0L;
+				int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					rows = Math.addExact(rows, Chunks.tupleCount(value.mv_data(), 4, index.getIndexSplitPosition()));
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				return rows;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		});
+	}
+
 	private static ChunkInput termChunk(TripleIndex index, MDBVal key, MDBVal data) throws IOException {
 		ByteBuffer encoded = key.mv_data().duplicate();
 		long[] anchor = new long[4];

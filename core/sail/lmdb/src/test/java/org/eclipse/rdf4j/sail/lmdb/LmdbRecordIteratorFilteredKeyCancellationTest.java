@@ -92,7 +92,7 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			LmdbRecordIterator iterator = new LmdbRecordIterator(index, index.getPatternScore(1L, -1L, 1L, 1L),
-				1L, -1L, 1L, 1L, true, txn, null, null, true);
+					1L, -1L, 1L, 1L, true, txn, null, null, true);
 			try {
 				assertThat(iterator.fill(new long[1_500 * 4], 1_500)).isEqualTo(1_500);
 				assertThat(iterator.getSourceRowsScannedActual()).isEqualTo(1_500);

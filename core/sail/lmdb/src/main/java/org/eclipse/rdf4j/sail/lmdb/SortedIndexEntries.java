@@ -36,8 +36,8 @@ final class SortedIndexEntries implements AutoCloseable {
 	static SortedIndexEntries prepare(int indexPosition, String specification, int[] order, int from, int count,
 			TupleReader tuples) {
 		Objects.checkFromIndexSize(from, count, order.length);
-        return new SortedIndexEntries(indexPosition, specification,
-                Arrays.copyOfRange(order, from, from + count), Objects.requireNonNull(tuples));
+		return new SortedIndexEntries(indexPosition, specification,
+				Arrays.copyOfRange(order, from, from + count), Objects.requireNonNull(tuples));
 	}
 
 	private SortedIndexEntries(int indexPosition, String specification, int[] statementIndices, TupleReader tuples) {

@@ -135,7 +135,7 @@ class LmdbInitialRunImportTest {
 				assertThat(sail.getBackingStore().isInitialRunImportActive()).isTrue();
 				writer.commit();
 			}
-			assertThat(sail.getBackingStore().explicitIndexEntryCounts())
+			assertThat(sail.getBackingStore().explicitIndexChunkCounts())
 					.containsEntry("spoc", 3L)
 					.containsEntry("cspo", 4L);
 			try (LmdbStoreConnection reader = (LmdbStoreConnection) sail.getConnection()) {
@@ -1052,7 +1052,7 @@ class LmdbInitialRunImportTest {
 
 	private static void assertImportedChunkCounts(LmdbStore sail, int subjects) throws IOException {
 		long chunks = (2L * subjects + Chunks.MAX_CHUNK_SIZE - 1) / Chunks.MAX_CHUNK_SIZE;
-		assertThat(sail.getBackingStore().explicitIndexEntryCounts())
+		assertThat(sail.getBackingStore().explicitIndexChunkCounts())
 				.hasSize(3)
 				.allSatisfy((index, count) -> assertThat(count).as("anchor count for %s", index).isEqualTo(chunks));
 		TripleStore triples = sail.getBackingStore().getTripleStore();

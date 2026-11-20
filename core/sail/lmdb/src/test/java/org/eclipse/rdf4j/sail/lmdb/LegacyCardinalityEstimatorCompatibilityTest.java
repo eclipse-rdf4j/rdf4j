@@ -64,7 +64,12 @@ class LegacyCardinalityEstimatorCompatibilityTest {
 		openStore(dataDir, false, true);
 		loadReferenceData();
 
-		assertEstimate(455.0d, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 2_000L,
+		// The exact count is 455 and the 5.3.2 sampler reports 5000. The page walker samples chunk keys (the first row
+		// of
+		// each chunk) and scales by the mean rows per chunk; object 2000 begins every predicate run in posc order, so
+		// it
+		// is over-represented among chunk keys.
+		assertEstimate(543.0d, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 2_000L,
 				LmdbValue.UNKNOWN_ID);
 	}
 

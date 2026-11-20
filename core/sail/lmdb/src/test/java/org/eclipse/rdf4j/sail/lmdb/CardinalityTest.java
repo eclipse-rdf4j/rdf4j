@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -37,7 +36,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * Low-level tests for {@link TripleStore}.
  */
-@Disabled("Disabled because cardinality estimation is not yet implemented correctly for chunked-based storage")
 public class CardinalityTest {
 
 	@TempDir
@@ -96,6 +94,33 @@ public class CardinalityTest {
 			}
 		} finally {
 			readers.forEach(Txn::close);
+		}
+	}
+
+	/**
+	 * Every statement below merges into one chunk per index, keyed by its first tuple {@code (1, 2, 3, 0)}. The
+	 * {@code (?, 5, ?, ?)} statements live inside a chunk that starts before the pattern's range.
+	 */
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void cardinalityCountsRowsInsideChunkStartingBeforeRange(boolean pageEstimator) throws Exception {
+		tripleStore.close();
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setPageCardinalityEstimator(pageEstimator), null);
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(1, 2, 3, 0, true);
+		tripleStore.storeTriple(1, 5, 6, 0, true);
+		tripleStore.storeTriple(1, 5, 7, 0, true);
+		tripleStore.storeTriple(1, 5, 8, 0, true);
+		tripleStore.commit();
+
+		long unknown = LmdbValue.UNKNOWN_ID;
+		assertEquals(3.0, tripleStore.cardinality(unknown, 5, unknown, unknown), 0.0);
+		assertEquals(1.0, tripleStore.cardinality(unknown, 2, 3, unknown), 0.0);
+		assertEquals(3.0, tripleStore.cardinality(1, 5, unknown, unknown), 0.0);
+		if (pageEstimator) {
+			// The RDF4J 5.3.2 sampler treats its maximum key as exclusive and so reports 0 for any fully bound pattern.
+			assertEquals(1.0, tripleStore.cardinality(1, 5, 7, 0), 0.0);
 		}
 	}
 

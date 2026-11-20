@@ -6843,10 +6843,10 @@ class LmdbNoneStreamingIngestionTest {
 		}
 
 		@Override
-		void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subjects,
+		void sortStatementIndicesByLeadingFields(int[] statementIndices, int length, TripleIndex index, long[] subjects,
 				long[] predicates, long[] objects, long[] contexts) {
 			sortedSecondaryIndexPassCount.incrementAndGet();
-			super.sortStatementIndicesByLeadingField(statementIndices, length, index, subjects, predicates, objects,
+			super.sortStatementIndicesByLeadingFields(statementIndices, length, index, subjects, predicates, objects,
 					contexts);
 		}
 
