@@ -256,6 +256,61 @@ class LmdbRecordIteratorCancellationTest {
 		}
 	}
 
+	@Test
+	void siblingProbesCannotConsumeEveryCheckpointOfACancelledOwner() throws Exception {
+		var store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc").setDirectAdjacencyEnabled(false));
+		var repository = new SailRepository(store);
+		try {
+			repository.init();
+			var values = repository.getValueFactory();
+			IRI subject = values.createIRI("urn:cursor-cancellation:subject");
+			IRI predicate = values.createIRI("urn:cursor-cancellation:predicate");
+			int interval = NativeCancellationToken.POLL_INTERVAL;
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				for (int i = 0; i < 2 * interval; i++) {
+					connection.add(subject, predicate, values.createIRI("urn:cursor-cancellation:o" + i));
+				}
+				connection.commit();
+			}
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				var source = (NativeLmdbQuerySource) dataset;
+				var evaluation = new NativeCancellationToken();
+				var cancelledOwner = new NativeCancellationToken(evaluation);
+				var liveOwner = new NativeCancellationToken(evaluation);
+				int liveRows = interval - 2;
+				long[] buffer = new long[liveRows * 4];
+				try (var cancelledProbe = source
+						.newProbe(NativeLmdbQuerySource.captureCursorCancellation(cancelledOwner));
+						var liveProbe = source.newProbe(NativeLmdbQuerySource.captureCursorCancellation(liveOwner));
+						var cursor = cancelledProbe.open(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID)) {
+					assertEquals(1, cursor.fill(buffer, 1));
+					try (var live = liveProbe.open(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID)) {
+						assertEquals(liveRows, live.fill(buffer, liveRows));
+					}
+					cancelledOwner.requestCancellation();
+
+					var signal = assertThrows(KernelQueryCancelledException.class, () -> {
+						for (int i = 0; i < interval; i++) {
+							assertEquals(1, cursor.fill(buffer, 1));
+							// The fresh sibling consumes one entry poll and the rest of the shared work budget.
+							try (var live = liveProbe.open(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID)) {
+								assertEquals(liveRows, live.fill(buffer, liveRows));
+							}
+						}
+					}, "the cancelled cursor must observe its owner within one polling interval of its own work");
+					assertTrue(signal.observedBy(cancelledOwner) && signal.origin() == cancelledOwner);
+					assertEquals(0, cursor.fill(buffer, 1));
+					try (var live = liveProbe.open(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID)) {
+						assertEquals(liveRows, live.fill(buffer, liveRows));
+					}
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static void assertUnscopedCursorAcceptsCrossThreadRequest(NativeLmdbQuerySource source, long subjectId,
 			long matchId) throws Exception {
 		try (var cursor = source.lmdbStatements(subjectId, UNKNOWN_ID, matchId, UNKNOWN_ID, null);

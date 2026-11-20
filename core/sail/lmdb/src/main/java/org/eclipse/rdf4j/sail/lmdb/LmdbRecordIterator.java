@@ -918,7 +918,8 @@ class LmdbRecordIterator implements RecordIterator {
 		if ((++cancellationTick & 1023) == 0) {
 			checkLocalCancellation();
 			if (cancellation != null) {
-				cancellation.checkpointProbeDeadline();
+				// An interleaved sibling can reach every shared checkpoint with a different cancellation owner.
+				cancellation.checkpointNow();
 			}
 		}
 	}
