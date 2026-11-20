@@ -215,7 +215,7 @@ test('records built-in route rendering, query result states, and disposable-repo
 	const variantFailures = evidence.createdTypes.filter(route => !route.acceptable);
 	expect(routeFailures, `route failures: ${JSON.stringify(routeFailures)}`).toEqual([]);
 	expect(variantFailures, `creation variant failures: ${JSON.stringify(variantFailures)}`).toEqual([]);
-	expect(evidence.createdTypes, 'current creation type picker options').toHaveLength(18);
+	expect(evidence.createdTypes, 'current creation type picker options').toHaveLength(25);
 	expect(evidence.queries.filter(query => query.acceptable), 'representative query outcomes').toHaveLength(5);
 	expect(evidence.mutations.filter(mutation => mutation.acceptable), 'mutating form routes').toHaveLength(5);
 	expect(pageErrors, 'browser page errors').toEqual([]);
