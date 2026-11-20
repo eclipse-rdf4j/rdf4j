@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -29,6 +30,36 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeDiagnosticTelemetryTest {
+
+	@Test
+	void textSourceTotalsDoNotCountAccessSiteBreakdownsTwice() {
+		try (var ignored = QueryExplanationContext.enter(Explanation.Level.Telemetry)) {
+			SingletonSet target = target(true);
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0), null);
+			layout.freeze(List.of("root"));
+			var invocation = LmdbNativeExplain.recordRuntimeEntryPlan(target, SingletonPlan.INSTANCE, layout, 1L);
+			invocation.adjacencyAccessAt("first-pattern").measurement(true, 100L, 3L, 97L, false, true);
+			invocation.adjacencyAccessAt("second-pattern").measurement(false, 7L, 7L, 0L, false, false);
+			invocation.complete();
+
+			String text = target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN);
+			for (var expected : Map.of("rowsScannedActual", 107L, "rowsMatchedActual", 10L,
+					"rowsFilteredActual", 97L).entrySet()) {
+				long total = Pattern.compile("(?m)^\\s*" + expected.getKey() + ": ([0-9][0-9,]*)\\s*$")
+						.matcher(text)
+						.results()
+						.mapToLong(match -> Long.parseLong(match.group(1).replace(",", "")))
+						.sum();
+				assertThat(total).as("legacy aggregate %s must exclude the site breakdown", expected.getKey())
+						.isEqualTo(expected.getValue());
+			}
+			assertThat(text).contains("siteRowsScannedActual: 100", "siteRowsScannedActual: 7");
+			assertThat(QueryExplanationContext.telemetry().snapshot().stages())
+					.filteredOn(stage -> "Statement access".equals(stage.operator()))
+					.extracting(stage -> stage.metrics().get("rowsScanned").count())
+					.containsExactlyInAnyOrder(100L, 7L);
+		}
+	}
 
 	@Test
 	void filterFeedbackDoesNotInventUnmeasuredOperatorTime() {
@@ -154,7 +185,7 @@ class LmdbNativeDiagnosticTelemetryTest {
 		assertThat(target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
 				.contains("where: first-pattern", "where: second-pattern")
 				.contains("physicalCounterMeasurements: 1", "returnedRowFallbackMeasurements: 1")
-				.contains("rowsScannedActual: 100", "rowsScannedActual: 7");
+				.contains("rowsScannedActual: 107", "siteRowsScannedActual: 100", "siteRowsScannedActual: 7");
 	}
 
 	@Test

@@ -44,6 +44,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -79,8 +80,10 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationExecutionException;
 import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.ExplanationResultConsumerFactory;
+import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -1305,6 +1308,78 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void testExplainTelemetryDatasetSupportsDefaultAndBlankGraphNames() {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new EmptyIteration<>());
+		Sail sail = createExplainTestSail(strategy);
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addDefaultGraph((Resource) null);
+		dataset.addNamedGraph(SimpleValueFactory.getInstance().createBNode("named-graph"));
+		dataset.addDefaultRemoveGraph((Resource) null);
+		dataset.setDefaultInsertGraph(SimpleValueFactory.getInstance().createBNode("insert-graph"));
+		try (SailConnection connection = sail.getConnection()) {
+			assertThat(explainDataset(connection, dataset)).contains("DEFAULT", "_:named-graph", "_:insert-graph");
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainTelemetryDatasetPreservesFullGraphIdentity() {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new EmptyIteration<>());
+		Sail sail = createExplainTestSail(strategy);
+		String prefix = "urn:telemetry:" + "a".repeat(45);
+		String suffix = "z".repeat(45);
+		IRI firstGraph = SimpleValueFactory.getInstance().createIRI(prefix + "first" + suffix);
+		IRI secondGraph = SimpleValueFactory.getInstance().createIRI(prefix + "other" + suffix);
+		SimpleDataset first = new SimpleDataset();
+		first.addDefaultGraph(firstGraph);
+		SimpleDataset second = new SimpleDataset();
+		second.addDefaultGraph(secondGraph);
+		try (SailConnection connection = sail.getConnection()) {
+			String firstDescription = explainDataset(connection, first);
+			String secondDescription = explainDataset(connection, second);
+			assertThat(firstDescription).contains(firstGraph.stringValue()).isNotEqualTo(secondDescription);
+			assertThat(secondDescription).contains(secondGraph.stringValue());
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainTelemetryDatasetIdentityIsCanonicalAndIncludesExplicitSelection() {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new EmptyIteration<>());
+		Sail sail = createExplainTestSail(strategy);
+		SimpleDataset first = new SimpleDataset();
+		first.addDefaultGraph(RDF.TYPE);
+		first.addDefaultGraph(RDFS.LABEL);
+		SimpleDataset reversed = new SimpleDataset();
+		reversed.addDefaultGraph(RDFS.LABEL);
+		reversed.addDefaultGraph(RDF.TYPE);
+		SimpleDataset implicitEmpty = new SimpleDataset();
+		SimpleDataset explicitEmpty = new SimpleDataset();
+		explicitEmpty.setExplicitReadDataset(true);
+		try (SailConnection connection = sail.getConnection()) {
+			assertThat(explainDataset(connection, first)).isEqualTo(explainDataset(connection, reversed));
+			assertThat(explainDataset(connection, explicitEmpty))
+					.isNotEqualTo(explainDataset(connection, implicitEmpty));
+			assertThat(explainDataset(connection, implicitEmpty)).isNotEqualTo(explainDataset(connection, null));
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private String explainDataset(SailConnection connection, Dataset dataset) {
+		TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		var profile = connection.explain(Explanation.Level.Telemetry, tupleExpr, dataset,
+				EmptyBindingSet.getInstance(), false, 10).toGenericPlanNode().getExecutionProfile();
+		assertThat(profile.status()).isEqualTo("COMPLETE");
+		return profile.properties().get("dataset");
+	}
+
+	@Test
 	public void testExplainValuesConsumptionIsExplicitAndScoped() throws Exception {
 		AtomicInteger decodes = new AtomicInteger();
 		Value value = mock(Value.class);
@@ -1522,6 +1597,162 @@ public class SnapshotSailStoreTest {
 						.isEqualTo("FAILED");
 			});
 		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainRecognizesIterationWrapperInterruptionDuringNext() {
+		for (Explanation.Level level : List.of(Explanation.Level.Telemetry, Explanation.Level.Executed,
+				Explanation.Level.Timed)) {
+			AtomicInteger closes = new AtomicInteger();
+			AtomicBoolean nextEntered = new AtomicBoolean();
+			EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+			when(strategy.precompile(any()))
+					.thenReturn(bindings -> interruptedNextIteration(closes, nextEntered, null));
+			Sail sail = createExplainTestSail(strategy);
+			try (SailConnection connection = sail.getConnection()) {
+				TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+				Explanation explanation = connection.explain(level, expression, null,
+						EmptyBindingSet.getInstance(), false, 1);
+				assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
+				if (level == Explanation.Level.Telemetry) {
+					assertThat(explanation.toGenericPlanNode().getExecutionProfile().status()).isEqualTo("TIMED_OUT");
+				}
+				assertThat(nextEntered).isTrue();
+				assertThat(closes).hasValue(1);
+				assertThat(Thread.currentThread().isInterrupted()).isFalse();
+			} finally {
+				sail.shutDown();
+			}
+		}
+	}
+
+	@Test
+	public void testExplainTimeoutDoesNotSwallowNoSuchElementFailureWithInterruptionMessage() {
+		NoSuchElementException failure = new NoSuchElementException("The iteration has been interrupted.");
+		AtomicInteger closes = new AtomicInteger();
+		AtomicBoolean nextEntered = new AtomicBoolean();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> interruptedNextIteration(closes, nextEntered, failure));
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertThat(assertThrows(NoSuchElementException.class,
+					() -> connection.explain(Explanation.Level.Telemetry, expression, null,
+							EmptyBindingSet.getInstance(), false, 1))).isSameAs(failure).hasNoCause();
+			assertThat(failure.getSuppressed()).anySatisfy(diagnostic -> {
+				assertThat(diagnostic).isInstanceOf(ExplanationExecutionException.class);
+				assertThat(((ExplanationExecutionException) diagnostic).getExecutionProfile().status())
+						.isEqualTo("FAILED");
+			});
+			assertThat(nextEntered).isTrue();
+			assertThat(closes).hasValue(1);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private CloseableIteration<BindingSet> interruptedNextIteration(AtomicInteger closes, AtomicBoolean nextEntered,
+			NoSuchElementException failure) {
+		IterationWrapper<BindingSet> wrapped = new IterationWrapper<>(
+				new CloseableIteratorIteration<>(List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator())) {
+		};
+		return new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+
+			@Override
+			public BindingSet next() {
+				nextEntered.set(true);
+				try {
+					new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+					throw new AssertionError("explanation timeout did not interrupt next()");
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+				}
+				if (failure != null) {
+					throw failure;
+				}
+				return wrapped.next();
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+				wrapped.close();
+			}
+		};
+	}
+
+	@Test
+	public void testExplainExternalInterruptAtEndOfHasNextMarksConsumptionPartial() {
+		assertExplainExternalInterruptAtEndOfHasNext(false);
+	}
+
+	@Test
+	public void testExplainExternalInterruptAtEndOfHasNextPreservesConsumerCloseFailure() {
+		assertExplainExternalInterruptAtEndOfHasNext(true);
+	}
+
+	private void assertExplainExternalInterruptAtEndOfHasNext(boolean failOnClose) {
+		assertThat(Thread.currentThread().isInterrupted()).isFalse();
+		IllegalStateException closeFailure = new IllegalStateException(
+				"consumer close failed after external interrupt");
+		var consumer = mock(ExplanationResultConsumerFactory.ResultConsumer.class);
+		when(consumer.bytesWritten()).thenReturn(13L);
+		if (failOnClose) {
+			doThrow(closeFailure).when(consumer).close();
+		}
+		FailingTelemetryConsumerFactory.CURRENT.set(consumer);
+		CloseableIteration<BindingSet> iteration = mock(CloseableIteration.class);
+		when(iteration.hasNext()).thenAnswer(invocation -> {
+			Thread.currentThread().interrupt();
+			return false;
+		});
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> iteration);
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection();
+				var ignored = ExplanationOptions.serialized(FailingTelemetryConsumerFactory.MIME).activate()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			QueryExecutionProfile profile;
+			if (failOnClose) {
+				assertSame(closeFailure, assertThrows(IllegalStateException.class,
+						() -> connection.explain(Explanation.Level.Telemetry, expression, null,
+								EmptyBindingSet.getInstance(), false, 10)));
+				profile = List.of(closeFailure.getSuppressed())
+						.stream()
+						.filter(ExplanationExecutionException.class::isInstance)
+						.map(ExplanationExecutionException.class::cast)
+						.findFirst()
+						.orElseThrow()
+						.getExecutionProfile();
+			} else {
+				profile = connection.explain(Explanation.Level.Telemetry, expression, null,
+						EmptyBindingSet.getInstance(), false, 10).toGenericPlanNode().getExecutionProfile();
+			}
+			assertThat(profile.status()).isEqualTo(failOnClose ? "FAILED" : "CANCELLED");
+			assertThat(profile.stages()).filteredOn(stage -> stage.id().equals("query/resultConsumption"))
+					.singleElement()
+					.satisfies(stage -> {
+						assertThat(stage.status()).isEqualTo("PARTIAL");
+						assertThat(stage.metrics().get("rowsConsumed").count()).isZero();
+						assertThat(stage.metrics().get("rowsConsumed").state()).isEqualTo("partial");
+						assertThat(stage.metrics().get("serializedBytes").count()).isEqualTo(13L);
+						assertThat(stage.metrics().get("serializedBytes").state()).isEqualTo("partial");
+					});
+			verify(iteration, never()).next();
+			verify(iteration).close();
+			verify(consumer, never()).accept(any());
+			verify(consumer, never()).finish();
+			verify(consumer).close();
+			assertThat(Thread.currentThread().isInterrupted()).isFalse();
+		} finally {
+			Thread.interrupted();
+			FailingTelemetryConsumerFactory.CURRENT.remove();
 			sail.shutDown();
 		}
 	}

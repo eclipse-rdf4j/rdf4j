@@ -14,10 +14,28 @@ package org.eclipse.rdf4j.sail.base;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.junit.jupiter.api.Test;
@@ -77,6 +95,181 @@ class SlowQueryLogFormatterTest {
 		assertThat(formatted)
 				.contains("Renderer throwable:")
 				.contains("boom");
+	}
+
+	@Test
+	void explanationFailurePreservesRawQueryAndExecutionConfiguration() {
+		StatementPattern expression = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")) {
+			@Override
+			public String getSignature() {
+				throw new IllegalStateException("explanation unavailable");
+			}
+		};
+		SlowQueryLogInfo info = new SlowQueryLogInfo("test.Sail", 1L, 0L, Query.QueryType.TUPLE,
+				"SELECT * WHERE { ?s ?p ?o }", SlowQueryLogInfo.capturePlan(expression), expression, null, null,
+				Map.of("executionId", "captured-execution", "maxExecutionTimeSeconds", "17"));
+
+		assertThat(new SlowQueryLogFormatter().formatExecution(info, 2_000L))
+				.contains("Raw query text", "SELECT * WHERE { ?s ?p ?o }", "executionId=captured-execution",
+						"maxExecutionTimeSeconds=17", "<unavailable>", "Explanation throwable:",
+						"explanation unavailable");
+	}
+
+	@Test
+	void datasetSelectorsAreCapturedBeforeLaterMutation() {
+		String queryText = "SELECT * WHERE { ?s ?p ?o }";
+		TupleExpr tupleExpr = parseTupleExpr(queryText);
+		IRI originalGraph = SimpleValueFactory.getInstance().createIRI("urn:original-graph");
+		IRI replacementGraph = SimpleValueFactory.getInstance().createIRI("urn:replacement-graph");
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addDefaultGraph(originalGraph);
+		SlowQueryLogInfo info = new SlowQueryLogInfo("test.Sail", 1L, 0L, Query.QueryType.TUPLE,
+				queryText, tupleExpr, tupleExpr, dataset, Collections.emptySet());
+
+		dataset.removeDefaultGraph(originalGraph);
+		dataset.addDefaultGraph(replacementGraph);
+
+		assertThat(new SlowQueryLogFormatter().formatExecution(info, 2_000L))
+				.contains("urn:original-graph")
+				.doesNotContain("urn:replacement-graph");
+	}
+
+	@Test
+	void queryPlansAreCapturedBeforeLaterMutation() {
+		StatementPattern tupleExpr = new StatementPattern(Var.of("s"),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:original-predicate")), Var.of("o"));
+		SlowQueryLogInfo info = new SlowQueryLogInfo("test.Sail", 1L, 0L, Query.QueryType.TUPLE,
+				"SELECT * WHERE { ?s ?p ?o }", tupleExpr, tupleExpr, null, Collections.emptySet());
+
+		tupleExpr.replaceChildNode(tupleExpr.getPredicateVar(),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:replacement-predicate")));
+
+		assertThat(new SlowQueryLogFormatter().formatExecution(info, 2_000L))
+				.contains("urn:original-predicate")
+				.doesNotContain("urn:replacement-predicate");
+	}
+
+	@Test
+	void capturedValuesRemainAvailableAfterTheirBackingStoreCloses() {
+		AtomicBoolean backingStoreOpen = new AtomicBoolean(true);
+		IRI storedValue = new SimpleIRI("urn:stored-value") {
+			@Override
+			public String stringValue() {
+				if (!backingStoreOpen.get()) {
+					throw new IllegalStateException("backing store closed");
+				}
+				return super.stringValue();
+			}
+		};
+		StatementPattern tupleExpr = new StatementPattern(Var.of("s"), Var.of("p", storedValue), Var.of("o"));
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addDefaultGraph(storedValue);
+		SlowQueryLogInfo info = new SlowQueryLogInfo("test.Sail", 1L, 0L, Query.QueryType.TUPLE,
+				"SELECT * WHERE { ?s ?p ?o }", tupleExpr, tupleExpr, dataset, Collections.emptySet());
+
+		backingStoreOpen.set(false);
+
+		assertThat(new SlowQueryLogFormatter().formatExecution(info, 2_000L))
+				.contains("urn:stored-value")
+				.doesNotContain("<unavailable>", "backing store closed");
+	}
+
+	@Test
+	void allPhasesUseCapturedMetadataAndRdfBindingValues() {
+		String queryText = "SELECT * WHERE { ?s ?p ?o }";
+		TupleExpr expression = parseTupleExpr(queryText);
+		Map<String, String> metadata = new HashMap<>(Map.of("executionId", "original-execution",
+				"maxExecutionTimeSeconds", "17", "threadName", "original\nthread"));
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("message", SimpleValueFactory.getInstance().createLiteral("original\nvalue"));
+		bindings.addBinding("direction",
+				SimpleValueFactory.getInstance().createLiteral("hello", "en", Literal.BaseDirection.RTL));
+		bindings.addBinding("term", SimpleValueFactory.getInstance()
+				.createTripleTerm(
+						SimpleValueFactory.getInstance().createIRI("urn:subject"),
+						SimpleValueFactory.getInstance().createIRI("urn:predicate"),
+						SimpleValueFactory.getInstance().createLiteral("nested")));
+		SlowQueryLogInfo info = new SlowQueryLogInfo("test.Sail", 2L, 1L, Query.QueryType.TUPLE, queryText,
+				SlowQueryLogInfo.capturePlan(expression), expression, null, bindings, metadata);
+
+		metadata.put("executionId", "later-execution");
+		bindings.clear();
+		SlowQueryLogFormatter formatter = new SlowQueryLogFormatter();
+		for (String output : List.of(formatter.formatFirstResult(info, 1_500L),
+				formatter.formatExecution(info, 2_500L))) {
+			assertThat(output).contains("executionId=original-execution", "maxExecutionTimeSeconds=17",
+					"threadName=original\\nthread", "bindingCount=3", "binding.message=\"original\\nvalue\"",
+					"binding.direction=\"hello\"@en--rtl", "binding.term=", "urn:subject", "nested",
+					"thresholdSeconds=2", "firstResultThresholdSeconds=1")
+					.doesNotContain("later-execution", "original\nthread", "original\nvalue");
+		}
+	}
+
+	@Test
+	void singleUseValuesAreNotConsumedByLogging() {
+		AtomicInteger reads = new AtomicInteger();
+		BindingSetAssignment expression = new BindingSetAssignment();
+		expression.setDeclaredBindingNames(Set.of("value"));
+		expression.setBindingSets(() -> {
+			reads.incrementAndGet();
+			throw new AssertionError("logging consumed the VALUES source");
+		});
+		SlowQueryLogInfo info = new SlowQueryLogInfo("test.Sail", 1L, 0L, Query.QueryType.TUPLE,
+				"programmatic query", expression, expression, null, Set.of());
+
+		assertThat(new SlowQueryLogFormatter().formatExecution(info, 2_000L))
+				.contains("programmatic query", "single-use VALUES source", "unoptimizedPlanSnapshotError",
+						"optimizedPlanSnapshotError");
+		assertThat(reads).hasValue(0);
+	}
+
+	@Test
+	void repeatableValuesRowsAreCapturedBeforeLaterMutation() {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("value", SimpleValueFactory.getInstance().createLiteral("original-row"));
+		BindingSetAssignment expression = new BindingSetAssignment();
+		expression.setBindingSets(List.of(row));
+		SlowQueryLogInfo info = new SlowQueryLogInfo("test.Sail", 1L, 0L, Query.QueryType.TUPLE,
+				"programmatic query", expression, expression, null, Set.of());
+
+		row.clear();
+		row.addBinding("value", SimpleValueFactory.getInstance().createLiteral("later-row"));
+
+		assertThat(new SlowQueryLogFormatter().formatExecution(info, 2_000L))
+				.contains("original-row")
+				.doesNotContain("later-row");
+	}
+
+	@Test
+	void concurrentPhasesShareOneImmutableRendering() throws Exception {
+		TupleExpr expression = parseTupleExpr("SELECT * WHERE { ?s ?p ?o }");
+		SlowQueryLogInfo info = new SlowQueryLogInfo("test.Sail", 2L, 1L, Query.QueryType.TUPLE,
+				"SELECT * WHERE { ?s ?p ?o }", expression, expression, null, Set.of());
+		AtomicInteger renderers = new AtomicInteger();
+		SlowQueryLogFormatter formatter = new SlowQueryLogFormatter() {
+			@Override
+			protected TupleExprIRRenderer createRenderer() {
+				renderers.incrementAndGet();
+				return super.createRenderer();
+			}
+		};
+		CountDownLatch start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var first = executor.submit(() -> {
+				assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
+				return formatter.formatFirstResult(info, 1_500L);
+			});
+			var complete = executor.submit(() -> {
+				assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
+				return formatter.formatExecution(info, 2_500L);
+			});
+			start.countDown();
+			String firstOutput = first.get(10, TimeUnit.SECONDS);
+			String completeOutput = complete.get(10, TimeUnit.SECONDS);
+			assertThat(firstOutput.substring(firstOutput.indexOf("thresholdSeconds=")))
+					.isEqualTo(completeOutput.substring(completeOutput.indexOf("thresholdSeconds=")));
+		}
+		assertThat(renderers).hasValue(1);
 	}
 
 	private TupleExpr parseTupleExpr(String queryText) {

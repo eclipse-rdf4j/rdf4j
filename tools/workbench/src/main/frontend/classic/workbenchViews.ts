@@ -2011,6 +2011,10 @@ namespace workbench {
             'rdfs-dt': 'Adds RDF Schema and direct type inference.',
             lucene: 'Adds Lucene full-text search.',
             'rdfs-lucene': 'Adds RDF Schema inference and Lucene full-text search.',
+            'rdfs-shacl': 'Adds RDF Schema inference and validates every change against SHACL shapes.',
+            'shacl-lucene': 'Adds Lucene full-text search and validates every change against SHACL shapes.',
+            'rdfs-shacl-lucene': 'Adds RDF Schema inference and Lucene full-text search, '
+                + 'and validates every change against SHACL shapes.',
             customrule: 'Adds inference from a rule written as a graph query.',
             shacl: 'Validates every change against SHACL shapes.'
         };

@@ -12,11 +12,57 @@
 package org.eclipse.rdf4j.sail.helpers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.rdf4j.query.Query;
 import org.junit.jupiter.api.Test;
 
 class SlowQueryContextHolderTest {
+
+	@Test
+	void metadataIsAnImmutableExecutionSnapshot() {
+		Map<String, String> metadata = new HashMap<>(
+				Map.of("executionId", "original", "maxExecutionTimeSeconds", "30"));
+		var previous = SlowQueryContextHolder.set("SELECT * WHERE {}", Query.QueryType.TUPLE, "requested", true,
+				metadata);
+		try {
+			metadata.put("executionId", "later");
+			assertThat(SlowQueryContextHolder.get().getMetadata()).containsEntry("executionId", "original")
+					.containsEntry("maxExecutionTimeSeconds", "30");
+			assertThatThrownBy(() -> SlowQueryContextHolder.get().getMetadata().put("executionId", "changed"))
+					.isInstanceOf(UnsupportedOperationException.class);
+			assertThat(SlowQueryContextHolder.get().getForcedExecutionStrategy()).isEqualTo("requested");
+			assertThat(SlowQueryContextHolder.get().isResultCacheRequested()).isTrue();
+		} finally {
+			SlowQueryContextHolder.restore(previous);
+		}
+	}
+
+	@Test
+	void executionContextsDoNotLeakToAnotherThread() throws Exception {
+		var previous = SlowQueryContextHolder.set("outer", Query.QueryType.TUPLE, null, false,
+				Map.of("executionId", "outer"));
+		try {
+			CompletableFuture.runAsync(() -> {
+				assertThat(SlowQueryContextHolder.get()).isNull();
+				var workerPrevious = SlowQueryContextHolder.set("worker", Query.QueryType.BOOLEAN, null, false,
+						Map.of("executionId", "worker"));
+				try {
+					assertThat(SlowQueryContextHolder.get().getMetadata()).containsEntry("executionId", "worker");
+				} finally {
+					SlowQueryContextHolder.restore(workerPrevious);
+				}
+				assertThat(SlowQueryContextHolder.get()).isNull();
+			}).get();
+			assertThat(SlowQueryContextHolder.get().getMetadata()).containsEntry("executionId", "outer");
+		} finally {
+			SlowQueryContextHolder.restore(previous);
+		}
+	}
 
 	@Test
 	void restoreNestedContext() {

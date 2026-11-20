@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -739,6 +740,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	private NativeGroupIteration resultOwner;
 	static final AtomicLong LENGTH_SUMMARY_RESULTS = new AtomicLong();
 	volatile boolean closed;
+	/** Retains the accepted stop outcome without retaining native cancellation provenance or cleanup graphs. */
+	private volatile boolean cancellationTerminated;
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
 			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base,
@@ -876,15 +879,20 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	private boolean finishCancellation(KernelQueryCancelledException cancelled) {
 		close();
-		if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+		if (!cancellation.isCleanOwnedCancellation(cancelled)) {
 			KernelRuntime.rethrowCloseFailure(cancelled);
 		}
+		cancellationTerminated = true;
 		return false;
 	}
 
 	@Override
 	public BindingSet next() {
 		if (!hasNext()) {
+			if (cancellationTerminated) {
+				throw new NoSuchElementException(null,
+						new CancellationException("Native aggregate evaluation was cancelled."));
+			}
 			throw new NoSuchElementException();
 		}
 		BindingSet result = next;

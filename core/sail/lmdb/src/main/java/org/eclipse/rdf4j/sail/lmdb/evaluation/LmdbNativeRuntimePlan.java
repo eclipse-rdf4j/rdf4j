@@ -908,7 +908,7 @@ final class LmdbNativeRuntimePlan {
 						.append(site.getKey().indexName.isEmpty()
 								? "UNKNOWN"
 								: site.getKey().indexName);
-				site.getValue().render(out);
+				site.getValue().render(out, true);
 			}
 			if (omittedAccessMeasurements > 0L) {
 				out.append("\n        omittedMeasurements: ").append(omittedAccessMeasurements);
@@ -1281,20 +1281,26 @@ final class LmdbNativeRuntimePlan {
 			}
 
 			private void render(StringBuilder out) {
+				render(out, false);
+			}
+
+			private void render(StringBuilder out, boolean accessSite) {
 				if (total() == 0L) {
 					return;
 				}
+				// Keep the legacy aggregate row tokens exclusive to totals; site details are a breakdown of them.
 				out.append("\n        ")
 						.append(source)
 						.append(":\n          completed: ")
 						.append(completed)
 						.append("\n          censored: ")
 						.append(censored)
-						.append("\n          rowsScannedActual: ")
+						.append(accessSite ? "\n          siteRowsScannedActual: " : "\n          rowsScannedActual: ")
 						.append(scannedRows)
-						.append("\n          rowsMatchedActual: ")
+						.append(accessSite ? "\n          siteRowsMatchedActual: " : "\n          rowsMatchedActual: ")
 						.append(matchedRows)
-						.append("\n          rowsFilteredActual: ")
+						.append(accessSite ? "\n          siteRowsFilteredActual: "
+								: "\n          rowsFilteredActual: ")
 						.append(filteredRows)
 						.append("\n          physicalCounterMeasurements: ")
 						.append(physicalCounterMeasurements)

@@ -890,47 +890,71 @@ public class QueryPlanRetrievalTest {
 			JsonNode root = OBJECT_MAPPER.readTree(actual);
 			assertThat(root.path("type").asText()).isEqualTo("Projection");
 			assertThat(root.path("resultSizeActual").asLong()).isEqualTo(2L);
-			assertTelemetryFieldsPresentRecursively(root);
-			assertThat(root.path("nextCallCountActual").asLong()).isGreaterThan(0L);
+			assertRecordedTelemetryFieldsAreNonnegativeRecursively(root);
+			for (String field : List.of("hasNextCallCountActual", "hasNextTrueCountActual", "hasNextTimeNanosActual",
+					"nextCallCountActual", "nextTimeNanosActual")) {
+				assertThat(root.path(field).isIntegralNumber()).as("recorded root counter %s", field).isTrue();
+			}
+			assertThat(root.path("nextCallCountActual").asLong()).isEqualTo(2L);
+			assertThat(root.path("hasNextCallCountActual").asLong()).isGreaterThanOrEqualTo(3L);
+			assertThat(root.path("hasNextTrueCountActual").asLong()).isGreaterThanOrEqualTo(2L);
 			assertThat(root.path("longMetricsActual").has("outputRowsActual")).isFalse();
 
+			JsonNode leftJoin = findFirstPlanNode(root, node -> node.path("type").asText().startsWith("LeftJoin"));
+			assertThat(leftJoin).isNotNull();
+			assertThat(leftJoin.path("joinRightIteratorsCreatedActual").asLong()).isPositive();
+			assertThat(leftJoin.path("joinLeftBindingsConsumedActual").asLong()).isPositive();
+			assertThat(leftJoin.path("joinRightBindingsConsumedActual").asLong()).isPositive();
+
+			JsonNode projectionElements = findFirstPlanNode(root,
+					node -> "ProjectionElemList".equals(node.path("type").asText()));
+			assertThat(projectionElements).isNotNull();
+			// These nodes describe the plan; they do not execute iterators and must not acquire invented zero counts.
+			assertTelemetryFieldsAbsentRecursively(projectionElements);
+
+			assertThat(root.path("logicalPath").asText()).isEqualTo("0");
+			JsonNode profile = root.path("executionProfile");
+			assertThat(profile.path("schemaVersion").asInt()).isEqualTo(1);
+			assertThat(profile.path("status").asText()).isEqualTo("COMPLETE");
+			assertThat(profile.path("properties").path("consumptionMode").asText()).isEqualTo("rows");
+			JsonNode rowsConsumed = profile.path("stages").findValue("rowsConsumed");
+			assertThat(rowsConsumed).isNotNull();
+			assertThat(rowsConsumed.path("count").asLong()).isEqualTo(2L);
+			assertThat(rowsConsumed.path("unit").asText()).isEqualTo("rows");
+			assertThat(rowsConsumed.path("origin").asText()).isEqualTo("measured");
+			assertThat(rowsConsumed.path("state").asText()).isEqualTo("complete");
+			assertThat(rowsConsumed.path("scope").asText()).isEqualTo("self");
 		}
 		sailRepository.shutDown();
 
 	}
 
 	@Test
-	public void testEstimateStabilityStatsAreHiddenUntilTelemetryLevel() {
+	public void testUnmeasuredEstimateStabilityStatsAreAbsentAtEveryLevel() throws IOException {
 		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String optimized = query.explain(Explanation.Level.Optimized).toString();
-			String executed = query.explain(Explanation.Level.Executed).toString();
-			String timed = query.explain(Explanation.Level.Timed).toString();
-			String telemetry = query.explain(Explanation.Level.Telemetry).toString();
-
-			assertThat(optimized).doesNotContain("sampleCountActual=");
-			assertThat(optimized).doesNotContain("varianceActual=");
-			assertThat(optimized).doesNotContain("stddevActual=");
-			assertThat(optimized).doesNotContain("confidenceScoreActual=");
-
-			assertThat(executed).doesNotContain("sampleCountActual=");
-			assertThat(executed).doesNotContain("varianceActual=");
-			assertThat(executed).doesNotContain("stddevActual=");
-			assertThat(executed).doesNotContain("confidenceScoreActual=");
-
-			assertThat(timed).doesNotContain("sampleCountActual=");
-			assertThat(timed).doesNotContain("varianceActual=");
-			assertThat(timed).doesNotContain("stddevActual=");
-			assertThat(timed).doesNotContain("confidenceScoreActual=");
-
-			assertThat(telemetry).contains("sampleCountActual=");
-			assertThat(telemetry).contains("varianceActual=");
-			assertThat(telemetry).contains("stddevActual=");
-			assertThat(telemetry).contains("confidenceScoreActual=");
+			for (Explanation.Level level : Explanation.Level.values()) {
+				Explanation explanation = query.explain(level);
+				String text = explanation.toString();
+				String json = explanation.toJson();
+				assertThat(text).as("%s text does not invent statistical samples", level)
+						.doesNotContain("sampleCountActual=", "varianceActual=", "stddevActual=",
+								"confidenceScoreActual=");
+				assertThat(json).as("%s JSON does not invent statistical samples", level)
+						.doesNotContain("\"sampleCountActual\"", "\"varianceActual\"", "\"stddevActual\"",
+								"\"confidenceScoreActual\"");
+				JsonNode profile = OBJECT_MAPPER.readTree(json).path("executionProfile");
+				if (level == Explanation.Level.Telemetry) {
+					assertThat(profile.path("status").asText()).isEqualTo("COMPLETE");
+					assertThat(text).contains("Execution profile (COMPLETE)", "hasNextCallCountActual=");
+				} else {
+					assertThat(profile.isMissingNode()).as("%s has no runtime profile", level).isTrue();
+				}
+			}
 		}
 		sailRepository.shutDown();
 
@@ -1142,23 +1166,23 @@ public class QueryPlanRetrievalTest {
 		return dot.replaceAll(" ?<tr><td>(Binding state|Join type|Index|Indexes)</td><td>.*?</td></tr>", "");
 	}
 
-	private static void assertTelemetryFieldsPresentRecursively(JsonNode node) {
-		assertThat(node.has("hasNextCallCountActual")).isTrue();
-		assertThat(node.has("hasNextTrueCountActual")).isTrue();
-		assertThat(node.has("hasNextTimeNanosActual")).isTrue();
-		assertThat(node.has("nextCallCountActual")).isTrue();
-		assertThat(node.has("nextTimeNanosActual")).isTrue();
-		assertThat(node.has("joinRightIteratorsCreatedActual")).isTrue();
-		assertThat(node.has("joinLeftBindingsConsumedActual")).isTrue();
-		assertThat(node.has("joinRightBindingsConsumedActual")).isTrue();
-		assertThat(node.has("sourceRowsScannedActual")).isTrue();
-		assertThat(node.has("sourceRowsMatchedActual")).isTrue();
-		assertThat(node.has("sourceRowsFilteredActual")).isTrue();
+	private static void assertRecordedTelemetryFieldsAreNonnegativeRecursively(JsonNode node) {
+		for (String field : List.of("hasNextCallCountActual", "hasNextTrueCountActual", "hasNextTimeNanosActual",
+				"nextCallCountActual", "nextTimeNanosActual", "joinRightIteratorsCreatedActual",
+				"joinLeftBindingsConsumedActual", "joinRightBindingsConsumedActual", "sourceRowsScannedActual",
+				"sourceRowsMatchedActual", "sourceRowsFilteredActual")) {
+			if (node.has(field)) {
+				assertThat(node.path(field).isIntegralNumber()).as("%s.%s", node.path("type").asText(), field).isTrue();
+				assertThat(node.path(field).asLong()).as("%s.%s", node.path("type").asText(), field)
+						.isGreaterThanOrEqualTo(0L);
+			}
+		}
 
 		JsonNode plans = node.path("plans");
 		if (plans.isArray()) {
 			for (JsonNode child : plans) {
-				assertTelemetryFieldsPresentRecursively(child);
+				assertThat(child.has("executionProfile")).as("the profile belongs to the query root only").isFalse();
+				assertRecordedTelemetryFieldsAreNonnegativeRecursively(child);
 			}
 		}
 	}

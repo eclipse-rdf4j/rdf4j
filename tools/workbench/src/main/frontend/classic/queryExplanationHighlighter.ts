@@ -1513,6 +1513,10 @@ namespace workbench {
             return /consumption|resultMime|snapshot|revision|overlayGenerations|pendingGenerations|dataset|includeInferred|binding|repository|inputAlgebra|queryEvaluationMode/i.test(name);
         }
 
+        function truncatedWorkloadContext(value: string): boolean {
+            return typeof value === 'string' && value.indexOf('… [truncated]') >= 0;
+        }
+
         function stagedWorkloadContext(profile: ExecutionProfile): { [key: string]: string } {
             var context: { [key: string]: string } = Object.create(null);
             (profile.stages || []).forEach(function(stage: ProfileStage): void {
@@ -1620,6 +1624,7 @@ namespace workbench {
                 return lines.concat(['Profiles use different schema versions; measurements are incomparable.']).join('\n');
             }
             var complete = profileComplete(left) && profileComplete(right);
+            var truncatedContext = false;
             if (!complete) {
                 lines.push('Partial or incomplete execution: report observed values without speedup or work ratios.');
             }
@@ -1631,6 +1636,10 @@ namespace workbench {
                 visited[name] = true;
                 var before = (left.properties || {})[name];
                 var after = (right.properties || {})[name];
+                if (workloadContextName(name) && (truncatedWorkloadContext(before) || truncatedWorkloadContext(after))) {
+                    complete = false;
+                    truncatedContext = true;
+                }
                 if (before !== after) {
                     lines.push('Context ' + name + ': ' + (before || 'unavailable') + ' → ' + (after || 'unavailable'));
                     if (workloadContextName(name)) {
@@ -1648,6 +1657,10 @@ namespace workbench {
             contextNames.forEach(function(name: string): void {
                 if (visitedContext[name]) { return; }
                 visitedContext[name] = true;
+                if (truncatedWorkloadContext(beforeContext[name]) || truncatedWorkloadContext(afterContext[name])) {
+                    complete = false;
+                    truncatedContext = true;
+                }
                 if (beforeContext[name] !== afterContext[name]) {
                     complete = false;
                     if (contextChanges++ < 8) {
@@ -1657,6 +1670,9 @@ namespace workbench {
                 }
             });
             if (contextChanges > 8) { lines.push((contextChanges - 8) + ' further workload context changes.'); }
+            if (truncatedContext) {
+                lines.push('Workload comparison unavailable: context was truncated, so input equivalence cannot be verified.');
+            }
             var beforeStages: { [key: string]: ProfileStage } = Object.create(null);
             var duplicate: { [key: string]: boolean } = Object.create(null);
             (left.stages || []).forEach(function(stage: ProfileStage): void {

@@ -81,6 +81,8 @@ The ledger counts all observed attempts and summarizes strategy/bound-mask group
 
 Access stages retain source/index choice, bound shape, scanned/matched/filtered counts, active iterator work, and physical versus returned-row-proxy provenance. The profile records the query's pinned adjacency view, including snapshot/base revision and overlay generations, independently of later process-wide changes.
 
+The native text report keeps source totals under `rowsScannedActual`, `rowsMatchedActual`, and `rowsFilteredActual`. Its `accessSites` breakdown uses the corresponding `siteRowsScannedActual`, `siteRowsMatchedActual`, and `siteRowsFilteredActual` labels. Source totals already include the site work; adding the breakdown to those totals would count it twice. Structured access-stage metrics retain their own stage identities.
+
 Payload page/fiber/root visits and copied values describe logical adjacency work. They do not measure physical disk reads or operating-system page-cache misses. The query's pinned view is evidence about its source lifetime, not a claim that the repository was idle throughout the run.
 
 ### 6. Values, dictionary work, and expression escapes
@@ -118,6 +120,8 @@ Unknown fixed counters are not converted to zero. A parent's observed duration i
 Workbench presents the structured physical profile, its measurement qualifiers, attempts, workers, and evidence-based findings. Physical stage links navigate to logical origins where such a mapping exists. Telemetry heatmaps use attributable measured time when available; an aggregate is no longer ranked solely by its one output row.
 
 Semantic comparison aligns physical identities and discloses route changes. It refuses timing/work ratios across incompatible units, scopes, provenance, partial execution, or changed workload/snapshot context. Unknown or proxy counters do not silently become precise ratios. The original logical plan and textual diagnostics remain available below the profile.
+
+Dataset context uses complete graph names, blank-node graph identities, default-graph selectors, and explicit dataset selection. Graph sets have a canonical order so equivalent selections compare consistently; a repository-default dataset remains distinct from an explicitly supplied dataset. Context that exceeds the report's string bound is marked as truncated and cannot establish comparison compatibility.
 
 ## Partial execution and failure
 

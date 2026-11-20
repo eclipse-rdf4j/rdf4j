@@ -1,4 +1,11 @@
 lmdb
+lmdb-lucene
+lmdb-rdfs
+lmdb-rdfs-lucene
+lmdb-rdfs-shacl
+lmdb-rdfs-shacl-lucene
+lmdb-shacl
+lmdb-shacl-lucene
 memory
 memory-customrule
 memory-lucene

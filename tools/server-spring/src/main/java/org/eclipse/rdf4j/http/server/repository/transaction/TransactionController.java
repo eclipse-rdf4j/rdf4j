@@ -57,6 +57,7 @@ import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
+import org.eclipse.rdf4j.http.client.QueryLoggingContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
@@ -531,7 +532,9 @@ public class TransactionController extends AbstractController implements Disposa
 		QueryCircuitBreakerHandle breakerHandle = null;
 		boolean handedOffToView = false;
 
-		try {
+		Map<String, String> loggingContext = ProtocolUtil.captureQueryLoggingContext(request);
+		loggingContext.put(QueryLoggingContext.TRANSACTION_ID, txn.getID().toString());
+		try (QueryLoggingContext.Activation ignored = QueryLoggingContext.activateMdc(loggingContext)) {
 			breakerHandle = queryCircuitBreaker.register(QueryCircuitBreakerHandle.Source.TX,
 					RepositoryInterceptor.getRepositoryID(request), queryStr);
 			queryCircuitBreaker.beforeExecution(breakerHandle);

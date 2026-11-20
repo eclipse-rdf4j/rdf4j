@@ -206,6 +206,45 @@ test('snapshot revisions and serialization formats stored on stages invalidate w
     }
 });
 
+test('equal truncated workload context makes comparison unavailable without expanding the report', () => {
+    const h = highlighter();
+    const truncated = 'shared context '.repeat(400).slice(0, 4096) + '… [truncated]';
+    const workloadKeys = ['dataset', 'bindings', 'inputAlgebra', 'repositoryId', 'queryEvaluationMode',
+        'includeInferred', 'consumptionMode', 'resultMimeType', 'adjacencySnapshotRevision',
+        'overlayGenerations', 'pendingGenerations'];
+    for (const location of ['root', 'stage']) {
+        for (const name of workloadKeys) {
+            const before = profile();
+            const after = profile(2000);
+            const oldProperties = location === 'root' ? before.properties : before.stages[0].properties;
+            const newProperties = location === 'root' ? after.properties : after.stages[0].properties;
+            oldProperties[name] = truncated;
+            newProperties[name] = truncated;
+            const compared = h.compareExecutionProfiles(before, after);
+            assert.match(compared, /comparison unavailable[^\n]*truncated/i, `${location}.${name}`);
+            assert.doesNotMatch(compared, /scanned[^\n]*2(?:\.0+)?x/, `${location}.${name}`);
+            assert.equal((compared.match(/comparison unavailable/gi) || []).length, 1);
+        }
+    }
+    const multiBefore = profile();
+    const multiAfter = profile(2000);
+    for (const name of workloadKeys) {
+        multiBefore.properties[name] = truncated;
+        multiAfter.properties[name] = truncated;
+        multiBefore.stages[0].properties[name] = truncated;
+        multiAfter.stages[0].properties[name] = truncated;
+    }
+    const multiCompared = h.compareExecutionProfiles(multiBefore, multiAfter);
+    assert.equal((multiCompared.match(/comparison unavailable/gi) || []).length, 1);
+    assert.ok(multiCompared.length < 1000, 'repeated truncated contexts need only one bounded explanation');
+    const before = profile();
+    const after = profile(2000);
+    before.properties.build = truncated;
+    after.properties.build = truncated;
+    assert.match(h.compareExecutionProfiles(before, after), /scanned[^\n]*2(?:\.0+)?x/,
+        'a truncated descriptive property does not conceal workload identity');
+});
+
 test('removed physical stage properties remain visible in comparison', () => {
     const h = highlighter();
     const before = profile();
