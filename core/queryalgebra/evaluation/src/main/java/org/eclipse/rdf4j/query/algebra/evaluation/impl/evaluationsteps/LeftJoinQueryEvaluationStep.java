@@ -192,7 +192,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			condition = null;
 		}
 		LeftJoinQueryEvaluationStep defaultStep = new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin,
-				optionalVars, conditionReads, context, strategy, mappingParameterized, scopedLookupInputs, optionalRestoration);
+				optionalVars, conditionReads, context, strategy, mappingParameterized, scopedLookupInputs,
+				optionalRestoration);
 		Set<String> staticInvocationNames = context.getSubstitutionBindingNames();
 		QueryEvaluationStep compatibilityFallback = defaultStep.compatibilityFallback;
 		// Batch-correlated seam (accumulate–semijoin–probe): only reachable on this well-designed,
@@ -219,7 +220,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 									conditionReads, context.getSubstitutionBindingNames()).asPredicate();
 					return bs -> {
 						if (compatibilityFallback != null
-								&& needsCurrentEntryMatch(bs, optionalVars, staticInvocationNames, optionalRestoration)) {
+								&& needsCurrentEntryMatch(bs, optionalVars, staticInvocationNames,
+										optionalRestoration)) {
 							return compatibilityFallback.evaluate(bs);
 						}
 						if (BindingFrameBindings.hasFrame(bs)) {
